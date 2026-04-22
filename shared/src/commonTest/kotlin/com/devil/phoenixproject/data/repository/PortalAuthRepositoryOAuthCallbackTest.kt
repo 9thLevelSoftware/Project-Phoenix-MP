@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.data.auth.OAuthProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -66,5 +67,23 @@ class PortalAuthRepositoryOAuthCallbackTest {
         val callbackUrl = "com.devil.phoenixproject://auth-callback?code=auth-code-123"
 
         assertNull(extractOAuthCallbackParam(callbackUrl, "state"))
+    }
+
+    @Test
+    fun `buildOAuthAuthorizeUrl omits client managed state`() {
+        val authorizeUrl = buildOAuthAuthorizeUrl(
+            authUrl = "https://example.supabase.co/auth/v1",
+            provider = OAuthProvider.APPLE,
+            codeChallenge = "challenge-123",
+            redirectUrl = PortalAuthRepository.OAUTH_CALLBACK_URL,
+        )
+
+        assertTrue(authorizeUrl.contains("provider=apple"))
+        assertTrue(
+            authorizeUrl.contains(
+                "redirect_to=com.devil.phoenixproject%3A%2F%2Fauth-callback",
+            ),
+        )
+        assertFalse(authorizeUrl.contains("state="))
     }
 }

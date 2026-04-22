@@ -4,7 +4,6 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.auth.generateOAuthPkce
-import com.devil.phoenixproject.data.auth.generateOAuthState
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.PortalUser
@@ -129,8 +128,12 @@ class PortalAuthRepository(
      */
     private suspend fun signInWithOAuth(provider: OAuthProvider): Result<AuthUser> {
         val pkce = generateOAuthPkce()
-        val state = generateOAuthState()
-        val authorizeUrl = buildAuthorizeUrl(provider, pkce.challenge, state)
+        val authorizeUrl = buildOAuthAuthorizeUrl(
+            authUrl = supabaseConfig.authUrl,
+            provider = provider,
+            codeChallenge = pkce.challenge,
+            redirectUrl = OAUTH_CALLBACK_URL,
+        )
 
         val callbackResult = oauthLauncher.launch(authorizeUrl, OAUTH_CALLBACK_SCHEME)
         val callbackUrl = callbackResult.getOrElse { return Result.failure(it) }
@@ -140,12 +143,6 @@ class PortalAuthRepository(
         // scheme. Reject anything that isn't from the redirect we registered.
         if (!isExpectedOAuthCallback(callbackUrl)) {
             return Result.failure(Exception("Unexpected OAuth callback URL"))
-        }
-
-        // CSRF protection: Supabase echoes `state` back unchanged. A mismatch
-        // means either a forged callback or a stale flow — refuse the code.
-        if (extractState(callbackUrl) != state) {
-            return Result.failure(Exception("OAuth callback state mismatch"))
         }
 
         val code = extractAuthCode(callbackUrl)
@@ -163,17 +160,6 @@ class PortalAuthRepository(
             }
     }
 
-    private fun buildAuthorizeUrl(provider: OAuthProvider, codeChallenge: String, state: String): String {
-        val redirect = urlEncode(OAUTH_CALLBACK_URL)
-        return "${supabaseConfig.authUrl}/authorize" +
-            "?provider=${provider.wireName}" +
-            "&redirect_to=$redirect" +
-            "&code_challenge=$codeChallenge" +
-            "&code_challenge_method=S256" +
-            "&state=${urlEncode(state)}" +
-            "&scopes=${urlEncode(provider.scopes)}"
-    }
-
     private fun isExpectedOAuthCallback(callbackUrl: String): Boolean {
         return isExpectedOAuthCallbackUrl(
             callbackUrl = callbackUrl,
@@ -185,29 +171,10 @@ class PortalAuthRepository(
         return extractOAuthCallbackParam(callbackUrl, "code")
     }
 
-    private fun extractState(callbackUrl: String): String? {
-        return extractOAuthCallbackParam(callbackUrl, "state")
-    }
-
     private fun extractErrorMessage(callbackUrl: String): String? {
         val description = extractOAuthCallbackParam(callbackUrl, "error_description")
         val error = extractOAuthCallbackParam(callbackUrl, "error")
         return description ?: error
-    }
-
-    private fun urlEncode(value: String): String = buildString {
-        for (c in value) {
-            when {
-                c.isLetterOrDigit() || c == '-' || c == '_' || c == '.' || c == '~' -> append(c)
-                else -> {
-                    for (b in c.toString().encodeToByteArray()) {
-                        append('%')
-                        append(((b.toInt() shr 4) and 0xF).toString(16).uppercase())
-                        append((b.toInt() and 0xF).toString(16).uppercase())
-                    }
-                }
-            }
-        }
     }
 
     override suspend fun signOut(): Result<Unit> {
@@ -272,6 +239,24 @@ class PortalAuthRepository(
     )
 }
 
+internal fun buildOAuthAuthorizeUrl(
+    authUrl: String,
+    provider: OAuthProvider,
+    codeChallenge: String,
+    redirectUrl: String,
+): String {
+    // Supabase Auth validates its own OAuth flow state server-side. Passing a
+    // client-managed state here is redundant and breaks Apple, where Supabase
+    // rewrites the provider state before the callback returns to the device.
+    val redirect = urlEncodeOAuthValue(redirectUrl)
+    return "$authUrl/authorize" +
+        "?provider=${provider.wireName}" +
+        "&redirect_to=$redirect" +
+        "&code_challenge=$codeChallenge" +
+        "&code_challenge_method=S256" +
+        "&scopes=${urlEncodeOAuthValue(provider.scopes)}"
+}
+
 internal fun isExpectedOAuthCallbackUrl(
     callbackUrl: String,
     expectedScheme: String,
@@ -302,4 +287,19 @@ internal fun extractOAuthCallbackParam(callbackUrl: String, key: String): String
         }
         .firstOrNull { (name, _) -> name == key }
         ?.second
+}
+
+internal fun urlEncodeOAuthValue(value: String): String = buildString {
+    for (c in value) {
+        when {
+            c.isLetterOrDigit() || c == '-' || c == '_' || c == '.' || c == '~' -> append(c)
+            else -> {
+                for (b in c.toString().encodeToByteArray()) {
+                    append('%')
+                    append(((b.toInt() shr 4) and 0xF).toString(16).uppercase())
+                    append((b.toInt() and 0xF).toString(16).uppercase())
+                }
+            }
+        }
+    }
 }
