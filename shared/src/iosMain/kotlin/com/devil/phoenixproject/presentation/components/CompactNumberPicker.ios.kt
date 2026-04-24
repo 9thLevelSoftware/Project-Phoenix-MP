@@ -174,13 +174,7 @@ actual fun CompactNumberPicker(
 
     // Format a value for display
     fun formatValue(floatVal: Float): String {
-        val formatted = if (step >= 1.0f && floatVal % 1.0f == 0f) {
-            floatVal.toInt().toString()
-        } else {
-            val intPart = floatVal.toInt()
-            val decPart = ((floatVal - intPart) * 10).toInt().let { if (floatVal < 0 && it < 0) -it else abs(it) }
-            "$intPart.$decPart"
-        }
+        val formatted = formatCompactNumberPickerValue(floatVal, step)
         return if (suffix.isNotEmpty()) "$formatted $suffix" else formatted
     }
 
@@ -271,13 +265,7 @@ actual fun CompactNumberPicker(
     }
 
     // Format value for editing (without suffix)
-    fun formatValueForEdit(floatVal: Float): String = if (step >= 1.0f && floatVal % 1.0f == 0f) {
-        floatVal.toInt().toString()
-    } else {
-        val intPart = floatVal.toInt()
-        val decPart = ((floatVal - intPart) * 10).toInt().let { if (floatVal < 0 && it < 0) -it else abs(it) }
-        "$intPart.$decPart"
-    }
+    fun formatValueForEdit(floatVal: Float): String = formatCompactNumberPickerValue(floatVal, step)
 
     fun formatOverlayValue(floatVal: Float, useCompactOverlay: Boolean): String = if (useCompactOverlay) formatValueForEdit(floatVal) else formatValue(floatVal)
 
