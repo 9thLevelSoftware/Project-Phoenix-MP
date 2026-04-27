@@ -35,12 +35,14 @@ import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ProfileColors
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
 
@@ -81,6 +83,29 @@ fun RoutinesTab(
     // showRoutineBuilder and routineToEdit states removed
 
     Logger.d { "RoutinesTab: ${routines.size} routines loaded" }
+
+    // Historical time estimates (Issue #225)
+    val timeEstimator: RoutineTimeEstimator = koinInject()
+    val timeEstimates = remember { mutableStateMapOf<String, String>() }
+    LaunchedEffect(routines) {
+        for (routine in routines) {
+            if (routine.exercises.isEmpty()) continue
+            try {
+                val estimate = timeEstimator.estimateRoutineDuration(routine, routine.profileId)
+                val text = buildString {
+                    if (estimate.hasRange) {
+                        append(estimate.formattedRange)
+                    } else {
+                        append(estimate.formattedDuration)
+                    }
+                    if (estimate.isEntirelyFallback) append(" (est.)")
+                }
+                timeEstimates[routine.id] = text
+            } catch (e: Exception) {
+                Logger.w(e) { "Failed to estimate duration for routine ${routine.id}" }
+            }
+        }
+    }
 
     // Selection mode state
     var selectionMode by remember { mutableStateOf(false) }
@@ -183,6 +208,7 @@ fun RoutinesTab(
                                 moveToGroupRoutineId = routine.id
                                 showMoveToGroupDialog = true
                             },
+                            historicalTimeEstimate = timeEstimates[routine.id],
                         )
                     }
 
@@ -225,6 +251,7 @@ fun RoutinesTab(
                                         moveToGroupRoutineId = routine.id
                                         showMoveToGroupDialog = true
                                     },
+                                    historicalTimeEstimate = timeEstimates[routine.id],
                                 )
                             }
                         }
@@ -669,6 +696,7 @@ private fun RoutineCardWithActions(
     profilePickerIsMoveAction: (Boolean) -> Unit,
     hasGroups: Boolean,
     onMoveToGroup: () -> Unit,
+    historicalTimeEstimate: String? = null,
 ) {
     RoutineCard(
         routine = routine,
@@ -744,6 +772,7 @@ private fun RoutineCardWithActions(
             )
             onSaveRoutine(duplicated)
         },
+        historicalTimeEstimate = historicalTimeEstimate,
     )
 }
 
@@ -894,6 +923,7 @@ fun RoutineCard(
     hasOtherProfiles: Boolean = false,
     hasGroups: Boolean = false,
     onMoveToGroup: () -> Unit = {},
+    historicalTimeEstimate: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -974,7 +1004,7 @@ fun RoutineCard(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "${routine.exercises.size} exercises • ${formatEstimatedDuration(routine)}",
+                        text = "${routine.exercises.size} exercises • ${historicalTimeEstimate ?: formatEstimatedDuration(routine)}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

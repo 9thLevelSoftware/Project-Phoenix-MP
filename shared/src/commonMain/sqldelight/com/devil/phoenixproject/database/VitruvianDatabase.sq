@@ -656,6 +656,13 @@ FROM WorkoutSession
 WHERE exerciseId = ? AND duration > 0
 AND profile_id = :profileId;
 
+-- Count sessions for a specific exercise (Issue #225: minimum session threshold for time estimation)
+selectSessionCountForExercise:
+SELECT COUNT(*)
+FROM WorkoutSession
+WHERE exerciseId = ? AND duration > 0
+AND profile_id = :profileId;
+
 -- Personal Record Queries
 
 -- Get all PRs ordered by timestamp

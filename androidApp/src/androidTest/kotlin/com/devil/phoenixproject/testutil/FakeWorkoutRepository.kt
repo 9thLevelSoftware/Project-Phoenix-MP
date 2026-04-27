@@ -73,6 +73,9 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override fun getAllSessions(profileId: String): Flow<List<WorkoutSession>> = _sessionsFlow
 
+    override suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long =
+        sessions.values.count { it.exerciseId == exerciseId }.toLong()
+
     override suspend fun saveSession(session: WorkoutSession) {
         sessions[session.id] = session
         updateSessionsFlow()

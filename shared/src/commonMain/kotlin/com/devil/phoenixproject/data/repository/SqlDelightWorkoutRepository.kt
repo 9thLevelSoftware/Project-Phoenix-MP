@@ -800,6 +800,11 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             ?.toLong()
     }
 
+    override suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long = withContext(Dispatchers.IO) {
+        queries.selectSessionCountForExercise(exerciseId, profileId = profileId)
+            .executeAsOne()
+    }
+
     override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> = queries.selectAllRecords(profileId = profileId) {
             id,
             exerciseId,

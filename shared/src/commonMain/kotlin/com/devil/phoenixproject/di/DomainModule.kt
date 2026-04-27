@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.detection.SignatureExtractor
 import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.domain.voice.SafeWordDetectionManager
 import org.koin.dsl.module
@@ -25,6 +26,7 @@ val domainModule = module {
     single { RepCounterFromMachine() }
     single { ProgressionUseCase(get(), get()) }
     factory { ResolveRoutineWeightsUseCase(get()) }
+    factory { RoutineTimeEstimator(get()) }
     single { TemplateConverter(get()) }
 
     // Assessment

@@ -63,6 +63,12 @@ interface WorkoutRepository {
      */
     suspend fun getAverageSetDurationMs(exerciseId: String, profileId: String): Long?
 
+    /**
+     * Get the number of completed sessions for a specific exercise.
+     * Issue #225: Used by RoutineTimeEstimator to enforce minimum session threshold.
+     */
+    suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long
+
     // Metrics storage
     suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>)
 

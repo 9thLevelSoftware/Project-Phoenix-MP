@@ -21,9 +21,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
+import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
@@ -31,6 +34,7 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
 
@@ -76,6 +80,17 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
         viewModel.selectExerciseInOverview(pagerState.currentPage)
     }
 
+    // Time estimate (Issue #225)
+    val timeEstimator: RoutineTimeEstimator = koinInject()
+    var timeEstimate by remember { mutableStateOf<RoutineTimeEstimate?>(null) }
+    LaunchedEffect(routine) {
+        try {
+            timeEstimate = timeEstimator.estimateRoutineDuration(routine, routine.profileId)
+        } catch (e: Exception) {
+            Logger.w(e) { "Failed to compute routine time estimate" }
+        }
+    }
+
     // Stop routine confirmation dialog
     var showStopConfirmation by remember { mutableStateOf(false) }
 
@@ -109,6 +124,37 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                     ),
                 ),
         ) {
+            // Time estimate badge (Issue #225)
+            timeEstimate?.let { estimate ->
+                if (routine.exercises.isNotEmpty() && estimate.totalSeconds > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.Schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        val displayText = buildString {
+                            append("Est. ")
+                            append(if (estimate.hasRange) estimate.formattedRange else estimate.formattedDuration)
+                            if (estimate.isEntirelyFallback) append(" (est.)")
+                        }
+                        Text(
+                            text = displayText,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
             // Horizontal pager for exercises
             HorizontalPager(
                 state = pagerState,
