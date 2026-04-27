@@ -240,6 +240,94 @@ actual class HealthIntegration {
     }
 
     /**
+     * Issue #395: Write a single aggregate HealthKit workout for an entire routine.
+     * Called once at routine completion instead of per-set.
+     */
+    actual suspend fun writeRoutineWorkout(data: RoutineHealthData): Result<Unit> {
+        if (!isAvailable()) {
+            return Result.failure(
+                IllegalStateException("HealthKit is not available on this device"),
+            )
+        }
+
+        if (!hasPermissions()) {
+            return Result.failure(
+                IllegalStateException("HealthKit write permissions not granted"),
+            )
+        }
+
+        return try {
+            val epochSeconds = data.startTimeMs / 1000.0
+            val startDate = NSDate(
+                timeIntervalSinceReferenceDate =
+                    epochSeconds - UNIX_TO_APPLE_EPOCH_OFFSET,
+            )
+
+            val durationMs = data.durationMs.coerceAtLeast(1000L)
+            val durationSeconds = (durationMs / 1000L).toDouble()
+            val endDate = NSDate(
+                timeIntervalSinceReferenceDate =
+                    (epochSeconds + durationSeconds) - UNIX_TO_APPLE_EPOCH_OFFSET,
+            )
+
+            val calorieQuantity: HKQuantity? = data.totalCalories?.let { cal ->
+                if (cal > 0f) {
+                    HKQuantity.quantityWithUnit(
+                        unit = HKUnit.unitFromString("kcal"),
+                        doubleValue = cal.toDouble(),
+                    )
+                } else {
+                    null
+                }
+            }
+
+            val metadata = mutableMapOf<Any?, Any?>(
+                "HKExternalUUID" to data.externalId,
+            )
+            metadata["title"] = data.routineName
+
+            @Suppress("DEPRECATION")
+            val workout = HKWorkout.workoutWithActivityType(
+                workoutActivityType = HKWorkoutActivityTypeTraditionalStrengthTraining,
+                startDate = startDate,
+                endDate = endDate,
+                duration = durationSeconds,
+                totalEnergyBurned = calorieQuantity,
+                totalDistance = null,
+                metadata = metadata,
+            )
+
+            suspendCancellableCoroutine { continuation ->
+                healthStore.saveObject(workout) { success: Boolean, error: NSError? ->
+                    if (error != null) {
+                        log.e { "HealthKit routine save error: ${error.localizedDescription}" }
+                        continuation.resume(
+                            Result.failure<Unit>(
+                                RuntimeException(
+                                    "HealthKit routine save failed: ${error.localizedDescription}",
+                                ),
+                            ),
+                        )
+                    } else if (!success) {
+                        log.e { "HealthKit routine save returned false without error" }
+                        continuation.resume(
+                            Result.failure<Unit>(
+                                RuntimeException("HealthKit routine save failed without error details"),
+                            ),
+                        )
+                    } else {
+                        log.d { "Wrote HealthKit routine workout: ${data.routineName} (${data.externalId})" }
+                        continuation.resume(Result.success(Unit))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            log.e(e) { "Failed to write routine workout to HealthKit: ${data.externalId}" }
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Builds a human-readable title for the exercise session.
      * Total weight shown is per-cable x cableCount (respects single vs dual cable).
      *

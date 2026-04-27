@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
+import com.devil.phoenixproject.data.integration.RoutineHealthData
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
@@ -1877,6 +1878,8 @@ class ActiveSessionEngine(
 
             is InterruptedWorkoutRecoveryPlan.ShowRoutineComplete -> {
                 Logger.w { "Interrupted workout already completed before reconnect; showing routine complete" }
+                // Issue #395: Write aggregate health workout before clearing routine state
+                writeRoutineHealthData()
                 interruptedSetRecovery = null
                 pendingStartOverride = null
                 resetInterruptedWorkoutTrackingState()
@@ -2228,6 +2231,7 @@ class ActiveSessionEngine(
             coordinator.currentRoutineSessionId = null
             coordinator.currentRoutineName = null
             coordinator.currentRoutineId = null
+            coordinator.routineAccumulatedCalories = 0f
             return
         }
 
@@ -2474,6 +2478,7 @@ class ActiveSessionEngine(
                 coordinator.currentRoutineSessionId = null
                 coordinator.currentRoutineName = null
                 coordinator.currentRoutineId = null
+                coordinator.routineAccumulatedCalories = 0f
             } else {
                 coordinator._workoutState.value = summary
             }
@@ -2568,6 +2573,8 @@ class ActiveSessionEngine(
                 if (routine != null) {
                     val movedToNextStep = flowDelegate?.skipCurrentExerciseAndEnterNextStep() == true
                     if (!movedToNextStep) {
+                        // Issue #395: Write aggregate health workout before completing routine
+                        writeRoutineHealthData()
                         flowDelegate?.showRoutineComplete()
                     }
                 }
@@ -2644,6 +2651,52 @@ class ActiveSessionEngine(
         val routineExercise = flowDelegate?.getCurrentExercise() ?: return null
         val plannedSets = completedSetRepository.getPlannedSets(routineExercise.id)
         return plannedSets.find { it.setNumber == setIndex }?.id
+    }
+
+    /**
+     * Issue #395: Write a single aggregate workout to the health platform
+     * for a completed routine. Fire-and-forget; failure is non-fatal.
+     *
+     * Must be called BEFORE coordinator.routineStartTime/currentRoutineSessionId are reset.
+     */
+    internal fun writeRoutineHealthData() {
+        val routineSessionId = coordinator.currentRoutineSessionId ?: return
+        val startTime = coordinator.routineStartTime
+        if (startTime <= 0L) return
+        if (healthIntegration == null || externalActivityRepository == null) return
+
+        val routineName = coordinator.currentRoutineName ?: "Phoenix Routine"
+        val durationMs = currentTimeMillis() - startTime
+        val totalCalories = coordinator.routineAccumulatedCalories.takeIf { it > 0f }
+        val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+
+        scope.launch {
+            try {
+                val provider = if (getPlatform().name.startsWith("iOS")) {
+                    IntegrationProvider.APPLE_HEALTH
+                } else {
+                    IntegrationProvider.GOOGLE_HEALTH
+                }
+                val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
+                if (status?.status == ConnectionStatus.CONNECTED) {
+                    val data = RoutineHealthData(
+                        routineName = routineName,
+                        startTimeMs = startTime,
+                        durationMs = durationMs,
+                        totalCalories = totalCalories,
+                        externalId = routineSessionId,
+                    )
+                    healthIntegration.writeRoutineWorkout(data)
+                    Logger.i("ActiveSessionEngine") {
+                        "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s)"
+                    }
+                }
+            } catch (e: Exception) {
+                Logger.w("ActiveSessionEngine") { "Routine health push failed (non-fatal): ${e.message}" }
+            } finally {
+                coordinator.routineAccumulatedCalories = 0f
+            }
+        }
     }
 
     /**
@@ -2745,9 +2798,19 @@ class ActiveSessionEngine(
 
         workoutRepository.saveSession(session)
 
+        // Issue #395: Accumulate calories for routine-level aggregate health write.
+        // Only write per-set to health platform for non-routine (Just Lift) workouts.
+        val isRoutineSet = session.routineSessionId != null
+        if (isRoutineSet) {
+            session.estimatedCalories?.let { cal ->
+                if (cal > 0f) coordinator.routineAccumulatedCalories += cal
+            }
+        }
+
         // Fire-and-forget health push: auto-push to Health Connect (Android) or HealthKit (iOS)
         // after the session is persisted. Failure is non-fatal and never blocks workout completion.
-        if (healthIntegration != null && externalActivityRepository != null) {
+        // Issue #395: Skip per-set writes for routine sets — aggregate written at routine completion.
+        if (!isRoutineSet && healthIntegration != null && externalActivityRepository != null) {
             val profileId = session.profileId
             scope.launch {
                 try {
@@ -3610,6 +3673,8 @@ class ActiveSessionEngine(
             startWorkoutOrSetReady()
         } else {
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
+            // Issue #395: Write aggregate health workout BEFORE clearing routine state
+            writeRoutineHealthData()
             // Issue #393: Set Idle BEFORE showRoutineComplete() to prevent race where
             // routineFlowState=Complete + workoutState=SetSummary causes navigation ping-pong
             // between EnhancedMainScreen and ActiveWorkoutScreen.

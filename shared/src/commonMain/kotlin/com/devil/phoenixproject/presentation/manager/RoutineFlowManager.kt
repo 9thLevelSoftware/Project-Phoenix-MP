@@ -960,6 +960,7 @@ class RoutineFlowManager(
         coordinator.currentRoutineSessionId = null
         coordinator.currentRoutineName = null
         coordinator.currentRoutineId = null
+        coordinator.routineAccumulatedCalories = 0f
     }
 
     /**
@@ -995,6 +996,7 @@ class RoutineFlowManager(
         coordinator.currentRoutineSessionId = null
         coordinator.currentRoutineName = null
         coordinator.currentRoutineId = null
+        coordinator.routineAccumulatedCalories = 0f
     }
 
     // ===== Exercise Navigation =====

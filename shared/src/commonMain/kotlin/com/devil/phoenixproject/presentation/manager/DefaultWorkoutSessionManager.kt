@@ -628,6 +628,8 @@ class DefaultWorkoutSessionManager(
                     // Result: multiple overlapping RoutineComplete screens (visible as garbled UI).
                     // Setting Idle first ensures shouldResumeActiveWorkout() returns false before
                     // the Complete navigation fires.
+                    // Issue #395: Write aggregate health workout before clearing routine state
+                    activeSessionEngine.writeRoutineHealthData()
                     coordinator._workoutState.value = WorkoutState.Idle
                     showRoutineComplete()
                     // Clear routine session context so stale IDs don't leak into next routine
