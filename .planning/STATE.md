@@ -6,23 +6,23 @@ status: executing
 last_updated: "2026-04-27T12:00:00.000Z"
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 21
-  completed_plans: 11
+  completed_plans: 14
 ---
 
 # GSD State: Project Phoenix MP
 
 ## Current Position
 
-Phase: 40 of 44 (planned)
-Plan: 0/3 complete
-Status: Phase 40 planned — 3 plans across 2 waves, critique passed (2 cycles)
-Last activity: 2026-04-27 — Phase 40 planning
+Phase: 40 of 44 (executed, pending review)
+Plan: 3/3 complete
+Status: Phase 40 complete — all plans executed successfully
+Last activity: 2026-04-27 — Phase 40 execution
 
 ## Progress
 ```
-[###########         ] 52% — 11/21 plans complete
+[##############      ] 67% — 14/21 plans complete
 ```
 
 ## Project Reference
@@ -48,7 +48,7 @@ See: .planning/PROJECT.md (updated 2026-04-21)
 | 37 | Foundation | #323 | 2 | Complete |
 | 38 | Weight-Dependent | #266, #337 | 3 | Complete |
 | 39 | Routine Cluster | #365, #307 | 3 | Complete |
-| 40 | Analytics | #229, #225 | 3 | Planned |
+| 40 | Analytics | #229, #225 | 3 | Complete |
 | 41 | Quick Wins | #190, #228, #100 | 2 | Pending |
 | 42 | Platform | #363 | 3 | Pending |
 | 43 | Advanced VBT | #313 | 3 | Pending |
@@ -83,6 +83,12 @@ Advanced (#313) ── uses biomechanics engine (exists)
 | v0.7.0 MVP Cloud Sync | 2026-03-15 | Cloud sync UI + iOS launch |
 | v0.6.0 Portal Sync | 2026-03-02 | Bidirectional Supabase sync |
 
+## Phase 40 Results
+
+- Plan 40-01 (Wave 1): Bodyweight Volume Integration — Complete. BodyweightVolumeCalculator wired at 3 call sites, Settings body weight input, variant picker, Exercise.isBodyweight migration.
+- Plan 40-02 (Wave 1): Historical Time Estimates — Complete. RoutineTimeEstimator fixed (profileId, AMRAP 1.5x, warmup 0.7x, superset-aware, transitions), Koin registered, UI wired. 18 tests pass.
+- Plan 40-03 (Wave 2): Integration Tests & Portal Fix — Complete. 17 new tests, portal transforms.ts total_volume fix (cross-repo).
+
 ## Phase 39 Results
 
 - Plan 39-01 (Wave 1): Superset Exercise Reorder — Complete. RoutineUtils.kt + nested ReorderableColumn.
@@ -93,7 +99,7 @@ Advanced (#313) ── uses biomechanics engine (exists)
 
 - SqlDelightTrainingCycleRepositoryTest.checkAndAutoAdvance — flaky (time-dependent, pre-existing)
 - PortalPullPaginationTest.pullCapsLargeKnownSessionIdsToMaxParityIds — pre-existing failure, unrelated to Phase 39
-- Portal transforms.ts applies `weightTransform` to `total_volume` — doubles all volume values (fix scoped in 40-03)
+- Portal transforms.ts `total_volume` weightTransform — FIXED in 40-03 (schema level). Component-level `* WEIGHT_MULTIPLIER` in Analytics.tsx, Dashboard.tsx, challenges.ts, profile.ts still needs cleanup pass
 
 ## GitHub
 
@@ -106,7 +112,7 @@ Advanced (#313) ── uses biomechanics engine (exists)
 
 ## Next Action
 
-Run `/legion:build` to execute Phase 40: Analytics
+Run `/legion:review` to verify Phase 40: Analytics
 
 ---
-*Last updated: 2026-04-27 — Phase 40 planned (3 plans, 2 waves, critique passed 2 cycles, 6 findings addressed)*
+*Last updated: 2026-04-27 — Phase 40 complete (3/3 plans executed, 2 waves, 17 new tests, portal fix)*
