@@ -2231,7 +2231,13 @@ class ActiveSessionEngine(
             return
         }
 
-        if (coordinator.currentRoutineSessionId.isNullOrBlank()) {
+        // Issue #392: Generate new session ID when routine changes OR when no ID exists.
+        // Previously only checked isNullOrBlank, so switching from Routine A → B without
+        // going through the natural "routine complete" path reused Routine A's session ID,
+        // merging both routines into one history entry.
+        if (coordinator.currentRoutineSessionId.isNullOrBlank() ||
+            coordinator.currentRoutineId != loadedRoutine.id
+        ) {
             coordinator.currentRoutineSessionId = KmpUtils.randomUUID()
         }
         coordinator.currentRoutineName = loadedRoutine.name
@@ -2464,6 +2470,10 @@ class ActiveSessionEngine(
                 coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
                 coordinator._loadedRoutine.value = null
                 coordinator.routineStartTime = 0
+                // Issue #392: Clear routine session context on exit
+                coordinator.currentRoutineSessionId = null
+                coordinator.currentRoutineName = null
+                coordinator.currentRoutineId = null
             } else {
                 coordinator._workoutState.value = summary
             }
@@ -3600,8 +3610,11 @@ class ActiveSessionEngine(
             startWorkoutOrSetReady()
         } else {
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
-            flowDelegate?.showRoutineComplete()
+            // Issue #393: Set Idle BEFORE showRoutineComplete() to prevent race where
+            // routineFlowState=Complete + workoutState=SetSummary causes navigation ping-pong
+            // between EnhancedMainScreen and ActiveWorkoutScreen.
             coordinator._workoutState.value = WorkoutState.Idle
+            flowDelegate?.showRoutineComplete()
             coordinator._currentSetIndex.value = 0
             coordinator._currentExerciseIndex.value = 0
             coordinator.currentRoutineSessionId = null

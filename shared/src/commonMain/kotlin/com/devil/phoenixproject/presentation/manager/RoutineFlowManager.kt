@@ -956,6 +956,10 @@ class RoutineFlowManager(
         coordinator._loadedRoutine.value = null
         coordinator._workoutState.value = WorkoutState.Idle
         coordinator.routineStartTime = 0
+        // Issue #392: Clear routine session context so next routine gets fresh ID
+        coordinator.currentRoutineSessionId = null
+        coordinator.currentRoutineName = null
+        coordinator.currentRoutineId = null
     }
 
     /**
@@ -987,6 +991,10 @@ class RoutineFlowManager(
         coordinator._loadedRoutine.value = null
         clearCycleContext()
         coordinator.routineStartTime = 0
+        // Issue #392: Clear routine session context so next routine gets fresh ID
+        coordinator.currentRoutineSessionId = null
+        coordinator.currentRoutineName = null
+        coordinator.currentRoutineId = null
     }
 
     // ===== Exercise Navigation =====

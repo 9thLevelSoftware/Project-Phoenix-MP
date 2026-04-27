@@ -232,7 +232,9 @@ object PortalSyncAdapter {
      */
     private fun buildPortalExerciseWithTelemetry(swr: SessionWithReps, portalSessionId: String, orderIndex: Int): ExerciseWithTelemetry {
         val session = swr.session
-        val exerciseId = generateUUID()
+        // Use stable mobile session ID as exercise ID so repeated syncs
+        // upsert the same row instead of creating duplicates (issue #33).
+        val exerciseId = session.id
         val setId = generateUUID()
 
         // Build rep summaries from RepMetricData + RepBiomechanics

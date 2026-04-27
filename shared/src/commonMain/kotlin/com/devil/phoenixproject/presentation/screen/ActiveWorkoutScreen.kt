@@ -308,12 +308,19 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             }
 
             is RoutineFlowState.Complete -> {
-                Logger.d {
-                    "ActiveWorkoutScreen: RoutineFlowState.Complete - navigating to RoutineComplete"
-                }
-                hasNavigatedAway = true
-                navController.navigate(NavigationRoutes.RoutineComplete.route) {
-                    popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                // Issue #393: Guard against navigating while workoutState is still active.
+                // Without this, the Complete navigation fires while workoutState is SetSummary,
+                // allowing EnhancedMainScreen's shouldResumeActiveWorkout guard to bounce back,
+                // creating duplicate RoutineComplete screens (visible as overlapping garbled UI).
+                if (!isWorkoutActive) {
+                    Logger.d {
+                        "ActiveWorkoutScreen: RoutineFlowState.Complete + Idle - navigating to RoutineComplete"
+                    }
+                    hasNavigatedAway = true
+                    navController.navigate(NavigationRoutes.RoutineComplete.route) {
+                        popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
                 }
             }
 
