@@ -76,7 +76,7 @@ class HistoryManager(
                     sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
                 GroupedRoutineHistoryItem(
                     routineSessionId = id,
-                    routineName = sessionList.first().routineName ?: "Unnamed Routine",
+                    routineName = sortedSessions.first().routineName ?: "Unnamed Routine",
                     sessions = sortedSessions,
                     // Use elapsed span (first set start -> last set end) so inter-set rest is included.
                     totalDuration = (lastEnd - firstStart).coerceAtLeast(0L),

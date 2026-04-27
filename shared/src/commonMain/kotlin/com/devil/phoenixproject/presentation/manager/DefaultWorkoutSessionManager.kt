@@ -619,13 +619,17 @@ class DefaultWorkoutSessionManager(
                 // If no more steps in the entire routine, show completion screen
                 if (nextStep == null) {
                     Logger.d { "proceedFromSummary: No more steps - showing routine complete" }
-                    showRoutineComplete()
-                    // Issue #355: Clear workoutState so EnhancedMainScreen's resume-active-workout
-                    // guard does not bounce the user back to ActiveWorkout after navigation to
-                    // RoutineComplete. Leaving workoutState at SetSummary caused a navigation
-                    // ping-pong with ActiveWorkoutScreen's Complete observer. Mirrors the reset
-                    // performed in ActiveSessionEngine.startNextSetOrExercise() (Path B).
+                    // Issue #393: Set workoutState to Idle BEFORE showing routine complete.
+                    // Previously, showRoutineComplete() set routineFlowState=Complete while
+                    // workoutState was still SetSummary. This created a race window where:
+                    //   1. ActiveWorkoutScreen sees Complete → navigates to RoutineComplete
+                    //   2. EnhancedMainScreen sees SetSummary → force-navigates back to ActiveWorkout
+                    //   3. New ActiveWorkoutScreen sees Complete → navigates again
+                    // Result: multiple overlapping RoutineComplete screens (visible as garbled UI).
+                    // Setting Idle first ensures shouldResumeActiveWorkout() returns false before
+                    // the Complete navigation fires.
                     coordinator._workoutState.value = WorkoutState.Idle
+                    showRoutineComplete()
                     return@launch
                 }
 
