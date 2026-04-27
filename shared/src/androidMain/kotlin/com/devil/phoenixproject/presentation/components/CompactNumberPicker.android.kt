@@ -103,15 +103,9 @@ actual fun CompactNumberPicker(
                         this.value = currentIndex.coerceIn(0, values.size - 1)
                         wrapSelectorWheel = false
 
-                        // Format displayed values with proper decimal precision
+                        // Format displayed values with precision matching the picker step.
                         val displayValues = values.map {
-                            val formatted = if (step >= 1.0f && it % 1.0f == 0f) {
-                                // Show as integer if step is 1.0 and value is whole number
-                                it.toInt().toString()
-                            } else {
-                                // Show with one decimal place for fractional values
-                                "%.1f".format(it)
-                            }
+                            val formatted = formatCompactNumberPickerValue(it, step)
                             if (suffix.isNotEmpty()) "$formatted $suffix" else formatted
                         }.toTypedArray()
                         this.displayedValues = displayValues
