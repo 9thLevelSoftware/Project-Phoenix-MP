@@ -37,6 +37,8 @@ fun DeleteProfileDialog(profile: UserProfile, profileRepository: UserProfileRepo
                         // SIGABRT on iOS (Kotlin/Native abort() on uncaught exception).
                         try {
                             profileRepository.deleteProfile(profile.id)
+                        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             Logger.e(e) { "PROFILE_DELETE: Failed to delete profile '${profile.name}' (id=${profile.id})" }
                         }

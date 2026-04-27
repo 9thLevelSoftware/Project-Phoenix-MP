@@ -161,6 +161,8 @@ class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) :
             gamificationRepository.updateStats(targetProfileId)
             val rpgInput = gamificationRepository.getRpgInput(targetProfileId)
             gamificationRepository.saveRpgProfile(RpgAttributeEngine.computeProfile(rpgInput), targetProfileId)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(e) { "PROFILE_DELETE: Gamification recompute failed for profile '$targetProfileId' after deleting '$id'" }
         }
