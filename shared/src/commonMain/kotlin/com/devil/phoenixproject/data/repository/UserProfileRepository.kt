@@ -168,6 +168,9 @@ class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) :
         }
 
         refreshProfilesSync()
+        // Returns true because the profile itself was deleted successfully.
+        // Gamification recompute failure above is best-effort and non-critical;
+        // stats will self-heal on next workout or app restart.
         return true
     }
 

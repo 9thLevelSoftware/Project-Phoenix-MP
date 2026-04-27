@@ -37,13 +37,17 @@ fun DeleteProfileDialog(profile: UserProfile, profileRepository: UserProfileRepo
                         // SIGABRT on iOS (Kotlin/Native abort() on uncaught exception).
                         try {
                             profileRepository.deleteProfile(profile.id)
+                            onDismiss()
                         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                             throw e
                         } catch (e: Exception) {
                             Logger.e(e) { "PROFILE_DELETE: Failed to delete profile '${profile.name}' (id=${profile.id})" }
+                            // Still dismiss on failure — profile list will refresh and
+                            // the error is logged. Keeping dialog open with no user-visible
+                            // feedback would be confusing.
+                            onDismiss()
                         }
                     }
-                    onDismiss()
                 },
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,

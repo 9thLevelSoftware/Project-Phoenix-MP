@@ -630,6 +630,10 @@ class DefaultWorkoutSessionManager(
                     // the Complete navigation fires.
                     coordinator._workoutState.value = WorkoutState.Idle
                     showRoutineComplete()
+                    // Clear routine session context so stale IDs don't leak into next routine
+                    coordinator.currentRoutineSessionId = null
+                    coordinator.currentRoutineName = null
+                    coordinator.currentRoutineId = null
                     return@launch
                 }
 
