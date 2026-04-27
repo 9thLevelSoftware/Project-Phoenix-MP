@@ -95,20 +95,38 @@ fun Byte.toVitruvianHex(): String {
 /**
  * Parse rep packet data into RepNotification.
  *
- * Supports TWO formats (Issue #210 - critical two-tier only):
- * - Legacy (<24 bytes effective): u16 counters only
- * - Modern (>=24 bytes effective): all 8 fields
+ * Supports TWO formats for backwards compatibility (parent repo PR #190, Issue #187):
+ *
+ * LEGACY FORMAT (any 6..23 effective bytes — V-Form Trainer / Beta 4 / older firmware):
+ * - Bytes 0-1: topCounter (u16 LE) — concentric completions
+ * - Bytes 2-3: padding/unused
+ * - Bytes 4-5: completeCounter (u16 LE) — eccentric completions
+ *
+ * MODERN FORMAT (>=24 effective bytes — Trainer+ / current firmware):
+ * - Bytes 0-3:   up (u32 LE)        — concentric completions
+ * - Bytes 4-7:   down (u32 LE)      — eccentric completions
+ * - Bytes 8-11:  rangeTop (float LE)
+ * - Bytes 12-15: rangeBottom (float LE)
+ * - Bytes 16-17: repsRomCount (u16 LE) — warmup with proper ROM
+ * - Bytes 18-19: repsRomTotal (u16 LE)
+ * - Bytes 20-21: repsSetCount (u16 LE) — working set rep count
+ * - Bytes 22-23: repsSetTotal (u16 LE)
+ *
+ * Issue #388 / #174 / #187: V-Form ("Vee_*") firmware sends rep packets in the 6..23 byte
+ * range (most likely 16 bytes per official `Reps.read()` spec). Earlier Phoenix MP code
+ * accepted only `==6` or `>=24` and returned null for everything else, regressing the
+ * parent repo fix (VitruvianRedux PR #190 / commit 980df08) that timuh60/IshyEvenTrying
+ * confirmed working in v0.6.2-beta. This restores the catch-all legacy branch.
  *
  * @param data The raw byte array
  * @param hasOpcodePrefix If true, data[0] is opcode and rep data starts at index 1
  * @param timestamp Timestamp to assign to the notification
- * @return RepNotification or null if data too short
+ * @return RepNotification or null if data too short (<6 effective bytes)
  */
 fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): RepNotification? {
     val offset = if (hasOpcodePrefix) 1 else 0
     val effectiveSize = data.size - offset
 
-    // Minimum 6 bytes for legacy format; ambiguous 7..23 byte packets are rejected (M-M01).
     if (effectiveSize < 6) return null
 
     return if (effectiveSize >= 24) {
@@ -135,10 +153,12 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
             timestamp = timestamp,
             isLegacyFormat = false,
         )
-    } else if (effectiveSize == 6) {
-        // LEGACY 6-byte format — second u16 is at offset +2 (not +4; bytes 4-5 are padding)
+    } else {
+        // LEGACY format — any 6..23 byte size from older firmware (V-Form / Beta 4).
+        // topCounter at bytes 0-1, completeCounter at bytes 4-5; bytes 2-3 are padding.
+        // Matches VitruvianRedux/VitruvianBleManager.kt handleRepNotification (PR #190).
         val topCounter = getUInt16LE(data, offset + 0)
-        val completeCounter = getUInt16LE(data, offset + 2)
+        val completeCounter = getUInt16LE(data, offset + 4)
 
         RepNotification(
             topCounter = topCounter,
@@ -153,8 +173,6 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
             timestamp = timestamp,
             isLegacyFormat = true,
         )
-    } else {
-        null
     }
 }
 
