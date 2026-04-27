@@ -65,8 +65,8 @@ jobs:
           path: |
             shared/build/reports/tests/
             shared/build/test-results/
-                androidApp/build/reports/tests/
-                androidApp/build/test-results/
+            androidApp/build/reports/tests/
+            androidApp/build/test-results/
 
       - name: Publish Shared Module Test Report
         uses: mikepenz/action-junit-report@v4
@@ -80,8 +80,8 @@ jobs:
         uses: mikepenz/action-junit-report@v4
         if: always()
         with:
-            report_paths: 'androidApp/build/test-results/testDebugUnitTest/TEST-*.xml'
-            check_name: 'Android App Unit Test Results'
+          report_paths: 'androidApp/build/test-results/testDebugUnitTest/TEST-*.xml'
+          check_name: 'Android App Unit Test Results'
           fail_on_failure: true
 
   build-android:
