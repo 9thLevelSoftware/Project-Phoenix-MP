@@ -714,7 +714,7 @@ class RoutineFlowManager(
             ?: firstExercise.weightPerCableKg
 
         // Only bodyweight exercises should have warmupReps = 0
-        val isFirstBodyweight = isBodyweightExercise(firstExercise)
+        val isFirstBodyweight = firstExercise.exercise.isBodyweight
 
         // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility
         // Legacy "Last set AMRAP" only applies when we're on the last set (set index 0 for single-set exercises)
@@ -809,7 +809,7 @@ class RoutineFlowManager(
 
             // Issue #356: Initialize warm-up state for the first exercise
             val firstExercise = normalized.exercises.firstOrNull()
-            val isFirstBodyweight = isBodyweightExercise(firstExercise)
+            val isFirstBodyweight = firstExercise?.exercise?.isBodyweight ?: false
             if (firstExercise != null && firstExercise.warmupSets.isNotEmpty() && !isFirstBodyweight) {
                 coordinator._currentWarmupSetIndex.value = 0
                 coordinator._totalWarmupSets.value = firstExercise.warmupSets.size
@@ -868,7 +868,7 @@ class RoutineFlowManager(
         // Issue #356: Initialize warm-up state when entering a new exercise at set 0
         // This ensures warm-up sets are executed when navigating via SetReady skip/prev
         if (isNewExercise && setIndex == 0) {
-            val isBodyweight = isBodyweightExercise(exercise)
+            val isBodyweight = exercise.exercise.isBodyweight
             if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
                 coordinator._currentWarmupSetIndex.value = 0
                 coordinator._totalWarmupSets.value = exercise.warmupSets.size
@@ -930,7 +930,7 @@ class RoutineFlowManager(
         // Issue #356: Initialize warm-up state when entering a new exercise at set 0
         // This is the main path from RoutineOverviewScreen when user taps "Start"
         if (isNewExercise && setIndex == 0) {
-            val isBodyweight = isBodyweightExercise(exercise)
+            val isBodyweight = exercise.exercise.isBodyweight
             if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
                 coordinator._currentWarmupSetIndex.value = 0
                 coordinator._totalWarmupSets.value = exercise.warmupSets.size
@@ -1126,9 +1126,10 @@ class RoutineFlowManager(
         }
 
         // Phase 35C: Initialize warm-up phase when jumping to exercise with warmupSets
-        val isBodyweight = exercise.exercise.equipment.lowercase().let {
-            it == "bodyweight" || it == "body weight" || it == "none"
-        }
+        // Fixed: Use canonical isBodyweight check (hasCableAccessory) instead of
+        // incorrect equipment string comparison that missed exercises with non-cable
+        // equipment like BENCH.
+        val isBodyweight = exercise.exercise.isBodyweight
         if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
             coordinator._currentWarmupSetIndex.value = 0
             coordinator._totalWarmupSets.value = exercise.warmupSets.size
@@ -1489,7 +1490,14 @@ class RoutineFlowManager(
  * in the exercise's equipment list. Non-cable equipment like BENCH is allowed.
  *
  * Top-level function accessible to both RoutineFlowManager and DWSM/ActiveSessionEngine.
+ *
+ * @deprecated Use `exercise.exercise.isBodyweight` instead for direct property access.
+ *   Retained for backward compatibility with existing ActiveSessionEngine callers.
  */
+@Deprecated(
+    message = "Use exercise.exercise.isBodyweight property instead",
+    replaceWith = ReplaceWith("exercise?.exercise?.isBodyweight ?: false"),
+)
 internal fun isBodyweightExercise(exercise: RoutineExercise?): Boolean = exercise?.let {
     val isBodyweight = !it.exercise.hasCableAccessory
     Logger.d {

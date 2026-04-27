@@ -21,6 +21,7 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
@@ -282,6 +283,88 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         .clip(RoundedCornerShape(12.dp)),
                 )
                 Spacer(Modifier.height(12.dp))
+            }
+
+            // Issue #229: Bodyweight variant picker (transient, not persisted)
+            if (isBodyweight) {
+                val variants = remember(currentExercise.exercise.name) {
+                    BodyweightVolumeCalculator.getVariantsForExercise(currentExercise.exercise.name)
+                }
+                if (variants != null && variants.size > 1) {
+                    var expanded by remember { mutableStateOf(false) }
+                    var selectedVariant by remember { mutableStateOf(variants[0]) }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.medium),
+                        ) {
+                            Text(
+                                "Exercise Variant",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            ExposedDropdownMenuBox(
+                                expanded = expanded,
+                                onExpandedChange = { expanded = it },
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedVariant.first,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                    modifier = Modifier
+                                        .menuAnchor()
+                                        .fillMaxWidth(),
+                                    singleLine = true,
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { expanded = false },
+                                ) {
+                                    variants.forEach { variant ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    "${variant.first} (${(variant.second * 100).toInt()}%)",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                )
+                                            },
+                                            onClick = {
+                                                selectedVariant = variant
+                                                expanded = false
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                            val userPrefs by viewModel.userPreferences.collectAsState()
+                            if (userPrefs.bodyWeightKg > 0f) {
+                                val effectiveKg = userPrefs.bodyWeightKg * selectedVariant.second
+                                val displayWeight = if (weightUnit == WeightUnit.KG) {
+                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(effectiveKg)} kg"
+                                } else {
+                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(com.devil.phoenixproject.util.UnitConverter.kgToLb(effectiveKg))} lb"
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Effective load: $displayWeight",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
             }
 
             // Configuration card - matching RestTimerCard style

@@ -107,6 +107,9 @@ fun SettingsTab(
     // Issue #266: Configurable weight increment
     weightIncrement: Float = -1f,
     onWeightIncrementChange: (Float) -> Unit = {},
+    // Issue #229: Body weight for bodyweight exercise volume
+    bodyWeightKg: Float = 0f,
+    onBodyWeightKgChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var showDeleteAllDialog by remember { mutableStateOf(false) }
@@ -134,6 +137,21 @@ fun SettingsTab(
     var localWeightUnit by remember(weightUnit) { mutableStateOf(weightUnit) }
     // Issue #266: Weight increment picker dialog state
     var showWeightIncrementDialog by remember { mutableStateOf(false) }
+    // Issue #229: Body weight input dialog state
+    var showBodyWeightDialog by remember { mutableStateOf(false) }
+    var bodyWeightInput by remember(bodyWeightKg) {
+        mutableStateOf(
+            if (bodyWeightKg > 0f) {
+                if (weightUnit == WeightUnit.KG) {
+                    UnitConverter.formatDecimal(bodyWeightKg)
+                } else {
+                    UnitConverter.formatDecimal(UnitConverter.kgToLb(bodyWeightKg))
+                }
+            } else {
+                ""
+            },
+        )
+    }
 
     // Inject DataBackupManager for manual backup/restore operations
     val backupManager: DataBackupManager = koinInject()
@@ -547,6 +565,112 @@ fun SettingsTab(
                         },
                         confirmButton = {
                             TextButton(onClick = { showWeightIncrementDialog = false }) {
+                                Text("Cancel")
+                            }
+                        },
+                    )
+                }
+
+                // Issue #229: Body Weight Input
+                Spacer(modifier = Modifier.height(Spacing.small))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                val bodyWeightUnitLabel = if (localWeightUnit == WeightUnit.KG) "kg" else "lb"
+                val displayBodyWeight = if (bodyWeightKg > 0f) {
+                    if (localWeightUnit == WeightUnit.KG) {
+                        "${UnitConverter.formatDecimal(bodyWeightKg)} $bodyWeightUnitLabel"
+                    } else {
+                        "${UnitConverter.formatDecimal(UnitConverter.kgToLb(bodyWeightKg))} $bodyWeightUnitLabel"
+                    }
+                } else {
+                    "Not set"
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showBodyWeightDialog = true }
+                        .padding(vertical = Spacing.small),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text(
+                            text = "Body Weight",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "$displayBodyWeight — for bodyweight exercise volume",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // Body weight input dialog
+                if (showBodyWeightDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showBodyWeightDialog = false },
+                        title = { Text("Body Weight") },
+                        text = {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                            ) {
+                                Text(
+                                    text = "Used to estimate volume for bodyweight exercises (push-ups, pull-ups, etc.)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                OutlinedTextField(
+                                    value = bodyWeightInput,
+                                    onValueChange = { input ->
+                                        // Allow only valid numeric input
+                                        if (input.isEmpty() || input.matches(Regex("^\\d{0,3}(\\.\\d{0,1})?$"))) {
+                                            bodyWeightInput = input
+                                        }
+                                    },
+                                    label = { Text("Weight ($bodyWeightUnitLabel)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                val minDisplay = if (localWeightUnit == WeightUnit.KG) "20" else "44"
+                                val maxDisplay = if (localWeightUnit == WeightUnit.KG) "300" else "660"
+                                Text(
+                                    text = "Range: $minDisplay–$maxDisplay $bodyWeightUnitLabel",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    val parsed = bodyWeightInput.toFloatOrNull()
+                                    if (parsed != null) {
+                                        val inKg = if (localWeightUnit == WeightUnit.LB) {
+                                            UnitConverter.lbToKg(parsed)
+                                        } else {
+                                            parsed
+                                        }
+                                        // Clamp to valid range: 20-300 kg
+                                        val clamped = inKg.coerceIn(20f, 300f)
+                                        onBodyWeightKgChange(clamped)
+                                    }
+                                    showBodyWeightDialog = false
+                                },
+                            ) {
+                                Text("Save")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showBodyWeightDialog = false }) {
                                 Text("Cancel")
                             }
                         },

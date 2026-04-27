@@ -356,6 +356,9 @@ fun NavGraph(
                     // Issue #266: Configurable weight increment
                     weightIncrement = userPreferences.weightIncrement,
                     onWeightIncrementChange = { viewModel.setWeightIncrement(it) },
+                    // Issue #229: Body weight for bodyweight exercise volume
+                    bodyWeightKg = userPreferences.bodyWeightKg,
+                    onBodyWeightKgChange = { viewModel.setBodyWeightKg(it) },
                 )
             }
 

@@ -45,6 +45,13 @@ data class Exercise(
         get() = equipment.split(",").any { it.trim().uppercase() in CABLE_ACCESSORIES }
 
     /**
+     * Whether this is a bodyweight exercise (no cable accessories attached).
+     * Inverse of [hasCableAccessory] for readability at call sites.
+     */
+    val isBodyweight: Boolean
+        get() = !hasCableAccessory
+
+    /**
      * Preferred cable count for summary calculations when the exercise metadata is explicit.
      * Null means the caller should fall back to telemetry heuristics.
      */

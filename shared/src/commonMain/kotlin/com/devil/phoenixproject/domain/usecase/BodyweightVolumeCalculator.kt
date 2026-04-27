@@ -16,15 +16,23 @@ object BodyweightVolumeCalculator {
      * Value = percentage of body weight (0.0 to 1.0)
      */
     private val EXERCISE_PERCENTAGES: List<Pair<List<String>, Float>> = listOf(
-        // Push-up variations (specific patterns BEFORE generic "push up")
+        // Push-up variations — height-specific decline BEFORE generic decline
+        // Issue #229: Decline heights from research (4.5"/11"/16"/24")
+        listOf("decline 24", "decline push 24") to 0.75f,
+        listOf("decline 16", "decline push 16") to 0.72f,
+        listOf("decline 11", "decline push 11") to 0.70f,
+        listOf("decline 4.5", "decline push 4.5", "decline 4½") to 0.66f,
+        // Generic decline (fallback for unspecified height)
         listOf("decline push", "decline pushup") to 0.70f,
-        listOf("incline push", "incline pushup") to 0.55f,
+        listOf("incline push", "incline pushup") to 0.40f,
         listOf("pike push", "pike pushup") to 0.70f,
         listOf("diamond push", "diamond pushup") to 0.64f,
+        listOf("handstand push", "handstand pushup", "handstand press") to 1.00f,
         // Generic push-up (must be AFTER specific variations)
         listOf("push up", "pushup", "push-up") to 0.64f,
 
         // Pull-ups and variations
+        listOf("wide grip pull", "wide-grip pull") to 0.90f,
         listOf("pull up", "pullup", "pull-up") to 0.95f,
         listOf("chin up", "chinup", "chin-up") to 0.95f,
 
@@ -40,6 +48,7 @@ object BodyweightVolumeCalculator {
         listOf("sit up", "situp", "sit-up") to 0.40f,
         listOf("crunch", "crunches") to 0.30f,
         listOf("plank") to 0.65f,
+        listOf("nordic curl", "nordic ham") to 0.60f,
 
         // Rows
         listOf("inverted row", "body row", "bodyweight row") to 0.60f,
@@ -51,6 +60,41 @@ object BodyweightVolumeCalculator {
 
     /** Default percentage when exercise type is unknown */
     const val DEFAULT_PERCENTAGE = 0.64f
+
+    /**
+     * Bodyweight exercise variant options for the transient variant picker.
+     * Each entry maps a base exercise keyword to a list of (displayLabel, percentage) pairs.
+     * Used by the SetReady screen to let users select the specific variant they are performing.
+     */
+    val VARIANT_OPTIONS: Map<String, List<Pair<String, Float>>> = mapOf(
+        "push up" to listOf(
+            "Standard Push-Up" to 0.64f,
+            "Incline (hands elevated)" to 0.40f,
+            "Decline 4.5\"" to 0.66f,
+            "Decline 11\"" to 0.70f,
+            "Decline 16\"" to 0.72f,
+            "Decline 24\"" to 0.75f,
+            "Diamond Push-Up" to 0.64f,
+            "Pike Push-Up" to 0.70f,
+            "Handstand Push-Up" to 1.00f,
+        ),
+        "pull up" to listOf(
+            "Standard Pull-Up" to 0.95f,
+            "Chin-Up" to 0.95f,
+            "Wide-Grip Pull-Up" to 0.90f,
+        ),
+    )
+
+    /**
+     * Find applicable variant options for an exercise name.
+     * Returns null if no variants are available for this exercise.
+     */
+    fun getVariantsForExercise(exerciseName: String): List<Pair<String, Float>>? {
+        val nameLower = exerciseName.lowercase()
+        return VARIANT_OPTIONS.entries.firstOrNull { (key, _) ->
+            nameLower.contains(key)
+        }?.value
+    }
 
     /**
      * Get the estimated body weight percentage for an exercise.

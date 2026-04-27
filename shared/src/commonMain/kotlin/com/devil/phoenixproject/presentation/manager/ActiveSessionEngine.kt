@@ -39,6 +39,7 @@ import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BlePacketFactory
@@ -634,6 +635,44 @@ class ActiveSessionEngine(
             workingAvgWeightKg = workingAvgWeightKg,
             burnoutAvgWeightKg = burnoutAvgWeightKg,
             peakWeightKg = peakWeightKg,
+        )
+    }
+
+    /**
+     * Apply bodyweight volume overrides to a set summary.
+     *
+     * For bodyweight exercises (no cable accessories), the cable-based volume calculation
+     * produces meaningless values. This replaces totalVolumeKg and heaviestLiftKgPerCable
+     * with estimates based on the user's body weight and the exercise-specific percentage
+     * from [BodyweightVolumeCalculator].
+     *
+     * @param summary The cable-based set summary to override
+     * @param currentExercise The routine exercise context (null-safe; returns summary unchanged)
+     * @param bodyWeightKg User's body weight in kg (0 = not set, returns summary unchanged)
+     * @return Summary with bodyweight volume applied, or the original summary if not applicable
+     */
+    internal fun applyBodyweightVolume(
+        summary: WorkoutState.SetSummary,
+        currentExercise: RoutineExercise?,
+        bodyWeightKg: Float,
+    ): WorkoutState.SetSummary {
+        if (currentExercise == null) return summary
+        if (currentExercise.exercise.hasCableAccessory) return summary
+        if (bodyWeightKg <= 0f) return summary
+
+        val exerciseName = currentExercise.exercise.name
+        val repCount = summary.repCount
+        val volume = BodyweightVolumeCalculator.calculateVolume(exerciseName, bodyWeightKg, repCount)
+        val effectiveWeight = BodyweightVolumeCalculator.effectiveWeight(exerciseName, bodyWeightKg)
+
+        Logger.d("ActiveSessionEngine") {
+            "applyBodyweightVolume: exercise=$exerciseName, bodyWeight=${bodyWeightKg}kg, " +
+                "reps=$repCount, volume=${volume}kg, effectiveWeight=${effectiveWeight}kg"
+        }
+
+        return summary.copy(
+            totalVolumeKg = volume,
+            heaviestLiftKgPerCable = effectiveWeight,
         )
     }
 
@@ -2357,7 +2396,11 @@ class ActiveSessionEngine(
                 workingRepsCount = repCount.workingReps,
                 warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs,
                 cableCountHint = selectedExercise?.preferredCableCount,
-            )
+            ).let { baseSummary ->
+                // Issue #229: Override volume for bodyweight exercises
+                val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
+                applyBodyweightVolume(baseSummary, currentExercise, bodyWeightKg)
+            }
 
             // Issue #252: Exclude warmup time from session duration
             val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
@@ -2666,6 +2709,8 @@ class ActiveSessionEngine(
         val selectedExercise = resolveSelectedExercise(params)
         val exerciseName = selectedExercise?.name
 
+        val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+
         val summary = calculateSetSummaryMetrics(
             metrics = metricsSnapshot,
             repCount = working,
@@ -2676,7 +2721,11 @@ class ActiveSessionEngine(
             workingRepsCount = working,
             warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs,
             cableCountHint = selectedExercise?.preferredCableCount,
-        )
+        ).let { baseSummary ->
+            // Issue #229: Override volume for bodyweight exercises
+            val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
+            applyBodyweightVolume(baseSummary, currentExercise, bodyWeightKg)
+        }
 
         // Capture biomechanics summary for WorkoutSession fields.
         // Safe to call here: runs BEFORE biomechanicsEngine.reset() in handleSetCompletion.
@@ -2999,7 +3048,11 @@ class ActiveSessionEngine(
                 warmupRepsCount = warmupReps,
                 workingRepsCount = completedReps,
                 cableCountHint = selectedExercise?.preferredCableCount,
-            )
+            ).let { raw ->
+                // Issue #229: Override volume for bodyweight exercises
+                val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
+                applyBodyweightVolume(raw, currentExercise, bodyWeightKg)
+            }
 
             // Attach quality and biomechanics summaries to the set summary
             val summary = baseSummary.copy(
