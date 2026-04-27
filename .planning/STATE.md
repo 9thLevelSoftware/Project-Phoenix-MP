@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: Enhancement Sweep
 status: executing
-last_updated: "2026-04-21T20:00:00.000Z"
+last_updated: "2026-04-27T12:00:00.000Z"
 progress:
   total_phases: 8
   completed_phases: 3
@@ -15,10 +15,10 @@ progress:
 
 ## Current Position
 
-Phase: 39 of 44 (complete)
-Plan: 3/3 complete
-Status: Phase 39 complete — review passed (1 cycle)
-Last activity: 2026-04-21 — Phase 39 review passed
+Phase: 40 of 44 (planned)
+Plan: 0/3 complete
+Status: Phase 40 planned — 3 plans across 2 waves, critique passed (2 cycles)
+Last activity: 2026-04-27 — Phase 40 planning
 
 ## Progress
 ```
@@ -48,7 +48,7 @@ See: .planning/PROJECT.md (updated 2026-04-21)
 | 37 | Foundation | #323 | 2 | Complete |
 | 38 | Weight-Dependent | #266, #337 | 3 | Complete |
 | 39 | Routine Cluster | #365, #307 | 3 | Complete |
-| 40 | Analytics | #229, #225 | 3 | Pending |
+| 40 | Analytics | #229, #225 | 3 | Planned |
 | 41 | Quick Wins | #190, #228, #100 | 2 | Pending |
 | 42 | Platform | #363 | 3 | Pending |
 | 43 | Advanced VBT | #313 | 3 | Pending |
@@ -93,6 +93,7 @@ Advanced (#313) ── uses biomechanics engine (exists)
 
 - SqlDelightTrainingCycleRepositoryTest.checkAndAutoAdvance — flaky (time-dependent, pre-existing)
 - PortalPullPaginationTest.pullCapsLargeKnownSessionIdsToMaxParityIds — pre-existing failure, unrelated to Phase 39
+- Portal transforms.ts applies `weightTransform` to `total_volume` — doubles all volume values (fix scoped in 40-03)
 
 ## GitHub
 
@@ -101,10 +102,11 @@ Advanced (#313) ── uses biomechanics engine (exists)
 | 37 | #380 |
 | 38 | #382 |
 | 39 | #385 |
+| 40 | #397 |
 
 ## Next Action
 
-Run `/legion:plan 40` to plan the next phase
+Run `/legion:build` to execute Phase 40: Analytics
 
 ---
-*Last updated: 2026-04-21 — Phase 39 review passed (1 cycle, 2 blockers fixed, 6 warnings fixed)*
+*Last updated: 2026-04-27 — Phase 40 planned (3 plans, 2 waves, critique passed 2 cycles, 6 findings addressed)*
