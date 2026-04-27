@@ -5,29 +5,99 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.MilitaryTech
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Scale
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
-import com.devil.phoenixproject.ui.theme.*
+import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.BackupProgress
 import com.devil.phoenixproject.util.ColorSchemes
 import com.devil.phoenixproject.util.DataBackupManager
@@ -38,8 +108,71 @@ import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_ok
+import vitruvianprojectphoenix.shared.generated.resources.action_save
+import vitruvianprojectphoenix.shared.generated.resources.action_share
+import vitruvianprojectphoenix.shared.generated.resources.backup_all_data
+import vitruvianprojectphoenix.shared.generated.resources.backup_description
+import vitruvianprojectphoenix.shared.generated.resources.backup_success
+import vitruvianprojectphoenix.shared.generated.resources.cd_achievements
+import vitruvianprojectphoenix.shared.generated.resources.cd_advanced_settings
+import vitruvianprojectphoenix.shared.generated.resources.cd_app_info
+import vitruvianprojectphoenix.shared.generated.resources.cd_appearance
+import vitruvianprojectphoenix.shared.generated.resources.cd_backup_data
+import vitruvianprojectphoenix.shared.generated.resources.cd_calibration_check
+import vitruvianprojectphoenix.shared.generated.resources.cd_cloud_sync
+import vitruvianprojectphoenix.shared.generated.resources.cd_connection_logs
+import vitruvianprojectphoenix.shared.generated.resources.cd_delete_workouts
+import vitruvianprojectphoenix.shared.generated.resources.cd_developer_tools
+import vitruvianprojectphoenix.shared.generated.resources.cd_led_scheme
+import vitruvianprojectphoenix.shared.generated.resources.cd_leds_off
+import vitruvianprojectphoenix.shared.generated.resources.cd_link_portal
+import vitruvianprojectphoenix.shared.generated.resources.cd_open_backup_folder
+import vitruvianprojectphoenix.shared.generated.resources.cd_restore_data
+import vitruvianprojectphoenix.shared.generated.resources.cd_support_developer
+import vitruvianprojectphoenix.shared.generated.resources.cd_sync_error
+import vitruvianprojectphoenix.shared.generated.resources.cd_test_sounds
+import vitruvianprojectphoenix.shared.generated.resources.cd_view_badges
+import vitruvianprojectphoenix.shared.generated.resources.cd_weight_unit
+import vitruvianprojectphoenix.shared.generated.resources.import_completed
+import vitruvianprojectphoenix.shared.generated.resources.import_records_imported
+import vitruvianprojectphoenix.shared.generated.resources.import_records_skipped
+import vitruvianprojectphoenix.shared.generated.resources.label_kg
+import vitruvianprojectphoenix.shared.generated.resources.label_lbs
+import vitruvianprojectphoenix.shared.generated.resources.label_please_wait
+import vitruvianprojectphoenix.shared.generated.resources.language_dutch
+import vitruvianprojectphoenix.shared.generated.resources.language_english
+import vitruvianprojectphoenix.shared.generated.resources.language_french
+import vitruvianprojectphoenix.shared.generated.resources.language_german
+import vitruvianprojectphoenix.shared.generated.resources.language_spanish
+import vitruvianprojectphoenix.shared.generated.resources.restore_description
+import vitruvianprojectphoenix.shared.generated.resources.restore_from_backup
+import vitruvianprojectphoenix.shared.generated.resources.select_file
+import vitruvianprojectphoenix.shared.generated.resources.settings_appearance
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibrate_button
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibrate_first
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibrated_badge
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_fail
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_listening
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_mic_error
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_open_settings
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_progress
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_prompt
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_cloud_sync
+import vitruvianprojectphoenix.shared.generated.resources.settings_dark_mode
+import vitruvianprojectphoenix.shared.generated.resources.settings_dark_mode_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_language
+import vitruvianprojectphoenix.shared.generated.resources.settings_language_help
+import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_hint
+import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_label
+import vitruvianprojectphoenix.shared.generated.resources.settings_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_version
+import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_weight_unit
 
 @Composable
 fun SettingsTab(
@@ -104,6 +237,7 @@ fun SettingsTab(
     onSafeWordCalibratedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val focusManager = LocalFocusManager.current
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     // Backup/Restore state
     var showBackupDialog by remember { mutableStateOf(false) }
@@ -965,6 +1099,8 @@ fun SettingsTab(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     )
 
                     Spacer(modifier = Modifier.height(Spacing.small))
@@ -1113,71 +1249,69 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
-                // Color scheme slider with preview
+                // Color scheme picker — row of tappable color circles
                 val colorSchemes = ColorSchemes.ALL
-                val currentScheme = colorSchemes.getOrElse(selectedColorSchemeIndex) { colorSchemes.first() }
-                val isNoneScheme = currentScheme.name == "None"
 
-                // Convert RGB colors to Compose Color for preview
-                val previewColors = if (isNoneScheme) {
-                    listOf(Color.DarkGray, Color.Gray, Color.DarkGray)
-                } else {
-                    currentScheme.colors.map { Color(it.r, it.g, it.b) }
-                }
-
-                // Color preview box with current scheme name
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .shadow(4.dp, RoundedCornerShape(12.dp))
-                        .background(
-                            Brush.horizontalGradient(previewColors),
-                            RoundedCornerShape(12.dp),
-                        ),
-                    contentAlignment = Alignment.Center,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                    colorSchemes.forEachIndexed { index, scheme ->
+                        val isSelected = index == selectedColorSchemeIndex
+                        val isNone = scheme.name == "None"
+
+                        // Selection ring + circle
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.border(
+                                            width = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            shape = CircleShape,
+                                        )
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .padding(3.dp)
+                                .clip(CircleShape)
+                                .then(
+                                    if (isNone) {
+                                        Modifier.background(Color.DarkGray, CircleShape)
+                                    } else {
+                                        Modifier.background(
+                                            Brush.radialGradient(
+                                                scheme.colors.map { Color(it.r, it.g, it.b) },
+                                            ),
+                                            CircleShape,
+                                        )
+                                    },
+                                )
+                                .clickable { onColorSchemeChange(index) },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            if (isNoneScheme) {
+                            if (isNone) {
                                 Icon(
                                     imageVector = Icons.Default.PowerSettingsNew,
                                     contentDescription = stringResource(Res.string.cd_leds_off),
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(20.dp),
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(18.dp),
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
                             }
-                            Text(
-                                text = currentScheme.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(Spacing.medium))
-
-                // Slider for color selection
-                Slider(
-                    value = selectedColorSchemeIndex.toFloat(),
-                    onValueChange = { onColorSchemeChange(it.toInt()) },
-                    valueRange = 0f..(colorSchemes.size - 1).toFloat(),
-                    steps = colorSchemes.size - 2, // steps = divisions - 1
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    ),
+                // Selected scheme name
+                val currentScheme = colorSchemes.getOrElse(selectedColorSchemeIndex) { colorSchemes.first() }
+                Text(
+                    text = currentScheme.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Spacing.small),
                 )
 
                 // Disco mode toggle (only visible when unlocked)

@@ -113,6 +113,101 @@ class RoutineTest {
         assertTrue(items[1] is RoutineItem.Single)
     }
 
+    // ===== resolveWeight / resolveSetWeights (Issue #357) =====
+
+    @Test
+    fun resolveWeight_percentOfPR_calculatesCorrectly() {
+        val exercise = createTestRoutineExercise(
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            weightPerCableKg = 5.75f, // Old absolute value
+        )
+        // 80% of 50kg PR = 40kg
+        assertEquals(40f, exercise.resolveWeight(50f))
+    }
+
+    @Test
+    fun resolveWeight_noPR_fallsBackToAbsolute() {
+        val exercise = createTestRoutineExercise(
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            weightPerCableKg = 5.75f,
+        )
+        assertEquals(5.75f, exercise.resolveWeight(null))
+    }
+
+    @Test
+    fun resolveSetWeights_allSetsGetPRWeight() {
+        val exercise = createTestRoutineExercise(
+            setReps = listOf(10, 10, 10),
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            weightPerCableKg = 5.75f,
+        )
+        // 80% of 50kg PR = 40kg for ALL 3 sets
+        val weights = exercise.resolveSetWeights(50f)
+        assertEquals(3, weights.size)
+        weights.forEachIndexed { index, weight ->
+            assertEquals(40f, weight, "Set $index should be 40kg (80% of 50kg)")
+        }
+    }
+
+    @Test
+    fun resolveSetWeights_withPerSetPercentages() {
+        val exercise = createTestRoutineExercise(
+            setReps = listOf(10, 8, 6),
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            setWeightsPercentOfPR = listOf(70, 80, 90),
+            weightPerCableKg = 5.75f,
+        )
+        // Per-set: 70%, 80%, 90% of 100kg PR
+        val weights = exercise.resolveSetWeights(100f)
+        assertEquals(3, weights.size)
+        assertEquals(70f, weights[0])
+        assertEquals(80f, weights[1])
+        assertEquals(90f, weights[2])
+    }
+
+    @Test
+    fun resolveSetWeights_warmupSetsDoNotAffectWorkingSetCount() {
+        // Issue #357: Warm-up sets should NOT affect the number of resolved working set weights
+        val exercise = createTestRoutineExercise(
+            setReps = listOf(10, 10, 10), // 3 working sets
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            weightPerCableKg = 5.75f,
+            warmupSets = listOf(
+                WarmupSet(reps = 12, percentOfWorking = 50),
+                WarmupSet(reps = 8, percentOfWorking = 70),
+                WarmupSet(reps = 4, percentOfWorking = 85),
+            ),
+        )
+        // Warm-up sets should NOT inflate the resolved set weights list
+        val weights = exercise.resolveSetWeights(50f)
+        assertEquals(3, weights.size, "Should have 3 weights (matching 3 working sets, NOT 3+3 warm-ups)")
+        weights.forEach { weight ->
+            assertEquals(40f, weight, "Each working set should be 40kg (80% of 50kg PR)")
+        }
+    }
+
+    @Test
+    fun resolveSetWeights_fewerPercentagesThanSets_fallsBackToBase() {
+        // Edge case: setWeightsPercentOfPR has fewer entries than sets
+        val exercise = createTestRoutineExercise(
+            setReps = listOf(10, 10, 10),
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            setWeightsPercentOfPR = listOf(70), // Only 1 entry for 3 sets
+            weightPerCableKg = 5.75f,
+        )
+        val weights = exercise.resolveSetWeights(100f)
+        assertEquals(3, weights.size)
+        assertEquals(70f, weights[0]) // Explicit 70%
+        assertEquals(80f, weights[1]) // Falls back to base 80%
+        assertEquals(80f, weights[2]) // Falls back to base 80%
+    }
+
     // ===== Helper =====
 
     private fun createTestRoutineExercise(
@@ -122,6 +217,11 @@ class RoutineTest {
         setRestSeconds: List<Int> = emptyList(),
         supersetId: String? = null,
         orderInSuperset: Int = 0,
+        usePercentOfPR: Boolean = false,
+        weightPercentOfPR: Int = 80,
+        setWeightsPercentOfPR: List<Int> = emptyList(),
+        weightPerCableKg: Float = 20f,
+        warmupSets: List<WarmupSet> = emptyList(),
     ): RoutineExercise = RoutineExercise(
         id = id,
         exercise = Exercise(
@@ -132,9 +232,13 @@ class RoutineTest {
         ),
         orderIndex = orderIndex,
         setReps = setReps,
-        weightPerCableKg = 20f,
+        weightPerCableKg = weightPerCableKg,
         setRestSeconds = setRestSeconds,
         supersetId = supersetId,
         orderInSuperset = orderInSuperset,
+        usePercentOfPR = usePercentOfPR,
+        weightPercentOfPR = weightPercentOfPR,
+        setWeightsPercentOfPR = setWeightsPercentOfPR,
+        warmupSets = warmupSets,
     )
 }

@@ -20,7 +20,7 @@ object BlePacketFactory {
     }
 
     @Volatile
-    var defaultForceConfigVariant: ForceConfigVariant = ForceConfigVariant.NON_OVERLAP
+    var defaultForceConfigVariant: ForceConfigVariant = ForceConfigVariant.OVERLAP
 
     // ========== Little-Endian Byte Helpers ==========
 

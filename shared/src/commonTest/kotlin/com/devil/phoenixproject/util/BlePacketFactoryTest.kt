@@ -826,7 +826,11 @@ class BlePacketFactoryTest {
             reps = 10,
             weightPerCableKg = 50f,
         )
-        val packet = BlePacketFactory.createProgramParams(params)
+        // Use NON_OVERLAP to test raw profile bytes at 0x48-0x4F without force config overwrite
+        val packet = BlePacketFactory.createProgramParams(
+            params,
+            variant = BlePacketFactory.ForceConfigVariant.NON_OVERLAP,
+        )
 
         // Concentric down ramp: C1507d(0, 20, 3.0f)
         assertEquals(0.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
@@ -914,7 +918,11 @@ class BlePacketFactoryTest {
             reps = 10,
             weightPerCableKg = 30f,
         )
-        val packet = BlePacketFactory.createProgramParams(params)
+        // Use NON_OVERLAP to test raw profile bytes at 0x48-0x4F without force config overwrite
+        val packet = BlePacketFactory.createProgramParams(
+            params,
+            variant = BlePacketFactory.ForceConfigVariant.NON_OVERLAP,
+        )
 
         // Concentric down ramp: C1507d(50, 450, 10.0f)
         assertEquals(50.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
@@ -1001,7 +1009,11 @@ class BlePacketFactoryTest {
             reps = 8,
             weightPerCableKg = 40f,
         )
-        val packet = BlePacketFactory.createProgramParams(params)
+        // Use NON_OVERLAP to test raw profile bytes at 0x48-0x4F without force config overwrite
+        val packet = BlePacketFactory.createProgramParams(
+            params,
+            variant = BlePacketFactory.ForceConfigVariant.NON_OVERLAP,
+        )
 
         // Concentric down ramp: C1507d(250, 350, 7.0f)
         assertEquals(250.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
@@ -1095,7 +1107,11 @@ class BlePacketFactoryTest {
             reps = 6,
             weightPerCableKg = 60f,
         )
-        val packet = BlePacketFactory.createProgramParams(params)
+        // Use NON_OVERLAP to test raw profile bytes at 0x48-0x4F without force config overwrite
+        val packet = BlePacketFactory.createProgramParams(
+            params,
+            variant = BlePacketFactory.ForceConfigVariant.NON_OVERLAP,
+        )
 
         // Concentric down ramp: C1507d(50, 550, 50.0f)
         assertEquals(50.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
@@ -1238,7 +1254,11 @@ class BlePacketFactoryTest {
             reps = 6,
             weightPerCableKg = 70f,
         )
-        val packet = BlePacketFactory.createProgramParams(params)
+        // Use NON_OVERLAP to test raw profile bytes at 0x48-0x4F without force config overwrite
+        val packet = BlePacketFactory.createProgramParams(
+            params,
+            variant = BlePacketFactory.ForceConfigVariant.NON_OVERLAP,
+        )
 
         // Concentric down ramp: C1507d(150, 250, 7.0f)
         assertEquals(150.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")

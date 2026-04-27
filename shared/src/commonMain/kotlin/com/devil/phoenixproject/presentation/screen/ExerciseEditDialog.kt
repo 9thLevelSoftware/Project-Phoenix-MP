@@ -1,26 +1,65 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.runtime.*
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.cd_add_set
+import vitruvianprojectphoenix.shared.generated.resources.cd_remove_set
+import vitruvianprojectphoenix.shared.generated.resources.label_kg
+import vitruvianprojectphoenix.shared.generated.resources.label_lbs
+import vitruvianprojectphoenix.shared.generated.resources.label_reps
+import vitruvianprojectphoenix.shared.generated.resources.label_seconds
+import vitruvianprojectphoenix.shared.generated.resources.label_sets
+import vitruvianprojectphoenix.shared.generated.resources.seconds_label
+import vitruvianprojectphoenix.shared.generated.resources.weight_per_cable
 
 /**
  * Bottom sheet for editing exercise configuration in a routine.
@@ -235,9 +274,11 @@ fun ExerciseEditBottomSheet(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Quick select buttons
+                // Quick select buttons — scrollable for Bold Text accessibility
                 Row(
-                    modifier = Modifier.weight(0.65f),
+                    modifier = Modifier
+                        .weight(0.65f)
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     listOf(30, 60, 90, 120).forEach { seconds ->

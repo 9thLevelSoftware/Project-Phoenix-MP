@@ -38,9 +38,9 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
-import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
+import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
@@ -55,7 +55,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.coroutines.coroutineContext
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -2103,12 +2102,19 @@ class ActiveSessionEngine(
                 } else {
                     repCounter.reset()
                 }
+                // Issue #357: Use warmupOverrideParams (the actual BLE params) for rep counter
+                // configuration. During variable warm-up sets, effectiveParams still has
+                // warmupReps=3 (firmware ramp), but warmupOverrideParams correctly has
+                // warmupReps=0 since variable warm-up sets handle their own weight scaling.
+                // Using effectiveParams caused the rep counter to misclassify the first 3
+                // reps of each warm-up set as firmware warmup reps, making sets appear to
+                // end 3 reps early and corrupting weight tracking.
                 repCounter.configure(
-                    warmupTarget = effectiveParams.warmupReps,
-                    workingTarget = if (isTimedCableExercise) 0 else effectiveParams.reps,
+                    warmupTarget = warmupOverrideParams.warmupReps,
+                    workingTarget = if (isTimedCableExercise) 0 else warmupOverrideParams.reps,
                     isJustLift = isJustLiftMode,
-                    stopAtTop = effectiveParams.stopAtTop,
-                    isAMRAP = if (isTimedCableExercise) true else effectiveParams.isAMRAP,
+                    stopAtTop = warmupOverrideParams.stopAtTop,
+                    isAMRAP = if (isTimedCableExercise) true else warmupOverrideParams.isAMRAP,
                 )
 
                 if (isTimedCableExercise) {
