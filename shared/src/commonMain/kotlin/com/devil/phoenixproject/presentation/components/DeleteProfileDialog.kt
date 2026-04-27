@@ -36,16 +36,17 @@ fun DeleteProfileDialog(profile: UserProfile, profileRepository: UserProfileRepo
                         // Issue #393: Unhandled exceptions in profile deletion caused
                         // SIGABRT on iOS (Kotlin/Native abort() on uncaught exception).
                         try {
-                            profileRepository.deleteProfile(profile.id)
-                            onDismiss()
+                            val deleted = profileRepository.deleteProfile(profile.id)
+                            if (deleted) {
+                                onDismiss()
+                            } else {
+                                // Protected profile (e.g. "default") — keep dialog open
+                                Logger.w { "PROFILE_DELETE: Refused to delete protected profile '${profile.name}' (id=${profile.id})" }
+                            }
                         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                             throw e
                         } catch (e: Exception) {
                             Logger.e(e) { "PROFILE_DELETE: Failed to delete profile '${profile.name}' (id=${profile.id})" }
-                            // Still dismiss on failure — profile list will refresh and
-                            // the error is logged. Keeping dialog open with no user-visible
-                            // feedback would be confusing.
-                            onDismiss()
                         }
                     }
                 },
