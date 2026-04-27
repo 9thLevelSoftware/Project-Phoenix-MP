@@ -535,6 +535,52 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `toPortalRoutine maps per-set reps as JSON`() {
+        val exercises = listOf(
+            makeRoutineExercise(
+                setRepsOverride = listOf(8, 10, 12),
+            ),
+        )
+        val routine = makeRoutine(exercises = exercises)
+
+        val result = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+
+        assertNotNull(result.exercises[0].perSetReps)
+        assertTrue(result.exercises[0].perSetReps!!.contains("8"))
+        assertTrue(result.exercises[0].perSetReps!!.contains("10"))
+        assertTrue(result.exercises[0].perSetReps!!.contains("12"))
+    }
+
+    @Test
+    fun `toPortalRoutine maps AMRAP reps with null in JSON`() {
+        val exercises = listOf(
+            makeRoutineExercise(
+                setRepsOverride = listOf(10, 10, null),
+                isAMRAP = true,
+            ),
+        )
+        val routine = makeRoutine(exercises = exercises)
+
+        val result = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+
+        assertNotNull(result.exercises[0].perSetReps)
+        assertTrue(result.exercises[0].perSetReps!!.contains("10"))
+        assertTrue(result.exercises[0].perSetReps!!.contains("null"))
+    }
+
+    @Test
+    fun `toPortalRoutine perSetReps is null for single uniform set`() {
+        val exercises = listOf(
+            makeRoutineExercise(sets = 1, reps = 10),
+        )
+        val routine = makeRoutine(exercises = exercises)
+
+        val result = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+
+        assertNull(result.exercises[0].perSetReps)
+    }
+
+    @Test
     fun `toPortalRoutine maps Echo mode settings`() {
         val exercises = listOf(
             makeRoutineExercise(
@@ -915,6 +961,7 @@ class PortalSyncAdapterTest {
         muscleGroup: String = "Chest",
         sets: Int = 3,
         reps: Int = 10,
+        setRepsOverride: List<Int?>? = null,
         weightPerCableKg: Float = 25f,
         orderIndex: Int = 0,
         mode: ProgramMode = ProgramMode.OldSchool,
@@ -934,7 +981,7 @@ class PortalSyncAdapterTest {
         id = id,
         exercise = Exercise(name = name, muscleGroup = muscleGroup),
         orderIndex = orderIndex,
-        setReps = List(sets) { reps },
+        setReps = setRepsOverride ?: List(sets) { reps },
         weightPerCableKg = weightPerCableKg,
         setWeightsPerCableKg = setWeightsPerCableKg,
         programMode = mode,

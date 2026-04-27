@@ -568,15 +568,22 @@ class SqlDelightSyncRepository(
                         }
 
                         for (exercise in portalRoutine.exercises) {
-                            // Build setReps string: e.g., "10,10,10" for sets=3, reps=10
-                            val repsList = List(exercise.sets) {
-                                if (exercise.isAmrap && it == exercise.sets - 1) {
-                                    "AMRAP"
-                                } else {
-                                    exercise.reps.toString()
+                            // Parse perSetReps JSON if available, otherwise reconstruct from scalar
+                            val setReps = exercise.perSetReps?.let { jsonStr ->
+                                try {
+                                    val parsed = Json.decodeFromString<List<Int?>>(jsonStr)
+                                    parsed.joinToString(",") { it?.toString() ?: "AMRAP" }
+                                } catch (_: Exception) {
+                                    null
                                 }
+                            } ?: run {
+                                // Fallback: reconstruct from scalar (old portal data without perSetReps)
+                                val repsList = List(exercise.sets) {
+                                    if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP"
+                                    else exercise.reps.toString()
+                                }
+                                repsList.joinToString(",")
                             }
-                            val setReps = repsList.joinToString(",")
 
                             // Convert perSetWeights JSON "[50,55,60]" to comma-separated "50.0,55.0,60.0"
                             val setWeights = exercise.perSetWeights?.let { jsonStr ->
@@ -1511,11 +1518,20 @@ class SqlDelightSyncRepository(
                         }
 
                         for (exercise in portalRoutine.exercises) {
-                            // Build setReps string
-                            val repsList = List(exercise.sets) {
-                                if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP" else exercise.reps.toString()
+                            // Parse perSetReps JSON if available, otherwise reconstruct from scalar
+                            val setReps = exercise.perSetReps?.let { jsonStr ->
+                                try {
+                                    val parsed = Json.decodeFromString<List<Int?>>(jsonStr)
+                                    parsed.joinToString(",") { it?.toString() ?: "AMRAP" }
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            } ?: run {
+                                val repsList = List(exercise.sets) {
+                                    if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP" else exercise.reps.toString()
+                                }
+                                repsList.joinToString(",")
                             }
-                            val setReps = repsList.joinToString(",")
 
                             // Convert perSetWeights JSON
                             val setWeights = exercise.perSetWeights?.let { jsonStr ->

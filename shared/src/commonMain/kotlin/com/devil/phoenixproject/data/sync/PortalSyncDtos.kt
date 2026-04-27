@@ -209,6 +209,7 @@ data class PortalRoutineExerciseSyncDto(
     // Per-set configuration (new portal columns)
     val perSetWeights: String? = null, // JSON array
     val perSetRest: String? = null, // JSON array
+    val perSetReps: String? = null, // JSON array e.g. "[10,8,6]"
     val isAmrap: Boolean = false,
     val isBodyweight: Boolean = false,
     val prPercentage: Float? = null,
@@ -699,6 +700,7 @@ data class PullRoutineExerciseDto(
     val supersetOrder: Int? = null,
     val perSetWeights: String? = null,
     val perSetRest: String? = null,
+    val perSetReps: String? = null,
     val isAmrap: Boolean = false,
     val isBodyweight: Boolean = false,
     val prPercentage: Float? = null,
