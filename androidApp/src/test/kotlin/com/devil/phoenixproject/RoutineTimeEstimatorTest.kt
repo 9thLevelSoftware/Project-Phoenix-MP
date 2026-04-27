@@ -419,6 +419,165 @@ class RoutineTimeEstimatorTest {
         assertEquals(3, RoutineTimeEstimator.MIN_HISTORICAL_SESSIONS)
     }
 
+    // ==================== PHASE 40 INTEGRATION TESTS ====================
+
+    @Test
+    fun `3 exercises x 3 sets all historical produces consistent estimate`() = runTest {
+        // Set up historical data for 3 exercises
+        for (id in listOf("ex-1", "ex-2", "ex-3")) {
+            coEvery { workoutRepository.getSessionCountForExercise(id, profileId) } returns 5
+            coEvery { workoutRepository.getAverageSetDurationMs(id, profileId) } returns 40_000L // 40s avg
+        }
+
+        val exercises = listOf(
+            routineExercise(
+                exercise = cableExercise(id = "ex-1", name = "Bench Press"),
+                setReps = listOf(10, 10, 10),
+                restSeconds = listOf(90, 90),
+                orderIndex = 0,
+            ),
+            routineExercise(
+                exercise = cableExercise(id = "ex-2", name = "Row"),
+                setReps = listOf(10, 10, 10),
+                restSeconds = listOf(90, 90),
+                orderIndex = 1,
+            ),
+            routineExercise(
+                exercise = cableExercise(id = "ex-3", name = "Shoulder Press"),
+                setReps = listOf(10, 10, 10),
+                restSeconds = listOf(90, 90),
+                orderIndex = 2,
+            ),
+        )
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        // Each exercise: 3 sets * 40s = 120s work + 2 * 90s rest = 300s
+        // 3 exercises = 900s work/rest
+        // 2 transitions * 30s = 60s
+        // Total = 960s
+        assertEquals(960, result.totalSeconds)
+        assertTrue(result.isHistoryBased)
+        assertEquals(3, result.historicalExerciseCount)
+        assertEquals(3, result.totalExerciseCount)
+        assertFalse(result.hasRange) // No AMRAP
+    }
+
+    @Test
+    fun `2 warmup + 3 working sets with warmup at 0_7x and no warmup rest`() = runTest {
+        val exercises = listOf(
+            routineExercise(
+                setReps = listOf(10, 10, 10), // 3 working sets
+                restSeconds = listOf(60, 60), // Rest between working sets only
+                warmupSets = listOf(
+                    WarmupSet(reps = 10, percentOfWorking = 50),
+                    WarmupSet(reps = 8, percentOfWorking = 70),
+                ),
+            ),
+        )
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        // Working: 3 sets * 45s = 135s
+        // Working rest: 2 * 60s = 120s
+        // Warmup: 2 sets * (45s * 0.7) = 63s (truncated from ms)
+        // No rest between warmup sets
+        // Total = 135 + 120 + 63 = 318s
+        val expectedWarmupMs = (2 * 45_000L * 0.7).toLong()
+        val expectedWorkMs = 3 * 45_000L
+        val expectedRestMs = 2 * 60_000L
+        val expectedTotalMs = expectedWorkMs + expectedRestMs + expectedWarmupMs
+        assertEquals((expectedTotalMs / 1000).toInt(), result.totalSeconds)
+    }
+
+    @Test
+    fun `custom exercise without ID uses fallback`() = runTest {
+        // Exercise with null ID — cannot look up historical data
+        val customExercise = Exercise(
+            name = "Custom Lift",
+            muscleGroup = "General",
+            equipment = "BAR",
+            id = null, // No ID
+        )
+        val exercises = listOf(
+            routineExercise(
+                exercise = customExercise,
+                setReps = listOf(10, 10),
+                restSeconds = listOf(60),
+            ),
+        )
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        // 2 sets * 45s fallback = 90s + 60s rest = 150s
+        assertEquals(150, result.totalSeconds)
+        assertFalse(result.isHistoryBased)
+        assertTrue(result.isEntirelyFallback)
+    }
+
+    @Test
+    fun `long routine with 6 exercises has correct transition count`() = runTest {
+        val exercises = (0 until 6).map { idx ->
+            routineExercise(
+                exercise = cableExercise(id = "ex-$idx", name = "Exercise $idx"),
+                setReps = listOf(10),
+                restSeconds = emptyList(),
+                orderIndex = idx,
+            )
+        }
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        // 6 exercises * 45s = 270s work
+        // 5 transitions * 30s = 150s
+        // Total = 420s
+        assertEquals(420, result.totalSeconds)
+        assertEquals(6, result.totalExerciseCount)
+    }
+
+    @Test
+    fun `bodyweight exercise in mixed routine uses 30s fallback`() = runTest {
+        val exercises = listOf(
+            routineExercise(
+                exercise = cableExercise(id = "ex-1"),
+                setReps = listOf(10),
+                restSeconds = emptyList(),
+                orderIndex = 0,
+            ),
+            routineExercise(
+                exercise = bodyweightExercise(id = "bw-1"),
+                setReps = listOf(10),
+                restSeconds = emptyList(),
+                orderIndex = 1,
+            ),
+        )
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        // Cable: 1 set * 45s = 45s
+        // Bodyweight: 1 set * 30s = 30s
+        // 1 transition = 30s
+        // Total = 105s
+        assertEquals(105, result.totalSeconds)
+    }
+
+    @Test
+    fun `AMRAP without history provides range around 90s fallback`() = runTest {
+        val exercises = listOf(
+            routineExercise(
+                setReps = listOf(null), // AMRAP only
+                restSeconds = emptyList(),
+            ),
+        )
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        // AMRAP fallback = 90s midpoint
+        assertTrue(result.hasRange)
+        assertEquals(90, result.totalSeconds) // Midpoint = 90s
+
+        // Lower = 90s / 1.5 = 60s
+        // Upper = 90s * 2 / 1.5 = 120s
+        assertTrue(result.lowerBoundSeconds < result.totalSeconds)
+        assertTrue(result.upperBoundSeconds > result.totalSeconds)
+    }
+
+    // ==================== ORIGINAL THRESHOLD TEST ====================
+
     @Test
     fun `exactly 3 sessions meets threshold`() = runTest {
         val exerciseId = "ex-1"

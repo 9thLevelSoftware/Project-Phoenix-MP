@@ -822,6 +822,68 @@ class PortalSyncAdapterTest {
         assertEquals("ECCENTRIC_ONLY", result[0].exercises[0].sets[0].workoutMode)
     }
 
+    // ========== Bodyweight Volume Sync Push Tests (Phase 40) ==========
+
+    @Test
+    fun `portal session includes non-zero totalVolume for bodyweight session`() {
+        // Bodyweight exercises have totalVolumeKg computed from body weight percentage.
+        // E.g., push-up: 80kg * 0.64 * 10 reps = 512kg
+        val session = makeSessionWithReps(
+            totalVolumeKg = 512f, // Already computed by ActiveSessionEngine
+            weightPerCableKg = 0f, // No cable weight for bodyweight
+            totalReps = 10,
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(session), "user-1")
+
+        // Volume should be passed through without zeroing out
+        assertTrue(
+            result[0].totalVolume > 0f,
+            "Bodyweight session totalVolume should be non-zero, got ${result[0].totalVolume}",
+        )
+    }
+
+    @Test
+    fun `portal session preserves bodyweight volume without cable division`() {
+        // Bodyweight exercise: cableCount = null (not a cable exercise)
+        // totalVolumeKg = 512f (80kg * 0.64 * 10 reps)
+        // The sync adapter should NOT divide by cableCount for bodyweight exercises
+        // because the volume IS the total volume (no cables involved).
+        val session = makeSessionWithReps(
+            totalVolumeKg = 512f,
+            weightPerCableKg = 0f,
+            totalReps = 10,
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(session), "user-1")
+
+        // After the Phase 40 fix, totalVolume should be the actual total (512),
+        // not halved (256) for per-cable conversion.
+        // With cableCount=null, cables = max(null ?: 1, 1) = 1, so 512/1 = 512
+        assertFloatEquals(512f, result[0].totalVolume)
+    }
+
+    @Test
+    fun `portal session totalVolume for cable exercise divides by cable count`() {
+        // Cable exercise with cableCount=2:
+        // totalVolumeKg = 1000f (50kg/cable * 2 cables * 10 reps)
+        // The sync adapter divides by cableCount → 500 (per-cable volume for portal)
+        val session = makeSessionWithReps(
+            totalVolumeKg = 1000f,
+            weightPerCableKg = 50f,
+            totalReps = 10,
+        )
+        // Set cableCount = 2 for a dual-cable exercise
+        val withCables = session.copy(
+            session = session.session.copy(cableCount = 2),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(withCables), "user-1")
+
+        // 1000 / 2 = 500 per-cable
+        assertFloatEquals(500f, result[0].totalVolume)
+    }
+
     // ========== Factory Helpers ==========
 
     private fun makeSessionWithReps(
