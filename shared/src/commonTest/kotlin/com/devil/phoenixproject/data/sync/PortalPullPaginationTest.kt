@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
  *   - Empty page with hasMore=true is treated as "end of pagination" (SyncManager line 823-830).
  *   - Failure mid-pagination does NOT advance the lastSync timestamp (caller restarts).
  *   - knownEntityIds is built from the local repository's ID lists (parity sync).
- *   - Large knownEntityIds sets (5000+ ids) are capped to MAX_PARITY_IDS=500
+ *   - Large knownEntityIds sets (10000+ ids) are capped to MAX_PARITY_IDS=10000
  *     (audit item #7, Phase 4.1) so the server's HTTP 413 enforcement is
  *     never triggered. The most recent (`takeLast`) window is sent.
  *   - pageSize defaults to SyncConfig.DEFAULT_PAGE_SIZE (100).
@@ -320,9 +320,9 @@ class PortalPullPaginationTest {
     @Test
     fun pullCapsLargeKnownSessionIdsToMaxParityIds() = runTest {
         authenticate()
-        // 5000 session IDs simulates a user with deep history doing a parity
+        // 15000 session IDs simulates a user with deep history doing a parity
         // sync. The server enforces HTTP 413 above SyncConfig.MAX_PARITY_IDS
-        // (500), so SyncManager.runPullLoop must truncate via `capParity()`
+        // (10000), so SyncManager.runPullLoop must truncate via `capParity()`
         // to the last MAX_PARITY_IDS entries (most recent window) and rely on
         // server-side `lastSync` delta + local dedupe for the older tail.
         // Resolves audit item #7 (Phase 4.1).
@@ -331,7 +331,7 @@ class PortalPullPaginationTest {
             return "$hex-0000-4000-8000-000000000000"
         }
 
-        val bigSet = List(5000) { fakeUuid(it) }
+        val bigSet = List(15_000) { fakeUuid(it) }
         fakeSyncRepo.sessionIds = bigSet
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
@@ -345,8 +345,8 @@ class PortalPullPaginationTest {
             "Large knownEntityIds payloads must be capped at MAX_PARITY_IDS to avoid server 413",
         )
         // capParity() uses takeLast(), so the window is the most recent IDs.
-        assertEquals(fakeUuid(5000 - SyncConfig.MAX_PARITY_IDS), known.sessionIds.first())
-        assertEquals(fakeUuid(4999), known.sessionIds.last())
+        assertEquals(fakeUuid(15_000 - SyncConfig.MAX_PARITY_IDS), known.sessionIds.first())
+        assertEquals(fakeUuid(14_999), known.sessionIds.last())
     }
 
     // ==================== pageSize Wiring ====================
