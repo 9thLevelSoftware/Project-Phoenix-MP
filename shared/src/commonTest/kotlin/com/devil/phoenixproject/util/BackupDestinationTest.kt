@@ -7,6 +7,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Tests for BackupDestination sealed class serialization and edge cases.
@@ -22,9 +25,9 @@ class BackupDestinationTest {
 
     @Test
     fun default_serializesToJsonWithTypeDiscriminator() {
-        val json = BackupDestination.Default.serialize()
-        assertTrue(json.contains("\"type\""), "Expected type discriminator in JSON: $json")
-        assertTrue(json.contains("\"default\""), "Expected 'default' type value in JSON: $json")
+        val jsonStr = BackupDestination.Default.serialize()
+        val obj = Json.parseToJsonElement(jsonStr).jsonObject
+        assertEquals("default", obj["type"]?.jsonPrimitive?.content, "Expected 'default' type discriminator")
     }
 
     // ===== Custom serialization =====
@@ -35,10 +38,15 @@ class BackupDestinationTest {
             uri = "content://com.android.externalstorage/tree/primary%3ABackups",
             displayName = "Backups",
         )
-        val json = custom.serialize()
-        assertTrue(json.contains("\"custom\""), "Expected 'custom' type value: $json")
-        assertTrue(json.contains("content://com.android.externalstorage"), "Expected URI in JSON: $json")
-        assertTrue(json.contains("Backups"), "Expected displayName in JSON: $json")
+        val jsonStr = custom.serialize()
+        val obj = Json.parseToJsonElement(jsonStr).jsonObject
+        assertEquals("custom", obj["type"]?.jsonPrimitive?.content, "Expected 'custom' type discriminator")
+        assertEquals(
+            "content://com.android.externalstorage/tree/primary%3ABackups",
+            obj["uri"]?.jsonPrimitive?.content,
+            "Expected URI field to match",
+        )
+        assertEquals("Backups", obj["displayName"]?.jsonPrimitive?.content, "Expected displayName field to match")
     }
 
     @Test

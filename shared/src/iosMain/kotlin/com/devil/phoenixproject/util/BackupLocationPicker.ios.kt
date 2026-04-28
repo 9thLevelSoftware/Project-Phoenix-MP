@@ -87,6 +87,12 @@ actual class BackupLocationPicker {
      * including a Base64-encoded security-scoped bookmark.
      */
     private fun createBookmarkedDestination(url: NSURL): BackupDestination.Custom? = try {
+        val uri = url.absoluteString ?: url.path
+        if (uri.isNullOrBlank()) {
+            log.w { "Directory URL has no usable URI — treating as cancelled" }
+            return null
+        }
+
         // Create a minimal bookmark for persistent cross-launch access
         val bookmarkData: NSData? = url.bookmarkDataWithOptions(
             options = NSURLBookmarkCreationMinimalBookmark,
@@ -97,12 +103,17 @@ actual class BackupLocationPicker {
 
         val base64Bookmark = bookmarkData?.base64EncodedStringWithOptions(0u)
 
+        if (base64Bookmark == null) {
+            log.w { "Failed to create security-scoped bookmark — destination would be inaccessible on next launch" }
+            return null
+        }
+
         val displayName = url.lastPathComponent ?: "Selected folder"
 
-        log.d { "Directory bookmarked: $displayName (bookmark=${base64Bookmark != null})" }
+        log.d { "Directory bookmarked: $displayName" }
 
         BackupDestination.Custom(
-            uri = url.absoluteString ?: url.path ?: "",
+            uri = uri,
             displayName = displayName,
             bookmarkData = base64Bookmark,
         )

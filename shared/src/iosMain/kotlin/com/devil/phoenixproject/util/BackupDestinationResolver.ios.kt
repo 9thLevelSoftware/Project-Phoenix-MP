@@ -2,11 +2,18 @@ package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
 import kotlinx.cinterop.BetaInteropApi
+import kotlinx.cinterop.BooleanVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSData
+import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSString
 import platform.Foundation.NSURL
@@ -52,19 +59,34 @@ class IosBackupDestinationResolver : BackupDestinationResolver {
                 return null
             }
 
-            @Suppress("UNCHECKED_CAST")
-            val url = NSURL.URLByResolvingBookmarkData(
-                bookmarkData = bookmarkData,
-                options = NSURLBookmarkResolutionWithoutUI,
-                relativeToURL = null,
-                bookmarkDataIsStale = null,
-                error = null,
-            )
+            memScoped {
+                val isStale = alloc<BooleanVar>()
+                val errorPtr = alloc<ObjCObjectVar<NSError?>>()
 
-            if (url == null) {
-                log.w { "Bookmark resolution returned null for ${destination.displayName}" }
+                @Suppress("UNCHECKED_CAST")
+                val url = NSURL.URLByResolvingBookmarkData(
+                    bookmarkData = bookmarkData,
+                    options = NSURLBookmarkResolutionWithoutUI,
+                    relativeToURL = null,
+                    bookmarkDataIsStale = isStale.ptr,
+                    error = errorPtr.ptr,
+                )
+
+                if (url == null) {
+                    val resolveError = errorPtr.value
+                    log.w {
+                        "Bookmark resolution failed for ${destination.displayName}: " +
+                            (resolveError?.localizedDescription ?: "unknown error")
+                    }
+                    return null
+                }
+
+                if (isStale.value) {
+                    log.w { "Bookmark is stale for ${destination.displayName} — consider re-creating it" }
+                }
+
+                url
             }
-            url
         } catch (e: Exception) {
             log.e(e) { "resolveBookmark failed for ${destination.displayName}" }
             null

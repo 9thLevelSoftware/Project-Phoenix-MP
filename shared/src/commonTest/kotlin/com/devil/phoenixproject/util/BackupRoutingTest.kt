@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.testutil.FakeBackupDestinationResolver
+import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.util.BackupDestination.Companion.fromJson
 import com.devil.phoenixproject.util.BackupDestination.Companion.toJson
 import kotlin.test.Test
@@ -145,5 +146,42 @@ class BackupRoutingTest {
         assertEquals("file1.json", resolver.writtenFiles[0].second)
         assertEquals("file2.json", resolver.writtenFiles[1].second)
         assertEquals("file3.json", resolver.writtenFiles[2].second)
+    }
+
+    // ===== PreferencesManager backup destination tests =====
+
+    @Test
+    fun preferencesManager_setBackupDestination_updatesFlow() = runTest {
+        val prefs = FakePreferencesManager()
+
+        // Verify default is Default
+        assertEquals(
+            BackupDestination.Default,
+            prefs.preferencesFlow.value.backupDestination,
+            "Initial backup destination should be Default",
+        )
+
+        // Set to custom
+        val custom = BackupDestination.Custom(
+            uri = "content://com.android.externalstorage/tree/primary%3APhoenixBackups",
+            displayName = "Phoenix Backups",
+        )
+        prefs.setBackupDestination(custom)
+
+        // Verify flow updated — smart-cast after assertTrue(is Custom) allows direct field access
+        val updated = prefs.preferencesFlow.value.backupDestination
+        assertTrue(updated is BackupDestination.Custom, "Destination should be Custom after set")
+        assertEquals(custom.uri, updated.uri)
+        assertEquals(custom.displayName, updated.displayName)
+    }
+
+    // ===== listFiles edge cases =====
+
+    @Test
+    fun listFiles_returnsEmptyByDefault() = runTest {
+        // FakeBackupDestinationResolver defaults to emptyList for listFilesResult
+        val destination = BackupDestination.Custom(uri = "content://inaccessible", displayName = "Gone")
+        val files = resolver.listFiles(destination)
+        assertTrue(files.isEmpty(), "Default listFiles result should be empty")
     }
 }
