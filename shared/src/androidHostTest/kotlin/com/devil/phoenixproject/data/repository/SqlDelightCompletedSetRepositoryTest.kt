@@ -201,6 +201,7 @@ class SqlDelightCompletedSetRepositoryTest {
             strengthProfile = null,
             formScore = null,
             profile_id = "default",
+            display_multiplier = null,
         )
     }
 }

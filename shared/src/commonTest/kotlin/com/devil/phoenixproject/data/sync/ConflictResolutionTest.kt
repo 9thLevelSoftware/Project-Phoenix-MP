@@ -610,6 +610,7 @@ class ConflictResolutionTest {
             formScore = null,
             updatedAt = session.timestamp,
             profile_id = session.profileId,
+            display_multiplier = null,
         )
     }
 }

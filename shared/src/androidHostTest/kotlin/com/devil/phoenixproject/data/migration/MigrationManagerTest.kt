@@ -624,6 +624,7 @@ class MigrationManagerTest {
             strengthProfile = null,
             formScore = null,
             profile_id = profileId,
+            display_multiplier = null,
         )
     }
 }

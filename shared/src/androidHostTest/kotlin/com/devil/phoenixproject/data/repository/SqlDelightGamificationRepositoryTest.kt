@@ -112,6 +112,7 @@ class SqlDelightGamificationRepositoryTest {
             strengthProfile = null,
             formScore = null,
             profile_id = "default",
+            display_multiplier = null,
         )
     }
 }
