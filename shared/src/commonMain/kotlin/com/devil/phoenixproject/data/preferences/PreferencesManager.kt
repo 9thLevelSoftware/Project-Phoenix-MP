@@ -3,6 +3,8 @@ package com.devil.phoenixproject.data.preferences
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.util.BackupDestination
+import com.devil.phoenixproject.util.BackupDestination.Companion.toJson
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -129,6 +131,9 @@ interface PreferencesManager {
     // Issue #293: Per-session auto-backup
     suspend fun setAutoBackupEnabled(enabled: Boolean)
 
+    // Issue #293: Custom backup destination
+    suspend fun setBackupDestination(destination: BackupDestination)
+
     // Issue #238: Language/locale preference
     suspend fun setLanguage(language: String)
 
@@ -185,6 +190,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_REP_SOUND_ENABLED = "rep_sound_enabled"
         private const val KEY_MOTION_START = "motion_start_enabled"
         private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
+        private const val KEY_BACKUP_DESTINATION = "backup_destination"
         private const val KEY_LANGUAGE = "language"
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
         private const val KEY_SAFE_WORD = "safe_word"
@@ -230,6 +236,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             repSoundEnabled = settings.getBoolean(KEY_REP_SOUND_ENABLED, true),
             motionStartEnabled = settings.getBoolean(KEY_MOTION_START, false),
             autoBackupEnabled = settings.getBoolean(KEY_AUTO_BACKUP_ENABLED, false),
+            backupDestination = BackupDestination.fromJson(settings.getStringOrNull(KEY_BACKUP_DESTINATION)),
             language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en",
             voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
             safeWord = settings.getStringOrNull(KEY_SAFE_WORD),
@@ -400,6 +407,11 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     override suspend fun setAutoBackupEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_AUTO_BACKUP_ENABLED, enabled)
         updateAndEmit { copy(autoBackupEnabled = enabled) }
+    }
+
+    override suspend fun setBackupDestination(destination: BackupDestination) {
+        settings.putString(KEY_BACKUP_DESTINATION, destination.toJson())
+        updateAndEmit { copy(backupDestination = destination) }
     }
 
     override suspend fun setLanguage(language: String) {

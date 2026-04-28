@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.domain.model
 
+import com.devil.phoenixproject.util.BackupDestination
+
 /**
  * User preferences data class
  */
@@ -38,6 +40,8 @@ data class UserPreferences(
     val voiceStopEnabled: Boolean = false, // Whether safe word detection is active during workouts
     val safeWord: String? = null, // The configured safe word (null = not yet set)
     val safeWordCalibrated: Boolean = false, // Whether the safe word passed 3-rep calibration
+    // Issue #293: Custom backup destination (default = platform default location)
+    val backupDestination: BackupDestination = BackupDestination.Default,
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

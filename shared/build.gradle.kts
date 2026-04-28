@@ -164,6 +164,9 @@ kotlin {
                 // Encrypted SharedPreferences for secure token storage
                 implementation(libs.androidx.security.crypto)
 
+                // DocumentFile for directory picker display name extraction
+                implementation(libs.androidx.documentfile)
+
                 // Health Connect (Google Health)
                 // Pinned to alpha11: stable 1.1.0 made record constructors and Metadata internal.
                 // The alpha SDK still uses public constructors. The permission strings are identical
