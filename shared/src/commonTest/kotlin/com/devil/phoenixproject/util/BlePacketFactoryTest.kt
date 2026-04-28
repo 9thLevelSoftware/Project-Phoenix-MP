@@ -1151,6 +1151,52 @@ class BlePacketFactoryTest {
         assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
     }
 
+    @Test
+    fun `EccentricOnly preserves profile tail even when OVERLAP variant is requested`() {
+        // Regression guard: createProgramParams must override the caller-provided
+        // variant for EccentricOnly so the eccentric-up ramp at 0x48-0x4F survives.
+        // If this ever regresses the firmware stops applying weight during the
+        // eccentric phase (reps still count, but the cables go slack).
+        val params = WorkoutParameters(
+            programMode = ProgramMode.EccentricOnly,
+            reps = 6,
+            weightPerCableKg = 60f,
+        )
+        val packet = BlePacketFactory.createProgramParams(
+            params,
+            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
+        )
+
+        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS preserved")
+        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS preserved")
+        assertEquals(20.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp preserved")
+
+        // Force config block at 0x50-0x5F still carries the active weight.
+        assertEquals(60.0f, readFloatLE(packet, 0x58), "targetWeight at 0x58")
+    }
+
+    @Test
+    fun `JustLift with EccentricOnly programMode honors OVERLAP variant`() {
+        // Just Lift always copies the OldSchool profile, so its 0x48-0x4F bytes
+        // are not the eccentric-up ramp. The variant override must key off the
+        // resolved profile (not params.programMode) or this configuration would
+        // silently lose its softMax/increment writes.
+        val params = WorkoutParameters(
+            programMode = ProgramMode.EccentricOnly,
+            reps = 0,
+            weightPerCableKg = 40f,
+            isJustLift = true,
+        )
+        val packet = BlePacketFactory.createProgramParams(
+            params,
+            variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
+        )
+
+        // Just Lift forces softMax to 100.0f at 0x48 and increment to 0 at 0x4C.
+        assertEquals(100.0f, readFloatLE(packet, 0x48), "Just Lift softMax at 0x48")
+        assertEquals(0.0f, readFloatLE(packet, 0x4C), "Just Lift increment at 0x4C")
+    }
+
     // ========== Cross-Mode Regression Tests ==========
 
     @Test

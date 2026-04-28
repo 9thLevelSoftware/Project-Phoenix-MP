@@ -125,15 +125,31 @@ object BlePacketFactory {
      * (per-rep progression) at 0x4C. These offsets fall within the mode profile
      * block (0x30-0x4F), so we overwrite the last 8 bytes of the eccentric phase
      * with the correct force config values after copying the profile.
+     *
+     * Variant override: when the profile actually copied into the packet is
+     * [ProgramMode.EccentricOnly], the [variant] argument is forced to
+     * [ForceConfigVariant.NON_OVERLAP] to preserve the eccentric-up ramp bytes
+     * at 0x48-0x4F. The override keys off the resolved profile, not
+     * `params.programMode`, so Just Lift / Echo selections (which always use
+     * the OldSchool profile) continue to honor the requested variant.
      */
     fun createProgramParams(params: WorkoutParameters, variant: ForceConfigVariant = defaultForceConfigVariant): ByteArray {
+        // Resolve the profile up front so the variant decision can key off it.
+        val profileMode = if (params.isJustLift || params.isEchoMode) {
+            ProgramMode.OldSchool
+        } else {
+            params.programMode
+        }
+
         // EccentricOnly relies on the eccentric-up ramp bytes at 0x48-0x4F
         // (minMmS=-100, maxMmS=-50, ramp=20.0f). The OVERLAP variant overwrites
         // those bytes with softMax/increment, which leaves the firmware unable
         // to apply weight during the eccentric phase (reps count, but the
         // chosen weight is never engaged). The official app preserves the
-        // profile tail for this mode.
-        val effectiveVariant = if (params.programMode is ProgramMode.EccentricOnly) {
+        // profile tail for this mode. Gate on the resolved profile, not the
+        // requested mode, so Just Lift packets (which use the OldSchool
+        // profile) keep the OVERLAP overwrites they were designed for.
+        val effectiveVariant = if (profileMode is ProgramMode.EccentricOnly) {
             ForceConfigVariant.NON_OVERLAP
         } else {
             variant
@@ -195,13 +211,6 @@ object BlePacketFactory {
         frame[0x2f] = 0x00
 
         // Get the mode profile block (32 bytes for offsets 0x30-0x4F)
-        val profileMode = if (params.isJustLift ||
-            params.isEchoMode
-        ) {
-            ProgramMode.OldSchool
-        } else {
-            params.programMode
-        }
         val profile = getActivationPhases(profileMode)
         profile.copyInto(frame, 0x30)
 
