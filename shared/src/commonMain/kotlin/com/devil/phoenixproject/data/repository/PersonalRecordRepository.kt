@@ -67,6 +67,7 @@ interface PersonalRecordRepository {
         workoutMode: String,
         timestamp: Long,
         profileId: String,
+        cableCount: Int? = null,
     ): Result<Boolean> = updatePRsIfBetter(
         exerciseId = exerciseId,
         weightPRWeightPerCableKg = weightPerCableKg,
@@ -75,6 +76,7 @@ interface PersonalRecordRepository {
         workoutMode = workoutMode,
         timestamp = timestamp,
         profileId = profileId,
+        cableCount = cableCount,
     ).fold(
         onSuccess = { Result.success(it.isNotEmpty()) },
         onFailure = { Result.failure(it) },
@@ -157,6 +159,7 @@ interface PersonalRecordRepository {
         workoutMode: String,
         timestamp: Long,
         profileId: String,
+        cableCount: Int? = null,
     ): Result<List<PRType>> = updatePRsIfBetter(
         exerciseId = exerciseId,
         weightPRWeightPerCableKg = weightPerCableKg,
@@ -165,6 +168,7 @@ interface PersonalRecordRepository {
         workoutMode = workoutMode,
         timestamp = timestamp,
         profileId = profileId,
+        cableCount = cableCount,
     )
 
     /**
@@ -188,6 +192,7 @@ interface PersonalRecordRepository {
         workoutMode: String,
         timestamp: Long,
         profileId: String,
+        cableCount: Int? = null,
     ): Result<List<PRType>>
 
     // ========== Phase-specific PR Methods (Issue #111) ==========
@@ -212,6 +217,7 @@ interface PersonalRecordRepository {
         peakConcentricForceKg: Float,
         peakEccentricForceKg: Float,
         profileId: String,
+        cableCount: Int? = null,
     ): Result<List<WorkoutPhase>>
 }
 

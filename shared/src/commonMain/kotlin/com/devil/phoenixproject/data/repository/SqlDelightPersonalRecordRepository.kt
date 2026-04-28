@@ -36,6 +36,8 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         deletedAt: Long?,
         // Multi-profile support (migration 21)
         profileId: String,
+        // Cable-aware weight display (migration 28)
+        cableCount: Long?,
     ): PersonalRecord = PersonalRecord(
         id = id,
         exerciseId = exerciseId,
@@ -56,6 +58,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
             else -> WorkoutPhase.COMBINED
         },
         profileId = profileId,
+        cableCount = cableCount?.toInt(),
     )
 
     override suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = withContext(Dispatchers.IO) {
@@ -95,6 +98,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         workoutMode: String,
         timestamp: Long,
         profileId: String,
+        cableCount: Int?,
     ): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val brokenPRs = updatePRsIfBetterInternal(
@@ -106,6 +110,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                 timestamp = timestamp,
                 phase = WorkoutPhase.COMBINED,
                 profileId = profileId,
+                cableCount = cableCount,
             )
             Result.success(brokenPRs.isNotEmpty())
         } catch (e: Exception) {
@@ -168,6 +173,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         workoutMode: String,
         timestamp: Long,
         profileId: String,
+        cableCount: Int?,
     ): Result<List<PRType>> = withContext(Dispatchers.IO) {
         try {
             val brokenPRs = updatePRsIfBetterInternal(
@@ -179,6 +185,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                 timestamp = timestamp,
                 phase = WorkoutPhase.COMBINED,
                 profileId = profileId,
+                cableCount = cableCount,
             )
             Result.success(brokenPRs)
         } catch (e: Exception) {
@@ -194,6 +201,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         peakConcentricForceKg: Float,
         peakEccentricForceKg: Float,
         profileId: String,
+        cableCount: Int?,
     ): Result<List<WorkoutPhase>> = withContext(Dispatchers.IO) {
         try {
             val brokenPhases = mutableListOf<WorkoutPhase>()
@@ -209,6 +217,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     timestamp = timestamp,
                     phase = WorkoutPhase.CONCENTRIC,
                     profileId = profileId,
+                    cableCount = cableCount,
                 )
                 if (broken.isNotEmpty()) brokenPhases.add(WorkoutPhase.CONCENTRIC)
             }
@@ -224,6 +233,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     timestamp = timestamp,
                     phase = WorkoutPhase.ECCENTRIC,
                     profileId = profileId,
+                    cableCount = cableCount,
                 )
                 if (broken.isNotEmpty()) brokenPhases.add(WorkoutPhase.ECCENTRIC)
             }
@@ -247,6 +257,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         timestamp: Long,
         phase: WorkoutPhase,
         profileId: String,
+        cableCount: Int? = null,
     ): List<PRType> {
         // Issue #319: Defensive validation for profileId
         if (profileId.isBlank()) {
@@ -333,6 +344,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     volume = volumeForWeightPR.toDouble(),
                     phase = phaseName,
                     profile_id = effectiveProfileId,
+                    cable_count = cableCount?.toLong(),
                 )
                 brokenPRs.add(PRType.MAX_WEIGHT)
             }
@@ -351,6 +363,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     volume = volumeForVolumePR.toDouble(),
                     phase = phaseName,
                     profile_id = effectiveProfileId,
+                    cable_count = cableCount?.toLong(),
                 )
                 brokenPRs.add(PRType.MAX_VOLUME)
             }

@@ -30,14 +30,10 @@ enum class WorkoutPhase {
 /**
  * Personal record for an exercise.
  *
- * TODO(weight-display): Add `cableCount: Int?` field to enable cable-aware weight display
- * for PRs. Currently all PR display surfaces pass `cableCount=null` to WeightDisplayFormatter,
- * which defaults to 1 (showing per-cable weight). This requires:
- * 1. Database migration to add `cable_count` column to `personal_records` table
- * 2. Populate from exercise `preferredCableCount` when PR is recorded
- * 3. Update SqlDelightPersonalRecordRepository mapping
- * 4. Update SyncModels DTO if PRs are synced
- * Affected display surfaces: AnalyticsScreen, DashboardComponents, ActiveWorkoutScreen (PR celebration)
+ * [cableCount] enables cable-aware weight display for PRs. Populated from
+ * exercise `preferredCableCount` when a PR is recorded. Legacy PRs have
+ * `cableCount = null`, which causes WeightDisplayFormatter to default to 1
+ * (showing per-cable weight — safe backward-compatible behavior).
  */
 data class PersonalRecord(
     val id: Long = 0,
@@ -52,6 +48,7 @@ data class PersonalRecord(
     val volume: Float,
     val phase: WorkoutPhase = WorkoutPhase.COMBINED,
     val profileId: String = "default",
+    val cableCount: Int? = null,
 )
 
 /**
@@ -626,6 +623,7 @@ data class PRCelebrationEvent(
     val reps: Int,
     val workoutMode: String,
     val brokenPRTypes: List<PRType> = listOf(PRType.MAX_WEIGHT),
+    val cableCount: Int? = null,
 ) {
     val isWeightPR: Boolean get() = PRType.MAX_WEIGHT in brokenPRTypes
     val isVolumePR: Boolean get() = PRType.MAX_VOLUME in brokenPRTypes

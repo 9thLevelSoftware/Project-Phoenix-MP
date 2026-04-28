@@ -547,7 +547,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             exerciseName = event.exerciseName,
             weight = "${WeightDisplayFormatter.formatDisplayWeight(
                 event.weightPerCableKg,
-                cableCount = null, // PRCelebrationEvent lacks cableCount; defaults to 1
+                cableCount = event.cableCount,
                 weightUnit,
             )} × ${event.reps} reps",
             workoutMode = event.workoutMode,

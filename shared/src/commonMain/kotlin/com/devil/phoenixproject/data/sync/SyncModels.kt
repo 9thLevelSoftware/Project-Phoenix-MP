@@ -90,6 +90,7 @@ data class PersonalRecordSyncDto(
     val prType: String = "MAX_WEIGHT",
     val phase: String = "COMBINED",
     val volume: Float = 0f,
+    val cableCount: Int? = null,
     val deletedAt: Long? = null,
     val createdAt: Long,
     val updatedAt: Long,

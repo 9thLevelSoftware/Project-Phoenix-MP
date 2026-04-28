@@ -146,7 +146,9 @@ CREATE TABLE PersonalRecord (
     serverId TEXT,
     deletedAt INTEGER,
     -- Multi-profile support (added in migration 21)
-    profile_id TEXT NOT NULL DEFAULT 'default'
+    profile_id TEXT NOT NULL DEFAULT 'default',
+    -- Cable-aware weight display (added in migration 28)
+    cable_count INTEGER
 );
 
 CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id);
@@ -751,24 +753,24 @@ SELECT * FROM PersonalRecord WHERE profile_id = :profileId ORDER BY exerciseId, 
 
 -- Insert a new PR (with prType, volume, and phase support)
 insertRecord:
-INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert PR (insert or replace) - requires ID
 upsertRecord:
-INSERT OR REPLACE INTO PersonalRecord (id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PersonalRecord (id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert PR by unique key (exerciseId, workoutMode, prType, phase) - no ID required
 -- Uses INSERT OR REPLACE which replaces on unique index conflict (idx_pr_unique)
 upsertPR:
-INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert PR but ignore on conflict (local wins) - for portal pull merge
 insertPRIgnore:
-INSERT OR IGNORE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Delete PR by unique key (for upsert fallback)
 deletePRByKey:

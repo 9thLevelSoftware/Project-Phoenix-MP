@@ -588,6 +588,7 @@ abstract class BaseDataBackupManager(
                             volume = pr.volume.toDouble(),
                             phase = pr.phase ?: "COMBINED",
                             profile_id = pr.profileId ?: "default",
+                            cable_count = pr.cableCount?.toLong(),
                         )
                         personalRecordsImported++
                     } catch (e: Exception) {
@@ -1430,6 +1431,7 @@ abstract class BaseDataBackupManager(
         volume = pr.volume.toFloat(),
         phase = pr.phase,
         profileId = pr.profile_id,
+        cableCount = pr.cable_count?.toInt(),
     )
 
     private fun mapTrainingCycleToBackup(cycle: TrainingCycle): TrainingCycleBackup = TrainingCycleBackup(

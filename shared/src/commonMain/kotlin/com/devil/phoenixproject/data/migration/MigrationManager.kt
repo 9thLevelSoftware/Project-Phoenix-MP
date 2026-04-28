@@ -105,6 +105,7 @@ class MigrationManager(
         val prType: String,
         val volume: Double,
         val phase: String,
+        val cable_count: Long? = null,
     )
 
     private data class CanonicalEarnedBadge(
@@ -388,6 +389,7 @@ class MigrationManager(
                 prType = record.prType,
                 volume = record.volume,
                 phase = record.phase,
+                cable_count = record.cable_count,
             )
             val key = "${canonical.exerciseId}|${canonical.workoutMode}|${canonical.prType}|${canonical.phase}"
             val existing = canonicalByKey[key]
@@ -419,6 +421,7 @@ class MigrationManager(
                 volume = record.volume,
                 phase = record.phase,
                 profile_id = toProfileId,
+                cable_count = record.cable_count,
             )
         }
     }
@@ -655,6 +658,7 @@ class MigrationManager(
                             volume = record.volume,
                             phase = record.phase,
                             profile_id = recordProfileId,
+                            cable_count = record.cable_count,
                         )
                         updated++
                     } else {

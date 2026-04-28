@@ -102,6 +102,9 @@ class GamificationManager(
                 try {
                     val workoutMode = programMode.displayName
                     val timestamp = currentTimeMillis()
+                    // Resolve exercise once for both PR storage and celebration display
+                    val exercise = exerciseRepository.getExerciseById(exId)
+                    val cableCount = exercise?.preferredCableCount
 
                     // Check COMBINED (traditional) PRs
                     val result = personalRecordRepository.updatePRsIfBetter(
@@ -112,6 +115,7 @@ class GamificationManager(
                         workoutMode = workoutMode,
                         timestamp = timestamp,
                         profileId = effectiveProfileId,
+                        cableCount = cableCount,
                     )
 
                     // Issue #319: Always log PR result at INFO level for visibility
@@ -122,7 +126,7 @@ class GamificationManager(
                             Logger.i { "PR_TRACK: No new PR — existing records are equal or better (exercise=$exId, mode=$workoutMode, profile=$effectiveProfileId, weight=${achievedWeightKg}kg, reps=$workingReps)" }
                         }
                     }.onFailure { e ->
-                        val errorMsg = "Failed to save PR for ${exerciseRepository.getExerciseById(exId)?.name ?: exId}: ${e.message}"
+                        val errorMsg = "Failed to save PR for ${exercise?.name ?: exId}: ${e.message}"
                         Logger.e { "PR_TRACK: $errorMsg (profile=$effectiveProfileId)" }
                         // Issue #319: Emit to UI-visible error flow
                         _prTrackingErrorEvents.emit(errorMsg)
@@ -138,6 +142,7 @@ class GamificationManager(
                             peakConcentricForceKg = peakConcentricForceKg,
                             peakEccentricForceKg = peakEccentricForceKg,
                             profileId = effectiveProfileId,
+                            cableCount = cableCount,
                         ).onFailure { e ->
                             Logger.e { "PR_TRACK: Error updating phase-specific PRs: ${e.message}" }
                         }
@@ -148,7 +153,6 @@ class GamificationManager(
                         result.onSuccess { brokenPRs ->
                             if (brokenPRs.isNotEmpty()) {
                                 hasCelebrationSound = true // PR dialog will play sound via callback
-                                val exercise = exerciseRepository.getExerciseById(exId)
                                 val prTypeDescription = when {
                                     brokenPRs.contains(PRType.MAX_WEIGHT) &&
                                         brokenPRs.contains(PRType.MAX_VOLUME) -> "Weight & Volume"
@@ -166,6 +170,7 @@ class GamificationManager(
                                         reps = workingReps,
                                         workoutMode = workoutMode,
                                         brokenPRTypes = brokenPRs,
+                                        cableCount = cableCount,
                                     ),
                                 )
                                 Logger.i {

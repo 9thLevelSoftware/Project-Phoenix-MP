@@ -85,6 +85,7 @@ class SqlDelightSyncRepository(
                 prType = row.prType,
                 phase = row.phase,
                 volume = row.volume.toFloat(),
+                cableCount = row.cable_count?.toInt(),
                 deletedAt = row.deletedAt,
                 createdAt = row.achievedAt,
                 updatedAt = row.updatedAt ?: row.achievedAt,
@@ -313,6 +314,7 @@ class SqlDelightSyncRepository(
                         volume = effectiveVolume.toDouble(),
                         phase = dto.phase,
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
+                        cable_count = dto.cableCount?.toLong(),
                     )
                 }
             }
@@ -1353,6 +1355,7 @@ class SqlDelightSyncRepository(
                         volume = effectiveVolume.toDouble(),
                         phase = dto.phase,
                         profile_id = profileId,
+                        cable_count = dto.cableCount?.toLong(),
                     )
                 }
             }
@@ -1714,6 +1717,7 @@ class SqlDelightSyncRepository(
                         volume = effectiveVolume.toDouble(),
                         phase = pr.phase,
                         profile_id = profileId,
+                        cable_count = pr.cableCount?.toLong(),
                     )
                 }
             }

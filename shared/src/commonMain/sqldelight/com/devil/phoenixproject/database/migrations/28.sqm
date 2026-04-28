@@ -1,0 +1,2 @@
+-- Migration 28: Add cable_count to PersonalRecord for cable-aware weight display
+ALTER TABLE PersonalRecord ADD COLUMN cable_count INTEGER;

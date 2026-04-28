@@ -821,6 +821,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             serverId,
             deletedAt,
             profileId_,
+            cableCount,
         ->
         PersonalRecordEntity(
             id = id,
@@ -838,7 +839,9 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
             val timestamp = currentTimeMillis()
             val newVolume = weightKg * reps
-            val exerciseName = exerciseRepository.getExerciseById(exerciseId)?.name ?: ""
+            val exercise = exerciseRepository.getExerciseById(exerciseId)
+            val exerciseName = exercise?.name ?: ""
+            val cableCount = exercise?.preferredCableCount
 
             val combinedPhase = "COMBINED"
 
@@ -881,6 +884,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     volume = newVolume.toDouble(),
                     phase = combinedPhase,
                     profile_id = defaultProfileId,
+                    cable_count = cableCount?.toLong(),
                 )
             }
 
@@ -897,6 +901,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     volume = newVolume.toDouble(),
                     phase = combinedPhase,
                     profile_id = defaultProfileId,
+                    cable_count = cableCount?.toLong(),
                 )
             }
 

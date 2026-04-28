@@ -178,7 +178,7 @@ fun ProgressTab(
                                 Text(
                                     text = WeightDisplayFormatter.formatDisplayWeight(
                                         pr.weightPerCableKg,
-                                        cableCount = null, // PersonalRecord lacks cableCount; defaults to 1
+                                        cableCount = pr.cableCount,
                                         weightUnit,
                                     ),
                                     style = MaterialTheme.typography.headlineSmall,

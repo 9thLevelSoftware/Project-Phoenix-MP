@@ -181,6 +181,7 @@ data class PersonalRecordBackup(
     val volume: Float = 0f,
     val phase: String? = "COMBINED", // Nullable for backward compat with pre-v0.7.0 backups
     val profileId: String? = null, // null for backward compat with pre-profile backups
+    val cableCount: Int? = null, // null for backward compat with pre-v0.9.0 backups
 )
 
 /**
