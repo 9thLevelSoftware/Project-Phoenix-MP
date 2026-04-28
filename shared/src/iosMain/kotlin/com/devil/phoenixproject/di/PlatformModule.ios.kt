@@ -12,12 +12,14 @@ import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.util.BackupDestinationResolver
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.IosCsvExporter
 import com.devil.phoenixproject.util.IosCsvImporter
+import com.devil.phoenixproject.util.IosBackupDestinationResolver
 import com.devil.phoenixproject.util.IosDataBackupManager
 import com.russhwolf.settings.ExperimentalSettingsImplementation
 import com.russhwolf.settings.KeychainSettings
@@ -85,7 +87,8 @@ actual val platformModule: Module = module {
     single<BleRepository> { KableBleRepository() }
     single<CsvExporter> { IosCsvExporter() }
     single<CsvImporter> { IosCsvImporter(get()) }
-    single<DataBackupManager> { IosDataBackupManager(get()) }
+    single<BackupDestinationResolver> { IosBackupDestinationResolver() }
+    single<DataBackupManager> { IosDataBackupManager(get(), get(), get()) }
     single { ConnectivityChecker() }
     single<SafeWordListenerFactory> { IosSafeWordListenerFactory() }
     single { HealthIntegration() }

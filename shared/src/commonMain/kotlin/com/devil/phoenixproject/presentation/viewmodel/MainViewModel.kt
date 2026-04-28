@@ -275,6 +275,10 @@ class MainViewModel constructor(
         refreshBackupStats()
     }
 
+    fun setBackupDestination(destination: com.devil.phoenixproject.util.BackupDestination) {
+        settingsManager.setBackupDestination(destination)
+    }
+
     fun setLanguage(language: String) {
         settingsManager.setLanguage(language)
     }

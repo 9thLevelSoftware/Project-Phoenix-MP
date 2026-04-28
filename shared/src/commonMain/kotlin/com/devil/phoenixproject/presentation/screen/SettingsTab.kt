@@ -28,6 +28,7 @@ import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
 import com.devil.phoenixproject.ui.theme.*
+import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupProgress
 import com.devil.phoenixproject.util.ColorSchemes
 import com.devil.phoenixproject.util.Constants
@@ -36,6 +37,7 @@ import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
+import com.devil.phoenixproject.util.rememberBackupLocationPicker
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -97,6 +99,9 @@ fun SettingsTab(
     onAutoBackupEnabledChange: (Boolean) -> Unit = {},
     backupStats: com.devil.phoenixproject.util.BackupStats? = null,
     onOpenBackupFolder: () -> Unit = {},
+    // Custom backup destination (Phase 42)
+    backupDestination: com.devil.phoenixproject.util.BackupDestination = com.devil.phoenixproject.util.BackupDestination.Default,
+    onBackupDestinationChange: (com.devil.phoenixproject.util.BackupDestination) -> Unit = {},
     // Issue #238: Language preference
     selectedLanguage: String = "en",
     onLanguageChange: (String) -> Unit = {},
@@ -1567,6 +1572,101 @@ fun SettingsTab(
                         checked = autoBackupEnabled,
                         onCheckedChange = onAutoBackupEnabledChange,
                     )
+                }
+
+                // Backup Location selector (Phase 42)
+                var showLocationPicker by remember { mutableStateOf(false) }
+                Spacer(modifier = Modifier.height(Spacing.small))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceContainerLow,
+                            RoundedCornerShape(12.dp),
+                        )
+                        .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.Folder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Backup Location",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            when (backupDestination) {
+                                is BackupDestination.Default -> "Default (Downloads/PhoenixBackups)"
+                                is BackupDestination.Custom -> backupDestination.displayName
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                ) {
+                    OutlinedButton(
+                        onClick = { showLocationPicker = true },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                    ) {
+                        Icon(
+                            Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "Change Location",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (backupDestination.isCustom) {
+                        OutlinedButton(
+                            onClick = { onBackupDestinationChange(BackupDestination.Default) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                        ) {
+                            Icon(
+                                Icons.Default.RestartAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Reset to Default",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+
+                // Directory picker launcher
+                if (showLocationPicker) {
+                    val locationPicker = rememberBackupLocationPicker()
+                    locationPicker.LaunchDirectoryPicker { destination ->
+                        showLocationPicker = false
+                        destination?.let { onBackupDestinationChange(it) }
+                    }
                 }
 
                 // Backup stats: file count and total size

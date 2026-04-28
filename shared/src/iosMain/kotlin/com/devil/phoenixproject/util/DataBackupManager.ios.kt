@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.util
 
+import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.database.VitruvianDatabase
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -19,9 +21,18 @@ import platform.darwin.dispatch_get_main_queue
 /**
  * iOS implementation of DataBackupManager.
  * Uses NSFileManager for file operations and Documents directory for storage.
+ *
+ * When the user has selected a custom backup destination via [PreferencesManager],
+ * exports are routed through [BackupDestinationResolver]. If the custom destination
+ * is inaccessible or write fails, the manager falls back to the default location
+ * to guarantee data is never lost.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-class IosDataBackupManager(database: VitruvianDatabase) : BaseDataBackupManager(database) {
+class IosDataBackupManager(
+    database: VitruvianDatabase,
+    private val preferencesManager: PreferencesManager,
+    private val destinationResolver: BackupDestinationResolver,
+) : BaseDataBackupManager(database) {
 
     private val fileManager = NSFileManager.defaultManager
 
@@ -99,6 +110,98 @@ class IosDataBackupManager(database: VitruvianDatabase) : BaseDataBackupManager(
         }
     }
 
+    /**
+     * Override to route session backups to a custom destination when configured.
+     * Falls back to default location if the custom destination is inaccessible.
+     */
+    override fun writeSessionBackupFile(filePath: String, content: String) {
+        val destination = preferencesManager.preferencesFlow.value.backupDestination
+        if (destination is BackupDestination.Custom) {
+            try {
+                val fileName = filePath.substringAfterLast('/')
+                // Write content to a temp file, then copy to custom destination
+                val tempPath = "${NSTemporaryDirectory()}session_backup_temp.json"
+                val data = NSString.create(string = content).dataUsingEncoding(NSUTF8StringEncoding)
+                    ?: throw Exception("Failed to encode session backup content")
+                val written = data.writeToFile(tempPath, atomically = true)
+                if (!written) throw Exception("Failed to write temp session backup file")
+
+                // Try to resolve and write to custom destination
+                // Note: This is called from a coroutine context in exportSession,
+                // so we can use the bookmark resolution synchronously
+                val base64 = destination.bookmarkData
+                if (!base64.isNullOrBlank()) {
+                    val bookmarkData = NSData.create(base64EncodedString = base64, options = 0u)
+                    if (bookmarkData != null) {
+                        @Suppress("UNCHECKED_CAST")
+                        val url = NSURL.URLByResolvingBookmarkData(
+                            bookmarkData = bookmarkData,
+                            options = platform.Foundation.NSURLBookmarkResolutionWithoutUI,
+                            relativeToURL = null,
+                            bookmarkDataIsStale = null,
+                            error = null,
+                        )
+                        if (url != null) {
+                            val accessing = url.startAccessingSecurityScopedResource()
+                            try {
+                                val dirPath = url.path
+                                if (dirPath != null) {
+                                    val destPath = "$dirPath/$fileName"
+                                    if (fileManager.fileExistsAtPath(destPath)) {
+                                        fileManager.removeItemAtPath(destPath, error = null)
+                                    }
+                                    val success = data.writeToFile(destPath, atomically = true)
+                                    if (success) {
+                                        fileManager.removeItemAtPath(tempPath, error = null)
+                                        Logger.d { "Session backup written to custom destination: ${destination.displayName}" }
+                                        return
+                                    }
+                                }
+                            } finally {
+                                if (accessing) url.stopAccessingSecurityScopedResource()
+                            }
+                        }
+                    }
+                }
+                fileManager.removeItemAtPath(tempPath, error = null)
+                Logger.w { "Custom backup destination not accessible, falling back to default" }
+            } catch (e: Exception) {
+                Logger.w(e) { "Falling back to default backup location after custom destination error" }
+            }
+        }
+
+        // Default: write to session backup directory using base class
+        super.writeSessionBackupFile(filePath, content)
+    }
+
+    /**
+     * Attempt to write the temp file to a custom backup destination.
+     * Returns the successful [Result] or null if the custom destination
+     * is inaccessible and the caller should fall back to default.
+     */
+    private suspend fun tryCustomDestination(
+        destination: BackupDestination.Custom,
+        fileName: String,
+        tempFilePath: String,
+    ): Result<String>? {
+        return try {
+            if (!destinationResolver.isAccessible(destination)) {
+                Logger.w { "Custom backup destination '${destination.displayName}' is not accessible, falling back to default" }
+                return null
+            }
+            val result = destinationResolver.writeFile(destination, fileName, tempFilePath)
+            if (result.isSuccess) {
+                result
+            } else {
+                Logger.w(result.exceptionOrNull()) { "Falling back to default backup location after custom destination write failure" }
+                null
+            }
+        } catch (e: Exception) {
+            Logger.w(e) { "Falling back to default backup location after custom destination error" }
+            null
+        }
+    }
+
     override fun openBackupFolder() {
         val dir = getSessionBackupDirectory()
         val fileURL = NSURL.fileURLWithPath(dir)
@@ -137,21 +240,36 @@ class IosDataBackupManager(database: VitruvianDatabase) : BaseDataBackupManager(
         return BackupJsonWriter("$tempDir$fileName")
     }
 
-    override suspend fun finalizeExport(tempFilePath: String): Result<String> = try {
+    override suspend fun finalizeExport(tempFilePath: String): Result<String> {
         val fileName = tempFilePath.substringAfterLast('/')
-        val destPath = "$backupDirectory/$fileName"
 
-        // Remove existing file if present
-        if (fileManager.fileExistsAtPath(destPath)) {
-            fileManager.removeItemAtPath(destPath, error = null)
+        // Check for custom backup destination
+        val destination = preferencesManager.preferencesFlow.value.backupDestination
+        if (destination is BackupDestination.Custom) {
+            val customResult = tryCustomDestination(destination, fileName, tempFilePath)
+            if (customResult != null) {
+                // Clean up temp file after successful custom write
+                fileManager.removeItemAtPath(tempFilePath, error = null)
+                return customResult
+            }
+            // Custom destination failed — fall through to default
         }
 
-        val success = fileManager.moveItemAtPath(tempFilePath, toPath = destPath, error = null)
-        if (!success) throw Exception("Failed to move backup to Documents")
+        return try {
+            val destPath = "$backupDirectory/$fileName"
 
-        Result.success(destPath)
-    } catch (e: Exception) {
-        Result.failure(e)
+            // Remove existing file if present
+            if (fileManager.fileExistsAtPath(destPath)) {
+                fileManager.removeItemAtPath(destPath, error = null)
+            }
+
+            val success = fileManager.moveItemAtPath(tempFilePath, toPath = destPath, error = null)
+            if (!success) throw Exception("Failed to move backup to Documents")
+
+            Result.success(destPath)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     // Legacy save path (kept for backward compatibility)

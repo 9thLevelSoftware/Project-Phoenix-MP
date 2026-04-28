@@ -25,6 +25,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.savedstate.read
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.presentation.screen.*
@@ -345,6 +346,9 @@ fun NavGraph(
                     onAutoBackupEnabledChange = { viewModel.setAutoBackupEnabled(it) },
                     backupStats = backupStats,
                     onOpenBackupFolder = { viewModel.openBackupFolder() },
+                    // Custom backup destination (Phase 42)
+                    backupDestination = userPreferences.backupDestination,
+                    onBackupDestinationChange = { viewModel.setBackupDestination(it) },
                     // Language preference
                     selectedLanguage = userPreferences.language,
                     onLanguageChange = { viewModel.setLanguage(it) },

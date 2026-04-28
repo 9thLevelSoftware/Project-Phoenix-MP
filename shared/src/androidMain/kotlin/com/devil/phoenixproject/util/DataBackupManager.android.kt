@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.database.VitruvianDatabase
 import java.io.File
 import java.io.InputStream
@@ -18,8 +19,18 @@ import kotlinx.coroutines.withContext
 /**
  * Android implementation of DataBackupManager.
  * Uses MediaStore for Android 10+ and direct file access for older versions.
+ *
+ * When the user has selected a custom backup destination via [PreferencesManager],
+ * exports are routed through [BackupDestinationResolver]. If the custom destination
+ * is inaccessible or write fails, the manager falls back to the default location
+ * to guarantee data is never lost.
  */
-class AndroidDataBackupManager(private val context: Context, database: VitruvianDatabase) : BaseDataBackupManager(database) {
+class AndroidDataBackupManager(
+    private val context: Context,
+    database: VitruvianDatabase,
+    private val preferencesManager: PreferencesManager,
+    private val destinationResolver: BackupDestinationResolver,
+) : BaseDataBackupManager(database) {
 
     private val cacheDir: File
         get() {
@@ -49,8 +60,43 @@ class AndroidDataBackupManager(private val context: Context, database: Vitruvian
     /**
      * On Android Q+, write session backups to MediaStore Downloads so they survive
      * app uninstall. On pre-Q, the base class writes directly to public Downloads.
+     *
+     * When a custom backup destination is configured, writes there first.
+     * Falls back to default location if the custom destination is inaccessible.
      */
     override fun writeSessionBackupFile(filePath: String, content: String) {
+        // Check for custom backup destination (synchronous read of current preference value)
+        val destination = preferencesManager.preferencesFlow.value.backupDestination
+        if (destination is BackupDestination.Custom) {
+            try {
+                val fileName = File(filePath).name
+                // Write content to a temp file first, then use DocumentFile to copy
+                val tempFile = File(context.cacheDir, "session_backup_temp.json")
+                tempFile.writeText(content, Charsets.UTF_8)
+
+                val treeUri = android.net.Uri.parse(destination.uri)
+                val treeDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+                if (treeDoc != null && treeDoc.exists() && treeDoc.canWrite()) {
+                    // Remove existing file with same name
+                    treeDoc.findFile(fileName)?.delete()
+                    val newFile = treeDoc.createFile("application/json", fileName)
+                    if (newFile != null) {
+                        context.contentResolver.openOutputStream(newFile.uri)?.use { outputStream ->
+                            tempFile.inputStream().use { it.copyTo(outputStream) }
+                        }
+                        tempFile.delete()
+                        Logger.d { "Session backup written to custom destination: ${destination.displayName}" }
+                        return
+                    }
+                }
+                tempFile.delete()
+                Logger.w { "Custom backup destination not writable, falling back to default" }
+            } catch (e: Exception) {
+                Logger.w(e) { "Falling back to default backup location after custom destination error" }
+            }
+        }
+
+        // Default behavior
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val fileName = File(filePath).name
             val contentValues = ContentValues().apply {
@@ -146,6 +192,34 @@ class AndroidDataBackupManager(private val context: Context, database: Vitruvian
         }
     }
 
+    /**
+     * Attempt to write the temp file to a custom backup destination.
+     * Returns the successful [Result] or null if the custom destination
+     * is inaccessible and the caller should fall back to default.
+     */
+    private suspend fun tryCustomDestination(
+        destination: BackupDestination.Custom,
+        fileName: String,
+        tempFilePath: String,
+    ): Result<String>? {
+        return try {
+            if (!destinationResolver.isAccessible(destination)) {
+                Logger.w { "Custom backup destination '${destination.displayName}' is not accessible, falling back to default" }
+                return null
+            }
+            val result = destinationResolver.writeFile(destination, fileName, tempFilePath)
+            if (result.isSuccess) {
+                result
+            } else {
+                Logger.w(result.exceptionOrNull()) { "Falling back to default backup location after custom destination write failure" }
+                null
+            }
+        } catch (e: Exception) {
+            Logger.w(e) { "Falling back to default backup location after custom destination error" }
+            null
+        }
+    }
+
     override fun openBackupFolder() {
         try {
             // Open Downloads/PhoenixBackups in system file manager
@@ -180,6 +254,17 @@ class AndroidDataBackupManager(private val context: Context, database: Vitruvian
     override suspend fun finalizeExport(tempFilePath: String): Result<String> {
         val file = File(tempFilePath)
         val fileName = file.name
+
+        // Check for custom backup destination
+        val destination = preferencesManager.preferencesFlow.value.backupDestination
+        if (destination is BackupDestination.Custom) {
+            val customResult = tryCustomDestination(destination, fileName, tempFilePath)
+            if (customResult != null) {
+                file.delete()
+                return customResult
+            }
+            // Custom destination failed — fall through to default
+        }
 
         return try {
             val destPath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

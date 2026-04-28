@@ -110,6 +110,10 @@ class SettingsManager(
         scope.launch { preferencesManager.setAutoBackupEnabled(enabled) }
     }
 
+    fun setBackupDestination(destination: com.devil.phoenixproject.util.BackupDestination) {
+        scope.launch { preferencesManager.setBackupDestination(destination) }
+    }
+
     fun setLanguage(language: String) {
         scope.launch { preferencesManager.setLanguage(language) }
         // Apply locale to the platform so the UI updates immediately (Android)

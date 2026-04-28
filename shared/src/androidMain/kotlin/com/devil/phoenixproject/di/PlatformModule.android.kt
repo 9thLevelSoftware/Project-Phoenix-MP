@@ -15,9 +15,11 @@ import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.manager.AndroidWorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
+import com.devil.phoenixproject.util.AndroidBackupDestinationResolver
 import com.devil.phoenixproject.util.AndroidCsvExporter
 import com.devil.phoenixproject.util.AndroidCsvImporter
 import com.devil.phoenixproject.util.AndroidDataBackupManager
+import com.devil.phoenixproject.util.BackupDestinationResolver
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
@@ -61,7 +63,8 @@ actual val platformModule: Module = module {
     single<BleRepository> { KableBleRepository() }
     single<CsvExporter> { AndroidCsvExporter(androidContext()) }
     single<CsvImporter> { AndroidCsvImporter(androidContext(), get()) }
-    single<DataBackupManager> { AndroidDataBackupManager(androidContext(), get()) }
+    single<BackupDestinationResolver> { AndroidBackupDestinationResolver(androidContext()) }
+    single<DataBackupManager> { AndroidDataBackupManager(androidContext(), get(), get(), get()) }
     single { ConnectivityChecker(androidContext()) }
     single<SafeWordListenerFactory> { AndroidSafeWordListenerFactory(androidContext()) }
     single { HealthIntegration(androidContext()) }
