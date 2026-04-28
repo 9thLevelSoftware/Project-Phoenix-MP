@@ -139,12 +139,25 @@ fun RoutinesTab(
     // Snapshot of known group IDs before creating a new group (to detect the new one)
     var preCreateGroupIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
-    // Group routines: ungrouped first, then by group
-    val ungroupedRoutines = remember(routines) {
-        routines.filter { it.groupId == null }
+    val routineGroupIds = remember(routineGroups) {
+        routineGroups.map { it.id }.toSet()
     }
-    val groupedRoutineMap = remember(routines) {
-        routines.filter { it.groupId != null }.groupBy { it.groupId }
+
+    // Group routines: ungrouped first, then by known group.
+    // Stale group references can happen after profile moves/imports; keep those routines visible.
+    val ungroupedRoutines = remember(routines, routineGroupIds) {
+        routines.filter { routine ->
+            val groupId = routine.groupId
+            groupId == null || groupId !in routineGroupIds
+        }
+    }
+    val groupedRoutineMap = remember(routines, routineGroupIds) {
+        routines
+            .mapNotNull { routine ->
+                val groupId = routine.groupId
+                if (groupId != null && groupId in routineGroupIds) groupId to routine else null
+            }
+            .groupBy({ it.first }, { it.second })
     }
 
     // Helper to clear selection

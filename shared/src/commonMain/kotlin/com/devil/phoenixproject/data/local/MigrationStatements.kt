@@ -49,7 +49,7 @@ internal fun applyMigrationResilient(
  * Get the SQL statements for a specific migration version.
  *
  * These mirror the .sqm files exactly, split into individual statements so
- * the resilient executor can apply them one-by-one. Every version from 1-25
+ * the resilient executor can apply them one-by-one. Every version from 1-28
  * is covered. Version 18 is intentionally empty (NOOP).
  */
 internal fun getMigrationStatements(version: Int): List<String> = when (version) {
@@ -671,6 +671,11 @@ WHERE gs.rowid = (
         )""",
         "CREATE INDEX IF NOT EXISTS idx_routine_group_profile ON RoutineGroup(profile_id)",
         "ALTER TABLE Routine ADD COLUMN groupId TEXT REFERENCES RoutineGroup(id) ON DELETE SET NULL",
+    )
+
+    // Migration 28: Cable-aware PersonalRecord weight display
+    28 -> listOf(
+        "ALTER TABLE PersonalRecord ADD COLUMN cable_count INTEGER",
     )
 
     else -> emptyList()

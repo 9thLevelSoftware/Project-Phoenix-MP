@@ -12,9 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import platform.Foundation.NSData
 import platform.Foundation.NSURL
-import platform.Foundation.NSURLBookmarkCreationMinimalBookmark
+import platform.Foundation.NSURLBookmarkCreationWithSecurityScope
 import platform.Foundation.base64EncodedStringWithOptions
-import platform.Foundation.bookmarkDataWithOptions
 import platform.Foundation.lastPathComponent
 import platform.UIKit.UIApplication
 import platform.UIKit.UIDocumentPickerDelegateProtocol
@@ -93,9 +92,9 @@ actual class BackupLocationPicker {
             return null
         }
 
-        // Create a minimal bookmark for persistent cross-launch access
+        // Create a security-scoped bookmark for persistent cross-launch access.
         val bookmarkData: NSData? = url.bookmarkDataWithOptions(
-            options = NSURLBookmarkCreationMinimalBookmark,
+            options = NSURLBookmarkCreationWithSecurityScope,
             includingResourceValuesForKeys = null,
             relativeToURL = null,
             error = null,

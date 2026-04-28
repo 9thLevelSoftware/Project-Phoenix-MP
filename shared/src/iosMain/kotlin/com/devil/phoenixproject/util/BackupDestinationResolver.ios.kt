@@ -17,9 +17,9 @@ import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSString
 import platform.Foundation.NSURL
+import platform.Foundation.NSURLBookmarkResolutionWithSecurityScope
 import platform.Foundation.NSURLBookmarkResolutionWithoutUI
 import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.URLByResolvingBookmarkData
 import platform.Foundation.create
 import platform.Foundation.dataUsingEncoding
 import platform.Foundation.writeToFile
@@ -66,7 +66,7 @@ class IosBackupDestinationResolver : BackupDestinationResolver {
                 @Suppress("UNCHECKED_CAST")
                 val url = NSURL.URLByResolvingBookmarkData(
                     bookmarkData = bookmarkData,
-                    options = NSURLBookmarkResolutionWithoutUI,
+                    options = NSURLBookmarkResolutionWithoutUI or NSURLBookmarkResolutionWithSecurityScope,
                     relativeToURL = null,
                     bookmarkDataIsStale = isStale.ptr,
                     error = errorPtr.ptr,
