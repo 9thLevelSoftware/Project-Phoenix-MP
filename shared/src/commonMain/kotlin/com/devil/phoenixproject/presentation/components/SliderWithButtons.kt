@@ -1,21 +1,30 @@
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material3.*
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.ui.theme.Spacing
-import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.cd_decrease
+import vitruvianprojectphoenix.shared.generated.resources.cd_increase
+import kotlin.math.roundToInt
 
 /**
  * Hybrid slider with fine-tuning +/- buttons
@@ -31,6 +40,8 @@ fun SliderWithButtons(
     formatValue: (Float) -> String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    deltaText: String? = null,
+    isDeltaPositive: Boolean = true,
 ) {
     // Calculate number of discrete steps for the slider
     // steps = number of intervals - 1 (excluding start and end)
@@ -56,6 +67,21 @@ fun SliderWithButtons(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        // Delta from baseline indicator (e.g., "+11 lb" or "-5 kg")
+        if (deltaText != null) {
+            Text(
+                text = deltaText,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                color = if (isDeltaPositive) {
+                    MaterialTheme.colorScheme.tertiary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+                modifier = Modifier.align(Alignment.End),
             )
         }
 

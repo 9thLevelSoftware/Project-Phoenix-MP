@@ -18,12 +18,11 @@ import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineItem
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
-import com.devil.phoenixproject.domain.model.currentTimeMillis
-import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateSupersetId
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CoroutineScope
@@ -965,9 +964,10 @@ class RoutineFlowManager(
      */
     fun updateSetReadyWeight(weight: Float) {
         val state = coordinator._routineFlowState.value
-        if (state is RoutineFlowState.SetReady && weight >= 0f) {
-            coordinator._routineFlowState.value = state.copy(adjustedWeight = weight)
-            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(weightPerCableKg = weight)
+        if (state is RoutineFlowState.SetReady) {
+            val clampedWeight = weight.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG)
+            coordinator._routineFlowState.value = state.copy(adjustedWeight = clampedWeight)
+            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(weightPerCableKg = clampedWeight)
         }
     }
 

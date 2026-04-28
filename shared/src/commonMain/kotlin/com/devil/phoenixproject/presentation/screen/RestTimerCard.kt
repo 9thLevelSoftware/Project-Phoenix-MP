@@ -7,12 +7,43 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -29,10 +60,36 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
-import com.devil.phoenixproject.ui.theme.*
+import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.cd_add_30_seconds
+import vitruvianprojectphoenix.shared.generated.resources.cd_end_workout
+import vitruvianprojectphoenix.shared.generated.resources.cd_reset_timer
+import vitruvianprojectphoenix.shared.generated.resources.cd_rest_timer
+import vitruvianprojectphoenix.shared.generated.resources.cd_skip_rest
+import vitruvianprojectphoenix.shared.generated.resources.rest_complete_announcement
+import vitruvianprojectphoenix.shared.generated.resources.rest_continue
+import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
+import vitruvianprojectphoenix.shared.generated.resources.rest_echo_level
+import vitruvianprojectphoenix.shared.generated.resources.rest_end_workout
+import vitruvianprojectphoenix.shared.generated.resources.rest_exercise_of
+import vitruvianprojectphoenix.shared.generated.resources.rest_mode
+import vitruvianprojectphoenix.shared.generated.resources.rest_next_set_config
+import vitruvianprojectphoenix.shared.generated.resources.rest_pause
+import vitruvianprojectphoenix.shared.generated.resources.rest_paused
+import vitruvianprojectphoenix.shared.generated.resources.rest_quick_rest
+import vitruvianprojectphoenix.shared.generated.resources.rest_reset
+import vitruvianprojectphoenix.shared.generated.resources.rest_resume
+import vitruvianprojectphoenix.shared.generated.resources.rest_seconds_remaining
+import vitruvianprojectphoenix.shared.generated.resources.rest_set_of
+import vitruvianprojectphoenix.shared.generated.resources.rest_skip
+import vitruvianprojectphoenix.shared.generated.resources.rest_target_reps
+import vitruvianprojectphoenix.shared.generated.resources.rest_time
+import vitruvianprojectphoenix.shared.generated.resources.rest_up_next
+import vitruvianprojectphoenix.shared.generated.resources.rest_weight_per_cable
+import vitruvianprojectphoenix.shared.generated.resources.rest_workout_complete
 
 /**
  * Rest Timer Card Component
@@ -427,19 +484,30 @@ fun RestTimerCard(
                         } else {
                             // Non-Echo modes: Show weight adjuster
                             if (nextExerciseWeight != null && formatWeightWithUnit != null) {
-                                val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
-                                val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f // Match other weight selectors
+                                val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
+                                val weightStepKg = 0.25f
+
+                                // Delta from baseline (nextExerciseWeight is the routine-configured weight in kg)
+                                val baselineWeightKg = nextExerciseWeight
+                                val deltaKg = editedWeight - baselineWeightKg
+                                val deltaText = if (kotlin.math.abs(deltaKg) > 0.01f) {
+                                    val sign = if (deltaKg > 0) "+" else "-"
+                                    val absDeltaFormatted = formatWeightWithUnit(kotlin.math.abs(deltaKg), weightUnit)
+                                    "${sign}${absDeltaFormatted}"
+                                } else null
 
                                 SliderWithButtons(
                                     value = editedWeight,
                                     onValueChange = { newWeight ->
-                                        editedWeight = newWeight.coerceIn(0f, maxWeight)
+                                        editedWeight = newWeight.coerceIn(0f, maxWeightKg)
                                         onUpdateWeight?.invoke(editedWeight)
                                     },
-                                    valueRange = 0f..maxWeight,
-                                    step = weightStep,
+                                    valueRange = 0f..maxWeightKg,
+                                    step = weightStepKg,
                                     label = stringResource(Res.string.rest_weight_per_cable),
                                     formatValue = { formatWeightWithUnit(it, weightUnit) },
+                                    deltaText = deltaText,
+                                    isDeltaPositive = deltaKg >= 0f,
                                 )
                             }
                         }

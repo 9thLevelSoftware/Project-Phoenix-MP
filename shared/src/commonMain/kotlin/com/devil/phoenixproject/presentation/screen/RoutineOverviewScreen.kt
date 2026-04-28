@@ -1,7 +1,20 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -9,9 +22,30 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,7 +58,12 @@ import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.BackHandler
@@ -33,10 +72,17 @@ import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_exit
+import vitruvianprojectphoenix.shared.generated.resources.action_stop
+import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
+import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
+import vitruvianprojectphoenix.shared.generated.resources.start_exercise
+import vitruvianprojectphoenix.shared.generated.resources.target_reps
 
 /**
  * Routine Overview Screen - Entry point when starting a routine.
@@ -326,9 +372,8 @@ private fun ExerciseOverviewCard(
     onEccentricLoadChange: (Int) -> Unit,
     onStartExercise: () -> Unit,
 ) {
-    // Weight parameters matching RestTimerCard exactly
-    val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
-    val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f // Fine-grained like RestTimerCard
+    val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
+    val weightStepKg = 0.25f
 
     // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
     val isBodyweight = !exercise.exercise.hasCableAccessory
@@ -467,15 +512,27 @@ private fun ExerciseOverviewCard(
                                 }
                             } else {
                                 // Standard modes: Weight + Reps
+                                // Delta from routine baseline
+                                val baselineWeightKg = exercise.setWeightsPerCableKg.firstOrNull()
+                                    ?: exercise.weightPerCableKg
+                                val deltaKg = adjustedWeight - baselineWeightKg
+                                val deltaText = if (kotlin.math.abs(deltaKg) > 0.01f) {
+                                    val sign = if (deltaKg > 0) "+" else "-"
+                                    val absDeltaFormatted = formatWeight(kotlin.math.abs(deltaKg), weightUnit)
+                                    "${sign}${absDeltaFormatted}"
+                                } else null
+
                                 SliderWithButtons(
                                     value = adjustedWeight,
                                     onValueChange = { newWeight ->
-                                        onWeightChange(newWeight.coerceIn(0f, maxWeight))
+                                        onWeightChange(newWeight.coerceIn(0f, maxWeightKg))
                                     },
-                                    valueRange = 0f..maxWeight,
-                                    step = weightStep,
+                                    valueRange = 0f..maxWeightKg,
+                                    step = weightStepKg,
                                     label = "Weight per cable",
                                     formatValue = { formatWeight(it, weightUnit) },
+                                    deltaText = deltaText,
+                                    isDeltaPositive = deltaKg >= 0f,
                                 )
 
                                 // Reps adjuster (or AMRAP indicator)

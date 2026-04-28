@@ -16,6 +16,9 @@ object Constants {
     // Trainer+: 110kg max per cable (220kg total) - use 100kg as safe default
     const val MIN_WEIGHT_KG = 0f
     const val MAX_WEIGHT_KG = 100f
+
+    // Trainer+ hardware ceiling — used by UI sliders to enforce absolute maximum
+    const val MAX_WEIGHT_PER_CABLE_KG = 110f
     // Configurable weight increment options per unit system (Issue #266)
     val WEIGHT_INCREMENT_OPTIONS_KG = listOf(0.5f, 1.0f, 2.5f, 5.0f)
     val WEIGHT_INCREMENT_OPTIONS_LB = listOf(0.1f, 0.5f, 1.0f, 2.5f, 5.0f)
