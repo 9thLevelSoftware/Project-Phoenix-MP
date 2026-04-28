@@ -109,6 +109,8 @@ private class IosSoundManager {
             HapticEvent.DISCO_MODE_UNLOCKED to "discomode",
             // Issue #100: Warmup-to-working transition (ascending tone)
             HapticEvent.WARMUP_TO_WORKING to "beepboop",
+            // Issue #313: Velocity loss threshold alert (attention-getting)
+            HapticEvent.VELOCITY_THRESHOLD_REACHED to "boopbeepbeep",
             // ERROR, BADGE_EARNED, PERSONAL_RECORD, REP_COUNT_ANNOUNCED, COUNTDOWN_TICK handled separately
         )
 
@@ -392,6 +394,16 @@ private fun playHapticFeedback(event: HapticEvent) {
                 val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleMedium)
                 generator.prepare()
                 generator.impactOccurred()
+            }
+
+            is HapticEvent.VELOCITY_THRESHOLD_REACHED -> {
+                // Issue #313: Heavy impact + warning notification for velocity threshold alert
+                val impactGenerator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleHeavy)
+                impactGenerator.prepare()
+                impactGenerator.impactOccurred()
+                val notificationGenerator = UINotificationFeedbackGenerator()
+                notificationGenerator.prepare()
+                notificationGenerator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeWarning)
             }
 
             is HapticEvent.REP_COUNT_ANNOUNCED -> {

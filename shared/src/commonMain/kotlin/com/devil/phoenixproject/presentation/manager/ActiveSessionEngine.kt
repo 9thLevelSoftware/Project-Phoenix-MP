@@ -57,6 +57,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
+import kotlin.math.roundToInt
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -189,6 +190,10 @@ class ActiveSessionEngine(
     /** Issue #237: Motion-triggered set start detector (reused across sets) */
     private val motionStartDetector = MotionStartDetector()
     private var motionStartListenerJob: Job? = null
+
+    // VBT auto-end state (Issue #313)
+    private var velocityThresholdAlertEmitted = false
+    private var consecutiveThresholdReps = 0
 
     // ===== Init Block: Workout-Related Collectors (moved from DWSM) =====
 
@@ -1064,6 +1069,33 @@ class ActiveSessionEngine(
             )
 
             Logger.d { "Biomechanics processed: rep=$repNumber, metrics=${repMetrics.size}, concentric=${concentricMetrics.size}" }
+
+            // Issue #313: Check velocity threshold for alert and auto-end (working reps only)
+            if (coordinator._repCount.value.isWarmupComplete) {
+                checkVelocityThreshold()
+            }
+        }
+    }
+
+    private suspend fun checkVelocityThreshold() {
+        val latestResult = coordinator.biomechanicsEngine.latestRepResult.value ?: return
+        val velocity = latestResult.velocity
+
+        if (velocity.shouldStopSet) {
+            consecutiveThresholdReps++
+
+            if (!velocityThresholdAlertEmitted) {
+                velocityThresholdAlertEmitted = true
+                coordinator._hapticEvents.emit(HapticEvent.VELOCITY_THRESHOLD_REACHED)
+                Logger.i { "VBT: Velocity loss threshold reached (${velocity.velocityLossPercent?.roundToInt()}%). Alert emitted." }
+            }
+
+            if (consecutiveThresholdReps >= 2 && coordinator.autoEndOnVelocityLoss) {
+                Logger.i { "VBT: Auto-ending set — $consecutiveThresholdReps consecutive reps above threshold" }
+                handleSetCompletion()
+            }
+        } else {
+            consecutiveThresholdReps = 0
         }
     }
 
@@ -1625,6 +1657,8 @@ class ActiveSessionEngine(
         coordinator.setRepMetrics.value = emptyList()
         // Reset biomechanics engine and rep boundary timestamps
         coordinator.biomechanicsEngine.reset()
+        velocityThresholdAlertEmitted = false
+        consecutiveThresholdReps = 0
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
@@ -1957,6 +1991,8 @@ class ActiveSessionEngine(
         coordinator.setRepMetrics.value = emptyList()
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.biomechanicsEngine.reset()
+        velocityThresholdAlertEmitted = false
+        consecutiveThresholdReps = 0
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
         coordinator._loadBaselineA.value = 0f
@@ -3069,6 +3105,8 @@ class ActiveSessionEngine(
 
             // Reset biomechanics engine and rep boundary timestamps for next set
             coordinator.biomechanicsEngine.reset()
+            velocityThresholdAlertEmitted = false
+            consecutiveThresholdReps = 0
             coordinator.repBoundaryTimestamps.value = emptyList()
 
             val completedReps = coordinator._repCount.value.workingReps

@@ -76,6 +76,8 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
                 loadSoundByName(context, soundPool, "discomode")?.let { put(HapticEvent.DISCO_MODE_UNLOCKED, it) }
                 // Issue #100: Warmup-to-working transition (ascending tone)
                 loadSoundByName(context, soundPool, "beepboop")?.let { put(HapticEvent.WARMUP_TO_WORKING, it) }
+                // Issue #313: Velocity loss threshold alert (attention-getting)
+                loadSoundByName(context, soundPool, "boopbeepbeep")?.let { put(HapticEvent.VELOCITY_THRESHOLD_REACHED, it) }
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to load sounds" }
             }
@@ -257,6 +259,7 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
         is HapticEvent.REP_COUNT_ANNOUNCED -> "rep_%02d".format(event.repNumber)
         is HapticEvent.COUNTDOWN_TICK -> "beep"
         is HapticEvent.WARMUP_TO_WORKING -> "beepboop"
+        is HapticEvent.VELOCITY_THRESHOLD_REACHED -> "boopbeepbeep"
         is HapticEvent.ERROR -> return
     }
 
@@ -409,6 +412,15 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
                 )
             }
 
+            is HapticEvent.VELOCITY_THRESHOLD_REACHED -> {
+                // Issue #313: Strong alert — double heavy pulse for velocity threshold
+                VibrationEffect.createWaveform(
+                    longArrayOf(0, 120, 80, 150),
+                    intArrayOf(0, 255, 0, 255),
+                    -1,
+                )
+            }
+
             is HapticEvent.COUNTDOWN_TICK -> {
                 // Issue #100: Very light tick for rest countdown (last 10 seconds)
                 VibrationEffect.createOneShot(30, 80)
@@ -468,6 +480,10 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
 
             is HapticEvent.BADGE_EARNED, is HapticEvent.PERSONAL_RECORD -> {
                 vibrator.vibrate(longArrayOf(0, 100, 60, 120, 60, 150), -1)
+            }
+
+            is HapticEvent.VELOCITY_THRESHOLD_REACHED -> {
+                vibrator.vibrate(longArrayOf(0, 120, 80, 150), -1)
             }
 
             is HapticEvent.COUNTDOWN_TICK -> {

@@ -349,6 +349,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         motionStartHoldProgress, isRestPaused,
         currentWarmupSetIndex, totalWarmupSets,
         justLiftRestCountdown, isExerciseTimerPaused,
+        userPreferences.velocityLossThresholdPercent,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -386,6 +387,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             totalWarmupSets = totalWarmupSets,
             justLiftRestCountdown = justLiftRestCountdown,
             isExerciseTimerPaused = isExerciseTimerPaused,
+            velocityLossThresholdPercent = userPreferences.velocityLossThresholdPercent,
         )
     }
 

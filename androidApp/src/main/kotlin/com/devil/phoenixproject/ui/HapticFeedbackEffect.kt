@@ -222,6 +222,8 @@ private fun playHapticFeedback(event: HapticEvent, hapticFeedback: HapticFeedbac
 
         // Issue #100: Distinct transition feedback
 
+        is HapticEvent.VELOCITY_THRESHOLD_REACHED -> HapticFeedbackType.LongPress
+
         is HapticEvent.REP_COUNT_ANNOUNCED -> return // Already handled above
     }
 

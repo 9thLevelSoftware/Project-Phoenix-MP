@@ -39,6 +39,7 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -84,6 +85,7 @@ fun WorkoutHud(
     onPauseExerciseTimer: () -> Unit = {},
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
+    velocityLossThresholdPercent: Int = 20,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -196,6 +198,7 @@ fun WorkoutHud(
                         formatWeight = formatWeight,
                         isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                         latestBiomechanicsResult = latestBiomechanicsResult,
+                        velocityLossThresholdPercent = velocityLossThresholdPercent,
                     )
                 }
             }
@@ -828,6 +831,7 @@ private fun StatsPage(
     formatWeight: (Float, WeightUnit) -> String,
     isCurrentExerciseBodyweight: Boolean = false,
     latestBiomechanicsResult: BiomechanicsRepResult? = null,
+    velocityLossThresholdPercent: Int = 20,
 ) {
     if (isCurrentExerciseBodyweight) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -934,17 +938,17 @@ private fun StatsPage(
                     // Velocity loss (only shown after rep 2)
                     val vloss = latestBiomechanicsResult.velocity.velocityLossPercent
                     if (vloss != null) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            StatColumn(
-                                label = "Vel. Loss",
-                                value = "${vloss.toInt()}%",
-                                color = if (vloss > 20f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            val repsRemaining = latestBiomechanicsResult.velocity.estimatedRepsRemaining
-                            if (repsRemaining != null) {
+                        VelocityLossIndicator(
+                            currentLossPercent = vloss,
+                            thresholdPercent = velocityLossThresholdPercent,
+                            shouldStopSet = latestBiomechanicsResult.velocity.shouldStopSet,
+                        )
+                        val repsRemaining = latestBiomechanicsResult.velocity.estimatedRepsRemaining
+                        if (repsRemaining != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
                                 StatColumn(
                                     label = "Est. Reps Left",
                                     value = "$repsRemaining",
@@ -1088,6 +1092,84 @@ private fun StatsPage(
                     onDismiss = { showExpandedCurve = false },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun VelocityLossIndicator(
+    currentLossPercent: Float,
+    thresholdPercent: Int,
+    shouldStopSet: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val maxDisplayPercent = (thresholdPercent * 1.5f).coerceAtMost(100f)
+    val fillFraction = (currentLossPercent / maxDisplayPercent).coerceIn(0f, 1f)
+    val thresholdFraction = (thresholdPercent.toFloat() / maxDisplayPercent).coerceIn(0f, 1f)
+
+    val ratio = currentLossPercent / thresholdPercent
+    val barColor = when {
+        ratio < 0.5f -> Color(0xFF10B981)
+        ratio < 0.8f -> Color(0xFFF59E0B)
+        else -> Color(0xFFDC2626)
+    }
+
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "Velocity Loss",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "${currentLossPercent.roundToInt()}% / ${thresholdPercent}%",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (shouldStopSet) FontWeight.Bold else FontWeight.Normal,
+                color = if (shouldStopSet) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            // Fill bar
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(fillFraction)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(barColor),
+            )
+            // Threshold marker line: fill to threshold fraction, align line at trailing edge
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(thresholdFraction),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .width(2.dp)
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)),
+                )
+            }
+        }
+        if (shouldStopSet) {
+            Text(
+                "THRESHOLD REACHED",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFDC2626),
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }

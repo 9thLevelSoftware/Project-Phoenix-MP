@@ -446,6 +446,9 @@ sealed class HapticEvent {
     /** Strong haptic + random PR celebration sound */
     data object PERSONAL_RECORD : HapticEvent()
 
+    /** Issue #313: Velocity loss threshold reached — strong haptic + alert sound */
+    data object VELOCITY_THRESHOLD_REACHED : HapticEvent()
+
     /** Issue #100: Distinct transition sound from warmup to working sets */
     data object WARMUP_TO_WORKING : HapticEvent()
 

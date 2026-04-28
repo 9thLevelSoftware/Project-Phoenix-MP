@@ -120,6 +120,7 @@ fun WorkoutTab(
         onPauseExerciseTimer = actions::onPauseExerciseTimer,
         onResumeExerciseTimer = actions::onResumeExerciseTimer,
         onResetExerciseTimer = actions::onResetExerciseTimer,
+        velocityLossThresholdPercent = state.velocityLossThresholdPercent,
     )
 }
 
@@ -197,6 +198,8 @@ fun WorkoutTab(
     onPauseExerciseTimer: () -> Unit = {},
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
+    // Issue #313: VBT velocity loss threshold for HUD visualization
+    velocityLossThresholdPercent: Int = 20,
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -237,6 +240,7 @@ fun WorkoutTab(
                 onPauseExerciseTimer = onPauseExerciseTimer,
                 onResumeExerciseTimer = onResumeExerciseTimer,
                 onResetExerciseTimer = onResetExerciseTimer,
+                velocityLossThresholdPercent = velocityLossThresholdPercent,
                 modifier = Modifier.fillMaxSize(),
             )
 

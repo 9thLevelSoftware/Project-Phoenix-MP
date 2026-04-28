@@ -84,6 +84,8 @@ data class WorkoutUiState(
     val justLiftRestCountdown: Int? = null,
     // Issue #190: Exercise timer pause state for timed exercise controls
     val isExerciseTimerPaused: Boolean = false,
+    // Issue #313: VBT velocity loss threshold for HUD visualization
+    val velocityLossThresholdPercent: Int = 20,
 ) {
     /** True when currently executing a variable warm-up set (for HUD label) */
     val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0

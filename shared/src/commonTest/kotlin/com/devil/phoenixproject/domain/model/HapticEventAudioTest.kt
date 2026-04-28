@@ -65,6 +65,7 @@ class HapticEventAudioTest {
             HapticEvent.DISCO_MODE_UNLOCKED,
             HapticEvent.BADGE_EARNED,
             HapticEvent.PERSONAL_RECORD,
+            HapticEvent.VELOCITY_THRESHOLD_REACHED,
             HapticEvent.WARMUP_TO_WORKING,
         )
         // Each pair should be distinct
