@@ -3,26 +3,26 @@ gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: Enhancement Sweep
 status: executing
-last_updated: "2026-04-27T18:00:00.000Z"
+last_updated: "2026-04-27T22:00:00.000Z"
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 21
-  completed_plans: 16
+  completed_plans: 19
 ---
 
 # GSD State: Project Phoenix MP
 
 ## Current Position
 
-Phase: 41 of 44 (complete)
-Plan: 2/2 complete
-Status: Phase 41 complete — review passed (1 cycle)
-Last activity: 2026-04-27 — Phase 41 review passed
+Phase: 42 of 44 (executed, pending review)
+Plan: 3/3 complete
+Status: Phase 42 complete — all plans executed successfully
+Last activity: 2026-04-27 — Phase 42 execution (3/3 plans passed)
 
 ## Progress
 ```
-[################    ] 76% — 16/21 plans complete
+[##################  ] 90% — 19/21 plans complete
 ```
 
 ## Project Reference
@@ -50,7 +50,7 @@ See: .planning/PROJECT.md (updated 2026-04-21)
 | 39 | Routine Cluster | #365, #307 | 3 | Complete |
 | 40 | Analytics | #229, #225 | 3 | Complete |
 | 41 | Quick Wins | #190, #228, #100 | 2 | Complete |
-| 42 | Platform | #363 | 3 | Pending |
+| 42 | Platform | #363 | 3 | Complete |
 | 43 | Advanced VBT | #313 | 3 | Pending |
 | 44 | Integration Validation | — | 2 | Pending |
 
@@ -110,15 +110,22 @@ Advanced (#313) ── uses biomechanics engine (exists)
 | 39 | #385 |
 | 40 | #397 |
 | 41 | #398 |
+| 42 | #399 |
 
 ## Phase 41 Results
 
 - Plan 41-01 (Wave 1): Routine Auto-Start & Timer Controls — Complete. LaunchedEffect redirect with one-shot guard, exercise timer pause/resume/reset (pure state, no BLE), Settings toggle, 13 tests pass.
 - Plan 41-02 (Wave 2): Audio Feedback Improvements — Complete. FINAL_REP event with boopbeepbeep sound, REP_COMPLETED switched to chirpchirp (louder), warmup gated by repSoundEnabled, 28 tests pass.
 
+## Phase 42 Results
+
+- Plan 42-01 (Wave 1): BackupDestination Model & Platform Pickers — Complete. BackupDestination sealed class (Default/Custom with bookmarkData), PreferencesManager persistence, BackupLocationPicker expect/actual (Android SAF + iOS UIDocumentPicker with bookmarks).
+- Plan 42-02 (Wave 2): UI Integration & Backup Path Routing — Complete. BackupDestinationResolver interface + platform impls, DataBackupManager custom destination routing with fallback, SettingsTab backup location UI.
+- Plan 42-03 (Wave 3): Tests & Test Fixtures — Complete. 15 serialization tests, 9 routing tests, FakeBackupDestinationResolver, FakePreferencesManager fix. 24 new tests, 1612 total.
+
 ## Next Action
 
-Run `/legion:plan 42` to plan Phase 42: Platform
+Run `/legion:review` to verify Phase 42: Platform
 
 ---
-*Last updated: 2026-04-27 — Phase 41 review passed (1 cycle, 0 blockers)*
+*Last updated: 2026-04-27 — Phase 42 execution complete (3/3 plans passed, 24 new tests)*
