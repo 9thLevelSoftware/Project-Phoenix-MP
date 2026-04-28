@@ -83,6 +83,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         workoutMode: String,
         timestamp: Long,
         profileId: String,
+        cableCount: Int?,
     ): Result<Boolean> {
         updateCalls.add(UpdateCall(exerciseId, weightPerCableKg, weightPerCableKg, reps, workoutMode, timestamp))
 
@@ -163,6 +164,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         workoutMode: String,
         timestamp: Long,
         profileId: String,
+        cableCount: Int?,
     ): Result<List<PRType>> {
         updateCalls.add(
             UpdateCall(
@@ -231,6 +233,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         peakConcentricForceKg: Float,
         peakEccentricForceKg: Float,
         profileId: String,
+        cableCount: Int?,
     ): Result<List<WorkoutPhase>> {
         val brokenPhases = mutableListOf<WorkoutPhase>()
 

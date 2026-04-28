@@ -122,6 +122,7 @@ class SqlDelightPersonalRecordRepositoryTest {
             volume = 440.0,
             phase = "COMBINED",
             profile_id = "default",
+            cable_count = null,
         )
 
         val canonical = repository.getWeightPR("bench", "Old School", profileId = "default")

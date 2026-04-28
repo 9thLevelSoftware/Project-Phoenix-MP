@@ -227,6 +227,7 @@ class MigrationManagerTest {
             volume = 500.0,
             phase = "COMBINED",
             profile_id = "default",
+            cable_count = null,
         )
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -240,6 +241,7 @@ class MigrationManagerTest {
             volume = 500.0,
             phase = "COMBINED",
             profile_id = "default",
+            cable_count = null,
         )
 
         migrationManager.checkAndRunMigrations()
@@ -288,6 +290,7 @@ class MigrationManagerTest {
             volume = 560.0,
             phase = "COMBINED",
             profile_id = "profile-b",
+            cable_count = null,
         )
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -301,6 +304,7 @@ class MigrationManagerTest {
             volume = 520.0,
             phase = "COMBINED",
             profile_id = "profile-b",
+            cable_count = null,
         )
 
         migrationManager.checkAndRunMigrations()
