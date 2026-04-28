@@ -2,27 +2,27 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: Enhancement Sweep
-status: executing
-last_updated: "2026-04-28T12:00:00.000Z"
+status: complete
+last_updated: "2026-04-28T18:00:00.000Z"
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 21
 ---
 
 # GSD State: Project Phoenix MP
 
 ## Current Position
 
-Phase: 43 of 44 (complete)
-Plan: 3/3
-Status: Phase 43 complete — review passed (1 cycle)
-Last activity: 2026-04-28 — Phase 43 review passed
+Phase: 44 of 44 (complete)
+Plan: 2/2
+Status: Phase 44 complete — all plans executed successfully
+Last activity: 2026-04-28 — Phase 44 execution complete
 
 ## Progress
 ```
-[################### ] 95% — 19/21 plans complete
+[#####################] 100% — 21/21 plans complete
 ```
 
 ## Project Reference
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-04-21)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking — reliably, on both platforms.
 **Current milestone:** v0.9.0 Enhancement Sweep
-**Branch:** main
+**Branch:** feat/v0.9.0-enhancement-sweep
 
 ## Workflow Preferences
 
@@ -52,7 +52,7 @@ See: .planning/PROJECT.md (updated 2026-04-21)
 | 41 | Quick Wins | #190, #228, #100 | 2 | Complete |
 | 42 | Platform | #363 | 3 | Complete |
 | 43 | Advanced VBT | #313 | 3 | Complete |
-| 44 | Integration Validation | — | 2 | Pending |
+| 44 | Integration Validation | — | 2 | Complete |
 
 ## Dependency Map
 
@@ -74,6 +74,7 @@ Advanced (#313) ── uses biomechanics engine (exists)
 | v0.6.0 | 6 | 13 | 1 day |
 | v0.7.0 | 3 | 8 | 1 day |
 | v0.8.0 | 5 | 15 | 2 days |
+| v0.9.0 | 8 | 21 | — |
 
 ## Completed Milestones
 
@@ -98,8 +99,9 @@ Advanced (#313) ── uses biomechanics engine (exists)
 ## Known Issues
 
 - SqlDelightTrainingCycleRepositoryTest.checkAndAutoAdvance — flaky (time-dependent, pre-existing)
-- PortalPullPaginationTest.pullCapsLargeKnownSessionIdsToMaxParityIds — pre-existing failure, unrelated to Phase 39
+- PortalPullPaginationTest.pullCapsLargeKnownSessionIdsToMaxParityIds — pre-existing failure, unrelated to v0.9.0 (MAX_PARITY_IDS raised without updating test input)
 - Portal transforms.ts `total_volume` weightTransform — FIXED in 40-03 (schema level). Component-level `* WEIGHT_MULTIPLIER` in Analytics.tsx, Dashboard.tsx, challenges.ts, profile.ts still needs cleanup pass
+- iOS sound files — .ogg to .caf conversion TODO in HapticFeedbackEffect.ios.kt (pre-existing)
 
 ## GitHub
 
@@ -112,6 +114,7 @@ Advanced (#313) ── uses biomechanics engine (exists)
 | 41 | #398 |
 | 42 | #399 |
 | 43 | #400 |
+| 44 | #401 |
 
 ## Phase 41 Results
 
@@ -130,9 +133,14 @@ Advanced (#313) ── uses biomechanics engine (exists)
 - Plan 43-02 (Wave 2): Real-Time Tracking & Auto-End — Complete. VELOCITY_THRESHOLD_REACHED HapticEvent (boopbeepbeep sound, both platforms), VelocityLossIndicator progress bar (green→yellow→red with threshold marker), ActiveSessionEngine checkVelocityThreshold() with 1-rep grace period, auto-end on 2nd consecutive threshold rep, state reset at all 3 biomechanicsEngine.reset() sites. 9 files, build passes.
 - Plan 43-03 (Wave 2): Tests & Integration Validation — Complete. VbtThresholdTest (10 tests: custom thresholds, boundaries, shouldStopSet transitions, reset), VbtAutoEndTest (9 tests: grace period, consecutive counting, recovery reset, disabled path), VbtEngineTest regression guards (4 tests: zones/force/asymmetry independence). 23 new tests, 1637 total.
 
+## Phase 44 Results
+
+- Plan 44-01 (Wave 1): Cross-Feature Integration Tests — Complete. 20 new tests across 5 files: ActiveSessionEngineIntegrationTest (4), WorkoutCoordinatorEventTest (4), WeightDisplayIntegrationTest (4), PreferencesIsolationTest (4), BackupSerializationTest (4). 6 integration surfaces verified.
+- Plan 44-02 (Wave 2): Regression Suite & Build Validation — Complete. 1,682 total tests (1,681 pass, 1 pre-existing fail). Clean debug build (35.9 MB APK). Sync DTO parity verified (124 sync tests). Migration 27 verified (28 schema tests, 292 columns / 31 tables). All platform-specific files present with correct expect/actual pairings.
+
 ## Next Action
 
-Run `/legion:plan 44` to plan Phase 44: Integration Validation
+Run `/legion:review` to verify Phase 44: Integration Validation. Then `/legion:ship` for v0.9.0 release.
 
 ---
-*Last updated: 2026-04-28 — Phase 43 review passed (1 cycle, 2 warnings fixed, 57 tests pass)*
+*Last updated: 2026-04-28 — Phase 44 complete, v0.9.0 milestone 100% (21/21 plans)*
