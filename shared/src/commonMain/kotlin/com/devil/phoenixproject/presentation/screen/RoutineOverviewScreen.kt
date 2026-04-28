@@ -51,6 +51,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
     val weightUnit by viewModel.weightUnit.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+    val userPreferences by viewModel.userPreferences.collectAsState()
 
     // Get the current routine from flow state
     val routine = when (val state = routineFlowState) {
@@ -63,6 +64,28 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
     // Auto-navigating causes double-back issues when exitRoutineFlow() clears the routine
     if (routine == null) {
         return
+    }
+
+    // Issue #190: Auto-start routine — skip overview and enter SetReady for exercise 0
+    // Uses a one-shot flag to prevent re-triggering on recomposition or back-navigation.
+    // Guard conditions: pref enabled, routine non-empty, BLE connected, no resumable progress.
+    var autoStartFired by remember { mutableStateOf(false) }
+    LaunchedEffect(routine.id, userPreferences.autoStartRoutine) {
+        if (
+            !autoStartFired &&
+            userPreferences.autoStartRoutine &&
+            routine.exercises.isNotEmpty() &&
+            connectionState is ConnectionState.Connected &&
+            !viewModel.hasResumableProgress(routine.id)
+        ) {
+            autoStartFired = true
+            Logger.d("AutoStart") { "AutoStart: skipping overview, entering SetReady for exercise 0" }
+            val firstExercise = routine.exercises[0]
+            val initialWeight = firstExercise.setWeightsPerCableKg.firstOrNull() ?: firstExercise.weightPerCableKg
+            val initialReps = firstExercise.setReps.firstOrNull() ?: 10
+            viewModel.enterSetReadyWithAdjustments(0, 0, initialWeight, initialReps)
+            navController.navigate(NavigationRoutes.SetReady.route)
+        }
     }
 
     val pagerState = rememberPagerState(

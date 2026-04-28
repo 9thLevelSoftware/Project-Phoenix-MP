@@ -307,6 +307,8 @@ fun NavGraph(
                     onRepSoundChange = { viewModel.setRepSoundEnabled(it) },
                     motionStartEnabled = userPreferences.motionStartEnabled,
                     onMotionStartChange = { viewModel.setMotionStartEnabled(it) },
+                    autoStartRoutine = userPreferences.autoStartRoutine,
+                    onAutoStartRoutineChange = { viewModel.setAutoStartRoutine(it) },
                     summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
                     autoStartCountdownSeconds = userPreferences.autoStartCountdownSeconds,
                     selectedColorSchemeIndex = userPreferences.colorScheme,

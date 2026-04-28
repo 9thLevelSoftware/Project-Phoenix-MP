@@ -116,6 +116,10 @@ fun WorkoutTab(
         motionStartHoldProgress = state.motionStartHoldProgress,
         isRestPaused = state.isRestPaused,
         justLiftRestCountdown = state.justLiftRestCountdown,
+        isExerciseTimerPaused = state.isExerciseTimerPaused,
+        onPauseExerciseTimer = actions::onPauseExerciseTimer,
+        onResumeExerciseTimer = actions::onResumeExerciseTimer,
+        onResetExerciseTimer = actions::onResetExerciseTimer,
     )
 }
 
@@ -188,6 +192,11 @@ fun WorkoutTab(
     isRestPaused: Boolean = false,
     // Issue #113: Just Lift visual rest countdown (null = not resting)
     justLiftRestCountdown: Int? = null,
+    // Issue #190: Exercise timer controls
+    isExerciseTimerPaused: Boolean = false,
+    onPauseExerciseTimer: () -> Unit = {},
+    onResumeExerciseTimer: () -> Unit = {},
+    onResetExerciseTimer: () -> Unit = {},
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -224,6 +233,10 @@ fun WorkoutTab(
                 detectionState = detectionState,
                 onDetectionConfirmed = onDetectionConfirmed,
                 onDetectionDismissed = onDetectionDismissed,
+                isExerciseTimerPaused = isExerciseTimerPaused,
+                onPauseExerciseTimer = onPauseExerciseTimer,
+                onResumeExerciseTimer = onResumeExerciseTimer,
+                onResetExerciseTimer = onResetExerciseTimer,
                 modifier = Modifier.fillMaxSize(),
             )
 

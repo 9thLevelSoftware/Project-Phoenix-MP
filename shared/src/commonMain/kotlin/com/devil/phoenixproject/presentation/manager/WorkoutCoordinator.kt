@@ -307,6 +307,14 @@ class WorkoutCoordinator(
     @Volatile
     internal var isCurrentlyStalled = false
 
+    // ===== Exercise Timer Control State (Issue #190: Pause/Resume/Reset for timed exercises) =====
+
+    internal val _isExerciseTimerPaused = MutableStateFlow(false)
+    val isExerciseTimerPaused: StateFlow<Boolean> = _isExerciseTimerPaused.asStateFlow()
+
+    // Original duration for the current timed exercise (seconds), used for reset functionality
+    internal var exerciseTimerOriginalDuration: Int = 0
+
     // ===== Rest Timer Control State (Issue #297, #228) =====
 
     internal val _isRestPaused = MutableStateFlow(false)

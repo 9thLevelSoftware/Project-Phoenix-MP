@@ -95,6 +95,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val totalWarmupSets by viewModel.totalWarmupSets.collectAsState()
     // Issue #113: Just Lift visual rest countdown
     val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
+    // Issue #190: Exercise timer pause state
+    val isExerciseTimerPaused by viewModel.isExerciseTimerPaused.collectAsState()
 
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
@@ -346,7 +348,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         latestBiomechanicsResult, detectionState,
         motionStartHoldProgress, isRestPaused,
         currentWarmupSetIndex, totalWarmupSets,
-        justLiftRestCountdown,
+        justLiftRestCountdown, isExerciseTimerPaused,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -383,6 +385,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             currentWarmupSetIndex = currentWarmupSetIndex,
             totalWarmupSets = totalWarmupSets,
             justLiftRestCountdown = justLiftRestCountdown,
+            isExerciseTimerPaused = isExerciseTimerPaused,
         )
     }
 
@@ -418,6 +421,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                 viewModel.onDetectionConfirmed(exerciseId, exerciseName)
             },
             onDetectionDismissed = { viewModel.onDetectionDismissed() },
+            onPauseExerciseTimer = { viewModel.pauseExerciseTimer() },
+            onResumeExerciseTimer = { viewModel.resumeExerciseTimer() },
+            onResetExerciseTimer = { viewModel.resetExerciseTimer() },
         )
     }
 

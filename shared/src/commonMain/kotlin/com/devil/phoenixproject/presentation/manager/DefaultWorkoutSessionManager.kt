@@ -562,6 +562,12 @@ class DefaultWorkoutSessionManager(
     fun resetRestTimer() = activeSessionEngine.resetRestTimer()
     fun startNextSet() = activeSessionEngine.startNextSet()
 
+    // ===== Exercise Timer Controls — delegated to ActiveSessionEngine =====
+
+    fun pauseExerciseTimer() = activeSessionEngine.pauseExerciseTimer()
+    fun resumeExerciseTimer() = activeSessionEngine.resumeExerciseTimer()
+    fun resetExerciseTimer() = activeSessionEngine.resetExerciseTimer()
+
     // ===== Orchestration: proceedFromSummary (cross-cutting, stays in DWSM) =====
 
     /**

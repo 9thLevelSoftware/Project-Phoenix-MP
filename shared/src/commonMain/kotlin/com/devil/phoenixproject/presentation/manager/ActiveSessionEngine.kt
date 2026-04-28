@@ -2038,11 +2038,21 @@ class ActiveSessionEngine(
                     coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
 
                     coordinator.bodyweightTimerJob?.cancel()
+                    coordinator.exerciseTimerOriginalDuration = effectiveDuration
+                    coordinator._isExerciseTimerPaused.value = false
                     coordinator.bodyweightTimerJob = scope.launch {
                         coordinator._timedExerciseRemainingSeconds.value = effectiveDuration
-                        for (remaining in effectiveDuration downTo 1) {
-                            coordinator._timedExerciseRemainingSeconds.value = remaining
+                        while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
+                            if (coordinator._isExerciseTimerPaused.value) {
+                                delay(100L)
+                                continue
+                            }
                             delay(1000L)
+                            // Re-check pause after delay — if paused during the 1s wait, don't decrement
+                            if (!coordinator._isExerciseTimerPaused.value) {
+                                val current = coordinator._timedExerciseRemainingSeconds.value ?: 0
+                                coordinator._timedExerciseRemainingSeconds.value = (current - 1).coerceAtLeast(0)
+                            }
                         }
                         coordinator._timedExerciseRemainingSeconds.value = 0
                         handleSetCompletion()
@@ -2211,6 +2221,8 @@ class ActiveSessionEngine(
                 @Suppress("SENSELESS_COMPARISON")
                 if (isTimedCableExercise && exerciseDuration != null) {
                     coordinator.bodyweightTimerJob?.cancel()
+                    coordinator.exerciseTimerOriginalDuration = exerciseDuration
+                    coordinator._isExerciseTimerPaused.value = false
                     coordinator.bodyweightTimerJob = scope.launch {
                         if (effectiveParams.warmupReps > 0) {
                             Logger.d { "Duration cable: waiting for ${effectiveParams.warmupReps} warmup reps before starting ${exerciseDuration}s timer" }
@@ -2219,9 +2231,16 @@ class ActiveSessionEngine(
                         }
 
                         coordinator._timedExerciseRemainingSeconds.value = exerciseDuration
-                        for (remaining in exerciseDuration downTo 1) {
-                            coordinator._timedExerciseRemainingSeconds.value = remaining
+                        while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
+                            if (coordinator._isExerciseTimerPaused.value) {
+                                delay(100L)
+                                continue
+                            }
                             delay(1000L)
+                            if (!coordinator._isExerciseTimerPaused.value) {
+                                val current = coordinator._timedExerciseRemainingSeconds.value ?: 0
+                                coordinator._timedExerciseRemainingSeconds.value = (current - 1).coerceAtLeast(0)
+                            }
                         }
                         coordinator._timedExerciseRemainingSeconds.value = 0
                         handleSetCompletion()
@@ -2900,6 +2919,7 @@ class ActiveSessionEngine(
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
         coordinator._timedExerciseRemainingSeconds.value = null
+        coordinator._isExerciseTimerPaused.value = false
 
         scope.launch {
             val params = coordinator._workoutParameters.value
@@ -3729,6 +3749,40 @@ class ActiveSessionEngine(
         coordinator._restSecondsRemaining.value = coordinator._restOriginalDuration.value
         armRestDeadline(coordinator._restOriginalDuration.value)
         Logger.d("ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
+    }
+
+    // ===== Exercise Timer Controls (Issue #190: Pause/Resume/Reset for timed exercises) =====
+
+    /**
+     * Pause the exercise timer. Pure state manipulation — no BLE commands.
+     * The bodyweightTimerJob loop checks this flag and suspends decrement when true.
+     */
+    fun pauseExerciseTimer() {
+        if (coordinator._timedExerciseRemainingSeconds.value == null) return
+        coordinator._isExerciseTimerPaused.value = true
+        Logger.d("ActiveSessionEngine") { "pauseExerciseTimer: paused" }
+    }
+
+    /**
+     * Resume the exercise timer from the current position. Pure state manipulation — no BLE commands.
+     */
+    fun resumeExerciseTimer() {
+        if (coordinator._timedExerciseRemainingSeconds.value == null) return
+        coordinator._isExerciseTimerPaused.value = false
+        Logger.d("ActiveSessionEngine") { "resumeExerciseTimer: resumed" }
+    }
+
+    /**
+     * Reset the exercise timer to its original duration and unpause. Pure state manipulation — no BLE commands.
+     * Does NOT cancel the bodyweightTimerJob; the loop will pick up the new remaining value.
+     */
+    fun resetExerciseTimer() {
+        if (coordinator._timedExerciseRemainingSeconds.value == null) return
+        val original = coordinator.exerciseTimerOriginalDuration
+        if (original <= 0) return
+        coordinator._isExerciseTimerPaused.value = false
+        coordinator._timedExerciseRemainingSeconds.value = original
+        Logger.d("ActiveSessionEngine") { "resetExerciseTimer: reset to ${original}s" }
     }
 
     fun startNextSet() {

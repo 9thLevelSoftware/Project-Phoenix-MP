@@ -80,6 +80,10 @@ fun WorkoutHud(
     detectionState: DetectionState = DetectionState(),
     onDetectionConfirmed: suspend (exerciseId: String, exerciseName: String) -> Unit = { _, _ -> },
     onDetectionDismissed: () -> Unit = {},
+    isExerciseTimerPaused: Boolean = false,
+    onPauseExerciseTimer: () -> Unit = {},
+    onResumeExerciseTimer: () -> Unit = {},
+    onResetExerciseTimer: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -172,6 +176,10 @@ fun WorkoutHud(
                             timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
                             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                             cableCount = currentExerciseCableCount,
+                            isExerciseTimerPaused = isExerciseTimerPaused,
+                            onPauseExerciseTimer = onPauseExerciseTimer,
+                            onResumeExerciseTimer = onResumeExerciseTimer,
+                            onResetExerciseTimer = onResetExerciseTimer,
                         )
                     }
 
@@ -462,6 +470,10 @@ private fun ExecutionPage(
     timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
     isCurrentExerciseBodyweight: Boolean = false,
     cableCount: Int? = null,
+    isExerciseTimerPaused: Boolean = false,
+    onPauseExerciseTimer: () -> Unit = {},
+    onResumeExerciseTimer: () -> Unit = {},
+    onResetExerciseTimer: () -> Unit = {},
 ) {
     // Issue #192: Check if this is a timed exercise
     val isTimedExercise = timedExerciseRemainingSeconds != null
@@ -520,6 +532,17 @@ private fun ExecutionPage(
                     MaterialTheme.colorScheme.primary
                 },
             )
+
+            // Issue #190: Timer control buttons for bodyweight timed exercises
+            if (timedExerciseRemainingSeconds != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                ExerciseTimerControls(
+                    isPaused = isExerciseTimerPaused,
+                    onPause = onPauseExerciseTimer,
+                    onResume = onResumeExerciseTimer,
+                    onReset = onResetExerciseTimer,
+                )
+            }
         } else if (isTimedExercise && timedExerciseRemainingSeconds != null) {
             // timedExerciseRemainingSeconds != null is logically redundant (implied by isTimedExercise)
             // but required for Kotlin smart-cast so timedExerciseRemainingSeconds can be used as non-null below
@@ -541,6 +564,15 @@ private fun ExecutionPage(
                 } else {
                     MaterialTheme.colorScheme.primary
                 },
+            )
+
+            // Issue #190: Timer control buttons for timed cable exercises
+            Spacer(modifier = Modifier.height(12.dp))
+            ExerciseTimerControls(
+                isPaused = isExerciseTimerPaused,
+                onPause = onPauseExerciseTimer,
+                onResume = onResumeExerciseTimer,
+                onReset = onResetExerciseTimer,
             )
 
             // Timed cable exercises still count reps; show a secondary rep counter.
@@ -1088,5 +1120,65 @@ private fun StatColumn(label: String, value: String, color: Color) {
             fontWeight = FontWeight.Bold,
             color = color,
         )
+    }
+}
+
+/**
+ * Issue #190: Pause/Resume/Reset controls for timed exercise countdown.
+ * Styled to match RestTimerCard button pattern. Pure UI — no BLE side effects.
+ */
+@Composable
+private fun ExerciseTimerControls(
+    isPaused: Boolean,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onReset: () -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Pause/Resume toggle
+        FilledTonalButton(
+            onClick = if (isPaused) onResume else onPause,
+            shape = RoundedCornerShape(16.dp),
+            colors = if (isPaused) {
+                ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                )
+            } else {
+                ButtonDefaults.filledTonalButtonColors()
+            },
+        ) {
+            Icon(
+                if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                contentDescription = if (isPaused) "Resume Timer" else "Pause Timer",
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                if (isPaused) "Resume" else "Pause",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
+        // Reset button
+        OutlinedButton(
+            onClick = onReset,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Icon(
+                Icons.Default.Replay,
+                contentDescription = "Reset Timer",
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                "Reset",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }

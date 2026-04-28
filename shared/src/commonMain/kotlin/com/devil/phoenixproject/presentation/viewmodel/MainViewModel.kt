@@ -329,6 +329,12 @@ class MainViewModel constructor(
     fun resetRestTimer() = workoutSessionManager.resetRestTimer()
     val isRestPaused get() = workoutSessionManager.coordinator.isRestPaused
 
+    // Issue #190: Exercise timer controls for timed exercises (TUT/Echo/bodyweight)
+    fun pauseExerciseTimer() = workoutSessionManager.pauseExerciseTimer()
+    fun resumeExerciseTimer() = workoutSessionManager.resumeExerciseTimer()
+    fun resetExerciseTimer() = workoutSessionManager.resetExerciseTimer()
+    val isExerciseTimerPaused get() = workoutSessionManager.coordinator.isExerciseTimerPaused
+
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentWarmupSetIndex
     val totalWarmupSets: StateFlow<Int> get() = workoutSessionManager.coordinator.totalWarmupSets

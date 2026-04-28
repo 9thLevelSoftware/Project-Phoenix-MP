@@ -57,6 +57,9 @@ fun SettingsTab(
     // Issue #237: Motion-triggered set start
     motionStartEnabled: Boolean = false,
     onMotionStartChange: (Boolean) -> Unit = {},
+    // Issue #190: Auto-start routine (skip overview)
+    autoStartRoutine: Boolean = false,
+    onAutoStartRoutineChange: (Boolean) -> Unit = {},
     summaryCountdownSeconds: Int = 10,
     autoStartCountdownSeconds: Int = 5,
     selectedColorSchemeIndex: Int = 0,
@@ -976,6 +979,34 @@ fun SettingsTab(
                         options = (2..10).toList(),
                         onValueSelected = { onAutoStartCountdownChange(it) },
                         modifier = Modifier.width(100.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Issue #190: Auto-start routine toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Auto-start Routine",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Skip overview and start first exercise immediately",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = autoStartRoutine,
+                        onCheckedChange = onAutoStartRoutineChange,
                     )
                 }
 
