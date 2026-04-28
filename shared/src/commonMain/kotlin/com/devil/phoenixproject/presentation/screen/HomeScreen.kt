@@ -495,7 +495,7 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
                         Column {
                             val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
                                 session.weightPerCableKg,
-                                session.cableCount,
+                                session.displayMultiplier ?: session.cableCount,
                                 weightUnit,
                             )
                             val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"

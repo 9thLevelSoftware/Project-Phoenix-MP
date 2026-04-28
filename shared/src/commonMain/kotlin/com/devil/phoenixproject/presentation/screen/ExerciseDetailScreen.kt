@@ -600,7 +600,7 @@ private fun ExerciseHistoryTable(sessions: List<WorkoutSession>, weightUnit: Wei
                         TableCell(
                             WeightDisplayFormatter.formatDisplayWeight(
                                 session.weightPerCableKg,
-                                session.cableCount,
+                                session.displayMultiplier ?: session.cableCount,
                                 weightUnit,
                             ),
                             Modifier.weight(1f),
@@ -691,7 +691,7 @@ private fun SessionHistoryRow(session: WorkoutSession, weightUnit: WeightUnit, f
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        "${WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, session.cableCount, weightUnit)} × ${session.workingReps} reps",
+                        "${WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, session.displayMultiplier ?: session.cableCount, weightUnit)} × ${session.workingReps} reps",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

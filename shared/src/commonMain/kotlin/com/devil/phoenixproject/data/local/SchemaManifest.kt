@@ -604,7 +604,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 updatedAt INTEGER,
                 serverId TEXT,
                 deletedAt INTEGER,
-                profile_id TEXT NOT NULL DEFAULT 'default'
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                display_multiplier INTEGER
             )
         """.trimIndent(),
     ),
@@ -978,6 +979,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("WorkoutSession", "cableCount", "ALTER TABLE WorkoutSession ADD COLUMN cableCount INTEGER"),
     // Migration 21: multi-profile support
     SchemaHealOperation("WorkoutSession", "profile_id", "ALTER TABLE WorkoutSession ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
+    // Migration 29: display_multiplier for equipment-aware weight display
+    SchemaHealOperation("WorkoutSession", "display_multiplier", "ALTER TABLE WorkoutSession ADD COLUMN display_multiplier INTEGER"),
 
     // ── PersonalRecord (6 columns) ──────────────────────────────────────
 

@@ -440,6 +440,7 @@ class ActiveSessionEngine(
         workingRepsCount: Int = 0,
         warmupCompleteTimeMs: Long = 0L,
         cableCountHint: Int? = null,
+        displayMultiplierHint: Int? = null,
     ): WorkoutState.SetSummary {
         if (metrics.isEmpty()) {
             return WorkoutState.SetSummary(
@@ -448,6 +449,7 @@ class ActiveSessionEngine(
                 avgLoadKgPerCable = 0f,
                 repCount = repCount,
                 cableCount = cableCountHint ?: 1,
+                displayMultiplier = displayMultiplierHint ?: 1,
                 heaviestLiftKgPerCable = fallbackWeightKg,
                 configuredWeightKgPerCable = configuredWeightKgPerCable,
             )
@@ -638,6 +640,7 @@ class ActiveSessionEngine(
             durationMs = durationMs,
             totalVolumeKg = totalVolumeKg,
             cableCount = cableCount,
+            displayMultiplier = displayMultiplierHint ?: cableCount,
             heaviestLiftKgPerCable = heaviestLiftKgPerCable,
             configuredWeightKgPerCable = configuredWeightKgPerCable,
             peakForceConcentricA = peakConcentricA,
@@ -2468,6 +2471,7 @@ class ActiveSessionEngine(
                 workingRepsCount = repCount.workingReps,
                 warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs,
                 cableCountHint = selectedExercise?.preferredCableCount,
+                displayMultiplierHint = selectedExercise?.displayMultiplier,
             ).let { baseSummary ->
                 // Issue #229: Override volume for bodyweight exercises
                 val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
@@ -2502,6 +2506,7 @@ class ActiveSessionEngine(
                 heaviestLiftKg = summary.heaviestLiftKgPerCable,
                 totalVolumeKg = summary.totalVolumeKg,
                 cableCount = summary.cableCount,
+                displayMultiplier = summary.displayMultiplier,
                 estimatedCalories = summary.estimatedCalories,
                 warmupAvgWeightKg = if (params.isEchoMode) summary.warmupAvgWeightKg else null,
                 workingAvgWeightKg = if (params.isEchoMode) summary.workingAvgWeightKg else null,
@@ -2793,6 +2798,7 @@ class ActiveSessionEngine(
             workingRepsCount = working,
             warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs,
             cableCountHint = selectedExercise?.preferredCableCount,
+            displayMultiplierHint = selectedExercise?.displayMultiplier,
         ).let { baseSummary ->
             // Issue #229: Override volume for bodyweight exercises
             val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
@@ -2833,6 +2839,7 @@ class ActiveSessionEngine(
             heaviestLiftKg = summary.heaviestLiftKgPerCable,
             totalVolumeKg = summary.totalVolumeKg,
             cableCount = summary.cableCount,
+            displayMultiplier = summary.displayMultiplier,
             estimatedCalories = summary.estimatedCalories,
             warmupAvgWeightKg = if (params.isEchoMode) summary.warmupAvgWeightKg else null,
             workingAvgWeightKg = if (params.isEchoMode) summary.workingAvgWeightKg else null,
@@ -3123,6 +3130,7 @@ class ActiveSessionEngine(
                 warmupRepsCount = warmupReps,
                 workingRepsCount = completedReps,
                 cableCountHint = selectedExercise?.preferredCableCount,
+                displayMultiplierHint = selectedExercise?.displayMultiplier,
             ).let { raw ->
                 // Issue #229: Override volume for bodyweight exercises
                 val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg

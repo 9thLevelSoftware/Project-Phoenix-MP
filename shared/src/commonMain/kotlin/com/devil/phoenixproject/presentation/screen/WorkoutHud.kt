@@ -94,9 +94,9 @@ fun WorkoutHud(
     val pagerState = rememberPagerState(pageCount = { 3 })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
 
-    // Derive cableCount from current exercise in loaded routine
+    // Derive display multiplier from current exercise in loaded routine
     val currentExerciseCableCount = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
-        ?.exercise?.preferredCableCount
+        ?.exercise?.displayMultiplier
 
     // Track consecutive high-asymmetry reps for alert (ASYM-05)
     var consecutiveHighAsymmetryCount by remember { mutableStateOf(0) }

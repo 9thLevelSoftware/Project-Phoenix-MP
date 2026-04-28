@@ -89,6 +89,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         deletedAt: Long?,
         // Multi-profile support (migration 21)
         profileId: String,
+        // Equipment-aware weight display (migration 29)
+        displayMultiplier: Long?,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -141,6 +143,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         formScore = formScore?.toInt(),
         // Multi-profile support
         profileId = profileId,
+        // Equipment-aware weight display
+        displayMultiplier = displayMultiplier?.toInt(),
     )
 
     private fun mapToRoutineBasic(
@@ -524,6 +528,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 formScore = session.formScore?.toLong(),
                 // Multi-profile support
                 profile_id = session.profileId,
+                // Equipment-aware weight display
+                display_multiplier = session.displayMultiplier?.toLong(),
             )
         }
     }
@@ -841,7 +847,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             val newVolume = weightKg * reps
             val exercise = exerciseRepository.getExerciseById(exerciseId)
             val exerciseName = exercise?.name ?: ""
-            val cableCount = exercise?.preferredCableCount
+            val cableCount = exercise?.displayMultiplier
 
             val combinedPhase = "COMBINED"
 

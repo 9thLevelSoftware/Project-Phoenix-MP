@@ -1,0 +1,2 @@
+-- Migration 29: Add display_multiplier to WorkoutSession for equipment-aware weight display
+ALTER TABLE WorkoutSession ADD COLUMN display_multiplier INTEGER;

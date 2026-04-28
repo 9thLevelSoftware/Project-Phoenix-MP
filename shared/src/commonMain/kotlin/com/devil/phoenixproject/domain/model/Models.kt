@@ -82,6 +82,7 @@ sealed class WorkoutState {
         val durationMs: Long = 0L,
         val totalVolumeKg: Float = 0f,
         val cableCount: Int = 1,
+        val displayMultiplier: Int = 1,
         val heaviestLiftKgPerCable: Float = 0f,
         val configuredWeightKgPerCable: Float = 0f,
         val peakForceConcentricA: Float = 0f, // Peak during lifting (velocity > 0)
@@ -502,6 +503,7 @@ data class WorkoutSession(
     val heaviestLiftKg: Float? = null,
     val totalVolumeKg: Float? = null,
     val cableCount: Int? = null,
+    val displayMultiplier: Int? = null,
     val estimatedCalories: Float? = null,
     val warmupAvgWeightKg: Float? = null,
     val workingAvgWeightKg: Float? = null,
@@ -562,6 +564,7 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         durationMs = duration,
         totalVolumeKg = effectiveTotalVolumeKg(),
         cableCount = cableCount ?: 1,
+        displayMultiplier = displayMultiplier ?: cableCount ?: 1,
         heaviestLiftKgPerCable = effectiveHeaviestKgPerCable(),
         configuredWeightKgPerCable = weightPerCableKg,
         peakForceConcentricA = peakForceConcentricA ?: 0f,

@@ -274,6 +274,7 @@ class SqlDelightSyncRepository(
                         serverId = dto.serverId,
                         deletedAt = dto.deletedAt,
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
+                        display_multiplier = null,
                     )
                 }
             }
@@ -857,6 +858,7 @@ class SqlDelightSyncRepository(
                         formScore = session.formScore?.toLong(),
                         updatedAt = session.timestamp, // Mark as already-synced to prevent re-push
                         profile_id = session.profileId,
+                        display_multiplier = session.displayMultiplier?.toLong(),
                     )
                 }
             }
@@ -1177,6 +1179,8 @@ class SqlDelightSyncRepository(
         deletedAt: Long?,
         // Multi-profile support (migration 21)
         profileId: String,
+        // Equipment-aware weight display (migration 29)
+        displayMultiplier: Long?,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -1212,6 +1216,7 @@ class SqlDelightSyncRepository(
         heaviestLiftKg = heaviestLiftKg?.toFloat(),
         totalVolumeKg = totalVolumeKg?.toFloat(),
         cableCount = cableCount?.toInt(),
+        displayMultiplier = displayMultiplier?.toInt(),
         estimatedCalories = estimatedCalories?.toFloat(),
         warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
         workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
@@ -1455,6 +1460,7 @@ class SqlDelightSyncRepository(
                         formScore = session.formScore?.toLong(),
                         updatedAt = session.timestamp, // Mark as already-synced
                         profile_id = profileId,
+                        display_multiplier = session.displayMultiplier?.toLong(),
                     )
                 }
 
@@ -1836,6 +1842,7 @@ class SqlDelightSyncRepository(
                     formScore = session.formScore?.toLong(),
                     updatedAt = incomingTs,
                     profile_id = session.profileId,
+                    display_multiplier = session.displayMultiplier?.toLong(),
                 )
             }
         }

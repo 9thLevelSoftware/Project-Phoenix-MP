@@ -104,7 +104,7 @@ class GamificationManager(
                     val timestamp = currentTimeMillis()
                     // Resolve exercise once for both PR storage and celebration display
                     val exercise = exerciseRepository.getExerciseById(exId)
-                    val cableCount = exercise?.preferredCableCount
+                    val cableCount = exercise?.displayMultiplier
 
                     // Check COMBINED (traditional) PRs
                     val result = personalRecordRepository.updatePRsIfBetter(

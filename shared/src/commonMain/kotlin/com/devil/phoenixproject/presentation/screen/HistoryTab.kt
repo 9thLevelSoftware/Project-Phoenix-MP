@@ -309,7 +309,7 @@ fun WorkoutHistoryCard(
                     } else {
                         WeightDisplayFormatter.formatDisplayWeight(
                             session.effectiveHeaviestKgPerCable(),
-                            session.cableCount,
+                            session.displayMultiplier ?: session.cableCount,
                             weightUnit,
                         ) + " ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}"
                     },
@@ -398,7 +398,7 @@ fun WorkoutHistoryCard(
                     // CompletedSet breakdown (set-level tracking)
                     CompletedSetsSection(
                         sessionId = session.id,
-                        cableCount = session.cableCount,
+                        cableCount = session.displayMultiplier ?: session.cableCount,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                     )
@@ -833,7 +833,7 @@ fun GroupedRoutineCard(
                 // Use max cableCount from sessions in this group for display
                 val groupCableCount = groupedItem.sessions
                     .filter { it.exerciseId == exerciseGroup.exerciseId }
-                    .mapNotNull { it.cableCount }
+                    .mapNotNull { it.displayMultiplier ?: it.cableCount }
                     .maxOrNull()
 
                 Row(
@@ -955,7 +955,7 @@ fun GroupedRoutineCard(
                         // CompletedSet breakdown per session
                         CompletedSetsSection(
                             sessionId = session.id,
-                            cableCount = session.cableCount,
+                            cableCount = session.displayMultiplier ?: session.cableCount,
                             weightUnit = weightUnit,
                             formatWeight = formatWeight,
                         )
@@ -1113,7 +1113,7 @@ fun WorkoutSessionCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    "${WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, session.cableCount, weightUnit)} ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"} • ${session.totalReps} reps • ${session.mode}",
+                    "${WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, session.displayMultiplier ?: session.cableCount, weightUnit)} ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"} • ${session.totalReps} reps • ${session.mode}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
