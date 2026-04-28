@@ -42,6 +42,8 @@ class WorkoutCoordinator(
         extraBufferCapacity = 10,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     ),
+    private val velocityLossThresholdPercent: Float = 20f,
+    internal val autoEndOnVelocityLoss: Boolean = false,
 ) {
     companion object {
         /** Position-based auto-stop duration in seconds (handles in danger zone and released) */
@@ -393,7 +395,7 @@ class WorkoutCoordinator(
      * Processes each rep's MetricSamples and exposes results via StateFlow.
      * Reset between sets via ActiveSessionEngine.
      */
-    val biomechanicsEngine = BiomechanicsEngine()
+    val biomechanicsEngine = BiomechanicsEngine(velocityLossThresholdPercent)
 
     /**
      * Rep boundary timestamps for MetricSample segmentation.

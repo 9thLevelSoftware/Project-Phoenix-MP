@@ -365,6 +365,12 @@ fun NavGraph(
                     // Issue #229: Body weight for bodyweight exercise volume
                     bodyWeightKg = userPreferences.bodyWeightKg,
                     onBodyWeightKgChange = { viewModel.setBodyWeightKg(it) },
+                    // Issue #313: VBT power loss threshold
+                    velocityLossThresholdPercent = userPreferences.velocityLossThresholdPercent,
+                    onVelocityLossThresholdChange = { viewModel.setVelocityLossThreshold(it) },
+                    autoEndOnVelocityLoss = userPreferences.autoEndOnVelocityLoss,
+                    onAutoEndOnVelocityLossChange = { viewModel.setAutoEndOnVelocityLoss(it) },
+                    stallDetectionEnabled = userPreferences.stallDetectionEnabled,
                 )
             }
 

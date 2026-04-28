@@ -142,6 +142,10 @@ interface PreferencesManager {
     suspend fun setSafeWord(word: String?)
     suspend fun setSafeWordCalibrated(calibrated: Boolean)
 
+    // Issue #313: Velocity-Based Training (VBT)
+    suspend fun setVelocityLossThreshold(percent: Int)
+    suspend fun setAutoEndOnVelocityLoss(enabled: Boolean)
+
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
     suspend fun clearAllSingleExerciseDefaults()
@@ -195,6 +199,8 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
         private const val KEY_SAFE_WORD = "safe_word"
         private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"
+        private const val KEY_VELOCITY_LOSS_THRESHOLD = "velocity_loss_threshold_percent"
+        private const val KEY_AUTO_END_VELOCITY_LOSS = "auto_end_on_velocity_loss"
 
         // Permissions onboarding (health + microphone)
         private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
@@ -241,6 +247,8 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
             safeWord = settings.getStringOrNull(KEY_SAFE_WORD),
             safeWordCalibrated = settings.getBoolean(KEY_SAFE_WORD_CALIBRATED, false),
+            velocityLossThresholdPercent = settings.getInt(KEY_VELOCITY_LOSS_THRESHOLD, 20).coerceIn(10, 50),
+            autoEndOnVelocityLoss = settings.getBoolean(KEY_AUTO_END_VELOCITY_LOSS, false),
         )
     }
 
@@ -436,5 +444,16 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     override suspend fun setSafeWordCalibrated(calibrated: Boolean) {
         settings.putBoolean(KEY_SAFE_WORD_CALIBRATED, calibrated)
         updateAndEmit { copy(safeWordCalibrated = calibrated) }
+    }
+
+    override suspend fun setVelocityLossThreshold(percent: Int) {
+        val clamped = percent.coerceIn(10, 50)
+        settings.putInt(KEY_VELOCITY_LOSS_THRESHOLD, clamped)
+        updateAndEmit { copy(velocityLossThresholdPercent = clamped) }
+    }
+
+    override suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
+        settings.putBoolean(KEY_AUTO_END_VELOCITY_LOSS, enabled)
+        updateAndEmit { copy(autoEndOnVelocityLoss = enabled) }
     }
 }

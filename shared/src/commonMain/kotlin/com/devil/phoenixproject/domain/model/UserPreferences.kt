@@ -42,6 +42,9 @@ data class UserPreferences(
     val safeWordCalibrated: Boolean = false, // Whether the safe word passed 3-rep calibration
     // Issue #293: Custom backup destination (default = platform default location)
     val backupDestination: BackupDestination = BackupDestination.Default,
+    // Issue #313: Velocity-Based Training (VBT) power loss threshold
+    val velocityLossThresholdPercent: Int = 20,
+    val autoEndOnVelocityLoss: Boolean = false,
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

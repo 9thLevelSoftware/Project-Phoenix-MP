@@ -134,6 +134,14 @@ class SettingsManager(
         scope.launch { preferencesManager.setSafeWordCalibrated(calibrated) }
     }
 
+    fun setVelocityLossThreshold(percent: Int) {
+        scope.launch { preferencesManager.setVelocityLossThreshold(percent) }
+    }
+
+    fun setAutoEndOnVelocityLoss(enabled: Boolean) {
+        scope.launch { preferencesManager.setAutoEndOnVelocityLoss(enabled) }
+    }
+
     fun setColorScheme(schemeIndex: Int) {
         scope.launch {
             bleRepository.setColorScheme(schemeIndex)

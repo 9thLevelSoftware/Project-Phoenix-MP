@@ -166,7 +166,14 @@ class DefaultWorkoutSessionManager(
     )
 
     // ===== Coordinator: Shared state bus for all workout state =====
-    val coordinator = WorkoutCoordinator(_hapticEvents)
+    val coordinator = run {
+        val prefs = preferencesManager.preferencesFlow.value
+        WorkoutCoordinator(
+            _hapticEvents = _hapticEvents,
+            velocityLossThresholdPercent = prefs.velocityLossThresholdPercent.toFloat(),
+            autoEndOnVelocityLoss = prefs.autoEndOnVelocityLoss,
+        )
+    }
 
     // ===== RoutineFlowManager: Handles routine CRUD, navigation, superset logic =====
     val routineFlowManager = RoutineFlowManager(

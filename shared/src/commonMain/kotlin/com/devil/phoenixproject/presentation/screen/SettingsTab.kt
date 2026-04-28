@@ -39,6 +39,7 @@ import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.rememberBackupLocationPicker
 import com.devil.phoenixproject.util.rememberFilePicker
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -118,6 +119,12 @@ fun SettingsTab(
     // Issue #229: Body weight for bodyweight exercise volume
     bodyWeightKg: Float = 0f,
     onBodyWeightKgChange: (Float) -> Unit = {},
+    // Issue #313: VBT power loss threshold
+    velocityLossThresholdPercent: Int = 20,
+    onVelocityLossThresholdChange: (Int) -> Unit = {},
+    autoEndOnVelocityLoss: Boolean = false,
+    onAutoEndOnVelocityLossChange: (Boolean) -> Unit = {},
+    stallDetectionEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     var showDeleteAllDialog by remember { mutableStateOf(false) }
@@ -1500,6 +1507,135 @@ fun SettingsTab(
                             enabled = isConnected,
                         )
                     }
+                }
+            }
+        }
+
+        // Issue #313: Velocity-Based Training Section
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, RoundedCornerShape(20.dp)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+            shape = RoundedCornerShape(20.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.medium),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF10B981), Color(0xFF059669)),
+                                ),
+                                RoundedCornerShape(20.dp),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Speed,
+                            contentDescription = "Velocity-Based Training",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Text(
+                        "Velocity-Based Training",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Power Loss Threshold slider
+                Column {
+                    Text(
+                        "Power Loss Threshold",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Velocity drop percentage that signals fatigue",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.small))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "10%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = velocityLossThresholdPercent.toFloat(),
+                            onValueChange = { onVelocityLossThresholdChange(it.roundToInt()) },
+                            valueRange = 10f..50f,
+                            steps = 7,
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        )
+                        Text(
+                            "50%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        "Current: ${velocityLossThresholdPercent}%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Auto-end toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Auto-End on Velocity Loss",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = if (stallDetectionEnabled) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            if (stallDetectionEnabled) {
+                                "Automatically end set when threshold is reached"
+                            } else {
+                                "Enable Stall Detection in Workout Settings to use auto-end"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = autoEndOnVelocityLoss,
+                        onCheckedChange = onAutoEndOnVelocityLossChange,
+                        enabled = stallDetectionEnabled,
+                    )
                 }
             }
         }

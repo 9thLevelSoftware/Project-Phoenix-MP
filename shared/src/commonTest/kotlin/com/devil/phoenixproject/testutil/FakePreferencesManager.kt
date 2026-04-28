@@ -147,4 +147,14 @@ class FakePreferencesManager : PreferencesManager {
     override suspend fun setBackupDestination(destination: BackupDestination) {
         _preferencesFlow.value = _preferencesFlow.value.copy(backupDestination = destination)
     }
+
+    override suspend fun setVelocityLossThreshold(percent: Int) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(
+            velocityLossThresholdPercent = percent.coerceIn(10, 50),
+        )
+    }
+
+    override suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(autoEndOnVelocityLoss = enabled)
+    }
 }

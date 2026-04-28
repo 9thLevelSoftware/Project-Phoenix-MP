@@ -287,6 +287,8 @@ class MainViewModel constructor(
     fun setVoiceStopEnabled(enabled: Boolean) = settingsManager.setVoiceStopEnabled(enabled)
     fun setSafeWord(word: String?) = settingsManager.setSafeWord(word)
     fun setSafeWordCalibrated(calibrated: Boolean) = settingsManager.setSafeWordCalibrated(calibrated)
+    fun setVelocityLossThreshold(percent: Int) = settingsManager.setVelocityLossThreshold(percent)
+    fun setAutoEndOnVelocityLoss(enabled: Boolean) = settingsManager.setAutoEndOnVelocityLoss(enabled)
 
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
