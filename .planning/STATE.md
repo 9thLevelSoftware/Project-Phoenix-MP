@@ -3,26 +3,26 @@ gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: Enhancement Sweep
 status: executing
-last_updated: "2026-04-27T12:00:00.000Z"
+last_updated: "2026-04-27T18:00:00.000Z"
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 21
-  completed_plans: 14
+  completed_plans: 16
 ---
 
 # GSD State: Project Phoenix MP
 
 ## Current Position
 
-Phase: 40 of 44 (complete)
-Plan: 3/3 complete
-Status: Phase 40 complete — review passed (1 cycle)
-Last activity: 2026-04-27 — Phase 40 review passed
+Phase: 41 of 44 (executed, pending review)
+Plan: 2/2 complete
+Status: Phase 41 complete — all plans executed successfully
+Last activity: 2026-04-27 — Phase 41 execution complete
 
 ## Progress
 ```
-[##############      ] 67% — 14/21 plans complete
+[################    ] 76% — 16/21 plans complete
 ```
 
 ## Project Reference
@@ -49,7 +49,7 @@ See: .planning/PROJECT.md (updated 2026-04-21)
 | 38 | Weight-Dependent | #266, #337 | 3 | Complete |
 | 39 | Routine Cluster | #365, #307 | 3 | Complete |
 | 40 | Analytics | #229, #225 | 3 | Complete |
-| 41 | Quick Wins | #190, #228, #100 | 2 | Pending |
+| 41 | Quick Wins | #190, #228, #100 | 2 | Complete |
 | 42 | Platform | #363 | 3 | Pending |
 | 43 | Advanced VBT | #313 | 3 | Pending |
 | 44 | Integration Validation | — | 2 | Pending |
@@ -109,10 +109,16 @@ Advanced (#313) ── uses biomechanics engine (exists)
 | 38 | #382 |
 | 39 | #385 |
 | 40 | #397 |
+| 41 | #398 |
+
+## Phase 41 Results
+
+- Plan 41-01 (Wave 1): Routine Auto-Start & Timer Controls — Complete. LaunchedEffect redirect with one-shot guard, exercise timer pause/resume/reset (pure state, no BLE), Settings toggle, 13 tests pass.
+- Plan 41-02 (Wave 2): Audio Feedback Improvements — Complete. FINAL_REP event with boopbeepbeep sound, REP_COMPLETED switched to chirpchirp (louder), warmup gated by repSoundEnabled, 28 tests pass.
 
 ## Next Action
 
-Run `/legion:plan 41` to plan Phase 41: Quick Wins
+Run `/legion:review` to verify Phase 41: Quick Wins
 
 ---
-*Last updated: 2026-04-27 — Phase 40 review passed (1 cycle, 0 blockers, 5 warnings accepted)*
+*Last updated: 2026-04-27 — Phase 41 complete (2/2 plans, 41 new tests)*
