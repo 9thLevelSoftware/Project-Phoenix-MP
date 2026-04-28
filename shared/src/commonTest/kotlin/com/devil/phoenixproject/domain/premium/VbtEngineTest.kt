@@ -546,7 +546,7 @@ class VbtEngineTest {
 
         if (result.velocity.estimatedRepsRemaining != null) {
             assertTrue(
-                result.velocity.estimatedRepsRemaining!! <= 99,
+                result.velocity.estimatedRepsRemaining <= 99,
                 "Estimated reps should be clamped to max 99",
             )
         }

@@ -1600,6 +1600,11 @@ fun SettingsTab(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+                Text(
+                    "Changes take effect on next workout",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
 

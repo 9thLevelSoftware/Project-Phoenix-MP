@@ -56,6 +56,7 @@ fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
                 put(HapticEvent.DISCO_MODE_UNLOCKED, soundPool.load(context, R.raw.discomode, 1))
                 // Issue #100: Warmup-to-working transition (ascending tone)
                 put(HapticEvent.WARMUP_TO_WORKING, soundPool.load(context, R.raw.beepboop, 1))
+                put(HapticEvent.VELOCITY_THRESHOLD_REACHED, soundPool.load(context, R.raw.boopbeepbeep, 1))
                 // BADGE_EARNED, PERSONAL_RECORD use random sounds from lists below
                 // REP_COUNT_ANNOUNCED uses indexed sounds from repCountSoundIds list
                 // ERROR has no sound
