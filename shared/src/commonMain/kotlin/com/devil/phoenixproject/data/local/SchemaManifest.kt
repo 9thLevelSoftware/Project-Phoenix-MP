@@ -650,7 +650,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 updatedAt INTEGER,
                 serverId TEXT,
                 deletedAt INTEGER,
-                profile_id TEXT NOT NULL DEFAULT 'default'
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                cable_count INTEGER
             )
         """.trimIndent(),
     ),
@@ -978,7 +979,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 21: multi-profile support
     SchemaHealOperation("WorkoutSession", "profile_id", "ALTER TABLE WorkoutSession ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
 
-    // ── PersonalRecord (5 columns) ──────────────────────────────────────
+    // ── PersonalRecord (6 columns) ──────────────────────────────────────
 
     // Migration 11: sync fields
     SchemaHealOperation("PersonalRecord", "updatedAt", "ALTER TABLE PersonalRecord ADD COLUMN updatedAt INTEGER"),
@@ -988,6 +989,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("PersonalRecord", "phase", "ALTER TABLE PersonalRecord ADD COLUMN phase TEXT NOT NULL DEFAULT 'COMBINED'"),
     // Migration 21: multi-profile support
     SchemaHealOperation("PersonalRecord", "profile_id", "ALTER TABLE PersonalRecord ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
+    // Migration 28: cable-aware weight display
+    SchemaHealOperation("PersonalRecord", "cable_count", "ALTER TABLE PersonalRecord ADD COLUMN cable_count INTEGER"),
 
     // ── Routine (4 columns) ─────────────────────────────────────────────
 
