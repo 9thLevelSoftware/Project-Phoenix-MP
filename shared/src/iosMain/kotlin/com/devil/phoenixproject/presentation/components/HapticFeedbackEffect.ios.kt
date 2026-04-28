@@ -92,12 +92,7 @@ private class IosSoundManager {
     private fun loadSounds() {
         // Map events to sound file names (without extension)
         // Note: Using sealed class data objects as map keys (they have proper equals/hashCode)
-        // Issue #100: Sound file mapping. Source files are .ogg (Android).
-        // iOS requires conversion to .caf via: ffmpeg -i file.ogg -f caf file.caf
-        // TODO(iOS): Convert these .ogg files to .caf for iOS bundling:
-        //   chirpchirp, boopbeepbeep, beep, beepboop, restover, discomode,
-        //   rep_01 through rep_25, plus all badge/PR celebration sounds.
-        //   Requires macOS + ffmpeg. Run from androidApp/src/main/res/raw/
+        // Issue #100: Sound files converted from .ogg → .caf via iosApp/convert_sounds.sh
         val soundFiles: Map<HapticEvent, String> = mapOf(
             HapticEvent.REP_COMPLETED to "chirpchirp", // Issue #100: More audible than beep
             HapticEvent.FINAL_REP to "boopbeepbeep", // Issue #100: Distinct final rep sound
