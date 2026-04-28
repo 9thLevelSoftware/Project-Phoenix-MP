@@ -127,6 +127,17 @@ object BlePacketFactory {
      * with the correct force config values after copying the profile.
      */
     fun createProgramParams(params: WorkoutParameters, variant: ForceConfigVariant = defaultForceConfigVariant): ByteArray {
+        // EccentricOnly relies on the eccentric-up ramp bytes at 0x48-0x4F
+        // (minMmS=-100, maxMmS=-50, ramp=20.0f). The OVERLAP variant overwrites
+        // those bytes with softMax/increment, which leaves the firmware unable
+        // to apply weight during the eccentric phase (reps count, but the
+        // chosen weight is never engaged). The official app preserves the
+        // profile tail for this mode.
+        val effectiveVariant = if (params.programMode is ProgramMode.EccentricOnly) {
+            ForceConfigVariant.NON_OVERLAP
+        } else {
+            variant
+        }
         val frame = ByteArray(96)
 
         // Header section - Command 0x04 for PROGRAM mode
@@ -205,7 +216,7 @@ object BlePacketFactory {
 
         val softMax = if (params.isAMRAP || params.isJustLift) 100.0f else params.weightPerCableKg
 
-        if (variant == ForceConfigVariant.OVERLAP) {
+        if (effectiveVariant == ForceConfigVariant.OVERLAP) {
             // Issue #262: Firmware reads softMax at 0x48 and increment at 0x4C.
             // These overlap the last 8 bytes of the mode profile, but the firmware
             // interprets them as force config, not mode data. Write them AFTER the
@@ -239,7 +250,7 @@ object BlePacketFactory {
         Logger.d("BlePacket") {
             "adjustedWeight=${adjustedWeightPerCable}kg, effectiveKg=$effectiveKg"
         }
-        if (variant == ForceConfigVariant.OVERLAP) {
+        if (effectiveVariant == ForceConfigVariant.OVERLAP) {
             Logger.d("BlePacket") {
                 "softMax[0x48]=${readFloatLE(
                     frame,
