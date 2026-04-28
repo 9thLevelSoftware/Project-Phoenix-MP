@@ -5,7 +5,7 @@ package com.devil.phoenixproject.util
  */
 object Constants {
     // App version
-    const val APP_VERSION = "0.6.5"
+    const val APP_VERSION = "0.8.0"
 
     // EULA version - increment when EULA text changes materially
     // Users must re-accept when this version increases
@@ -16,9 +16,6 @@ object Constants {
     // Trainer+: 110kg max per cable (220kg total) - use 100kg as safe default
     const val MIN_WEIGHT_KG = 0f
     const val MAX_WEIGHT_KG = 100f
-    const val WEIGHT_INCREMENT_KG = 0.5f // Machine minimum step (BLE constraint)
-    const val MAX_PROGRESSION_KG = 3f
-
     // Configurable weight increment options per unit system (Issue #266)
     val WEIGHT_INCREMENT_OPTIONS_KG = listOf(0.5f, 1.0f, 2.5f, 5.0f)
     val WEIGHT_INCREMENT_OPTIONS_LB = listOf(0.1f, 0.5f, 1.0f, 2.5f, 5.0f)
@@ -30,28 +27,8 @@ object Constants {
     // 1 kg per cable = 2 kg total, well below any practical training weight.
     const val JUST_LIFT_MIN_VALID_WEIGHT_KG = 1f
 
-    // Reps limits
-    const val MIN_REPS = 1
-    const val MAX_REPS = 100
+    // Reps
     const val DEFAULT_WARMUP_REPS = 3
-
-    // BLE configuration
-    const val BLE_SCAN_TIMEOUT_MS = 30000L // Matches parent repo BleConstants.SCAN_TIMEOUT_MS
-    const val BLE_CONNECTION_TIMEOUT_MS = 15000L
-
-    // Workout detection thresholds
-    const val REP_DETECTION_THRESHOLD = 0.1f
-    const val POSITION_TOP_THRESHOLD = 0.95f
-    const val POSITION_BOTTOM_THRESHOLD = 0.05f
-
-    // Data sampling
-    const val METRICS_SAMPLE_INTERVAL_MS = 50L
-    const val MAX_HISTORY_POINTS = 72000 // 2 hours at 100ms
-
-    // Position ranges (mm) - from official app documentation
-    // Cable position is measured in millimeters, valid range is -1000 to +1000 mm
-    const val MAX_POSITION = 1000.0f
-    const val MIN_POSITION = -1000.0f
 }
 
 /**
@@ -116,18 +93,6 @@ object UnitConverter {
  * Estimated one-rep max calculators.
  */
 object OneRepMaxCalculator {
-    /**
-     * Calculate estimated 1RM using Brzycki formula.
-     * @param weight Weight lifted
-     * @param reps Number of reps completed
-     * @return Estimated one rep max
-     */
-    fun brzycki(weight: Float, reps: Int): Float {
-        if (reps <= 0) return 0f
-        if (reps == 1) return weight
-        return weight * (36f / (37f - reps))
-    }
-
     /**
      * Calculate estimated 1RM using Epley formula.
      */

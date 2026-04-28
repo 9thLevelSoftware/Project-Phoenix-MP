@@ -23,7 +23,7 @@ kotlin {
     // Android target (AGP 9.0 new DSL)
     android {
         namespace = "com.devil.phoenixproject.shared"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 26
 
         compilerOptions {
@@ -136,7 +136,7 @@ kotlin {
             }
         }
 
-        val androidMain by getting {
+        getByName("androidMain") {
             dependencies {
                 // Android-specific Coroutines
                 implementation(libs.kotlinx.coroutines.android)
@@ -167,17 +167,15 @@ kotlin {
                 // DocumentFile for directory picker display name extraction
                 implementation(libs.androidx.documentfile)
 
-                // Health Connect (Google Health)
-                // Pinned to alpha11: stable 1.1.0 made record constructors and Metadata internal.
-                // The alpha SDK still uses public constructors. The permission strings are identical
-                // across alpha11 and stable — the real fix for permissions was the manifest
-                // intent-filter (VIEW_PERMISSION_USAGE + HEALTH_PERMISSIONS category).
-                implementation("androidx.health.connect:connect-client:1.1.0-alpha11")
+                // Health Connect (Google Health) — pinned to alpha11, see libs.versions.toml
+                implementation(libs.androidx.health.connect)
             }
         }
 
         val iosArm64Main by getting
         val iosArm64Test by getting
+
+        @Suppress("UNUSED_VARIABLE")
         val iosMain by creating {
             dependsOn(commonMain)
             iosArm64Main.dependsOn(this)
@@ -191,6 +189,7 @@ kotlin {
             }
         }
 
+        @Suppress("UNUSED_VARIABLE")
         val iosTest by creating {
             dependsOn(commonTest)
             iosArm64Test.dependsOn(this)

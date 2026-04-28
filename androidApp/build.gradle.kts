@@ -51,7 +51,7 @@ val injectedVersionCode = providers.gradleProperty("version.code").orNull?.let {
 
 android {
     namespace = "com.devil.phoenixproject"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.devil.phoenixproject"
@@ -59,7 +59,7 @@ android {
         targetSdk = 36
         // Fail fast if CI injects an invalid version code instead of silently shipping a default.
         versionCode = injectedVersionCode ?: 5
-        versionName = "0.6.5"
+        versionName = "0.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -89,6 +89,7 @@ android {
             // Local release builds use debug signing for testing only.
             // See .github/workflows/ for the production signing pipeline.
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
