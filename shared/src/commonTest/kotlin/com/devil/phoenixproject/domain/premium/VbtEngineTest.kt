@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -635,5 +636,106 @@ class VbtEngineTest {
         assertEquals(2, summary!!.zoneDistribution[BiomechanicsVelocityZone.EXPLOSIVE])
         assertEquals(1, summary.zoneDistribution[BiomechanicsVelocityZone.FAST])
         assertEquals(1, summary.zoneDistribution[BiomechanicsVelocityZone.MODERATE])
+    }
+
+    // ========== Regression Guards (Plan 43-03) ==========
+
+    @Test
+    fun `default constructor preserves 20 percent threshold behavior`() {
+        val engine = BiomechanicsEngine()
+
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
+
+        val at19 = engine.processRep(2, createUniformMetrics(810.0), emptyList(), currentTimeMillis())
+        assertFalse(at19.velocity.shouldStopSet, "Default engine: 19% loss should not trigger")
+
+        engine.reset()
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
+        val at20 = engine.processRep(2, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
+        assertTrue(at20.velocity.shouldStopSet, "Default engine: 20% loss should trigger")
+    }
+
+    @Test
+    fun `velocity zones unchanged by threshold configuration`() {
+        val defaultEngine = BiomechanicsEngine()
+        val customEngine = BiomechanicsEngine(velocityLossThresholdPercent = 50f)
+
+        val velocities = listOf(249.0, 250.0, 499.0, 500.0, 749.0, 750.0, 999.0, 1000.0)
+        for (v in velocities) {
+            val defaultResult = defaultEngine.processRep(1, createUniformMetrics(v), emptyList(), currentTimeMillis())
+            defaultEngine.reset()
+
+            val customResult = customEngine.processRep(1, createUniformMetrics(v), emptyList(), currentTimeMillis())
+            customEngine.reset()
+
+            assertEquals(
+                defaultResult.velocity.zone,
+                customResult.velocity.zone,
+                "Zone at velocity=$v should be identical regardless of threshold",
+            )
+        }
+    }
+
+    @Test
+    fun `force curve analysis unchanged by threshold configuration`() {
+        val defaultEngine = BiomechanicsEngine()
+        val customEngine = BiomechanicsEngine(velocityLossThresholdPercent = 50f)
+
+        val metrics = (0..20).map { i ->
+            createMetric(
+                velocityA = 500.0,
+                velocityB = 500.0,
+                loadA = 50f + i,
+                loadB = 50f + i,
+                positionA = (i * 10).toFloat(),
+                positionB = (i * 10).toFloat(),
+            )
+        }
+
+        val defaultResult = defaultEngine.processRep(1, metrics, metrics, currentTimeMillis())
+        val customResult = customEngine.processRep(1, metrics, metrics, currentTimeMillis())
+
+        assertEquals(
+            defaultResult.forceCurve.strengthProfile,
+            customResult.forceCurve.strengthProfile,
+            "Strength profile should be identical regardless of threshold",
+        )
+        assertEquals(
+            defaultResult.forceCurve.stickingPointPct,
+            customResult.forceCurve.stickingPointPct,
+            "Sticking point should be identical regardless of threshold",
+        )
+        assertEquals(
+            defaultResult.forceCurve.normalizedForceN.size,
+            customResult.forceCurve.normalizedForceN.size,
+            "Force curve length should be identical regardless of threshold",
+        )
+    }
+
+    @Test
+    fun `asymmetry analysis unchanged by threshold configuration`() {
+        val defaultEngine = BiomechanicsEngine()
+        val customEngine = BiomechanicsEngine(velocityLossThresholdPercent = 50f)
+
+        val metrics = listOf(
+            createMetric(velocityA = 500.0, velocityB = 500.0, loadA = 60f, loadB = 40f),
+            createMetric(velocityA = 500.0, velocityB = 500.0, loadA = 62f, loadB = 38f),
+            createMetric(velocityA = 500.0, velocityB = 500.0, loadA = 58f, loadB = 42f),
+        )
+
+        val defaultResult = defaultEngine.processRep(1, metrics, metrics, currentTimeMillis())
+        val customResult = customEngine.processRep(1, metrics, metrics, currentTimeMillis())
+
+        assertEquals(
+            defaultResult.asymmetry.asymmetryPercent,
+            customResult.asymmetry.asymmetryPercent,
+            0.01f,
+            "Asymmetry percent should be identical regardless of threshold",
+        )
+        assertEquals(
+            defaultResult.asymmetry.dominantSide,
+            customResult.asymmetry.dominantSide,
+            "Dominant side should be identical regardless of threshold",
+        )
     }
 }
