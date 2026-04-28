@@ -8,22 +8,25 @@ Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines via 
 
 Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking — reliably, on both platforms.
 
-## Current State: v0.8.0 Beta Readiness
+## Current State: v0.9.0 Enhancement Sweep (Complete)
 
-**Branch:** TBD (from `MVP`)
-**Previous:** v0.7.0 shipped 2026-03-15
+**Branch:** feat/v0.9.0-enhancement-sweep
+**Previous:** v0.8.0 shipped 2026-04-12, v0.7.0 shipped 2026-03-15
 
-**What v0.8.0 ships:**
-- BLE reliability fixes: connection, reconnection, state machine hardening, permission UX
-- Sync data integrity: profile-scoped queries, PR DTO completeness, chunked first sync, push transaction safety
-- Android lifecycle/security: foreground service crash fix, encrypted token storage, exception handling, release build hygiene
-- iOS platform parity: schema version fix, missing columns, connectivity checker, feature gating
-- Integration validation across all subsystems
+**What v0.9.0 shipped:**
+- Exercise group management (muscle group organization, exercise metadata)
+- Weight display layer (cable-aware formatting, per-cable → total conversion)
+- Routine enhancements (superset/circuit support, group ID threading, AMRAP/PR-scaling)
+- Analytics engine (volume tracking, PR history, strength trends)
+- Haptic/audio feedback system (workout cues, PR celebrations, rep counting audio)
+- Platform hardening (iOS bookmark handling, error propagation, SavedStateHandle scaffolding)
+- Sound system (Android SoundPool + Fire OS fallback, iOS AVAudioPlayer framework)
+- Cross-feature integration validation (1,682 tests, 0 regressions)
 
-**What v0.8.0 does NOT include:**
-- SavedStateHandle process death recovery — deferred to v0.9.0 (foreground service mitigates during active workouts)
-- New features — this is strictly a stability and correctness pass
-- Portal-only changes beyond H6 (sync push transaction fix)
+**What v0.9.0 does NOT include:**
+- PersonalRecord.cableCount for accurate PR weight display (planned for tech debt pass)
+- iOS .caf sound file bundling (requires macOS build environment)
+- Server-side subscription validation (client-side FeatureGate accepted for pre-launch)
 
 ## Requirements
 
@@ -43,39 +46,17 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - ✓ Bidirectional portal sync via Supabase Edge Functions (v0.6.0)
 - ✓ Unified Supabase Auth across mobile and portal (v0.6.0)
 - ✓ Cloud sync UI, iOS sync launch, sync polish (v0.7.0)
+- ✓ BLE reliability, sync integrity, lifecycle/security, iOS parity (v0.8.0)
+- ✓ Enhancement sweep: groups, weight display, routines, analytics, haptics, sounds, platform hardening (v0.9.0)
 
-### Active (v0.8.0)
+### Active (Post v0.9.0)
 
-- **BLE-01**: Fix connectToDevice() dead StateFlow — primary connect path broken (B1)
-- **BLE-02**: Wire auto-reconnect flow consumer — reconnection never triggers (B2)
-- **BLE-03**: Cancel stale peripheral state observer on reconnect (H2)
-- **BLE-04**: Add error handling to onDeviceReady() fire-and-forget launch (H3)
-- **BLE-05**: Add scan timeout to startScanning() (H4)
-- **BLE-06**: Fix BLE permission denied loop on Android 11+ (H10)
-- **BLE-07**: Add .catch{} to permanent init collectors in ActiveSessionEngine (M1)
-- **BLE-08**: Increase CONNECTION_RETRY_DELAY_MS from 100ms to 1500ms (M2)
-- **SYNC-01**: Add profile_id filter to all sync push queries (B3)
-- **SYNC-02**: Add prType/phase/volume to PersonalRecordSyncDto (B4)
-- **SYNC-03**: Implement chunked first sync for large histories (H5)
-- **SYNC-04**: Wrap routine_exercises push in database transaction (H6, cross-repo)
-- **SYNC-05**: Fix updatedAt IS NULL perpetual re-push (M3)
-- **SYNC-06**: Handle Instant.parse() failure in SyncManager (M4)
-- **LIFE-01**: Fix START_STICKY null intent foreground service crash (B5)
-- **LIFE-02**: Encrypt auth tokens with EncryptedSharedPreferences (B6)
-- **LIFE-03**: Add top-level exception handler to workoutJob (H1)
-- **LIFE-04**: Gate Coil DebugLogger on BuildConfig.DEBUG (H9)
-- **LIFE-05**: Fix ActivityHolder WeakReference lifecycle (H11)
-- **LIFE-06**: Set allowBackup=false in manifest (M6)
-- **LIFE-07**: Uncomment ProGuard log-stripping rules (M7)
-- **IOS-01**: Update CURRENT_SCHEMA_VERSION to 22 (B7)
-- **IOS-02**: Add formScore column to iOS manual schema (B8)
-- **IOS-03**: Implement ConnectivityChecker with NWPathMonitor (H12)
-- **IOS-04**: Document/improve withPlatformLock global lock (H13)
-- **IOS-05**: Gate Form Check feature behind platform check on iOS (H14)
-- **IOS-06**: Verify no Vico chart imports leak to commonMain/iosMain (H15)
-- **VAL-01**: BLE connect + reconnect scenario validation
-- **VAL-02**: Sync E2E + profile isolation validation
-- **VAL-03**: iOS launch + session load + schema validation
+No active milestone. Tech debt resolution in progress on feat/v0.9.0-enhancement-sweep branch.
+
+Pending next milestone:
+- PersonalRecord.cableCount for accurate PR weight display
+- iOS .caf sound file bundling (requires macOS build)
+- Server-side subscription validation
 
 ### Out of Scope
 
@@ -141,14 +122,28 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Single milestone for all 29 findings | Clean version boundary; "no beta until fixed" framing | In Progress |
-| Phase by subsystem (BLE/Sync/Lifecycle/iOS) | Changes within each phase touch related files; minimizes cross-cutting risk | In Progress |
-| H6 included despite cross-repo | Keeps all sync integrity fixes together; cross-repo established in v0.6.0 | In Progress |
-| H8 SavedStateHandle deferred to v0.9.0 | Architectural refactor too risky for bug-fix milestone; foreground service mitigates | In Progress |
-| 3 plans per phase | Blockers + high + medium/cleanup per phase; 15 plans total matches project conventions | In Progress |
-| Guided + Deep Analysis workflow | Step-by-step with plan approval; deep analysis for interconnected BLE and sync fixes | In Progress |
+| Single milestone for all 29 findings | Clean version boundary; "no beta until fixed" framing | Shipped |
+| Phase by subsystem (BLE/Sync/Lifecycle/iOS) | Changes within each phase touch related files; minimizes cross-cutting risk | Shipped |
+| H6 included despite cross-repo | Keeps all sync integrity fixes together; cross-repo established in v0.6.0 | Shipped |
+| H8 SavedStateHandle deferred to v0.9.0 | Architectural refactor too risky for bug-fix milestone; foreground service mitigates | Shipped |
+| 3 plans per phase | Blockers + high + medium/cleanup per phase; 15 plans total matches project conventions | Shipped |
+| Guided + Deep Analysis workflow | Step-by-step with plan approval; deep analysis for interconnected BLE and sync fixes | Shipped |
+
+</details>
+
+<details>
+<summary>v0.9.0 Key Decisions</summary>
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| 8 phases for 12 GitHub issues | Group related enhancements to minimize cross-cutting risk | Shipped |
+| Wave 1 build / Wave 2 test split | Prevent test agents from blocking build; tests reference actual output | Shipped |
+| Dynamic review panels (3-4 reviewers) | Caught 2 data-loss blockers that 2-person review missed | Shipped |
+| SchemaManifest validator | Catch unprovisioned DB columns at build time | Shipped |
+| DWSMTestHarness standardization | 22-dependency test harness made integration tests feasible | Shipped |
+| Phase 40 cross-repo portal fix | total_volume double-multiplication caught and fixed in-milestone | Shipped |
 
 </details>
 
 ---
-*Last updated: 2026-03-23 — v0.8.0 Beta Readiness initialized*
+*Last updated: 2026-04-28 — v0.9.0 Enhancement Sweep complete, tech debt resolution*

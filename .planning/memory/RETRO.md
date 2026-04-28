@@ -47,13 +47,28 @@ Referenced by `/legion:plan` for continuous improvement.
 **Keep:**
 - Wave 1 = build, Wave 2 = tests/validation
 - Dynamic review panels for multi-domain or validation phases
+- **Reviewer panel sizing**: Use 3+ reviewer panels for validation and integration phases. Phase 44's 3-person panel gave best coverage-to-effort ratio. Phase 39's 4-person panel caught 2 data-loss blockers that smaller panels would have missed.
 - SchemaManifest validator for migration safety
 - Fix-in-cycle review approach (avoid full re-review when possible)
 - DWSMTestHarness + FakePreferencesManager as shared test infrastructure
 
 **Drop:**
-- Test generation without source-file scanning
+- **Guard tests without source scanning**: Test agents MUST grep actual source files to understand implementation, not just assert interface contracts. Phase 37 produced tautology tests that passed regardless of correctness because the agent never read the source.
 - Indefinite deferral of pre-existing test failures
 - TODO comments without assigned owners or milestone targets
+
+### Checklist Items for Migration Plans
+
+When a plan adds new DB columns via SQLDelight migration:
+
+1. [ ] Column added to CREATE TABLE or ALTER TABLE in .sq file
+2. [ ] Column added to ALL insert queries (insertX, upsertX) in .sq file
+3. [ ] Column added to domain model data class
+4. [ ] Column added to repository mapping function (mapToX)
+5. [ ] Column added to SyncDto if entity is synced
+6. [ ] Column populated at all call sites (not just read paths)
+7. [ ] SchemaManifest updated if project uses manifest validation
+
+Evidence: Phase 39 had 2 data-loss BLOCKERS because insertRoutine and upsertRoutine were missing the new groupId parameter. Reads worked fine; writes silently dropped the value.
 
 ---
