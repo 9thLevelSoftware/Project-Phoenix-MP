@@ -64,7 +64,10 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     val soundIds = remember(soundPool) {
         mutableMapOf<HapticEvent, Int>().apply {
             try {
-                loadSoundByName(context, soundPool, "beep")?.let { put(HapticEvent.REP_COMPLETED, it) }
+                // Issue #100: chirpchirp is louder/more audible than beep for rep completion
+                loadSoundByName(context, soundPool, "chirpchirp")?.let { put(HapticEvent.REP_COMPLETED, it) }
+                // Issue #100: Distinct boopbeepbeep sound on final working rep
+                loadSoundByName(context, soundPool, "boopbeepbeep")?.let { put(HapticEvent.FINAL_REP, it) }
                 loadSoundByName(context, soundPool, "beepboop")?.let { put(HapticEvent.WARMUP_COMPLETE, it) }
                 loadSoundByName(context, soundPool, "boopbeepbeep")?.let { put(HapticEvent.WORKOUT_COMPLETE, it) }
                 loadSoundByName(context, soundPool, "chirpchirp")?.let { put(HapticEvent.WORKOUT_START, it) }
@@ -241,7 +244,8 @@ private fun playSound(
  */
 private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     val soundName = when (event) {
-        is HapticEvent.REP_COMPLETED -> "beep"
+        is HapticEvent.REP_COMPLETED -> "chirpchirp" // Issue #100: More audible than beep
+        is HapticEvent.FINAL_REP -> "boopbeepbeep" // Issue #100: Distinct final rep sound
         is HapticEvent.WARMUP_COMPLETE -> "beepboop"
         is HapticEvent.WORKOUT_COMPLETE -> "boopbeepbeep"
         is HapticEvent.WORKOUT_START -> "chirpchirp"
@@ -326,6 +330,15 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
             is HapticEvent.REP_COMPLETED -> {
                 // Light, quick click for each rep
                 VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
+            }
+
+            is HapticEvent.FINAL_REP -> {
+                // Issue #100: Stronger vibration for final rep — double pulse with escalating amplitude
+                VibrationEffect.createWaveform(
+                    longArrayOf(0, 80, 60, 120),
+                    intArrayOf(0, 200, 0, 255),
+                    -1,
+                )
             }
 
             is HapticEvent.WARMUP_COMPLETE -> {
@@ -422,6 +435,11 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
         when (event) {
             is HapticEvent.REP_COMPLETED -> {
                 vibrator.vibrate(50)
+            }
+
+            is HapticEvent.FINAL_REP -> {
+                // Issue #100: Stronger double pulse for final rep
+                vibrator.vibrate(longArrayOf(0, 80, 60, 120), -1)
             }
 
             is HapticEvent.WARMUP_COMPLETE -> {

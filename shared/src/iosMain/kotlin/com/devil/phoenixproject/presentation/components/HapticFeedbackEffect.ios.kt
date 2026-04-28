@@ -92,8 +92,15 @@ private class IosSoundManager {
     private fun loadSounds() {
         // Map events to sound file names (without extension)
         // Note: Using sealed class data objects as map keys (they have proper equals/hashCode)
+        // Issue #100: Sound file mapping. Source files are .ogg (Android).
+        // iOS requires conversion to .caf via: ffmpeg -i file.ogg -f caf file.caf
+        // TODO(iOS): Convert these .ogg files to .caf for iOS bundling:
+        //   chirpchirp, boopbeepbeep, beep, beepboop, restover, discomode,
+        //   rep_01 through rep_25, plus all badge/PR celebration sounds.
+        //   Requires macOS + ffmpeg. Run from androidApp/src/main/res/raw/
         val soundFiles: Map<HapticEvent, String> = mapOf(
-            HapticEvent.REP_COMPLETED to "beep",
+            HapticEvent.REP_COMPLETED to "chirpchirp", // Issue #100: More audible than beep
+            HapticEvent.FINAL_REP to "boopbeepbeep", // Issue #100: Distinct final rep sound
             HapticEvent.WARMUP_COMPLETE to "beepboop",
             HapticEvent.WORKOUT_COMPLETE to "boopbeepbeep",
             HapticEvent.WORKOUT_START to "chirpchirp",
@@ -323,6 +330,13 @@ private fun playHapticFeedback(event: HapticEvent) {
             is HapticEvent.REP_COMPLETED -> {
                 // Light impact for each rep
                 val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleLight)
+                generator.prepare()
+                generator.impactOccurred()
+            }
+
+            is HapticEvent.FINAL_REP -> {
+                // Issue #100: Heavy impact for final rep — stands out from regular rep feedback
+                val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleHeavy)
                 generator.prepare()
                 generator.impactOccurred()
             }

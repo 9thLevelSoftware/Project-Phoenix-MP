@@ -44,7 +44,10 @@ fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     val soundIds = remember(soundPool) {
         mutableMapOf<HapticEvent, Int>().apply {
             try {
-                put(HapticEvent.REP_COMPLETED, soundPool.load(context, R.raw.beep, 1))
+                // Issue #100: chirpchirp is louder/more audible than beep for rep completion
+                put(HapticEvent.REP_COMPLETED, soundPool.load(context, R.raw.chirpchirp, 1))
+                // Issue #100: Distinct boopbeepbeep sound on final working rep
+                put(HapticEvent.FINAL_REP, soundPool.load(context, R.raw.boopbeepbeep, 1))
                 put(HapticEvent.WARMUP_COMPLETE, soundPool.load(context, R.raw.beepboop, 1))
                 put(HapticEvent.WORKOUT_COMPLETE, soundPool.load(context, R.raw.boopbeepbeep, 1))
                 put(HapticEvent.WORKOUT_START, soundPool.load(context, R.raw.chirpchirp, 1))
@@ -200,6 +203,7 @@ private fun playHapticFeedback(event: HapticEvent, hapticFeedback: HapticFeedbac
 
         // Light click
 
+        is HapticEvent.FINAL_REP, // Issue #100: Strong vibration for final rep
         is HapticEvent.WARMUP_COMPLETE,
         is HapticEvent.WORKOUT_COMPLETE,
         is HapticEvent.REST_ENDING,

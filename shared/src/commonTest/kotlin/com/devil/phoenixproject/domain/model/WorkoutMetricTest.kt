@@ -360,6 +360,7 @@ class HapticEventTest {
     @Test
     fun `singleton haptic events are equal`() {
         assertEquals(HapticEvent.REP_COMPLETED, HapticEvent.REP_COMPLETED)
+        assertEquals(HapticEvent.FINAL_REP, HapticEvent.FINAL_REP)
         assertEquals(HapticEvent.WARMUP_COMPLETE, HapticEvent.WARMUP_COMPLETE)
         assertEquals(HapticEvent.WORKOUT_COMPLETE, HapticEvent.WORKOUT_COMPLETE)
         assertEquals(HapticEvent.WORKOUT_START, HapticEvent.WORKOUT_START)

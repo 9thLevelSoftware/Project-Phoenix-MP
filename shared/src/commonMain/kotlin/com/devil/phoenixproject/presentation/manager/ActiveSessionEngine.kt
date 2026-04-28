@@ -200,15 +200,21 @@ class ActiveSessionEngine(
         repCounter.onRepEvent = { event ->
             scope.launch {
                 val timing = coordinator._workoutParameters.value.repCountTiming
+                val params = coordinator._workoutParameters.value
                 when (event.type) {
                     RepType.WORKING_PENDING -> {
                         // TOP timing: announce rep number at concentric peak
                         if (timing == RepCountTiming.TOP) {
                             val repNumber = event.workingCount + 1 // PENDING has pre-increment count
                             val prefs = settingsManager.userPreferences.value
+                            // Issue #100: Check if this is the final working rep
+                            val isFinalRep = !params.isJustLift && !params.isAMRAP &&
+                                params.reps > 0 && repNumber >= params.reps
                             if (prefs.audioRepCountEnabled && repNumber in 1..25) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(repNumber))
-                            } else {
+                            } else if (prefs.repSoundEnabled && isFinalRep) {
+                                coordinator._hapticEvents.emit(HapticEvent.FINAL_REP)
+                            } else if (prefs.repSoundEnabled) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
                             }
                         }
@@ -219,16 +225,27 @@ class ActiveSessionEngine(
                         // BOTTOM timing: announce at eccentric valley (traditional)
                         if (timing == RepCountTiming.BOTTOM) {
                             val prefs = settingsManager.userPreferences.value
+                            // Issue #100: Check if this is the final working rep
+                            val isFinalRep = !params.isJustLift && !params.isAMRAP &&
+                                params.reps > 0 && event.workingCount >= params.reps
                             if (prefs.audioRepCountEnabled && event.workingCount in 1..25) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(event.workingCount))
-                            } else {
+                            } else if (prefs.repSoundEnabled && isFinalRep) {
+                                coordinator._hapticEvents.emit(HapticEvent.FINAL_REP)
+                            } else if (prefs.repSoundEnabled) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
                             }
                         }
                         // TOP timing: already announced on PENDING, no double-announce
                     }
 
-                    RepType.WARMUP_COMPLETED -> coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
+                    RepType.WARMUP_COMPLETED -> {
+                        // Issue #100: Gate warmup rep sound by repSoundEnabled preference
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.repSoundEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
+                        }
+                    }
 
                     RepType.WARMUP_COMPLETE -> {
                         coordinator._hapticEvents.emit(HapticEvent.WARMUP_COMPLETE)

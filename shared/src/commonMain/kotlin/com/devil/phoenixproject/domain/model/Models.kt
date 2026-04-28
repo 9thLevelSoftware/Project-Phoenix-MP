@@ -406,8 +406,11 @@ data class RepEvent(
  * Implemented as a sealed class to support parameterized variants (REP_COUNT_ANNOUNCED).
  */
 sealed class HapticEvent {
-    /** Light haptic + beep sound */
+    /** Light haptic + chirpchirp sound (more audible than original beep) */
     data object REP_COMPLETED : HapticEvent()
+
+    /** Issue #100: Distinct sound on final working rep of a set — strong haptic + boopbeepbeep */
+    data object FINAL_REP : HapticEvent()
 
     /** Audio rep count announcement (1-25) - no haptic, just spoken number */
     data class REP_COUNT_ANNOUNCED(val repNumber: Int) : HapticEvent() {
