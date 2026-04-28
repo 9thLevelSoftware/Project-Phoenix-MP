@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.util.BackupDestination
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -141,5 +142,9 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setSafeWordCalibrated(calibrated: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(safeWordCalibrated = calibrated)
+    }
+
+    override suspend fun setBackupDestination(destination: BackupDestination) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(backupDestination = destination)
     }
 }
