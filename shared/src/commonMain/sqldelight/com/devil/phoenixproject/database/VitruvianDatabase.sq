@@ -765,7 +765,7 @@ SELECT * FROM PersonalRecord ORDER BY achievedAt DESC;
 
 -- Routine Queries
 selectAllRoutines:
-SELECT * FROM Routine WHERE profile_id = :profileId ORDER BY name ASC;
+SELECT * FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL ORDER BY name ASC;
 
 selectRoutineById:
 SELECT * FROM Routine WHERE id = ?;
@@ -824,6 +824,10 @@ DELETE FROM RoutineExercise WHERE routineId = ?;
 
 deleteRoutineById:
 DELETE FROM Routine WHERE id = ?;
+
+-- Soft delete routine (for sync — preserves tombstone for push)
+softDeleteRoutine:
+UPDATE Routine SET deletedAt = ?, updatedAt = ? WHERE id = ?;
 
 updateRoutineById:
 UPDATE Routine SET name = ?, description = ?, updatedAt = ? WHERE id = ?;
@@ -1265,7 +1269,7 @@ SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSession
 
 -- Count custom routines created (profile-scoped)
 countCreatedRoutines:
-SELECT COUNT(*) FROM Routine WHERE profile_id = :profileId;
+SELECT COUNT(*) FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL;
 
 -- Get days since last workout (for comeback badge, profile-scoped)
 selectDaysSinceLastWorkout:
@@ -1842,6 +1846,12 @@ SELECT * FROM Routine
 WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
 AND profile_id = :profileId;
 
+-- Get soft-deleted routines (for push — tombstones to propagate deletion to server)
+selectDeletedRoutinesSince:
+SELECT id, serverId, deletedAt FROM Routine
+WHERE deletedAt IS NOT NULL AND deletedAt > ?
+AND profile_id = :profileId;
+
 -- Update routine server ID
 updateRoutineServerId:
 UPDATE Routine SET serverId = ? WHERE id = ?;
@@ -2053,7 +2063,7 @@ selectAllSessionIdsByProfile:
 SELECT id FROM WorkoutSession WHERE profile_id = :profileId;
 
 selectAllRoutineIdsByProfile:
-SELECT id FROM Routine WHERE profile_id = :profileId;
+SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL;
 
 selectAllCycleIdsByProfile:
 SELECT id FROM TrainingCycle WHERE profile_id = :profileId;

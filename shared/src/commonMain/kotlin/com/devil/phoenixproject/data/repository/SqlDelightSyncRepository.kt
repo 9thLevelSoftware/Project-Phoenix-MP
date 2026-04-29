@@ -912,6 +912,13 @@ class SqlDelightSyncRepository(
         queries.selectSessionsModifiedSince(timestamp, profileId = profileId, ::mapToWorkoutSession).executeAsList()
     }
 
+    override suspend fun getDeletedRoutineIdsSince(timestamp: Long, profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectDeletedRoutinesSince(timestamp, profileId = profileId).executeAsList().map { row ->
+            // Prefer serverId (the ID the server knows) over local clientId
+            row.serverId ?: row.id
+        }
+    }
+
     override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = withContext(Dispatchers.IO) {
         val routineRows = queries.selectRoutinesModifiedSince(timestamp, profileId = profileId).executeAsList()
         routineRows.map { row ->

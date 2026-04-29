@@ -67,6 +67,12 @@ interface SyncRepository {
     suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String = "default"): List<Routine>
 
     /**
+     * Get IDs of soft-deleted routines since timestamp, for sync push tombstone propagation.
+     * Returns server IDs where available, falling back to client IDs.
+     */
+    suspend fun getDeletedRoutineIdsSince(timestamp: Long, profileId: String = "default"): List<String>
+
+    /**
      * Get training cycles scoped to the given profile, with progress and progression context for push.
      * Returns all matching cycles (no delta — cycles lack updatedAt timestamps).
      */

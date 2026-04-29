@@ -700,14 +700,14 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         withContext(Dispatchers.IO) {
             if (routineId.isBlank()) return@withContext
 
-            db.transaction {
-                // Delete exercises and supersets first (foreign key cascade should handle this, but be explicit)
-                queries.deleteRoutineExercises(routineId)
-                queries.deleteSupersetsByRoutine(routineId)
-                queries.deleteRoutineById(routineId)
-            }
+            val now = currentTimeMillis()
+            queries.softDeleteRoutine(
+                deletedAt = now,
+                updatedAt = now,
+                id = routineId,
+            )
 
-            Logger.d { "Deleted routine $routineId" }
+            Logger.d { "Soft-deleted routine $routineId (deletedAt=$now)" }
         }
     }
 

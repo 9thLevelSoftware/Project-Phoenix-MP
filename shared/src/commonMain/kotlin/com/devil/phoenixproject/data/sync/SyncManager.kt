@@ -564,6 +564,15 @@ class SyncManager(
             }
         }
 
+        // 4a. Gather soft-deleted routine IDs for server-side deletion propagation.
+        val deletedRoutineIds = syncRepository.getDeletedRoutineIdsSince(lastSync, activeProfileId)
+            .filter { CANONICAL_UUID_REGEX.matches(it) }
+        if (deletedRoutineIds.isNotEmpty()) {
+            Logger.d("SyncManager") {
+                "Push payload: ${deletedRoutineIds.size} deleted routine(s) to propagate"
+            }
+        }
+
         // 4b. Gather training cycles (all — no delta, lacks updatedAt), profile-scoped.
         // Cycle days may still point at local-only template routines that are hidden from
         // the main routines list via the "cycle_routine_<uuid>" prefix. Null those
@@ -759,6 +768,7 @@ class SyncManager(
                 sessions = allSessions,
                 telemetry = effectiveTelemetry,
                 routines = routineDtos,
+                deletedRoutineIds = deletedRoutineIds,
                 cycles = cycleDtos,
                 rpgAttributes = rpgDto,
                 badges = badgeDtos,
@@ -806,6 +816,7 @@ class SyncManager(
                     telemetry = batchTelemetry,
                     // Non-session data only on last batch to avoid duplicate upserts
                     routines = if (isLastBatch) routineDtos else emptyList(),
+                    deletedRoutineIds = if (isLastBatch) deletedRoutineIds else emptyList(),
                     cycles = if (isLastBatch) cycleDtos else emptyList(),
                     rpgAttributes = if (isLastBatch) rpgDto else null,
                     badges = if (isLastBatch) badgeDtos else emptyList(),
