@@ -206,10 +206,10 @@ sqldelight {
     databases {
         create("VitruvianDatabase") {
             packageName.set("com.devil.phoenixproject.database")
-            // Version 27 = initial schema (1) + 26 migrations (1.sqm through 26.sqm).
-            // Bump tracks 26.sqm (Phase 3.5: SessionNotes side-table for portal
-            // session-level notes persistence; resolves audit item #2 mobile gap).
-            version = 27
+            // Version 28 = initial schema (1) + 27 migrations (1.sqm through 27.sqm).
+            // Bump tracks 27.sqm (soft-delete deletedAt column on TrainingCycle
+            // for sync tombstone propagation, mirroring Routine's pattern).
+            version = 28
         }
     }
 }

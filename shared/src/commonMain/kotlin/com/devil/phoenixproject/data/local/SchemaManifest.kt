@@ -738,7 +738,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // TrainingCycle -- migration 10, full current shape
-    // Columns added by later migrations: profile_id (m21)
+    // Columns added by later migrations: profile_id (m21), deletedAt (m27)
     SchemaTableOperation(
         table = "TrainingCycle",
         createSql = """
@@ -748,7 +748,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 description TEXT,
                 created_at INTEGER NOT NULL,
                 is_active INTEGER NOT NULL DEFAULT 0,
-                profile_id TEXT NOT NULL DEFAULT 'default'
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                deletedAt INTEGER
             )
         """.trimIndent(),
     ),
@@ -1008,10 +1009,12 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("UserProfile", "subscription_expires_at", "ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER"),
     SchemaHealOperation("UserProfile", "last_auth_at", "ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER"),
 
-    // ── TrainingCycle (1 column) ────────────────────────────────────────
+    // ── TrainingCycle (2 columns) ────────────────────────────────────────
 
     // Migration 21: multi-profile support
     SchemaHealOperation("TrainingCycle", "profile_id", "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
+    // Migration 27: soft-delete for sync tombstone propagation
+    SchemaHealOperation("TrainingCycle", "deletedAt", "ALTER TABLE TrainingCycle ADD COLUMN deletedAt INTEGER"),
 
     // ── AssessmentResult (1 column) ─────────────────────────────────────
 

@@ -573,6 +573,15 @@ class SyncManager(
             }
         }
 
+        // 4c. Gather soft-deleted cycle IDs for server-side deletion propagation.
+        val deletedCycleIds = syncRepository.getDeletedCycleIdsSince(lastSync, activeProfileId)
+            .filter { CANONICAL_UUID_REGEX.matches(it) }
+        if (deletedCycleIds.isNotEmpty()) {
+            Logger.d("SyncManager") {
+                "Push payload: ${deletedCycleIds.size} deleted cycle(s) to propagate"
+            }
+        }
+
         // 4b. Gather training cycles (all — no delta, lacks updatedAt), profile-scoped.
         // Cycle days may still point at local-only template routines that are hidden from
         // the main routines list via the "cycle_routine_<uuid>" prefix. Null those
@@ -770,6 +779,7 @@ class SyncManager(
                 routines = routineDtos,
                 deletedRoutineIds = deletedRoutineIds,
                 cycles = cycleDtos,
+                deletedCycleIds = deletedCycleIds,
                 rpgAttributes = rpgDto,
                 badges = badgeDtos,
                 gamificationStats = gamStatsDto,
@@ -818,6 +828,7 @@ class SyncManager(
                     routines = if (isLastBatch) routineDtos else emptyList(),
                     deletedRoutineIds = if (isLastBatch) deletedRoutineIds else emptyList(),
                     cycles = if (isLastBatch) cycleDtos else emptyList(),
+                    deletedCycleIds = if (isLastBatch) deletedCycleIds else emptyList(),
                     rpgAttributes = if (isLastBatch) rpgDto else null,
                     badges = if (isLastBatch) badgeDtos else emptyList(),
                     gamificationStats = if (isLastBatch) gamStatsDto else null,
@@ -1020,6 +1031,9 @@ class SyncManager(
         var totalEntitiesFetched = 0
         var currentCursor: String? = null
         var finalSyncTime: Long = 0
+        // Track returned entity IDs across pages for parity reconciliation
+        val returnedRoutineIds = mutableSetOf<String>()
+        val returnedCycleIds = mutableSetOf<String>()
 
         // Pagination loop: fetch pages until hasMore is false
         while (true) {
@@ -1111,6 +1125,14 @@ class SyncManager(
                 }
             }
 
+            // Track returned entity IDs for parity reconciliation
+            for (routine in pullResponse.routines) {
+                returnedRoutineIds.add(routine.id)
+            }
+            for (cycle in pullResponse.cycles) {
+                returnedCycleIds.add(cycle.id)
+            }
+
             // Merge this page atomically
             val mergeResult = mergePullPage(pullResponse, lastSync, mergeProfileId)
             if (mergeResult.isFailure) {
@@ -1137,6 +1159,50 @@ class SyncManager(
                     "Pull page $pagesProcessed has hasMore=true but no nextCursor. Breaking."
                 }
                 break
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────
+        // PARITY RECONCILIATION: Delete local entities that were deleted
+        // on server. We sent knownEntityIds; server returned everything
+        // it still has. Any ID we sent that server didn't return was
+        // deleted server-side -> hard-delete locally.
+        //
+        // Guards:
+        //   - Only reconcile if we sent the full parity list (not
+        //     truncated by MAX_PARITY_IDS cap). If truncated, the tail
+        //     IDs weren't sent, so we can't determine if they're missing.
+        //   - Only reconcile after ALL pages are fetched (partial pages
+        //     may not include all entity types yet).
+        // ──────────────────────────────────────────────────────────────
+
+        // Cycles -- portal-authoritative, so server deletion is common
+        if (filteredCycleIds.size <= SyncConfig.MAX_PARITY_IDS) {
+            val serverDeletedCycleIds = filteredCycleIds.filter { it !in returnedCycleIds }
+            if (serverDeletedCycleIds.isNotEmpty()) {
+                Logger.i("SyncManager") {
+                    "Parity reconciliation: ${serverDeletedCycleIds.size} cycle(s) deleted on server, removing locally"
+                }
+                try {
+                    syncRepository.hardDeleteCyclesByIds(serverDeletedCycleIds)
+                } catch (e: Exception) {
+                    Logger.w(e) { "Parity reconciliation failed for cycles; non-fatal" }
+                }
+            }
+        }
+
+        // Routines -- shared-authority, same pattern
+        if (filteredRoutineIds.size <= SyncConfig.MAX_PARITY_IDS) {
+            val serverDeletedRoutineIds = filteredRoutineIds.filter { it !in returnedRoutineIds }
+            if (serverDeletedRoutineIds.isNotEmpty()) {
+                Logger.i("SyncManager") {
+                    "Parity reconciliation: ${serverDeletedRoutineIds.size} routine(s) deleted on server, removing locally"
+                }
+                try {
+                    syncRepository.hardDeleteRoutinesByIds(serverDeletedRoutineIds)
+                } catch (e: Exception) {
+                    Logger.w(e) { "Parity reconciliation failed for routines; non-fatal" }
+                }
             }
         }
 

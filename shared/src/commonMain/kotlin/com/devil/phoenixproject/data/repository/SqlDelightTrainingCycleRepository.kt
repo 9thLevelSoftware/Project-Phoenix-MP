@@ -120,6 +120,7 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
             created_at,
             is_active,
             profile_id,
+            _deletedAt,
         ->
         TrainingCycle(
             id = id,
@@ -167,6 +168,7 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
             created_at,
             is_active,
             profile_id,
+            _deletedAt,
         ->
         TrainingCycle(
             id = id,
@@ -324,16 +326,11 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
 
     override suspend fun deleteCycle(cycleId: String) {
         withContext(Dispatchers.IO) {
-            db.transaction {
-                // Delete progress first
-                queries.deleteCycleProgress(cycleId)
-
-                // Delete days (should cascade, but be explicit)
-                queries.deleteCycleDaysByCycle(cycleId)
-
-                // Delete the cycle
-                queries.deleteTrainingCycle(cycleId)
-            }
+            val now = currentTimeMillis()
+            // Soft-delete: set deletedAt timestamp so sync can propagate
+            // tombstone to server. Days/progress stay attached — they'll be
+            // cascade-deleted on server. UI queries filter deletedAt IS NULL.
+            queries.softDeleteTrainingCycle(deletedAt = now, id = cycleId)
         }
     }
 

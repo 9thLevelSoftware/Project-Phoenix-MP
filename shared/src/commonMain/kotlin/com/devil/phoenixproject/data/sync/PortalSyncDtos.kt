@@ -485,6 +485,7 @@ data class PortalSyncPayload(
     val routines: List<PortalRoutineSyncDto> = emptyList(),
     val deletedRoutineIds: List<String> = emptyList(),
     val cycles: List<PortalTrainingCycleSyncDto> = emptyList(),
+    val deletedCycleIds: List<String> = emptyList(),
     val rpgAttributes: PortalRpgAttributesSyncDto? = null,
     val badges: List<PortalEarnedBadgeSyncDto> = emptyList(),
     val gamificationStats: PortalGamificationStatsSyncDto? = null,

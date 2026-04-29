@@ -919,6 +919,10 @@ class SqlDelightSyncRepository(
         }
     }
 
+    override suspend fun getDeletedCycleIdsSince(timestamp: Long, profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectDeletedCyclesSince(timestamp, profileId = profileId).executeAsList()
+    }
+
     override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = withContext(Dispatchers.IO) {
         val routineRows = queries.selectRoutinesModifiedSince(timestamp, profileId = profileId).executeAsList()
         routineRows.map { row ->
@@ -1744,6 +1748,35 @@ class SqlDelightSyncRepository(
             Logger.d {
                 "Atomic merge complete: ${sessions.size} sessions, ${routines.size} routines, " +
                     "${cycles.size} cycles, ${badges.size} badges, ${personalRecords.size} PRs (profile=$profileId)"
+            }
+        }
+    }
+
+    // === Parity Reconciliation ===
+
+    override suspend fun hardDeleteCyclesByIds(ids: List<String>) {
+        if (ids.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                // Delete progress and days first (explicit cleanup before parent deletion)
+                for (id in ids) {
+                    queries.deleteCycleProgress(id)
+                    queries.deleteCycleDaysByCycle(id)
+                }
+                queries.hardDeleteCyclesByIds(ids)
+            }
+        }
+    }
+
+    override suspend fun hardDeleteRoutinesByIds(ids: List<String>) {
+        if (ids.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                for (id in ids) {
+                    queries.deleteRoutineExercises(id)
+                    queries.deleteSupersetsByRoutine(id)
+                }
+                queries.hardDeleteRoutinesByIds(ids)
             }
         }
     }

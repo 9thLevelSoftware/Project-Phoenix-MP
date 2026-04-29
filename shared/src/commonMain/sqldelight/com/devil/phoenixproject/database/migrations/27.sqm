@@ -1,0 +1,3 @@
+-- Migration 27: Add deletedAt column to TrainingCycle for soft-delete sync support.
+-- Mirrors Routine's deletedAt pattern (added in migration 11).
+ALTER TABLE TrainingCycle ADD COLUMN deletedAt INTEGER;

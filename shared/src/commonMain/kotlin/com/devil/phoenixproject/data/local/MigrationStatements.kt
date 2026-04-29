@@ -49,7 +49,7 @@ internal fun applyMigrationResilient(
  * Get the SQL statements for a specific migration version.
  *
  * These mirror the .sqm files exactly, split into individual statements so
- * the resilient executor can apply them one-by-one. Every version from 1-25
+ * the resilient executor can apply them one-by-one. Every version from 1-27
  * is covered. Version 18 is intentionally empty (NOOP).
  */
 internal fun getMigrationStatements(version: Int): List<String> = when (version) {
@@ -648,6 +648,21 @@ WHERE gs.rowid = (
         "DROP TABLE IF EXISTS GamificationStats",
         "ALTER TABLE GamificationStats_rebuild RENAME TO GamificationStats",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id)",
+    )
+
+    // Migration 26: SessionNotes side-table (Phase 3.5 — session-level notes persistence)
+    26 -> listOf(
+        """CREATE TABLE IF NOT EXISTS SessionNotes (
+            routineSessionId TEXT NOT NULL PRIMARY KEY,
+            notes TEXT,
+            updatedAt INTEGER
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_session_notes_updated_at ON SessionNotes(updatedAt)",
+    )
+
+    // Migration 27: TrainingCycle soft-delete for sync tombstone propagation
+    27 -> listOf(
+        "ALTER TABLE TrainingCycle ADD COLUMN deletedAt INTEGER",
     )
 
     else -> emptyList()
