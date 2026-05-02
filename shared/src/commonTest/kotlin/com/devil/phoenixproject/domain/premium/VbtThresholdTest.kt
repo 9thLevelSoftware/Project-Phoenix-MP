@@ -75,6 +75,20 @@ class VbtThresholdTest {
     }
 
     @Test
+    fun `updated threshold applies to subsequent reps`() {
+        val engine = BiomechanicsEngine(velocityLossThresholdPercent = 30f)
+
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
+        val rep2 = engine.processRep(2, createUniformMetrics(850.0), emptyList(), currentTimeMillis())
+        assertFalse(rep2.velocity.shouldStopSet, "15% loss should not trigger initial 30% threshold")
+
+        engine.updateVelocityLossThresholdPercent(10f)
+
+        val rep3 = engine.processRep(3, createUniformMetrics(850.0), emptyList(), currentTimeMillis())
+        assertTrue(rep3.velocity.shouldStopSet, "15% loss should trigger updated 10% threshold")
+    }
+
+    @Test
     fun `custom threshold 50 percent triggers only at extreme loss`() {
         val engine = BiomechanicsEngine(velocityLossThresholdPercent = 50f)
 

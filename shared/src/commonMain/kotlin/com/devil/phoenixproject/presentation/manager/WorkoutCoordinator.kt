@@ -43,7 +43,7 @@ class WorkoutCoordinator(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     ),
     private val velocityLossThresholdPercent: Float = 20f,
-    internal val autoEndOnVelocityLoss: Boolean = false,
+    autoEndOnVelocityLoss: Boolean = false,
 ) {
     companion object {
         /** Position-based auto-stop duration in seconds (handles in danger zone and released) */
@@ -390,12 +390,24 @@ class WorkoutCoordinator(
 
     // ===== Biomechanics Engine =====
 
+    private val _autoEndOnVelocityLoss = MutableStateFlow(autoEndOnVelocityLoss)
+    internal val autoEndOnVelocityLoss: Boolean
+        get() = _autoEndOnVelocityLoss.value
+
     /**
      * Biomechanics analysis engine for VBT, force curve, and asymmetry analysis.
      * Processes each rep's MetricSamples and exposes results via StateFlow.
      * Reset between sets via ActiveSessionEngine.
      */
     val biomechanicsEngine = BiomechanicsEngine(velocityLossThresholdPercent)
+
+    internal fun updateVbtSettings(
+        velocityLossThresholdPercent: Float,
+        autoEndOnVelocityLoss: Boolean,
+    ) {
+        biomechanicsEngine.updateVelocityLossThresholdPercent(velocityLossThresholdPercent)
+        _autoEndOnVelocityLoss.value = autoEndOnVelocityLoss
+    }
 
     /**
      * Rep boundary timestamps for MetricSample segmentation.

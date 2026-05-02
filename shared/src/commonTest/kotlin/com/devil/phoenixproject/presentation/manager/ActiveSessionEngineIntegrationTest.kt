@@ -118,23 +118,37 @@ class ActiveSessionEngineIntegrationTest {
     }
 
     @Test
-    fun coordinatorReflectsVbtConfigurationFromConstruction() = runTest {
+    fun coordinatorTracksVbtConfigurationUpdates() = runTest {
         val harness = DWSMTestHarness(this)
         advanceUntilIdle()
 
-        // The coordinator's autoEndOnVelocityLoss property is set at DWSM construction
-        // time from the initial preferences. Since DWSMTestHarness uses default prefs
-        // (autoEndOnVelocityLoss = false), verify that's what the coordinator got.
         assertFalse(
             harness.coordinator.autoEndOnVelocityLoss,
-            "Coordinator should reflect default autoEndOnVelocityLoss = false from construction",
+            "Coordinator should reflect default autoEndOnVelocityLoss = false",
+        )
+        assertEquals(
+            20f,
+            harness.coordinator.biomechanicsEngine.currentVelocityLossThresholdPercent,
+            "Coordinator should reflect default VBT threshold",
         )
 
-        // The biomechanicsEngine should have been constructed with default 20% threshold
-        // We can't directly access the threshold, but we can verify the engine exists
-        // and its latestRepResult is a valid StateFlow (not null reference)
-        val repResult = harness.coordinator.biomechanicsEngine.latestRepResult
-        assertEquals(null, repResult.value, "No rep result before any reps processed")
+        harness.fakePrefsManager.setPreferences(
+            UserPreferences(
+                autoEndOnVelocityLoss = true,
+                velocityLossThresholdPercent = 35,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertTrue(
+            harness.coordinator.autoEndOnVelocityLoss,
+            "Coordinator should update autoEndOnVelocityLoss from preferences",
+        )
+        assertEquals(
+            35f,
+            harness.coordinator.biomechanicsEngine.currentVelocityLossThresholdPercent,
+            "Coordinator should update VBT threshold from preferences",
+        )
 
         harness.cleanup()
     }

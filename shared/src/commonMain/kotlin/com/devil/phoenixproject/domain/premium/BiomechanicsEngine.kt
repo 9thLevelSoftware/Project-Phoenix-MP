@@ -27,14 +27,22 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * @param velocityLossThresholdPercent Velocity loss percentage to trigger shouldStopSet (default 20%)
  */
-class BiomechanicsEngine(private val velocityLossThresholdPercent: Float = 20f) {
+class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
     private val _latestRepResult = MutableStateFlow<BiomechanicsRepResult?>(null)
+    private val velocityLossThresholdPercent = MutableStateFlow(velocityLossThresholdPercent)
 
     /**
      * Latest biomechanics result for the most recently completed rep.
      * Null at set start or after reset.
      */
     val latestRepResult: StateFlow<BiomechanicsRepResult?> = _latestRepResult.asStateFlow()
+
+    internal val currentVelocityLossThresholdPercent: Float
+        get() = velocityLossThresholdPercent.value
+
+    internal fun updateVelocityLossThresholdPercent(percent: Float) {
+        velocityLossThresholdPercent.value = percent
+    }
 
     // C2: Thread-safe snapshot list — processRep() runs on Dispatchers.Default while
     // getSetSummary()/reset() may be called from the main dispatcher
@@ -239,15 +247,17 @@ class BiomechanicsEngine(private val velocityLossThresholdPercent: Float = 20f) 
 
         // VBT-04: Rep projection
         // Estimate remaining reps based on velocity decay rate
+        val thresholdPercent = velocityLossThresholdPercent.value
         val estimatedRepsRemaining: Int? = calculateEstimatedRepsRemaining(
             repNumber = repNumber,
             currentLossPercent = velocityLossPercent,
+            thresholdPercent = thresholdPercent,
         )
 
         // VBT-05: Auto-stop recommendation
         // Trigger when velocity loss reaches or exceeds threshold
         val shouldStopSet = velocityLossPercent != null &&
-            velocityLossPercent >= velocityLossThresholdPercent
+            velocityLossPercent >= thresholdPercent
 
         return VelocityResult(
             meanConcentricVelocityMmS = mcv,
@@ -269,7 +279,11 @@ class BiomechanicsEngine(private val velocityLossThresholdPercent: Float = 20f) 
      * @param currentLossPercent Current velocity loss percentage (null for rep 1)
      * @return Estimated reps remaining (0-99), or null if projection is not valid
      */
-    private fun calculateEstimatedRepsRemaining(repNumber: Int, currentLossPercent: Float?): Int? {
+    private fun calculateEstimatedRepsRemaining(
+        repNumber: Int,
+        currentLossPercent: Float?,
+        thresholdPercent: Float,
+    ): Int? {
         // Can't project from rep 1 (no decay data yet)
         if (repNumber < 2 || currentLossPercent == null) return null
 
@@ -282,7 +296,7 @@ class BiomechanicsEngine(private val velocityLossThresholdPercent: Float = 20f) 
         val avgLossPerRep = currentLossPercent / (repNumber - 1)
 
         // Project how many more reps until we hit the threshold
-        val remainingLossToThreshold = velocityLossThresholdPercent - currentLossPercent
+        val remainingLossToThreshold = thresholdPercent - currentLossPercent
 
         // If we're already at or past threshold, no reps remaining
         if (remainingLossToThreshold <= 0f) return 0

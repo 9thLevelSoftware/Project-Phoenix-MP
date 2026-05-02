@@ -264,6 +264,19 @@ class DefaultWorkoutSessionManager(
             override fun proceedFromSummary() = this@DefaultWorkoutSessionManager.proceedFromSummary()
         }
 
+        scope.launch {
+            try {
+                preferencesManager.preferencesFlow.collect { prefs ->
+                    coordinator.updateVbtSettings(
+                        velocityLossThresholdPercent = prefs.velocityLossThresholdPercent.toFloat(),
+                        autoEndOnVelocityLoss = prefs.autoEndOnVelocityLoss,
+                    )
+                }
+            } catch (e: Exception) {
+                Logger.e(e) { "Error in VBT settings collector" }
+            }
+        }
+
         // Manager-level summary auto-advance so countdown continues even when UI is backgrounded.
         // try-catch required — on Kotlin/Native (iOS), unhandled exceptions in scope.launch
         // call abort(), causing SIGABRT crash.

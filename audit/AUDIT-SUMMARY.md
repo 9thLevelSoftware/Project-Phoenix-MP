@@ -10,25 +10,32 @@
 
 ## Audit Reports
 
-| Report | File | Findings |
-|--------|------|----------|
-| Database & Migrations | [`database-migrations-audit.md`](database-migrations-audit.md) | 4 Critical, 6 High |
-| BLE Communication | [`ble-communication-audit.md`](ble-communication-audit.md) | 3 High, 12 Medium, 10 Low |
-| UI & State Management | [`ui-state-management-audit.md`](ui-state-management-audit.md) | 4 Critical, 6 High, 10 Medium, 6 Low |
-| Sync Layer | [`sync-layer-audit.md`](sync-layer-audit.md) | 3 High, 12 Medium, 11 Low |
-| Architecture & Testing | [`architecture-testing-audit.md`](architecture-testing-audit.md) | 2 High, 7 Medium, 3 Low |
+| Report | Date | File | Findings |
+|--------|------|------|----------|
+| Database & Migrations | 2026-03-31 | [`database-migrations-audit.md`](database-migrations-audit.md) | 4 Critical, 6 High |
+| BLE Communication | 2026-03-31 | [`ble-communication-audit.md`](ble-communication-audit.md) | 3 High, 12 Medium, 10 Low |
+| UI & State Management (code-architecture) | 2026-03-31 | [`ui-state-management-audit.md`](ui-state-management-audit.md) | 4 Critical, 6 High, 10 Medium, 6 Low |
+| Sync Layer | 2026-03-31 | [`sync-layer-audit.md`](sync-layer-audit.md) | 3 High, 12 Medium, 11 Low |
+| Architecture & Testing | 2026-03-31 | [`architecture-testing-audit.md`](architecture-testing-audit.md) | 2 High, 7 Medium, 3 Low |
+| **UX/UI (user-facing)** | **2026-05-01** | [**`ux-ui/PLAN.md`**](ux-ui/PLAN.md) | **9 Critical, 24 High, 18 Medium, 10 Polish** (+ 2 mockups, 71 screenshots, cross-repo parity coordination) |
 
 ---
 
 ## Consolidated Severity Counts
 
-| Severity | Database | BLE | UI/State | Sync | Arch/Test | **Total** |
-|----------|----------|-----|----------|------|-----------|-----------|
-| Critical | 4 | 0 | 4 | 0 | 0 | **8** |
-| High | 6 | 3 | 6 | 3 | 2 | **20** |
-| Medium | — | 12 | 10 | 12 | 7 | **41** |
-| Low | — | 10 | 6 | 11 | 3 | **30** |
-| **Total** | **10** | **25** | **26** | **26** | **12** | **99** |
+| Severity | Database | BLE | UI/State | Sync | Arch/Test | UX/UI | **Total** |
+|----------|----------|-----|----------|------|-----------|-------|-----------|
+| Critical | 4 | 0 | 4 | 0 | 0 | 9 | **17** |
+| High | 6 | 3 | 6 | 3 | 2 | 24 | **44** |
+| Medium | — | 12 | 10 | 12 | 7 | 18 | **59** |
+| Low / Polish | — | 10 | 6 | 11 | 3 | 10 | **40** |
+| **Total** | **10** | **25** | **26** | **26** | **12** | **61** | **160** |
+
+The UX/UI audit (2026-05-01) is the only one that:
+- Audits the user-facing Compose UI surfaces empirically (Pixel 8 emulator walkthrough)
+- Audits cross-platform parity with `phoenix-portal` (cable colors, weight conventions, asymmetry thresholds, palette unification)
+- Ships proposed-redesign mockups (M-01 BLE state machine, M-02 RoutineEditor)
+- See `ux-ui/PLAN.md` for the full plan and `ux-ui/PARITY-COORDINATION.md` for cross-repo coordination.
 
 ---
 

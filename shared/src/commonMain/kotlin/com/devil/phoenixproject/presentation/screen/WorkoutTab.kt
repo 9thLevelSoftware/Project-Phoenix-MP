@@ -409,11 +409,11 @@ fun WorkoutTab(
             when (workoutState) {
                 is WorkoutState.Countdown -> {
                     if (!workoutParameters.isJustLift) {
-                        // Compute total weight for display: per-cable * cableCount
-                        // cableCount sourced from exercise metadata when available
                         val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
-                        val cableCount = currentExercise?.exercise?.preferredCableCount ?: 1
-                        val totalWeight = workoutParameters.weightPerCableKg * cableCount
+                        val displayMultiplier = currentExercise?.exercise?.displayMultiplier
+                            ?: currentExercise?.exercise?.preferredCableCount
+                            ?: 1
+                        val totalWeight = workoutParameters.weightPerCableKg * displayMultiplier
                         CountdownCard(
                             countdownSecondsRemaining = workoutState.secondsRemaining,
                             nextExerciseName = currentExercise?.exercise?.name ?: "Exercise",
