@@ -113,6 +113,7 @@ class SqlDelightSyncRepository(
                 clientId = row.id,
                 serverId = row.serverId,
                 name = row.name,
+                displayName = row.displayName ?: row.name, // Carry display name (#404)
                 muscleGroup = row.muscleGroup,
                 equipment = row.equipment,
                 defaultCableConfig = row.defaultCableConfig,
@@ -387,7 +388,7 @@ class SqlDelightSyncRepository(
                     queries.insertExercise(
                         id = dto.clientId,
                         name = dto.name,
-                        displayName = null, // Custom exercises use name directly
+                        displayName = dto.displayName, // Carry display name from sync (#404)
                         description = null,
                         created = dto.createdAt,
                         muscleGroup = dto.muscleGroup,
@@ -621,9 +622,10 @@ class SqlDelightSyncRepository(
 
                             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
 
-                            // Attempt catalog lookup so equipment and exerciseId are populated.
-                            // Prevents bodyweight misclassification when equipment would default to "".
-                            val catalogExercise = queries.findExerciseByName(exercise.name).executeAsOneOrNull()
+                            // ID-first catalog lookup: use exerciseId when available, fall back to name (#404)
+                            val catalogExercise = exercise.exerciseId?.let { id ->
+                                queries.selectExerciseById(id).executeAsOneOrNull()
+                            } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
                             val resolvedEquipment = when {
                                 exercise.isBodyweight -> "Bodyweight"
@@ -879,21 +881,26 @@ class SqlDelightSyncRepository(
     // === Exercise Lookup for Pull ===
 
     /**
-     * Find exercise ID by name and optionally muscle group for session enrichment during pull.
+     * Find exercise ID by catalog ID, name, and optionally muscle group for session enrichment during pull.
      *
      * Lookup strategy (in order):
+     * 0. Direct ID lookup (unambiguous, O(1)) — added for #404
      * 1. Exact match on name + muscle group (if muscle group provided)
      * 2. Exact match on name only (via findExerciseByName)
      * 3. Case-insensitive match on name (fallback for portal name variations)
      *
-     * This enables pulled sessions to link to the local exercise catalog, which provides
-     * muscle group data, equipment info, and other metadata for analytics and display.
-     *
      * @param name Exercise name from portal
-     * @param muscleGroup Optional muscle group for disambiguation (e.g., "Chest Press" in Chest vs Arms)
-     * @return Exercise ID if found, null otherwise (caller should log for telemetry)
+     * @param muscleGroup Optional muscle group for disambiguation
+     * @param exerciseId Optional catalog exercise ID (preferred, unambiguous)
+     * @return Exercise ID if found, null otherwise
      */
-    override suspend fun findExerciseId(name: String, muscleGroup: String?): String? = withContext(Dispatchers.IO) {
+    override suspend fun findExerciseId(name: String, muscleGroup: String?, exerciseId: String?): String? = withContext(Dispatchers.IO) {
+        // Strategy 0: Direct ID lookup — O(1), unambiguous (#404)
+        exerciseId?.let { id ->
+            val match = queries.selectExerciseById(id).executeAsOneOrNull()
+            if (match != null) return@withContext match.id
+        }
+
         // Strategy 1: Try exact match with muscle group (most specific)
         if (muscleGroup != null) {
             val exactMatch = queries.findExerciseByNameAndMuscle(name, muscleGroup).executeAsOneOrNull()
@@ -1580,7 +1587,10 @@ class SqlDelightSyncRepository(
                             } ?: ""
 
                             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
-                            val catalogExercise = queries.findExerciseByName(exercise.name).executeAsOneOrNull()
+                            // ID-first catalog lookup (#404)
+                            val catalogExercise = exercise.exerciseId?.let { id ->
+                                queries.selectExerciseById(id).executeAsOneOrNull()
+                            } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
                             val resolvedEquipmentBulk = when {
                                 exercise.isBodyweight -> "Bodyweight"

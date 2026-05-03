@@ -235,7 +235,7 @@ interface SyncRepository {
      *
      * @return Exercise ID if found, null otherwise
      */
-    suspend fun findExerciseId(name: String, muscleGroup: String? = null): String?
+    suspend fun findExerciseId(name: String, muscleGroup: String? = null, exerciseId: String? = null): String?
 
     // === Atomic Pull Merge ===
 
