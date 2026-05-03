@@ -5,6 +5,7 @@
 CREATE TABLE Exercise (
     id TEXT NOT NULL PRIMARY KEY,
     name TEXT NOT NULL,
+    displayName TEXT,
     description TEXT,
     created INTEGER NOT NULL DEFAULT 0,
     muscleGroup TEXT NOT NULL,
@@ -457,12 +458,12 @@ UPDATE Exercise SET isFavorite = ? WHERE id = ?;
 
 insertExercise:
 INSERT OR REPLACE INTO Exercise (
-    id, name, description, created, muscleGroup, muscleGroups, muscles,
+    id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
     equipment, movement, sidedness, grip, gripWidth, minRepRange,
     popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
     aliases, defaultCableConfig, one_rep_max_kg
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 countExercises:
 SELECT COUNT(*) FROM Exercise;
