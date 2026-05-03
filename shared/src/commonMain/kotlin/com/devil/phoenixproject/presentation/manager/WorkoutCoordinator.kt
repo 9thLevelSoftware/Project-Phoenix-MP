@@ -269,6 +269,9 @@ class WorkoutCoordinator(
     internal var currentRoutineName: String? = null
     internal var currentRoutineId: String? = null
 
+    /** Issue #395: Accumulated calories across all sets in current routine for aggregate health write. */
+    internal var routineAccumulatedCalories: Float = 0f
+
     // Training Cycle context for tracking cycle progress when workout completes
     internal var activeCycleId: String? = null
     internal var activeCycleDayNumber: Int? = null

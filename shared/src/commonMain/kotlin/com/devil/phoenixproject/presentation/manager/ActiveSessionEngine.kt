@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
+import com.devil.phoenixproject.data.integration.RoutineHealthData
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
@@ -1039,39 +1040,49 @@ class ActiveSessionEngine(
      * @param timestamp Rep completion timestamp
      */
     private fun processBiomechanicsForRep(repNumber: Int, timestamp: Long) {
+        val allMetrics = coordinator.collectedMetrics.value
+        val boundaries = coordinator.repBoundaryTimestamps.value
+        if (boundaries.isEmpty()) {
+            Logger.d { "Biomechanics: no rep boundary for rep $repNumber" }
+            return
+        }
+
         scope.launch(Dispatchers.Default) {
-            val allMetrics = coordinator.collectedMetrics.value
-            val boundaries = coordinator.repBoundaryTimestamps.value
+            try {
+                // Segment: metrics between previous boundary and current boundary
+                val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
+                val currentBoundary = boundaries.last()
 
-            // Segment: metrics between previous boundary and current boundary
-            val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
-            val currentBoundary = boundaries.last()
+                val repMetrics = allMetrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+                if (repMetrics.isEmpty()) {
+                    Logger.d { "Biomechanics: no metrics for rep $repNumber (boundary $prevBoundary..$currentBoundary)" }
+                    return@launch
+                }
 
-            val repMetrics = allMetrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
-            if (repMetrics.isEmpty()) {
-                Logger.d { "Biomechanics: no metrics for rep $repNumber (boundary $prevBoundary..$currentBoundary)" }
-                return@launch
+                // Split into concentric/eccentric using velocity direction
+                // Concentric = lifting (positive velocity), Eccentric = lowering (negative velocity)
+                // Approximate: use first half as concentric if we can't determine from velocity
+                val concentricMetrics = repMetrics.filter {
+                    it.velocityA > 0 || it.velocityB > 0
+                }.takeIf { it.isNotEmpty() } ?: run {
+                    // Fallback: first half is concentric
+                    val midpoint = repMetrics.size / 2
+                    if (midpoint > 0) repMetrics.take(midpoint) else repMetrics
+                }
+
+                coordinator.biomechanicsEngine.processRep(
+                    repNumber = repNumber,
+                    concentricMetrics = concentricMetrics,
+                    allRepMetrics = repMetrics,
+                    timestamp = timestamp,
+                )
+
+                Logger.d { "Biomechanics processed: rep=$repNumber, metrics=${repMetrics.size}, concentric=${concentricMetrics.size}" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.e(e) { "Biomechanics processing failed for rep $repNumber" }
             }
-
-            // Split into concentric/eccentric using velocity direction
-            // Concentric = lifting (positive velocity), Eccentric = lowering (negative velocity)
-            // Approximate: use first half as concentric if we can't determine from velocity
-            val concentricMetrics = repMetrics.filter {
-                it.velocityA > 0 || it.velocityB > 0
-            }.takeIf { it.isNotEmpty() } ?: run {
-                // Fallback: first half is concentric
-                val midpoint = repMetrics.size / 2
-                if (midpoint > 0) repMetrics.take(midpoint) else repMetrics
-            }
-
-            coordinator.biomechanicsEngine.processRep(
-                repNumber = repNumber,
-                concentricMetrics = concentricMetrics,
-                allRepMetrics = repMetrics,
-                timestamp = timestamp,
-            )
-
-            Logger.d { "Biomechanics processed: rep=$repNumber, metrics=${repMetrics.size}, concentric=${concentricMetrics.size}" }
 
             // Issue #313: Check velocity threshold for alert and auto-end (working reps only)
             if (coordinator._repCount.value.isWarmupComplete) {
@@ -1971,6 +1982,8 @@ class ActiveSessionEngine(
 
             is InterruptedWorkoutRecoveryPlan.ShowRoutineComplete -> {
                 Logger.w { "Interrupted workout already completed before reconnect; showing routine complete" }
+                // Issue #395: Write aggregate health workout before clearing routine state
+                writeRoutineHealthData()
                 interruptedSetRecovery = null
                 pendingStartOverride = null
                 resetInterruptedWorkoutTrackingState()
@@ -2208,12 +2221,19 @@ class ActiveSessionEngine(
                 } else {
                     repCounter.reset()
                 }
+                // Issue #357: Use warmupOverrideParams (the actual BLE params) for rep counter
+                // configuration. During variable warm-up sets, effectiveParams still has
+                // warmupReps=3 (firmware ramp), but warmupOverrideParams correctly has
+                // warmupReps=0 since variable warm-up sets handle their own weight scaling.
+                // Using effectiveParams caused the rep counter to misclassify the first 3
+                // reps of each warm-up set as firmware warmup reps, making sets appear to
+                // end 3 reps early and corrupting weight tracking.
                 repCounter.configure(
-                    warmupTarget = effectiveParams.warmupReps,
-                    workingTarget = if (isTimedCableExercise) 0 else effectiveParams.reps,
+                    warmupTarget = warmupOverrideParams.warmupReps,
+                    workingTarget = if (isTimedCableExercise) 0 else warmupOverrideParams.reps,
                     isJustLift = isJustLiftMode,
-                    stopAtTop = effectiveParams.stopAtTop,
-                    isAMRAP = if (isTimedCableExercise) true else effectiveParams.isAMRAP,
+                    stopAtTop = warmupOverrideParams.stopAtTop,
+                    isAMRAP = if (isTimedCableExercise) true else warmupOverrideParams.isAMRAP,
                 )
 
                 if (isTimedCableExercise) {
@@ -2336,10 +2356,17 @@ class ActiveSessionEngine(
             coordinator.currentRoutineSessionId = null
             coordinator.currentRoutineName = null
             coordinator.currentRoutineId = null
+            coordinator.routineAccumulatedCalories = 0f
             return
         }
 
-        if (coordinator.currentRoutineSessionId.isNullOrBlank()) {
+        // Issue #392: Generate new session ID when routine changes OR when no ID exists.
+        // Previously only checked isNullOrBlank, so switching from Routine A → B without
+        // going through the natural "routine complete" path reused Routine A's session ID,
+        // merging both routines into one history entry.
+        if (coordinator.currentRoutineSessionId.isNullOrBlank() ||
+            coordinator.currentRoutineId != loadedRoutine.id
+        ) {
             coordinator.currentRoutineSessionId = KmpUtils.randomUUID()
         }
         coordinator.currentRoutineName = loadedRoutine.name
@@ -2578,6 +2605,11 @@ class ActiveSessionEngine(
                 coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
                 coordinator._loadedRoutine.value = null
                 coordinator.routineStartTime = 0
+                // Issue #392: Clear routine session context on exit
+                coordinator.currentRoutineSessionId = null
+                coordinator.currentRoutineName = null
+                coordinator.currentRoutineId = null
+                coordinator.routineAccumulatedCalories = 0f
             } else {
                 coordinator._workoutState.value = summary
             }
@@ -2672,6 +2704,8 @@ class ActiveSessionEngine(
                 if (routine != null) {
                     val movedToNextStep = flowDelegate?.skipCurrentExerciseAndEnterNextStep() == true
                     if (!movedToNextStep) {
+                        // Issue #395: Write aggregate health workout before completing routine
+                        writeRoutineHealthData()
                         flowDelegate?.showRoutineComplete()
                     }
                 }
@@ -2748,6 +2782,52 @@ class ActiveSessionEngine(
         val routineExercise = flowDelegate?.getCurrentExercise() ?: return null
         val plannedSets = completedSetRepository.getPlannedSets(routineExercise.id)
         return plannedSets.find { it.setNumber == setIndex }?.id
+    }
+
+    /**
+     * Issue #395: Write a single aggregate workout to the health platform
+     * for a completed routine. Fire-and-forget; failure is non-fatal.
+     *
+     * Must be called BEFORE coordinator.routineStartTime/currentRoutineSessionId are reset.
+     */
+    internal fun writeRoutineHealthData() {
+        val routineSessionId = coordinator.currentRoutineSessionId ?: return
+        val startTime = coordinator.routineStartTime
+        if (startTime <= 0L) return
+        if (healthIntegration == null || externalActivityRepository == null) return
+
+        val routineName = coordinator.currentRoutineName ?: "Phoenix Routine"
+        val durationMs = currentTimeMillis() - startTime
+        val totalCalories = coordinator.routineAccumulatedCalories.takeIf { it > 0f }
+        val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+
+        scope.launch {
+            try {
+                val provider = if (getPlatform().name.startsWith("iOS")) {
+                    IntegrationProvider.APPLE_HEALTH
+                } else {
+                    IntegrationProvider.GOOGLE_HEALTH
+                }
+                val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
+                if (status?.status == ConnectionStatus.CONNECTED) {
+                    val data = RoutineHealthData(
+                        routineName = routineName,
+                        startTimeMs = startTime,
+                        durationMs = durationMs,
+                        totalCalories = totalCalories,
+                        externalId = routineSessionId,
+                    )
+                    healthIntegration.writeRoutineWorkout(data)
+                    Logger.i("ActiveSessionEngine") {
+                        "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s)"
+                    }
+                }
+            } catch (e: Exception) {
+                Logger.w("ActiveSessionEngine") { "Routine health push failed (non-fatal): ${e.message}" }
+            } finally {
+                coordinator.routineAccumulatedCalories = 0f
+            }
+        }
     }
 
     /**
@@ -2857,9 +2937,19 @@ class ActiveSessionEngine(
 
         workoutRepository.saveSession(session)
 
+        // Issue #395: Accumulate calories for routine-level aggregate health write.
+        // Only write per-set to health platform for non-routine (Just Lift) workouts.
+        val isRoutineSet = session.routineSessionId != null
+        if (isRoutineSet) {
+            session.estimatedCalories?.let { cal ->
+                if (cal > 0f) coordinator.routineAccumulatedCalories += cal
+            }
+        }
+
         // Fire-and-forget health push: auto-push to Health Connect (Android) or HealthKit (iOS)
         // after the session is persisted. Failure is non-fatal and never blocks workout completion.
-        if (healthIntegration != null && externalActivityRepository != null) {
+        // Issue #395: Skip per-set writes for routine sets — aggregate written at routine completion.
+        if (!isRoutineSet && healthIntegration != null && externalActivityRepository != null) {
             val profileId = session.profileId
             scope.launch {
                 try {
@@ -3730,8 +3820,13 @@ class ActiveSessionEngine(
             startWorkoutOrSetReady()
         } else {
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
-            flowDelegate?.showRoutineComplete()
+            // Issue #395: Write aggregate health workout BEFORE clearing routine state
+            writeRoutineHealthData()
+            // Issue #393: Set Idle BEFORE showRoutineComplete() to prevent race where
+            // routineFlowState=Complete + workoutState=SetSummary causes navigation ping-pong
+            // between EnhancedMainScreen and ActiveWorkoutScreen.
             coordinator._workoutState.value = WorkoutState.Idle
+            flowDelegate?.showRoutineComplete()
             coordinator._currentSetIndex.value = 0
             coordinator._currentExerciseIndex.value = 0
             coordinator.currentRoutineSessionId = null

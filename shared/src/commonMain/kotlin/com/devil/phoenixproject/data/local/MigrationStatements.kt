@@ -49,7 +49,7 @@ internal fun applyMigrationResilient(
  * Get the SQL statements for a specific migration version.
  *
  * These mirror the .sqm files exactly, split into individual statements so
- * the resilient executor can apply them one-by-one. Every version from 1-28
+ * the resilient executor can apply them one-by-one. Every version from 1-29
  * is covered. Version 18 is intentionally empty (NOOP).
  */
 internal fun getMigrationStatements(version: Int): List<String> = when (version) {
@@ -650,7 +650,7 @@ WHERE gs.rowid = (
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id)",
     )
 
-    // Migration 26: SessionNotes side-table for session-level notes persistence
+    // Migration 26: SessionNotes side-table (Phase 3.5 — session-level notes persistence)
     26 -> listOf(
         """CREATE TABLE IF NOT EXISTS SessionNotes (
             routineSessionId TEXT NOT NULL PRIMARY KEY,
@@ -660,7 +660,7 @@ WHERE gs.rowid = (
         "CREATE INDEX IF NOT EXISTS idx_session_notes_updated_at ON SessionNotes(updatedAt)",
     )
 
-    // Migration 27: Routine Groups (local-only organizational buckets)
+    // Migration 27: Routine Groups + TrainingCycle soft-delete
     27 -> listOf(
         """CREATE TABLE IF NOT EXISTS RoutineGroup (
             id TEXT PRIMARY KEY NOT NULL,
@@ -671,11 +671,17 @@ WHERE gs.rowid = (
         )""",
         "CREATE INDEX IF NOT EXISTS idx_routine_group_profile ON RoutineGroup(profile_id)",
         "ALTER TABLE Routine ADD COLUMN groupId TEXT REFERENCES RoutineGroup(id) ON DELETE SET NULL",
+        "ALTER TABLE TrainingCycle ADD COLUMN deletedAt INTEGER",
     )
 
     // Migration 28: Cable-aware PersonalRecord weight display
     28 -> listOf(
         "ALTER TABLE PersonalRecord ADD COLUMN cable_count INTEGER",
+    )
+
+    // Migration 29: Equipment-aware weight display
+    29 -> listOf(
+        "ALTER TABLE WorkoutSession ADD COLUMN display_multiplier INTEGER",
     )
 
     else -> emptyList()

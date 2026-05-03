@@ -25,6 +25,7 @@ import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.util.Constants
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flatMapLatest
@@ -116,6 +117,7 @@ class RoutineFlowManager(
                     // for a SQLDelight reactive query), so break if it does.
                     break
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e  // Never suppress coroutine cancellation
                     retryCount++
                     Logger.e(e) { "ROUTINE_LOAD: Error loading routines (attempt $retryCount/$maxRetries)" }
                     if (retryCount <= maxRetries) {
@@ -138,6 +140,7 @@ class RoutineFlowManager(
                     Logger.e { "Failed to initialize exercise library: ${result.exceptionOrNull()?.message}" }
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Logger.e(e) { "Error initializing exercise library" }
             }
         }
@@ -509,6 +512,7 @@ class RoutineFlowManager(
                 workoutRepository.saveRoutine(routineWithProfile)
                 Logger.d { "ROUTINE_SAVE: Saved routine '${routineWithProfile.name}' (id=${routineWithProfile.id}, profileId=${routineWithProfile.profileId})" }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Logger.e(e) { "ROUTINE_SAVE: Failed to save routine '${routine.name}' (id=${routine.id}, profileId=${routine.profileId})" }
             }
         }
@@ -522,6 +526,7 @@ class RoutineFlowManager(
                 workoutRepository.updateRoutine(routineWithProfile)
                 Logger.d { "ROUTINE_SAVE: Updated routine '${routineWithProfile.name}' (id=${routineWithProfile.id}, profileId=${routineWithProfile.profileId})" }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Logger.e(e) { "ROUTINE_SAVE: Failed to update routine '${routine.name}' (id=${routine.id})" }
             }
         }
@@ -532,6 +537,7 @@ class RoutineFlowManager(
             try {
                 workoutRepository.deleteRoutine(routineId)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Logger.e(e) { "ROUTINE_SAVE: Failed to delete routine (id=$routineId)" }
             }
         }
@@ -548,6 +554,7 @@ class RoutineFlowManager(
                 workoutRepository.saveRoutine(routineWithProfile)
                 Logger.d { "ROUTINE_SAVE: Saved routine '${routine.name}' to profile $targetProfileId" }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Logger.e(e) { "ROUTINE_SAVE: Failed to save routine '${routine.name}' to profile $targetProfileId" }
             }
         }
@@ -564,6 +571,7 @@ class RoutineFlowManager(
                 }
                 Logger.d { "ROUTINE_MOVE: Moved ${routineIds.size} routines to profile $targetProfileId" }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Logger.e(e) { "ROUTINE_MOVE: Failed to move routines to profile $targetProfileId" }
             }
         }
@@ -1053,6 +1061,11 @@ class RoutineFlowManager(
         coordinator._loadedRoutine.value = null
         coordinator._workoutState.value = WorkoutState.Idle
         coordinator.routineStartTime = 0
+        // Issue #392: Clear routine session context so next routine gets fresh ID
+        coordinator.currentRoutineSessionId = null
+        coordinator.currentRoutineName = null
+        coordinator.currentRoutineId = null
+        coordinator.routineAccumulatedCalories = 0f
     }
 
     /**
@@ -1084,6 +1097,11 @@ class RoutineFlowManager(
         coordinator._loadedRoutine.value = null
         clearCycleContext()
         coordinator.routineStartTime = 0
+        // Issue #392: Clear routine session context so next routine gets fresh ID
+        coordinator.currentRoutineSessionId = null
+        coordinator.currentRoutineName = null
+        coordinator.currentRoutineId = null
+        coordinator.routineAccumulatedCalories = 0f
     }
 
     // ===== Exercise Navigation =====
@@ -1209,6 +1227,7 @@ class RoutineFlowManager(
 
                 Logger.d("RoutineFlowManager") { "BLE stop sequence sent before navigation to exercise $index" }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Logger.w(e) { "Stop command before navigation failed (non-fatal): ${e.message}" }
             }
 

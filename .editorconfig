@@ -8,6 +8,9 @@ charset = utf-8
 trim_trailing_whitespace = true
 insert_final_newline = true
 
+[*.{yml,yaml}]
+indent_size = 2
+
 [*.{kt,kts}]
 ktlint_code_style = android_studio
 max_line_length = off

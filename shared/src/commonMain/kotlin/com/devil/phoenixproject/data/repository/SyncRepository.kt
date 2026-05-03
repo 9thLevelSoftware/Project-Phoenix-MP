@@ -67,6 +67,18 @@ interface SyncRepository {
     suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String = "default"): List<Routine>
 
     /**
+     * Get IDs of soft-deleted routines since timestamp, for sync push tombstone propagation.
+     * Returns server IDs where available, falling back to client IDs.
+     */
+    suspend fun getDeletedRoutineIdsSince(timestamp: Long, profileId: String = "default"): List<String>
+
+    /**
+     * Get IDs of training cycles that were soft-deleted since [timestamp].
+     * Used to propagate deletion tombstones to the server on push.
+     */
+    suspend fun getDeletedCycleIdsSince(timestamp: Long, profileId: String = "default"): List<String>
+
+    /**
      * Get training cycles scoped to the given profile, with progress and progression context for push.
      * Returns all matching cycles (no delta — cycles lack updatedAt timestamps).
      */
@@ -93,6 +105,20 @@ interface SyncRepository {
      * Get all VBT assessment results for sync push.
      */
     suspend fun getAllAssessments(profileId: String = "default"): List<com.devil.phoenixproject.database.AssessmentResult>
+
+    // === Parity Reconciliation (hard-delete entities removed on server) ===
+
+    /**
+     * Hard-delete cycles by IDs. Used during parity reconciliation when
+     * server confirms these cycles no longer exist (portal deletion).
+     */
+    suspend fun hardDeleteCyclesByIds(ids: List<String>)
+
+    /**
+     * Hard-delete routines by IDs. Used during parity reconciliation when
+     * server confirms these routines no longer exist (portal deletion).
+     */
+    suspend fun hardDeleteRoutinesByIds(ids: List<String>)
 
     // === Parity Sync Operations (get local entity IDs for comparison) ===
 

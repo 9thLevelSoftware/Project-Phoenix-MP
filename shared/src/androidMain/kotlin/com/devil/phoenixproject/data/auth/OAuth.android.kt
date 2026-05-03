@@ -1,13 +1,22 @@
 package com.devil.phoenixproject.data.auth
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import androidx.browser.customtabs.CustomTabsIntent
 import co.touchlab.kermit.Logger
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.security.SecureRandom
 
 private val log = Logger.withTag("OAuthLauncher")
@@ -19,11 +28,11 @@ internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
 }
 
 /**
- * Android OAuth launcher. Opens the authorize URL in whatever browser the
- * user has set as default (via ACTION_VIEW). The browser-side redirect is
- * captured by [OAuthRedirectActivity] in the host app (registered against
- * the callback URI scheme in its AndroidManifest) and delivered back here
- * via [AndroidOAuthBridge].
+ * Android OAuth launcher. Opens the authorize URL in a Chrome Custom Tab
+ * when possible, falling back to the default external browser only if no
+ * Custom Tabs-capable browser is available. The browser-side redirect is
+ * captured by [OAuthRedirectActivity] in the host app and delivered back
+ * here via [AndroidOAuthBridge].
  *
  * If the user dismisses the browser without completing the flow (Back / Home
  * / kill the tab), the host activity will resume without a callback ever
@@ -38,6 +47,11 @@ actual class OAuthLauncher(private val context: Context) {
             ?: return Result.failure(
                 IllegalStateException("OAuth requires an Application context"),
             )
+        val abandonmentScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val abandonmentGuard = AndroidOAuthAbandonmentWatcher(
+            deferred = deferred,
+            scope = abandonmentScope,
+        )
 
         // Watch the activity lifecycle so we can detect the user backing out
         // of the browser without completing OAuth. We set hostStopped = true
@@ -45,18 +59,20 @@ actual class OAuthLauncher(private val context: Context) {
         // activity in our app resumes again without the deferred being
         // completed, we know the user dismissed the browser.
         //
+        // The cancellation is intentionally delayed by a short grace window:
+        // some browsers resume the host task before they deliver the deep-link
+        // redirect intent. Cancelling immediately turns a successful OAuth
+        // handoff into a false "flow cancelled" error.
+        //
         // Successful OAuth: OAuthRedirectActivity.onCreate runs deliverCallback
         // before its onResume fires, so the deferred is already completed by
         // the time the listener sees a resume → no cancellation.
-        var hostStopped = false
-        val abandonmentWatcher = object : Application.ActivityLifecycleCallbacks {
+        val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
             override fun onActivityStopped(activity: Activity) {
-                hostStopped = true
+                abandonmentGuard.onActivityStopped()
             }
             override fun onActivityResumed(activity: Activity) {
-                if (hostStopped && !deferred.isCompleted) {
-                    AndroidOAuthBridge.cancelFlow()
-                }
+                abandonmentGuard.onActivityResumed()
             }
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
             override fun onActivityStarted(activity: Activity) {}
@@ -64,13 +80,10 @@ actual class OAuthLauncher(private val context: Context) {
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
             override fun onActivityDestroyed(activity: Activity) {}
         }
-        application.registerActivityLifecycleCallbacks(abandonmentWatcher)
+        application.registerActivityLifecycleCallbacks(lifecycleCallbacks)
 
         return try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authorizeUrl)).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
+            openAuthorizeUrl(authorizeUrl)
             val callbackUrl = deferred.await()
             Result.success(callbackUrl)
         } catch (e: Exception) {
@@ -78,10 +91,64 @@ actual class OAuthLauncher(private val context: Context) {
             AndroidOAuthBridge.cancelFlow()
             Result.failure(e)
         } finally {
-            application.unregisterActivityLifecycleCallbacks(abandonmentWatcher)
+            abandonmentGuard.dispose()
+            abandonmentScope.cancel()
+            application.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
+        }
+    }
+
+    private fun openAuthorizeUrl(authorizeUrl: String) {
+        val uri = Uri.parse(authorizeUrl)
+        val customTabsIntent = CustomTabsIntent.Builder()
+            .setShowTitle(false)
+            .build()
+            .apply {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+        try {
+            customTabsIntent.launchUrl(context, uri)
+        } catch (e: ActivityNotFoundException) {
+            log.w(e) { "Custom Tabs unavailable; falling back to external browser" }
+            val fallbackIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(fallbackIntent)
         }
     }
 }
+
+internal class AndroidOAuthAbandonmentWatcher(
+    private val deferred: CompletableDeferred<String>,
+    private val scope: CoroutineScope,
+    private val gracePeriodMs: Long = CALLBACK_RESUME_GRACE_PERIOD_MS,
+    private val cancelFlow: () -> Unit = AndroidOAuthBridge::cancelFlow,
+) {
+    private var hostStopped = false
+    private var pendingCancellation: Job? = null
+
+    fun onActivityStopped() {
+        hostStopped = true
+    }
+
+    fun onActivityResumed() {
+        if (!hostStopped || deferred.isCompleted) return
+
+        pendingCancellation?.cancel()
+        pendingCancellation = scope.launch {
+            delay(gracePeriodMs)
+            if (!deferred.isCompleted) {
+                cancelFlow()
+            }
+        }
+    }
+
+    fun dispose() {
+        pendingCancellation?.cancel()
+    }
+}
+
+internal const val CALLBACK_RESUME_GRACE_PERIOD_MS = 750L
 
 /**
  * Shared handoff between [OAuthLauncher] (waiting for a callback) and the

@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -81,6 +83,7 @@ import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -231,6 +234,23 @@ fun EnhancedMainScreen(
         val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
 
         CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
+            val useCompactTopBar = isCompactAccessibilityLayout()
+            val fullTopBarTitle = if (topBarTitle.isNotEmpty()) {
+                topBarTitle
+            } else {
+                getScreenTitle(
+                    route = currentRoute,
+                    routineName = currentRoutineName,
+                    exerciseName = selectedExerciseName,
+                    cycleName = editingCycleName,
+                )
+            }
+            val visibleTopBarTitle = if (useCompactTopBar) {
+                getCompactScreenTitle(currentRoute, fullTopBarTitle)
+            } else {
+                fullTopBarTitle
+            }
+
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 topBar = {
@@ -239,21 +259,17 @@ fun EnhancedMainScreen(
                             modifier = Modifier.statusBarsPadding(),
                             title = {
                                 Column(
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalArrangement = Arrangement.spacedBy(0.dp),
                                 ) {
                                     // Main title - either dynamic or default based on route
                                     Text(
-                                        text = if (topBarTitle.isNotEmpty()) {
-                                            topBarTitle
+                                        text = visibleTopBarTitle,
+                                        style = if (useCompactTopBar) {
+                                            MaterialTheme.typography.titleLarge
                                         } else {
-                                            getScreenTitle(
-                                                route = currentRoute,
-                                                routineName = currentRoutineName,
-                                                exerciseName = selectedExerciseName,
-                                                cycleName = editingCycleName,
-                                            )
+                                            MaterialTheme.typography.titleLarge
                                         },
-                                        style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
@@ -339,6 +355,7 @@ fun EnhancedMainScreen(
                                 // Connection status icon with text label
                                 ConnectionStatusIndicator(
                                     connectionState = connectionState,
+                                    compact = useCompactTopBar,
                                     onToggleConnection = {
                                         if (connectionState is ConnectionState.Connected) {
                                             viewModel.disconnect()
@@ -696,7 +713,11 @@ private fun SyncStatusIcon(syncState: SyncState, isAuthenticated: Boolean, lastS
  * 4. Red "Reconnect" - error or connection lost
  */
 @Composable
-private fun ConnectionStatusIndicator(connectionState: ConnectionState, onToggleConnection: () -> Unit) {
+private fun ConnectionStatusIndicator(
+    connectionState: ConnectionState,
+    compact: Boolean,
+    onToggleConnection: () -> Unit,
+) {
     val isConnected = connectionState is ConnectionState.Connected
     val isConnecting = connectionState is ConnectionState.Connecting ||
         connectionState is ConnectionState.Scanning
@@ -714,11 +735,20 @@ private fun ConnectionStatusIndicator(connectionState: ConnectionState, onToggle
         label = "gradientOffset",
     )
 
-    val buttonText = when {
-        isConnected -> "Connected"
-        isConnecting -> "Connecting..."
-        isError -> "Reconnect"
-        else -> "Click to Connect"
+    val buttonText = if (compact) {
+        when {
+            isConnected -> "Connected"
+            isConnecting -> "Connecting"
+            isError -> "Retry"
+            else -> "Connect"
+        }
+    } else {
+        when {
+            isConnected -> "Connected"
+            isConnecting -> "Connecting..."
+            isError -> "Reconnect"
+            else -> "Click to Connect"
+        }
     }
 
     val contentDescription = when {
@@ -735,7 +765,8 @@ private fun ConnectionStatusIndicator(connectionState: ConnectionState, onToggle
 
     Box(
         modifier = Modifier
-            .height(32.dp)
+            .heightIn(min = 32.dp)
+            .widthIn(max = if (compact) 124.dp else 180.dp)
             .padding(end = 8.dp)
             .clip(RoundedCornerShape(16.dp))
             .then(
@@ -769,7 +800,7 @@ private fun ConnectionStatusIndicator(connectionState: ConnectionState, onToggle
                 onClick = onToggleConnection,
                 role = Role.Button,
             )
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = if (compact) 8.dp else 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -777,6 +808,7 @@ private fun ConnectionStatusIndicator(connectionState: ConnectionState, onToggle
             style = MaterialTheme.typography.labelSmall,
             color = Color.White,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -831,6 +863,18 @@ private fun getScreenTitle(route: String, routineName: String = "", exerciseName
 
     // Fallback
     else -> "Project Phoenix"
+}
+
+private fun getCompactScreenTitle(route: String, title: String): String = when {
+    route == NavigationRoutes.Home.route -> "Workouts"
+    route == NavigationRoutes.DailyRoutines.route -> "Routines"
+    route == NavigationRoutes.TrainingCycles.route -> "Cycles"
+    route == NavigationRoutes.SmartInsights.route -> "Insights"
+    route == NavigationRoutes.SingleExercise.route -> "Exercise"
+    route.startsWith("cycle_editor") -> "Cycle"
+    route.startsWith("cycleReview") -> "Review"
+    route.startsWith("routine_editor") -> "Edit"
+    else -> title
 }
 
 private fun shouldResumeActiveWorkout(workoutState: WorkoutState): Boolean = when (workoutState) {

@@ -51,10 +51,10 @@ class MainActivity : ComponentActivity() {
                     @Suppress("DEPRECATION")
                     resources.updateConfiguration(config, resources.displayMetrics)
                 }
-                Logger.d("MainActivity") { "Applied locale '$langCode' before composition" }
+                Logger.d(tag = "MainActivity") { "Applied locale '$langCode' before composition" }
             }
         } catch (e: Exception) {
-            Logger.w("MainActivity") { "Failed to apply locale before composition: ${e.message}" }
+            Logger.w(tag = "MainActivity") { "Failed to apply locale before composition: ${e.message}" }
         }
     }
 }

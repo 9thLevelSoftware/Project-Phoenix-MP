@@ -11,10 +11,9 @@ import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.database.VitruvianDatabase
-import java.io.File
-import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Android implementation of DataBackupManager.
@@ -355,20 +354,54 @@ class AndroidDataBackupManager(
 
     override suspend fun importFromFile(filePath: String): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
-            val jsonString = if (filePath.startsWith("content://")) {
-                // Content URI
-                val uri = filePath.toUri()
-                val inputStream: InputStream = context.contentResolver.openInputStream(uri)
+            val inputStream = if (filePath.startsWith("content://")) {
+                context.contentResolver.openInputStream(filePath.toUri())
                     ?: throw Exception("Cannot open file")
-                inputStream.bufferedReader().use { it.readText() }
             } else {
-                // File path
-                File(filePath).readText()
+                File(filePath).inputStream()
             }
 
-            importFromJson(jsonString)
+            // Check file size to decide between proven legacy path and streaming
+            val fileSize = getFileSizeOrNull(filePath)
+            if (fileSize != null && fileSize < STREAMING_IMPORT_THRESHOLD) {
+                // Small file: use proven non-streaming path
+                val jsonString = inputStream.bufferedReader().use { it.readText() }
+                importFromJson(jsonString)
+            } else {
+                // Large file or unknown size: streaming import to avoid OOM
+                Logger.i { "Using streaming import for file (size=${fileSize ?: "unknown"} bytes)" }
+                val source = InputStreamBackupSource(inputStream)
+                try {
+                    source.open()
+                    importFromStream(source)
+                } finally {
+                    source.close()
+                }
+            }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    private fun getFileSizeOrNull(filePath: String): Long? {
+        return if (filePath.startsWith("content://")) {
+            try {
+                val uri = filePath.toUri()
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(android.provider.OpenableColumns.SIZE),
+                    null, null, null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (sizeIndex >= 0) cursor.getLong(sizeIndex) else null
+                    } else null
+                }
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            File(filePath).let { if (it.exists()) it.length() else null }
         }
     }
 

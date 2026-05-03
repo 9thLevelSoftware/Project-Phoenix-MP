@@ -232,7 +232,9 @@ object PortalSyncAdapter {
      */
     private fun buildPortalExerciseWithTelemetry(swr: SessionWithReps, portalSessionId: String, orderIndex: Int): ExerciseWithTelemetry {
         val session = swr.session
-        val exerciseId = generateUUID()
+        // Use stable mobile session ID as exercise ID so repeated syncs
+        // upsert the same row instead of creating duplicates (issue #33).
+        val exerciseId = session.id
         val setId = generateUUID()
 
         // Build rep summaries from RepMetricData + RepBiomechanics
@@ -470,6 +472,8 @@ object PortalSyncAdapter {
                     ?.let { Json.encodeToString(ListSerializer(Float.serializer()), it) },
                 perSetRest = ex.setRestSeconds.takeIf { it.isNotEmpty() }
                     ?.let { Json.encodeToString(ListSerializer(Int.serializer()), it) },
+                perSetReps = ex.setReps.takeIf { it.size > 1 || it.any { r -> r == null } }
+                    ?.let { Json.encodeToString(ListSerializer(Int.serializer().nullable), it) },
                 isAmrap = ex.isAMRAP,
                 isBodyweight = !ex.exercise.hasCableAccessory,
                 prPercentage = if (ex.usePercentOfPR) ex.weightPercentOfPR.toFloat() else null,

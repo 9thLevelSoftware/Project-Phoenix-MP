@@ -906,11 +906,16 @@ class SyncManagerTest {
         val sess1 = "66666666-6666-4666-a666-666666666666"
         val sess2 = "77777777-7777-4777-a777-777777777777"
         val rout1 = "88888888-8888-4888-a888-888888888888"
+        val badge1 = "99999999-9999-4999-a999-999999999999"
+        val badge2 = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+        val badge3 = "bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb"
+        val pr1 = "cccccccc-cccc-4ccc-accc-cccccccccccc"
+        val pr2 = "dddddddd-dddd-4ddd-addd-dddddddddddd"
         fakeSyncRepo.sessionIds = listOf(sess1, sess2)
         fakeSyncRepo.routineIds = listOf(rout1)
         fakeSyncRepo.cycleIds = emptyList()
-        fakeSyncRepo.badgeIds = listOf("1", "2", "3")
-        fakeSyncRepo.personalRecordIds = listOf("10", "20")
+        fakeSyncRepo.badgeIds = listOf(badge1, badge2, badge3)
+        fakeSyncRepo.personalRecordIds = listOf(pr1, pr2)
 
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
@@ -925,8 +930,37 @@ class SyncManagerTest {
         assertEquals(listOf(sess1, sess2), knownIds.sessionIds)
         assertEquals(listOf(rout1), knownIds.routineIds)
         assertEquals(emptyList<String>(), knownIds.cycleIds)
-        assertEquals(listOf("1", "2", "3"), knownIds.badgeIds)
-        assertEquals(listOf("10", "20"), knownIds.personalRecordIds)
+        assertEquals(listOf(badge1, badge2, badge3), knownIds.badgeIds)
+        assertEquals(listOf(pr1, pr2), knownIds.personalRecordIds)
+    }
+
+    @Test
+    fun pullDropsNonUuidBadgeAndPersonalRecordIdsBeforeSend() = runTest {
+        setupAuthenticated()
+        val badgeId = "eeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee"
+        val personalRecordId = "ffffffff-ffff-4fff-afff-ffffffffffff"
+        fakeSyncRepo.badgeIds = listOf("1", badgeId, "2")
+        fakeSyncRepo.personalRecordIds = listOf("10", personalRecordId, "20")
+
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        val knownIds = fakeApi.lastPullKnownEntityIds
+        assertNotNull(knownIds, "Pull should have been called with knownEntityIds")
+        assertEquals(
+            listOf(badgeId),
+            knownIds.badgeIds,
+            "Local numeric badge ids must be filtered before send; portal parity uses UUID row ids",
+        )
+        assertEquals(
+            listOf(personalRecordId),
+            knownIds.personalRecordIds,
+            "Local numeric personal record ids must be filtered before send; portal parity uses UUID row ids",
+        )
     }
 
     @Test

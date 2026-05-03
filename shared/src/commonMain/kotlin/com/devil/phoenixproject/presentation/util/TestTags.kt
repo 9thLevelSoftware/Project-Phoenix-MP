@@ -20,7 +20,9 @@ object TestTags {
     const val ACTION_LINK_ACCOUNT = "action-link-account"
     const val ACTION_CONNECTION_LOGS = "action-connection-logs"
     const val ACTION_START_ROUTINE = "action-start-routine"
+    const val ACTION_START_ROUTINE_EXERCISE = "action-start-routine-exercise"
     const val ACTION_START_SET = "action-start-set"
+    const val ACTION_STOP_ROUTINE_OVERVIEW = "action-stop-routine-overview"
     const val ACTION_STOP_WORKOUT = "action-stop-workout"
 
     const val SCREEN_HOME = "screen-home"

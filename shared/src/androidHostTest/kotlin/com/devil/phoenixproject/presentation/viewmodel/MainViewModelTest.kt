@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
+import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
 import com.devil.phoenixproject.data.repository.RepNotification
@@ -33,13 +34,8 @@ import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -47,6 +43,12 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModelTest {
@@ -117,11 +119,11 @@ class MainViewModelTest {
 
     @After
     fun tearDown() {
-        // Clear ViewModel to cancel viewModelScope coroutines and prevent test pollution.
-        // Uses reflection since onCleared() is protected in androidx.lifecycle.ViewModel.
-        val method = viewModel::class.java.getDeclaredMethod("onCleared")
-        method.isAccessible = true
-        method.invoke(viewModel)
+        // Cancel viewModelScope directly. In lifecycle 2.5+, viewModelScope is cancelled
+        // in clear() — not in onCleared(). Calling onCleared() via reflection skips that
+        // cancellation, leaving all ViewModel coroutines alive and polluting the test
+        // dispatcher's scheduler for subsequent tests (UncaughtExceptionsBeforeTest).
+        viewModel.viewModelScope.cancel()
     }
 
     // ========== Initial State Tests ==========

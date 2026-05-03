@@ -792,7 +792,7 @@ SELECT * FROM PersonalRecord ORDER BY achievedAt DESC;
 
 -- Routine Queries
 selectAllRoutines:
-SELECT * FROM Routine WHERE profile_id = :profileId ORDER BY name ASC;
+SELECT * FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL ORDER BY name ASC;
 
 selectRoutineById:
 SELECT * FROM Routine WHERE id = ?;
@@ -802,8 +802,8 @@ INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, profi
 
 -- Upsert routine (insert or replace) - handles both new and existing routines
 upsertRoutine:
-INSERT OR REPLACE INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id, groupId)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO Routine (id, name, description, createdAt, lastUsed, useCount, updatedAt, profile_id, groupId)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateRoutineLastUsed:
 UPDATE Routine SET lastUsed = ?, useCount = useCount + 1 WHERE id = ?;
@@ -881,8 +881,12 @@ DELETE FROM RoutineExercise WHERE routineId = ?;
 deleteRoutineById:
 DELETE FROM Routine WHERE id = ?;
 
+-- Soft delete routine (for sync — preserves tombstone for push)
+softDeleteRoutine:
+UPDATE Routine SET deletedAt = ?, updatedAt = ? WHERE id = ?;
+
 updateRoutineById:
-UPDATE Routine SET name = ?, description = ? WHERE id = ?;
+UPDATE Routine SET name = ?, description = ?, updatedAt = ? WHERE id = ?;
 
 -- ==================== SUPERSET QUERIES ====================
 
@@ -1321,7 +1325,7 @@ SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSession
 
 -- Count custom routines created (profile-scoped)
 countCreatedRoutines:
-SELECT COUNT(*) FROM Routine WHERE profile_id = :profileId;
+SELECT COUNT(*) FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL;
 
 -- Get days since last workout (for comeback badge, profile-scoped)
 selectDaysSinceLastWorkout:
@@ -1343,7 +1347,9 @@ CREATE TABLE TrainingCycle (
     created_at INTEGER NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 0,
     -- Multi-profile support (added in migration 21)
-    profile_id TEXT NOT NULL DEFAULT 'default'
+    profile_id TEXT NOT NULL DEFAULT 'default',
+    -- Soft-delete for sync tombstone propagation (added in migration 27)
+    deletedAt INTEGER
 );
 
 CREATE INDEX idx_cycle_profile ON TrainingCycle(profile_id);
@@ -1446,13 +1452,13 @@ CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
 
 -- TrainingCycle Queries
 selectAllTrainingCycles:
-SELECT * FROM TrainingCycle WHERE profile_id = :profileId ORDER BY created_at DESC;
+SELECT * FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NULL ORDER BY created_at DESC;
 
 selectTrainingCycleById:
 SELECT * FROM TrainingCycle WHERE id = ?;
 
 selectActiveTrainingCycle:
-SELECT * FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profileId LIMIT 1;
+SELECT * FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profileId AND deletedAt IS NULL LIMIT 1;
 
 insertTrainingCycle:
 INSERT INTO TrainingCycle (id, name, description, created_at, is_active, profile_id)
@@ -1469,10 +1475,14 @@ UPDATE TrainingCycle SET is_active = 0 WHERE profile_id = :profileId;
 
 -- Count active cycles for invariant verification (should always be 0 or 1)
 countActiveCycles:
-SELECT COUNT(*) FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profileId;
+SELECT COUNT(*) FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profileId AND deletedAt IS NULL;
 
 deleteTrainingCycle:
 DELETE FROM TrainingCycle WHERE id = ?;
+
+-- Soft-delete training cycle (for sync — tombstone propagation to server)
+softDeleteTrainingCycle:
+UPDATE TrainingCycle SET deletedAt = ? WHERE id = ?;
 
 -- CycleDay Queries
 selectCycleDaysByCycle:
@@ -1651,7 +1661,7 @@ SELECT * FROM TrainingCycle;
 
 -- Profile-scoped training cycle query for sync push (prevents cross-profile leak)
 selectTrainingCyclesByProfile:
-SELECT * FROM TrainingCycle WHERE profile_id = :profileId;
+SELECT * FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NULL;
 
 selectAllCycleDaysSync:
 SELECT * FROM CycleDay;
@@ -1899,6 +1909,18 @@ SELECT * FROM Routine
 WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
 AND profile_id = :profileId;
 
+-- Get soft-deleted routines (for push — tombstones to propagate deletion to server)
+selectDeletedRoutinesSince:
+SELECT id, serverId, deletedAt FROM Routine
+WHERE deletedAt IS NOT NULL AND deletedAt > ?
+AND profile_id = :profileId;
+
+-- Get soft-deleted cycles (for push — tombstones to propagate deletion to server)
+selectDeletedCyclesSince:
+SELECT id FROM TrainingCycle
+WHERE deletedAt IS NOT NULL AND deletedAt > ?
+AND profile_id = :profileId;
+
 -- Update routine server ID
 updateRoutineServerId:
 UPDATE Routine SET serverId = ? WHERE id = ?;
@@ -2110,16 +2132,24 @@ selectAllSessionIdsByProfile:
 SELECT id FROM WorkoutSession WHERE profile_id = :profileId;
 
 selectAllRoutineIdsByProfile:
-SELECT id FROM Routine WHERE profile_id = :profileId;
+SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL;
 
 selectAllCycleIdsByProfile:
-SELECT id FROM TrainingCycle WHERE profile_id = :profileId;
+SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NULL;
 
 selectAllBadgeIdsByProfile:
 SELECT CAST(id AS TEXT) FROM EarnedBadge WHERE profile_id = :profileId;
 
 selectAllPersonalRecordIdsByProfile:
 SELECT CAST(id AS TEXT) FROM PersonalRecord WHERE profile_id = :profileId;
+
+-- Hard-delete cycles by IDs (used for parity reconciliation when server confirms deletion)
+hardDeleteCyclesByIds:
+DELETE FROM TrainingCycle WHERE id IN ?;
+
+-- Hard-delete routines by IDs (used for parity reconciliation when server confirms deletion)
+hardDeleteRoutinesByIds:
+DELETE FROM Routine WHERE id IN ?;
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- SessionNotes (Phase 3.5, migration 26.sqm)

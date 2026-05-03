@@ -22,9 +22,10 @@ import kotlin.test.assertTrue
  *   - Empty page with hasMore=true is treated as "end of pagination" (SyncManager line 823-830).
  *   - Failure mid-pagination does NOT advance the lastSync timestamp (caller restarts).
  *   - knownEntityIds is built from the local repository's ID lists (parity sync).
- *   - Large knownEntityIds sets (10000+ ids) are capped to MAX_PARITY_IDS=10000
- *     (audit item #7, Phase 4.1) so the server's HTTP 413 enforcement is
- *     never triggered. The most recent (`takeLast`) window is sent.
+ *   - Large knownEntityIds sets (> MAX_PARITY_IDS) are capped to the current
+ *     MAX_PARITY_IDS limit (audit item #7, Phase 4.1) so the server's HTTP
+ *     413 enforcement is never triggered. The most recent (`takeLast`) window
+ *     is sent.
  *   - pageSize defaults to SyncConfig.DEFAULT_PAGE_SIZE (100).
  *
  * These tests use the existing FakePortalApiClient.pullResultsQueue mechanism to return
@@ -276,11 +277,14 @@ class PortalPullPaginationTest {
         val s1 = "11111111-1111-4111-a111-111111111111"
         val s2 = "22222222-2222-4222-a222-222222222222"
         val r1 = "33333333-3333-4333-a333-333333333333"
+        val b1 = "44444444-4444-4444-a444-444444444444"
+        val b2 = "55555555-5555-4555-a555-555555555555"
+        val pr1 = "66666666-6666-4666-a666-666666666666"
         fakeSyncRepo.sessionIds = listOf(s1, s2)
         fakeSyncRepo.routineIds = listOf(r1)
         fakeSyncRepo.cycleIds = emptyList()
-        fakeSyncRepo.badgeIds = listOf("1", "2")
-        fakeSyncRepo.personalRecordIds = listOf("10")
+        fakeSyncRepo.badgeIds = listOf(b1, b2)
+        fakeSyncRepo.personalRecordIds = listOf(pr1)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
         createManager().sync()
@@ -290,8 +294,8 @@ class PortalPullPaginationTest {
         assertEquals(listOf(s1, s2), known.sessionIds)
         assertEquals(listOf(r1), known.routineIds)
         assertEquals(emptyList<String>(), known.cycleIds)
-        assertEquals(listOf("1", "2"), known.badgeIds)
-        assertEquals(listOf("10"), known.personalRecordIds)
+        assertEquals(listOf(b1, b2), known.badgeIds)
+        assertEquals(listOf(pr1), known.personalRecordIds)
     }
 
     @Test
@@ -318,11 +322,35 @@ class PortalPullPaginationTest {
     }
 
     @Test
+    fun pullDropsNonUuidBadgeAndPersonalRecordIdsBeforeSend() = runTest {
+        authenticate()
+        val realBadge = "77777777-7777-4777-a777-777777777777"
+        val realPr = "88888888-8888-4888-a888-888888888888"
+        fakeSyncRepo.badgeIds = listOf("1", realBadge, "2")
+        fakeSyncRepo.personalRecordIds = listOf("10", realPr, "20")
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        createManager().sync()
+
+        val known = fakeApi.lastPullKnownEntityIds
+        assertNotNull(known)
+        assertEquals(
+            listOf(realBadge),
+            known.badgeIds,
+            "Local numeric badge ids must be filtered before send; portal parity uses UUID row ids",
+        )
+        assertEquals(
+            listOf(realPr),
+            known.personalRecordIds,
+            "Local numeric personal record ids must be filtered before send; portal parity uses UUID row ids",
+        )
+    }
+
+    @Test
     fun pullCapsLargeKnownSessionIdsToMaxParityIds() = runTest {
         authenticate()
-        // 15000 session IDs simulates a user with deep history doing a parity
-        // sync. The server enforces HTTP 413 above SyncConfig.MAX_PARITY_IDS
-        // (10000), so SyncManager.runPullLoop must truncate via `capParity()`
+        // Simulate a user with deep history whose parity list exceeds the
+        // current cap. SyncManager.runPullLoop must truncate via `capParity()`
         // to the last MAX_PARITY_IDS entries (most recent window) and rely on
         // server-side `lastSync` delta + local dedupe for the older tail.
         // Resolves audit item #7 (Phase 4.1).
@@ -331,7 +359,8 @@ class PortalPullPaginationTest {
             return "$hex-0000-4000-8000-000000000000"
         }
 
-        val bigSet = List(15_000) { fakeUuid(it) }
+        val totalSessionIds = SyncConfig.MAX_PARITY_IDS + 500
+        val bigSet = List(totalSessionIds) { fakeUuid(it) }
         fakeSyncRepo.sessionIds = bigSet
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
@@ -345,8 +374,8 @@ class PortalPullPaginationTest {
             "Large knownEntityIds payloads must be capped at MAX_PARITY_IDS to avoid server 413",
         )
         // capParity() uses takeLast(), so the window is the most recent IDs.
-        assertEquals(fakeUuid(15_000 - SyncConfig.MAX_PARITY_IDS), known.sessionIds.first())
-        assertEquals(fakeUuid(14_999), known.sessionIds.last())
+        assertEquals(fakeUuid(totalSessionIds - SyncConfig.MAX_PARITY_IDS), known.sessionIds.first())
+        assertEquals(fakeUuid(totalSessionIds - 1), known.sessionIds.last())
     }
 
     // ==================== pageSize Wiring ====================

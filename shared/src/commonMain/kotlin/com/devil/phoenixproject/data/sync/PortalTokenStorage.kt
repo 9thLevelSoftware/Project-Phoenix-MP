@@ -57,6 +57,7 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_USER_EMAIL = "portal_user_email"
         private const val KEY_USER_NAME = "portal_user_display_name"
         private const val KEY_IS_PREMIUM = "portal_user_is_premium"
+        private const val KEY_SUBSCRIPTION_TIER = "portal_user_subscription_tier"
         private const val KEY_REFRESH_TOKEN = "portal_refresh_token"
         private const val KEY_EXPIRES_AT = "portal_token_expires_at"
         private const val KEY_LAST_SYNC = "portal_last_sync_timestamp"
@@ -179,6 +180,23 @@ class PortalTokenStorage(private val settings: Settings) {
         _currentUser.value = _currentUser.value?.copy(isPremium = isPremium)
     }
 
+    /**
+     * Persists the active subscription tier string (EMBER, FLAME, INFERNO, or null).
+     * Null clears the key so callers can distinguish "not yet resolved" from "no
+     * active subscription." Used by [SyncManager] to gate features whose entitlement
+     * depends on a specific tier rather than the broad `isPremium` flag (e.g., 50 Hz
+     * telemetry sync is Inferno-only).
+     */
+    fun updateSubscriptionTier(tier: String?) {
+        if (tier == null) {
+            settings.remove(KEY_SUBSCRIPTION_TIER)
+        } else {
+            settings[KEY_SUBSCRIPTION_TIER] = tier
+        }
+    }
+
+    fun getSubscriptionTier(): String? = settings[KEY_SUBSCRIPTION_TIER]
+
     fun clearAuth() {
         clearAuthInternal()
     }
@@ -211,6 +229,7 @@ class PortalTokenStorage(private val settings: Settings) {
         settings.remove(KEY_USER_EMAIL)
         settings.remove(KEY_USER_NAME)
         settings.remove(KEY_IS_PREMIUM)
+        settings.remove(KEY_SUBSCRIPTION_TIER)
         settings.remove(KEY_LAST_SYNC) // Reset so re-link does a full pull
         // Keep device ID for stable identity
 

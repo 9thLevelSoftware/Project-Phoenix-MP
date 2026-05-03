@@ -209,6 +209,7 @@ data class PortalRoutineExerciseSyncDto(
     // Per-set configuration (new portal columns)
     val perSetWeights: String? = null, // JSON array
     val perSetRest: String? = null, // JSON array
+    val perSetReps: String? = null, // JSON array e.g. "[10,8,6]"
     val isAmrap: Boolean = false,
     val isBodyweight: Boolean = false,
     val prPercentage: Float? = null,
@@ -482,7 +483,9 @@ data class PortalSyncPayload(
     val sessions: List<PortalWorkoutSessionDto> = emptyList(),
     val telemetry: List<PortalRepTelemetryDto> = emptyList(),
     val routines: List<PortalRoutineSyncDto> = emptyList(),
+    val deletedRoutineIds: List<String> = emptyList(),
     val cycles: List<PortalTrainingCycleSyncDto> = emptyList(),
+    val deletedCycleIds: List<String> = emptyList(),
     val rpgAttributes: PortalRpgAttributesSyncDto? = null,
     val badges: List<PortalEarnedBadgeSyncDto> = emptyList(),
     val gamificationStats: PortalGamificationStatsSyncDto? = null,
@@ -679,6 +682,7 @@ data class PullRoutineDto(
     val estimatedDuration: Int = 0,
     val timesCompleted: Int = 0,
     val isFavorite: Boolean = false,
+    val updatedAt: Long? = null,
     val exercises: List<PullRoutineExerciseDto> = emptyList(),
 )
 
@@ -699,6 +703,7 @@ data class PullRoutineExerciseDto(
     val supersetOrder: Int? = null,
     val perSetWeights: String? = null,
     val perSetRest: String? = null,
+    val perSetReps: String? = null,
     val isAmrap: Boolean = false,
     val isBodyweight: Boolean = false,
     val prPercentage: Float? = null,

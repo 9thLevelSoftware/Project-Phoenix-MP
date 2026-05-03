@@ -1,14 +1,22 @@
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_delete
+import vitruvianprojectphoenix.shared.generated.resources.delete_profile
+import vitruvianprojectphoenix.shared.generated.resources.delete_profile_message
 
 /**
  * Confirmation dialog for deleting a user profile.
@@ -25,9 +33,22 @@ fun DeleteProfileDialog(profile: UserProfile, profileRepository: UserProfileRepo
             TextButton(
                 onClick = {
                     scope.launch {
-                        profileRepository.deleteProfile(profile.id)
+                        // Issue #393: Unhandled exceptions in profile deletion caused
+                        // SIGABRT on iOS (Kotlin/Native abort() on uncaught exception).
+                        try {
+                            val deleted = profileRepository.deleteProfile(profile.id)
+                            if (deleted) {
+                                onDismiss()
+                            } else {
+                                // Protected profile (e.g. "default") — keep dialog open
+                                Logger.w { "PROFILE_DELETE: Refused to delete protected profile '${profile.name}' (id=${profile.id})" }
+                            }
+                        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Logger.e(e) { "PROFILE_DELETE: Failed to delete profile '${profile.name}' (id=${profile.id})" }
+                        }
                     }
-                    onDismiss()
                 },
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,

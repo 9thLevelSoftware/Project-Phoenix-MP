@@ -104,6 +104,48 @@ class HealthDataMappingTest {
         assertEquals(true, shouldIncludeCalories(250f))
     }
 
+    // ---- Issue #395: RoutineHealthData construction ----
+
+    @Test
+    fun routineHealthDataHasCorrectTitle() {
+        val data = buildRoutineHealthData(routineName = "Push Day", totalCalories = 150f)
+        assertEquals("Push Day", data.routineName)
+    }
+
+    @Test
+    fun routineHealthDataNullCaloriesWhenZeroAccumulated() {
+        val data = buildRoutineHealthData(routineName = "Pull Day", totalCalories = 0f)
+        assertEquals(null, data.totalCalories)
+    }
+
+    @Test
+    fun routineHealthDataAccumulatesCalories() {
+        // Simulate 3 sets with calories
+        val accumulated = accumulateCalories(listOf(80f, 95f, null, 75f))
+        assertEquals(250f, accumulated)
+    }
+
+    @Test
+    fun routineHealthDataAccumulatesCaloriesSkipsNullAndZero() {
+        val accumulated = accumulateCalories(listOf(null, 0f, -5f, 100f))
+        assertEquals(100f, accumulated)
+    }
+
+    @Test
+    fun routineHealthDataDurationFromStartToEnd() {
+        val startMs = 1700000000000L
+        val endMs = 1700003600000L // 1 hour later
+        val durationMs = endMs - startMs
+        val data = buildRoutineHealthData(
+            routineName = "Legs",
+            startTimeMs = startMs,
+            durationMs = durationMs,
+            totalCalories = 300f,
+        )
+        assertEquals(3600000L, data.durationMs)
+        assertEquals(startMs, data.startTimeMs)
+    }
+
     // ---- Extracted pure functions matching both platform implementations ----
 
     private fun buildTitle(exerciseName: String?, weightPerCableKg: Float, cableCount: Int? = null): String {
@@ -121,4 +163,29 @@ class HealthDataMappingTest {
     private fun clampDuration(durationSeconds: Long): Long = durationSeconds.coerceAtLeast(1L)
 
     private fun shouldIncludeCalories(estimatedCalories: Float?): Boolean = estimatedCalories != null && estimatedCalories > 0f
+
+    /** Mirrors the routine health data construction in writeRoutineHealthData() */
+    private fun buildRoutineHealthData(
+        routineName: String,
+        startTimeMs: Long = 1700000000000L,
+        durationMs: Long = 60000L,
+        totalCalories: Float?,
+    ): RoutineHealthData = RoutineHealthData(
+        routineName = routineName,
+        startTimeMs = startTimeMs,
+        durationMs = durationMs,
+        totalCalories = totalCalories?.takeIf { it > 0f },
+        externalId = "test-routine-session-id",
+    )
+
+    /** Mirrors calorie accumulation logic in saveWorkoutSession() */
+    private fun accumulateCalories(setCalories: List<Float?>): Float {
+        var accumulated = 0f
+        for (cal in setCalories) {
+            if (cal != null && cal > 0f) {
+                accumulated += cal
+            }
+        }
+        return accumulated
+    }
 }

@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.util
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -79,6 +80,14 @@ fun calculateWindowSizeClass(widthDp: Dp, heightDp: Dp): WindowSizeClass {
         widthDp = widthDp,
         heightDp = heightDp,
     )
+}
+
+@Composable
+fun isCompactAccessibilityLayout(fontScaleThreshold: Float = 1.15f): Boolean {
+    val windowSizeClass = LocalWindowSizeClass.current
+    val fontScale = LocalDensity.current.fontScale
+    return windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact &&
+        (windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact || fontScale >= fontScaleThreshold)
 }
 
 /**

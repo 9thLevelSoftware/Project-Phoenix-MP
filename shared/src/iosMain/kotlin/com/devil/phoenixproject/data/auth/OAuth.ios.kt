@@ -42,8 +42,9 @@ internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
  *
  * ASWebAuthenticationSession is the Apple-recommended API for OAuth-style
  * flows in native apps: it presents a system-owned browser sheet, shares
- * cookies with Safari for SSO, and captures the callback URL in-process
- * without needing an Info.plist URL scheme registration.
+ * cookies with Safari for SSO, and captures the callback URL in-process.
+ * The host iOS app must still register the callback scheme in Info.plist
+ * URL Types so the system can route the redirect back to this session.
  */
 actual class OAuthLauncher {
     private var session: ASWebAuthenticationSession? = null

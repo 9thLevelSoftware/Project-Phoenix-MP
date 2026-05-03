@@ -161,6 +161,9 @@ kotlin {
                 // Activity Compose (for file picker Activity Result APIs)
                 implementation(libs.androidx.activity.compose)
 
+                // Android browser integrations for Custom Tabs OAuth handoff
+                implementation(libs.androidx.browser)
+
                 // Encrypted SharedPreferences for secure token storage
                 implementation(libs.androidx.security.crypto)
 

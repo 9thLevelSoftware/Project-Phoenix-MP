@@ -141,6 +141,19 @@ class SyncManager(
          * Prevents infinite retry storms when the same batch keeps failing.
          */
         const val MAX_FULL_BATCH_RETRIES = 3
+
+        /**
+         * Subscription tier that entitles a user to sync 50 Hz rep telemetry
+         * (raw force curves) to the portal. Matches the portal's "Session replay
+         * with 50 Hz telemetry" and "Force curves & VBT zones" Inferno features.
+         * All other tiers sync rep summaries but not per-sample telemetry.
+         */
+        const val TELEMETRY_SYNC_TIER = "INFERNO"
+
+        private val CANONICAL_UUID_REGEX = Regex(
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            RegexOption.IGNORE_CASE,
+        )
     }
 
     /**
@@ -176,6 +189,16 @@ class SyncManager(
         if (signInResult.isFailure) return signInResult.map { it.toPortalAuthResponse().user }
 
         val goTrueResponse = signInResult.getOrThrow()
+
+        // Capture prior identity BEFORE overwriting auth so entitlement can only
+        // carry forward on the same userId. A different user (or no prior user)
+        // must never inherit a previous session's INFERNO / premium flag through
+        // a transient network failure on the subscription check.
+        val previousUserId = tokenStorage.currentUser.value?.id
+        val previousPremium = tokenStorage.currentUser.value?.isPremium ?: false
+        val previousTier = tokenStorage.getSubscriptionTier()
+        val sameAccount = previousUserId != null && previousUserId == goTrueResponse.user.id
+
         tokenStorage.saveGoTrueAuth(goTrueResponse)
         Logger.d("SyncManager") { "Login: token saved" }
 
@@ -185,15 +208,32 @@ class SyncManager(
             _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
         }
 
-        // Check premium status from server immediately after auth.
-        // On fresh install, existingPremium defaults to false — server is source of truth.
-        // On network failure, preserve existing premium status to avoid downgrading paid users.
-        val existingPremium = tokenStorage.currentUser.value?.isPremium ?: false
+        // On account switch, fail closed: drop prior entitlement before the
+        // server resolves the new account's status. Only preserve it when the
+        // login is for the same userId and the server call hiccups.
+        val fallbackPremium = if (sameAccount) previousPremium else false
+        val fallbackTier = if (sameAccount) previousTier else null
+
+        // Distinguish a *successful* `null` (user has no active subscription —
+        // genuine downgrade) from a *failure* (network or 5xx — preserve prior
+        // status). `getOrNull() ?: fallback` would incorrectly keep the old
+        // tier on a legitimate downgrade.
         val premiumResult = apiClient.checkPremiumStatus()
-        val isPremium = premiumResult.getOrNull() ?: existingPremium
+        val isPremium = if (premiumResult.isSuccess) {
+            premiumResult.getOrNull() ?: false
+        } else {
+            fallbackPremium
+        }
         tokenStorage.updatePremiumStatus(isPremium)
+
+        val tierResult = apiClient.getActiveSubscriptionTier()
+        val resolvedTier = if (tierResult.isSuccess) tierResult.getOrNull() else fallbackTier
+        tokenStorage.updateSubscriptionTier(resolvedTier)
+
         Logger.i("SyncManager") {
-            "Login successful for ${goTrueResponse.user.email}, premium=$isPremium (server check: ${premiumResult.isSuccess})"
+            "Login successful for ${goTrueResponse.user.email}, premium=$isPremium, " +
+                "tier=${resolvedTier ?: "none"} (sameAccount=$sameAccount, " +
+                "server checks: premium=${premiumResult.isSuccess}, tier=${tierResult.isSuccess})"
         }
 
         return Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
@@ -212,9 +252,10 @@ class SyncManager(
             _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
         }
 
-        // New accounts start as free tier — no need to check premium status.
-        // Premium status will be set after they subscribe via Paddle.
+        // New accounts start without a subscription — no need to check status.
+        // Premium status and tier will be set after they subscribe via Paddle.
         tokenStorage.updatePremiumStatus(false)
+        tokenStorage.updateSubscriptionTier(null)
         Logger.i("SyncManager") { "Signup successful for ${goTrueResponse.user.email}" }
 
         return Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
@@ -235,6 +276,7 @@ class SyncManager(
         apiClient.signOut()
 
         tokenStorage.updatePremiumStatus(false)
+        tokenStorage.updateSubscriptionTier(null)
         tokenStorage.clearAuth()
         tokenStorage.emitLogoutEvent()
 
@@ -246,17 +288,48 @@ class SyncManager(
     }
 
     /**
+     * Resets [_syncState] to [SyncState.Idle] without performing a sync.
+     *
+     * Use this after an out-of-band sign-in (OAuth, deep-link, etc.) that
+     * bypasses [login] but still needs to clear a stale
+     * [SyncState.NotAuthenticated] left over from a prior [logout]. Otherwise
+     * the UI continues to show "Authentication failed — please sign out and
+     * sign back in" even though the new session is valid.
+     */
+    suspend fun resetSyncStateToIdle() {
+        syncMutex.withLock {
+            _syncState.value = SyncState.Idle
+        }
+    }
+
+    /**
      * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
      * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
      */
     suspend fun refreshPremiumStatusFromServer() {
         if (!tokenStorage.hasToken()) return
-        val premiumResult = apiClient.checkPremiumStatus()
+
         val existingPremium = tokenStorage.currentUser.value?.isPremium ?: false
-        val isPremium = premiumResult.getOrNull() ?: existingPremium
+        val existingTier = tokenStorage.getSubscriptionTier()
+
+        // A successful `null` from the server means the user has no active
+        // subscription (a real downgrade) and MUST clear the cached tier.
+        // Only a failed call (network, 5xx) preserves the existing value.
+        val premiumResult = apiClient.checkPremiumStatus()
+        val isPremium = if (premiumResult.isSuccess) {
+            premiumResult.getOrNull() ?: false
+        } else {
+            existingPremium
+        }
         tokenStorage.updatePremiumStatus(isPremium)
+
+        val tierResult = apiClient.getActiveSubscriptionTier()
+        val resolvedTier = if (tierResult.isSuccess) tierResult.getOrNull() else existingTier
+        tokenStorage.updateSubscriptionTier(resolvedTier)
+
         Logger.d("SyncManager") {
-            "refreshPremiumStatusFromServer: premium=$isPremium (network ok=${premiumResult.isSuccess})"
+            "refreshPremiumStatusFromServer: premium=$isPremium, tier=${resolvedTier ?: "none"} " +
+                "(network ok: premium=${premiumResult.isSuccess}, tier=${tierResult.isSuccess})"
         }
     }
 
@@ -479,12 +552,63 @@ class SyncManager(
             )
         }
 
-        // 4. Gather routines as full domain objects (exclude internal cycle_routine_ entries), profile-scoped
-        val routines = syncRepository.getFullRoutinesModifiedSince(lastSync, activeProfileId)
-            .filterNot { it.id.startsWith("cycle_routine_") }
+        // 4. Gather routines as full domain objects, but only ship canonical UUID IDs.
+        // Local template-derived cycle routines use "cycle_routine_<uuid>" and must never
+        // reach the server's UUID ownership checks.
+        val rawRoutines = syncRepository.getFullRoutinesModifiedSince(lastSync, activeProfileId)
+        val routines = rawRoutines.filter { routine -> CANONICAL_UUID_REGEX.matches(routine.id) }
+        val droppedRoutineCount = rawRoutines.size - routines.size
+        if (droppedRoutineCount > 0) {
+            Logger.w("SyncManager") {
+                "Push payload: dropped $droppedRoutineCount non-UUID routines before send"
+            }
+        }
 
-        // 4b. Gather training cycles (all — no delta, lacks updatedAt), profile-scoped
-        val cyclesWithContext = syncRepository.getFullCyclesForSync(activeProfileId)
+        // 4a. Gather soft-deleted routine IDs for server-side deletion propagation.
+        val deletedRoutineIds = syncRepository.getDeletedRoutineIdsSince(lastSync, activeProfileId)
+            .filter { CANONICAL_UUID_REGEX.matches(it) }
+        if (deletedRoutineIds.isNotEmpty()) {
+            Logger.d("SyncManager") {
+                "Push payload: ${deletedRoutineIds.size} deleted routine(s) to propagate"
+            }
+        }
+
+        // 4c. Gather soft-deleted cycle IDs for server-side deletion propagation.
+        val deletedCycleIds = syncRepository.getDeletedCycleIdsSince(lastSync, activeProfileId)
+            .filter { CANONICAL_UUID_REGEX.matches(it) }
+        if (deletedCycleIds.isNotEmpty()) {
+            Logger.d("SyncManager") {
+                "Push payload: ${deletedCycleIds.size} deleted cycle(s) to propagate"
+            }
+        }
+
+        // 4b. Gather training cycles (all — no delta, lacks updatedAt), profile-scoped.
+        // Cycle days may still point at local-only template routines that are hidden from
+        // the main routines list via the "cycle_routine_<uuid>" prefix. Null those
+        // references for server push so one bad local ID cannot fail the entire sync.
+        val rawCyclesWithContext = syncRepository.getFullCyclesForSync(activeProfileId)
+        var droppedCycleRoutineRefs = 0
+        val cyclesWithContext = rawCyclesWithContext.map { ctx ->
+            val sanitizedDays = ctx.cycle.days.map { day ->
+                val routineId = day.routineId
+                if (routineId != null && !CANONICAL_UUID_REGEX.matches(routineId)) {
+                    droppedCycleRoutineRefs++
+                    day.copy(routineId = null)
+                } else {
+                    day
+                }
+            }
+            if (sanitizedDays == ctx.cycle.days) {
+                ctx
+            } else {
+                ctx.copy(cycle = ctx.cycle.copy(days = sanitizedDays))
+            }
+        }
+        if (droppedCycleRoutineRefs > 0) {
+            Logger.w("SyncManager") {
+                "Push payload: dropped $droppedCycleRoutineRefs non-UUID cycle-day routine references before send"
+            }
+        }
 
         // 5. Gather gamification data (profile-scoped)
         val rpgInput = gamificationRepository.getRpgInput(activeProfileId)
@@ -579,13 +703,33 @@ class SyncManager(
             userId,
         )
 
+        // Gate telemetry push behind the Inferno tier. Force-curve / 50 Hz session
+        // replay is an Inferno-only feature per the subscription matrix. Other
+        // tiers (Ember, Flame) and users whose tier is unresolved (offline login,
+        // network error during subscription check) fail closed — no telemetry on
+        // the wire. Rep summaries still ship in `sessions` regardless of tier so
+        // Ember/Flame users get full history, PRs, and analytics without the raw
+        // per-sample payload that blows past the server cap. When Inferno
+        // launches, this gate automatically opens for those subscribers with no
+        // further code changes.
+        val tier = tokenStorage.getSubscriptionTier()
+        val telemetryAllowed = tier == TELEMETRY_SYNC_TIER
+        val effectiveTelemetry = if (telemetryAllowed) buildResult.telemetry else emptyList()
+        if (!telemetryAllowed && buildResult.telemetry.isNotEmpty()) {
+            Logger.i("SyncManager") {
+                "Telemetry push gated off: tier=${tier ?: "unknown"} " +
+                    "($TELEMETRY_SYNC_TIER required). Skipping ${buildResult.telemetry.size} points; " +
+                    "rep summaries still sync."
+            }
+        }
+
         // Build a telemetry index keyed by set ID for batch slicing.
         // Each session's exercises contain sets whose IDs are referenced by telemetry rows.
         val sessionSetIds = buildResult.sessions.associate { session ->
             val setIds = session.exercises.flatMap { ex -> ex.sets.map { s -> s.id } }.toSet()
             session.id to setIds
         }
-        val telemetryBySetId = buildResult.telemetry.groupBy { it.setId }
+        val telemetryBySetId = effectiveTelemetry.groupBy { it.setId }
 
         // 7b. Profile data for portal tagging and profile-scoped filtering
         val activeProfile = userProfileRepository.activeProfile.value
@@ -615,7 +759,7 @@ class SyncManager(
 
         Logger.d("SyncManager") {
             "Pushing portal payload: ${allSessions.size} sessions ($totalBatches batch(es)), " +
-                "${buildResult.telemetry.size} telemetry points, " +
+                "${effectiveTelemetry.size} telemetry points, " +
                 "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
                 "${phaseStatsBySessionId.size} sessions with phase stats, " +
                 "${signatureDtos.size} signatures, " +
@@ -631,9 +775,11 @@ class SyncManager(
                 platform = platform,
                 lastSync = lastSync,
                 sessions = allSessions,
-                telemetry = buildResult.telemetry,
+                telemetry = effectiveTelemetry,
                 routines = routineDtos,
+                deletedRoutineIds = deletedRoutineIds,
                 cycles = cycleDtos,
+                deletedCycleIds = deletedCycleIds,
                 rpgAttributes = rpgDto,
                 badges = badgeDtos,
                 gamificationStats = gamStatsDto,
@@ -680,7 +826,9 @@ class SyncManager(
                     telemetry = batchTelemetry,
                     // Non-session data only on last batch to avoid duplicate upserts
                     routines = if (isLastBatch) routineDtos else emptyList(),
+                    deletedRoutineIds = if (isLastBatch) deletedRoutineIds else emptyList(),
                     cycles = if (isLastBatch) cycleDtos else emptyList(),
+                    deletedCycleIds = if (isLastBatch) deletedCycleIds else emptyList(),
                     rpgAttributes = if (isLastBatch) rpgDto else null,
                     badges = if (isLastBatch) badgeDtos else emptyList(),
                     gamificationStats = if (isLastBatch) gamStatsDto else null,
@@ -837,13 +985,8 @@ class SyncManager(
         // mobile-sync-pull validator rejects the whole request if any entry
         // in knownEntityIds fails UUID validation. Filter non-canonical UUIDs
         // client-side before sending.
-        val uuidPattern = Regex(
-            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-            RegexOption.IGNORE_CASE,
-        )
-
         fun filterUuids(ids: List<String>, label: String): List<String> {
-            val filtered = ids.filter { uuidPattern.matches(it) }
+            val filtered = ids.filter { CANONICAL_UUID_REGEX.matches(it) }
             val dropped = ids.size - filtered.size
             if (dropped > 0) {
                 Logger.w("SyncManager") {
@@ -856,6 +999,8 @@ class SyncManager(
         val filteredRoutineIds = filterUuids(rawRoutineIds, "routineIds")
         val filteredSessionIds = filterUuids(rawSessionIds, "sessionIds")
         val filteredCycleIds = filterUuids(rawCycleIds, "cycleIds")
+        val filteredBadgeIds = filterUuids(rawBadgeIds, "badgeIds")
+        val filteredPrIds = filterUuids(rawPrIds, "personalRecordIds")
 
         fun <T> capParity(list: List<T>, label: String): List<T> =
             if (list.size <= SyncConfig.MAX_PARITY_IDS) {
@@ -873,8 +1018,8 @@ class SyncManager(
             sessionIds = capParity(filteredSessionIds, "sessionIds"),
             routineIds = capParity(filteredRoutineIds, "routineIds"),
             cycleIds = capParity(filteredCycleIds, "cycleIds"),
-            badgeIds = capParity(rawBadgeIds, "badgeIds"),
-            personalRecordIds = capParity(rawPrIds, "personalRecordIds"),
+            badgeIds = capParity(filteredBadgeIds, "badgeIds"),
+            personalRecordIds = capParity(filteredPrIds, "personalRecordIds"),
         )
 
         Logger.i("SyncManager") {
@@ -886,6 +1031,9 @@ class SyncManager(
         var totalEntitiesFetched = 0
         var currentCursor: String? = null
         var finalSyncTime: Long = 0
+        // Track returned entity IDs across pages for parity reconciliation
+        val returnedRoutineIds = mutableSetOf<String>()
+        val returnedCycleIds = mutableSetOf<String>()
 
         // Pagination loop: fetch pages until hasMore is false
         while (true) {
@@ -977,6 +1125,14 @@ class SyncManager(
                 }
             }
 
+            // Track returned entity IDs for parity reconciliation
+            for (routine in pullResponse.routines) {
+                returnedRoutineIds.add(routine.id)
+            }
+            for (cycle in pullResponse.cycles) {
+                returnedCycleIds.add(cycle.id)
+            }
+
             // Merge this page atomically
             val mergeResult = mergePullPage(pullResponse, lastSync, mergeProfileId)
             if (mergeResult.isFailure) {
@@ -1003,6 +1159,50 @@ class SyncManager(
                     "Pull page $pagesProcessed has hasMore=true but no nextCursor. Breaking."
                 }
                 break
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────
+        // PARITY RECONCILIATION: Delete local entities that were deleted
+        // on server. We sent knownEntityIds; server returned everything
+        // it still has. Any ID we sent that server didn't return was
+        // deleted server-side -> hard-delete locally.
+        //
+        // Guards:
+        //   - Only reconcile if we sent the full parity list (not
+        //     truncated by MAX_PARITY_IDS cap). If truncated, the tail
+        //     IDs weren't sent, so we can't determine if they're missing.
+        //   - Only reconcile after ALL pages are fetched (partial pages
+        //     may not include all entity types yet).
+        // ──────────────────────────────────────────────────────────────
+
+        // Cycles -- portal-authoritative, so server deletion is common
+        if (filteredCycleIds.size <= SyncConfig.MAX_PARITY_IDS) {
+            val serverDeletedCycleIds = filteredCycleIds.filter { it !in returnedCycleIds }
+            if (serverDeletedCycleIds.isNotEmpty()) {
+                Logger.i("SyncManager") {
+                    "Parity reconciliation: ${serverDeletedCycleIds.size} cycle(s) deleted on server, removing locally"
+                }
+                try {
+                    syncRepository.hardDeleteCyclesByIds(serverDeletedCycleIds)
+                } catch (e: Exception) {
+                    Logger.w(e) { "Parity reconciliation failed for cycles; non-fatal" }
+                }
+            }
+        }
+
+        // Routines -- shared-authority, same pattern
+        if (filteredRoutineIds.size <= SyncConfig.MAX_PARITY_IDS) {
+            val serverDeletedRoutineIds = filteredRoutineIds.filter { it !in returnedRoutineIds }
+            if (serverDeletedRoutineIds.isNotEmpty()) {
+                Logger.i("SyncManager") {
+                    "Parity reconciliation: ${serverDeletedRoutineIds.size} routine(s) deleted on server, removing locally"
+                }
+                try {
+                    syncRepository.hardDeleteRoutinesByIds(serverDeletedRoutineIds)
+                } catch (e: Exception) {
+                    Logger.w(e) { "Parity reconciliation failed for routines; non-fatal" }
+                }
             }
         }
 

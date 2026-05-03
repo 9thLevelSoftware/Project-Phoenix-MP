@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.util.KmpLocalDate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -76,7 +77,7 @@ class HistoryManager(
                     sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
                 GroupedRoutineHistoryItem(
                     routineSessionId = id,
-                    routineName = sessionList.first().routineName ?: "Unnamed Routine",
+                    routineName = sortedSessions.first().routineName ?: "Unnamed Routine",
                     sessions = sortedSessions,
                     // Use elapsed span (first set start -> last set end) so inter-set rest is included.
                     totalDuration = (lastEnd - firstStart).coerceAtLeast(0L),
@@ -186,6 +187,7 @@ class HistoryManager(
                         _workoutHistory.value = sessions.take(20)
                     }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e  // Never suppress coroutine cancellation
                 co.touchlab.kermit.Logger.e(e) {
                     "Error loading workout history in HistoryManager init"
                 }

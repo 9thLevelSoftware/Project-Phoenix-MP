@@ -173,8 +173,9 @@ class ProtocolParserTest {
 
     @Test
     fun `parseRepPacket parses legacy 6-byte format`() {
-        // Legacy 6-byte: top=2 at 0-1, complete=1 at 2-3 (audit M-C02)
-        val data = byteArrayOf(0x02, 0x00, 0x01, 0x00, 0x00, 0x00)
+        // Legacy 6-byte format (parent repo PR #190 / Issue #187):
+        // top=2 at bytes 0-1, padding at 2-3, complete=1 at bytes 4-5
+        val data = byteArrayOf(0x02, 0x00, 0x00, 0x00, 0x01, 0x00)
         val result = parseRepPacket(data, hasOpcodePrefix = false, timestamp = 1000L)
 
         assertNotNull(result)
@@ -484,9 +485,47 @@ class ProtocolParserTest {
     }
 
     @Test
-    fun `parseRepPacket returns null for ambiguous 7 to 23 byte payload`() {
-        val data = ByteArray(10) { 0x01 }
-        assertNull(parseRepPacket(data, hasOpcodePrefix = false, timestamp = 0L))
+    fun `parseRepPacket parses 7 to 23 byte payload as legacy - Issue 388 V-Form fix`() {
+        // Issue #388: V-Form Trainer firmware emits rep packets shorter than 24 bytes
+        // but longer than 6. Phoenix MP previously rejected these (regression of parent
+        // repo PR #190 fix from Issue #187/#174). Restored: any 6..23 byte payload parses
+        // as legacy with topCounter@0-1 and completeCounter@4-5.
+        val data = ByteArray(10) { 0x00 }
+        // top=7 at 0-1, complete=3 at 4-5
+        data[0] = 0x07
+        data[4] = 0x03
+        val result = parseRepPacket(data, hasOpcodePrefix = false, timestamp = 4000L)
+
+        assertNotNull(result)
+        assertTrue(result.isLegacyFormat)
+        assertEquals(7, result.topCounter)
+        assertEquals(3, result.completeCounter)
+        assertEquals(0, result.repsRomCount)
+        assertEquals(0, result.repsSetCount)
+        assertEquals(4000L, result.timestamp)
+    }
+
+    @Test
+    fun `parseRepPacket parses 16-byte legacy V-Form format - Issue 388`() {
+        // Most likely V-Form rep size per official com.vitruvian.formtrainer.Reps spec
+        // (4-byte int up + 4-byte int down + 4-byte float rangeTop + 4-byte float rangeBottom
+        // = 16 bytes minimum, with optional 4× short trailer making 24).
+        // Phoenix's legacy parser only reads bytes 0-1 and 4-5, so the float bytes 8-15 are
+        // ignored — sufficient to drive RepCounterFromMachine.processLegacy via topCounter
+        // increments, matching v0.6.2-beta behaviour.
+        val data = ByteArray(16) { 0x00 }
+        // top counter = 5 (only low 16 bits read)
+        data[0] = 0x05
+        // bytes 2-3 padding (ignored)
+        // complete counter = 4 (only low 16 bits read)
+        data[4] = 0x04
+        val result = parseRepPacket(data, hasOpcodePrefix = false, timestamp = 5000L)
+
+        assertNotNull(result)
+        assertTrue(result.isLegacyFormat)
+        assertEquals(5, result.topCounter)
+        assertEquals(4, result.completeCounter)
+        assertEquals(5000L, result.timestamp)
     }
 
     @Test

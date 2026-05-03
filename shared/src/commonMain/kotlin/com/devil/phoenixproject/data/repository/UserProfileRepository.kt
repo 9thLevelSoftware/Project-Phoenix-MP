@@ -153,11 +153,24 @@ class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) :
             queries.setActiveProfile("default")
         }
 
-        gamificationRepository.updateStats(targetProfileId)
-        val rpgInput = gamificationRepository.getRpgInput(targetProfileId)
-        gamificationRepository.saveRpgProfile(RpgAttributeEngine.computeProfile(rpgInput), targetProfileId)
+        // Issue #393: Wrap post-deletion gamification recompute in try-catch.
+        // getRpgInput() has no internal error handling; if it throws (e.g., missing
+        // data after cascade reassignment), the whole deleteProfile call propagates
+        // the exception to the UI, which on iOS causes SIGABRT.
+        try {
+            gamificationRepository.updateStats(targetProfileId)
+            val rpgInput = gamificationRepository.getRpgInput(targetProfileId)
+            gamificationRepository.saveRpgProfile(RpgAttributeEngine.computeProfile(rpgInput), targetProfileId)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e(e) { "PROFILE_DELETE: Gamification recompute failed for profile '$targetProfileId' after deleting '$id'" }
+        }
 
         refreshProfilesSync()
+        // Returns true because the profile itself was deleted successfully.
+        // Gamification recompute failure above is best-effort and non-critical;
+        // stats will self-heal on next workout or app restart.
         return true
     }
 

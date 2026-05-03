@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,8 +33,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -50,8 +53,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -70,6 +77,10 @@ import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.TestTags
+import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.Constants
@@ -95,9 +106,9 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
     val routineFlowState by viewModel.routineFlowState.collectAsState()
     val completedExercises by viewModel.completedExercises.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
-    val connectionState by viewModel.connectionState.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
 
     // Get the current routine from flow state
     val routine = when (val state = routineFlowState) {
@@ -138,6 +149,12 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
         initialPage = (routineFlowState as? RoutineFlowState.Overview)?.selectedExerciseIndex ?: 0,
         pageCount = { routine.exercises.size },
     )
+    val overviewSizing = routineOverviewSizing()
+    val adjustmentStates = remember(routine.id, routine.exercises) {
+        routine.exercises.associate { exercise ->
+            exercise.id to mutableStateOf(defaultOverviewAdjustments(exercise))
+        }
+    }
 
     // Clear topbar title to allow dynamic title from EnhancedMainScreen
     LaunchedEffect(Unit) {
@@ -168,15 +185,34 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
         showStopConfirmation = true
     }
 
+    fun startCurrentExercise() {
+        val exerciseIndex = pagerState.currentPage
+        val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
+        val adjustments = adjustmentStates[exercise.id]?.value ?: defaultOverviewAdjustments(exercise)
+
+        // Use ensureConnection to auto-connect if needed (matches other start buttons)
+        viewModel.ensureConnection(
+            onConnected = {
+                // Pass adjusted values to SetReady
+                viewModel.enterSetReadyWithAdjustments(
+                    exerciseIndex = exerciseIndex,
+                    setIndex = 0,
+                    adjustedWeight = adjustments.weight,
+                    adjustedReps = adjustments.reps,
+                )
+                navController.navigate(NavigationRoutes.SetReady.route)
+            },
+            onFailed = {}, // Toast/error handled by ensureConnection
+        )
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets.navigationBars,
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showStopConfirmation = true },
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                icon = { Icon(Icons.Default.Close, "Stop") },
-                text = { Text(stringResource(Res.string.action_stop)) },
+        bottomBar = {
+            RoutineOverviewActionBar(
+                sizing = overviewSizing,
+                onStopRoutine = { showStopConfirmation = true },
+                onStartExercise = { startCurrentExercise() },
             )
         },
     ) { padding ->
@@ -235,18 +271,8 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
             ) { page ->
                 val exercise = routine.exercises[page]
                 val isCompleted = completedExercises.contains(page)
-
-                // Track adjusted parameters for this exercise (first set as baseline)
-                val initialWeight = exercise.setWeightsPerCableKg.firstOrNull() ?: exercise.weightPerCableKg
-                val initialReps = exercise.setReps.firstOrNull() ?: 10
-                var adjustedWeight by remember(exercise) { mutableStateOf(initialWeight) }
-                var adjustedReps by remember(exercise) { mutableStateOf(initialReps) }
-
-                // Echo mode state
-                var echoLevel by remember(exercise) { mutableStateOf(exercise.echoLevel) }
-                var eccentricLoadPercent by remember(exercise) {
-                    mutableStateOf(exercise.eccentricLoad.percentage)
-                }
+                val adjustmentState = adjustmentStates.getValue(exercise.id)
+                val adjustments by adjustmentState
 
                 // Load video for this exercise
                 var videoEntity by remember { mutableStateOf<ExerciseVideoEntity?>(null) }
@@ -268,30 +294,28 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                     weightUnit = weightUnit,
                     formatWeight = viewModel::formatWeight,
                     videoUrl = if (enableVideoPlayback) videoEntity?.videoUrl else null,
-                    adjustedWeight = adjustedWeight,
-                    adjustedReps = adjustedReps,
+                    adjustedWeight = adjustments.weight,
+                    adjustedReps = adjustments.reps,
                     isAMRAP = exercise.isAMRAP,
                     isEchoMode = exercise.programMode is ProgramMode.Echo,
-                    echoLevel = echoLevel,
-                    eccentricLoadPercent = eccentricLoadPercent,
+                    echoLevel = adjustments.echoLevel,
+                    eccentricLoadPercent = adjustments.eccentricLoadPercent,
+                    sizing = overviewSizing,
                     onWeightChange = { newWeight ->
-                        if (newWeight >= 0f) adjustedWeight = newWeight
+                        if (newWeight >= 0f) {
+                            adjustmentState.value = adjustmentState.value.copy(weight = newWeight)
+                        }
                     },
                     onRepsChange = { newReps ->
-                        if (newReps >= 1) adjustedReps = newReps
+                        if (newReps >= 1) {
+                            adjustmentState.value = adjustmentState.value.copy(reps = newReps)
+                        }
                     },
-                    onEchoLevelChange = { echoLevel = it },
-                    onEccentricLoadChange = { eccentricLoadPercent = it },
-                    onStartExercise = {
-                        // Use ensureConnection to auto-connect if needed (matches other start buttons)
-                        viewModel.ensureConnection(
-                            onConnected = {
-                                // Pass adjusted values to SetReady
-                                viewModel.enterSetReadyWithAdjustments(page, 0, adjustedWeight, adjustedReps)
-                                navController.navigate(NavigationRoutes.SetReady.route)
-                            },
-                            onFailed = {}, // Toast/error handled by ensureConnection
-                        )
+                    onEchoLevelChange = {
+                        adjustmentState.value = adjustmentState.value.copy(echoLevel = it)
+                    },
+                    onEccentricLoadChange = {
+                        adjustmentState.value = adjustmentState.value.copy(eccentricLoadPercent = it)
                     },
                 )
             }
@@ -352,6 +376,138 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
     }
 }
 
+private data class ExerciseOverviewAdjustments(
+    val weight: Float,
+    val reps: Int,
+    val echoLevel: EchoLevel,
+    val eccentricLoadPercent: Int,
+)
+
+private data class RoutineOverviewSizing(
+    val isReducedViewport: Boolean,
+    val cardPadding: Dp,
+    val contentSpacing: Dp,
+    val configPadding: Dp,
+    val configSpacing: Dp,
+    val videoHeight: Dp,
+    val actionBarVerticalPadding: Dp,
+    val actionButtonMinHeight: Dp,
+)
+
+private fun defaultOverviewAdjustments(exercise: RoutineExercise): ExerciseOverviewAdjustments {
+    val initialWeight = exercise.setWeightsPerCableKg.firstOrNull() ?: exercise.weightPerCableKg
+    val initialReps = exercise.setReps.firstOrNull() ?: 10
+
+    return ExerciseOverviewAdjustments(
+        weight = initialWeight,
+        reps = initialReps,
+        echoLevel = exercise.echoLevel,
+        eccentricLoadPercent = exercise.eccentricLoad.percentage,
+    )
+}
+
+@Composable
+private fun routineOverviewSizing(): RoutineOverviewSizing {
+    val windowSizeClass = LocalWindowSizeClass.current
+    val fontScale = LocalDensity.current.fontScale
+    val isCompactWidth = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact
+    val isReducedViewport = isCompactWidth &&
+        (
+            windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact ||
+                windowSizeClass.heightDp < 700.dp ||
+                fontScale >= 1.15f
+            )
+
+    return if (isReducedViewport) {
+        RoutineOverviewSizing(
+            isReducedViewport = true,
+            cardPadding = 12.dp,
+            contentSpacing = 8.dp,
+            configPadding = 12.dp,
+            configSpacing = 10.dp,
+            videoHeight = 200.dp,
+            actionBarVerticalPadding = 8.dp,
+            actionButtonMinHeight = 52.dp,
+        )
+    } else {
+        RoutineOverviewSizing(
+            isReducedViewport = false,
+            cardPadding = 16.dp,
+            contentSpacing = 12.dp,
+            configPadding = Spacing.medium,
+            configSpacing = Spacing.medium,
+            videoHeight = 220.dp,
+            actionBarVerticalPadding = 12.dp,
+            actionButtonMinHeight = 56.dp,
+        )
+    }
+}
+
+@Composable
+private fun RoutineOverviewActionBar(
+    sizing: RoutineOverviewSizing,
+    onStopRoutine: () -> Unit,
+    onStartExercise: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 3.dp,
+        shadowElevation = 6.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(
+                    horizontal = 16.dp,
+                    vertical = sizing.actionBarVerticalPadding,
+                ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilledTonalIconButton(
+                onClick = onStopRoutine,
+                modifier = Modifier
+                    .size(sizing.actionButtonMinHeight)
+                    .testTag(TestTags.ACTION_STOP_ROUTINE_OVERVIEW),
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = stringResource(Res.string.action_stop),
+                )
+            }
+
+            Button(
+                onClick = onStartExercise,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = sizing.actionButtonMinHeight)
+                    .testTag(TestTags.ACTION_START_ROUTINE_EXERCISE),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(
+                    horizontal = if (sizing.isReducedViewport) 12.dp else 16.dp,
+                    vertical = 10.dp,
+                ),
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(Res.string.start_exercise),
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ExerciseOverviewCard(
     exercise: RoutineExercise,
@@ -366,11 +522,11 @@ private fun ExerciseOverviewCard(
     isEchoMode: Boolean,
     echoLevel: EchoLevel,
     eccentricLoadPercent: Int,
+    sizing: RoutineOverviewSizing,
     onWeightChange: (Float) -> Unit,
     onRepsChange: (Int) -> Unit,
     onEchoLevelChange: (EchoLevel) -> Unit,
     onEccentricLoadChange: (Int) -> Unit,
-    onStartExercise: () -> Unit,
 ) {
     val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
     val weightStepKg = 0.25f
@@ -388,9 +544,9 @@ private fun ExerciseOverviewCard(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
+                    .padding(sizing.cardPadding),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(sizing.contentSpacing),
             ) {
                 // Exercise header
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -402,14 +558,23 @@ private fun ExerciseOverviewCard(
                     Spacer(Modifier.height(4.dp))
                     Text(
                         exercise.exercise.displayName,
-                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = if (sizing.isReducedViewport) {
+                            MaterialTheme.typography.titleLarge
+                        } else {
+                            MaterialTheme.typography.headlineSmall
+                        },
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         exercise.exercise.muscleGroups,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
@@ -418,7 +583,7 @@ private fun ExerciseOverviewCard(
                     videoUrl = videoUrl,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(140.dp)
+                        .height(sizing.videoHeight)
                         .clip(RoundedCornerShape(12.dp)),
                 )
 
@@ -453,8 +618,8 @@ private fun ExerciseOverviewCard(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(Spacing.medium),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+                                .padding(sizing.configPadding),
+                            verticalArrangement = Arrangement.spacedBy(sizing.configSpacing),
                         ) {
                             Text(
                                 if (isEchoMode) "ECHO SETTINGS" else "SET CONFIGURATION",
@@ -567,20 +732,7 @@ private fun ExerciseOverviewCard(
                     }
                 }
 
-                Spacer(Modifier.weight(1f))
-
-                // Start button
-                Button(
-                    onClick = onStartExercise,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    Icon(Icons.Default.PlayArrow, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(Res.string.start_exercise), fontWeight = FontWeight.Bold)
-                }
+                Spacer(Modifier.height(sizing.contentSpacing))
             }
 
             // Completed overlay

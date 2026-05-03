@@ -354,6 +354,7 @@ class SqlDelightSyncRepository(
                         createdAt = dto.createdAt,
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
+                        updatedAt = currentTimeMillis(),
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
                         groupId = existing?.groupId,
                     )
@@ -526,6 +527,7 @@ class SqlDelightSyncRepository(
                         createdAt = existing?.createdAt ?: currentTimeMillis(),
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
+                        updatedAt = portalRoutine.updatedAt ?: currentTimeMillis(),
                         profile_id = existing?.profile_id ?: profileId,
                         groupId = existing?.groupId,
                     )
@@ -573,15 +575,22 @@ class SqlDelightSyncRepository(
                         }
 
                         for (exercise in portalRoutine.exercises) {
-                            // Build setReps string: e.g., "10,10,10" for sets=3, reps=10
-                            val repsList = List(exercise.sets) {
-                                if (exercise.isAmrap && it == exercise.sets - 1) {
-                                    "AMRAP"
-                                } else {
-                                    exercise.reps.toString()
+                            // Parse perSetReps JSON if available, otherwise reconstruct from scalar
+                            val setReps = exercise.perSetReps?.let { jsonStr ->
+                                try {
+                                    val parsed = Json.decodeFromString<List<Int?>>(jsonStr)
+                                    parsed.joinToString(",") { it?.toString() ?: "AMRAP" }
+                                } catch (_: Exception) {
+                                    null
                                 }
+                            } ?: run {
+                                // Fallback: reconstruct from scalar (old portal data without perSetReps)
+                                val repsList = List(exercise.sets) {
+                                    if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP"
+                                    else exercise.reps.toString()
+                                }
+                                repsList.joinToString(",")
                             }
-                            val setReps = repsList.joinToString(",")
 
                             // Convert perSetWeights JSON "[50,55,60]" to comma-separated "50.0,55.0,60.0"
                             val setWeights = exercise.perSetWeights?.let { jsonStr ->
@@ -907,6 +916,17 @@ class SqlDelightSyncRepository(
 
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = withContext(Dispatchers.IO) {
         queries.selectSessionsModifiedSince(timestamp, profileId = profileId, ::mapToWorkoutSession).executeAsList()
+    }
+
+    override suspend fun getDeletedRoutineIdsSince(timestamp: Long, profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectDeletedRoutinesSince(timestamp, profileId = profileId).executeAsList().map { row ->
+            // Prefer serverId (the ID the server knows) over local clientId
+            row.serverId ?: row.id
+        }
+    }
+
+    override suspend fun getDeletedCycleIdsSince(timestamp: Long, profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectDeletedCyclesSince(timestamp, profileId = profileId).executeAsList()
     }
 
     override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = withContext(Dispatchers.IO) {
@@ -1483,6 +1503,7 @@ class SqlDelightSyncRepository(
                         createdAt = existing?.createdAt ?: currentTimeMillis(),
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
+                        updatedAt = portalRoutine.updatedAt ?: currentTimeMillis(),
                         profile_id = existing?.profile_id ?: profileId,
                         groupId = existing?.groupId,
                     )
@@ -1523,11 +1544,20 @@ class SqlDelightSyncRepository(
                         }
 
                         for (exercise in portalRoutine.exercises) {
-                            // Build setReps string
-                            val repsList = List(exercise.sets) {
-                                if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP" else exercise.reps.toString()
+                            // Parse perSetReps JSON if available, otherwise reconstruct from scalar
+                            val setReps = exercise.perSetReps?.let { jsonStr ->
+                                try {
+                                    val parsed = Json.decodeFromString<List<Int?>>(jsonStr)
+                                    parsed.joinToString(",") { it?.toString() ?: "AMRAP" }
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            } ?: run {
+                                val repsList = List(exercise.sets) {
+                                    if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP" else exercise.reps.toString()
+                                }
+                                repsList.joinToString(",")
                             }
-                            val setReps = repsList.joinToString(",")
 
                             // Convert perSetWeights JSON
                             val setWeights = exercise.perSetWeights?.let { jsonStr ->
@@ -1731,6 +1761,35 @@ class SqlDelightSyncRepository(
             Logger.d {
                 "Atomic merge complete: ${sessions.size} sessions, ${routines.size} routines, " +
                     "${cycles.size} cycles, ${badges.size} badges, ${personalRecords.size} PRs (profile=$profileId)"
+            }
+        }
+    }
+
+    // === Parity Reconciliation ===
+
+    override suspend fun hardDeleteCyclesByIds(ids: List<String>) {
+        if (ids.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                // Delete progress and days first (explicit cleanup before parent deletion)
+                for (id in ids) {
+                    queries.deleteCycleProgress(id)
+                    queries.deleteCycleDaysByCycle(id)
+                }
+                queries.hardDeleteCyclesByIds(ids)
+            }
+        }
+    }
+
+    override suspend fun hardDeleteRoutinesByIds(ids: List<String>) {
+        if (ids.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                for (id in ids) {
+                    queries.deleteRoutineExercises(id)
+                    queries.deleteSupersetsByRoutine(id)
+                }
+                queries.hardDeleteRoutinesByIds(ids)
             }
         }
     }

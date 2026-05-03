@@ -261,6 +261,48 @@ class ConflictResolutionTest {
         assertEquals("Local Bench Press", exercisesAfter.first().exerciseName)
     }
 
+    @Test
+    fun `mergeAllPullData - AMRAP routine preserves per-set reps from portal`() = runTest {
+        val routineId = "routine-all-amrap"
+        val exerciseId = "routine-exercise-all-amrap"
+        val portalRoutine = PullRoutineDto(
+            id = routineId,
+            name = "Deadlift AMRAP",
+            description = "Every set is AMRAP",
+            exerciseCount = 1,
+            exercises = listOf(
+                PullRoutineExerciseDto(
+                    id = exerciseId,
+                    routineId = routineId,
+                    name = "Deadlift",
+                    muscleGroup = "Back",
+                    sets = 3,
+                    reps = 10,
+                    perSetReps = "[null,null,null]",
+                    isAmrap = true,
+                ),
+            ),
+        )
+
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = listOf(portalRoutine),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = testProfileId,
+        )
+
+        val exercise = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine(routineId)
+            .executeAsOne()
+
+        assertEquals("AMRAP,AMRAP,AMRAP", exercise.setReps)
+        assertEquals(1L, exercise.isAMRAP)
+    }
+
     // ─── Training Cycle Merge Tests (SINGLE-ACTIVE ENFORCEMENT) ─────────────────
     //
     // NOTE: Current Implementation vs. Target State

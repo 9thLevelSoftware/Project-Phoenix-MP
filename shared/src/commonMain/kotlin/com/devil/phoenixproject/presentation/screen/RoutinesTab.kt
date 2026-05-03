@@ -11,20 +11,70 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileCopy
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -38,13 +88,40 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ProfileColors
-import com.devil.phoenixproject.ui.theme.*
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_copy
+import vitruvianprojectphoenix.shared.generated.resources.action_delete
+import vitruvianprojectphoenix.shared.generated.resources.action_edit
+import vitruvianprojectphoenix.shared.generated.resources.cannot_be_undone
+import vitruvianprojectphoenix.shared.generated.resources.cd_add_routine
+import vitruvianprojectphoenix.shared.generated.resources.cd_cancel_selection
+import vitruvianprojectphoenix.shared.generated.resources.cd_collapse
+import vitruvianprojectphoenix.shared.generated.resources.cd_copy_selected
+import vitruvianprojectphoenix.shared.generated.resources.cd_delete_selected
+import vitruvianprojectphoenix.shared.generated.resources.cd_expand
+import vitruvianprojectphoenix.shared.generated.resources.copy_routines_confirm
+import vitruvianprojectphoenix.shared.generated.resources.copy_to_profile
+import vitruvianprojectphoenix.shared.generated.resources.create_new_routine
+import vitruvianprojectphoenix.shared.generated.resources.delete_routine
+import vitruvianprojectphoenix.shared.generated.resources.delete_routine_message
+import vitruvianprojectphoenix.shared.generated.resources.delete_selected_routines
+import vitruvianprojectphoenix.shared.generated.resources.duplicate_routines_message
+import vitruvianprojectphoenix.shared.generated.resources.duplicate_selected_routines
+import vitruvianprojectphoenix.shared.generated.resources.empty_no_routines_message
+import vitruvianprojectphoenix.shared.generated.resources.empty_no_routines_title
+import vitruvianprojectphoenix.shared.generated.resources.move_routines_confirm
+import vitruvianprojectphoenix.shared.generated.resources.move_to_profile
+import vitruvianprojectphoenix.shared.generated.resources.no_other_profiles
+import vitruvianprojectphoenix.shared.generated.resources.select_target_profile
+import vitruvianprojectphoenix.shared.generated.resources.start_workout
 
 /**
  * Routines tab showing list of saved routines with create/edit/delete functionality.
@@ -324,7 +401,7 @@ fun RoutinesTab(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ) {
-                        Icon(Icons.Default.Folder, contentDescription = "Move to Group")
+                        Icon(Icons.Default.FolderOpen, contentDescription = "Move to Group")
                     }
 
                     // Move to Profile button (only if other profiles exist)
@@ -941,6 +1018,8 @@ fun RoutineCard(
     var expanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
+    val useCompactAccessibility = isCompactAccessibilityLayout()
+    val cardPadding = if (useCompactAccessibility) 16.dp else 20.dp
 
     @OptIn(ExperimentalFoundationApi::class)
     Card(
@@ -987,7 +1066,7 @@ fun RoutineCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
+                .padding(cardPadding),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1012,14 +1091,22 @@ fun RoutineCard(
                 ) {
                     Text(
                         text = routine.name,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = if (useCompactAccessibility) {
+                            MaterialTheme.typography.titleMedium
+                        } else {
+                            MaterialTheme.typography.titleLarge
+                        },
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = "${routine.exercises.size} exercises • ${historicalTimeEstimate ?: formatEstimatedDuration(routine)}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
@@ -1049,17 +1136,23 @@ fun RoutineCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top,
                         ) {
                             Text(
                                 text = "${index + 1}. ${exercise.exercise.name}",
+                                modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 text = formatSetRepsForCard(exercise.setReps),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -1080,6 +1173,8 @@ fun RoutineCard(
                             stringResource(Res.string.start_workout),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
 
@@ -1094,46 +1189,73 @@ fun RoutineCard(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            contentPadding = if (useCompactAccessibility) {
+                                PaddingValues(horizontal = 6.dp, vertical = 10.dp)
+                            } else {
+                                PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            },
                         ) {
                             Icon(
                                 Icons.Default.Edit,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(20.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text(stringResource(Res.string.action_edit), maxLines = 1)
+                            Text(
+                                stringResource(Res.string.action_edit),
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                         Spacer(Modifier.width(6.dp))
                         OutlinedButton(
                             onClick = onDuplicate,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            contentPadding = if (useCompactAccessibility) {
+                                PaddingValues(horizontal = 6.dp, vertical = 10.dp)
+                            } else {
+                                PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            },
                         ) {
                             Icon(
                                 Icons.Default.ContentCopy,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(20.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text(stringResource(Res.string.action_copy), maxLines = 1)
+                            Text(
+                                stringResource(Res.string.action_copy),
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                         Spacer(Modifier.width(6.dp))
                         OutlinedButton(
                             onClick = { showDeleteDialog = true },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            contentPadding = if (useCompactAccessibility) {
+                                PaddingValues(horizontal = 6.dp, vertical = 10.dp)
+                            } else {
+                                PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         ) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(20.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text(stringResource(Res.string.action_delete), maxLines = 1)
+                            Text(
+                                stringResource(Res.string.action_delete),
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
 
                         // Overflow menu for Move/Copy to Profile and Move to Group
@@ -1165,7 +1287,7 @@ fun RoutineCard(
                                         },
                                         leadingIcon = {
                                             Icon(
-                                                Icons.Default.Folder,
+                                                Icons.Default.FolderOpen,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(20.dp),
                                             )

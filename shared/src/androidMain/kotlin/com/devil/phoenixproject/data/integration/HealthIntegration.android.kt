@@ -123,6 +123,64 @@ actual class HealthIntegration(private val context: Context) {
     }
 
     /**
+     * Issue #395: Write a single aggregate Health Connect workout for an entire routine.
+     * Called once at routine completion instead of per-set.
+     */
+    @SuppressLint("RestrictedApi")
+    actual suspend fun writeRoutineWorkout(data: RoutineHealthData): Result<Unit> {
+        val c = client ?: return Result.failure(
+            IllegalStateException("Health Connect is not available on this device"),
+        )
+
+        if (!hasPermissions()) {
+            return Result.failure(
+                SecurityException("Health Connect write permissions not granted"),
+            )
+        }
+
+        return try {
+            val startInstant = Instant.ofEpochMilli(data.startTimeMs)
+            val durationMs = data.durationMs.coerceAtLeast(1000L)
+            val durationSeconds = durationMs / 1000L
+            val endInstant = startInstant.plusSeconds(durationSeconds)
+            val zoneOffset = ZoneId.systemDefault().rules.getOffset(startInstant)
+
+            val records = buildList {
+                add(
+                    ExerciseSessionRecord(
+                        startTime = startInstant,
+                        startZoneOffset = zoneOffset,
+                        endTime = endInstant,
+                        endZoneOffset = zoneOffset,
+                        exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING,
+                        title = data.routineName,
+                    ),
+                )
+
+                val calories = data.totalCalories
+                if (calories != null && calories > 0f) {
+                    add(
+                        TotalCaloriesBurnedRecord(
+                            startTime = startInstant,
+                            startZoneOffset = zoneOffset,
+                            endTime = endInstant,
+                            endZoneOffset = zoneOffset,
+                            energy = Energy.kilocalories(calories.toDouble()),
+                        ),
+                    )
+                }
+            }
+
+            c.insertRecords(records)
+            log.d { "Wrote ${records.size} Health Connect record(s) for routine: ${data.routineName}" }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            log.e(e) { "Failed to write routine workout to Health Connect: ${data.externalId}" }
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Builds a human-readable title for the exercise session.
      *
      * Weight display logic:

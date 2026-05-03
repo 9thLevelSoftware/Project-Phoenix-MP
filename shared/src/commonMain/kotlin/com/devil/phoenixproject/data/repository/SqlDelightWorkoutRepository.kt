@@ -583,6 +583,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     createdAt = routine.createdAt,
                     lastUsed = routine.lastUsed,
                     useCount = routine.useCount.toLong(),
+                    updatedAt = currentTimeMillis(),
                     profile_id = routine.profileId,
                     groupId = routine.groupId,
                 )
@@ -684,6 +685,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 queries.updateRoutineById(
                     name = routine.name,
                     description = "", // Keep description empty for now
+                    updatedAt = currentTimeMillis(),
                     id = routineId,
                 )
 
@@ -712,14 +714,14 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         withContext(Dispatchers.IO) {
             if (routineId.isBlank()) return@withContext
 
-            db.transaction {
-                // Delete exercises and supersets first (foreign key cascade should handle this, but be explicit)
-                queries.deleteRoutineExercises(routineId)
-                queries.deleteSupersetsByRoutine(routineId)
-                queries.deleteRoutineById(routineId)
-            }
+            val now = currentTimeMillis()
+            queries.softDeleteRoutine(
+                deletedAt = now,
+                updatedAt = now,
+                id = routineId,
+            )
 
-            Logger.d { "Deleted routine $routineId" }
+            Logger.d { "Soft-deleted routine $routineId (deletedAt=$now)" }
         }
     }
 

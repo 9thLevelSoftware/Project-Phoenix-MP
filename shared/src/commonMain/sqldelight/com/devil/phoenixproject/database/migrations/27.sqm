@@ -1,8 +1,10 @@
--- Migration 27: Routine Groups (local-only organizational buckets)
+-- Migration 27: Routine Groups + TrainingCycle soft-delete
 --
 -- Adds a RoutineGroup table for named routine grouping and a nullable
 -- groupId FK on the Routine table. ON DELETE SET NULL ensures deleting
 -- a group preserves routines (they become ungrouped).
+-- Also adds deletedAt to TrainingCycle for soft-delete sync support
+-- (mirrors Routine's deletedAt pattern from migration 11).
 
 CREATE TABLE IF NOT EXISTS RoutineGroup (
     id TEXT PRIMARY KEY NOT NULL,
@@ -15,3 +17,5 @@ CREATE TABLE IF NOT EXISTS RoutineGroup (
 CREATE INDEX IF NOT EXISTS idx_routine_group_profile ON RoutineGroup(profile_id);
 
 ALTER TABLE Routine ADD COLUMN groupId TEXT REFERENCES RoutineGroup(id) ON DELETE SET NULL;
+
+ALTER TABLE TrainingCycle ADD COLUMN deletedAt INTEGER;
