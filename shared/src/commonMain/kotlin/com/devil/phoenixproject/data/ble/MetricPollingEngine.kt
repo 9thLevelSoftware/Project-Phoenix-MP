@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.DeviceInfo
+import com.devil.phoenixproject.data.ble.PixelTestFlags
 import com.juul.kable.Peripheral
 import com.juul.kable.WriteType
 import kotlinx.coroutines.CoroutineScope
@@ -180,6 +181,10 @@ class MetricPollingEngine(
     /** Start all 4 polling loops. Called from startObservingNotifications(). */
     fun startAll(peripheral: Peripheral) {
         log.i { "Starting all polling loops" }
+        if (PixelTestFlags.killAllPolling) {
+            log.i { "#333 TEST: ALL POLLING DISABLED — notification-only mode (official app parity)" }
+            return
+        }
         startMonitorPolling(peripheral)
         startDiagnosticPolling(peripheral)
         startHeuristicPolling(peripheral)
@@ -370,6 +375,12 @@ class MetricPollingEngine(
      * Issue #222 v15.1: V-Form requires WriteType.WithResponse.
      */
     fun startHeartbeat(peripheral: Peripheral) {
+        if (PixelTestFlags.killHeartbeat || PixelTestFlags.killAllPolling) {
+            log.i { "#333 TEST: Heartbeat DISABLED (killHeartbeat=${PixelTestFlags.killHeartbeat}, killAllPolling=${PixelTestFlags.killAllPolling})" }
+            heartbeatJob?.cancel()
+            heartbeatJob = null
+            return
+        }
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             log.d {
