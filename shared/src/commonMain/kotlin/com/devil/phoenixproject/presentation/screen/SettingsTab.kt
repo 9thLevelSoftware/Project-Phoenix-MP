@@ -94,6 +94,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.ble.PixelTestFlags
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
@@ -1756,6 +1757,127 @@ fun SettingsTab(
                     "Play workout sounds to test audio configuration and volume",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                // Issue #333: Pixel 6/7 BLE Experiment Flags
+                Spacer(modifier = Modifier.height(Spacing.medium))
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                )
+                Spacer(modifier = Modifier.height(Spacing.small))
+                Text(
+                    "Pixel BLE Experiments (#333)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFF59E0B),
+                )
+                Text(
+                    "Memory-only flags for testing GATT_ERROR(133) on Pixel 6/7. Reset on app restart.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Flag A: Kill Heartbeat
+                var flagAEnabled by remember { mutableStateOf(PixelTestFlags.killHeartbeat) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "A: Kill Heartbeat",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "Disable heartbeat loop (no-op read + write every 2s)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagAEnabled,
+                        onCheckedChange = {
+                            flagAEnabled = it
+                            PixelTestFlags.killHeartbeat = it
+                        },
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Flag B: Kill All Polling
+                var flagBEnabled by remember { mutableStateOf(PixelTestFlags.killAllPolling) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "B: Kill All Polling",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "Disable ALL polling loops — notification-only mode (like official app)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagBEnabled,
+                        onCheckedChange = {
+                            flagBEnabled = it
+                            PixelTestFlags.killAllPolling = it
+                        },
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Flag C: Explicit LE 1M PHY
+                var flagCEnabled by remember { mutableStateOf(PixelTestFlags.explicitLe1mPhy) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "C: Explicit LE 1M PHY",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "Force LE 1M PHY + Transport.LE in Peripheral builder",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagCEnabled,
+                        onCheckedChange = {
+                            flagCEnabled = it
+                            PixelTestFlags.explicitLe1mPhy = it
+                        },
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Active flags summary
+                Text(
+                    "Active: ${PixelTestFlags.activeFlagsSummary()}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (flagAEnabled || flagBEnabled || flagCEnabled)
+                        Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
