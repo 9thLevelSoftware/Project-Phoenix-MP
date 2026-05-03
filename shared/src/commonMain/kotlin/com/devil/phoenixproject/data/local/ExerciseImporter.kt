@@ -49,6 +49,23 @@ data class TutorialJson(val video: String, val thumbnail: String)
 data class RangeJson(val minimum: Double? = null)
 
 /**
+ * Maps equipment codes from exercise_dump.json to human-readable labels.
+ * Matches the portal's equipmentDisplayMap in transforms.ts.
+ */
+private fun String.toEquipmentDisplayLabel(): String = when (this.uppercase()) {
+    "HANDLES" -> "Handles"
+    "BAR" -> "Bar"
+    "LONG_BAR" -> "Long Bar"
+    "SHORT_BAR" -> "Short Bar"
+    "ROPE" -> "Rope"
+    "BELT" -> "Belt"
+    "BENCH" -> "Bench"
+    "STRAPS" -> "Straps"
+    "GREY_CABLES" -> "Cables"
+    else -> this.lowercase().replaceFirstChar { it.uppercase() }
+}
+
+/**
  * Imports exercises from JSON file into the SQLDelight database.
  * KMP-compatible implementation using Compose Resources.
  */
@@ -59,6 +76,34 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         ignoreUnknownKeys = true
         isLenient = true
         coerceInputValues = true
+    }
+
+    /**
+     * Generate disambiguated display names for exercises.
+     * If only one exercise has a given base name -> displayName = trimmed name.
+     * If multiple share the base name -> displayName = "Name (Primary Equipment)".
+     * Primary equipment = first item in the equipment list from exercise_dump.json.
+     */
+    private fun generateDisplayNames(exercises: List<ExerciseJson>): Map<String, String> {
+        val grouped = exercises
+            .filter { it.archived == null }
+            .groupBy { it.name.lowercase().trim() }
+
+        return exercises.associate { exercise ->
+            val siblings = grouped[exercise.name.lowercase().trim()] ?: listOf(exercise)
+            val displayName = if (siblings.size > 1) {
+                val primaryEquipment = exercise.equipment?.firstOrNull()
+                    ?.toEquipmentDisplayLabel() ?: ""
+                if (primaryEquipment.isNotEmpty()) {
+                    "${exercise.name.trim()} ($primaryEquipment)"
+                } else {
+                    exercise.name.trim()
+                }
+            } else {
+                exercise.name.trim()
+            }
+            exercise.id to displayName
+        }
     }
 
     /**
@@ -90,6 +135,9 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
     suspend fun importFromJsonString(jsonString: String, clearExisting: Boolean = false): Result<Int> = withContext(Dispatchers.IO) {
         try {
             val exercises = json.decodeFromString<List<ExerciseJson>>(jsonString)
+
+            // Generate display names for disambiguation (issue #404)
+            val displayNames = generateDisplayNames(exercises)
 
             Logger.d { "Parsed ${exercises.size} exercises from JSON" }
 
@@ -134,8 +182,8 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         // Insert exercise with all columns
                         queries.insertExercise(
                             id = exerciseJson.id,
-                            name = exerciseJson.name,
-                            displayName = null, // Populated by ExerciseImporter display name generation (Task 3)
+                            name = exerciseJson.name.trim(),
+                            displayName = displayNames[exerciseJson.id],
                             description = exerciseJson.description,
                             created = 0L, // Will be set from JSON created field if needed
                             muscleGroup = primaryMuscle,
@@ -269,6 +317,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
             Logger.d { "Received ${jsonContent.length} bytes from GitHub" }
 
             val exercises: List<ExerciseJson> = json.decodeFromString(jsonContent)
+            val displayNames = generateDisplayNames(exercises)
             Logger.d { "Parsed ${exercises.size} exercises from GitHub" }
 
             var updatedCount = 0
@@ -285,8 +334,8 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                     // Use the full insertExercise query with all parameters
                     queries.insertExercise(
                         id = exercise.id,
-                        name = exercise.name,
-                        displayName = null, // Populated by ExerciseImporter display name generation (Task 3)
+                        name = exercise.name.trim(),
+                        displayName = displayNames[exercise.id],
                         description = exercise.description,
                         created = 0L, // Default to 0, as date parsing is complex
                         muscleGroup = exercise.muscleGroups?.firstOrNull() ?: "Other",
