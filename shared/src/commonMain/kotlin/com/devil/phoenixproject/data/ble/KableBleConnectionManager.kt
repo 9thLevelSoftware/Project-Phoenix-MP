@@ -10,8 +10,10 @@ import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.HardwareDetection
 import com.juul.kable.Advertisement
 import com.juul.kable.Peripheral
+import com.juul.kable.Phy
 import com.juul.kable.Scanner
 import com.juul.kable.State
+import com.juul.kable.Transport
 import com.juul.kable.WriteType
 import kotlin.concurrent.Volatile
 import kotlin.time.Clock
@@ -474,7 +476,15 @@ class KableBleConnectionManager(
             // Note: MTU negotiation is handled in onDeviceReady() via expect/actual
             // pattern (requestMtuIfSupported) since Kable's requestMtu requires
             // platform-specific AndroidPeripheral cast
-            peripheral = Peripheral(advertisement)
+            peripheral = if (PixelTestFlags.explicitLe1mPhy) {
+                log.i { "#333 TEST: Creating Peripheral with explicit Transport.Le + Phy.Le1M" }
+                Peripheral(advertisement) {
+                    transport = Transport.Le
+                    phy = Phy.Le1M
+                }
+            } else {
+                Peripheral(advertisement)
+            }
 
             // Cancel any stale state observer before launching a new one (H2 fix)
             stateObserverJob?.cancel()
@@ -497,6 +507,17 @@ class KableBleConnectionManager(
                                 connectedDeviceName,
                                 connectedDeviceAddress,
                             )
+                            // Log active #333 test flags
+                            val flagsSummary = PixelTestFlags.activeFlagsSummary()
+                            if (flagsSummary != "None") {
+                                log.i { "#333 TEST FLAGS ACTIVE: $flagsSummary" }
+                                logRepo.info(
+                                    LogEventType.SERVICE_DISCOVERED,
+                                    "#333 experiment flags: $flagsSummary",
+                                    device.name,
+                                    device.address,
+                                )
+                            }
                             reportConnectionState(
                                 ConnectionState.Connected(
                                     deviceName = device.name,
