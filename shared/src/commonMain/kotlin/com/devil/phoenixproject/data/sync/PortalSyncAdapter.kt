@@ -269,6 +269,7 @@ object PortalSyncAdapter {
         val exercise = PortalExerciseDto(
             id = exerciseId,
             sessionId = portalSessionId,
+            exerciseId = session.exerciseId, // Catalog exercise ID for identity preservation (#404)
             name = session.exerciseName ?: "Unknown Exercise",
             muscleGroup = swr.muscleGroup,
             orderIndex = orderIndex,
@@ -452,8 +453,11 @@ object PortalSyncAdapter {
             PortalRoutineExerciseSyncDto(
                 id = ex.id,
                 routineId = routine.id,
+                exerciseId = ex.exercise.id,               // Catalog exercise ID (#404)
                 name = ex.exercise.name,
+                displayName = ex.exercise.displayName,     // Disambiguated name (#404)
                 muscleGroup = ex.exercise.muscleGroup,
+                exerciseEquipment = ex.exercise.equipment, // Equipment snapshot (#404)
                 sets = ex.sets,
                 reps = ex.reps,
                 weight = ex.weightPerCableKg,
