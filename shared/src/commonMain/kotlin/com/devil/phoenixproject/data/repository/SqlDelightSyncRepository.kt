@@ -387,6 +387,7 @@ class SqlDelightSyncRepository(
                     queries.insertExercise(
                         id = dto.clientId,
                         name = dto.name,
+                        displayName = null, // Custom exercises use name directly
                         description = null,
                         created = dto.createdAt,
                         muscleGroup = dto.muscleGroup,

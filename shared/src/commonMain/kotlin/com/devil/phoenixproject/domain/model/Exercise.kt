@@ -30,13 +30,8 @@ data class Exercise(
     val timesPerformed: Int = 0, // Number of times this exercise has been performed
     val oneRepMaxKg: Float? = null, // User's 1RM for percentage-based programming
     val cableIntent: ExerciseCableIntent? = null, // Explicit single/dual cable metadata when known
+    val displayName: String = name, // Disambiguated name from catalog; defaults to base name
 ) {
-    /**
-     * Display name for UI (same as name for now)
-     */
-    val displayName: String
-        get() = name
-
     /**
      * Whether this exercise uses any cable accessory (handles, bar, rope, etc.).
      * Exercises with only non-cable equipment (e.g., bench) or no equipment are bodyweight.

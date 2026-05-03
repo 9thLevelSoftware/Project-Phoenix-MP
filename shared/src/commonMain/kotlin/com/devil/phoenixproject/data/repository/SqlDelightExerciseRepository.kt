@@ -22,6 +22,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
     private fun mapToExercise(
         id: String,
         name: String,
+        displayName: String?,
         description: String?,
         created: Long,
         muscleGroup: String,
@@ -62,6 +63,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
                 defaultCableConfig = defaultCableConfig,
                 isCustom = isCustom == 1L,
             ),
+            displayName = displayName ?: name,
         )
     }
 
@@ -193,6 +195,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
             queries.insertExercise(
                 id = customId,
                 name = exercise.name,
+                displayName = null, // Custom exercises use name directly
                 description = null, // Custom exercises start without description
                 created = currentTimeMillis(),
                 muscleGroup = exercise.muscleGroup,

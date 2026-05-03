@@ -135,6 +135,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         queries.insertExercise(
                             id = exerciseJson.id,
                             name = exerciseJson.name,
+                            displayName = null, // Populated by ExerciseImporter display name generation (Task 3)
                             description = exerciseJson.description,
                             created = 0L, // Will be set from JSON created field if needed
                             muscleGroup = primaryMuscle,
@@ -285,6 +286,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                     queries.insertExercise(
                         id = exercise.id,
                         name = exercise.name,
+                        displayName = null, // Populated by ExerciseImporter display name generation (Task 3)
                         description = exercise.description,
                         created = 0L, // Default to 0, as date parsing is complex
                         muscleGroup = exercise.muscleGroups?.firstOrNull() ?: "Other",
