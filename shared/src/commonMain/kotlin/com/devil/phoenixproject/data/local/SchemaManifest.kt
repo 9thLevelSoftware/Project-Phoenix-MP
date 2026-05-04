@@ -497,7 +497,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // because applyColumnHeal handles "duplicate column" errors gracefully.
 
     // Exercise -- initial schema, full current shape
-    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11)
+    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11), displayName (m30)
     SchemaTableOperation(
         table = "Exercise",
         createSql = """

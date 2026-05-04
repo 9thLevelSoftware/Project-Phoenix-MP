@@ -1184,7 +1184,7 @@ abstract class BaseDataBackupManager(
                                                     lastUsed = routine.lastUsed,
                                                     useCount = routine.useCount.toLong(),
                                                     profile_id = routine.profileId ?: "default",
-                                                    groupId = null,
+                                                    groupId = routine.groupId,
                                                 )
                                                 routinesImported++
                                                 importedRoutineIds.add(routine.id)
