@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.ble
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PixelGattFlags
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.ReconnectionRequest
@@ -436,6 +437,10 @@ class KableBleConnectionManager(
 
     suspend fun connect(device: ScannedDevice): Result<Unit> {
         log.i { "Connecting to device: ${device.name}" }
+        // Issue #333: Log active GATT experiment flags
+        if (PixelGattFlags.refreshGattCache || PixelGattFlags.forceImmediateClose) {
+            log.i { "[#333] Active GATT experiment flags: ${PixelGattFlags.activeFlagsSummary()}" }
+        }
         logRepo.info(
             LogEventType.CONNECT_START,
             "Connecting to device",
@@ -536,6 +541,16 @@ class KableBleConnectionManager(
                         }
 
                         is State.Disconnected -> {
+                            // Issue #333 Flag E: Force immediate GATT close on disconnect
+                            if (PixelGattFlags.forceImmediateClose) {
+                                log.i { "[#333 Flag E] Force-closing GATT immediately on disconnect" }
+                                try {
+                                    peripheral?.forceCloseGatt()
+                                } catch (e: Exception) {
+                                    log.w { "[#333 Flag E] Force GATT close error: ${e.message}" }
+                                }
+                            }
+
                             // Capture device info and connection state BEFORE clearing
                             val deviceName = connectedDeviceName
                             val deviceAddress = connectedDeviceAddress
@@ -655,6 +670,19 @@ class KableBleConnectionManager(
      */
     private suspend fun onDeviceReady() {
         val p = peripheral ?: return
+
+        // Issue #333 Flag D: Refresh GATT cache before any operations
+        // Clears stale cached service data that can cause GATT_ERROR(133)
+        // on Pixel 6/7 BCM4389 controllers
+        if (PixelGattFlags.refreshGattCache) {
+            log.i { "[#333 Flag D] Refreshing GATT cache..." }
+            val refreshed = p.refreshGattCache()
+            log.i { "[#333 Flag D] GATT cache refresh result: $refreshed" }
+            if (refreshed) {
+                // Small delay after refresh to let the BLE stack stabilize
+                delay(200)
+            }
+        }
 
         // Request High Connection Priority (Android only - via expect/actual extension)
         // Critical for maintaining ~20Hz polling rate without lag
