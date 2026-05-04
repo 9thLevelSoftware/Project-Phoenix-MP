@@ -497,13 +497,14 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // because applyColumnHeal handles "duplicate column" errors gracefully.
 
     // Exercise -- initial schema, full current shape
-    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11)
+    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11), displayName (m30)
     SchemaTableOperation(
         table = "Exercise",
         createSql = """
             CREATE TABLE IF NOT EXISTS Exercise (
                 id TEXT NOT NULL PRIMARY KEY,
                 name TEXT NOT NULL,
+                displayName TEXT,
                 description TEXT,
                 created INTEGER NOT NULL DEFAULT 0,
                 muscleGroup TEXT NOT NULL,
@@ -931,7 +932,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 // ============================================================
 
 internal val manifestColumns: List<SchemaHealOperation> = listOf(
-    // ── Exercise (4 columns) ────────────────────────────────────────────
+    // ── Exercise (5 columns) ────────────────────────────────────────────
 
     // Migration 1: one_rep_max_kg
     SchemaHealOperation("Exercise", "one_rep_max_kg", "ALTER TABLE Exercise ADD COLUMN one_rep_max_kg REAL DEFAULT NULL"),
@@ -939,6 +940,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("Exercise", "updatedAt", "ALTER TABLE Exercise ADD COLUMN updatedAt INTEGER"),
     SchemaHealOperation("Exercise", "serverId", "ALTER TABLE Exercise ADD COLUMN serverId TEXT"),
     SchemaHealOperation("Exercise", "deletedAt", "ALTER TABLE Exercise ADD COLUMN deletedAt INTEGER"),
+    // Migration 30: display name
+    SchemaHealOperation("Exercise", "displayName", "ALTER TABLE Exercise ADD COLUMN displayName TEXT"),
 
     // ── WorkoutSession (31 columns) ─────────────────────────────────────
 
