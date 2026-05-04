@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PixelGattFlags
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.RoutineHealthData
@@ -2288,6 +2289,19 @@ class ActiveSessionEngine(
                     stopMotionStartDetection()
                 }
 
+                // Issue #333 Flag F: Quiesce all polling before the CONFIG/START writes.
+                // The official Vitruvian app uses zero polling and zero heartbeat, so its
+                // BLE channel is silent when sending the 96-byte CONFIG packet. Phoenix's
+                // 4 polling loops saturate BCM4389 (Pixel 6/7), causing the
+                // WithResponse CONFIG write to fail with GATT_ERROR(133). Pausing polling
+                // mimics that quiet-channel behavior at the most fragile moment.
+                val quiescePolling = PixelGattFlags.quiescePolling
+                if (quiescePolling) {
+                    Logger.i { "[#333 Flag F] Quiescing polling before CONFIG write" }
+                    bleRepository.stopPolling()
+                    delay(150)
+                }
+
                 try {
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
@@ -2320,6 +2334,9 @@ class ActiveSessionEngine(
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
+                    // Issue #333 Flag F: re-arm polling on error so the connection
+                    // isn't left dead — the user can retry without reconnecting.
+                    if (quiescePolling) bleRepository.startActiveWorkoutPolling()
                     return@launch
                 }
 
@@ -2332,6 +2349,7 @@ class ActiveSessionEngine(
                     } catch (e: Exception) {
                         Logger.e(e) { "Failed to send START command" }
                         coordinator._bleErrorEvents.tryEmit("Failed to start workout: ${e.message}")
+                        if (quiescePolling) bleRepository.startActiveWorkoutPolling()
                         return@launch
                     }
                 }
