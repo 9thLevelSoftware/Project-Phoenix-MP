@@ -502,6 +502,7 @@ class MigrationManagerTest {
         database.vitruvianDatabaseQueries.insertExercise(
             id = id,
             name = name,
+            displayName = null,
             description = null,
             created = 0L,
             muscleGroup = "Back",
