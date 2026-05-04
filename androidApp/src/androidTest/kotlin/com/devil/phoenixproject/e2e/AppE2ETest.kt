@@ -149,7 +149,7 @@ class AppE2ETest : KoinTest {
         advancePastSplash()
         startWorkoutAndWaitForActiveState()
 
-        composeRule.onNodeWithText("Stop Set").assertIsDisplayed()
+        composeRule.onNodeWithText("STOP").assertIsDisplayed()
 
         val originalViewModel = resolvedMainViewModel
         val originalBleRepository = GlobalContext.get().get<BleRepository>()
@@ -160,7 +160,7 @@ class AppE2ETest : KoinTest {
         composeRule.waitForIdle()
 
         composeRule.onAllNodesWithText("PROJECT PHOENIX").assertCountEquals(0)
-        composeRule.onNodeWithText("Stop Set").assertIsDisplayed()
+        composeRule.onNodeWithText("STOP").assertIsDisplayed()
         assertThat(resolvedMainViewModel).isSameInstanceAs(originalViewModel)
         assertThat(resolvedMainViewModel.workoutState.value).isInstanceOf(WorkoutState.Active::class.java)
         assertThat(GlobalContext.get().get<BleRepository>()).isSameInstanceAs(originalBleRepository)
