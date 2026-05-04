@@ -282,6 +282,26 @@ private val testModule = module {
             override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) = Unit
             override suspend fun mergePortalSessions(sessions: List<WorkoutSession>) = Unit
             override suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String) = Unit
+            override suspend fun getDeletedRoutineIdsSince(timestamp: Long, profileId: String): List<String> = emptyList()
+            override suspend fun getDeletedCycleIdsSince(timestamp: Long, profileId: String): List<String> = emptyList()
+            override suspend fun hardDeleteCyclesByIds(ids: List<String>) = Unit
+            override suspend fun hardDeleteRoutinesByIds(ids: List<String>) = Unit
+            override suspend fun getAllSessionIds(profileId: String): List<String> = emptyList()
+            override suspend fun getAllRoutineIds(profileId: String): List<String> = emptyList()
+            override suspend fun getAllCycleIds(profileId: String): List<String> = emptyList()
+            override suspend fun getAllBadgeIds(profileId: String): List<String> = emptyList()
+            override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = emptyList()
+            override suspend fun findExerciseId(name: String, muscleGroup: String?, exerciseId: String?): String? = null
+            override suspend fun mergeAllPullData(
+                sessions: List<WorkoutSession>,
+                routines: List<PullRoutineDto>,
+                cycles: List<PullTrainingCycleDto>,
+                badges: List<EarnedBadgeSyncDto>,
+                gamificationStats: GamificationStatsSyncDto?,
+                personalRecords: List<PersonalRecordSyncDto>,
+                lastSync: Long,
+                profileId: String,
+            ) = Unit
         }
     }
     single { ConnectivityChecker(ApplicationProvider.getApplicationContext()) }
