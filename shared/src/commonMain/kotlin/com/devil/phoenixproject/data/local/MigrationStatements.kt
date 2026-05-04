@@ -684,5 +684,10 @@ WHERE gs.rowid = (
         "ALTER TABLE WorkoutSession ADD COLUMN display_multiplier INTEGER",
     )
 
+    // Migration 30: Exercise display name
+    30 -> listOf(
+        "ALTER TABLE Exercise ADD COLUMN displayName TEXT",
+    )
+
     else -> emptyList()
 }

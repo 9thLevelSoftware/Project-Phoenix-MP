@@ -1231,8 +1231,8 @@ class SyncManager(
             PortalPullAdapter.toWorkoutSessionsWithLookup(
                 portalSession,
                 mergeProfileId,
-            ) { name, muscleGroup ->
-                val exerciseId = syncRepository.findExerciseId(name, muscleGroup)
+            ) { name, muscleGroup, existingExerciseId ->
+                val exerciseId = syncRepository.findExerciseId(name, muscleGroup, existingExerciseId)
                 if (exerciseId == null) {
                     unmatchedExerciseCount++
                     unmatchedExerciseNames.add(name)

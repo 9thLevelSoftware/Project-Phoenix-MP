@@ -119,7 +119,7 @@ fun WeightStepper(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "kg per cable",
+                    text = stringResource(Res.string.weight_kg_per_cable),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -161,14 +161,13 @@ fun WeightStepper(
                 )
                 Spacer(modifier = Modifier.width(Spacing.small))
                 val totalWeight = weight * 2
+                val totalFormatted = if (totalWeight == totalWeight.toLong().toFloat()) {
+                    totalWeight.toLong().toString()
+                } else {
+                    totalWeight.format(1)
+                }
                 Text(
-                    text = "Total weight for 2 cables: ${
-                        if (totalWeight == totalWeight.toLong().toFloat()) {
-                            totalWeight.toLong().toString()
-                        } else {
-                            totalWeight.format(1)
-                        }
-                    } kg",
+                    text = stringResource(Res.string.weight_total_two_cables, totalFormatted),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

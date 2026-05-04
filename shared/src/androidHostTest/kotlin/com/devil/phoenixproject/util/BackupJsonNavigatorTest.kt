@@ -539,6 +539,7 @@ class StreamingImportRoundTripTest {
             volume = 100.0,
             phase = "COMBINED",
             profile_id = "default",
+            cable_count = 2,
         )
 
         // 2. Export from original DB

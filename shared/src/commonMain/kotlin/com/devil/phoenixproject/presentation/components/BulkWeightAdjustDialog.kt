@@ -76,9 +76,7 @@ sealed class BulkAdjustMode {
  *   (their weight is PR-derived at runtime; adjusting the absolute field would be misleading).
  * - [RoutineExercise.weightPerCableKg] is adjusted.
  * - [RoutineExercise.setWeightsPerCableKg], if non-empty, has each entry adjusted.
- * - Results are clamped to [Constants.MIN_WEIGHT_KG]..[Constants.MAX_WEIGHT_KG].
- *   NOTE: Trainer+ supports 110kg per cable, but MAX_WEIGHT_KG is 100kg as a safe default.
- *   This is a known limitation tracked in Constants.kt.
+ * - Results are clamped to [Constants.MIN_WEIGHT_KG]..[Constants.MAX_WEIGHT_PER_CABLE_KG] (110kg).
  * - Results are rounded to the 0.5kg machine increment via [UnitConverter.roundToMachineIncrement].
  * - All non-weight fields (id, exercise, orderIndex, etc.) are preserved unchanged.
  *
@@ -96,7 +94,7 @@ fun applyBulkAdjust(
             is BulkAdjustMode.Absolute -> weight + mode.deltaKg
         }
         return UnitConverter.roundToMachineIncrement(
-            raw.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_KG),
+            raw.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG),
         )
     }
 
@@ -377,7 +375,7 @@ private fun PreviewRow(
     val isPRScaled = exercise.usePercentOfPR
     val currentFormatted = formatWeight(exercise.weightPerCableKg, weightUnit)
     val isClamped = newWeight != null && (
-        newWeight <= Constants.MIN_WEIGHT_KG || newWeight >= Constants.MAX_WEIGHT_KG
+        newWeight <= Constants.MIN_WEIGHT_KG || newWeight >= Constants.MAX_WEIGHT_PER_CABLE_KG
         )
     val hasChanged = newWeight != null && newWeight != exercise.weightPerCableKg
 

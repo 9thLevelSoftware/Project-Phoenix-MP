@@ -533,6 +533,10 @@
     <string name="cd_current_weight">Current weight: %1$s</string>
     <string name="cd_current_weight_tap">Current weight: %1$s per cable. Tap to open weight picker.</string>
 
+    <!-- Weight Stepper (BLE config context — machine always uses kg) -->
+    <string name="weight_kg_per_cable">kg per cable</string>
+    <string name="weight_total_two_cables">Total: %1$s kg (both cables)</string>
+
     <!-- Data / Export -->
     <string name="cd_backup_data">Backup data</string>
     <string name="cd_restore_data">Restore data</string>

@@ -349,7 +349,7 @@ object PortalSyncAdapter {
                     } else {
                         null
                     },
-                    cable = "left",
+                    cable = "A",
                 ),
             )
         }
@@ -373,13 +373,13 @@ object PortalSyncAdapter {
                         } else {
                             null
                         },
-                        cable = "right",
+                        cable = "B",
                     ),
                 )
             }
         }
 
-        // Eccentric phase - Cable A (left)
+        // Eccentric phase - Cable A
         val eccentricOffset = rep.concentricDurationMs
         for (i in rep.eccentricTimestamps.indices) {
             points.add(
@@ -402,12 +402,12 @@ object PortalSyncAdapter {
                     } else {
                         null
                     },
-                    cable = "left",
+                    cable = "A",
                 ),
             )
         }
 
-        // Eccentric phase - Cable B (right)
+        // Eccentric phase - Cable B
         for (i in rep.eccentricTimestamps.indices) {
             if (i < rep.eccentricLoadsB.size) {
                 points.add(
@@ -426,7 +426,7 @@ object PortalSyncAdapter {
                         } else {
                             null
                         },
-                        cable = "right",
+                        cable = "B",
                     ),
                 )
             }

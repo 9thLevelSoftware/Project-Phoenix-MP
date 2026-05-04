@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
  * Covers:
  * - Percentage mode (positive, negative, zero)
  * - Absolute mode (positive, negative, zero)
- * - Clamping to [0, MAX_WEIGHT_KG]
+ * - Clamping to [0, MAX_WEIGHT_PER_CABLE_KG] (110kg Trainer+ ceiling)
  * - Rounding to 0.5kg machine increment
  * - PR-scaled exercise skipping
  * - Per-set weight adjustment
@@ -121,9 +121,9 @@ class BulkWeightAdjustTest {
 
     @Test
     fun clamps_toMaxWeight() {
-        val exercises = listOf(exercise(weightKg = 98f))
+        val exercises = listOf(exercise(weightKg = 105f))
         val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(10f))
-        assertEquals(Constants.MAX_WEIGHT_KG, result[0].weightPerCableKg)
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].weightPerCableKg)
     }
 
     @Test
@@ -136,9 +136,9 @@ class BulkWeightAdjustTest {
     @Test
     fun clamps_percentageExceedingMax() {
         val exercises = listOf(exercise(weightKg = 80f))
-        // 80 * 1.50 = 120 -> clamped to 100
+        // 80 * 1.50 = 120 -> clamped to 110
         val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(50f))
-        assertEquals(Constants.MAX_WEIGHT_KG, result[0].weightPerCableKg)
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].weightPerCableKg)
     }
 
     @Test
@@ -209,16 +209,16 @@ class BulkWeightAdjustTest {
     fun perSetWeights_clampedIndividually() {
         val exercises = listOf(
             exercise(
-                weightKg = 95f,
-                setWeightsKg = listOf(90f, 95f, 99f),
+                weightKg = 105f,
+                setWeightsKg = listOf(102f, 105f, 108f),
             ),
         )
         val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(10f))
-        // All clamped to 100
-        assertEquals(Constants.MAX_WEIGHT_KG, result[0].weightPerCableKg)
-        assertEquals(Constants.MAX_WEIGHT_KG, result[0].setWeightsPerCableKg[0])
-        assertEquals(Constants.MAX_WEIGHT_KG, result[0].setWeightsPerCableKg[1])
-        assertEquals(Constants.MAX_WEIGHT_KG, result[0].setWeightsPerCableKg[2])
+        // All clamped to 110 (Trainer+ hardware ceiling)
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].weightPerCableKg)
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].setWeightsPerCableKg[0])
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].setWeightsPerCableKg[1])
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].setWeightsPerCableKg[2])
     }
 
     // ── ID and field preservation ───────────────────────────────────
@@ -330,9 +330,9 @@ class BulkWeightAdjustTest {
 
     @Test
     fun weightAtMax_percentageIncrease_staysAtMax() {
-        val exercises = listOf(exercise(weightKg = Constants.MAX_WEIGHT_KG))
+        val exercises = listOf(exercise(weightKg = Constants.MAX_WEIGHT_PER_CABLE_KG))
         val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
-        assertEquals(Constants.MAX_WEIGHT_KG, result[0].weightPerCableKg)
+        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].weightPerCableKg)
     }
 
     // ── lb-to-kg conversion path (simulates BulkWeightAdjustDialog) ────

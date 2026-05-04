@@ -109,8 +109,8 @@ fun WeightAdjustmentControls(
             // Increase button
             WeightButton(
                 icon = Icons.Default.Add,
-                onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(Constants.MAX_WEIGHT_KG)) },
-                enabled = enabled && currentWeightKg < Constants.MAX_WEIGHT_KG,
+                onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(Constants.MAX_WEIGHT_PER_CABLE_KG)) },
+                enabled = enabled && currentWeightKg < Constants.MAX_WEIGHT_PER_CABLE_KG,
                 contentDescription = stringResource(Res.string.cd_increase_weight),
             )
         }
@@ -508,8 +508,8 @@ fun CompactWeightAdjustment(
             )
 
             IconButton(
-                onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(Constants.MAX_WEIGHT_KG)) },
-                enabled = enabled && currentWeightKg < Constants.MAX_WEIGHT_KG,
+                onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(Constants.MAX_WEIGHT_PER_CABLE_KG)) },
+                enabled = enabled && currentWeightKg < Constants.MAX_WEIGHT_PER_CABLE_KG,
                 modifier = Modifier.size(32.dp),
             ) {
                 Icon(

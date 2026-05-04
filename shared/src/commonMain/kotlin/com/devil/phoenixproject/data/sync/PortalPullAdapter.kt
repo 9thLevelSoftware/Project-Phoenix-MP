@@ -39,7 +39,7 @@ object PortalPullAdapter {
     suspend fun toWorkoutSessionsWithLookup(
         portalSession: PullWorkoutSessionDto,
         profileId: String,
-        exerciseLookup: suspend (name: String, muscleGroup: String?) -> String?
+        exerciseLookup: suspend (name: String, muscleGroup: String?, exerciseId: String?) -> String?
     ): List<WorkoutSession> {
         if (portalSession.exercises.isEmpty()) return emptyList()
 
@@ -58,8 +58,8 @@ object PortalPullAdapter {
             val totalReps = exercise.sets.sumOf { it.actualReps }
             val maxWeight = exercise.sets.maxOfOrNull { it.weightKg } ?: 0f
 
-            // Attempt to resolve exerciseId from local catalog
-            val resolvedExerciseId = exerciseLookup(exercise.name, exercise.muscleGroup)
+            // Attempt to resolve exerciseId from local catalog (ID-first, then name-based)
+            val resolvedExerciseId = exerciseLookup(exercise.name, exercise.muscleGroup, exercise.exerciseId)
 
             WorkoutSession(
                 id = exercise.id,
