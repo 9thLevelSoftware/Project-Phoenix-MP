@@ -194,7 +194,7 @@ class FakeSyncRepository : SyncRepository {
     var exerciseIdLookupResults: Map<String, String> = emptyMap()
     var findExerciseIdCallCount = 0
 
-    override suspend fun findExerciseId(name: String, muscleGroup: String?): String? {
+    override suspend fun findExerciseId(name: String, muscleGroup: String?, exerciseId: String?): String? {
         findExerciseIdCallCount++
         // Try with muscle group key first, then name-only key
         val keyWithMuscle = "$name:$muscleGroup"
