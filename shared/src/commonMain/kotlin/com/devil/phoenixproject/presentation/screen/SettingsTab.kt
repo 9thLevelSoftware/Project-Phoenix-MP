@@ -2355,12 +2355,43 @@ fun SettingsTab(
                     )
                 }
 
+                // Flag F: Polling Quiesce around CONFIG/START
+                var flagFEnabled by remember { mutableStateOf(PixelGattFlags.quiescePolling) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Flag F: Polling Quiesce",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Pauses all polling loops + 150ms drain before sending the " +
+                                "CONFIG/START packet at workout start. Mirrors the " +
+                                "official app's silent BLE channel during this critical " +
+                                "moment. Targets the GATT_ERROR(133) at countdown=0.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagFEnabled,
+                        onCheckedChange = {
+                            flagFEnabled = it
+                            PixelGattFlags.quiescePolling = it
+                        },
+                    )
+                }
+
                 // Active flags summary
                 Text(
                     "Active: ${PixelGattFlags.activeFlagsSummary()}",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (flagDEnabled || flagEEnabled)
+                    color = if (flagDEnabled || flagEEnabled || flagFEnabled)
                         Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
