@@ -2,14 +2,12 @@ package com.devil.phoenixproject.data.ble
 
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
-import android.os.Build
 import co.touchlab.kermit.Logger
 import com.juul.kable.AndroidPeripheral
 import com.juul.kable.Peripheral
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
-import kotlin.coroutines.resume
 
 actual suspend fun Peripheral.requestHighPriority() {
     // Cast to AndroidPeripheral to access Android-specific connection priority method
@@ -105,21 +103,22 @@ actual suspend fun Peripheral.forceCloseGatt() {
 }
 
 /**
- * Issue #333 Flag H: Bypass Kable and write directly to BluetoothGatt.
+ * Issue #333 Flag H: Write to BluetoothGatt directly but cooperate with Kable's
+ * internal state so subsequent operations don't get corrupted.
  *
- * Mirrors the official Vitruvian app's write path at AndroidPeripheral.java:480:
- *   bluetoothGattCharacteristic.setWriteType(WRITE_TYPE_DEFAULT)  // WithResponse
- *   bluetoothGattCharacteristic.setValue(bytes)
- *   bluetoothGatt.writeCharacteristic(bluetoothGattCharacteristic)
+ * v4 proved the raw write works (CONFIG succeeded in 53ms) but the workout
+ * disconnected ~12s later because onCharacteristicWrite fired into Kable's
+ * callback.onResponse channel. The next Kable polling read picked up that
+ * stale write response instead of its own read response → type mismatch →
+ * Kable interpreted it as a connection failure.
  *
- * This completely bypasses:
- *   - Kable's internal Mutex (guard) — no double-Mutex with BleOperationQueue
- *   - Kable's connectionScope.async response wait — no "StandaloneCoroutine was cancelled"
- *   - Kable's coroutine cancellation handling and response channel draining
+ * v5 fix: Hold Kable's internal guard Mutex during the write AND drain the
+ * onCharacteristicWrite callback response from Kable's channel afterward.
+ * This gives us raw GATT dispatch (no connectionScope cancellation risk)
+ * while keeping Kable's internal state clean for subsequent operations.
  *
  * The write uses the deprecated (pre-API 33) setValue+writeCharacteristic path
- * intentionally — this is exactly what the official app uses and it works on
- * every device including Pixel 6/7 with BCM4389.
+ * intentionally — this is exactly what the official app uses.
  */
 @Suppress("DEPRECATION") // Intentional: matches official app's deprecated API usage
 actual suspend fun Peripheral.rawGattWriteCharacteristic(
@@ -132,10 +131,17 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
         return Result.failure(IllegalStateException("Not an AndroidPeripheral"))
     }
 
-    val gatt = findBluetoothGatt(androidPeripheral)
+    // Get the Connection object (holds gatt, guard mutex, and callback)
+    val connection = findConnection(androidPeripheral)
+    if (connection == null) {
+        Logger.w("BleExtensions") { "[Flag H] Cannot raw-write: Connection not found" }
+        return Result.failure(IllegalStateException("Kable Connection not found"))
+    }
+
+    val gatt = findGattFromConnection(connection)
     if (gatt == null) {
-        Logger.w("BleExtensions") { "[Flag H] Cannot raw-write: BluetoothGatt not found" }
-        return Result.failure(IllegalStateException("BluetoothGatt not found via reflection"))
+        Logger.w("BleExtensions") { "[Flag H] Cannot raw-write: BluetoothGatt not found in Connection" }
+        return Result.failure(IllegalStateException("BluetoothGatt not found"))
     }
 
     // Find the TX characteristic from the GATT service list
@@ -153,30 +159,70 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
         return Result.failure(IllegalStateException("TX characteristic not found"))
     }
 
-    return try {
-        // Match the official app exactly: setValue + setWriteType + writeCharacteristic
-        // Official app: AndroidPeripheral.java line 479-480
-        //   bluetoothGattCharacteristic.setWriteType(2)  // WRITE_TYPE_DEFAULT = WithResponse
-        //   bluetoothGatt.writeCharacteristic(bluetoothGattCharacteristic)
-        txChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT // WithResponse
-        txChar.value = data
-        val accepted = gatt.writeCharacteristic(txChar)
+    // Get Kable's internal guard Mutex and callback response channel
+    val guardMutex = findGuardMutex(connection)
+    val responseChannel = findResponseChannel(connection)
 
-        if (accepted) {
-            Logger.i("BleExtensions") {
-                "[Flag H] Raw GATT write accepted: ${data.size} bytes to $characteristicUuid"
+    return try {
+        // Acquire Kable's guard mutex so no other Kable operation runs concurrently.
+        // This prevents the stale response problem: we hold the lock, dispatch the
+        // raw write, wait for the callback, drain the response, then release.
+        val writeBlock: suspend () -> Result<Unit> = {
+            txChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            txChar.value = data
+            val accepted = gatt.writeCharacteristic(txChar)
+
+            if (accepted) {
+                Logger.i("BleExtensions") {
+                    "[Flag H] Raw GATT write accepted: ${data.size} bytes"
+                }
+                // Wait for the onCharacteristicWrite callback to fire.
+                // This response MUST be drained before releasing the mutex,
+                // otherwise the next Kable operation gets a stale response.
+                // 2000ms timeout covers even slow BCM4389 responses.
+                if (responseChannel != null) {
+                    try {
+                        val drained = kotlinx.coroutines.withTimeoutOrNull(2000L) {
+                            @Suppress("UNCHECKED_CAST")
+                            (responseChannel as kotlinx.coroutines.channels.Channel<Any>).receive()
+                        }
+                        if (drained != null) {
+                            Logger.d("BleExtensions") {
+                                "[Flag H] Drained onCharacteristicWrite callback: ${drained::class.simpleName}"
+                            }
+                        } else {
+                            Logger.w("BleExtensions") {
+                                "[Flag H] Callback drain timed out (2s) — proceeding anyway"
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Logger.w("BleExtensions") {
+                            "[Flag H] Callback drain error (non-fatal): ${e.message}"
+                        }
+                    }
+                } else {
+                    // Couldn't find the channel — just wait a fixed time for the callback
+                    // to settle before releasing the mutex
+                    Logger.w("BleExtensions") {
+                        "[Flag H] Could not find response channel — using fixed 200ms settle"
+                    }
+                    delay(200)
+                }
+                Result.success(Unit)
+            } else {
+                Logger.e("BleExtensions") {
+                    "[Flag H] Raw GATT write REJECTED (returned false)"
+                }
+                Result.failure(IllegalStateException("writeCharacteristic returned false (GATT busy)"))
             }
-            // The write was accepted by the GATT stack. Unlike Kable, we don't wait
-            // for the onCharacteristicWrite callback — same as the official app which
-            // returns COROUTINE_SUSPENDED and doesn't block on the callback within
-            // the write function itself. We give a brief settle time for the controller.
-            delay(50)
-            Result.success(Unit)
+        }
+
+        if (guardMutex != null) {
+            Logger.d("BleExtensions") { "[Flag H] Acquiring Kable guard mutex..." }
+            guardMutex.withLock { writeBlock() }
         } else {
-            Logger.e("BleExtensions") {
-                "[Flag H] Raw GATT write REJECTED by controller (returned false)"
-            }
-            Result.failure(IllegalStateException("writeCharacteristic returned false (GATT busy)"))
+            Logger.w("BleExtensions") { "[Flag H] Could not find Kable guard mutex — writing without lock" }
+            writeBlock()
         }
     } catch (e: Exception) {
         Logger.e("BleExtensions") { "[Flag H] Raw GATT write exception: ${e.message}" }
@@ -185,103 +231,128 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
 }
 
 /**
- * Navigate Kable 0.42.0's internal object graph to find the BluetoothGatt instance.
- *
- * Kable's class hierarchy (from javap of kable-core-release.aar):
- *   BluetoothDeviceAndroidPeripheral (implements AndroidPeripheral)
- *     └── field `connection`: MutableStateFlow<Connection>
- *           └── .value → Connection
- *                 └── field `gatt`: BluetoothGatt
- *                     (also accessible via getGatt$kable_core_release())
- *
- * Previous implementation failed because it searched for fields whose TYPE
- * contained "Connection" — but the actual field type is MutableStateFlow,
- * which wraps the Connection. We now search by FIELD NAME instead.
+ * Find the Kable Connection object from BluetoothDeviceAndroidPeripheral.
+ * Path: peripheral.connection (MutableStateFlow<Connection>) → .value
  */
-private fun findBluetoothGatt(androidPeripheral: AndroidPeripheral): BluetoothGatt? {
+private fun findConnection(androidPeripheral: AndroidPeripheral): Any? {
     try {
-        // The actual class is BluetoothDeviceAndroidPeripheral, which extends BasePeripheral
         val peripheralClass = androidPeripheral::class.java
-        Logger.d("BleExtensions") {
-            "Peripheral class: ${peripheralClass.name}, fields: ${peripheralClass.declaredFields.map { "${it.name}:${it.type.simpleName}" }}"
-        }
-
-        // Strategy 1 (Primary): BluetoothDeviceAndroidPeripheral.connection (MutableStateFlow<Connection>)
-        // Then Connection.gatt (BluetoothGatt)
         val connectionField = peripheralClass.declaredFields.firstOrNull { it.name == "connection" }
         if (connectionField != null) {
             connectionField.isAccessible = true
-            val stateFlow = connectionField.get(androidPeripheral)
-            if (stateFlow != null) {
-                // MutableStateFlow has a .getValue() method
-                val valueMethod = stateFlow::class.java.methods.firstOrNull {
-                    it.name == "getValue" && it.parameterCount == 0
-                }
-                val connection = valueMethod?.invoke(stateFlow)
-                if (connection != null) {
-                    Logger.d("BleExtensions") {
-                        "Connection class: ${connection::class.java.name}, fields: ${connection::class.java.declaredFields.map { "${it.name}:${it.type.simpleName}" }}"
-                    }
+            val stateFlow = connectionField.get(androidPeripheral) ?: return null
+            val valueMethod = stateFlow::class.java.methods.firstOrNull {
+                it.name == "getValue" && it.parameterCount == 0
+            }
+            return valueMethod?.invoke(stateFlow)
+        }
+    } catch (e: Exception) {
+        Logger.w("BleExtensions") { "findConnection error: ${e.message}" }
+    }
+    return null
+}
 
-                    // Try the public getter first (Kotlin internal visibility → mangled name)
-                    try {
-                        val getGattMethod = connection::class.java.methods.firstOrNull {
-                            it.name.startsWith("getGatt") && it.returnType == BluetoothGatt::class.java
-                        }
-                        if (getGattMethod != null) {
-                            val gatt = getGattMethod.invoke(connection) as? BluetoothGatt
-                            if (gatt != null) {
-                                Logger.d("BleExtensions") { "Found BluetoothGatt via Connection.getGatt*()" }
-                                return gatt
-                            }
-                        }
-                    } catch (_: Exception) { /* Fall through to field access */ }
-
-                    // Direct field access: Connection.gatt
-                    val gattField = connection::class.java.declaredFields.firstOrNull {
-                        it.name == "gatt" || it.type == BluetoothGatt::class.java
-                    }
-                    if (gattField != null) {
-                        gattField.isAccessible = true
-                        val gatt = gattField.get(connection) as? BluetoothGatt
-                        if (gatt != null) {
-                            Logger.d("BleExtensions") { "Found BluetoothGatt via Connection.gatt field" }
-                            return gatt
-                        }
-                    }
-                } else {
-                    Logger.w("BleExtensions") { "Connection StateFlow.value is null (not connected?)" }
-                }
+/**
+ * Find BluetoothGatt from the Connection object.
+ */
+private fun findGattFromConnection(connection: Any): BluetoothGatt? {
+    try {
+        // Try public getter first
+        val getGattMethod = connection::class.java.methods.firstOrNull {
+            it.name.startsWith("getGatt") && it.returnType == BluetoothGatt::class.java
+        }
+        if (getGattMethod != null) {
+            val gatt = getGattMethod.invoke(connection) as? BluetoothGatt
+            if (gatt != null) {
+                Logger.d("BleExtensions") { "Found BluetoothGatt via Connection.getGatt*()" }
+                return gatt
             }
         }
+        // Direct field access
+        val gattField = connection::class.java.declaredFields.firstOrNull {
+            it.name == "gatt" || it.type == BluetoothGatt::class.java
+        }
+        if (gattField != null) {
+            gattField.isAccessible = true
+            val gatt = gattField.get(connection) as? BluetoothGatt
+            if (gatt != null) {
+                Logger.d("BleExtensions") { "Found BluetoothGatt via Connection.gatt field" }
+                return gatt
+            }
+        }
+    } catch (e: Exception) {
+        Logger.w("BleExtensions") { "findGattFromConnection error: ${e.message}" }
+    }
+    return null
+}
 
-        // Strategy 2: Walk ALL fields looking for anything that holds a BluetoothGatt
-        // (handles future Kable refactors)
-        for (field in peripheralClass.declaredFields) {
+/**
+ * Find Kable's internal guard Mutex from the Connection object.
+ */
+private fun findGuardMutex(connection: Any): kotlinx.coroutines.sync.Mutex? {
+    try {
+        val guardField = connection::class.java.declaredFields.firstOrNull { it.name == "guard" }
+        if (guardField != null) {
+            guardField.isAccessible = true
+            return guardField.get(connection) as? kotlinx.coroutines.sync.Mutex
+        }
+    } catch (e: Exception) {
+        Logger.w("BleExtensions") { "findGuardMutex error: ${e.message}" }
+    }
+    return null
+}
+
+/**
+ * Find Kable's callback.onResponse channel from the Connection object.
+ * Path: Connection.callback → Callback.onResponse (Channel<Response>)
+ */
+private fun findResponseChannel(connection: Any): Any? {
+    try {
+        val callbackField = connection::class.java.declaredFields.firstOrNull { it.name == "callback" }
+        if (callbackField != null) {
+            callbackField.isAccessible = true
+            val callback = callbackField.get(connection) ?: return null
+            val onResponseField = callback::class.java.declaredFields.firstOrNull { it.name == "onResponse" }
+            if (onResponseField != null) {
+                onResponseField.isAccessible = true
+                return onResponseField.get(callback)
+            }
+            // Try getter
+            val getOnResponse = callback::class.java.methods.firstOrNull {
+                it.name == "getOnResponse"
+            }
+            if (getOnResponse != null) {
+                return getOnResponse.invoke(callback)
+            }
+        }
+    } catch (e: Exception) {
+        Logger.w("BleExtensions") { "findResponseChannel error: ${e.message}" }
+    }
+    return null
+}
+
+/**
+ * Navigate Kable 0.42.0's internal object graph to find the BluetoothGatt instance.
+ * Used by refreshGattCache() and forceCloseGatt() (non-critical operations).
+ * For Flag H raw writes, use findConnection() + findGattFromConnection() directly.
+ */
+private fun findBluetoothGatt(androidPeripheral: AndroidPeripheral): BluetoothGatt? {
+    val connection = findConnection(androidPeripheral)
+    if (connection != null) {
+        val gatt = findGattFromConnection(connection)
+        if (gatt != null) return gatt
+    }
+
+    // Fallback: walk all fields for any BluetoothGatt (handles Kable refactors)
+    try {
+        for (field in androidPeripheral::class.java.declaredFields) {
             field.isAccessible = true
             val value = try { field.get(androidPeripheral) } catch (_: Exception) { continue }
-            if (value is BluetoothGatt) {
-                Logger.d("BleExtensions") { "Found BluetoothGatt via direct field: ${field.name}" }
-                return value
-            }
-            // Check one level deep for any object holding a gatt
-            if (value != null) {
-                for (innerField in value::class.java.declaredFields) {
-                    if (innerField.type == BluetoothGatt::class.java) {
-                        innerField.isAccessible = true
-                        val gatt = try { innerField.get(value) as? BluetoothGatt } catch (_: Exception) { null }
-                        if (gatt != null) {
-                            Logger.d("BleExtensions") { "Found BluetoothGatt via ${field.name}.${innerField.name}" }
-                            return gatt
-                        }
-                    }
-                }
-            }
+            if (value is BluetoothGatt) return value
         }
-
-        Logger.w("BleExtensions") { "BluetoothGatt not found via any reflection path" }
     } catch (e: Exception) {
-        Logger.w("BleExtensions") { "Reflection error finding BluetoothGatt: ${e.message}" }
+        Logger.w("BleExtensions") { "findBluetoothGatt fallback error: ${e.message}" }
     }
+    Logger.w("BleExtensions") { "BluetoothGatt not found via any reflection path" }
     return null
 }
