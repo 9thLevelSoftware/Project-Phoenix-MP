@@ -1040,6 +1040,70 @@ class KableBleConnectionManager(
         log.d { "Sending ${command.size}-byte command to NUS TX" }
         log.d { "Command hex: $commandHex" }
 
+        // Issue #333 Flag H: For CONFIG packets (0x04, 96 bytes), bypass Kable entirely
+        // and write directly to BluetoothGatt via reflection. This eliminates:
+        //   - Double-Mutex (BleOperationQueue + Kable's internal guard)
+        //   - Kable's connectionScope.async that causes "StandaloneCoroutine was cancelled"
+        //   - Coroutine cancellation propagation from transient BCM4389 blips
+        // Matches the official Vitruvian app's raw writeCharacteristic() path.
+        val isProgramConfig = command.size == 96 && command[0] == 0x04.toByte()
+        val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
+        val useRawGatt = PixelGattFlags.rawGattWrite && (isProgramConfig || isEchoConfig)
+
+        if (useRawGatt) {
+            log.i { "[#333 Flag H] Using raw GATT write for ${command.size}-byte CONFIG packet" }
+            val attemptStart = currentTimeMillis()
+            val rawResult = p.rawGattWriteCharacteristic(
+                BleConstants.NUS_RX_CHAR_UUID_STRING,
+                command,
+            )
+            val elapsedMs = currentTimeMillis() - attemptStart
+
+            if (rawResult.isSuccess) {
+                log.i { "[#333 Flag H] Raw GATT write succeeded in ${elapsedMs}ms" }
+                logRepo.debug(
+                    LogEventType.COMMAND_SENT,
+                    "Command sent (raw GATT, Flag H)",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    "Size: ${command.size} bytes, elapsed: ${elapsedMs}ms",
+                )
+
+                // Post-CONFIG diagnostic read (still use Kable for reads — they're not the problem)
+                val delayMs = if (isProgramConfig) 350L else 200L
+                scope.launch {
+                    delay(delayMs)
+                    try {
+                        val data = withTimeoutOrNull(500L) {
+                            bleQueue.read { p.read(diagnosticCharacteristic) }
+                        }
+                        if (data != null) {
+                            log.d { "Post-CONFIG diagnostic read (${data.size} bytes)" }
+                            parseDiagnosticData(data)
+                        } else {
+                            log.d { "Post-CONFIG diagnostic read timed out" }
+                        }
+                    } catch (e: Exception) {
+                        log.w { "Post-CONFIG diagnostic read failed: ${e.message}" }
+                    }
+                }
+
+                return Result.success(Unit)
+            } else {
+                val ex = rawResult.exceptionOrNull()
+                log.e { "[#333 Flag H] Raw GATT write failed in ${elapsedMs}ms: ${ex?.message}" }
+                logRepo.error(
+                    LogEventType.ERROR,
+                    "Raw GATT write failed (Flag H)",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    ex?.message,
+                )
+                return Result.failure(ex ?: IllegalStateException("Raw GATT write failed"))
+            }
+        }
+
+        // Standard Kable write path (non-CONFIG commands, or Flag H disabled)
         // Issue #222: Log queue state before acquiring for debugging
         log.d { "BLE queue locked: ${bleQueue.isLocked}, acquiring..." }
 
@@ -1052,8 +1116,6 @@ class KableBleConnectionManager(
             log.i { "Command sent via NUS TX: ${command.size} bytes" }
 
             // Issue #222 v16 (optional): One-shot diagnostic read after CONFIG to catch early faults.
-            val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
-            val isProgramConfig = command.size == 96 && command[0] == 0x04.toByte()
             if (isEchoConfig || isProgramConfig) {
                 val delayMs = if (isProgramConfig) 350L else 200L
                 scope.launch {

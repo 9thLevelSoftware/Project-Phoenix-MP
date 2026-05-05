@@ -2340,7 +2340,14 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                if (!effectiveParams.isEchoMode) {
+                // Issue #333 Flag G: The official Vitruvian app's CommandId enum has no
+                // ID 3 (0x03). It sends ONLY the ActivationPacket (0x04) to start a
+                // workout. The 0x03 START command was invented by the parent repo and
+                // has no effect on the device — but sending it doubles the chance of
+                // hitting GATT_ERROR(133) on BCM4389 since the controller is still
+                // processing the 96-byte CONFIG write.
+                val skipPhantomStart = PixelGattFlags.skipPhantomStart
+                if (!effectiveParams.isEchoMode && !skipPhantomStart) {
                     delay(100)
                     try {
                         val startCommand = BlePacketFactory.createStartCommand()
@@ -2352,6 +2359,8 @@ class ActiveSessionEngine(
                         if (quiescePolling) bleRepository.startActiveWorkoutPolling()
                         return@launch
                     }
+                } else if (skipPhantomStart && !effectiveParams.isEchoMode) {
+                    Logger.i { "[#333 Flag G] Skipping phantom START command (0x03) — not in official protocol" }
                 }
 
                 bleRepository.startActiveWorkoutPolling()

@@ -20,3 +20,11 @@ actual suspend fun Peripheral.refreshGattCache(): Boolean {
 actual suspend fun Peripheral.forceCloseGatt() {
     // No-op on iOS — CoreBluetooth handles cleanup automatically
 }
+
+actual suspend fun Peripheral.rawGattWriteCharacteristic(
+    characteristicUuid: String,
+    data: ByteArray,
+): Result<Unit> {
+    // No-op on iOS — BCM4389 GATT issue is Android/Pixel specific
+    return Result.failure(UnsupportedOperationException("Raw GATT write is Android-only"))
+}

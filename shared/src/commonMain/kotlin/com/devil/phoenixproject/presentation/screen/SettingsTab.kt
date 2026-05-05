@@ -2386,12 +2386,78 @@ fun SettingsTab(
                     )
                 }
 
+                // Flag G: Skip Phantom START
+                var flagGEnabled by remember { mutableStateOf(PixelGattFlags.skipPhantomStart) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Flag G: Skip Phantom START",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Removes the 0x03 START command sent after CONFIG. The " +
+                                "official app's CommandId enum has no ID 3 — the " +
+                                "workout starts from the ActivationPacket (0x04) " +
+                                "alone. Eliminates one unnecessary write on an " +
+                                "already-stressed BLE channel.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagGEnabled,
+                        onCheckedChange = {
+                            flagGEnabled = it
+                            PixelGattFlags.skipPhantomStart = it
+                        },
+                    )
+                }
+
+                // Flag H: Raw GATT Write
+                var flagHEnabled by remember { mutableStateOf(PixelGattFlags.rawGattWrite) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Flag H: Raw GATT Write",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFDC2626), // Flame Red — this is the critical experiment
+                        )
+                        Text(
+                            "Bypasses Kable entirely for CONFIG writes. Calls " +
+                                "BluetoothGatt.writeCharacteristic() directly via " +
+                                "reflection — matching the official app's exact " +
+                                "write path. Eliminates the double-Mutex and " +
+                                "connectionScope cancellation that causes " +
+                                "'StandaloneCoroutine was cancelled' on BCM4389.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagHEnabled,
+                        onCheckedChange = {
+                            flagHEnabled = it
+                            PixelGattFlags.rawGattWrite = it
+                        },
+                    )
+                }
+
                 // Active flags summary
                 Text(
                     "Active: ${PixelGattFlags.activeFlagsSummary()}",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (flagDEnabled || flagEEnabled || flagFEnabled)
+                    color = if (flagDEnabled || flagEEnabled || flagFEnabled || flagGEnabled || flagHEnabled)
                         Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )

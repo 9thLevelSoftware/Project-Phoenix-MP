@@ -33,3 +33,23 @@ expect suspend fun Peripheral.refreshGattCache(): Boolean
  * Android-only; no-op on other platforms.
  */
 expect suspend fun Peripheral.forceCloseGatt()
+
+/**
+ * Issue #333 Flag H: Bypass Kable entirely and write directly to BluetoothGatt.
+ * Uses reflection to find the underlying BluetoothGatt and calls
+ * writeCharacteristic() with the raw bytes — matching the official
+ * Vitruvian app's AndroidPeripheral.java:480 write path exactly.
+ *
+ * This eliminates Kable's internal Mutex, connectionScope, and coroutine
+ * machinery that cause "StandaloneCoroutine was cancelled" on BCM4389.
+ *
+ * Android-only; returns Result.failure on other platforms.
+ *
+ * @param characteristicUuid The UUID of the TX characteristic to write to
+ * @param data The raw bytes to write
+ * @return Result.success if writeCharacteristic() returned true, failure otherwise
+ */
+expect suspend fun Peripheral.rawGattWriteCharacteristic(
+    characteristicUuid: String,
+    data: ByteArray,
+): Result<Unit>

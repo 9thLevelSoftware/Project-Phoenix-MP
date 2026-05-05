@@ -9,6 +9,13 @@ package com.devil.phoenixproject.data.ble
  *         Mirrors the official Vitruvian app's notification-only behavior at the
  *         most fragile moment, where BCM4389 returns GATT_ERROR(133) when a
  *         96-byte WithResponse write hits a saturated channel.
+ * Flag G: Skip the phantom START command (0x03) after CONFIG. The official Vitruvian
+ *         app's CommandId enum has no ID 3 — it sends only the ActivationPacket (0x04).
+ *         The 0x03 START was invented by the parent repo and carried into Phoenix.
+ * Flag H: Bypass Kable's coroutine/Mutex layer for critical CONFIG writes and call
+ *         BluetoothGatt.writeCharacteristic() directly via reflection. Matches the
+ *         official app's raw GATT write path — eliminates the double-Mutex and the
+ *         connectionScope cancellation that causes "StandaloneCoroutine was cancelled".
  *
  * All flags are Android-only and toggled from Developer Tools.
  */
@@ -29,11 +36,36 @@ object PixelGattFlags {
     @Volatile
     var quiescePolling: Boolean = false
 
+    /**
+     * Flag G: Skip the phantom START command (0x03) after sending CONFIG (0x04).
+     * The official Vitruvian app never sends command ID 3 — its CommandId enum
+     * contains: 1, 2, 4, 29, 31, 56, 57, 78, 79. The workout starts from the
+     * ActivationPacket alone. Removing the redundant write eliminates one chance
+     * for BCM4389 to hit GATT_ERROR(133) on a saturated channel.
+     */
+    @Volatile
+    var skipPhantomStart: Boolean = false
+
+    /**
+     * Flag H: Bypass Kable entirely for the critical CONFIG write. Uses reflection
+     * to call BluetoothGatt.writeCharacteristic() directly, matching the official
+     * app's write path (AndroidPeripheral.java:480). This eliminates:
+     *   - Kable's internal Mutex (`guard`) — avoids double-Mutex with BleOperationQueue
+     *   - Kable's connectionScope.async response wait — prevents "StandaloneCoroutine
+     *     was cancelled" when BCM4389 causes a transient connection blip
+     *   - Kable's coroutine dispatch overhead on the critical 96-byte write
+     * Android-only; ignored on iOS.
+     */
+    @Volatile
+    var rawGattWrite: Boolean = false
+
     fun activeFlagsSummary(): String {
         val active = mutableListOf<String>()
         if (refreshGattCache) active.add("D:GattRefresh")
         if (forceImmediateClose) active.add("E:ForceClose")
         if (quiescePolling) active.add("F:Quiesce")
+        if (skipPhantomStart) active.add("G:NoStart")
+        if (rawGattWrite) active.add("H:RawGatt")
         return if (active.isEmpty()) "None" else active.joinToString(", ")
     }
 }
