@@ -6,7 +6,7 @@ import co.touchlab.kermit.Logger
 import com.juul.kable.AndroidPeripheral
 import com.juul.kable.Peripheral
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 actual suspend fun Peripheral.requestHighPriority() {
@@ -103,19 +103,32 @@ actual suspend fun Peripheral.forceCloseGatt() {
 }
 
 /**
- * Issue #333 Flag H: Write to BluetoothGatt directly but cooperate with Kable's
- * internal state so subsequent operations don't get corrupted.
+ * Issue #333 Flag H: Write to BluetoothGatt directly, bypassing Kable's
+ * connectionScope.async that causes "StandaloneCoroutine was cancelled" on BCM4389.
  *
- * v4 proved the raw write works (CONFIG succeeded in 53ms) but the workout
- * disconnected ~12s later because onCharacteristicWrite fired into Kable's
- * callback.onResponse channel. The next Kable polling read picked up that
- * stale write response instead of its own read response → type mismatch →
- * Kable interpreted it as a connection failure.
+ * ## Evolution
+ * - v4: Raw write + no stale response handling → CONFIG succeeded in 53ms
+ *   but disconnect 12s later (onCharacteristicWrite poisoned Kable's channel)
+ * - v5: Added guard mutex lock + blocking channel drain → 2009ms timeout,
+ *   callback never arrived because blocking receive() + mutex contention
+ *   stalled the whole operation
+ * - v6: Minimal approach — dispatch on Kable's own threading dispatcher for
+ *   correct thread affinity, use non-blocking tryReceive() after a short
+ *   settle delay. NO guard mutex (Flag F already stopped polling — nothing
+ *   competes). This matches v4's simplicity while cleaning up the channel.
  *
- * v5 fix: Hold Kable's internal guard Mutex during the write AND drain the
- * onCharacteristicWrite callback response from Kable's channel afterward.
- * This gives us raw GATT dispatch (no connectionScope cancellation risk)
- * while keeping Kable's internal state clean for subsequent operations.
+ * ## Why no guard mutex?
+ * Flag F quiesces all polling 150ms before the write. With no Kable
+ * operations in flight, the guard mutex is uncontested — acquiring it just
+ * adds latency and risk. v5 proved that blocking on the mutex + channel
+ * receive together causes the 2009ms timeout. Keep it simple.
+ *
+ * ## Why dispatch on Kable's threading dispatcher?
+ * Kable's Connection.execute() dispatches GATT actions via
+ * withContext(dispatcher) which routes to the Handler thread (API 26+).
+ * The BluetoothGattCallback also fires on this handler. Using the same
+ * dispatcher ensures correct thread affinity and matches the official app's
+ * single-threaded BLE approach.
  *
  * The write uses the deprecated (pre-API 33) setValue+writeCharacteristic path
  * intentionally — this is exactly what the official app uses.
@@ -131,7 +144,7 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
         return Result.failure(IllegalStateException("Not an AndroidPeripheral"))
     }
 
-    // Get the Connection object (holds gatt, guard mutex, and callback)
+    // Get the Connection object (holds gatt, threading dispatcher, and callback)
     val connection = findConnection(androidPeripheral)
     if (connection == null) {
         Logger.w("BleExtensions") { "[Flag H] Cannot raw-write: Connection not found" }
@@ -159,71 +172,107 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
         return Result.failure(IllegalStateException("TX characteristic not found"))
     }
 
-    // Get Kable's internal guard Mutex and callback response channel
-    val guardMutex = findGuardMutex(connection)
+    // Get Kable's threading dispatcher and callback channel
+    val kableDispatcher = findDispatcher(connection)
     val responseChannel = findResponseChannel(connection)
 
     return try {
-        // Acquire Kable's guard mutex so no other Kable operation runs concurrently.
-        // This prevents the stale response problem: we hold the lock, dispatch the
-        // raw write, wait for the callback, drain the response, then release.
-        val writeBlock: suspend () -> Result<Unit> = {
+        // Dispatch the raw write on Kable's threading dispatcher for correct
+        // thread affinity (Handler thread on API 26+). This matches how
+        // Connection.execute() dispatches GATT operations.
+        val writeContext = kableDispatcher ?: kotlinx.coroutines.Dispatchers.IO
+        if (kableDispatcher != null) {
+            Logger.d("BleExtensions") { "[Flag H] Dispatching on Kable's handler thread" }
+        } else {
+            Logger.w("BleExtensions") { "[Flag H] Kable dispatcher not found — using Dispatchers.IO" }
+        }
+
+        val accepted = kotlinx.coroutines.withContext(writeContext) {
             txChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             txChar.value = data
-            val accepted = gatt.writeCharacteristic(txChar)
+            gatt.writeCharacteristic(txChar)
+        }
 
-            if (accepted) {
-                Logger.i("BleExtensions") {
-                    "[Flag H] Raw GATT write accepted: ${data.size} bytes"
-                }
-                // Wait for the onCharacteristicWrite callback to fire.
-                // This response MUST be drained before releasing the mutex,
-                // otherwise the next Kable operation gets a stale response.
-                // 2000ms timeout covers even slow BCM4389 responses.
-                if (responseChannel != null) {
-                    try {
-                        val drained = kotlinx.coroutines.withTimeoutOrNull(2000L) {
-                            @Suppress("UNCHECKED_CAST")
-                            (responseChannel as kotlinx.coroutines.channels.Channel<Any>).receive()
-                        }
-                        if (drained != null) {
-                            Logger.d("BleExtensions") {
-                                "[Flag H] Drained onCharacteristicWrite callback: ${drained::class.simpleName}"
-                            }
-                        } else {
-                            Logger.w("BleExtensions") {
-                                "[Flag H] Callback drain timed out (2s) — proceeding anyway"
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Logger.w("BleExtensions") {
-                            "[Flag H] Callback drain error (non-fatal): ${e.message}"
-                        }
+        if (!accepted) {
+            Logger.e("BleExtensions") {
+                "[Flag H] Raw GATT write REJECTED (returned false — GATT busy)"
+            }
+            return Result.failure(IllegalStateException("writeCharacteristic returned false (GATT busy)"))
+        }
+
+        Logger.i("BleExtensions") {
+            "[Flag H] Raw GATT write accepted: ${data.size} bytes"
+        }
+
+        // Short settle delay for the onCharacteristicWrite callback to fire.
+        // The callback pushes into Kable's onResponse channel (CONFLATED).
+        // We DON'T block waiting for it — that caused v5's 2009ms timeout.
+        // 150ms matches the official app's observed callback latency.
+        delay(150)
+
+        // Non-blocking drain: remove any stale response from the channel
+        // so the next Kable operation doesn't pick up our write response.
+        // tryReceive() returns immediately — no blocking, no timeout risk.
+        if (responseChannel != null) {
+            try {
+                @Suppress("UNCHECKED_CAST")
+                val channel = responseChannel as kotlinx.coroutines.channels.Channel<Any>
+                val result = channel.tryReceive()
+                if (result.isSuccess) {
+                    val drained = result.getOrNull()
+                    Logger.d("BleExtensions") {
+                        "[Flag H] Drained callback response: ${drained?.let { it::class.simpleName } ?: "null"}"
+                    }
+                } else if (result.isClosed) {
+                    // Channel closed = connection dropped (onConnectionStateChange → DISCONNECTED)
+                    Logger.w("BleExtensions") {
+                        "[Flag H] Response channel closed — connection may have dropped"
                     }
                 } else {
-                    // Couldn't find the channel — just wait a fixed time for the callback
-                    // to settle before releasing the mutex
-                    Logger.w("BleExtensions") {
-                        "[Flag H] Could not find response channel — using fixed 200ms settle"
+                    // No response yet — callback hasn't fired in 150ms.
+                    // This is OK: the callback will fire eventually and since
+                    // polling is stopped (Flag F), nothing will read the channel
+                    // before polling resumes. When polling resumes, the first
+                    // Kable read will acquire guard, and if there's a stale
+                    // write response it will get a type mismatch. To prevent
+                    // that, do one more drain attempt after a longer wait.
+                    Logger.d("BleExtensions") {
+                        "[Flag H] No callback yet after 150ms — retrying after 200ms"
                     }
                     delay(200)
+                    val retry = channel.tryReceive()
+                    if (retry.isSuccess) {
+                        Logger.d("BleExtensions") {
+                            "[Flag H] Drained callback on retry: ${retry.getOrNull()?.let { it::class.simpleName }}"
+                        }
+                    } else if (retry.isClosed) {
+                        Logger.w("BleExtensions") {
+                            "[Flag H] Channel closed on retry — connection dropped"
+                        }
+                    } else {
+                        // Still nothing after 350ms total. The write was accepted
+                        // by the BLE stack but no callback came. Either:
+                        // 1. BCM4389 is very slow (but not erroring)
+                        // 2. The callback fired but on a thread we can't see
+                        // Log it but proceed — the write WAS accepted.
+                        Logger.w("BleExtensions") {
+                            "[Flag H] No callback after 350ms — write was accepted, proceeding"
+                        }
+                    }
                 }
-                Result.success(Unit)
-            } else {
-                Logger.e("BleExtensions") {
-                    "[Flag H] Raw GATT write REJECTED (returned false)"
+            } catch (e: Exception) {
+                Logger.w("BleExtensions") {
+                    "[Flag H] Channel drain error (non-fatal): ${e.message}"
                 }
-                Result.failure(IllegalStateException("writeCharacteristic returned false (GATT busy)"))
             }
+        } else {
+            Logger.w("BleExtensions") {
+                "[Flag H] Could not find response channel — 200ms settle fallback"
+            }
+            delay(200)
         }
 
-        if (guardMutex != null) {
-            Logger.d("BleExtensions") { "[Flag H] Acquiring Kable guard mutex..." }
-            guardMutex.withLock { writeBlock() }
-        } else {
-            Logger.w("BleExtensions") { "[Flag H] Could not find Kable guard mutex — writing without lock" }
-            writeBlock()
-        }
+        Result.success(Unit)
     } catch (e: Exception) {
         Logger.e("BleExtensions") { "[Flag H] Raw GATT write exception: ${e.message}" }
         Result.failure(e)
@@ -298,6 +347,47 @@ private fun findGuardMutex(connection: Any): kotlinx.coroutines.sync.Mutex? {
         }
     } catch (e: Exception) {
         Logger.w("BleExtensions") { "findGuardMutex error: ${e.message}" }
+    }
+    return null
+}
+
+/**
+ * Find Kable's threading dispatcher from the Connection object.
+ * Path: Connection.dispatcher (CoroutineContext composed from threading.dispatcher)
+ * This is the dispatcher Kable uses for all GATT operations (Handler thread on API 26+).
+ */
+private fun findDispatcher(connection: Any): kotlin.coroutines.CoroutineContext? {
+    try {
+        // Connection has: private val dispatcher = connectionScope.coroutineContext + threading.dispatcher
+        val dispatcherField = connection::class.java.declaredFields.firstOrNull { it.name == "dispatcher" }
+        if (dispatcherField != null) {
+            dispatcherField.isAccessible = true
+            val dispatcher = dispatcherField.get(connection)
+            if (dispatcher is kotlin.coroutines.CoroutineContext) {
+                Logger.d("BleExtensions") { "Found Kable dispatcher via Connection.dispatcher field" }
+                return dispatcher
+            }
+        }
+        // Fallback: try threading field → threading.dispatcher
+        val threadingField = connection::class.java.declaredFields.firstOrNull { it.name == "threading" }
+        if (threadingField != null) {
+            threadingField.isAccessible = true
+            val threading = threadingField.get(connection)
+            if (threading != null) {
+                val getDispatcher = threading::class.java.methods.firstOrNull {
+                    it.name == "getDispatcher" && it.parameterCount == 0
+                }
+                if (getDispatcher != null) {
+                    val d = getDispatcher.invoke(threading)
+                    if (d is kotlin.coroutines.CoroutineContext) {
+                        Logger.d("BleExtensions") { "Found Kable dispatcher via threading.dispatcher" }
+                        return d
+                    }
+                }
+            }
+        }
+    } catch (e: Exception) {
+        Logger.w("BleExtensions") { "findDispatcher error: ${e.message}" }
     }
     return null
 }

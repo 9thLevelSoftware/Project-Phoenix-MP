@@ -2299,7 +2299,22 @@ class ActiveSessionEngine(
                 if (quiescePolling) {
                     Logger.i { "[#333 Flag F] Quiescing polling before CONFIG write" }
                     bleRepository.stopPolling()
+                    // Wait for any in-flight BLE operation to complete.
+                    // Polling reads have a 1500ms timeout, so we need to wait
+                    // long enough for the current operation to finish.
+                    // Poll bleQueue.isLocked for up to 2000ms, then add 150ms settle.
+                    val quiesceStart = currentTimeMillis()
+                    var waited = 0L
+                    while (bleRepository.isBleQueueLocked() && waited < 2000L) {
+                        delay(50)
+                        waited = currentTimeMillis() - quiesceStart
+                    }
+                    if (waited > 0) {
+                        Logger.i { "[#333 Flag F] Waited ${waited}ms for BLE queue to drain" }
+                    }
+                    // Extra settle time for the BLE stack to fully quiesce
                     delay(150)
+                    Logger.i { "[#333 Flag F] BLE channel quiesced — ready for CONFIG write" }
                 }
 
                 try {

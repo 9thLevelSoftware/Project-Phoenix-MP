@@ -276,6 +276,8 @@ class KableBleRepository : BleRepository {
 
     override fun stopPolling() = pollingEngine.stopAll()
 
+    override fun isBleQueueLocked(): Boolean = bleQueue.isLocked
+
     override fun stopMonitorPollingOnly() = pollingEngine.stopMonitorOnly()
 
     override fun restartDiagnosticPolling() {
