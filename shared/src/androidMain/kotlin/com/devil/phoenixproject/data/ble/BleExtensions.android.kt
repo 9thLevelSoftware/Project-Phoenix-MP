@@ -185,38 +185,96 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
 }
 
 /**
- * Navigate Kable's internal object graph to find the BluetoothGatt instance.
- * Path: AndroidPeripheral → Connection → gatt field
+ * Navigate Kable 0.42.0's internal object graph to find the BluetoothGatt instance.
+ *
+ * Kable's class hierarchy (from javap of kable-core-release.aar):
+ *   BluetoothDeviceAndroidPeripheral (implements AndroidPeripheral)
+ *     └── field `connection`: MutableStateFlow<Connection>
+ *           └── .value → Connection
+ *                 └── field `gatt`: BluetoothGatt
+ *                     (also accessible via getGatt$kable_core_release())
+ *
+ * Previous implementation failed because it searched for fields whose TYPE
+ * contained "Connection" — but the actual field type is MutableStateFlow,
+ * which wraps the Connection. We now search by FIELD NAME instead.
  */
 private fun findBluetoothGatt(androidPeripheral: AndroidPeripheral): BluetoothGatt? {
     try {
-        // Strategy 1: Look for Connection object, then get its gatt field
-        // Kable's BluetoothDeviceAndroidPeripheral stores a Connection internally
-        for (field in androidPeripheral::class.java.declaredFields) {
-            if (field.type.name.contains("Connection")) {
-                field.isAccessible = true
-                val connection = field.get(androidPeripheral) ?: continue
-                for (connField in connection::class.java.declaredFields) {
-                    if (connField.type.name == "android.bluetooth.BluetoothGatt") {
-                        connField.isAccessible = true
-                        val gatt = connField.get(connection) as? BluetoothGatt
+        // The actual class is BluetoothDeviceAndroidPeripheral, which extends BasePeripheral
+        val peripheralClass = androidPeripheral::class.java
+        Logger.d("BleExtensions") {
+            "Peripheral class: ${peripheralClass.name}, fields: ${peripheralClass.declaredFields.map { "${it.name}:${it.type.simpleName}" }}"
+        }
+
+        // Strategy 1 (Primary): BluetoothDeviceAndroidPeripheral.connection (MutableStateFlow<Connection>)
+        // Then Connection.gatt (BluetoothGatt)
+        val connectionField = peripheralClass.declaredFields.firstOrNull { it.name == "connection" }
+        if (connectionField != null) {
+            connectionField.isAccessible = true
+            val stateFlow = connectionField.get(androidPeripheral)
+            if (stateFlow != null) {
+                // MutableStateFlow has a .getValue() method
+                val valueMethod = stateFlow::class.java.methods.firstOrNull {
+                    it.name == "getValue" && it.parameterCount == 0
+                }
+                val connection = valueMethod?.invoke(stateFlow)
+                if (connection != null) {
+                    Logger.d("BleExtensions") {
+                        "Connection class: ${connection::class.java.name}, fields: ${connection::class.java.declaredFields.map { "${it.name}:${it.type.simpleName}" }}"
+                    }
+
+                    // Try the public getter first (Kotlin internal visibility → mangled name)
+                    try {
+                        val getGattMethod = connection::class.java.methods.firstOrNull {
+                            it.name.startsWith("getGatt") && it.returnType == BluetoothGatt::class.java
+                        }
+                        if (getGattMethod != null) {
+                            val gatt = getGattMethod.invoke(connection) as? BluetoothGatt
+                            if (gatt != null) {
+                                Logger.d("BleExtensions") { "Found BluetoothGatt via Connection.getGatt*()" }
+                                return gatt
+                            }
+                        }
+                    } catch (_: Exception) { /* Fall through to field access */ }
+
+                    // Direct field access: Connection.gatt
+                    val gattField = connection::class.java.declaredFields.firstOrNull {
+                        it.name == "gatt" || it.type == BluetoothGatt::class.java
+                    }
+                    if (gattField != null) {
+                        gattField.isAccessible = true
+                        val gatt = gattField.get(connection) as? BluetoothGatt
                         if (gatt != null) {
-                            Logger.d("BleExtensions") { "Found BluetoothGatt via Connection path" }
+                            Logger.d("BleExtensions") { "Found BluetoothGatt via Connection.gatt field" }
                             return gatt
                         }
                     }
+                } else {
+                    Logger.w("BleExtensions") { "Connection StateFlow.value is null (not connected?)" }
                 }
             }
         }
 
-        // Strategy 2: Direct field on peripheral (fallback)
-        for (field in androidPeripheral::class.java.declaredFields) {
-            if (field.type.name == "android.bluetooth.BluetoothGatt") {
-                field.isAccessible = true
-                val gatt = field.get(androidPeripheral) as? BluetoothGatt
-                if (gatt != null) {
-                    Logger.d("BleExtensions") { "Found BluetoothGatt via direct path" }
-                    return gatt
+        // Strategy 2: Walk ALL fields looking for anything that holds a BluetoothGatt
+        // (handles future Kable refactors)
+        for (field in peripheralClass.declaredFields) {
+            field.isAccessible = true
+            val value = try { field.get(androidPeripheral) } catch (_: Exception) { continue }
+            if (value is BluetoothGatt) {
+                Logger.d("BleExtensions") { "Found BluetoothGatt via direct field: ${field.name}" }
+                return value
+            }
+            // Check one level deep for any object holding a gatt
+            if (value != null) {
+                for (innerField in value::class.java.declaredFields) {
+                    if (innerField.type == BluetoothGatt::class.java) {
+                        innerField.isAccessible = true
+                        val gatt = try { innerField.get(value) as? BluetoothGatt } catch (_: Exception) { null }
+                        if (gatt != null) {
+                            Logger.d("BleExtensions") { "Found BluetoothGatt via ${field.name}.${innerField.name}" }
+                            return gatt
+                        }
+                    }
                 }
             }
         }
