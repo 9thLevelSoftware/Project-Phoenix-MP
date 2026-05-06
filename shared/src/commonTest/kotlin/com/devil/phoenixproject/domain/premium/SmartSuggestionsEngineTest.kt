@@ -436,7 +436,7 @@ class SmartSuggestionsEngineTest {
     }
 
     @Test
-    fun unknownMuscleGroupFallbackCounterTracksTaxonomyGaps() {
+    fun unknownMuscleGroupCallbackTracksTaxonomyGaps() {
         val unknownGroups = mutableMapOf<String, Int>()
         val tracker: (String) -> Unit = { group ->
             unknownGroups[group] = (unknownGroups[group] ?: 0) + 1

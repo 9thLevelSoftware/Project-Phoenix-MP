@@ -285,7 +285,8 @@ object SmartSuggestionsEngine {
     /**
      * Maps a muscle group string to a MovementCategory for balance analysis.
      * Case-insensitive and supports aliases used by the exercise catalog.
-     * Unknown groups default to CORE and increment a fallback counter.
+     * Unknown groups default to CORE and optionally report normalized taxonomy gaps
+     * through onUnknownGroup.
      */
     internal fun classifyMuscleGroup(
         muscleGroup: String,
