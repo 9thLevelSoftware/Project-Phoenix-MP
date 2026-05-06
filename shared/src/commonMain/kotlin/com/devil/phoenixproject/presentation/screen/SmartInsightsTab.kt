@@ -108,7 +108,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val profileId = activeProfile?.id ?: "default"
 
-    val nowMs = remember { currentTimeMillis() }
+    var nowMs by remember { mutableStateOf(currentTimeMillis()) }
     val twentyEightDaysMs = 28L * 24 * 60 * 60 * 1000
 
     var isLoading by remember { mutableStateOf(true) }
@@ -117,6 +117,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     var weightHistory by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
 
     LaunchedEffect(profileId) {
+        nowMs = currentTimeMillis()
         withContext(Dispatchers.IO) {
             sessionSummaries =
                 repository.getSessionSummariesSince(nowMs - twentyEightDaysMs, profileId)
@@ -137,13 +138,13 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     }
 
     // Compute all insights
-    val weeklyVolume = remember(sessionSummaries) {
+    val weeklyVolume = remember(sessionSummaries, nowMs) {
         SmartSuggestionsEngine.computeWeeklyVolume(sessionSummaries, nowMs)
     }
-    val balanceAnalysis = remember(sessionSummaries) {
+    val balanceAnalysis = remember(sessionSummaries, nowMs) {
         SmartSuggestionsEngine.analyzeBalance(sessionSummaries, nowMs)
     }
-    val neglectedExercises = remember(exerciseLastPerformed) {
+    val neglectedExercises = remember(exerciseLastPerformed, nowMs) {
         SmartSuggestionsEngine.findNeglectedExercises(exerciseLastPerformed, nowMs)
     }
     val plateaus = remember(weightHistory) {
@@ -203,7 +204,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
 
         // Section F: Training Readiness / ACWR (ACWR-01)
         item {
-            val readiness = remember(sessionSummaries) {
+            val readiness = remember(sessionSummaries, nowMs) {
                 ReadinessEngine.computeReadiness(sessionSummaries, nowMs)
             }
             ReadinessBriefingCard(readinessResult = readiness)
