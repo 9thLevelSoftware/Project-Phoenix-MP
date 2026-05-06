@@ -121,6 +121,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         // the exact same anchor timestamp. This avoids drift where query and computation use
         // slightly different "now" values.
         isLoading = true
+        insightsAnchorNowMs = null
         val snapshotNowMs = currentTimeMillis()
         insightsAnchorNowMs = snapshotNowMs
         withContext(Dispatchers.IO) {
