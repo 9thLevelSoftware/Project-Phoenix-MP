@@ -117,13 +117,23 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     var weightHistory by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
 
     LaunchedEffect(profileId) {
-        nowMs = currentTimeMillis()
-        withContext(Dispatchers.IO) {
-            sessionSummaries =
-                repository.getSessionSummariesSince(nowMs - twentyEightDaysMs, profileId)
-            exerciseLastPerformed = repository.getExerciseLastPerformed(profileId)
-            weightHistory = repository.getExerciseWeightHistory(profileId)
-        }
+        isLoading = true
+        sessionSummaries = emptyList()
+        exerciseLastPerformed = emptyList()
+        weightHistory = emptyList()
+        val fetchNow = currentTimeMillis()
+        val (fetchedSessions, fetchedLastPerformed, fetchedWeightHistory) =
+            withContext(Dispatchers.IO) {
+                Triple(
+                    repository.getSessionSummariesSince(fetchNow - twentyEightDaysMs, profileId),
+                    repository.getExerciseLastPerformed(profileId),
+                    repository.getExerciseWeightHistory(profileId),
+                )
+            }
+        nowMs = fetchNow
+        sessionSummaries = fetchedSessions
+        exerciseLastPerformed = fetchedLastPerformed
+        weightHistory = fetchedWeightHistory
         isLoading = false
     }
 
