@@ -354,12 +354,12 @@ class SmartSuggestionsEngineTest {
     fun timeOfDayMixedWithClearWinner() {
         val baseTime = NOW - (NOW % ONE_DAY_MS)
         val sessions = listOf(
-            // 4 evening sessions (high volume)
+            // 4 evening sessions (high intensity)
             session(timestamp = baseTime + 17 * ONE_HOUR_MS, weightPerCableKg = 80f),
             session(timestamp = baseTime - ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 80f),
             session(timestamp = baseTime - 2 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 80f),
             session(timestamp = baseTime - 3 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 80f),
-            // 1 morning session (lower volume)
+            // 1 morning session (lower intensity)
             session(timestamp = baseTime + 8 * ONE_HOUR_MS, weightPerCableKg = 40f),
         )
         val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions, TimeZone.UTC)
@@ -379,8 +379,44 @@ class SmartSuggestionsEngineTest {
             session(timestamp = baseTime - 2 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 40f),
         )
         val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions, TimeZone.UTC)
-        // Morning has higher volume per session but only 2 sessions -> not eligible
+        // Morning has higher intensity but only 2 sessions -> not eligible
         // Evening has 3 sessions -> eligible
+        assertEquals(TimeWindow.EVENING, analysis.optimalWindow)
+    }
+
+    @Test
+    fun timeOfDayRequiresDistinctDaysNotJustSessionCount() {
+        val baseTime = NOW - (NOW % ONE_DAY_MS)
+        val sessions = listOf(
+            // 3 morning sessions all on the same day (fails distinct-day gate)
+            session(timestamp = baseTime + 7 * ONE_HOUR_MS, weightPerCableKg = 90f),
+            session(timestamp = baseTime + 8 * ONE_HOUR_MS, weightPerCableKg = 90f),
+            session(timestamp = baseTime + 9 * ONE_HOUR_MS, weightPerCableKg = 90f),
+            // 3 evening sessions across 3 days (passes gates)
+            session(timestamp = baseTime + 17 * ONE_HOUR_MS, weightPerCableKg = 60f),
+            session(timestamp = baseTime - ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 60f),
+            session(timestamp = baseTime - 2 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 60f),
+        )
+
+        val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions, TimeZone.UTC)
+        assertEquals(TimeWindow.EVENING, analysis.optimalWindow)
+    }
+
+    @Test
+    fun timeOfDayUsesIntensityInsteadOfRawVolume() {
+        val baseTime = NOW - (NOW % ONE_DAY_MS)
+        val sessions = listOf(
+            // Morning: more total volume from reps, but lower intensity (20kg/rep)
+            session(timestamp = baseTime + 8 * ONE_HOUR_MS, weightPerCableKg = 20f, workingReps = 20),
+            session(timestamp = baseTime - ONE_DAY_MS + 8 * ONE_HOUR_MS, weightPerCableKg = 20f, workingReps = 20),
+            session(timestamp = baseTime - 2 * ONE_DAY_MS + 8 * ONE_HOUR_MS, weightPerCableKg = 20f, workingReps = 20),
+            // Evening: lower total volume, higher intensity (40kg/rep)
+            session(timestamp = baseTime + 17 * ONE_HOUR_MS, weightPerCableKg = 40f, workingReps = 5),
+            session(timestamp = baseTime - ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 40f, workingReps = 5),
+            session(timestamp = baseTime - 2 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 40f, workingReps = 5),
+        )
+
+        val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions, TimeZone.UTC)
         assertEquals(TimeWindow.EVENING, analysis.optimalWindow)
     }
 
