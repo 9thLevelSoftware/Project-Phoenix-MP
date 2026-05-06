@@ -442,7 +442,12 @@ class SmartSuggestionsEngineTest {
         SmartSuggestionsEngine.resetUnknownMuscleGroupFallbackCount()
         SmartSuggestionsEngine.classifyMuscleGroup("Serratus")
         SmartSuggestionsEngine.classifyMuscleGroup("Forearms")
-        assertEquals(2, SmartSuggestionsEngine.getUnknownMuscleGroupFallbackCount())
+        SmartSuggestionsEngine.classifyMuscleGroup("  forearms ")
+        assertEquals(3, SmartSuggestionsEngine.getUnknownMuscleGroupFallbackCount())
+        assertEquals(
+            mapOf("serratus" to 1, "forearms" to 2),
+            SmartSuggestionsEngine.getUnknownMuscleGroupFallbackBreakdown(),
+        )
     }
 
     // ========== classifyTimeWindow timezone fix (BOARD-01) ==========
