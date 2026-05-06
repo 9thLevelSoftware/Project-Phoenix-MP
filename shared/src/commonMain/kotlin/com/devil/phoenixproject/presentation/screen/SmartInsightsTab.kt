@@ -60,6 +60,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -132,8 +133,8 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         isLoading = false
     }
 
-    LaunchedEffect(profileId) {
-        while (true) {
+    LaunchedEffect(Unit) {
+        while (isActive) {
             delay(nowRefreshIntervalMs)
             nowMs = currentTimeMillis()
         }
