@@ -216,14 +216,13 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             val readiness = remember(sessionSummaries, nowMs) {
                 ReadinessEngine.computeReadiness(sessionSummaries, nowMs)
             }
-            InsightCard(
+            InsightContextBlock(
                 title = "Training Readiness",
                 definition = "Acute vs chronic workload readiness signal.",
                 timeframe = "Acute 7d vs Chronic 28d",
                 soWhat = "If readiness is low, reduce intensity/volume and prioritize recovery.",
-            ) {
-                ReadinessBriefingCard(readinessResult = readiness)
-            }
+            )
+            ReadinessBriefingCard(readinessResult = readiness)
         }
     }
 }
@@ -614,6 +613,24 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
 }
 
 // ---- Shared Components ----
+
+
+@Composable
+private fun InsightContextBlock(
+    title: String,
+    definition: String,
+    timeframe: String,
+    soWhat: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(definition, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TimeframeBadge(timeframe)
+        Text("So what? $soWhat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+    }
+}
+
+
 
 @Composable
 private fun InsightHierarchyHeader(title: String, subtitle: String) {
