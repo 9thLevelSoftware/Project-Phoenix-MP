@@ -390,7 +390,7 @@
     <string name="insights_training_balance">Training Balance</string>
     <string name="insights_exercise_variety">Exercise Variety</string>
     <string name="insights_plateau_alert">Plateau Alert</string>
-    <string name="insights_best_window">Best Training Window</string>
+    <string name="insights_best_window">Highest Average Intensity Window</string>
     <string name="insights_col_muscle_group">Muscle Group</string>
     <string name="insights_col_sets">Sets</string>
     <string name="insights_col_reps">Reps</string>
@@ -400,8 +400,8 @@
     <string name="insights_legs">Legs</string>
     <string name="insights_well_balanced">Your training is well-balanced</string>
     <string name="insights_days_ago">%1$d days ago</string>
-    <string name="insights_need_more_sessions">Train more to unlock time insights (need 10+ sessions)</string>
-    <string name="insights_perform_best_in">You perform best in the</string>
+    <string name="insights_need_more_sessions">Need more sessions across different days to identify your best window</string>
+    <string name="insights_perform_best_in">Your highest average intensity is in the</string>
 
     <!-- ==================== Issue 3: ExerciseConfigModal ==================== -->
     <string name="config_beast_mode">BEAST MODE</string>

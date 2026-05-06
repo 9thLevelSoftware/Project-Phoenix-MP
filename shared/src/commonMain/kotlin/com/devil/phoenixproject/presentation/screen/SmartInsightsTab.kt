@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -108,7 +109,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val profileId = activeProfile?.id ?: "default"
 
-    var nowMs by remember { mutableStateOf(currentTimeMillis()) }
+    var insightsAnchorNowMs by remember { mutableStateOf<Long?>(null) }
     val twentyEightDaysMs = 28L * 24 * 60 * 60 * 1000
 
     var isLoading by remember { mutableStateOf(true) }
@@ -117,17 +118,33 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     var weightHistory by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
 
     LaunchedEffect(profileId) {
-        nowMs = currentTimeMillis()
-        withContext(Dispatchers.IO) {
-            sessionSummaries =
-                repository.getSessionSummariesSince(nowMs - twentyEightDaysMs, profileId)
-            exerciseLastPerformed = repository.getExerciseLastPerformed(profileId)
-            weightHistory = repository.getExerciseWeightHistory(profileId)
+        // Option A: fetch a broad 28-day slice once, then compute every card's time window from
+        // the exact same anchor timestamp. This avoids drift where query and computation use
+        // slightly different "now" values.
+        isLoading = true
+        insightsAnchorNowMs = null
+        val snapshotNowMs = currentTimeMillis()
+
+        try {
+            val fetchResult = withContext(Dispatchers.IO) {
+                Triple(
+                    repository.getSessionSummariesSince(snapshotNowMs - twentyEightDaysMs, profileId),
+                    repository.getExerciseLastPerformed(profileId),
+                    repository.getExerciseWeightHistory(profileId),
+                )
+            }
+
+            sessionSummaries = fetchResult.first
+            exerciseLastPerformed = fetchResult.second
+            weightHistory = fetchResult.third
+            insightsAnchorNowMs = snapshotNowMs
+        } finally {
+            isLoading = false
         }
-        isLoading = false
     }
 
-    if (isLoading) {
+    val anchorNowMs = insightsAnchorNowMs
+    if (isLoading || anchorNowMs == null) {
         Box(
             modifier = modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
@@ -137,15 +154,15 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         return
     }
 
-    // Compute all insights
-    val weeklyVolume = remember(sessionSummaries, nowMs) {
-        SmartSuggestionsEngine.computeWeeklyVolume(sessionSummaries, nowMs)
+    // Compute all insights from the same fetch anchor timestamp (Option A).
+    val weeklyVolume = remember(sessionSummaries, anchorNowMs) {
+        SmartSuggestionsEngine.computeWeeklyVolume(sessionSummaries, anchorNowMs)
     }
-    val balanceAnalysis = remember(sessionSummaries, nowMs) {
-        SmartSuggestionsEngine.analyzeBalance(sessionSummaries, nowMs)
+    val balanceAnalysis = remember(sessionSummaries, anchorNowMs) {
+        SmartSuggestionsEngine.analyzeBalance(sessionSummaries, anchorNowMs)
     }
-    val neglectedExercises = remember(exerciseLastPerformed, nowMs) {
-        SmartSuggestionsEngine.findNeglectedExercises(exerciseLastPerformed, nowMs)
+    val neglectedExercises = remember(exerciseLastPerformed, anchorNowMs) {
+        SmartSuggestionsEngine.findNeglectedExercises(exerciseLastPerformed, anchorNowMs)
     }
     val plateaus = remember(weightHistory) {
         SmartSuggestionsEngine.detectPlateaus(weightHistory)
@@ -177,15 +194,21 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             )
         }
 
+        item { InsightHierarchyHeader("1. Snapshot", "Current status") }
+
         // Section A: Weekly Volume (SUGG-01)
         item {
             WeeklyVolumeCard(weeklyVolume)
         }
 
+        item { InsightHierarchyHeader("2. Trends", "How it changed") }
+
         // Section B: Balance Analysis (SUGG-02)
         item {
             BalanceAnalysisCard(balanceAnalysis)
         }
+
+        item { InsightHierarchyHeader("3. Diagnostics", "Why") }
 
         // Section C: Neglected Exercises (SUGG-03)
         item {
@@ -197,6 +220,8 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             PlateauDetectionCard(plateaus)
         }
 
+        item { InsightHierarchyHeader("4. Actions", "What to do next") }
+
         // Section E: Optimal Training Time (SUGG-05)
         item {
             TimeOfDayCard(timeOfDay)
@@ -204,9 +229,15 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
 
         // Section F: Training Readiness / ACWR (ACWR-01)
         item {
-            val readiness = remember(sessionSummaries, nowMs) {
-                ReadinessEngine.computeReadiness(sessionSummaries, nowMs)
+            val readiness = remember(sessionSummaries, anchorNowMs) {
+                ReadinessEngine.computeReadiness(sessionSummaries, anchorNowMs)
             }
+            InsightContextBlock(
+                title = "Training Readiness",
+                definition = "Acute vs chronic workload readiness signal.",
+                timeframe = "Acute 7d vs Chronic 28d",
+                soWhat = "If readiness is low, reduce intensity/volume and prioritize recovery.",
+            )
             ReadinessBriefingCard(readinessResult = readiness)
         }
     }
@@ -216,7 +247,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
 
 @Composable
 private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
-    InsightCard(title = stringResource(Res.string.insights_weekly_volume)) {
+    InsightCard(title = stringResource(Res.string.insights_weekly_volume), definition = "Weekly muscle-group workload breakdown.", timeframe = "Last 7 days", soWhat = "Use as drill-down detail after checking the main total-volume trend.") {
         if (report.volumes.isEmpty()) {
             PlaceholderText(stringResource(Res.string.no_workouts_this_week))
         } else {
@@ -311,7 +342,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
 
 @Composable
 private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
-    InsightCard(title = stringResource(Res.string.insights_training_balance)) {
+    InsightCard(title = stringResource(Res.string.insights_training_balance), definition = "Push/pull/legs share of your recent volume.", timeframe = "Last 28 days", soWhat = "Shift upcoming sessions toward the underrepresented bucket.") {
         val total = analysis.pushVolume + analysis.pullVolume + analysis.legsVolume
 
         if (total <= 0f) {
@@ -420,7 +451,7 @@ private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
 
 @Composable
 private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
-    InsightCard(title = stringResource(Res.string.insights_exercise_variety)) {
+    InsightCard(title = stringResource(Res.string.insights_exercise_variety), definition = "Exercises not trained recently.", timeframe = "Last 28 days", soWhat = "Reintroduce one neglected movement this week to maintain capacity.") {
         if (neglected.isEmpty()) {
             PlaceholderText(stringResource(Res.string.great_variety))
         } else {
@@ -470,7 +501,7 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
 
 @Composable
 private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
-    InsightCard(title = stringResource(Res.string.insights_plateau_alert)) {
+    InsightCard(title = stringResource(Res.string.insights_plateau_alert), definition = "Movements with stalled peak load progression.", timeframe = "Recent comparable sessions", soWhat = "Change reps, tempo, or exercise variant to restart overload.") {
         if (plateaus.isEmpty()) {
             PlaceholderText(stringResource(Res.string.no_plateaus))
         } else {
@@ -516,7 +547,7 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
 
 @Composable
 private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
-    InsightCard(title = stringResource(Res.string.insights_best_window)) {
+    InsightCard(title = stringResource(Res.string.insights_best_window), definition = "Time windows associated with your strongest sessions.", timeframe = "Last 28 days", soWhat = "Schedule key sessions in your best-performing window.") {
         if (analysis.optimalWindow == null) {
             PlaceholderText(
                 if (analysis.windowCounts.isEmpty()) {
@@ -600,7 +631,49 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
 // ---- Shared Components ----
 
 @Composable
-private fun InsightCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun InsightContextBlock(
+    title: String,
+    definition: String,
+    timeframe: String,
+    soWhat: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(definition, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TimeframeBadge(timeframe)
+        Text("So what? $soWhat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun InsightHierarchyHeader(title: String, subtitle: String) {
+    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun TimeframeBadge(label: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(999.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun InsightCard(
+    title: String,
+    definition: String,
+    timeframe: String,
+    soWhat: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -619,6 +692,12 @@ private fun InsightCard(title: String, content: @Composable ColumnScope.() -> Un
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(definition, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(6.dp))
+            TimeframeBadge(timeframe)
+            Spacer(modifier = Modifier.height(6.dp))
+            Text("So what? $soWhat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
             Spacer(modifier = Modifier.height(8.dp))
             content()
         }
