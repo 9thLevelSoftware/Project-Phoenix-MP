@@ -35,6 +35,7 @@ object SmartSuggestionsEngine {
     private const val PLATEAU_WEIGHT_TOLERANCE = 0.5f
 
     private const val MIN_SESSIONS_FOR_OPTIMAL = 3
+    private const val MIN_DISTINCT_DAYS_FOR_OPTIMAL = 2
 
     /**
      * SUGG-01: Compute weekly volume per muscle group.
@@ -251,31 +252,47 @@ object SmartSuggestionsEngine {
         val byWindow = sessions.groupBy { classifyTimeWindow(it.timestamp, timeZone) }
 
         val windowCounts = mutableMapOf<TimeWindow, Int>()
-        val windowAvgVolumes = mutableMapOf<TimeWindow, Float>()
+        val windowAvgIntensity = mutableMapOf<TimeWindow, Float>()
+        val windowDistinctDays = mutableMapOf<TimeWindow, Int>()
 
         for ((window, windowSessions) in byWindow) {
             windowCounts[window] = windowSessions.size
             val totalVolume = windowSessions.sumOf {
                 (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble()
             }.toFloat()
-            windowAvgVolumes[window] = totalVolume / windowSessions.size
+            val totalWorkingReps = windowSessions.sumOf { it.workingReps }
+            val averageIntensity = if (totalWorkingReps > 0) {
+                totalVolume / totalWorkingReps
+            } else {
+                0f
+            }
+            windowAvgIntensity[window] = averageIntensity
+
+            val distinctDays = windowSessions
+                .map { Instant.fromEpochMilliseconds(it.timestamp).toLocalDateTime(timeZone).date }
+                .toSet()
+                .size
+            windowDistinctDays[window] = distinctDays
         }
 
-        // Find optimal: window with highest avg volume, minimum 3 sessions
-        val optimal = windowAvgVolumes
-            .filter { (window, _) -> (windowCounts[window] ?: 0) >= MIN_SESSIONS_FOR_OPTIMAL }
+        // Find optimal: window with highest average intensity, with confidence gating.
+        val optimal = windowAvgIntensity
+            .filter { (window, _) ->
+                (windowCounts[window] ?: 0) >= MIN_SESSIONS_FOR_OPTIMAL &&
+                    (windowDistinctDays[window] ?: 0) >= MIN_DISTINCT_DAYS_FOR_OPTIMAL
+            }
             .maxByOrNull { it.value }
             ?.key
 
         val suggestion = if (optimal != null) {
-            "Your best performance is during ${formatTimeWindow(optimal)} sessions. " +
+            "Your highest average intensity is during ${formatTimeWindow(optimal)} sessions. " +
                 "Try to schedule your key workouts during this time."
         } else {
-            "Train at more consistent times to identify your optimal training window."
+            "Train at consistent times with more sessions across different days to identify your highest-intensity window."
         }
 
         return TimeOfDayAnalysis(
-            windowVolumes = windowAvgVolumes,
+            windowVolumes = windowAvgIntensity,
             windowCounts = windowCounts,
             optimalWindow = optimal,
             suggestion = suggestion,
