@@ -59,8 +59,6 @@ import com.devil.phoenixproject.util.format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -112,7 +110,6 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
 
     var nowMs by remember { mutableStateOf(currentTimeMillis()) }
     val twentyEightDaysMs = 28L * 24 * 60 * 60 * 1000
-    val nowRefreshIntervalMs = 60_000L
 
     var isLoading by remember { mutableStateOf(true) }
     var sessionSummaries by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
@@ -133,12 +130,6 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         isLoading = false
     }
 
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            delay(nowRefreshIntervalMs)
-            nowMs = currentTimeMillis()
-        }
-    }
 
     if (isLoading) {
         Box(
