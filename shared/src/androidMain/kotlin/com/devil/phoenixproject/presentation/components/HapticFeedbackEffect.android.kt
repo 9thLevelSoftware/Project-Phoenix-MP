@@ -260,7 +260,7 @@ private fun playSound(
         return
     }
 
-    val audioFocusSession = requestTransientDuckAudioFocus(context)
+    val audioFocusSession = requestTransientDuckAudioFocus(context, AudioAttributes.USAGE_GAME)
 
     try {
         val streamId = soundPool.play(
@@ -319,19 +319,18 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     }
     if (resId == 0) return
 
-    val audioFocusSession = requestTransientDuckAudioFocus(context)
+    val playbackUsage = if (DeviceInfo.isFireOS()) {
+        AudioAttributes.USAGE_MEDIA
+    } else {
+        AudioAttributes.USAGE_GAME
+    }
+    val audioFocusSession = requestTransientDuckAudioFocus(context, playbackUsage)
 
     try {
         // Fire OS: Use USAGE_MEDIA to work around SoundPool volume bug
         // Standard Android: Use USAGE_GAME to mix with music without interrupting
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(
-                if (DeviceInfo.isFireOS()) {
-                    AudioAttributes.USAGE_MEDIA
-                } else {
-                    AudioAttributes.USAGE_GAME
-                },
-            )
+            .setUsage(playbackUsage)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
@@ -363,7 +362,10 @@ private interface AudioFocusSession {
     fun abandon()
 }
 
-private fun requestTransientDuckAudioFocus(context: Context): AudioFocusSession {
+private fun requestTransientDuckAudioFocus(
+    context: Context,
+    playbackUsage: Int,
+): AudioFocusSession {
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         ?: return object : AudioFocusSession {
             override fun abandon() = Unit
@@ -374,7 +376,7 @@ private fun requestTransientDuckAudioFocus(context: Context): AudioFocusSession 
             val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                 .setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setUsage(playbackUsage)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build(),
                 )
