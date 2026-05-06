@@ -362,7 +362,7 @@
     <string name="insights_legs">Legs</string>
     <string name="insights_well_balanced">Tu entrenamiento está bien equilibrado</string>
     <string name="insights_days_ago">Hace %1$d días</string>
-    <string name="insights_need_more_sessions">Se necesitan al menos 3 sesiones en 2+ días por franja</string>
+    <string name="insights_need_more_sessions">Se necesitan más sesiones en distintos días para identificar tu mejor franja</string>
     <string name="insights_perform_best_in">Tu mayor intensidad promedio está en la</string>
 
     <!-- ==================== Issue 3: ExerciseConfigModal ==================== -->

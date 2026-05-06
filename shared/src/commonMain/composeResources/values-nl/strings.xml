@@ -364,7 +364,7 @@
     <string name="insights_legs">Benen</string>
     <string name="insights_well_balanced">Je training is goed gebalanceerd</string>
     <string name="insights_days_ago">%1$d dagen geleden</string>
-    <string name="insights_need_more_sessions">Minimaal 3 sessies op 2+ dagen per tijdvenster nodig</string>
+    <string name="insights_need_more_sessions">Meer sessies op verschillende dagen nodig om je beste tijdvenster te bepalen</string>
     <string name="insights_perform_best_in">Je hoogste gemiddelde intensiteit is in de</string>
 
     <!-- Issue 3: ExerciseConfigModal -->

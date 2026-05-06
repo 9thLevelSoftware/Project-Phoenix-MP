@@ -362,7 +362,7 @@
     <string name="insights_legs">Legs</string>
     <string name="insights_well_balanced">Dein Training ist gut ausbalanciert</string>
     <string name="insights_days_ago">Vor %1$d Tagen</string>
-    <string name="insights_need_more_sessions">Mindestens 3 Sessions an 2+ Tagen pro Zeitfenster nötig</string>
+    <string name="insights_need_more_sessions">Mehr Sessions an unterschiedlichen Tagen nötig, um dein bestes Zeitfenster zu erkennen</string>
     <string name="insights_perform_best_in">Deine höchste durchschnittliche Intensität ist am</string>
 
     <!-- ==================== Issue 3: ExerciseConfigModal ==================== -->
