@@ -36,6 +36,9 @@ class ReadinessEngineTest {
         cableCount = cableCount,
     )
 
+    private fun volume(session: SessionSummary): Float =
+        (session.weightPerCableKg * session.cableMultiplier * session.workingReps)
+
     /**
      * Creates a set of sessions spread over the given number of days,
      * all within the last [days] days from NOW. Useful for setting up
@@ -110,7 +113,6 @@ class ReadinessEngineTest {
         assertIs<ReadinessResult.InsufficientData>(result)
     }
 
-
     @Test
     fun fourteenDayBoundaryIsInclusiveForRecentSessionCount() {
         val sessions = listOf(
@@ -143,19 +145,42 @@ class ReadinessEngineTest {
         val result = ReadinessEngine.computeReadiness(sessions, NOW)
         assertIs<ReadinessResult.Ready>(result)
 
-        val expectedAcuteVolume = listOf(
-            session(timestamp = NOW - 7 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 8),
-            session(timestamp = NOW - 3 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
-            session(timestamp = NOW - 1 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
-        ).sumOf { (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble() }.toFloat()
+        val chronicBoundarySession = sessions[1]
+        val fourteenDaySession = sessions[2]
+        val acuteBoundarySession = sessions[3]
+        val recentSessionA = sessions[4]
+        val recentSessionB = sessions[5]
 
-        val expectedChronicTotal = listOf(
-            session(timestamp = NOW - 28 * ONE_DAY_MS, weightPerCableKg = 20f, workingReps = 10),
+        val expectedAcuteVolume =
+            volume(acuteBoundarySession) + volume(recentSessionA) + volume(recentSessionB)
+
+        val expectedChronicTotal =
+            volume(chronicBoundarySession) + volume(fourteenDaySession) +
+                volume(acuteBoundarySession) + volume(recentSessionA) + volume(recentSessionB)
+
+        assertEquals(expectedAcuteVolume, result.acuteVolumeKg)
+        assertEquals(expectedChronicTotal / 4f, result.chronicWeeklyAvgKg)
+    }
+
+    @Test
+    fun sessionsBeforeBoundariesAreExcludedFromAcuteAndChronicWindows() {
+        val sessions = listOf(
+            session(timestamp = NOW - 35 * ONE_DAY_MS, weightPerCableKg = 10f, workingReps = 5),
+            // 1 ms before 28-day cutoff (excluded from chronic)
+            session(timestamp = NOW - 28 * ONE_DAY_MS - 1, weightPerCableKg = 90f, workingReps = 12),
             session(timestamp = NOW - 14 * ONE_DAY_MS, weightPerCableKg = 15f, workingReps = 6),
-            session(timestamp = NOW - 7 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 8),
+            // 1 ms before 7-day cutoff (excluded from acute, included in chronic)
+            session(timestamp = NOW - 7 * ONE_DAY_MS - 1, weightPerCableKg = 80f, workingReps = 10),
             session(timestamp = NOW - 3 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
-            session(timestamp = NOW - 1 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
-        ).sumOf { (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble() }.toFloat()
+            session(timestamp = NOW - ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
+        )
+
+        val result = ReadinessEngine.computeReadiness(sessions, NOW)
+        assertIs<ReadinessResult.Ready>(result)
+
+        val expectedAcuteVolume = volume(sessions[4]) + volume(sessions[5])
+        val expectedChronicTotal =
+            volume(sessions[2]) + volume(sessions[3]) + volume(sessions[4]) + volume(sessions[5])
 
         assertEquals(expectedAcuteVolume, result.acuteVolumeKg)
         assertEquals(expectedChronicTotal / 4f, result.chronicWeeklyAvgKg)
