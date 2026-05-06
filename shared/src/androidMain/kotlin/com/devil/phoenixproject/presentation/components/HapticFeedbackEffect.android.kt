@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.components
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.SoundPool
@@ -257,6 +258,8 @@ private fun playSound(
         return
     }
 
+    val audioFocusSession = requestTransientDuckAudioFocus(context)
+
     try {
         val streamId = soundPool.play(
             soundId,
@@ -274,6 +277,8 @@ private fun playSound(
     } catch (e: Exception) {
         Logger.w(e) { "SoundPool.play threw for $event — MediaPlayer fallback" }
         playWithMediaPlayer(event, context)
+    } finally {
+        audioFocusSession.abandon()
     }
 }
 
@@ -310,6 +315,8 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     }
     if (resId == 0) return
 
+    val audioFocusSession = requestTransientDuckAudioFocus(context)
+
     try {
         // Fire OS: Use USAGE_MEDIA to work around SoundPool volume bug
         // Standard Android: Use USAGE_GAME to mix with music without interrupting
@@ -326,10 +333,67 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
 
         val mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0) ?: return
         mediaPlayer.setVolume(1.0f, 1.0f)
-        mediaPlayer.setOnCompletionListener { it.release() }
+        mediaPlayer.setOnCompletionListener {
+            it.release()
+            audioFocusSession.abandon()
+        }
         mediaPlayer.start()
     } catch (_: Exception) {
         // Silently fail - sound is not critical
+        audioFocusSession.abandon()
+    }
+}
+
+private interface AudioFocusSession {
+    fun abandon()
+}
+
+private fun requestTransientDuckAudioFocus(context: Context): AudioFocusSession {
+    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        ?: return object : AudioFocusSession {
+            override fun abandon() = Unit
+        }
+
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        try {
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                .setAcceptsDelayedFocusGain(false)
+                .setWillPauseWhenDucked(false)
+                .build()
+            audioManager.requestAudioFocus(request)
+            object : AudioFocusSession {
+                override fun abandon() {
+                    try {
+                        audioManager.abandonAudioFocusRequest(request)
+                    } catch (_: Exception) {
+                        // Best effort
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            object : AudioFocusSession {
+                override fun abandon() = Unit
+            }
+        }
+    } else {
+        @Suppress("DEPRECATION")
+        audioManager.requestAudioFocus(
+            null,
+            AudioManager.STREAM_MUSIC,
+            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,
+        )
+        object : AudioFocusSession {
+            override fun abandon() {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(null)
+            }
+        }
     }
 }
 
