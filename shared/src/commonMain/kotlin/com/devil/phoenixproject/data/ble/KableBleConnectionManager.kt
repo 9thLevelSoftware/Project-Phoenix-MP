@@ -1060,7 +1060,7 @@ class KableBleConnectionManager(
             val elapsedMs = currentTimeMillis() - attemptStart
 
             if (rawResult.isSuccess) {
-                log.i { "[#333 Flag H] Raw GATT write succeeded in ${elapsedMs}ms" }
+                log.i { "[#333 Flag H] Raw GATT write INITIATED in ${elapsedMs}ms (quarantine begins)" }
                 logRepo.debug(
                     LogEventType.COMMAND_SENT,
                     "Command sent (raw GATT, Flag H)",
@@ -1069,24 +1069,10 @@ class KableBleConnectionManager(
                     "Size: ${command.size} bytes, elapsed: ${elapsedMs}ms",
                 )
 
-                // Post-CONFIG diagnostic read (still use Kable for reads — they're not the problem)
-                val delayMs = if (isProgramConfig) 350L else 200L
-                scope.launch {
-                    delay(delayMs)
-                    try {
-                        val data = withTimeoutOrNull(500L) {
-                            bleQueue.read { p.read(diagnosticCharacteristic) }
-                        }
-                        if (data != null) {
-                            log.d { "Post-CONFIG diagnostic read (${data.size} bytes)" }
-                            parseDiagnosticData(data)
-                        } else {
-                            log.d { "Post-CONFIG diagnostic read timed out" }
-                        }
-                    } catch (e: Exception) {
-                        log.w { "Post-CONFIG diagnostic read failed: ${e.message}" }
-                    }
-                }
+                // v7 quarantine: suppress ALL BLE reads after raw CONFIG write.
+                // The quarantine in ActiveSessionEngine enforces total BLE silence.
+                // This diagnostic read would race with the pending onCharacteristicWrite callback.
+                log.i { "[#333 Flag H] Skipping post-CONFIG diagnostic read (quarantine active)" }
 
                 return Result.success(Unit)
             } else {
