@@ -110,6 +110,57 @@ class ReadinessEngineTest {
         assertIs<ReadinessResult.InsufficientData>(result)
     }
 
+
+    @Test
+    fun fourteenDayBoundaryIsInclusiveForRecentSessionCount() {
+        val sessions = listOf(
+            session(timestamp = NOW - 35 * ONE_DAY_MS),
+            session(timestamp = NOW - 30 * ONE_DAY_MS),
+            session(timestamp = NOW - 20 * ONE_DAY_MS),
+            // Exactly at 14-day cutoff; should count as recent under inclusive policy
+            session(timestamp = NOW - 14 * ONE_DAY_MS),
+            session(timestamp = NOW - 10 * ONE_DAY_MS),
+            session(timestamp = NOW - 1 * ONE_DAY_MS),
+        )
+        val result = ReadinessEngine.computeReadiness(sessions, NOW)
+        assertIs<ReadinessResult.Ready>(result)
+    }
+
+    @Test
+    fun sevenAndTwentyEightDayBoundariesAreInclusiveForLoadWindows() {
+        val sessions = listOf(
+            // Ensure history span >= 28 days
+            session(timestamp = NOW - 35 * ONE_DAY_MS, weightPerCableKg = 10f, workingReps = 5),
+            // Exactly at chronic window boundary; must be included in chronic volume
+            session(timestamp = NOW - 28 * ONE_DAY_MS, weightPerCableKg = 20f, workingReps = 10),
+            session(timestamp = NOW - 14 * ONE_DAY_MS, weightPerCableKg = 15f, workingReps = 6),
+            // Exactly at acute boundary; must be included in acute and chronic volume
+            session(timestamp = NOW - 7 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 8),
+            session(timestamp = NOW - 3 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
+            session(timestamp = NOW - 1 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
+        )
+
+        val result = ReadinessEngine.computeReadiness(sessions, NOW)
+        assertIs<ReadinessResult.Ready>(result)
+
+        val expectedAcuteVolume = listOf(
+            session(timestamp = NOW - 7 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 8),
+            session(timestamp = NOW - 3 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
+            session(timestamp = NOW - 1 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
+        ).sumOf { (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble() }.toFloat()
+
+        val expectedChronicTotal = listOf(
+            session(timestamp = NOW - 28 * ONE_DAY_MS, weightPerCableKg = 20f, workingReps = 10),
+            session(timestamp = NOW - 14 * ONE_DAY_MS, weightPerCableKg = 15f, workingReps = 6),
+            session(timestamp = NOW - 7 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 8),
+            session(timestamp = NOW - 3 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
+            session(timestamp = NOW - 1 * ONE_DAY_MS, weightPerCableKg = 25f, workingReps = 7),
+        ).sumOf { (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble() }.toFloat()
+
+        assertEquals(expectedAcuteVolume, result.acuteVolumeKg)
+        assertEquals(expectedChronicTotal / 4f, result.chronicWeeklyAvgKg)
+    }
+
     // ==========================================================
     // ACWR Sweet Spot (0.8-1.3) -> HIGH readiness (70-100)
     // ==========================================================
