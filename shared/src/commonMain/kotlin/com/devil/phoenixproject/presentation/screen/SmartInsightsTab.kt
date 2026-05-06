@@ -216,7 +216,14 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             val readiness = remember(sessionSummaries, nowMs) {
                 ReadinessEngine.computeReadiness(sessionSummaries, nowMs)
             }
-            ReadinessBriefingCard(readinessResult = readiness)
+            InsightCard(
+                title = "Training Readiness",
+                definition = "Acute vs chronic workload readiness signal.",
+                timeframe = "Acute 7d vs Chronic 28d",
+                soWhat = "If readiness is low, reduce intensity/volume and prioritize recovery.",
+            ) {
+                ReadinessBriefingCard(readinessResult = readiness)
+            }
         }
     }
 }
