@@ -117,10 +117,14 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     var weightHistory by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
 
     LaunchedEffect(profileId) {
-        nowMs = currentTimeMillis()
+        // Option A: fetch a broad 28-day slice once, then compute every card's time window from
+        // the exact same anchor timestamp. This avoids drift where query and computation use
+        // slightly different "now" values.
+        val snapshotNowMs = currentTimeMillis()
+        nowMs = snapshotNowMs
         withContext(Dispatchers.IO) {
             sessionSummaries =
-                repository.getSessionSummariesSince(nowMs - twentyEightDaysMs, profileId)
+                repository.getSessionSummariesSince(snapshotNowMs - twentyEightDaysMs, profileId)
             exerciseLastPerformed = repository.getExerciseLastPerformed(profileId)
             weightHistory = repository.getExerciseWeightHistory(profileId)
         }

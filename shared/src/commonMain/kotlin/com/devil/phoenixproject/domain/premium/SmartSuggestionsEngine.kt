@@ -40,6 +40,10 @@ object SmartSuggestionsEngine {
      * SUGG-01: Compute weekly volume per muscle group.
      * Filters sessions from current 7-day window (nowMs - 7 days to nowMs).
      * totalKg = sum of (weightPerCableKg * cableMultiplier * workingReps) per session.
+     *
+     * NOTE: Callers should pass the same effective nowMs used to fetch sessions from storage.
+     * In SmartInsightsTab we intentionally use Option A (single 28-day fetch + shared nowMs),
+     * then derive the weekly window here to keep query and computation aligned.
      */
     fun computeWeeklyVolume(sessions: List<SessionSummary>, nowMs: Long): WeeklyVolumeReport {
         val weekStart = nowMs - SEVEN_DAYS_MS
