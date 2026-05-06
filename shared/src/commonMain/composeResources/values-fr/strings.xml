@@ -362,7 +362,7 @@
     <string name="insights_legs">Legs</string>
     <string name="insights_well_balanced">Votre entraînement est bien équilibré</string>
     <string name="insights_days_ago">Il y a %1$d jours</string>
-    <string name="insights_need_more_sessions">Train more to unlock time insights (need 10+ sessions)</string>
+    <string name="insights_need_more_sessions">Au moins 3 séances sur 2+ jours par créneau sont nécessaires</string>
     <string name="insights_perform_best_in">Votre intensité moyenne la plus élevée est le</string>
 
     <!-- ==================== Issue 3: ExerciseConfigModal ==================== -->

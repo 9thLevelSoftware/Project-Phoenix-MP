@@ -400,7 +400,7 @@
     <string name="insights_legs">Legs</string>
     <string name="insights_well_balanced">Your training is well-balanced</string>
     <string name="insights_days_ago">%1$d days ago</string>
-    <string name="insights_need_more_sessions">Train more to unlock time insights (need 10+ sessions)</string>
+    <string name="insights_need_more_sessions">Need at least 3 sessions across 2+ days in a time window</string>
     <string name="insights_perform_best_in">Your highest average intensity is in the</string>
 
     <!-- ==================== Issue 3: ExerciseConfigModal ==================== -->
