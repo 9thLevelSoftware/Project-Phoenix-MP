@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.domain.premium
 
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.ReadinessResult
+import com.devil.phoenixproject.domain.model.ReadinessStatus
+import com.devil.phoenixproject.domain.model.SessionSummary
+import com.devil.phoenixproject.domain.model.cableMultiplier
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
