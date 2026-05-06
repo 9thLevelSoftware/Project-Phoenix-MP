@@ -218,8 +218,10 @@ fun ProgressTab(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixproject.ui.theme.ThemeMode) {
+    // Dashboard ownership: recent-session snapshot/trends source
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
+    // Progress ownership: complete history for record-level drill-down
     val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
     val personalRecords by viewModel.allPersonalRecords.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()

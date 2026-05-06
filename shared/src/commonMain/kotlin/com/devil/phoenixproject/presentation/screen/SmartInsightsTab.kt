@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -177,15 +178,21 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             )
         }
 
+        item { InsightHierarchyHeader("1. Snapshot", "Current status") }
+
         // Section A: Weekly Volume (SUGG-01)
         item {
             WeeklyVolumeCard(weeklyVolume)
         }
 
+        item { InsightHierarchyHeader("2. Trends", "How it changed") }
+
         // Section B: Balance Analysis (SUGG-02)
         item {
             BalanceAnalysisCard(balanceAnalysis)
         }
+
+        item { InsightHierarchyHeader("3. Diagnostics", "Why") }
 
         // Section C: Neglected Exercises (SUGG-03)
         item {
@@ -196,6 +203,8 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         item {
             PlateauDetectionCard(plateaus)
         }
+
+        item { InsightHierarchyHeader("4. Actions", "What to do next") }
 
         // Section E: Optimal Training Time (SUGG-05)
         item {
@@ -216,7 +225,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
 
 @Composable
 private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
-    InsightCard(title = stringResource(Res.string.insights_weekly_volume)) {
+    InsightCard(title = stringResource(Res.string.insights_weekly_volume), definition = "Weekly muscle-group workload breakdown.", timeframe = "Last 7 days", soWhat = "Use as drill-down detail after checking the main total-volume trend.") {
         if (report.volumes.isEmpty()) {
             PlaceholderText(stringResource(Res.string.no_workouts_this_week))
         } else {
@@ -311,7 +320,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
 
 @Composable
 private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
-    InsightCard(title = stringResource(Res.string.insights_training_balance)) {
+    InsightCard(title = stringResource(Res.string.insights_training_balance), definition = "Push/pull/legs share of your recent volume.", timeframe = "Last 28 days", soWhat = "Shift upcoming sessions toward the underrepresented bucket.") {
         val total = analysis.pushVolume + analysis.pullVolume + analysis.legsVolume
 
         if (total <= 0f) {
@@ -420,7 +429,7 @@ private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
 
 @Composable
 private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
-    InsightCard(title = stringResource(Res.string.insights_exercise_variety)) {
+    InsightCard(title = stringResource(Res.string.insights_exercise_variety), definition = "Exercises not trained recently.", timeframe = "Last 28 days", soWhat = "Reintroduce one neglected movement this week to maintain capacity.") {
         if (neglected.isEmpty()) {
             PlaceholderText(stringResource(Res.string.great_variety))
         } else {
@@ -470,7 +479,7 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
 
 @Composable
 private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
-    InsightCard(title = stringResource(Res.string.insights_plateau_alert)) {
+    InsightCard(title = stringResource(Res.string.insights_plateau_alert), definition = "Movements with stalled peak load progression.", timeframe = "Recent comparable sessions", soWhat = "Change reps, tempo, or exercise variant to restart overload.") {
         if (plateaus.isEmpty()) {
             PlaceholderText(stringResource(Res.string.no_plateaus))
         } else {
@@ -516,7 +525,7 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
 
 @Composable
 private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
-    InsightCard(title = stringResource(Res.string.insights_best_window)) {
+    InsightCard(title = stringResource(Res.string.insights_best_window), definition = "Time windows associated with your strongest sessions.", timeframe = "Last 28 days", soWhat = "Schedule key sessions in your best-performing window.") {
         if (analysis.optimalWindow == null) {
             PlaceholderText(
                 if (analysis.windowCounts.isEmpty()) {
@@ -600,7 +609,20 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
 // ---- Shared Components ----
 
 @Composable
-private fun InsightCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun InsightHierarchyHeader(title: String, subtitle: String) {
+    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+
+@Composable
+private fun InsightCard(
+    title: String,
+    definition: String,
+    timeframe: String,
+    soWhat: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -619,6 +641,12 @@ private fun InsightCard(title: String, content: @Composable ColumnScope.() -> Un
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(definition, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(6.dp))
+            AssistChip(onClick = {}, enabled = false, label = { Text(timeframe) })
+            Spacer(modifier = Modifier.height(6.dp))
+            Text("So what? $soWhat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
             Spacer(modifier = Modifier.height(8.dp))
             content()
         }
