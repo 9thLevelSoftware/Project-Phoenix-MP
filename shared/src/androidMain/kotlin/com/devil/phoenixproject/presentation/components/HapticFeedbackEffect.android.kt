@@ -8,6 +8,8 @@ import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.SoundPool
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -272,13 +274,15 @@ private fun playSound(
         // If SoundPool fails, try MediaPlayer fallback
         if (streamId == 0) {
             Logger.d { "SoundPool.play returned 0 for $event (soundId=$soundId) — MediaPlayer fallback" }
+            audioFocusSession.abandon()
             playWithMediaPlayer(event, context)
+        } else {
+            audioFocusSession.abandonAfterDelay()
         }
     } catch (e: Exception) {
         Logger.w(e) { "SoundPool.play threw for $event — MediaPlayer fallback" }
-        playWithMediaPlayer(event, context)
-    } finally {
         audioFocusSession.abandon()
+        playWithMediaPlayer(event, context)
     }
 }
 
@@ -331,7 +335,11 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
-        val mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0) ?: return
+        val mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0)
+        if (mediaPlayer == null) {
+            audioFocusSession.abandon()
+            return
+        }
         mediaPlayer.setVolume(1.0f, 1.0f)
         mediaPlayer.setOnCompletionListener {
             it.release()
@@ -342,6 +350,13 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
         // Silently fail - sound is not critical
         audioFocusSession.abandon()
     }
+}
+
+
+private fun AudioFocusSession.abandonAfterDelay(delayMs: Long = 1500L) {
+    Handler(Looper.getMainLooper()).postDelayed({
+        abandon()
+    }, delayMs)
 }
 
 private interface AudioFocusSession {
