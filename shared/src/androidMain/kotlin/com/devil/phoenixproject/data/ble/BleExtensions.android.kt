@@ -103,32 +103,25 @@ actual suspend fun Peripheral.forceCloseGatt() {
 }
 
 /**
- * Issue #333 Flag H: Write to BluetoothGatt directly, bypassing Kable's
+ * Issue #333 Flag H v7: Write to BluetoothGatt directly, bypassing Kable's
  * connectionScope.async that causes "StandaloneCoroutine was cancelled" on BCM4389.
  *
+ * ## Critical distinction (v7)
+ * writeCharacteristic() returning true means the BLE stack INITIATED the write.
+ * The actual result (success or GATT_ERROR) arrives asynchronously via the
+ * onCharacteristicWrite callback. Previous versions (v4-v6) treated initiation
+ * as success and immediately started post-write activity — which is wrong.
+ *
+ * v7 returns immediately after initiation. The CALLER is responsible for:
+ * 1. Enforcing a quarantine period (no BLE traffic)
+ * 2. Checking connection state after the quarantine
+ * 3. Deciding whether the write actually succeeded
+ *
  * ## Evolution
- * - v4: Raw write + no stale response handling → CONFIG succeeded in 53ms
- *   but disconnect 12s later (onCharacteristicWrite poisoned Kable's channel)
- * - v5: Added guard mutex lock + blocking channel drain → 2009ms timeout,
- *   callback never arrived because blocking receive() + mutex contention
- *   stalled the whole operation
- * - v6: Minimal approach — dispatch on Kable's own threading dispatcher for
- *   correct thread affinity, use non-blocking tryReceive() after a short
- *   settle delay. NO guard mutex (Flag F already stopped polling — nothing
- *   competes). This matches v4's simplicity while cleaning up the channel.
- *
- * ## Why no guard mutex?
- * Flag F quiesces all polling 150ms before the write. With no Kable
- * operations in flight, the guard mutex is uncontested — acquiring it just
- * adds latency and risk. v5 proved that blocking on the mutex + channel
- * receive together causes the 2009ms timeout. Keep it simple.
- *
- * ## Why dispatch on Kable's threading dispatcher?
- * Kable's Connection.execute() dispatches GATT actions via
- * withContext(dispatcher) which routes to the Handler thread (API 26+).
- * The BluetoothGattCallback also fires on this handler. Using the same
- * dispatcher ensures correct thread affinity and matches the official app's
- * single-threaded BLE approach.
+ * - v4: Raw write, no response handling → 53ms acceptance, disconnect 12s later
+ * - v5: Guard mutex + blocking drain → 2009ms timeout (deadlock)
+ * - v6: Non-blocking tryReceive() drain → still uncertain about write success
+ * - v7: No drain, no delay — quarantine experiment. Caller checks connection state.
  *
  * The write uses the deprecated (pre-API 33) setValue+writeCharacteristic path
  * intentionally — this is exactly what the official app uses.
@@ -144,7 +137,6 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
         return Result.failure(IllegalStateException("Not an AndroidPeripheral"))
     }
 
-    // Get the Connection object (holds gatt, threading dispatcher, and callback)
     val connection = findConnection(androidPeripheral)
     if (connection == null) {
         Logger.w("BleExtensions") { "[Flag H] Cannot raw-write: Connection not found" }
@@ -157,7 +149,6 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
         return Result.failure(IllegalStateException("BluetoothGatt not found"))
     }
 
-    // Find the TX characteristic from the GATT service list
     val uuid = UUID.fromString(characteristicUuid)
     var txChar: BluetoothGattCharacteristic? = null
     for (service in gatt.services ?: emptyList()) {
@@ -172,14 +163,10 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
         return Result.failure(IllegalStateException("TX characteristic not found"))
     }
 
-    // Get Kable's threading dispatcher and callback channel
     val kableDispatcher = findDispatcher(connection)
-    val responseChannel = findResponseChannel(connection)
 
     return try {
-        // Dispatch the raw write on Kable's threading dispatcher for correct
-        // thread affinity (Handler thread on API 26+). This matches how
-        // Connection.execute() dispatches GATT operations.
+        // Dispatch on Kable's handler thread for correct thread affinity.
         val writeContext = kableDispatcher ?: kotlinx.coroutines.Dispatchers.IO
         if (kableDispatcher != null) {
             Logger.d("BleExtensions") { "[Flag H] Dispatching on Kable's handler thread" }
@@ -200,76 +187,14 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
             return Result.failure(IllegalStateException("writeCharacteristic returned false (GATT busy)"))
         }
 
+        // v7 quarantine: writeCharacteristic() returning true means the BLE stack
+        // INITIATED the write. The real result comes via onCharacteristicWrite(status).
+        // We deliberately do NOT drain the channel or wait for the callback here.
+        // The caller (ActiveSessionEngine) will enforce a 2500ms quarantine and then
+        // probe connection state to determine if the write actually succeeded.
         Logger.i("BleExtensions") {
-            "[Flag H] Raw GATT write accepted: ${data.size} bytes"
-        }
-
-        // Short settle delay for the onCharacteristicWrite callback to fire.
-        // The callback pushes into Kable's onResponse channel (CONFLATED).
-        // We DON'T block waiting for it — that caused v5's 2009ms timeout.
-        // 150ms matches the official app's observed callback latency.
-        delay(150)
-
-        // Non-blocking drain: remove any stale response from the channel
-        // so the next Kable operation doesn't pick up our write response.
-        // tryReceive() returns immediately — no blocking, no timeout risk.
-        if (responseChannel != null) {
-            try {
-                @Suppress("UNCHECKED_CAST")
-                val channel = responseChannel as kotlinx.coroutines.channels.Channel<Any>
-                val result = channel.tryReceive()
-                if (result.isSuccess) {
-                    val drained = result.getOrNull()
-                    Logger.d("BleExtensions") {
-                        "[Flag H] Drained callback response: ${drained?.let { it::class.simpleName } ?: "null"}"
-                    }
-                } else if (result.isClosed) {
-                    // Channel closed = connection dropped (onConnectionStateChange → DISCONNECTED)
-                    Logger.w("BleExtensions") {
-                        "[Flag H] Response channel closed — connection may have dropped"
-                    }
-                } else {
-                    // No response yet — callback hasn't fired in 150ms.
-                    // This is OK: the callback will fire eventually and since
-                    // polling is stopped (Flag F), nothing will read the channel
-                    // before polling resumes. When polling resumes, the first
-                    // Kable read will acquire guard, and if there's a stale
-                    // write response it will get a type mismatch. To prevent
-                    // that, do one more drain attempt after a longer wait.
-                    Logger.d("BleExtensions") {
-                        "[Flag H] No callback yet after 150ms — retrying after 200ms"
-                    }
-                    delay(200)
-                    val retry = channel.tryReceive()
-                    if (retry.isSuccess) {
-                        Logger.d("BleExtensions") {
-                            "[Flag H] Drained callback on retry: ${retry.getOrNull()?.let { it::class.simpleName }}"
-                        }
-                    } else if (retry.isClosed) {
-                        Logger.w("BleExtensions") {
-                            "[Flag H] Channel closed on retry — connection dropped"
-                        }
-                    } else {
-                        // Still nothing after 350ms total. The write was accepted
-                        // by the BLE stack but no callback came. Either:
-                        // 1. BCM4389 is very slow (but not erroring)
-                        // 2. The callback fired but on a thread we can't see
-                        // Log it but proceed — the write WAS accepted.
-                        Logger.w("BleExtensions") {
-                            "[Flag H] No callback after 350ms — write was accepted, proceeding"
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Logger.w("BleExtensions") {
-                    "[Flag H] Channel drain error (non-fatal): ${e.message}"
-                }
-            }
-        } else {
-            Logger.w("BleExtensions") {
-                "[Flag H] Could not find response channel — 200ms settle fallback"
-            }
-            delay(200)
+            "[Flag H] Raw GATT write INITIATED (accepted by BLE stack): ${data.size} bytes. " +
+                "Quarantine begins — caller will probe connection state."
         }
 
         Result.success(Unit)
