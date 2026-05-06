@@ -35,6 +35,7 @@ object SmartSuggestionsEngine {
     private const val PLATEAU_WEIGHT_TOLERANCE = 0.5f
 
     private const val MIN_SESSIONS_FOR_OPTIMAL = 3
+    private var unknownMuscleGroupCount = 0
 
     /**
      * SUGG-01: Compute weekly volume per muscle group.
@@ -284,14 +285,28 @@ object SmartSuggestionsEngine {
 
     /**
      * Maps a muscle group string to a MovementCategory for balance analysis.
-     * Case-insensitive. Unknown groups default to CORE.
+     * Case-insensitive and supports aliases used by the exercise catalog.
+     * Unknown groups default to CORE and increment a fallback counter.
      */
-    internal fun classifyMuscleGroup(muscleGroup: String): MovementCategory = when (muscleGroup.lowercase().trim()) {
-        "chest", "shoulders", "triceps" -> MovementCategory.PUSH
-        "back", "biceps" -> MovementCategory.PULL
-        "legs", "glutes" -> MovementCategory.LEGS
-        "core", "full body" -> MovementCategory.CORE
-        else -> MovementCategory.CORE
+    internal fun classifyMuscleGroup(muscleGroup: String): MovementCategory {
+        val normalized = muscleGroup.lowercase().trim()
+        return when (normalized) {
+            "chest", "pecs", "pectorals", "shoulders", "triceps", "front delts", "anterior delts", "side delts", "lateral delts" -> MovementCategory.PUSH
+            "back", "biceps", "lats", "latissimus", "traps", "trapezius", "rear delts", "posterior delts", "rhomboids" -> MovementCategory.PULL
+            "legs", "glutes", "quads", "quadriceps", "hamstrings", "hams", "calves", "adductors", "abductors" -> MovementCategory.LEGS
+            "core", "abs", "abdominals", "obliques", "lower back", "full body" -> MovementCategory.CORE
+            else -> {
+                unknownMuscleGroupCount++
+                println("SmartSuggestionsEngine: Unmapped muscle group '$muscleGroup' (normalized='$normalized')")
+                MovementCategory.CORE
+            }
+        }
+    }
+
+    internal fun getUnknownMuscleGroupFallbackCount(): Int = unknownMuscleGroupCount
+
+    internal fun resetUnknownMuscleGroupFallbackCount() {
+        unknownMuscleGroupCount = 0
     }
 
     /**

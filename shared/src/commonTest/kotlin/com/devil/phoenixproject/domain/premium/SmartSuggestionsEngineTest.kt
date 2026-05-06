@@ -417,8 +417,32 @@ class SmartSuggestionsEngineTest {
 
     @Test
     fun classifyUnknownDefaultsToCore() {
+        SmartSuggestionsEngine.resetUnknownMuscleGroupFallbackCount()
         assertEquals(MovementCategory.CORE, SmartSuggestionsEngine.classifyMuscleGroup("Unknown"))
         assertEquals(MovementCategory.CORE, SmartSuggestionsEngine.classifyMuscleGroup(""))
+        assertEquals(2, SmartSuggestionsEngine.getUnknownMuscleGroupFallbackCount())
+    }
+
+    @Test
+    fun classifyMuscleGroupAliases() {
+        assertEquals(MovementCategory.LEGS, SmartSuggestionsEngine.classifyMuscleGroup("Quads"))
+        assertEquals(MovementCategory.LEGS, SmartSuggestionsEngine.classifyMuscleGroup("hamstrings"))
+        assertEquals(MovementCategory.LEGS, SmartSuggestionsEngine.classifyMuscleGroup("CALVES"))
+
+        assertEquals(MovementCategory.PULL, SmartSuggestionsEngine.classifyMuscleGroup("Lats"))
+        assertEquals(MovementCategory.PULL, SmartSuggestionsEngine.classifyMuscleGroup("traps"))
+        assertEquals(MovementCategory.PULL, SmartSuggestionsEngine.classifyMuscleGroup("Rear Delts"))
+
+        assertEquals(MovementCategory.PUSH, SmartSuggestionsEngine.classifyMuscleGroup("Front Delts"))
+        assertEquals(MovementCategory.PUSH, SmartSuggestionsEngine.classifyMuscleGroup("Side Delts"))
+    }
+
+    @Test
+    fun unknownMuscleGroupFallbackCounterTracksTaxonomyGaps() {
+        SmartSuggestionsEngine.resetUnknownMuscleGroupFallbackCount()
+        SmartSuggestionsEngine.classifyMuscleGroup("Serratus")
+        SmartSuggestionsEngine.classifyMuscleGroup("Forearms")
+        assertEquals(2, SmartSuggestionsEngine.getUnknownMuscleGroupFallbackCount())
     }
 
     // ========== classifyTimeWindow timezone fix (BOARD-01) ==========
