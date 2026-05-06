@@ -123,20 +123,24 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         // slightly different "now" values.
         isLoading = true
         insightsAnchorNowMs = null
+        sessionSummaries = emptyList()
+        exerciseLastPerformed = emptyList()
+        weightHistory = emptyList()
         val snapshotNowMs = currentTimeMillis()
 
         try {
-            val fetchResult = withContext(Dispatchers.IO) {
-                Triple(
-                    repository.getSessionSummariesSince(snapshotNowMs - twentyEightDaysMs, profileId),
-                    repository.getExerciseLastPerformed(profileId),
-                    repository.getExerciseWeightHistory(profileId),
-                )
-            }
+            val (fetchedSessions, fetchedLastPerformed, fetchedWeightHistory) =
+                withContext(Dispatchers.IO) {
+                    Triple(
+                        repository.getSessionSummariesSince(snapshotNowMs - twentyEightDaysMs, profileId),
+                        repository.getExerciseLastPerformed(profileId),
+                        repository.getExerciseWeightHistory(profileId),
+                    )
+                }
 
-            sessionSummaries = fetchResult.first
-            exerciseLastPerformed = fetchResult.second
-            weightHistory = fetchResult.third
+            sessionSummaries = fetchedSessions
+            exerciseLastPerformed = fetchedLastPerformed
+            weightHistory = fetchedWeightHistory
             insightsAnchorNowMs = snapshotNowMs
         } finally {
             isLoading = false
