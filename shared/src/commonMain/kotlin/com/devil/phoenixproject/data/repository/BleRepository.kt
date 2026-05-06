@@ -218,6 +218,13 @@ interface BleRepository {
     fun isBleQueueLocked(): Boolean
 
     /**
+     * Get the current BLE connection state.
+     * Used by v7 quarantine experiment to check if connection survived
+     * the post-CONFIG silence period.
+     */
+    fun currentConnectionState(): ConnectionState
+
+    /**
      * Stop only monitor and heuristic polling, keeping diagnostic polling and heartbeat running.
      * Use this during bodyweight exercises to keep BLE connection "warm" (via diagnostic polling
      * at 500ms intervals) while not emitting workout metrics.

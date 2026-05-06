@@ -20,6 +20,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.IntegrationProvider
@@ -2329,7 +2330,6 @@ class ActiveSessionEngine(
                         Logger.w {
                             "BLE-ACTIVATION-VERIFY (temporary): offsets 0x48..0x5F => $activationTailDump"
                         }
-                        // Issue #390: Decode the key float values from packet bytes for readability
                         fun readFloatLE(buf: ByteArray, off: Int): Float {
                             val bits = (buf[off].toInt() and 0xFF) or
                                 ((buf[off + 1].toInt() and 0xFF) shl 8) or
@@ -2349,33 +2349,102 @@ class ActiveSessionEngine(
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
-                    // Issue #333 Flag F: re-arm polling on error so the connection
-                    // isn't left dead — the user can retry without reconnecting.
                     if (quiescePolling) bleRepository.startActiveWorkoutPolling()
                     return@launch
                 }
 
-                // Issue #333 Flag G: The official Vitruvian app's CommandId enum has no
-                // ID 3 (0x03). It sends ONLY the ActivationPacket (0x04) to start a
-                // workout. The 0x03 START command was invented by the parent repo and
-                // has no effect on the device — but sending it doubles the chance of
-                // hitting GATT_ERROR(133) on BCM4389 since the controller is still
-                // processing the 96-byte CONFIG write.
-                val skipPhantomStart = PixelGattFlags.skipPhantomStart
-                if (!effectiveParams.isEchoMode && !skipPhantomStart) {
-                    delay(100)
-                    try {
-                        val startCommand = BlePacketFactory.createStartCommand()
-                        bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
-                        Logger.i { "START command sent (0x03)" }
-                    } catch (e: Exception) {
-                        Logger.e(e) { "Failed to send START command" }
-                        coordinator._bleErrorEvents.tryEmit("Failed to start workout: ${e.message}")
-                        if (quiescePolling) bleRepository.startActiveWorkoutPolling()
+                // Issue #333 v7 Quarantine Experiment
+                // -----------------------------------------------------------------
+                // The raw GATT write was INITIATED (accepted by the BLE stack), but
+                // writeCharacteristic() returning true is NOT durable success.
+                // The actual result arrives via onCharacteristicWrite(status).
+                //
+                // QUARANTINE: For exactly 2500ms, perform ZERO BLE operations:
+                //   - No Kable reads (no diagnostic, no monitor, no heartbeat)
+                //   - No polling restart
+                //   - No START command (0x03)
+                //   - No channel drain
+                //
+                // After 2500ms, check Kable's connection state:
+                //   - Connected → write survived, post-write traffic was the problem
+                //   - Disconnected → CONFIG write itself failed (BCM4389 or peripheral)
+                //
+                // This is a ONE-TIME diagnostic experiment, not a permanent code path.
+                // -----------------------------------------------------------------
+                val useQuarantine = PixelGattFlags.rawGattWrite
+                if (useQuarantine) {
+                    val quarantineStartMs = currentTimeMillis()
+                    Logger.i { "[#333 QUARANTINE] === BEGIN === No BLE traffic for 2500ms ===" }
+
+                    delay(2500)
+
+                    val quarantineElapsed = currentTimeMillis() - quarantineStartMs
+                    Logger.i { "[#333 QUARANTINE] === END === (${quarantineElapsed}ms elapsed) ===" }
+
+                    // Check connection state via Kable's peripheral.state
+                    val currentState = bleRepository.currentConnectionState()
+                    Logger.i { "[#333 QUARANTINE] Connection state after quarantine: $currentState" }
+
+                    if (currentState !is ConnectionState.Connected) {
+                        Logger.e { "[#333 QUARANTINE] RESULT: Connection LOST during quarantine!" }
+                        Logger.e { "[#333 QUARANTINE] CONCLUSION: CONFIG write itself is the fault — " +
+                            "no post-write traffic was present to cause this." }
+                        coordinator._bleErrorEvents.tryEmit(
+                            "Quarantine test: connection lost during 2500ms silence after CONFIG write"
+                        )
+                        // Don't restart polling — connection is dead
                         return@launch
                     }
-                } else if (skipPhantomStart && !effectiveParams.isEchoMode) {
-                    Logger.i { "[#333 Flag G] Skipping phantom START command (0x03) — not in official protocol" }
+
+                    Logger.i { "[#333 QUARANTINE] Connection survived 2500ms silence!" }
+                    Logger.i { "[#333 QUARANTINE] Attempting one minimal probe read..." }
+
+                    // One minimal probe: send a small command to verify GATT is functional
+                    try {
+                        val probeResult = kotlinx.coroutines.withTimeoutOrNull(1000L) {
+                            bleRepository.sendWorkoutCommand(
+                                byteArrayOf(0x0A, 0x00, 0x00, 0x00) // INIT/status command — safe read
+                            )
+                        }
+                        if (probeResult != null && probeResult.isSuccess) {
+                            Logger.i { "[#333 QUARANTINE] Probe write succeeded — connection is alive!" }
+                            Logger.i { "[#333 QUARANTINE] CONCLUSION: Post-write traffic (polling, " +
+                                "diagnostic read, channel drain) was the cause of disconnects in v4-v6." }
+                        } else {
+                            Logger.w { "[#333 QUARANTINE] Probe write failed: ${probeResult?.exceptionOrNull()?.message}" }
+                            Logger.w { "[#333 QUARANTINE] Connection survived quarantine but cannot " +
+                                "write — GATT may be in degraded state." }
+                        }
+                    } catch (e: Exception) {
+                        Logger.w { "[#333 QUARANTINE] Probe exception: ${e.message}" }
+                    }
+
+                    // After quarantine + probe, resume normal flow
+                    Logger.i { "[#333 QUARANTINE] Resuming polling and workout state" }
+                }
+
+                // Issue #333 Flag G: skip phantom START (already handled by quarantine
+                // when Flag H is active — the quarantine enforces no-write period)
+                val skipPhantomStart = PixelGattFlags.skipPhantomStart
+                if (!useQuarantine) {
+                    // Non-quarantine path: original Flag G logic
+                    if (!effectiveParams.isEchoMode && !skipPhantomStart) {
+                        delay(100)
+                        try {
+                            val startCommand = BlePacketFactory.createStartCommand()
+                            bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
+                            Logger.i { "START command sent (0x03)" }
+                        } catch (e: Exception) {
+                            Logger.e(e) { "Failed to send START command" }
+                            coordinator._bleErrorEvents.tryEmit("Failed to start workout: ${e.message}")
+                            if (quiescePolling) bleRepository.startActiveWorkoutPolling()
+                            return@launch
+                        }
+                    } else if (skipPhantomStart && !effectiveParams.isEchoMode) {
+                        Logger.i { "[#333 Flag G] Skipping phantom START command (0x03) — not in official protocol" }
+                    }
+                } else if (!effectiveParams.isEchoMode) {
+                    Logger.i { "[#333 Flag G+H] Skipping START — quarantine enforces no-write period" }
                 }
 
                 bleRepository.startActiveWorkoutPolling()

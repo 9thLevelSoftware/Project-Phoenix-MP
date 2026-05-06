@@ -278,6 +278,8 @@ class KableBleRepository : BleRepository {
 
     override fun isBleQueueLocked(): Boolean = bleQueue.isLocked
 
+    override fun currentConnectionState(): ConnectionState = _connectionState.value
+
     override fun stopMonitorPollingOnly() = pollingEngine.stopMonitorOnly()
 
     override fun restartDiagnosticPolling() {
