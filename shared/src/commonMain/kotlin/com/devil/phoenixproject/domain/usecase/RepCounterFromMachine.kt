@@ -280,7 +280,7 @@ class RepCounterFromMachine {
     ) {
         // Issue #210: Sync warmupTarget with machine's repsRomTotal if provided and different
         // This ensures our warmup tracking matches the machine's expectation
-        if (!isLegacyFormat && repsRomTotal > 0 && repsRomTotal != warmupTarget) {
+        if (!isLegacyFormat && warmupTarget > 0 && repsRomTotal > 0 && repsRomTotal != warmupTarget) {
             logDebug("⚠️ WARMUP SYNC: Machine's repsRomTotal=$repsRomTotal differs from our warmupTarget=$warmupTarget - syncing")
             warmupTarget = repsRomTotal
         }

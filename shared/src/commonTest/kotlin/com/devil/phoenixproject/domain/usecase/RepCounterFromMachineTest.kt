@@ -567,6 +567,27 @@ class RepCounterFromMachineTest {
         assertFalse(capturedEvents.any { it.type == RepType.WORKOUT_COMPLETE }, "WORKOUT_COMPLETE should NOT fire")
     }
 
+    @Test
+    fun `variable warmup sets ignore machine repsRomTotal warmup sync`() {
+        // Issue #411: Variable warm-up sets send warmupTarget=0 intentionally.
+        // Some firmware still reports repsRomTotal=3; this must NOT re-enable firmware warmup gating.
+        repCounter.configure(warmupTarget = 0, workingTarget = 12, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(
+            repsRomCount = 0,
+            repsRomTotal = 3,
+            repsSetCount = 1,
+            repsSetTotal = 12,
+            up = 1,
+            down = 1,
+        )
+
+        val count = repCounter.getRepCount()
+        assertEquals(0, count.warmupReps)
+        assertEquals(1, count.workingReps, "First rep should count as working rep, not hidden warmup")
+        assertTrue(count.isWarmupComplete, "Warmup gate should stay open when warmupTarget=0")
+    }
+
     // ========== Position Range Tests ==========
 
     @Test
