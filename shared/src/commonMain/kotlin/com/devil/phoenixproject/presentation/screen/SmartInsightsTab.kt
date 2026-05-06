@@ -123,13 +123,27 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         // slightly different "now" values.
         isLoading = true
         insightsAnchorNowMs = null
+        sessionSummaries = emptyList()
+        exerciseLastPerformed = emptyList()
+        weightHistory = emptyList()
         val snapshotNowMs = currentTimeMillis()
-        insightsAnchorNowMs = snapshotNowMs
-        withContext(Dispatchers.IO) {
-            sessionSummaries =
-                repository.getSessionSummariesSince(snapshotNowMs - twentyEightDaysMs, profileId)
-            exerciseLastPerformed = repository.getExerciseLastPerformed(profileId)
-            weightHistory = repository.getExerciseWeightHistory(profileId)
+
+        try {
+            val (fetchedSessions, fetchedLastPerformed, fetchedWeightHistory) =
+                withContext(Dispatchers.IO) {
+                    Triple(
+                        repository.getSessionSummariesSince(snapshotNowMs - twentyEightDaysMs, profileId),
+                        repository.getExerciseLastPerformed(profileId),
+                        repository.getExerciseWeightHistory(profileId),
+                    )
+                }
+
+            sessionSummaries = fetchedSessions
+            exerciseLastPerformed = fetchedLastPerformed
+            weightHistory = fetchedWeightHistory
+            insightsAnchorNowMs = snapshotNowMs
+        } finally {
+            isLoading = false
         }
     }
 
@@ -620,7 +634,6 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
 
 // ---- Shared Components ----
 
-
 @Composable
 private fun InsightContextBlock(
     title: String,
@@ -636,14 +649,26 @@ private fun InsightContextBlock(
     }
 }
 
-
-
 @Composable
 private fun InsightHierarchyHeader(title: String, subtitle: String) {
     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
+@Composable
+private fun TimeframeBadge(label: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(999.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+        )
+    }
+}
 
 @Composable
 private fun InsightCard(
