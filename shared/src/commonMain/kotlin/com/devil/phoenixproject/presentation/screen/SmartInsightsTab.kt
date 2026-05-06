@@ -122,12 +122,17 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         nowMs = fetchNowMs
 
         try {
-            withContext(Dispatchers.IO) {
-                sessionSummaries =
-                    repository.getSessionSummariesSince(fetchNowMs - twentyEightDaysMs, profileId)
-                exerciseLastPerformed = repository.getExerciseLastPerformed(profileId)
-                weightHistory = repository.getExerciseWeightHistory(profileId)
+            val fetchResult = withContext(Dispatchers.IO) {
+                Triple(
+                    repository.getSessionSummariesSince(fetchNowMs - twentyEightDaysMs, profileId),
+                    repository.getExerciseLastPerformed(profileId),
+                    repository.getExerciseWeightHistory(profileId),
+                )
             }
+
+            sessionSummaries = fetchResult.first
+            exerciseLastPerformed = fetchResult.second
+            weightHistory = fetchResult.third
         } finally {
             isLoading = false
         }
