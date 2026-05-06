@@ -132,7 +132,8 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         isLoading = false
     }
 
-    if (isLoading) {
+    val anchorNowMs = insightsAnchorNowMs
+    if (isLoading || anchorNowMs == null) {
         Box(
             modifier = modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
@@ -141,8 +142,6 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         }
         return
     }
-
-    val anchorNowMs = insightsAnchorNowMs ?: return
 
     // Compute all insights from the same fetch anchor timestamp (Option A).
     val weeklyVolume = remember(sessionSummaries, anchorNowMs) {
