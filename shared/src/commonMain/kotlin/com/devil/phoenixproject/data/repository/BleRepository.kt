@@ -225,6 +225,14 @@ interface BleRepository {
     fun currentConnectionState(): ConnectionState
 
     /**
+     * Probe the BLE connection with a diagnostic characteristic read.
+     * Used by v8 quarantine experiment to test if the GATT read lane is functional
+     * after a NO_RESPONSE CONFIG write. A read probe is preferred over a write probe
+     * because a write could fail due to a wedged write lane (v7 proved this).
+     */
+    suspend fun probeRead(): Result<ByteArray?>
+
+    /**
      * Stop only monitor and heuristic polling, keeping diagnostic polling and heartbeat running.
      * Use this during bodyweight exercises to keep BLE connection "warm" (via diagnostic polling
      * at 500ms intervals) while not emitting workout metrics.

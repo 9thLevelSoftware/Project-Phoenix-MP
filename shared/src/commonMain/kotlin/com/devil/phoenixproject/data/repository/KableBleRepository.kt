@@ -280,6 +280,8 @@ class KableBleRepository : BleRepository {
 
     override fun currentConnectionState(): ConnectionState = _connectionState.value
 
+    override suspend fun probeRead(): Result<ByteArray?> = connectionManager.probeRead()
+
     override fun stopMonitorPollingOnly() = pollingEngine.stopMonitorOnly()
 
     override fun restartDiagnosticPolling() {

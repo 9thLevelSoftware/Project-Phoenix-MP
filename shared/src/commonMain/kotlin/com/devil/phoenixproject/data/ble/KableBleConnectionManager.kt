@@ -1145,6 +1145,36 @@ class KableBleConnectionManager(
     }
 
     // -------------------------------------------------------------------------
+    // 12b. probeRead() — v8 quarantine diagnostic
+    // -------------------------------------------------------------------------
+
+    /**
+     * Issue #333 v8: Read the diagnostic characteristic as a connection health probe.
+     * Uses the normal Kable read path (through bleQueue) to test if the GATT read lane
+     * is functional after a NO_RESPONSE CONFIG write.
+     *
+     * A read probe is preferred over a write probe because v7 showed the write lane
+     * gets permanently wedged with WriteRequestBusy after WRITE_TYPE_DEFAULT.
+     * If the read also fails, the entire GATT operation lane is blocked.
+     */
+    suspend fun probeRead(): Result<ByteArray?> {
+        val p = peripheral
+        if (p == null) {
+            log.w { "[#333 v8] probeRead: not connected" }
+            return Result.failure(IllegalStateException("Not connected"))
+        }
+
+        return try {
+            val data = bleQueue.read { p.read(diagnosticCharacteristic) }
+            log.i { "[#333 v8] probeRead succeeded: ${data.size} bytes" }
+            Result.success(data)
+        } catch (e: Exception) {
+            log.w { "[#333 v8] probeRead failed: ${e.message}" }
+            Result.failure(e)
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // 13. processIncomingData()
     // -------------------------------------------------------------------------
 

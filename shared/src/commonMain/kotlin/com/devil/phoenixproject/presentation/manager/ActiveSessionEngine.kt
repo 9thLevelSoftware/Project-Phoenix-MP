@@ -2397,26 +2397,29 @@ class ActiveSessionEngine(
                     }
 
                     Logger.i { "[#333 QUARANTINE] Connection survived 2500ms silence!" }
-                    Logger.i { "[#333 QUARANTINE] Attempting one minimal probe read..." }
+                    Logger.i { "[#333 QUARANTINE] Attempting diagnostic READ probe..." }
 
-                    // One minimal probe: send a small command to verify GATT is functional
+                    // v8: Probe with a READ, not a write. v7 showed the write lane is
+                    // permanently wedged (WriteRequestBusy) after WRITE_TYPE_DEFAULT.
+                    // A read probe tests whether the entire GATT operation lane is blocked
+                    // or only the write lane. If reads work, the problem is specifically
+                    // the acknowledged write completion path on BCM4389.
                     try {
-                        val probeResult = kotlinx.coroutines.withTimeoutOrNull(1000L) {
-                            bleRepository.sendWorkoutCommand(
-                                byteArrayOf(0x0A, 0x00, 0x00, 0x00) // INIT/status command — safe read
-                            )
+                        val probeResult = kotlinx.coroutines.withTimeoutOrNull(2000L) {
+                            bleRepository.probeRead()
                         }
                         if (probeResult != null && probeResult.isSuccess) {
-                            Logger.i { "[#333 QUARANTINE] Probe write succeeded — connection is alive!" }
-                            Logger.i { "[#333 QUARANTINE] CONCLUSION: Post-write traffic (polling, " +
-                                "diagnostic read, channel drain) was the cause of disconnects in v4-v6." }
+                            val data = probeResult.getOrNull()
+                            Logger.i { "[#333 QUARANTINE] Probe READ succeeded: ${data?.size ?: 0} bytes" }
+                            Logger.i { "[#333 QUARANTINE] CONCLUSION: GATT read lane is functional. " +
+                                "CONFIG write (NO_RESPONSE mode) did not wedge the GATT stack." }
                         } else {
-                            Logger.w { "[#333 QUARANTINE] Probe write failed: ${probeResult?.exceptionOrNull()?.message}" }
-                            Logger.w { "[#333 QUARANTINE] Connection survived quarantine but cannot " +
-                                "write — GATT may be in degraded state." }
+                            Logger.w { "[#333 QUARANTINE] Probe READ failed: ${probeResult?.exceptionOrNull()?.message}" }
+                            Logger.w { "[#333 QUARANTINE] Both read and write lanes may be blocked — " +
+                                "GATT stack is fully degraded after CONFIG." }
                         }
                     } catch (e: Exception) {
-                        Logger.w { "[#333 QUARANTINE] Probe exception: ${e.message}" }
+                        Logger.w { "[#333 QUARANTINE] Probe READ exception: ${e.message}" }
                     }
 
                     // After quarantine + probe, resume normal flow

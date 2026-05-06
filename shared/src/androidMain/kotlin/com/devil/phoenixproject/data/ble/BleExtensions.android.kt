@@ -103,25 +103,25 @@ actual suspend fun Peripheral.forceCloseGatt() {
 }
 
 /**
- * Issue #333 Flag H v7: Write to BluetoothGatt directly, bypassing Kable's
+ * Issue #333 Flag H v8: Write to BluetoothGatt directly, bypassing Kable's
  * connectionScope.async that causes "StandaloneCoroutine was cancelled" on BCM4389.
  *
- * ## Critical distinction (v7)
- * writeCharacteristic() returning true means the BLE stack INITIATED the write.
- * The actual result (success or GATT_ERROR) arrives asynchronously via the
- * onCharacteristicWrite callback. Previous versions (v4-v6) treated initiation
- * as success and immediately started post-write activity — which is wrong.
+ * ## v8: WRITE_TYPE_NO_RESPONSE experiment
+ * v7 quarantine proved the connection survives 2500ms of silence, but the GATT
+ * write lane is permanently wedged — `WriteRequestBusy` after 2500ms means the
+ * `onCharacteristicWrite` callback never completed for `WRITE_TYPE_DEFAULT`.
  *
- * v7 returns immediately after initiation. The CALLER is responsible for:
- * 1. Enforcing a quarantine period (no BLE traffic)
- * 2. Checking connection state after the quarantine
- * 3. Deciding whether the write actually succeeded
+ * v8 switches to `WRITE_TYPE_NO_RESPONSE` to bypass the acknowledged write path
+ * entirely. If the BCM4389 problem is specifically the write completion callback,
+ * NO_RESPONSE should succeed and the probe read should work. If the problem is
+ * the 96-byte CONFIG payload itself, NO_RESPONSE will also fail.
  *
  * ## Evolution
  * - v4: Raw write, no response handling → 53ms acceptance, disconnect 12s later
  * - v5: Guard mutex + blocking drain → 2009ms timeout (deadlock)
  * - v6: Non-blocking tryReceive() drain → still uncertain about write success
- * - v7: No drain, no delay — quarantine experiment. Caller checks connection state.
+ * - v7: Quarantine experiment → connection survived, but WriteRequestBusy (write lane wedged)
+ * - v8: WRITE_TYPE_NO_RESPONSE — bypass the wedged acknowledged write path
  *
  * The write uses the deprecated (pre-API 33) setValue+writeCharacteristic path
  * intentionally — this is exactly what the official app uses.
@@ -175,7 +175,7 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
         }
 
         val accepted = kotlinx.coroutines.withContext(writeContext) {
-            txChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            txChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
             txChar.value = data
             gatt.writeCharacteristic(txChar)
         }
@@ -187,14 +187,12 @@ actual suspend fun Peripheral.rawGattWriteCharacteristic(
             return Result.failure(IllegalStateException("writeCharacteristic returned false (GATT busy)"))
         }
 
-        // v7 quarantine: writeCharacteristic() returning true means the BLE stack
-        // INITIATED the write. The real result comes via onCharacteristicWrite(status).
-        // We deliberately do NOT drain the channel or wait for the callback here.
-        // The caller (ActiveSessionEngine) will enforce a 2500ms quarantine and then
-        // probe connection state to determine if the write actually succeeded.
+        // v8: WRITE_TYPE_NO_RESPONSE means no onCharacteristicWrite callback.
+        // The BLE stack fires and forgets. The caller (ActiveSessionEngine) will
+        // enforce a 2500ms quarantine and then probe with a READ to check GATT health.
         Logger.i("BleExtensions") {
-            "[Flag H] Raw GATT write INITIATED (accepted by BLE stack): ${data.size} bytes. " +
-                "Quarantine begins — caller will probe connection state."
+            "[Flag H] Raw GATT write INITIATED (NO_RESPONSE mode): ${data.size} bytes. " +
+                "Quarantine begins — caller will probe with read."
         }
 
         Result.success(Unit)
