@@ -277,7 +277,7 @@ private fun playSound(
             audioFocusSession.abandon()
             playWithMediaPlayer(event, context)
         } else {
-            audioFocusSession.abandonAfterDelay()
+            audioFocusSession.abandonAfterDelay(focusHoldDurationMs(event))
         }
     } catch (e: Exception) {
         Logger.w(e) { "SoundPool.play threw for $event — MediaPlayer fallback" }
@@ -351,6 +351,16 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     }
 }
 
+
+private fun focusHoldDurationMs(event: HapticEvent): Long = when (event) {
+    is HapticEvent.BADGE_EARNED,
+    is HapticEvent.PERSONAL_RECORD,
+    is HapticEvent.DISCO_MODE_UNLOCKED -> 5000L
+
+    is HapticEvent.REP_COUNT_ANNOUNCED -> 2500L
+
+    else -> 1500L
+}
 
 private fun AudioFocusSession.abandonAfterDelay(delayMs: Long = 1500L) {
     Handler(Looper.getMainLooper()).postDelayed({
