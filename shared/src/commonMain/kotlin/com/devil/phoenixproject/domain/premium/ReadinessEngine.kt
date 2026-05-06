@@ -26,6 +26,13 @@ object ReadinessEngine {
     private const val MIN_HISTORY_DAYS = 28
     private const val MIN_RECENT_SESSIONS = 3
 
+
+    /**
+     * Inclusive cutoff policy for readiness time windows.
+     * A session is in-window when timestamp >= cutoffMs.
+     */
+    private fun isInWindow(timestamp: Long, cutoffMs: Long): Boolean = timestamp >= cutoffMs
+
     /**
      * Compute readiness from training session history.
      *
@@ -49,20 +56,20 @@ object ReadinessEngine {
 
         // Guard: need 3+ sessions in last 14 days
         val fourteenDaysAgo = nowMs - FOURTEEN_DAYS_MS
-        val recentCount = sessions.count { it.timestamp >= fourteenDaysAgo }
+        val recentCount = sessions.count { isInWindow(it.timestamp, fourteenDaysAgo) }
         if (recentCount < MIN_RECENT_SESSIONS) return ReadinessResult.InsufficientData
 
         // Compute acute load (last 7 days volume)
         val sevenDaysAgo = nowMs - SEVEN_DAYS_MS
         val acuteVolume = sessions
-            .filter { it.timestamp >= sevenDaysAgo }
+            .filter { isInWindow(it.timestamp, sevenDaysAgo) }
             .sumOf { (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble() }
             .toFloat()
 
         // Compute chronic load (28-day total volume, divided by 4 for weekly average)
         val twentyEightDaysAgo = nowMs - TWENTY_EIGHT_DAYS_MS
         val chronicTotalVolume = sessions
-            .filter { it.timestamp >= twentyEightDaysAgo }
+            .filter { isInWindow(it.timestamp, twentyEightDaysAgo) }
             .sumOf { (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble() }
             .toFloat()
         val chronicWeeklyAvg = chronicTotalVolume / 4f
