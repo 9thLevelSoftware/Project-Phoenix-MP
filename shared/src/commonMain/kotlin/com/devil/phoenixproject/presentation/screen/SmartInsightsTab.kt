@@ -130,7 +130,6 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             exerciseLastPerformed = repository.getExerciseLastPerformed(profileId)
             weightHistory = repository.getExerciseWeightHistory(profileId)
         }
-        isLoading = false
     }
 
     val anchorNowMs = insightsAnchorNowMs
