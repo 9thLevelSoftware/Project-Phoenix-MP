@@ -366,6 +366,9 @@ private fun requestTransientDuckAudioFocus(
     context: Context,
     playbackUsage: Int,
 ): AudioFocusSession {
+    val focusChangeListener = AudioManager.OnAudioFocusChangeListener {
+        // No-op listener used as a unique identity token for each focus request session.
+    }
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         ?: return object : AudioFocusSession {
             override fun abandon() = Unit
@@ -380,6 +383,7 @@ private fun requestTransientDuckAudioFocus(
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build(),
                 )
+                .setOnAudioFocusChangeListener(focusChangeListener)
                 .setAcceptsDelayedFocusGain(false)
                 .setWillPauseWhenDucked(false)
                 .build()
@@ -401,14 +405,14 @@ private fun requestTransientDuckAudioFocus(
     } else {
         @Suppress("DEPRECATION")
         audioManager.requestAudioFocus(
-            null,
+            focusChangeListener,
             AudioManager.STREAM_MUSIC,
             AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,
         )
         object : AudioFocusSession {
             override fun abandon() {
                 @Suppress("DEPRECATION")
-                audioManager.abandonAudioFocus(null)
+                audioManager.abandonAudioFocus(focusChangeListener)
             }
         }
     }
