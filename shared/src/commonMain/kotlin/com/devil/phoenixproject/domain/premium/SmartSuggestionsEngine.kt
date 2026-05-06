@@ -35,7 +35,6 @@ object SmartSuggestionsEngine {
     private const val PLATEAU_WEIGHT_TOLERANCE = 0.5f
 
     private const val MIN_SESSIONS_FOR_OPTIMAL = 3
-    private val unknownMuscleGroupFallbackCounts = mutableMapOf<String, Int>()
 
     /**
      * SUGG-01: Compute weekly volume per muscle group.
@@ -288,7 +287,10 @@ object SmartSuggestionsEngine {
      * Case-insensitive and supports aliases used by the exercise catalog.
      * Unknown groups default to CORE and increment a fallback counter.
      */
-    internal fun classifyMuscleGroup(muscleGroup: String): MovementCategory {
+    internal fun classifyMuscleGroup(
+        muscleGroup: String,
+        onUnknownGroup: ((String) -> Unit)? = null,
+    ): MovementCategory {
         val normalized = muscleGroup.lowercase().trim()
         return when (normalized) {
             "chest", "pecs", "pectorals", "shoulders", "triceps", "front delts", "anterior delts", "side delts", "lateral delts" -> MovementCategory.PUSH
@@ -296,19 +298,10 @@ object SmartSuggestionsEngine {
             "legs", "glutes", "quads", "quadriceps", "hamstrings", "hams", "calves", "adductors", "abductors" -> MovementCategory.LEGS
             "core", "abs", "abdominals", "obliques", "lower back", "full body" -> MovementCategory.CORE
             else -> {
-                unknownMuscleGroupFallbackCounts[normalized] =
-                    (unknownMuscleGroupFallbackCounts[normalized] ?: 0) + 1
+                onUnknownGroup?.invoke(normalized)
                 MovementCategory.CORE
             }
         }
-    }
-
-    internal fun getUnknownMuscleGroupFallbackCount(): Int = unknownMuscleGroupFallbackCounts.values.sum()
-
-    internal fun getUnknownMuscleGroupFallbackBreakdown(): Map<String, Int> = unknownMuscleGroupFallbackCounts.toMap()
-
-    internal fun resetUnknownMuscleGroupFallbackCount() {
-        unknownMuscleGroupFallbackCounts.clear()
     }
 
     /**

@@ -417,10 +417,8 @@ class SmartSuggestionsEngineTest {
 
     @Test
     fun classifyUnknownDefaultsToCore() {
-        SmartSuggestionsEngine.resetUnknownMuscleGroupFallbackCount()
         assertEquals(MovementCategory.CORE, SmartSuggestionsEngine.classifyMuscleGroup("Unknown"))
         assertEquals(MovementCategory.CORE, SmartSuggestionsEngine.classifyMuscleGroup(""))
-        assertEquals(2, SmartSuggestionsEngine.getUnknownMuscleGroupFallbackCount())
     }
 
     @Test
@@ -439,14 +437,18 @@ class SmartSuggestionsEngineTest {
 
     @Test
     fun unknownMuscleGroupFallbackCounterTracksTaxonomyGaps() {
-        SmartSuggestionsEngine.resetUnknownMuscleGroupFallbackCount()
-        SmartSuggestionsEngine.classifyMuscleGroup("Serratus")
-        SmartSuggestionsEngine.classifyMuscleGroup("Forearms")
-        SmartSuggestionsEngine.classifyMuscleGroup("  forearms ")
-        assertEquals(3, SmartSuggestionsEngine.getUnknownMuscleGroupFallbackCount())
+        val unknownGroups = mutableMapOf<String, Int>()
+        val tracker: (String) -> Unit = { group ->
+            unknownGroups[group] = (unknownGroups[group] ?: 0) + 1
+        }
+
+        SmartSuggestionsEngine.classifyMuscleGroup("Serratus", tracker)
+        SmartSuggestionsEngine.classifyMuscleGroup("Forearms", tracker)
+        SmartSuggestionsEngine.classifyMuscleGroup("  forearms ", tracker)
+
         assertEquals(
             mapOf("serratus" to 1, "forearms" to 2),
-            SmartSuggestionsEngine.getUnknownMuscleGroupFallbackBreakdown(),
+            unknownGroups,
         )
     }
 
