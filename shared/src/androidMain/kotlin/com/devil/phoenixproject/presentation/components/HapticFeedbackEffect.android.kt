@@ -21,7 +21,12 @@ import com.devil.phoenixproject.util.DeviceInfo
 import kotlinx.coroutines.flow.SharedFlow
 import kotlin.random.Random
 
-private val STANDARD_ANDROID_CUE_USAGE = AudioAttributes.USAGE_ASSISTANCE_SONIFICATION
+// Both standard Android and Fire OS classify workout cues as USAGE_MEDIA so
+// playback is bound to STREAM_MUSIC. This matches MainActivity's
+// volumeControlStream = STREAM_MUSIC contract: hardware volume buttons control
+// the same stream the cues are played on, and cues mix with background music
+// without interrupting it.
+private val STANDARD_ANDROID_CUE_USAGE = AudioAttributes.USAGE_MEDIA
 private val FIRE_OS_CUE_USAGE = AudioAttributes.USAGE_MEDIA
 
 @Composable
@@ -42,9 +47,10 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     // Track which sounds are loaded and ready to play
     val loadedSounds = remember { mutableSetOf<Int>() }
 
-    // Create SoundPool for audio feedback.
-    // v0.7.x used assistance sonification for short workout cues; keep that
-    // classification so UI-like cues are routed as sound effects, not game audio.
+    // Create SoundPool for audio feedback. USAGE_MEDIA routes to STREAM_MUSIC
+    // so hardware volume keys (forced to STREAM_MUSIC by MainActivity) actually
+    // control cue loudness, and cues stay audible through DND while mixing with
+    // background music.
     val soundPool = remember {
         SoundPool.Builder()
             .setMaxStreams(3)
@@ -150,8 +156,9 @@ private fun loadSoundByName(context: Context, soundPool: SoundPool, name: String
 
 /**
  * Issue #409: Check media volume and log warning if muted.
- * Retained because Fire OS uses media playback and some Android policies still
- * route short sound effects through media volume.
+ * Cues use USAGE_MEDIA which routes to STREAM_MUSIC; if media volume is 0, all
+ * sounds are inaudible. MainActivity forces hardware volume buttons to
+ * STREAM_MUSIC so users can adjust this directly.
  */
 private fun warnIfMediaVolumeMuted(context: Context) {
     try {
@@ -161,7 +168,7 @@ private fun warnIfMediaVolumeMuted(context: Context) {
             val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             Logger.w {
                 "Issue #409: Media volume is 0/$maxVolume — workout sounds will be inaudible. " +
-                    "Raise media volume if audio cues are silent."
+                    "Cues use USAGE_MEDIA (STREAM_MUSIC). Raise media volume to hear audio cues."
             }
         }
     } catch (_: Exception) {
@@ -262,8 +269,8 @@ private fun playSound(
 
 /**
  * Fallback sound playback using MediaPlayer for when SoundPool fails or on Fire OS.
- * Fire OS: Uses USAGE_MEDIA to work around SoundPool volume bug.
- * Standard Android: Uses USAGE_ASSISTANCE_SONIFICATION to match the known-good v0.7.x cue path.
+ * Both standard Android and Fire OS use USAGE_MEDIA so cues route to STREAM_MUSIC,
+ * matching MainActivity's volumeControlStream contract.
  */
 private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     val soundName = when (event) {

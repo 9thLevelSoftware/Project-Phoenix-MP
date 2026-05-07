@@ -21,8 +21,10 @@ class MainActivity : ComponentActivity() {
         // Compose ViewModel pipeline (which fires after the first frame).
         applyStoredLocaleBeforeComposition()
 
-        // Issue #409: Keep hardware volume buttons on media while users are in
-        // the workout UI, especially when background music is playing.
+        // Issue #409: Route hardware volume buttons to media stream for the
+        // entire activity lifetime so workout cues (SoundPool/MediaPlayer with
+        // USAGE_MEDIA → STREAM_MUSIC) stay adjustable, even when background
+        // music is playing.
         volumeControlStream = AudioManager.STREAM_MUSIC
 
         enableEdgeToEdge()

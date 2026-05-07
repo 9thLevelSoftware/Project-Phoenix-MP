@@ -8,39 +8,60 @@ import kotlin.test.assertTrue
 /**
  * Structural guards for Android workout cue playback.
  *
- * These protect the v0.7.x known-good audio path: short workout cues should be
- * classified as assistance sonification, while Fire OS keeps the explicit media fallback.
+ * Workout cues must use USAGE_MEDIA so they route to STREAM_MUSIC, matching
+ * MainActivity's volumeControlStream contract. Fire OS keeps the same usage
+ * to work around its SoundPool volume bug via the MediaPlayer fallback.
  */
 class HapticFeedbackAudioRoutingGuardTest {
 
     private val projectRoot: File by lazy {
         var dir = File(System.getProperty("user.dir") ?: ".")
         while (!File(dir, "shared/src/androidMain").exists()) {
-            dir = dir.parentFile ?: break
+            val parent = dir.parentFile ?: break
+            dir = parent
+        }
+        check(File(dir, "shared/src/androidMain").exists()) {
+            "Could not locate project root containing shared/src/androidMain " +
+                "starting from ${System.getProperty("user.dir")}. " +
+                "Verify the working directory used by the test runner."
         }
         dir
     }
 
     private val hapticSourceFile: File
-        get() = File(
-            projectRoot,
-            "shared/src/androidMain/kotlin/com/devil/phoenixproject/presentation/components/HapticFeedbackEffect.android.kt",
-        )
+        get() {
+            val file = File(
+                projectRoot,
+                "shared/src/androidMain/kotlin/com/devil/phoenixproject/presentation/components/HapticFeedbackEffect.android.kt",
+            )
+            check(file.isFile) {
+                "HapticFeedbackEffect.android.kt not found at ${file.absolutePath}. " +
+                    "The audio routing guard cannot run without the source file."
+            }
+            return file
+        }
 
     private val rawResourceDir: File
-        get() = File(projectRoot, "androidApp/src/main/res/raw")
+        get() {
+            val dir = File(projectRoot, "androidApp/src/main/res/raw")
+            check(dir.isDirectory) {
+                "Expected raw resource directory at ${dir.absolutePath} but it is missing or not a directory."
+            }
+            return dir
+        }
 
     @Test
-    fun `standard Android cue playback uses assistance sonification`() {
+    fun `standard Android cue playback uses media usage`() {
         val source = hapticSourceFile.readText()
 
         assertTrue(
-            source.contains("STANDARD_ANDROID_CUE_USAGE = AudioAttributes.USAGE_ASSISTANCE_SONIFICATION"),
-            "Standard Android cues must use assistance sonification, matching the v0.7.x playback path.",
+            source.contains("STANDARD_ANDROID_CUE_USAGE = AudioAttributes.USAGE_MEDIA"),
+            "Standard Android cues must use USAGE_MEDIA so they route to STREAM_MUSIC " +
+                "(matching MainActivity.volumeControlStream).",
         )
         assertTrue(
             source.contains("FIRE_OS_CUE_USAGE = AudioAttributes.USAGE_MEDIA"),
-            "Fire OS must keep the media fallback for its SoundPool volume issue.",
+            "Fire OS must keep USAGE_MEDIA to work around its SoundPool volume bug.",
         )
         assertTrue(
             source.contains("buildCueAudioAttributes(STANDARD_ANDROID_CUE_USAGE)"),
@@ -49,6 +70,11 @@ class HapticFeedbackAudioRoutingGuardTest {
         assertFalse(
             source.contains("AudioAttributes.USAGE_GAME"),
             "Workout cues must not be classified as game audio; that was the v0.9.0 sweep regression.",
+        )
+        assertFalse(
+            source.contains("AudioAttributes.USAGE_ASSISTANCE_SONIFICATION"),
+            "Workout cues must not use USAGE_ASSISTANCE_SONIFICATION; it routes to STREAM_SYSTEM " +
+                "and breaks the volumeControlStream = STREAM_MUSIC contract.",
         )
     }
 
@@ -64,11 +90,11 @@ class HapticFeedbackAudioRoutingGuardTest {
     @Test
     fun `referenced raw cue resources exist`() {
         val source = hapticSourceFile.readText()
-        val availableRawNames = rawResourceDir
-            .listFiles()
-            ?.map { it.nameWithoutExtension }
-            ?.toSet()
-            ?: emptySet()
+        val rawFiles = rawResourceDir.listFiles()
+        check(rawFiles != null) {
+            "Failed to list ${rawResourceDir.absolutePath}: listFiles() returned null."
+        }
+        val availableRawNames = rawFiles.map { it.nameWithoutExtension }.toSet()
 
         val loadSoundNames = Regex("""loadSoundByName\(context, soundPool, "([a-z0-9_]+)"\)""")
             .findAll(source)
