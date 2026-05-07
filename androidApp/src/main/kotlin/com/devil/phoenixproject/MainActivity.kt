@@ -21,10 +21,8 @@ class MainActivity : ComponentActivity() {
         // Compose ViewModel pipeline (which fires after the first frame).
         applyStoredLocaleBeforeComposition()
 
-        // Issue #409: Route hardware volume buttons to media stream.
-        // SoundPool/MediaPlayer use USAGE_GAME which maps to STREAM_MUSIC.
-        // Without this, volume buttons default to ring/notification stream,
-        // leaving media volume at 0 and all workout sounds inaudible.
+        // Issue #409: Keep hardware volume buttons on media while users are in
+        // the workout UI, especially when background music is playing.
         volumeControlStream = AudioManager.STREAM_MUSIC
 
         enableEdgeToEdge()
