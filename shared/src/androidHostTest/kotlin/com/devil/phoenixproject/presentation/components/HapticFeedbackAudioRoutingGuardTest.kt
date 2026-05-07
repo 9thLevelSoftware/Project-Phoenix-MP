@@ -104,7 +104,7 @@ class HapticFeedbackAudioRoutingGuardTest {
         val constantSoundNames = soundNamesInConstantList(source, "BADGE_SOUND_NAMES") +
             soundNamesInConstantList(source, "PR_SOUND_NAMES")
 
-        val repCountNames = (1..25).map { "rep_%02d".format(it) }
+        val repCountNames = repCountSoundNames(source)
         val expectedNames = loadSoundNames + constantSoundNames + repCountNames
         val missing = expectedNames.sorted().filterNot { it in availableRawNames }
 
@@ -118,14 +118,27 @@ class HapticFeedbackAudioRoutingGuardTest {
         val start = source.indexOf("private val $listName = listOf(")
         if (start < 0) return emptySet()
 
-        val lineEnd = source.indexOf('\n', start)
-        val singleLine = lineEnd > start && source.substring(start, lineEnd).contains(")")
-        val end = if (singleLine) lineEnd else source.indexOf("\n)", start)
+        // Sound names only contain [a-z0-9_], so the next `)` after `start`
+        // is reliably the closing paren of `listOf(...)`, regardless of how
+        // the list is formatted (single-line, multi-line, indented `)`, etc.).
+        val end = source.indexOf(")", start)
         if (end < 0) return emptySet()
 
         return Regex("\"([a-z0-9_]+)\"")
             .findAll(source.substring(start, end))
             .map { it.groupValues[1] }
             .toSet()
+    }
+
+    private fun repCountSoundNames(source: String): Set<String> {
+        // Mirror the rep-count range in HapticFeedbackEffect.android.kt so the
+        // guard stays in sync if the upper bound changes.
+        val match = Regex("""\(1\.\.(\d+)\)\.mapNotNull""").find(source)
+        check(match != null) {
+            "Could not locate the rep-count range '(1..N).mapNotNull' in HapticFeedbackEffect.android.kt; " +
+                "update repCountSoundNames if the loop shape has changed."
+        }
+        val upper = match.groupValues[1].toInt()
+        return (1..upper).map { "rep_%02d".format(it) }.toSet()
     }
 }
