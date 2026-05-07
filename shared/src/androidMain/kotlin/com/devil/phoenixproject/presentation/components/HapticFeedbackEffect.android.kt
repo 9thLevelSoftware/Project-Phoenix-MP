@@ -87,25 +87,12 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
 
     // Load badge celebration sounds
     val badgeSoundIds = remember(soundPool) {
-        val badgeSoundNames = listOf(
-            "absolute_domination", "absolute_unit", "another_milestone_crushed",
-            "beast_mode", "insane_performance", "maxed_out", "new_peak_achieved",
-            "new_record_secured", "no_ones_stopping_you_now", "power", "pr",
-            "pressure_create_greatness", "record", "shattered", "strenght_unlocked",
-            "that_bar_never_stood_a_chance", "that_was_a_demolition", "that_was_god_mode",
-            "that_was_monster_level", "that_was_next_tier_strenght", "that_was_pure_savagery",
-            "the_grind_continues", "the_grind_is_real", "this_is_what_champions_are_made",
-            "unchained_power", "unstoppable", "victory", "you_crushed_that",
-            "you_dominated_that_set", "you_just_broke_your_limits", "you_just_destroyed_that_weight",
-            "you_just_levelled_up", "you_went_full_throttle",
-        )
-        badgeSoundNames.mapNotNull { loadSoundByName(context, soundPool, it) }
+        BADGE_SOUND_NAMES.mapNotNull { loadSoundByName(context, soundPool, it) }
     }
 
     // Load PR-specific sounds
     val prSoundIds = remember(soundPool) {
-        listOf("new_personal_record", "new_personal_record_2")
-            .mapNotNull { loadSoundByName(context, soundPool, it) }
+        PR_SOUND_NAMES.mapNotNull { loadSoundByName(context, soundPool, it) }
     }
 
     // Load rep count sounds (1-25)
@@ -310,6 +297,7 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     }
     if (resId == 0) return
 
+    var mediaPlayer: MediaPlayer? = null
     try {
         // Fire OS: Use USAGE_MEDIA to work around SoundPool volume bug
         // Standard Android: Use USAGE_GAME to mix with music without interrupting
@@ -324,41 +312,41 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
-        val mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0) ?: return
+        mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0) ?: return
         mediaPlayer.setVolume(1.0f, 1.0f)
         mediaPlayer.setOnCompletionListener { it.release() }
         mediaPlayer.start()
     } catch (_: Exception) {
-        // Silently fail - sound is not critical
+        mediaPlayer?.release()
     }
 }
+
+private val BADGE_SOUND_NAMES = listOf(
+    "absolute_domination", "absolute_unit", "another_milestone_crushed",
+    "beast_mode", "insane_performance", "maxed_out", "new_peak_achieved",
+    "new_record_secured", "no_ones_stopping_you_now", "power", "pr",
+    "pressure_create_greatness", "record", "shattered", "strenght_unlocked",
+    "that_bar_never_stood_a_chance", "that_was_a_demolition", "that_was_god_mode",
+    "that_was_monster_level", "that_was_next_tier_strenght", "that_was_pure_savagery",
+    "the_grind_continues", "the_grind_is_real", "this_is_what_champions_are_made",
+    "unchained_power", "unstoppable", "victory", "you_crushed_that",
+    "you_dominated_that_set", "you_just_broke_your_limits", "you_just_destroyed_that_weight",
+    "you_just_levelled_up", "you_went_full_throttle",
+)
+
+private val PR_SOUND_NAMES = listOf("new_personal_record", "new_personal_record_2")
 
 /**
  * Get a random badge celebration sound name.
  */
-private fun getRandomBadgeSound(): String {
-    val badgeSoundNames = listOf(
-        "absolute_domination", "absolute_unit", "another_milestone_crushed",
-        "beast_mode", "insane_performance", "maxed_out", "new_peak_achieved",
-        "new_record_secured", "no_ones_stopping_you_now", "power", "pr",
-        "pressure_create_greatness", "record", "shattered", "strenght_unlocked",
-        "that_bar_never_stood_a_chance", "that_was_a_demolition", "that_was_god_mode",
-        "that_was_monster_level", "that_was_next_tier_strenght", "that_was_pure_savagery",
-        "the_grind_continues", "the_grind_is_real", "this_is_what_champions_are_made",
-        "unchained_power", "unstoppable", "victory", "you_crushed_that",
-        "you_dominated_that_set", "you_just_broke_your_limits", "you_just_destroyed_that_weight",
-        "you_just_levelled_up", "you_went_full_throttle",
-    )
-    return badgeSoundNames[Random.nextInt(badgeSoundNames.size)]
-}
+private fun getRandomBadgeSound(): String =
+    BADGE_SOUND_NAMES[Random.nextInt(BADGE_SOUND_NAMES.size)]
 
 /**
  * Get a random PR celebration sound name.
  */
-private fun getRandomPRSound(): String {
-    val prSoundNames = listOf("new_personal_record", "new_personal_record_2")
-    return prSoundNames[Random.nextInt(prSoundNames.size)]
-}
+private fun getRandomPRSound(): String =
+    PR_SOUND_NAMES[Random.nextInt(PR_SOUND_NAMES.size)]
 
 @SuppressLint("MissingPermission")
 private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
