@@ -74,7 +74,6 @@ fun CircularForceGauge(
         Canvas(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             val strokeWidth = size.width * 0.08f
             val diameter = min(size.width, size.height) - strokeWidth
-            val radius = diameter / 2f
 
             // Background Track
             drawArc(

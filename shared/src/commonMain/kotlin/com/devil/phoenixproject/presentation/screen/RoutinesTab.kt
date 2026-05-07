@@ -35,9 +35,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
@@ -120,7 +120,6 @@ import vitruvianprojectphoenix.shared.generated.resources.empty_no_routines_titl
 import vitruvianprojectphoenix.shared.generated.resources.move_routines_confirm
 import vitruvianprojectphoenix.shared.generated.resources.move_to_profile
 import vitruvianprojectphoenix.shared.generated.resources.no_other_profiles
-import vitruvianprojectphoenix.shared.generated.resources.select_target_profile
 import vitruvianprojectphoenix.shared.generated.resources.start_workout
 
 /**
@@ -203,7 +202,6 @@ fun RoutinesTab(
 
     // Routine group state
     val collapsedGroups = remember { mutableStateMapOf<String, Boolean>() }
-    var showMoveToGroupDialog by remember { mutableStateOf(false) }
     var moveToGroupRoutineId by remember { mutableStateOf<String?>(null) }
     var showBatchMoveToGroupDialog by remember { mutableStateOf(false) }
     var showCreateGroupDialog by remember { mutableStateOf(false) }
@@ -296,7 +294,6 @@ fun RoutinesTab(
                             hasGroups = routineGroups.isNotEmpty(),
                             onMoveToGroup = {
                                 moveToGroupRoutineId = routine.id
-                                showMoveToGroupDialog = true
                             },
                             historicalTimeEstimate = timeEstimates[routine.id],
                         )
@@ -339,7 +336,6 @@ fun RoutinesTab(
                                     hasGroups = routineGroups.isNotEmpty(),
                                     onMoveToGroup = {
                                         moveToGroupRoutineId = routine.id
-                                        showMoveToGroupDialog = true
                                     },
                                     historicalTimeEstimate = timeEstimates[routine.id],
                                 )

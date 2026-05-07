@@ -258,7 +258,7 @@ class SqlDelightWorkoutRepositoryTest {
         // Verify DB was healed — subsequent loads should also have the ID
         val reloaded = repository.getRoutineById("routine-null-ex")
         assertNotNull(reloaded)
-        assertEquals(exercise.id, reloaded!!.exercises.first().exercise.id)
+        assertEquals(exercise.id, reloaded.exercises.first().exercise.id)
     }
 
     // ========== Profile ID Preservation Tests ==========

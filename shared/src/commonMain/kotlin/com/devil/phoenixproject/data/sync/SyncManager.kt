@@ -866,7 +866,7 @@ class SyncManager(
                                     "Manual retry required after investigating the issue. " +
                                     "Last error: ${error?.message}",
                                 null,
-                                (error as? PortalApiException)?.statusCode
+                                (error as? PortalApiException)?.statusCode,
                             )
                             return Result.failure(exhaustedError)
                         }
@@ -1002,17 +1002,16 @@ class SyncManager(
         val filteredBadgeIds = filterUuids(rawBadgeIds, "badgeIds")
         val filteredPrIds = filterUuids(rawPrIds, "personalRecordIds")
 
-        fun <T> capParity(list: List<T>, label: String): List<T> =
-            if (list.size <= SyncConfig.MAX_PARITY_IDS) {
-                list
-            } else {
-                Logger.w("SyncManager") {
-                    "Parity list '$label' has ${list.size} entries; truncating to last " +
-                        "${SyncConfig.MAX_PARITY_IDS} to stay within server cap. " +
-                        "Local dedupe will handle the older tail."
-                }
-                list.takeLast(SyncConfig.MAX_PARITY_IDS)
+        fun <T> capParity(list: List<T>, label: String): List<T> = if (list.size <= SyncConfig.MAX_PARITY_IDS) {
+            list
+        } else {
+            Logger.w("SyncManager") {
+                "Parity list '$label' has ${list.size} entries; truncating to last " +
+                    "${SyncConfig.MAX_PARITY_IDS} to stay within server cap. " +
+                    "Local dedupe will handle the older tail."
             }
+            list.takeLast(SyncConfig.MAX_PARITY_IDS)
+        }
 
         val knownEntityIds = KnownEntityIds(
             sessionIds = capParity(filteredSessionIds, "sessionIds"),

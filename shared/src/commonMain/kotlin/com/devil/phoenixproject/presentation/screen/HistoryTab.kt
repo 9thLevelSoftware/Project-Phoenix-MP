@@ -62,15 +62,16 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
-import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
 import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.manager.HistoryItem
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
+import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -85,7 +86,6 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_workout_session_ico
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_all
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_period
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_title
-import kotlin.time.Instant
 
 @Composable
 fun HistoryTab(
@@ -625,7 +625,9 @@ private fun CompletedSetsSection(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // actualWeightKg is per-cable; use WeightDisplayFormatter for total display weight
                     val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
-                        set.actualWeightKg, cableCount, weightUnit,
+                        set.actualWeightKg,
+                        cableCount,
+                        weightUnit,
                     )
                     val unitLabel = weightUnit.name.lowercase()
                     Text(

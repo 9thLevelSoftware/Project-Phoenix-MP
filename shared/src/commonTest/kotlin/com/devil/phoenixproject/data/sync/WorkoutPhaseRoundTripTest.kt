@@ -23,14 +23,14 @@ class WorkoutPhaseRoundTripTest {
     fun workoutPhaseEnumHasExactlyThreeCases() {
         assertEquals(
             listOf("COMBINED", "CONCENTRIC", "ECCENTRIC"),
-            WorkoutPhase.values().map { it.name },
+            WorkoutPhase.entries.map { it.name },
             "WorkoutPhase must contain exactly COMBINED, CONCENTRIC, ECCENTRIC (per audit 02)",
         )
     }
 
     @Test
     fun workoutPhaseNameRoundTripsThroughValueOf() {
-        for (phase in WorkoutPhase.values()) {
+        for (phase in WorkoutPhase.entries) {
             val wire = phase.name
             val parsed = WorkoutPhase.valueOf(wire)
             assertEquals(phase, parsed, "Round trip ${phase.name} ↔ $wire must be lossless")

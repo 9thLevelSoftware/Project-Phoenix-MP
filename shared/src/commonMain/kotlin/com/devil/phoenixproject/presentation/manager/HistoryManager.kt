@@ -187,7 +187,7 @@ class HistoryManager(
                         _workoutHistory.value = sessions.take(20)
                     }
             } catch (e: Exception) {
-                if (e is CancellationException) throw e  // Never suppress coroutine cancellation
+                if (e is CancellationException) throw e // Never suppress coroutine cancellation
                 co.touchlab.kermit.Logger.e(e) {
                     "Error loading workout history in HistoryManager init"
                 }

@@ -13,7 +13,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Before
 import org.junit.Test
@@ -635,14 +634,21 @@ class DataBackupManagerRoutineNameTest {
             display_multiplier = null,
         )
         queries.insertRoutine(
-            id = "routine-b", name = "Leg Day", description = "",
-            createdAt = 1_700_000_000_000, lastUsed = null, useCount = 1, profile_id = "userB",
+            id = "routine-b",
+            name = "Leg Day",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 1,
+            profile_id = "userB",
             groupId = null,
         )
 
         // 3. Restore a backup that explicitly says these rows belong to "userB"
         val backup = BackupData(
-            version = 1, exportedAt = "2026-03-29T00:00:00Z", appVersion = "test",
+            version = 1,
+            exportedAt = "2026-03-29T00:00:00Z",
+            appVersion = "test",
             data = BackupContent(
                 workoutSessions = listOf(
                     WorkoutSessionBackup(
@@ -656,7 +662,9 @@ class DataBackupManagerRoutineNameTest {
                 ),
                 routines = listOf(
                     RoutineBackup(
-                        id = "routine-b", name = "Leg Day", createdAt = 1_700_000_000_000,
+                        id = "routine-b",
+                        name = "Leg Day",
+                        createdAt = 1_700_000_000_000,
                         profileId = "userB", // explicit foreign profile
                     ),
                 ),

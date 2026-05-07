@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
@@ -43,16 +44,15 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -1733,7 +1733,7 @@ fun SettingsTab(
                         )
                     }
                     Text(
-                        "Current: ${velocityLossThresholdPercent}%",
+                        "Current: $velocityLossThresholdPercent%",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary,
@@ -2638,7 +2638,6 @@ private fun SafeWordCalibrationDialog(
     var calibrationFailed by remember { mutableStateOf(false) }
     var micError by remember { mutableStateOf(false) }
     var listener by remember { mutableStateOf<com.devil.phoenixproject.domain.voice.SafeWordListener?>(null) }
-    val scope = rememberCoroutineScope()
 
     // Create and start listener
     DisposableEffect(safeWord) {

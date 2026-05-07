@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.integration
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
@@ -14,7 +15,6 @@ import platform.HealthKit.HKQuantityTypeIdentifierActiveEnergyBurned
 import platform.HealthKit.HKUnit
 import platform.HealthKit.HKWorkout
 import platform.HealthKit.HKWorkoutActivityTypeTraditionalStrengthTraining
-import kotlin.coroutines.resume
 
 private val log = Logger.withTag("HealthIntegration.iOS")
 

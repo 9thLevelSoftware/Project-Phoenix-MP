@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.UserPreferences
-import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -77,6 +77,7 @@ class ActiveSessionEngineIntegrationTest {
 
         // Verify coordinator workout state is still Idle (no spurious transitions)
         val workoutState = harness.coordinator.workoutState.value
+        assertTrue(workoutState is WorkoutState.Idle, "Workout state should remain idle")
         assertFalse(harness.coordinator.isWorkoutActive, "No workout should be active")
 
         harness.cleanup()

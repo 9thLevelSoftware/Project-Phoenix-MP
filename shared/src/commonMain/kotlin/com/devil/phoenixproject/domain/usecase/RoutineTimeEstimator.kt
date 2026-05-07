@@ -83,6 +83,7 @@ class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
                     if (result.isHistoryBased) historicalExerciseCount++
                     if (result.hasAmrap) hasAmrap = true
                 }
+
                 is RoutineItem.SupersetItem -> {
                     val superset = item.superset
                     val supersetExercises = superset.exercises
@@ -216,7 +217,7 @@ class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
             } else {
                 // Fixed rep set
                 val setDurationMs = historicalAvgMs
-                    ?: (if (isBodyweight) BODYWEIGHT_SET_FALLBACK_SEC else CABLE_SET_FALLBACK_SEC) * 1000L
+                    ?: ((if (isBodyweight) BODYWEIGHT_SET_FALLBACK_SEC else CABLE_SET_FALLBACK_SEC) * 1000L)
                 midpointMs += setDurationMs
                 lowerMs += setDurationMs
                 upperMs += setDurationMs

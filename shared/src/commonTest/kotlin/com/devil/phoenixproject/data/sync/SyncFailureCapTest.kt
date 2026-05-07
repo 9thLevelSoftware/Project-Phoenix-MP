@@ -34,7 +34,7 @@ class SyncFailureCapTest {
         val syncState: StateFlow<SyncState> = _syncState
         var syncResult: Result<Long> = Result.success(currentTimeMillis())
         var syncCallCount = 0
-        suspend fun sync(): Result<Long> {
+        fun sync(): Result<Long> {
             syncCallCount++
             if (syncResult.isSuccess) {
                 _syncState.value = SyncState.Success(syncResult.getOrThrow())
@@ -81,10 +81,10 @@ class SyncFailureCapTest {
             _hasPersistentError.value = false
         }
 
-        suspend fun onWorkoutCompleted() = attemptSync(bypassThrottle = true)
-        suspend fun onAppForeground() = attemptSync(bypassThrottle = false)
+        fun onWorkoutCompleted() = attemptSync(bypassThrottle = true)
+        fun onAppForeground() = attemptSync(bypassThrottle = false)
 
-        private suspend fun attemptSync(bypassThrottle: Boolean) {
+        private fun attemptSync(bypassThrottle: Boolean) {
             if (!syncManager.isAuthenticated.value) return
             val user = syncManager.currentUser.value
             if (user?.isPremium == false && syncManager.lastSyncTime.value > 0) return
@@ -125,13 +125,16 @@ class SyncFailureCapTest {
                 SyncErrorCategory.TRANSIENT -> {
                     if (currentBackoffIndex < BACKOFF_SCHEDULE_MINUTES.size) currentBackoffIndex++
                 }
+
                 SyncErrorCategory.PERMANENT -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true
                 }
+
                 SyncErrorCategory.NETWORK -> {
                     isWaitingForConnectivity = true
                 }
+
                 SyncErrorCategory.AUTH -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true

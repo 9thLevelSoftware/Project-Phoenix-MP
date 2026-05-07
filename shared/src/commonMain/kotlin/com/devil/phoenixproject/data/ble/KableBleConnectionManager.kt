@@ -168,7 +168,7 @@ class KableBleConnectionManager(
     // 1. startScanning()
     // -------------------------------------------------------------------------
 
-    suspend fun startScanning(): Result<Unit> {
+    fun startScanning(): Result<Unit> {
         log.i { "Starting BLE scan for Vitruvian devices" }
         logRepo.info(LogEventType.SCAN_START, "Starting BLE scan for Vitruvian devices")
 
@@ -358,7 +358,7 @@ class KableBleConnectionManager(
     // 2. stopScanning()
     // -------------------------------------------------------------------------
 
-    suspend fun stopScanning() {
+    fun stopScanning() {
         log.i { "Stopping BLE scan" }
         logRepo.info(
             LogEventType.SCAN_STOP,

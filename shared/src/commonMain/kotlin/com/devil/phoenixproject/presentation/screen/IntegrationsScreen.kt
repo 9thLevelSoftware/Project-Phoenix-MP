@@ -28,7 +28,6 @@ import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.readUriContent
 import com.devil.phoenixproject.util.rememberFilePicker
 import com.devil.phoenixproject.util.rememberHealthPermissionRequester
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -80,7 +79,6 @@ fun IntegrationsScreen(
 
     // ── CSV file saver (triggered when csvContent is set) ────────────────────
     var triggerCsvSave by remember { mutableStateOf(false) }
-    var csvExportWeightUnit by remember { mutableStateOf(weightUnit) }
 
     LaunchedEffect(uiState.csvContent) {
         if (uiState.csvContent != null) {
@@ -450,7 +448,6 @@ fun IntegrationsScreen(
                     ) {
                         OutlinedButton(
                             onClick = {
-                                csvExportWeightUnit = csvWeightUnit
                                 viewModel.exportCsv(csvWeightUnit)
                             },
                             enabled = !uiState.isExporting,

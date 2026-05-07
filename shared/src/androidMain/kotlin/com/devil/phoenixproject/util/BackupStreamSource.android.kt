@@ -25,6 +25,5 @@ class InputStreamBackupSource(private val inputStream: InputStream) : BackupStre
 
     override fun read(): Int = reader?.read() ?: -1
 
-    override fun read(buffer: CharArray, offset: Int, length: Int): Int =
-        reader?.read(buffer, offset, length) ?: -1
+    override fun read(buffer: CharArray, offset: Int, length: Int): Int = reader?.read(buffer, offset, length) ?: -1
 }

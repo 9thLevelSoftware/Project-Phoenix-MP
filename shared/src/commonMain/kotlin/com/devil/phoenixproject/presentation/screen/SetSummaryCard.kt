@@ -102,7 +102,6 @@ fun SetSummaryCard(
     val cableCount = summary.displayMultiplier
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
-    val heaviestLiftDisplay = WeightDisplayFormatter.toDisplayWeight(summary.heaviestLiftKgPerCable, cableCount, weightUnit)
     val setWeightDisplay = WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, cableCount, weightUnit)
 
     // Debug logging for Issue #5 investigation

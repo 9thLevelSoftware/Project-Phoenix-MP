@@ -4,12 +4,12 @@ import com.devil.phoenixproject.data.repository.SqlDelightSyncRepository
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /**
  * Conflict Resolution Strategy Tests
@@ -107,8 +107,6 @@ class ConflictResolutionTest {
         // GIVEN: A routine exists locally with updatedAt > lastSync
         // We use insertRoutineWithUpdatedAt to simulate a locally modified routine
         val routineId = "routine-lww-test"
-        val lastSync = now - 10_000 // 10 seconds ago
-        val localUpdatedAt = now - 5_000 // 5 seconds ago (after lastSync)
 
         // Insert routine with a specific updatedAt using raw SQL
         database.vitruvianDatabaseQueries.insertRoutine(

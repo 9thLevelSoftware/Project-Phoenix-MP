@@ -236,7 +236,7 @@ class ForceCurveEngineTest {
         // Sticking point should be around 40% ROM
         assertTrue(result.stickingPointPct != null, "Sticking point should be detected")
         assertTrue(
-            result.stickingPointPct!! in 35f..45f,
+            result.stickingPointPct in 35f..45f,
             "Sticking point ${result.stickingPointPct} should be around 40% ROM",
         )
     }
@@ -274,7 +274,7 @@ class ForceCurveEngineTest {
         // It should find the next minimum after 5%
         assertTrue(result.stickingPointPct != null, "Sticking point should exist")
         assertTrue(
-            result.stickingPointPct!! >= 5f,
+            result.stickingPointPct >= 5f,
             "Sticking point ${result.stickingPointPct} should be >= 5%",
         )
     }
@@ -312,7 +312,7 @@ class ForceCurveEngineTest {
         // Sticking point should NOT be in last 5% (excluded region)
         assertTrue(result.stickingPointPct != null, "Sticking point should exist")
         assertTrue(
-            result.stickingPointPct!! <= 95f,
+            result.stickingPointPct <= 95f,
             "Sticking point ${result.stickingPointPct} should be <= 95%",
         )
     }
@@ -334,6 +334,8 @@ class ForceCurveEngineTest {
         // With only 20mm ROM but still > 1mm, we get 101 points
         // Sticking point should still be detected or null based on valid range
         // This is acceptable behavior - the test documents it
+        assertEquals(101, result.normalizedForceN.size)
+        assertEquals(101, result.normalizedPositionPct.size)
     }
 
     // ========== FORCE-04: Strength Profile Classification ==========

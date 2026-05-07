@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 object WorkoutStateFixtures {
 
     /** Put DWSM into Active workout state (post-countdown) */
-    suspend fun TestScope.activeDWSM(): DWSMTestHarness {
+    fun TestScope.activeDWSM(): DWSMTestHarness {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.dwsm.startWorkout(skipCountdown = true)
@@ -22,7 +22,7 @@ object WorkoutStateFixtures {
     }
 
     /** Put DWSM into routine SetReady state */
-    suspend fun TestScope.setReadyDWSM(routine: Routine? = null): DWSMTestHarness {
+    fun TestScope.setReadyDWSM(routine: Routine? = null): DWSMTestHarness {
         val harness = DWSMTestHarness(this)
         val r = routine ?: createTestRoutine()
         r.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }

@@ -106,8 +106,8 @@ class ResolveRoutineWeightsUseCaseTest {
         assertNull(result.percentOfPR)
         assertFalse(result.isFromPR)
         // And: fallbackReason is set
-        assertNotNull(result.fallbackReason)
-        assertTrue(result.fallbackReason.orEmpty().contains("No PR found"))
+        val fallbackReason = assertNotNull(result.fallbackReason)
+        assertTrue(fallbackReason.contains("No PR found"))
     }
 
     // ========== Test 3: Returns absolute weight when usePercentOfPR is false ==========
@@ -393,8 +393,8 @@ class ResolveRoutineWeightsUseCaseTest {
         // Should fall back to absolute weight
         assertEquals(25f, result.baseWeight)
         assertNull(result.usedPR)
-        assertNotNull(result.fallbackReason)
-        assertTrue(result.fallbackReason.orEmpty().contains("no ID"))
+        val fallbackReason = assertNotNull(result.fallbackReason)
+        assertTrue(fallbackReason.contains("no ID"))
     }
 
     @Test

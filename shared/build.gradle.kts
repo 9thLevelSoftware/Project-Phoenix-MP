@@ -239,8 +239,13 @@ tasks.register("validateSchemaManifest") {
         // V1 tables are grandfathered -- their original columns existed before
         // any migration system. Only flag columns on non-v1 tables that lack provenance.
         val v1Tables = setOf(
-            "Exercise", "ExerciseVideo", "WorkoutSession", "MetricSample",
-            "PersonalRecord", "Routine", "RoutineExercise",
+            "Exercise",
+            "ExerciseVideo",
+            "WorkoutSession",
+            "MetricSample",
+            "PersonalRecord",
+            "Routine",
+            "RoutineExercise",
         )
 
         // ── 1. Parse CREATE TABLE blocks from VitruvianDatabase.sq ──────────
@@ -331,8 +336,8 @@ tasks.register("validateSchemaManifest") {
         // These are tables created by the manifest (no migration). Their base shape
         // columns are covered.
         val tableOpRegex = Regex(
-            """SchemaTableOperation\(\s*table\s*=\s*"(\w+)"\s*,\s*createSql\s*=\s*"""
-                    + """["$]{3}(.*?)["$]{3}""",
+            """SchemaTableOperation\(\s*table\s*=\s*"(\w+)"\s*,\s*createSql\s*=\s*""" +
+                """["$]{3}(.*?)["$]{3}""",
             setOf(RegexOption.DOT_MATCHES_ALL),
         )
         val manifestTableColumns = mutableMapOf<String, MutableSet<String>>()
@@ -392,8 +397,8 @@ tasks.register("validateSchemaManifest") {
         if (uncovered.isNotEmpty()) {
             throw GradleException(
                 "Schema manifest validation FAILED: ${uncovered.size} column(s) lack provenance:\n" +
-                        uncovered.sorted().joinToString("\n") { "  - $it" } +
-                        "\n\nFix: add a SchemaHealOperation, SchemaTableOperation, or migration for each."
+                    uncovered.sorted().joinToString("\n") { "  - $it" } +
+                    "\n\nFix: add a SchemaHealOperation, SchemaTableOperation, or migration for each.",
             )
         }
 

@@ -453,9 +453,9 @@ object PortalSyncAdapter {
             PortalRoutineExerciseSyncDto(
                 id = ex.id,
                 routineId = routine.id,
-                exerciseId = ex.exercise.id,               // Catalog exercise ID (#404)
+                exerciseId = ex.exercise.id, // Catalog exercise ID (#404)
                 name = ex.exercise.name,
-                displayName = ex.exercise.displayName,     // Disambiguated name (#404)
+                displayName = ex.exercise.displayName, // Disambiguated name (#404)
                 muscleGroup = ex.exercise.muscleGroup,
                 exerciseEquipment = ex.exercise.equipment, // Equipment snapshot (#404)
                 sets = ex.sets,

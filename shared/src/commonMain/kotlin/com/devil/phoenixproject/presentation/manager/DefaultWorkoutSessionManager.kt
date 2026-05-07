@@ -616,158 +616,158 @@ class DefaultWorkoutSessionManager(
                 summaryAutoAdvanceJob?.cancel()
                 summaryAutoAdvanceJob = null
 
-            // Reset detection state for the new set
-            detectionManager.resetForNewSet()
+                // Reset detection state for the new set
+                detectionManager.resetForNewSet()
 
-            val routine = coordinator._loadedRoutine.value
-            val autoplay = settingsManager.autoplayEnabled.value
+                val routine = coordinator._loadedRoutine.value
+                val autoplay = settingsManager.autoplayEnabled.value
 
-            // Issue #209: If we have a loaded routine, force isJustLift = false
-            val isJustLift = if (routine != null) {
-                coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(isJustLift = false)
-                false
-            } else {
-                coordinator._workoutParameters.value.isJustLift
-            }
-
-            Logger.d { "proceedFromSummary: routine=${routine?.name ?: "NULL"}, isJustLift=$isJustLift, autoplay=$autoplay" }
-            Logger.d {
-                "  currentExerciseIndex=${coordinator._currentExerciseIndex.value}, currentSetIndex=${coordinator._currentSetIndex.value}"
-            }
-
-            // Check if routine is complete (for routine mode, not Just Lift)
-            if (routine != null && !isJustLift) {
-                val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
-                val isLastSetOfExercise = coordinator._currentSetIndex.value >= (currentExercise?.setReps?.size ?: 1) - 1
-
-                // Mark exercise as completed if this was the last set of THIS exercise
-                if (isLastSetOfExercise) {
-                    coordinator._completedExercises.value = coordinator._completedExercises.value + coordinator._currentExerciseIndex.value
+                // Issue #209: If we have a loaded routine, force isJustLift = false
+                val isJustLift = if (routine != null) {
+                    coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(isJustLift = false)
+                    false
+                } else {
+                    coordinator._workoutParameters.value.isJustLift
                 }
 
-                // Check if there are ANY more steps using superset-aware navigation
-                val nextStep = routineFlowManager.getNextStep(
-                    routine,
-                    coordinator._currentExerciseIndex.value,
-                    coordinator._currentSetIndex.value,
-                )
-
-                // If no more steps in the entire routine, show completion screen
-                if (nextStep == null) {
-                    Logger.d { "proceedFromSummary: No more steps - showing routine complete" }
-                    // Issue #393: Set workoutState to Idle BEFORE showing routine complete.
-                    // Previously, showRoutineComplete() set routineFlowState=Complete while
-                    // workoutState was still SetSummary. This created a race window where:
-                    //   1. ActiveWorkoutScreen sees Complete → navigates to RoutineComplete
-                    //   2. EnhancedMainScreen sees SetSummary → force-navigates back to ActiveWorkout
-                    //   3. New ActiveWorkoutScreen sees Complete → navigates again
-                    // Result: multiple overlapping RoutineComplete screens (visible as garbled UI).
-                    // Setting Idle first ensures shouldResumeActiveWorkout() returns false before
-                    // the Complete navigation fires.
-                    // Issue #395: Write aggregate health workout before clearing routine state
-                    activeSessionEngine.writeRoutineHealthData()
-                    coordinator._workoutState.value = WorkoutState.Idle
-                    showRoutineComplete()
-                    // Clear routine session context so stale IDs don't leak into next routine
-                    coordinator.currentRoutineSessionId = null
-                    coordinator.currentRoutineName = null
-                    coordinator.currentRoutineId = null
-                    return@launch
+                Logger.d { "proceedFromSummary: routine=${routine?.name ?: "NULL"}, isJustLift=$isJustLift, autoplay=$autoplay" }
+                Logger.d {
+                    "  currentExerciseIndex=${coordinator._currentExerciseIndex.value}, currentSetIndex=${coordinator._currentSetIndex.value}"
                 }
 
-                // Autoplay OFF: go directly to SetReady for manual control (no rest timer)
-                if (!autoplay) {
-                    Logger.d { "proceedFromSummary: Autoplay OFF - going to SetReady for next step" }
-                    val (nextExIdx, nextSetIdx) = nextStep
+                // Check if routine is complete (for routine mode, not Just Lift)
+                if (routine != null && !isJustLift) {
+                    val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
+                    val isLastSetOfExercise = coordinator._currentSetIndex.value >= (currentExercise?.setReps?.size ?: 1) - 1
 
-                    // Advance to next step
-                    coordinator._currentExerciseIndex.value = nextExIdx
-                    coordinator._currentSetIndex.value = nextSetIdx
-
-                    // Clear RPE for next set
-                    coordinator._currentSetRpe.value = null
-
-                    // Get next exercise and update parameters
-                    val nextExercise = routine.exercises[nextExIdx]
-                    val nextSetWeight = nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
-                        ?: nextExercise.weightPerCableKg
-                    val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
-                    val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
-                    val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
-
-                    coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
-                        weightPerCableKg = nextSetWeight,
-                        reps = nextSetReps ?: 0,
-                        programMode = nextExercise.programMode,
-                        echoLevel = nextExercise.echoLevel,
-                        eccentricLoad = nextExercise.eccentricLoad,
-                        progressionRegressionKg = nextExercise.progressionKg,
-                        selectedExerciseId = nextExercise.exercise.id,
-                        isAMRAP = nextIsAMRAP,
-                        stallDetectionEnabled = nextExercise.stallDetectionEnabled,
-                    )
-                    Logger.d {
-                        "proceedFromSummary: Issue #203 - Updated params for next set: ${nextExercise.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP"
+                    // Mark exercise as completed if this was the last set of THIS exercise
+                    if (isLastSetOfExercise) {
+                        coordinator._completedExercises.value = coordinator._completedExercises.value + coordinator._currentExerciseIndex.value
                     }
 
-                    // Reset counters for next set
-                    repCounter.resetCountsOnly()
+                    // Check if there are ANY more steps using superset-aware navigation
+                    val nextStep = routineFlowManager.getNextStep(
+                        routine,
+                        coordinator._currentExerciseIndex.value,
+                        coordinator._currentSetIndex.value,
+                    )
+
+                    // If no more steps in the entire routine, show completion screen
+                    if (nextStep == null) {
+                        Logger.d { "proceedFromSummary: No more steps - showing routine complete" }
+                        // Issue #393: Set workoutState to Idle BEFORE showing routine complete.
+                        // Previously, showRoutineComplete() set routineFlowState=Complete while
+                        // workoutState was still SetSummary. This created a race window where:
+                        //   1. ActiveWorkoutScreen sees Complete → navigates to RoutineComplete
+                        //   2. EnhancedMainScreen sees SetSummary → force-navigates back to ActiveWorkout
+                        //   3. New ActiveWorkoutScreen sees Complete → navigates again
+                        // Result: multiple overlapping RoutineComplete screens (visible as garbled UI).
+                        // Setting Idle first ensures shouldResumeActiveWorkout() returns false before
+                        // the Complete navigation fires.
+                        // Issue #395: Write aggregate health workout before clearing routine state
+                        activeSessionEngine.writeRoutineHealthData()
+                        coordinator._workoutState.value = WorkoutState.Idle
+                        showRoutineComplete()
+                        // Clear routine session context so stale IDs don't leak into next routine
+                        coordinator.currentRoutineSessionId = null
+                        coordinator.currentRoutineName = null
+                        coordinator.currentRoutineId = null
+                        return@launch
+                    }
+
+                    // Autoplay OFF: go directly to SetReady for manual control (no rest timer)
+                    if (!autoplay) {
+                        Logger.d { "proceedFromSummary: Autoplay OFF - going to SetReady for next step" }
+                        val (nextExIdx, nextSetIdx) = nextStep
+
+                        // Advance to next step
+                        coordinator._currentExerciseIndex.value = nextExIdx
+                        coordinator._currentSetIndex.value = nextSetIdx
+
+                        // Clear RPE for next set
+                        coordinator._currentSetRpe.value = null
+
+                        // Get next exercise and update parameters
+                        val nextExercise = routine.exercises[nextExIdx]
+                        val nextSetWeight = nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
+                            ?: nextExercise.weightPerCableKg
+                        val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
+                        val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
+                        val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
+
+                        coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                            weightPerCableKg = nextSetWeight,
+                            reps = nextSetReps ?: 0,
+                            programMode = nextExercise.programMode,
+                            echoLevel = nextExercise.echoLevel,
+                            eccentricLoad = nextExercise.eccentricLoad,
+                            progressionRegressionKg = nextExercise.progressionKg,
+                            selectedExerciseId = nextExercise.exercise.id,
+                            isAMRAP = nextIsAMRAP,
+                            stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                        )
+                        Logger.d {
+                            "proceedFromSummary: Issue #203 - Updated params for next set: ${nextExercise.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP"
+                        }
+
+                        // Reset counters for next set
+                        repCounter.resetCountsOnly()
+                        activeSessionEngine.resetAutoStopState()
+
+                        // Navigate to SetReady screen
+                        enterSetReady(nextExIdx, nextSetIdx)
+                        return@launch
+                    }
+                }
+
+                // Check if there are more sets or exercises remaining (for rest timer logic)
+                val hasMoreSets = routine?.let {
+                    val currentExercise = it.exercises.getOrNull(coordinator._currentExerciseIndex.value)
+                    val isAMRAPExercise = currentExercise?.isAMRAP == true
+
+                    if (isAMRAPExercise) {
+                        true // AMRAP always has "more sets" - user decides when to move on
+                    } else {
+                        currentExercise != null && coordinator._currentSetIndex.value < currentExercise.setReps.size - 1
+                    }
+                } ?: false
+
+                val hasMoreExercises = routine?.let {
+                    coordinator._currentExerciseIndex.value < it.exercises.size - 1
+                } ?: false
+
+                // Single Exercise mode (not Just Lift, includes temp routines from SingleExerciseScreen)
+                val isSingleExercise = isSingleExerciseMode(coordinator) && !isJustLift
+                // Show rest timer if autoplay ON and more sets/exercises remaining
+                val shouldShowRestTimer = (hasMoreSets || hasMoreExercises) && !isJustLift
+
+                Logger.d { "proceedFromSummary: hasMoreSets=$hasMoreSets, hasMoreExercises=$hasMoreExercises" }
+                Logger.d { "  isSingleExercise=$isSingleExercise, shouldShowRestTimer=$shouldShowRestTimer" }
+
+                // Clear RPE for next set
+                coordinator._currentSetRpe.value = null
+
+                // Show rest timer if there are more sets/exercises (autoplay ON path)
+                if (shouldShowRestTimer) {
+                    Logger.d { "proceedFromSummary: Starting rest timer..." }
+                    activeSessionEngine.startRestTimer()
+                } else {
+                    Logger.d { "proceedFromSummary: No rest timer - marking as completed/idle" }
+                    repCounter.reset()
                     activeSessionEngine.resetAutoStopState()
 
-                    // Navigate to SetReady screen
-                    enterSetReady(nextExIdx, nextSetIdx)
-                    return@launch
+                    // Auto-reset for Just Lift mode to enable immediate restart
+                    if (isJustLift) {
+                        Logger.d { "Just Lift mode: Auto-resetting to Idle" }
+                        activeSessionEngine.resetForNewWorkout()
+                        coordinator._workoutState.value = WorkoutState.Idle
+                        activeSessionEngine.enableHandleDetection()
+                        bleRepository.enableJustLiftWaitingMode()
+                        Logger.d { "Just Lift mode: Ready for next exercise" }
+                    } else {
+                        coordinator._workoutState.value = WorkoutState.Completed
+                    }
                 }
-            }
-
-            // Check if there are more sets or exercises remaining (for rest timer logic)
-            val hasMoreSets = routine?.let {
-                val currentExercise = it.exercises.getOrNull(coordinator._currentExerciseIndex.value)
-                val isAMRAPExercise = currentExercise?.isAMRAP == true
-
-                if (isAMRAPExercise) {
-                    true // AMRAP always has "more sets" - user decides when to move on
-                } else {
-                    currentExercise != null && coordinator._currentSetIndex.value < currentExercise.setReps.size - 1
-                }
-            } ?: false
-
-            val hasMoreExercises = routine?.let {
-                coordinator._currentExerciseIndex.value < it.exercises.size - 1
-            } ?: false
-
-            // Single Exercise mode (not Just Lift, includes temp routines from SingleExerciseScreen)
-            val isSingleExercise = isSingleExerciseMode(coordinator) && !isJustLift
-            // Show rest timer if autoplay ON and more sets/exercises remaining
-            val shouldShowRestTimer = (hasMoreSets || hasMoreExercises) && !isJustLift
-
-            Logger.d { "proceedFromSummary: hasMoreSets=$hasMoreSets, hasMoreExercises=$hasMoreExercises" }
-            Logger.d { "  isSingleExercise=$isSingleExercise, shouldShowRestTimer=$shouldShowRestTimer" }
-
-            // Clear RPE for next set
-            coordinator._currentSetRpe.value = null
-
-            // Show rest timer if there are more sets/exercises (autoplay ON path)
-            if (shouldShowRestTimer) {
-                Logger.d { "proceedFromSummary: Starting rest timer..." }
-                activeSessionEngine.startRestTimer()
-            } else {
-                Logger.d { "proceedFromSummary: No rest timer - marking as completed/idle" }
-                repCounter.reset()
-                activeSessionEngine.resetAutoStopState()
-
-                // Auto-reset for Just Lift mode to enable immediate restart
-                if (isJustLift) {
-                    Logger.d { "Just Lift mode: Auto-resetting to Idle" }
-                    activeSessionEngine.resetForNewWorkout()
-                    coordinator._workoutState.value = WorkoutState.Idle
-                    activeSessionEngine.enableHandleDetection()
-                    bleRepository.enableJustLiftWaitingMode()
-                    Logger.d { "Just Lift mode: Ready for next exercise" }
-                } else {
-                    coordinator._workoutState.value = WorkoutState.Completed
-                }
-            }
             } finally {
                 coordinator.proceedFromSummaryInProgress.value = false
             }

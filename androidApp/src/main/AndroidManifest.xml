@@ -24,8 +24,10 @@
     <!-- Network state permission for connectivity checks -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Foreground service permissions -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Foreground service permissions. Play Console declaration: user-initiated BLE workout sessions need an ongoing visible service. -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE"
+        tools:ignore="ForegroundServicesPolicy" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -41,9 +43,13 @@
     <!-- Camera permission for Form Check feature -->
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- Health Connect permissions (Android 14+ requires manifest declarations) -->
-    <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
-    <uses-permission android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED" />
+    <!-- Health Connect permissions. Play Console declaration: optional workout export writes only exercise and calories records. -->
+    <uses-permission
+        android:name="android.permission.health.WRITE_EXERCISE"
+        tools:ignore="HealthConnectPolicy" />
+    <uses-permission
+        android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED"
+        tools:ignore="HealthConnectPolicy" />
 
     <!-- Camera feature (not required - app works without camera) -->
     <uses-feature
@@ -80,7 +86,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.VitruvianProjectPhoenix"
-        tools:targetApi="36">
+        tools:targetApi="37">
 
         <activity
             android:name=".MainActivity"

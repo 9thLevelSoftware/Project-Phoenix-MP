@@ -2,7 +2,6 @@ package com.devil.phoenixproject
 
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.Exercise
-import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset

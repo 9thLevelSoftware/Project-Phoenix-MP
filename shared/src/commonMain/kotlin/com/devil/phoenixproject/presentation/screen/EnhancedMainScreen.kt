@@ -64,6 +64,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -800,6 +802,9 @@ private fun ConnectionStatusIndicator(
                 onClick = onToggleConnection,
                 role = Role.Button,
             )
+            .semantics {
+                this.contentDescription = contentDescription
+            }
             .padding(horizontal = if (compact) 8.dp else 10.dp),
         contentAlignment = Alignment.Center,
     ) {

@@ -28,7 +28,6 @@ class TrendAnalysisUseCase {
         val sumY = yValues.sum()
         val sumXY = xValues.zip(yValues).sumOf { (x, y) -> (x * y).toDouble() }
         val sumX2 = xValues.sumOf { (it * it).toDouble() }
-        val sumY2 = yValues.sumOf { (it * it).toDouble() }
 
         val slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX)
         val intercept = (sumY - slope * sumX) / n

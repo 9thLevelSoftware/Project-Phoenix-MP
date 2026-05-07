@@ -140,20 +140,8 @@ actual fun CompactNumberPicker(
                                             }
                                         }
                                     }
-
-                                    // Try to access and modify the Paint object
-                                    try {
-                                        val paintField = NumberPicker::class.java.getDeclaredField(
-                                            "mSelectorWheelPaint",
-                                        )
-                                        paintField.isAccessible = true
-                                        val paint = paintField.get(this) as? android.graphics.Paint
-                                        paint?.color = textColor.toArgb()
-                                    } catch (_: Exception) {
-                                        // Paint field not found - expected on some Android versions
-                                    }
                                 } catch (_: Exception) {
-                                    // Reflection failed - fall back to default styling
+                                    // Best-effort legacy styling; API 26-28 may keep default selector text color.
                                 }
                             }
                         }
@@ -191,20 +179,8 @@ actual fun CompactNumberPicker(
                                         }
                                     }
                                 }
-
-                                // Try to access and modify the Paint object
-                                try {
-                                    val paintField = NumberPicker::class.java.getDeclaredField(
-                                        "mSelectorWheelPaint",
-                                    )
-                                    paintField.isAccessible = true
-                                    val paint = paintField.get(picker) as? android.graphics.Paint
-                                    paint?.color = textColor.toArgb()
-                                } catch (_: Exception) {
-                                    // Paint field not found - expected on some Android versions
-                                }
                             } catch (_: Exception) {
-                                // Reflection failed - fall back to default styling
+                                // Best-effort legacy styling; API 26-28 may keep default selector text color.
                             }
                         }
                     }

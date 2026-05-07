@@ -33,8 +33,8 @@ import com.devil.phoenixproject.presentation.components.StableRepProgress
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.manager.DetectionState
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
-import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
@@ -97,25 +97,6 @@ fun WorkoutHud(
     // Derive display multiplier from current exercise in loaded routine
     val currentExerciseCableCount = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
         ?.exercise?.displayMultiplier
-
-    // Track consecutive high-asymmetry reps for alert (ASYM-05)
-    var consecutiveHighAsymmetryCount by remember { mutableStateOf(0) }
-    var lastProcessedRepNumber by remember { mutableStateOf(0) }
-
-    // Update consecutive count when new rep data arrives
-    LaunchedEffect(latestBiomechanicsResult?.repNumber) {
-        val result = latestBiomechanicsResult ?: return@LaunchedEffect
-        if (result.repNumber > lastProcessedRepNumber) {
-            lastProcessedRepNumber = result.repNumber
-            if (result.asymmetry.asymmetryPercent > 15f) {
-                consecutiveHighAsymmetryCount++
-            } else {
-                consecutiveHighAsymmetryCount = 0
-            }
-        }
-    }
-
-    val showAsymmetryAlert = consecutiveHighAsymmetryCount >= 3
 
     // Determine gradient for background based on phase?
     // For now, keep it simple dark/light surface
@@ -1125,7 +1106,7 @@ private fun VelocityLossIndicator(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "${currentLossPercent.roundToInt()}% / ${thresholdPercent}%",
+                "${currentLossPercent.roundToInt()}% / $thresholdPercent%",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = if (shouldStopSet) FontWeight.Bold else FontWeight.Normal,
                 color = if (shouldStopSet) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurface,

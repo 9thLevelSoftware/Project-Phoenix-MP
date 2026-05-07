@@ -34,6 +34,12 @@ import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -43,12 +49,6 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModelTest {
@@ -219,16 +219,22 @@ class MainViewModelTest {
             isJustLift = true,
         )
         viewModel.updateWorkoutParameters(initialParams)
-        assertEquals(30f, viewModel.workoutParameters.value.weightPerCableKg,
-            "Precondition: weight should be 30f after initial set")
+        assertEquals(
+            30f,
+            viewModel.workoutParameters.value.weightPerCableKg,
+            "Precondition: weight should be 30f after initial set",
+        )
 
         // Attempt to write near-zero weight (simulates the Compose race condition
         // where param-sync LaunchedEffect fires with the hardcoded initial 0.453592f)
         viewModel.updateWorkoutParameters(initialParams.copy(weightPerCableKg = 0.453592f))
 
         // The coordinator should still have 30f, not 0.453592f
-        assertEquals(30f, viewModel.workoutParameters.value.weightPerCableKg,
-            "Near-zero weight should be rejected when isJustLift is true")
+        assertEquals(
+            30f,
+            viewModel.workoutParameters.value.weightPerCableKg,
+            "Near-zero weight should be rejected when isJustLift is true",
+        )
     }
 
     @Test
@@ -243,8 +249,11 @@ class MainViewModelTest {
 
         viewModel.updateWorkoutParameters(initialParams.copy(weightPerCableKg = 35f))
 
-        assertEquals(35f, viewModel.workoutParameters.value.weightPerCableKg,
-            "Valid weight should be accepted in Just Lift mode")
+        assertEquals(
+            35f,
+            viewModel.workoutParameters.value.weightPerCableKg,
+            "Valid weight should be accepted in Just Lift mode",
+        )
     }
 
     @Test
@@ -260,8 +269,11 @@ class MainViewModelTest {
 
         viewModel.updateWorkoutParameters(initialParams.copy(weightPerCableKg = 0.453592f))
 
-        assertEquals(0.453592f, viewModel.workoutParameters.value.weightPerCableKg,
-            "Near-zero weight should be allowed in non-Just-Lift mode")
+        assertEquals(
+            0.453592f,
+            viewModel.workoutParameters.value.weightPerCableKg,
+            "Near-zero weight should be allowed in non-Just-Lift mode",
+        )
     }
 
     // ========== Disconnect Tests ==========

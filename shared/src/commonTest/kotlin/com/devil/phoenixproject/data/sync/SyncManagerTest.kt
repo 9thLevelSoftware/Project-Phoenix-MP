@@ -10,8 +10,6 @@ import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
-import kotlinx.coroutines.async
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -19,6 +17,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
 
 /**
  * Integration tests for SyncManager.
@@ -194,7 +194,7 @@ class SyncManagerTest {
             PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         // Make pull succeed so we get full Success state
-        val expectedEpoch = kotlinx.datetime.Instant.parse(
+        val expectedEpoch = kotlin.time.Instant.parse(
             "2026-03-02T12:00:00Z",
         ).toEpochMilliseconds()
         fakeApi.pullResult = Result.success(
@@ -499,7 +499,7 @@ class SyncManagerTest {
         val result = manager.sync()
 
         assertTrue(result.isSuccess, "Sync should succeed despite pull failure (push succeeded)")
-        val expectedEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
+        val expectedEpoch = kotlin.time.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         val state = manager.syncState.value
         assertIs<SyncState.PartialSuccess>(state)
         assertTrue(state.pushSucceeded, "Push should have succeeded")
@@ -526,7 +526,7 @@ class SyncManagerTest {
     fun syncUpdatesLastSyncTimestampInTokenStorage() = runTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T18:00:00Z"
-        val expectedEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
+        val expectedEpoch = kotlin.time.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(syncTime = pushSyncTimeIso),
         )
@@ -571,7 +571,7 @@ class SyncManagerTest {
     fun syncUsesPullSyncTimeWhenLargerThanPush() = runTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
-        val pullSyncTimeEpoch = kotlinx.datetime.Instant.parse(
+        val pullSyncTimeEpoch = kotlin.time.Instant.parse(
             "2026-03-02T13:00:00Z",
         ).toEpochMilliseconds()
         fakeApi.pushResult = Result.success(
@@ -608,7 +608,7 @@ class SyncManagerTest {
         val result = manager.sync()
 
         assertTrue(result.isSuccess, "Result should be success (push succeeded)")
-        val expectedEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
+        val expectedEpoch = kotlin.time.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         assertEquals(
             expectedEpoch,
             result.getOrThrow(),

@@ -47,7 +47,7 @@ class SyncBackoffTest {
         var syncResult: Result<Long> = Result.success(currentTimeMillis())
         var syncCallCount = 0
 
-        suspend fun sync(): Result<Long> {
+        fun sync(): Result<Long> {
             syncCallCount++
             if (syncResult.isSuccess) {
                 _syncState.value = SyncState.Success(syncResult.getOrThrow())
@@ -99,21 +99,19 @@ class SyncBackoffTest {
         }
         fun consecutiveFailures(): Int = consecutiveFailures
 
-        private fun currentThrottleMillis(): Long {
-            return if (currentBackoffIndex == 0) {
-                DEFAULT_THROTTLE_MILLIS
-            } else {
-                val delayMin = BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) {
-                    BACKOFF_SCHEDULE_MINUTES.last()
-                }
-                delayMin * 60 * 1000L
+        private fun currentThrottleMillis(): Long = if (currentBackoffIndex == 0) {
+            DEFAULT_THROTTLE_MILLIS
+        } else {
+            val delayMin = BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) {
+                BACKOFF_SCHEDULE_MINUTES.last()
             }
+            delayMin * 60 * 1000L
         }
 
-        suspend fun onWorkoutCompleted() = attemptSync(bypassThrottle = true)
-        suspend fun onAppForeground() = attemptSync(bypassThrottle = false)
+        fun onWorkoutCompleted() = attemptSync(bypassThrottle = true)
+        fun onAppForeground() = attemptSync(bypassThrottle = false)
 
-        private suspend fun attemptSync(bypassThrottle: Boolean) {
+        private fun attemptSync(bypassThrottle: Boolean) {
             if (!syncManager.isAuthenticated.value) return
             val user = syncManager.currentUser.value
             if (user?.isPremium == false && syncManager.lastSyncTime.value > 0) return
@@ -163,13 +161,16 @@ class SyncBackoffTest {
                         currentBackoffIndex++
                     }
                 }
+
                 SyncErrorCategory.PERMANENT -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true
                 }
+
                 SyncErrorCategory.NETWORK -> {
                     isWaitingForConnectivity = true
                 }
+
                 SyncErrorCategory.AUTH -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true

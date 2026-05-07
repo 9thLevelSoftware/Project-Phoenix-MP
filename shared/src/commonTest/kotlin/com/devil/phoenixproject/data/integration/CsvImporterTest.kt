@@ -153,7 +153,7 @@ class CsvImporterTest {
         )
         val preview = CsvImporter.parse(csv, WeightUnit.KG)
         assertNotNull(preview.dateRange)
-        val (earliest, latest) = preview.dateRange!!
+        val (earliest, latest) = preview.dateRange
         assertTrue(earliest < latest, "Earliest should be before latest")
     }
 

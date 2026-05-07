@@ -18,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -61,9 +60,6 @@ fun ProfileSidePanel(
         WindowWidthSizeClass.Medium -> 240.dp
         WindowWidthSizeClass.Compact -> 200.dp
     }
-
-    val density = LocalDensity.current
-    val panelWidthPx = with(density) { panelWidth.toPx() }
 
     // Panel offset animation
     val panelOffset by animateDpAsState(

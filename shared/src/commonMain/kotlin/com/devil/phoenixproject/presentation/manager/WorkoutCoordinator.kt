@@ -16,6 +16,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -25,7 +26,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlin.concurrent.Volatile
 
 /**
  * Shared state bus for all workout state. Contains zero business logic methods —
@@ -166,6 +166,7 @@ class WorkoutCoordinator(
     internal val _justLiftRestCountdown = MutableStateFlow<Int?>(null)
     val justLiftRestCountdown: StateFlow<Int?> = _justLiftRestCountdown.asStateFlow()
     internal var justLiftRestTimerJob: Job? = null
+
     @Volatile
     internal var justLiftRestDeadlineElapsedRealtimeMs: Long? = null
 
@@ -332,6 +333,7 @@ class WorkoutCoordinator(
     // Derived remaining seconds shown in the UI. The live countdown source of truth is the
     // monotonic deadline below so background suspension can catch up correctly.
     internal val _restSecondsRemaining = MutableStateFlow(0)
+
     @Volatile
     internal var restDeadlineElapsedRealtimeMs: Long? = null
 

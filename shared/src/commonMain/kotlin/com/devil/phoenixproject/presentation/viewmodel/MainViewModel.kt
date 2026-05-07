@@ -53,6 +53,7 @@ import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -60,6 +61,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // HistoryItem, SingleSessionHistoryItem, GroupedRoutineHistoryItem moved to
 // com.devil.phoenixproject.presentation.manager.HistoryManager
@@ -69,7 +71,7 @@ import kotlinx.coroutines.launch
  */
 data class TopBarAction(val icon: ImageVector, val description: String, val onClick: () -> Unit)
 
-class MainViewModel constructor(
+class MainViewModel(
     private val bleRepository: BleRepository,
     private val workoutRepository: WorkoutRepository,
     val exerciseRepository: ExerciseRepository,
@@ -515,13 +517,15 @@ class MainViewModel constructor(
 
         // Issue: BLE resource leak - Disconnect BLE when ViewModel is cleared
         // to prevent battery drain and orphaned connections.
-        // Use NonCancellable context since viewModelScope may be cancelled during onCleared
-        viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
-            try {
-                bleRepository.disconnect()
-                Logger.i { "BLE disconnected during ViewModel cleanup" }
-            } catch (e: Exception) {
-                Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
+        // Use NonCancellable inside the cleanup coroutine so disconnect can finish during onCleared.
+        viewModelScope.launch {
+            withContext(NonCancellable) {
+                try {
+                    bleRepository.disconnect()
+                    Logger.i { "BLE disconnected during ViewModel cleanup" }
+                } catch (e: Exception) {
+                    Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
+                }
             }
         }
 

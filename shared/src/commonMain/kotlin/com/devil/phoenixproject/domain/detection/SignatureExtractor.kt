@@ -113,7 +113,6 @@ class SignatureExtractor {
         if (smoothedPositions.size < 5) return emptyList()
 
         val valleys = mutableListOf<Int>()
-        val windowSize = 5 // Look +/- 2 samples for local minimum
 
         // Find all local minima
         for (i in 2 until smoothedPositions.size - 2) {

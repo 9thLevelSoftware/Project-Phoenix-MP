@@ -26,7 +26,6 @@ object ReadinessEngine {
     private const val MIN_HISTORY_DAYS = 28
     private const val MIN_RECENT_SESSIONS = 3
 
-
     /**
      * Inclusive cutoff policy for readiness time windows.
      * A session is in-window when timestamp >= cutoffMs.

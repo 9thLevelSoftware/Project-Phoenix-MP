@@ -395,6 +395,7 @@ class MigrationManager(
             val existing = canonicalByKey[key]
             canonicalByKey[key] = when {
                 existing == null -> canonical
+
                 shouldReplacePersonalRecord(canonical, existing) -> canonical.copy(
                     exerciseName = canonical.exerciseName.ifBlank { existing.exerciseName },
                 )
@@ -440,6 +441,7 @@ class MigrationManager(
             )
             merged[badge.badgeId] = when {
                 existing == null -> canonical
+
                 canonical.earnedAt < existing.earnedAt -> canonical.copy(
                     celebratedAt = canonical.celebratedAt ?: existing.celebratedAt,
                 )
@@ -814,13 +816,11 @@ class MigrationManager(
      * @param targetProfileId Profile ID to migrate orphaned records to (usually active profile)
      * @return Number of records repaired
      */
-    suspend fun repairOrphanedPRRecords(targetProfileId: String): Int {
-        return migrationMutex.withLock {
-            _orphanedDataRepairState.value = OrphanedDataRepairState.Repairing("Migrating orphaned PR records to $targetProfileId")
+    suspend fun repairOrphanedPRRecords(targetProfileId: String): Int = migrationMutex.withLock {
+        _orphanedDataRepairState.value = OrphanedDataRepairState.Repairing("Migrating orphaned PR records to $targetProfileId")
 
-            val orphanedCounts = scanForOrphanedPRRecords()
-            repairOrphanedPRRecordsInternal(targetProfileId, orphanedCounts)
-        }
+        val orphanedCounts = scanForOrphanedPRRecords()
+        repairOrphanedPRRecordsInternal(targetProfileId, orphanedCounts)
     }
 
     /**

@@ -69,6 +69,7 @@ import com.devil.phoenixproject.data.repository.LogLevel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.stringResource
@@ -88,7 +89,6 @@ import vitruvianprojectphoenix.shared.generated.resources.export_logs
 import vitruvianprojectphoenix.shared.generated.resources.log_level_count
 import vitruvianprojectphoenix.shared.generated.resources.logs_ready_to_export
 import vitruvianprojectphoenix.shared.generated.resources.search_logs
-import kotlin.time.Instant
 
 /**
  * Connection logs screen - shows BLE connection history with filtering.

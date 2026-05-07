@@ -9,7 +9,6 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Routine
-import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel

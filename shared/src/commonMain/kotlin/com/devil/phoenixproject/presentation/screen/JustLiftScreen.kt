@@ -972,13 +972,6 @@ fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, auto
         isCountingDown -> countdownOrange
         else -> autoStartGreen
     }
-    // Light variants computed by blending with white for gradient pairs
-    val secondaryColor = primaryColor.copy(
-        red = (primaryColor.red + 1f) / 2f,
-        green = (primaryColor.green + 1f) / 2f,
-        blue = (primaryColor.blue + 1f) / 2f,
-    )
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(

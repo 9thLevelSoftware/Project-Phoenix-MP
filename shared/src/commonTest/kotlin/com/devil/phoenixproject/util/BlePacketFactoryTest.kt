@@ -1368,8 +1368,8 @@ class BlePacketFactoryTest {
         assertEquals(progressionKg, increment, "increment at 0x4C must be progressionKg (0.907kg)")
 
         // Protocol force config (0x50-0x5F)
-        val adjustedWeight = weightPerCableKg - progressionKg  // 40 - 0.907 = 39.093
-        val forceMax = adjustedWeight + 10.0f                   // 49.093
+        val adjustedWeight = weightPerCableKg - progressionKg // 40 - 0.907 = 39.093
+        val forceMax = adjustedWeight + 10.0f // 49.093
 
         assertEquals(0.0f, readFloatLE(packet, 0x50), "forceMin at 0x50 must be 0")
         assertEquals(
@@ -1409,7 +1409,7 @@ class BlePacketFactoryTest {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
-            weightPerCableKg = 1.5f,  // Suspiciously low but valid
+            weightPerCableKg = 1.5f, // Suspiciously low but valid
             progressionRegressionKg = 0.5f,
         )
 

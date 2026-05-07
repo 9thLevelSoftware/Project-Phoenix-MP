@@ -988,7 +988,9 @@ abstract class BaseDataBackupManager(
                     }
 
                     "exportedAt" -> nav.skipValue()
+
                     "appVersion" -> nav.skipValue()
+
                     "data" -> {
                         nav.beginObject()
                         while (nav.hasNextInObject()) {

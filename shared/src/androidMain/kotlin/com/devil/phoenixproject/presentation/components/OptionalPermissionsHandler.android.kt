@@ -43,21 +43,38 @@ fun RequireOptionalPermissions(content: @Composable () -> Unit) {
     // Check if we've already shown onboarding
     var onboardingShown by remember { mutableStateOf(prefsManager.isPermissionsOnboardingShown()) }
 
-    // Check if all optional permissions are already granted
-    val allAlreadyGranted = remember {
+    // Health Connect availability
+    val healthAvailable = remember {
+        try {
+            HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    var allAlreadyGranted by remember { mutableStateOf(false) }
+
+    LaunchedEffect(context, healthAvailable) {
         val micGranted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.RECORD_AUDIO,
         ) == PackageManager.PERMISSION_GRANTED
 
-        val healthAvailable = try {
-            HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
-        } catch (_: Exception) {
-            false
+        val healthGranted = if (healthAvailable) {
+            try {
+                HealthConnectClient.getOrCreate(context)
+                    .permissionController
+                    .getGrantedPermissions()
+                    .containsAll(requiredHealthPermissions)
+            } catch (e: Exception) {
+                log.w(e) { "Unable to check existing Health Connect permissions" }
+                false
+            }
+        } else {
+            true
         }
 
-        // If Health Connect isn't available, don't block on it
-        micGranted && (!healthAvailable || false) // Health permissions checked async below
+        allAlreadyGranted = micGranted && healthGranted
     }
 
     if (onboardingShown || allAlreadyGranted) {
@@ -70,19 +87,6 @@ fun RequireOptionalPermissions(content: @Composable () -> Unit) {
     // Android only allows one Activity Result contract in flight at a time.
     // Launching two simultaneously causes the second to be silently dropped.
     // Flow: user taps Grant → mic dialog → mic callback → health dialog → health callback → done
-
-    // Permission flow phase tracking
-    // IDLE → MIC_REQUESTED → HEALTH_REQUESTED → DONE
-    var phase by remember { mutableStateOf("IDLE") }
-
-    // Health Connect availability
-    val healthAvailable = remember {
-        try {
-            HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
-        } catch (_: Exception) {
-            false
-        }
-    }
 
     // Health Connect permission launcher (registered first, launched second)
     val healthPermissionLauncher = rememberLauncherForActivityResult(
@@ -104,7 +108,6 @@ fun RequireOptionalPermissions(content: @Composable () -> Unit) {
         log.d { "Microphone permission result: $granted" }
         // Mic done, now launch health if available
         if (healthAvailable) {
-            phase = "HEALTH_REQUESTED"
             healthPermissionLauncher.launch(requiredHealthPermissions)
         } else {
             // No health to request, we're done
@@ -122,7 +125,6 @@ fun RequireOptionalPermissions(content: @Composable () -> Unit) {
         OptionalPermissionsScreen(
             healthAvailable = healthAvailable,
             onGrantPermissions = {
-                phase = "MIC_REQUESTED"
                 micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             },
             onSkip = {

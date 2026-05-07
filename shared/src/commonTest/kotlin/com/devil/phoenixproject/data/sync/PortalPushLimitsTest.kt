@@ -71,21 +71,19 @@ class PortalPushLimitsTest {
      * produce exactly 1 portal session in PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry.
      * Every session has an exerciseName so it maps to a real PortalExerciseDto.
      */
-    private fun buildSessions(count: Int, startTime: Long = 1_740_000_000_000L): List<WorkoutSession> {
-        return List(count) { i ->
-            WorkoutSession(
-                id = "sess-$i",
-                timestamp = startTime + i,
-                mode = "OldSchool",
-                reps = 10,
-                weightPerCableKg = 25f,
-                totalReps = 10,
-                exerciseId = "ex-$i",
-                exerciseName = "Squat",
-                routineSessionId = null, // standalone → 1 portal session per mobile session
-                profileId = "default",
-            )
-        }
+    private fun buildSessions(count: Int, startTime: Long = 1_740_000_000_000L): List<WorkoutSession> = List(count) { i ->
+        WorkoutSession(
+            id = "sess-$i",
+            timestamp = startTime + i,
+            mode = "OldSchool",
+            reps = 10,
+            weightPerCableKg = 25f,
+            totalReps = 10,
+            exerciseId = "ex-$i",
+            exerciseName = "Squat",
+            routineSessionId = null, // standalone → 1 portal session per mobile session
+            profileId = "default",
+        )
     }
 
     // ==================== Batch-Size Constant Contract ====================

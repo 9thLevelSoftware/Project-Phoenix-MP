@@ -56,7 +56,7 @@ android {
     defaultConfig {
         applicationId = "com.devil.phoenixproject"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         // Fail fast if CI injects an invalid version code instead of silently shipping a default.
         versionCode = injectedVersionCode ?: 5
         versionName = "0.9.0"
@@ -118,6 +118,13 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    bundle {
+        language {
+            // Runtime locale switching is handled in-app; keep all packaged locales available.
+            enableSplit = false
         }
     }
 }

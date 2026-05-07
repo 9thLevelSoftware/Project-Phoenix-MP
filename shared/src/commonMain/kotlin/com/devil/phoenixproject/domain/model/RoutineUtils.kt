@@ -22,6 +22,7 @@ fun normalizeRoutine(routine: Routine, preserveIntraSupersetOrder: Boolean = fal
     val reorderedExercises = routine.getItems().flatMap { item ->
         when (item) {
             is RoutineItem.Single -> listOf(item.exercise)
+
             is RoutineItem.SupersetItem ->
                 item.superset.exercises.sortedBy { it.orderInSuperset }
         }

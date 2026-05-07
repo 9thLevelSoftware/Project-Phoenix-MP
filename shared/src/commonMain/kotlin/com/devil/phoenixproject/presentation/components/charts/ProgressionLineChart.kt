@@ -14,7 +14,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
@@ -50,8 +49,6 @@ fun ProgressionLineChart(
     val yRange = yMax - yMin
 
     BoxWithConstraints(modifier = modifier) {
-        val density = LocalDensity.current
-
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height

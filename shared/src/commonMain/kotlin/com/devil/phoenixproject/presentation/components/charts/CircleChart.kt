@@ -123,7 +123,7 @@ fun MuscleGroupCircleChart(
                                             val sweepAngle = percentage * 360f
                                             if (angle >= cumulativeAngle && angle < cumulativeAngle + sweepAngle) {
                                                 // Found the segment - get original value from data
-                                                val originalValue = data.find { it.first == label }?.second ?: percentage * total
+                                                val originalValue = data.find { it.first == label }?.second ?: (percentage * total)
                                                 onSegmentClick(label, originalValue)
                                                 break
                                             }

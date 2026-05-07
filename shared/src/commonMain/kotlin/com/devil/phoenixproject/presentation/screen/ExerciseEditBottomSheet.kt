@@ -84,6 +84,7 @@ import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -95,7 +96,6 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_personal_record
 import vitruvianprojectphoenix.shared.generated.resources.label_duration
 import vitruvianprojectphoenix.shared.generated.resources.label_reps
 import vitruvianprojectphoenix.shared.generated.resources.percent_label
-import kotlin.math.roundToInt
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen

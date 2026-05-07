@@ -67,7 +67,7 @@ class BodyweightVolumeCalculatorTest {
         val variants = BodyweightVolumeCalculator.getVariantsForExercise("Push Up")
         assertTrue(variants != null && variants.size > 1, "Push Up should have variant options")
         // First should be standard
-        assertEquals("Standard Push-Up", variants!!.first().first)
+        assertEquals("Standard Push-Up", variants.first().first)
         assertEquals(0.64f, variants.first().second)
     }
 

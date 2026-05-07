@@ -12,7 +12,6 @@ import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
-import kotlinx.cinterop.value
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSLibraryDirectory
@@ -98,6 +97,7 @@ actual class DriverFactory {
     private fun getDatabasePath(): String {
         val fileManager = NSFileManager.defaultManager
         val urls = fileManager.URLsForDirectory(NSLibraryDirectory, NSUserDomainMask)
+
         @Suppress("UNCHECKED_CAST")
         val libraryUrl = (urls as List<NSURL>).firstOrNull()
         return "${libraryUrl?.path ?: ""}/$DATABASE_NAME"

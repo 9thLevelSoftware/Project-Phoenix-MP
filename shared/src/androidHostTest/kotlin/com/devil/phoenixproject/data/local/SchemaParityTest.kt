@@ -4,8 +4,8 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.VitruvianDatabase
-import org.junit.Test
 import kotlin.test.fail
+import org.junit.Test
 
 /**
  * SchemaParityTest -- the definitive CI safety net for schema convergence.
@@ -130,7 +130,9 @@ class SchemaParityTest {
             } catch (e: Exception) {
                 failures += "v$startVersion->v$CURRENT_VERSION: EXCEPTION ${e::class.simpleName}: ${e.message}"
             } finally {
-                try { driver.close() } catch (_: Exception) {}
+                try {
+                    driver.close()
+                } catch (_: Exception) {}
             }
         }
 
@@ -160,8 +162,7 @@ class SchemaParityTest {
         private val TRANSIENT_SUFFIXES = listOf("_rebuild", "_new", "_temp", "_v10")
     }
 
-    private fun isTransientTable(name: String): Boolean =
-        TRANSIENT_SUFFIXES.any { name.endsWith(it, ignoreCase = true) }
+    private fun isTransientTable(name: String): Boolean = TRANSIENT_SUFFIXES.any { name.endsWith(it, ignoreCase = true) }
 
     /**
      * Build the original v1 schema -- the 7 tables that existed before any

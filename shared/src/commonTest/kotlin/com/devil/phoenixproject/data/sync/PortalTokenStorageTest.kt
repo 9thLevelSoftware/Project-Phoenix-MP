@@ -180,7 +180,6 @@ class PortalTokenStorageTest {
     @Test
     fun clearAuthWithEventEmitsEvent() {
         val storage = createStorage()
-        val events = mutableListOf<AuthEvent>()
 
         // Setup: save auth first
         val nowSec = currentTimeMillis() / 1000

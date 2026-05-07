@@ -1,14 +1,15 @@
 package com.devil.phoenixproject.data.auth
 
 import android.app.Activity
-import android.content.ActivityNotFoundException
 import android.app.Application
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.browser.customtabs.CustomTabsIntent
 import co.touchlab.kermit.Logger
+import java.security.SecureRandom
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +18,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.security.SecureRandom
 
 private val log = Logger.withTag("OAuthLauncher")
 
@@ -204,4 +204,3 @@ object AndroidOAuthBridge {
         pending = null
     }
 }
-

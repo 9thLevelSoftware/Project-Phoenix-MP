@@ -19,11 +19,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material3.Card
-import androidx.compose.material3.Surface
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -50,12 +50,12 @@ import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.Spacing
+import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 /**
  * Wrapper composable that constrains card width on tablets to prevent over-stretching.
@@ -79,8 +79,6 @@ private fun ResponsiveCardWrapper(modifier: Modifier = Modifier, content: @Compo
         }
     }
 }
-
-
 
 @Composable
 private fun InsightSectionHeader(title: String, subtitle: String) {
@@ -114,7 +112,6 @@ private fun InsightMetadata(definition: String, timeframe: String, soWhat: Strin
         )
     }
 }
-
 
 @Composable
 private fun TimeframeBadge(label: String) {
@@ -336,7 +333,7 @@ fun InsightsTab(
             }
         }
 
-                // Mode drill-down detail (kept as allocation context, not duplicate primary metric)
+        // Mode drill-down detail (kept as allocation context, not duplicate primary metric)
         if (filteredSessions.isNotEmpty()) {
             item {
                 InsightMetadata("Workout mode allocation drill-down.", selectedPeriod.label, "Use this as context after adjusting volume/intensity, not as a primary KPI.")

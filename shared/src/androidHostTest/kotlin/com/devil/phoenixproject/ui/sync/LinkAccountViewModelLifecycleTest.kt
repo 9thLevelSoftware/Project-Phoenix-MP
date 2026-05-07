@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.ui.sync
 
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -13,8 +15,6 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 /**
  * Tests verifying that the coroutine lifecycle pattern used by [LinkAccountViewModel]
@@ -109,7 +109,6 @@ class LinkAccountViewModelLifecycleTest {
     @Test
     fun `isActive returns false after cancel`() = runTest {
         val job = SupervisorJob()
-        val scope = CoroutineScope(Dispatchers.Main + job)
 
         assertTrue(job.isActive)
 
@@ -171,7 +170,7 @@ class LinkAccountViewModelLifecycleTest {
         advanceUntilIdle()
 
         assertTrue(
-            caughtException != null && caughtException!!.message == "Child 1 failure",
+            caughtException?.message == "Child 1 failure",
             "Exception should have been caught by handler",
         )
         assertTrue(

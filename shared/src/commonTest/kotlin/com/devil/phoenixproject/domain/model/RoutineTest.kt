@@ -8,6 +8,7 @@ import kotlin.test.assertTrue
 /**
  * Tests for Routine domain model enhancements
  */
+@Suppress("DEPRECATION")
 class RoutineTest {
 
     // ===== roundToIncrement extension (Issue #266) =====

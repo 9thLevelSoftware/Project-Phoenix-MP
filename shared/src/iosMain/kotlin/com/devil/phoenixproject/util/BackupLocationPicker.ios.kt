@@ -14,7 +14,6 @@ import platform.Foundation.NSData
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLBookmarkCreationWithSecurityScope
 import platform.Foundation.base64EncodedStringWithOptions
-import platform.Foundation.lastPathComponent
 import platform.UIKit.UIApplication
 import platform.UIKit.UIDocumentPickerDelegateProtocol
 import platform.UIKit.UIDocumentPickerViewController

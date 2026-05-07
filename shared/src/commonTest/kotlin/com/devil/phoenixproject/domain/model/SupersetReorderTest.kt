@@ -2,8 +2,6 @@ package com.devil.phoenixproject.domain.model
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * Tests for superset exercise reorder functionality (Issue #365).

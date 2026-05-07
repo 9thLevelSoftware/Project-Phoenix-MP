@@ -6,13 +6,12 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.google.common.truth.Truth.assertThat
 import com.devil.phoenixproject.AndroidAppHost
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
@@ -46,12 +45,13 @@ import com.devil.phoenixproject.database.ExerciseSignature
 import com.devil.phoenixproject.database.PhaseStatistics
 import com.devil.phoenixproject.di.appModule
 import com.devil.phoenixproject.di.platformModule
-import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
-import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
@@ -78,6 +78,7 @@ import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
 import com.devil.phoenixproject.util.DataBackupManager
+import com.google.common.truth.Truth.assertThat
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.runBlocking
@@ -149,7 +150,7 @@ class AppE2ETest : KoinTest {
         advancePastSplash()
         startWorkoutAndWaitForActiveState()
 
-        composeRule.onNodeWithText("STOP").assertIsDisplayed()
+        assertStopButtonDisplayed()
 
         val originalViewModel = resolvedMainViewModel
         val originalBleRepository = GlobalContext.get().get<BleRepository>()
@@ -160,7 +161,7 @@ class AppE2ETest : KoinTest {
         composeRule.waitForIdle()
 
         composeRule.onAllNodesWithText("PROJECT PHOENIX").assertCountEquals(0)
-        composeRule.onNodeWithText("STOP").assertIsDisplayed()
+        assertStopButtonDisplayed()
         assertThat(resolvedMainViewModel).isSameInstanceAs(originalViewModel)
         assertThat(resolvedMainViewModel.workoutState.value).isInstanceOf(WorkoutState.Active::class.java)
         assertThat(GlobalContext.get().get<BleRepository>()).isSameInstanceAs(originalBleRepository)
@@ -207,6 +208,13 @@ class AppE2ETest : KoinTest {
 
     private fun startWorkoutAndWaitForActiveState() {
         composeRule.runOnIdle {
+            fakeBleRepository.simulateConnect("Vee_Test")
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            resolvedMainViewModel.connectionState.value is ConnectionState.Connected
+        }
+
+        composeRule.runOnIdle {
             resolvedMainViewModel.updateWorkoutParameters(
                 WorkoutParameters(
                     programMode = ProgramMode.OldSchool,
@@ -236,6 +244,20 @@ class AppE2ETest : KoinTest {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             resolvedMainViewModel.workoutState.value is WorkoutState.Active
         }
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+    }
+
+    private fun assertStopButtonDisplayed() {
+        repeat(20) {
+            composeRule.mainClock.advanceTimeBy(100)
+            composeRule.waitForIdle()
+            if (composeRule.onAllNodesWithText("STOP").fetchSemanticsNodes().isNotEmpty()) {
+                composeRule.onNodeWithText("STOP").assertIsDisplayed()
+                return
+            }
+        }
+        composeRule.onNodeWithText("STOP").assertIsDisplayed()
     }
 
     private companion object {

@@ -245,6 +245,7 @@ class RepQualityScorerTest {
         assertEquals(3, summary.repScores.size)
         assertEquals(score3.composite, summary.worstScore)
         // Best score should be one of the first two (consistent reps)
+        assertEquals(maxOf(score1.composite, score2.composite), summary.bestScore)
         assertTrue(summary.bestScore >= summary.worstScore)
         assertTrue(summary.averageScore in summary.worstScore..summary.bestScore)
         assertTrue(summary.bestRepNumber in 1..3)

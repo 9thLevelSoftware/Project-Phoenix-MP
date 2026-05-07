@@ -73,10 +73,10 @@ import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.KmpLocalDate
 import com.devil.phoenixproject.util.KmpUtils
+import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.cd_view_all_badges
-import kotlin.math.roundToInt
 
 /**
  * Insight card components for workout analytics

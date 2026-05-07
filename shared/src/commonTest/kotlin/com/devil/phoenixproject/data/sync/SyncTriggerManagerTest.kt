@@ -52,7 +52,7 @@ class SyncTriggerManagerTest {
         /** If set, sync() will preserve this state instead of setting Success */
         var preserveSyncState = false
 
-        suspend fun sync(): Result<Long> {
+        fun sync(): Result<Long> {
             syncCallCount++
             // Only update to Success if we're not preserving a custom state (like PartialSuccess)
             if (syncResult.isSuccess && !preserveSyncState) {
@@ -115,21 +115,21 @@ class SyncTriggerManagerTest {
         /**
          * Simulates onWorkoutCompleted - bypasses throttle
          */
-        suspend fun onWorkoutCompleted() {
+        fun onWorkoutCompleted() {
             attemptSync(bypassThrottle = true)
         }
 
         /**
          * Simulates onAppForeground - respects throttle
          */
-        suspend fun onAppForeground() {
+        fun onAppForeground() {
             attemptSync(bypassThrottle = false)
         }
 
         /**
          * Simulates onConnectivityRestored
          */
-        suspend fun onConnectivityRestored() {
+        fun onConnectivityRestored() {
             if (isWaitingForConnectivity) {
                 isWaitingForConnectivity = false
                 attemptSync(bypassThrottle = true)
@@ -155,7 +155,7 @@ class SyncTriggerManagerTest {
         fun getLastErrorCategory(): SyncErrorCategory? = lastErrorCategory
         fun isWaitingForConnectivity(): Boolean = isWaitingForConnectivity
 
-        private suspend fun attemptSync(bypassThrottle: Boolean) {
+        private fun attemptSync(bypassThrottle: Boolean) {
             // Check authentication
             if (!testSyncManager.isAuthenticated.value) {
                 return

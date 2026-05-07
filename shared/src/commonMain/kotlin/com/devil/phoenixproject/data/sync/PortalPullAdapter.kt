@@ -39,7 +39,7 @@ object PortalPullAdapter {
     suspend fun toWorkoutSessionsWithLookup(
         portalSession: PullWorkoutSessionDto,
         profileId: String,
-        exerciseLookup: suspend (name: String, muscleGroup: String?, exerciseId: String?) -> String?
+        exerciseLookup: suspend (name: String, muscleGroup: String?, exerciseId: String?) -> String?,
     ): List<WorkoutSession> {
         if (portalSession.exercises.isEmpty()) return emptyList()
 
@@ -65,7 +65,7 @@ object PortalPullAdapter {
                 id = exercise.id,
                 timestamp = timestamp,
                 mode = mobileMode,
-                reps = exercise.sets.firstOrNull()?.targetReps ?: totalReps / maxOf(exercise.sets.size, 1),
+                reps = exercise.sets.firstOrNull()?.targetReps ?: (totalReps / maxOf(exercise.sets.size, 1)),
                 weightPerCableKg = maxWeight, // Already per-cable from DB
                 duration = (portalSession.durationSeconds * 1000L) / exerciseCount, // seconds → ms
                 totalReps = totalReps,
@@ -120,7 +120,7 @@ object PortalPullAdapter {
                 id = exercise.id,
                 timestamp = timestamp,
                 mode = mobileMode,
-                reps = exercise.sets.firstOrNull()?.targetReps ?: totalReps / maxOf(exercise.sets.size, 1),
+                reps = exercise.sets.firstOrNull()?.targetReps ?: (totalReps / maxOf(exercise.sets.size, 1)),
                 weightPerCableKg = maxWeight, // Already per-cable from DB
                 duration = (portalSession.durationSeconds * 1000L) / exerciseCount, // seconds → ms
                 totalReps = totalReps,
@@ -226,7 +226,9 @@ object PortalPullAdapter {
             achievedAt = pr.achievedAt?.let {
                 try {
                     kotlinx.datetime.Instant.parse(it).toEpochMilliseconds()
-                } catch (_: Exception) { now }
+                } catch (_: Exception) {
+                    now
+                }
             } ?: now,
             workoutMode = pr.recordType,
             prType = pr.recordType,

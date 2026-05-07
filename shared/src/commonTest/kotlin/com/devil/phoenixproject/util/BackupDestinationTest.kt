@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.util.BackupDestination.Companion.fromJson
-import com.devil.phoenixproject.util.BackupDestination.Companion.toJson
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

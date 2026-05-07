@@ -19,6 +19,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 
+private val lenientJson = Json { ignoreUnknownKeys = true }
+
 /**
  * Tests for the token-refresh contract documented in audit 02:
  *
@@ -195,7 +197,7 @@ class PortalTokenRefreshTest {
               "user": { "id": "u-1", "email": "u@e.com" }
             }
         """.trimIndent()
-        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(
+        val parsed = lenientJson.decodeFromString(
             GoTrueAuthResponse.serializer(),
             json,
         )

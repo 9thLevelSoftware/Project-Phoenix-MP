@@ -119,18 +119,19 @@ class RepMetricRepositoryTest {
         // This test verifies the principle by checking the interface contract compiles
         // with sessionId-only signatures.
         val repo: RepMetricRepository? = null
-        // These lines verify the method signatures have no tier parameter:
-        @Suppress("SENSELESS_COMPARISON")
-        if (repo != null) {
-            // Just verifying method signatures - not actually calling
-            val _save: suspend (String, List<com.devil.phoenixproject.domain.model.RepMetricData>) -> Unit =
+        fun sessionOnlySignatures(repo: RepMetricRepository): List<Any> {
+            val save: suspend (String, List<com.devil.phoenixproject.domain.model.RepMetricData>) -> Unit =
                 repo::saveRepMetrics
-            val _get: suspend (String) -> List<com.devil.phoenixproject.domain.model.RepMetricData> =
+            val get: suspend (String) -> List<com.devil.phoenixproject.domain.model.RepMetricData> =
                 repo::getRepMetrics
-            val _delete: suspend (String) -> Unit = repo::deleteRepMetrics
-            val _count: suspend (String) -> Long = repo::getRepMetricCount
+            val delete: suspend (String) -> Unit = repo::deleteRepMetrics
+            val count: suspend (String) -> Long = repo::getRepMetricCount
+            return listOf(save, get, delete, count)
         }
+
+        val signatures = repo?.let(::sessionOnlySignatures).orEmpty()
+
         // If we get here, the interface has no tier parameters (GATE-04 compliant)
-        assertTrue(true, "RepMetricRepository interface has sessionId-only signatures (GATE-04)")
+        assertTrue(signatures.isEmpty(), "RepMetricRepository interface has sessionId-only signatures (GATE-04)")
     }
 }

@@ -1,11 +1,10 @@
 package com.devil.phoenixproject.util
 
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.Json
 
 /**
  * Integration tests for backup serialization round-trips with v0.9.0 additions.

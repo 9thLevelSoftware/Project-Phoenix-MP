@@ -39,14 +39,16 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
-import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
+import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -56,9 +58,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.coroutines.coroutineContext
-import kotlin.math.roundToInt
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -420,8 +419,7 @@ class ActiveSessionEngine(
 
     // ===== Calculation Helpers =====
 
-    private suspend fun resolveSelectedExercise(params: WorkoutParameters) =
-        params.selectedExerciseId?.let { exerciseId -> exerciseRepository.getExerciseById(exerciseId) }
+    private suspend fun resolveSelectedExercise(params: WorkoutParameters) = params.selectedExerciseId?.let { exerciseId -> exerciseRepository.getExerciseById(exerciseId) }
 
     private fun roundUpRemainingSeconds(seconds: Float): Int {
         val wholeSeconds = seconds.toInt()

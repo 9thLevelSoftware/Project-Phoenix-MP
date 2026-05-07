@@ -51,9 +51,6 @@ fun ProgressionSuggestionBanner(
         exit = fadeOut() + shrinkVertically(),
     ) {
         val isDeload = event.reason.isDeload
-        val accentColor = if (isDeload) Color(0xFFF57C00) else Color(0xFF4CAF50)
-        val accentColorDark = if (isDeload) Color(0xFFE65100) else Color(0xFF2E7D32)
-        val accentColorMid = if (isDeload) Color(0xFFEF6C00) else Color(0xFF388E3C)
 
         Card(
             modifier = modifier.fillMaxWidth(),
