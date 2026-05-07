@@ -21,6 +21,9 @@ import com.devil.phoenixproject.util.DeviceInfo
 import kotlinx.coroutines.flow.SharedFlow
 import kotlin.random.Random
 
+private val STANDARD_ANDROID_CUE_USAGE = AudioAttributes.USAGE_ASSISTANCE_SONIFICATION
+private val FIRE_OS_CUE_USAGE = AudioAttributes.USAGE_MEDIA
+
 @Composable
 actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     val context = LocalContext.current
@@ -39,19 +42,13 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     // Track which sounds are loaded and ready to play
     val loadedSounds = remember { mutableSetOf<Int>() }
 
-    // Create SoundPool for audio feedback
-    // Uses USAGE_GAME to:
-    // 1. Tie sounds to media volume (not notification - so they play through DND)
-    // 2. Mix with music without interrupting it (game audio is designed for this)
+    // Create SoundPool for audio feedback.
+    // v0.7.x used assistance sonification for short workout cues; keep that
+    // classification so UI-like cues are routed as sound effects, not game audio.
     val soundPool = remember {
         SoundPool.Builder()
             .setMaxStreams(3)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_GAME)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build(),
-            )
+            .setAudioAttributes(buildCueAudioAttributes(STANDARD_ANDROID_CUE_USAGE))
             .build().apply {
                 setOnLoadCompleteListener { _, sampleId, status ->
                     if (status == 0) {
@@ -153,9 +150,8 @@ private fun loadSoundByName(context: Context, soundPool: SoundPool, name: String
 
 /**
  * Issue #409: Check media volume and log warning if muted.
- * USAGE_GAME routes to STREAM_MUSIC — if media volume is 0, all sounds are inaudible.
- * Requires Activity.volumeControlStream = AudioManager.STREAM_MUSIC to let
- * hardware volume buttons control the correct stream.
+ * Retained because Fire OS uses media playback and some Android policies still
+ * route short sound effects through media volume.
  */
 private fun warnIfMediaVolumeMuted(context: Context) {
     try {
@@ -165,7 +161,7 @@ private fun warnIfMediaVolumeMuted(context: Context) {
             val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             Logger.w {
                 "Issue #409: Media volume is 0/$maxVolume — workout sounds will be inaudible. " +
-                    "Sounds use USAGE_GAME (STREAM_MUSIC). Raise media volume to hear audio cues."
+                    "Raise media volume if audio cues are silent."
             }
         }
     } catch (_: Exception) {
@@ -267,7 +263,7 @@ private fun playSound(
 /**
  * Fallback sound playback using MediaPlayer for when SoundPool fails or on Fire OS.
  * Fire OS: Uses USAGE_MEDIA to work around SoundPool volume bug.
- * Standard Android: Uses USAGE_GAME to ensure sounds play through DND and use media volume.
+ * Standard Android: Uses USAGE_ASSISTANCE_SONIFICATION to match the known-good v0.7.x cue path.
  */
 private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     val soundName = when (event) {
@@ -299,20 +295,7 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
 
     var mediaPlayer: MediaPlayer? = null
     try {
-        // Fire OS: Use USAGE_MEDIA to work around SoundPool volume bug
-        // Standard Android: Use USAGE_GAME to mix with music without interrupting
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(
-                if (DeviceInfo.isFireOS()) {
-                    AudioAttributes.USAGE_MEDIA
-                } else {
-                    AudioAttributes.USAGE_GAME
-                },
-            )
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-
-        mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0) ?: return
+        mediaPlayer = MediaPlayer.create(context, resId, buildMediaPlayerCueAudioAttributes(), 0) ?: return
         mediaPlayer.setVolume(1.0f, 1.0f)
         mediaPlayer.setOnCompletionListener { it.release() }
         mediaPlayer.start()
@@ -320,6 +303,17 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
         mediaPlayer?.release()
     }
 }
+
+private fun buildMediaPlayerCueAudioAttributes(): AudioAttributes {
+    val usage = if (DeviceInfo.isFireOS()) FIRE_OS_CUE_USAGE else STANDARD_ANDROID_CUE_USAGE
+    return buildCueAudioAttributes(usage)
+}
+
+private fun buildCueAudioAttributes(usage: Int): AudioAttributes =
+    AudioAttributes.Builder()
+        .setUsage(usage)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
 
 private val BADGE_SOUND_NAMES = listOf(
     "absolute_domination", "absolute_unit", "another_milestone_crushed",
