@@ -3,13 +3,10 @@ package com.devil.phoenixproject.presentation.components
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.SoundPool
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -260,8 +257,6 @@ private fun playSound(
         return
     }
 
-    val audioFocusSession = requestTransientDuckAudioFocus(context, AudioAttributes.USAGE_GAME)
-
     try {
         val streamId = soundPool.play(
             soundId,
@@ -274,14 +269,10 @@ private fun playSound(
         // If SoundPool fails, try MediaPlayer fallback
         if (streamId == 0) {
             Logger.d { "SoundPool.play returned 0 for $event (soundId=$soundId) — MediaPlayer fallback" }
-            audioFocusSession.abandon()
             playWithMediaPlayer(event, context)
-        } else {
-            audioFocusSession.abandonAfterDelay(focusHoldDurationMs(context, event))
         }
     } catch (e: Exception) {
         Logger.w(e) { "SoundPool.play threw for $event — MediaPlayer fallback" }
-        audioFocusSession.abandon()
         playWithMediaPlayer(event, context)
     }
 }
@@ -319,176 +310,45 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     }
     if (resId == 0) return
 
-    val playbackUsage = if (DeviceInfo.isFireOS()) {
-        AudioAttributes.USAGE_MEDIA
-    } else {
-        AudioAttributes.USAGE_GAME
-    }
-    val audioFocusSession = requestTransientDuckAudioFocus(context, playbackUsage)
-
     try {
         // Fire OS: Use USAGE_MEDIA to work around SoundPool volume bug
         // Standard Android: Use USAGE_GAME to mix with music without interrupting
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(playbackUsage)
+            .setUsage(
+                if (DeviceInfo.isFireOS()) {
+                    AudioAttributes.USAGE_MEDIA
+                } else {
+                    AudioAttributes.USAGE_GAME
+                },
+            )
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
-        val mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0)
-        if (mediaPlayer == null) {
-            audioFocusSession.abandon()
-            return
-        }
+        val mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0) ?: return
         mediaPlayer.setVolume(1.0f, 1.0f)
-        mediaPlayer.setOnCompletionListener {
-            it.release()
-            audioFocusSession.abandon()
-        }
+        mediaPlayer.setOnCompletionListener { it.release() }
         mediaPlayer.start()
     } catch (_: Exception) {
         // Silently fail - sound is not critical
-        audioFocusSession.abandon()
     }
 }
-
-
-private val soundDurationCacheMs = mutableMapOf<String, Long>()
-
-private fun focusHoldDurationMs(context: Context, event: HapticEvent): Long {
-    val candidateSoundNames = when (event) {
-        is HapticEvent.BADGE_EARNED -> getBadgeSoundNames()
-        is HapticEvent.PERSONAL_RECORD -> getPRSoundNames()
-        is HapticEvent.DISCO_MODE_UNLOCKED -> listOf("discomode")
-        is HapticEvent.REP_COUNT_ANNOUNCED -> listOf("rep_%02d".format(event.repNumber))
-        is HapticEvent.REST_ENDING -> listOf("restover")
-        else -> emptyList()
-    }
-
-    val maxDurationMs = candidateSoundNames.maxOfOrNull { getSoundDurationMs(context, it) } ?: 0L
-    val fallbackMs = 1500L
-    val safetyBufferMs = 250L
-    return maxOf(fallbackMs, maxDurationMs + safetyBufferMs)
-}
-
-private fun getSoundDurationMs(context: Context, soundName: String): Long {
-    soundDurationCacheMs[soundName]?.let { return it }
-
-    val packageName = context.packageName.removeSuffix(".debug")
-    var resId = context.resources.getIdentifier(soundName, "raw", packageName)
-    if (resId == 0) {
-        resId = context.resources.getIdentifier(soundName, "raw", context.packageName)
-    }
-    if (resId == 0) return 0L
-
-    val durationMs = try {
-        MediaPlayer.create(context, resId)?.useDurationOrZero() ?: 0L
-    } catch (_: Exception) {
-        0L
-    }
-
-    soundDurationCacheMs[soundName] = durationMs
-    return durationMs
-}
-
-private fun MediaPlayer.useDurationOrZero(): Long = try {
-    duration.toLong()
-} catch (_: Exception) {
-    0L
-} finally {
-    try {
-        release()
-    } catch (_: Exception) {
-        // Best effort cleanup
-    }
-}
-
-private fun AudioFocusSession.abandonAfterDelay(delayMs: Long = 1500L) {
-    Handler(Looper.getMainLooper()).postDelayed({
-        abandon()
-    }, delayMs)
-}
-
-private interface AudioFocusSession {
-    fun abandon()
-}
-
-private fun requestTransientDuckAudioFocus(
-    context: Context,
-    playbackUsage: Int,
-): AudioFocusSession {
-    val focusChangeListener = AudioManager.OnAudioFocusChangeListener {
-        // No-op listener used as a unique identity token for each focus request session.
-    }
-    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-        ?: return object : AudioFocusSession {
-            override fun abandon() = Unit
-        }
-
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        try {
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(playbackUsage)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build(),
-                )
-                .setOnAudioFocusChangeListener(focusChangeListener)
-                .setAcceptsDelayedFocusGain(false)
-                .setWillPauseWhenDucked(false)
-                .build()
-            audioManager.requestAudioFocus(request)
-            object : AudioFocusSession {
-                override fun abandon() {
-                    try {
-                        audioManager.abandonAudioFocusRequest(request)
-                    } catch (_: Exception) {
-                        // Best effort
-                    }
-                }
-            }
-        } catch (_: Exception) {
-            object : AudioFocusSession {
-                override fun abandon() = Unit
-            }
-        }
-    } else {
-        @Suppress("DEPRECATION")
-        audioManager.requestAudioFocus(
-            focusChangeListener,
-            AudioManager.STREAM_MUSIC,
-            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,
-        )
-        object : AudioFocusSession {
-            override fun abandon() {
-                @Suppress("DEPRECATION")
-                audioManager.abandonAudioFocus(focusChangeListener)
-            }
-        }
-    }
-}
-
-private fun getBadgeSoundNames(): List<String> = listOf(
-    "absolute_domination", "absolute_unit", "another_milestone_crushed",
-    "beast_mode", "insane_performance", "maxed_out", "new_peak_achieved",
-    "new_record_secured", "no_ones_stopping_you_now", "power", "pr",
-    "pressure_create_greatness", "record", "shattered", "strenght_unlocked",
-    "that_bar_never_stood_a_chance", "that_was_a_demolition", "that_was_god_mode",
-    "that_was_monster_level", "that_was_next_tier_strenght", "that_was_pure_savagery",
-    "the_grind_continues", "the_grind_is_real", "this_is_what_champions_are_made",
-    "unchained_power", "unstoppable", "victory", "you_crushed_that",
-    "you_dominated_that_set", "you_just_broke_your_limits", "you_just_destroyed_that_weight",
-    "you_just_levelled_up", "you_went_full_throttle",
-)
-
-private fun getPRSoundNames(): List<String> = listOf("new_personal_record", "new_personal_record_2")
-
 
 /**
  * Get a random badge celebration sound name.
  */
 private fun getRandomBadgeSound(): String {
-    val badgeSoundNames = getBadgeSoundNames()
+    val badgeSoundNames = listOf(
+        "absolute_domination", "absolute_unit", "another_milestone_crushed",
+        "beast_mode", "insane_performance", "maxed_out", "new_peak_achieved",
+        "new_record_secured", "no_ones_stopping_you_now", "power", "pr",
+        "pressure_create_greatness", "record", "shattered", "strenght_unlocked",
+        "that_bar_never_stood_a_chance", "that_was_a_demolition", "that_was_god_mode",
+        "that_was_monster_level", "that_was_next_tier_strenght", "that_was_pure_savagery",
+        "the_grind_continues", "the_grind_is_real", "this_is_what_champions_are_made",
+        "unchained_power", "unstoppable", "victory", "you_crushed_that",
+        "you_dominated_that_set", "you_just_broke_your_limits", "you_just_destroyed_that_weight",
+        "you_just_levelled_up", "you_went_full_throttle",
+    )
     return badgeSoundNames[Random.nextInt(badgeSoundNames.size)]
 }
 
@@ -496,10 +356,9 @@ private fun getRandomBadgeSound(): String {
  * Get a random PR celebration sound name.
  */
 private fun getRandomPRSound(): String {
-    val prSoundNames = getPRSoundNames()
+    val prSoundNames = listOf("new_personal_record", "new_personal_record_2")
     return prSoundNames[Random.nextInt(prSoundNames.size)]
 }
-
 
 @SuppressLint("MissingPermission")
 private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
