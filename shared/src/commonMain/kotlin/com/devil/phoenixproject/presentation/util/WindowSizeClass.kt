@@ -86,7 +86,7 @@ fun calculateWindowSizeClass(widthDp: Dp, heightDp: Dp): WindowSizeClass {
 fun isCompactAccessibilityLayout(fontScaleThreshold: Float = 1.15f): Boolean {
     val windowSizeClass = LocalWindowSizeClass.current
     val fontScale = LocalDensity.current.fontScale
-    val accessibilitySettings = rememberPlatformAccessibilitySettings()
+    val accessibilitySettings = LocalPlatformAccessibilitySettings.current
     return shouldUseCompactAccessibilityLayout(
         windowSizeClass = windowSizeClass,
         fontScale = fontScale,

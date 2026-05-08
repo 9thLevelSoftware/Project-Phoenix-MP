@@ -81,10 +81,12 @@ import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
-import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -233,8 +235,12 @@ fun EnhancedMainScreen(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
+        val platformAccessibilitySettings = rememberPlatformAccessibilitySettings()
 
-        CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
+        CompositionLocalProvider(
+            LocalWindowSizeClass provides windowSizeClass,
+            LocalPlatformAccessibilitySettings provides platformAccessibilitySettings,
+        ) {
             val useCompactTopBar = isCompactAccessibilityLayout() ||
                 windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact
             val fullTopBarTitle = if (topBarTitle.isNotEmpty()) {
