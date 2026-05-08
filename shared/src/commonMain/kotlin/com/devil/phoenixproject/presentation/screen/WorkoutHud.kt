@@ -5,8 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -36,6 +38,7 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import kotlin.math.abs
@@ -877,10 +880,13 @@ private fun StatsPage(
         return
     }
 
+    val useCompactAccessibility = isCompactAccessibilityLayout()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Title
@@ -979,25 +985,51 @@ private fun StatsPage(
                     color = MaterialTheme.colorScheme.primary,
                     letterSpacing = 1.sp,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    StatColumn(
-                        label = "Left",
-                        value = formatWeight(metric.loadA, weightUnit),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    StatColumn(
-                        label = "Right",
-                        value = formatWeight(metric.loadB, weightUnit),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                if (useCompactAccessibility) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        StatColumn(
+                            label = "Left",
+                            value = formatWeight(metric.loadA, weightUnit),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        StatColumn(
+                            label = "Right",
+                            value = formatWeight(metric.loadB, weightUnit),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     StatColumn(
                         label = "Total",
                         value = formatWeight(metric.totalLoad, weightUnit),
                         color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.fillMaxWidth(),
                     )
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        StatColumn(
+                            label = "Left",
+                            value = formatWeight(metric.loadA, weightUnit),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        StatColumn(
+                            label = "Right",
+                            value = formatWeight(metric.loadB, weightUnit),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        StatColumn(
+                            label = "Total",
+                            value = formatWeight(metric.totalLoad, weightUnit),
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
                 }
             }
         }
@@ -1187,8 +1219,9 @@ private fun formatMcv(mmPerSec: Float): String {
 }
 
 @Composable
-private fun StatColumn(label: String, value: String, color: Color) {
+private fun StatColumn(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
     Column(
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -1201,6 +1234,8 @@ private fun StatColumn(label: String, value: String, color: Color) {
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = color,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
         )
     }
 }

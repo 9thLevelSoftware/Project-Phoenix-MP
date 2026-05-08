@@ -227,64 +227,27 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode
                     RecentActivitySummary(recentSessions, weightUnit)
                 }
 
-                // Spacer for FABs clearance
-                item(key = "fab-spacer") {
-                    Spacer(modifier = Modifier.height(fabSpacerHeight))
+                if (useCompactAccessibility) {
+                    item(key = "action-grid") {
+                        HomeActionGrid(navController = navController)
+                    }
+                } else {
+                    // Spacer for FABs clearance
+                    item(key = "fab-spacer") {
+                        Spacer(modifier = Modifier.height(fabSpacerHeight))
+                    }
                 }
             }
 
-            // Bottom FAB Grid: 2 columns, equal width - positioned directly above the navbar
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                // Left column: Cycles & Routines
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AnimatedActionButton(
-                        label = "Cycles",
-                        icon = Icons.Default.Loop,
-                        onClick = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
-                        isPrimary = false,
-                        iconAnimation = IconAnimation.ROTATE,
-                    )
-                    AnimatedActionButton(
-                        label = "Routines",
-                        icon = Icons.AutoMirrored.Filled.FormatListBulleted,
-                        onClick = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
-                        isPrimary = false,
-                        iconAnimation = IconAnimation.NONE,
-                    )
-                }
-
-                // Right column: Single Exercise & Just Lift
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AnimatedActionButton(
-                        label = "Single Exercise",
-                        icon = Icons.Outlined.FitnessCenter,
-                        onClick = { navController.navigate(NavigationRoutes.SingleExercise.route) },
-                        isPrimary = false,
-                        iconAnimation = IconAnimation.TILT,
-                    )
-                    AnimatedActionButton(
-                        label = "Just Lift",
-                        icon = null,
-                        onClick = {
-                            navController.navigate(NavigationRoutes.JustLift.route)
-                        },
-                        isPrimary = true,
-                        isFireButton = true, // Fire animation effect
-                        iconAnimation = IconAnimation.NONE,
-                    )
-                }
+            if (!useCompactAccessibility) {
+                // Bottom FAB Grid: 2 columns, equal width - positioned directly above the navbar
+                HomeActionGrid(
+                    navController = navController,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                )
             }
 
             // Connection Error Handling
@@ -294,6 +257,57 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode
                     onDismiss = { viewModel.clearConnectionError() },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun HomeActionGrid(navController: NavController, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AnimatedActionButton(
+                label = "Cycles",
+                icon = Icons.Default.Loop,
+                onClick = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
+                isPrimary = false,
+                iconAnimation = IconAnimation.ROTATE,
+            )
+            AnimatedActionButton(
+                label = "Routines",
+                icon = Icons.AutoMirrored.Filled.FormatListBulleted,
+                onClick = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
+                isPrimary = false,
+                iconAnimation = IconAnimation.NONE,
+            )
+        }
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AnimatedActionButton(
+                label = "Single Exercise",
+                icon = Icons.Outlined.FitnessCenter,
+                onClick = { navController.navigate(NavigationRoutes.SingleExercise.route) },
+                isPrimary = false,
+                iconAnimation = IconAnimation.TILT,
+            )
+            AnimatedActionButton(
+                label = "Just Lift",
+                icon = null,
+                onClick = {
+                    navController.navigate(NavigationRoutes.JustLift.route)
+                },
+                isPrimary = true,
+                isFireButton = true,
+                iconAnimation = IconAnimation.NONE,
+            )
         }
     }
 }

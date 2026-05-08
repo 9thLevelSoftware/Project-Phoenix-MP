@@ -25,7 +25,9 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.*
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
+import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.CsvExporter
@@ -230,10 +232,16 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
 
     // Responsive sizing based on window size class
     val windowSizeClass = LocalWindowSizeClass.current
-    val tabIndicatorHeight = when (windowSizeClass.widthSizeClass) {
-        WindowWidthSizeClass.Expanded -> 12.dp
-        WindowWidthSizeClass.Medium -> 10.dp
-        WindowWidthSizeClass.Compact -> 8.dp
+    val useCompactTabs = isCompactAccessibilityLayout() ||
+        windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact
+    val tabIndicatorHeight = if (useCompactTabs) {
+        4.dp
+    } else {
+        when (windowSizeClass.widthSizeClass) {
+            WindowWidthSizeClass.Expanded -> 12.dp
+            WindowWidthSizeClass.Medium -> 10.dp
+            WindowWidthSizeClass.Compact -> 8.dp
+        }
     }
     val fabIconSize = when (windowSizeClass.widthSizeClass) {
         WindowWidthSizeClass.Expanded -> 36.dp
@@ -311,17 +319,19 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                 Tab(
                     selected = pagerState.currentPage == 0,
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
-                    text = {
-                        Text(
-                            stringResource(Res.string.analytics_dashboard),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            color = if (pagerState.currentPage == 0) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
+                    text = if (useCompactTabs) null else {
+                        {
+                            Text(
+                                stringResource(Res.string.analytics_dashboard),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                color = if (pagerState.currentPage == 0) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
                     },
                     icon = {
                         Icon(
@@ -338,17 +348,19 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                 Tab(
                     selected = pagerState.currentPage == 1,
                     onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
-                    text = {
-                        Text(
-                            stringResource(Res.string.analytics_progress),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            color = if (pagerState.currentPage == 1) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
+                    text = if (useCompactTabs) null else {
+                        {
+                            Text(
+                                stringResource(Res.string.analytics_progress),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                color = if (pagerState.currentPage == 1) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
                     },
                     icon = {
                         Icon(
@@ -365,17 +377,19 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                 Tab(
                     selected = pagerState.currentPage == 2,
                     onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
-                    text = {
-                        Text(
-                            stringResource(Res.string.analytics_history),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            color = if (pagerState.currentPage == 2) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
+                    text = if (useCompactTabs) null else {
+                        {
+                            Text(
+                                stringResource(Res.string.analytics_history),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                color = if (pagerState.currentPage == 2) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
                     },
                     icon = {
                         Icon(
