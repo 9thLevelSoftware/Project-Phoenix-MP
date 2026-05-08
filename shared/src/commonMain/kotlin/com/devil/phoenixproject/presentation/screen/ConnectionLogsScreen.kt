@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -68,6 +69,7 @@ import com.devil.phoenixproject.data.local.ConnectionLogEntity
 import com.devil.phoenixproject.data.repository.LogLevel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -104,6 +106,7 @@ fun ConnectionLogsScreen(
     val filter by logsViewModel.filter.collectAsState()
     val isAutoScrollEnabled by logsViewModel.isAutoScrollEnabled.collectAsState()
     val isLoggingEnabled by logsViewModel.isLoggingEnabled.collectAsState()
+    val useCompactAccessibility = isCompactAccessibilityLayout()
 
     val listState = rememberLazyListState()
 
@@ -174,99 +177,191 @@ fun ConnectionLogsScreen(
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             )
 
-            // Filter chips — scrollable to prevent overflow with Bold Text / accessibility
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                LogLevelFilterChip(
-                    level = LogLevel.DEBUG,
-                    selected = filter.showDebug,
-                    count = logs.count { it.level == LogLevel.DEBUG.name },
-                    onClick = { logsViewModel.toggleLevel(LogLevel.DEBUG) },
-                )
-                LogLevelFilterChip(
-                    level = LogLevel.INFO,
-                    selected = filter.showInfo,
-                    count = logs.count { it.level == LogLevel.INFO.name },
-                    onClick = { logsViewModel.toggleLevel(LogLevel.INFO) },
-                )
-                LogLevelFilterChip(
-                    level = LogLevel.WARNING,
-                    selected = filter.showWarning,
-                    count = logs.count { it.level == LogLevel.WARNING.name },
-                    onClick = { logsViewModel.toggleLevel(LogLevel.WARNING) },
-                )
-                LogLevelFilterChip(
-                    level = LogLevel.ERROR,
-                    selected = filter.showError,
-                    count = logs.count { it.level == LogLevel.ERROR.name },
-                    onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) },
-                )
+            // Critical filter chips wrap under iOS Bold Text so every level remains visible.
+            if (useCompactAccessibility) {
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    LogLevelFilterChip(
+                        level = LogLevel.DEBUG,
+                        selected = filter.showDebug,
+                        count = logs.count { it.level == LogLevel.DEBUG.name },
+                        onClick = { logsViewModel.toggleLevel(LogLevel.DEBUG) },
+                    )
+                    LogLevelFilterChip(
+                        level = LogLevel.INFO,
+                        selected = filter.showInfo,
+                        count = logs.count { it.level == LogLevel.INFO.name },
+                        onClick = { logsViewModel.toggleLevel(LogLevel.INFO) },
+                    )
+                    LogLevelFilterChip(
+                        level = LogLevel.WARNING,
+                        selected = filter.showWarning,
+                        count = logs.count { it.level == LogLevel.WARNING.name },
+                        onClick = { logsViewModel.toggleLevel(LogLevel.WARNING) },
+                    )
+                    LogLevelFilterChip(
+                        level = LogLevel.ERROR,
+                        selected = filter.showError,
+                        count = logs.count { it.level == LogLevel.ERROR.name },
+                        onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) },
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LogLevelFilterChip(
+                        level = LogLevel.DEBUG,
+                        selected = filter.showDebug,
+                        count = logs.count { it.level == LogLevel.DEBUG.name },
+                        onClick = { logsViewModel.toggleLevel(LogLevel.DEBUG) },
+                    )
+                    LogLevelFilterChip(
+                        level = LogLevel.INFO,
+                        selected = filter.showInfo,
+                        count = logs.count { it.level == LogLevel.INFO.name },
+                        onClick = { logsViewModel.toggleLevel(LogLevel.INFO) },
+                    )
+                    LogLevelFilterChip(
+                        level = LogLevel.WARNING,
+                        selected = filter.showWarning,
+                        count = logs.count { it.level == LogLevel.WARNING.name },
+                        onClick = { logsViewModel.toggleLevel(LogLevel.WARNING) },
+                    )
+                    LogLevelFilterChip(
+                        level = LogLevel.ERROR,
+                        selected = filter.showError,
+                        count = logs.count { it.level == LogLevel.ERROR.name },
+                        onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) },
+                    )
+                }
             }
 
             // Action bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "${logs.size} logs",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(end = 8.dp),
-                )
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+            if (useCompactAccessibility) {
+                Column(
                     modifier = Modifier
-                        .weight(1f, fill = false)
-                        .horizontalScroll(rememberScrollState()),
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    // Auto-scroll toggle
-                    FilterChip(
-                        selected = isAutoScrollEnabled,
-                        onClick = { logsViewModel.toggleAutoScroll() },
-                        label = { Text(stringResource(Res.string.auto_scroll)) },
-                        leadingIcon = {
+                    Text(
+                        text = "${logs.size} logs",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        FilterChip(
+                            selected = isAutoScrollEnabled,
+                            onClick = { logsViewModel.toggleAutoScroll() },
+                            label = { Text(stringResource(Res.string.auto_scroll)) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
+                        )
+
+                        FilterChip(
+                            selected = isLoggingEnabled,
+                            onClick = { logsViewModel.setLoggingEnabled(!isLoggingEnabled) },
+                            label = { Text(if (isLoggingEnabled) "Logging ON" else "Logging OFF") },
+                        )
+
+                        IconButton(onClick = {
+                            exportContent = logsViewModel.exportLogsAsText()
+                            showExportDialog = true
+                        }) {
                             Icon(
-                                Icons.Default.KeyboardArrowDown,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
+                                Icons.Default.Share,
+                                contentDescription = stringResource(Res.string.cd_export_logs),
                             )
-                        },
-                    )
+                        }
 
-                    // Logging toggle
-                    FilterChip(
-                        selected = isLoggingEnabled,
-                        onClick = { logsViewModel.setLoggingEnabled(!isLoggingEnabled) },
-                        label = { Text(if (isLoggingEnabled) "Logging ON" else "Logging OFF") },
-                    )
-
-                    // Export button
-                    IconButton(onClick = {
-                        exportContent = logsViewModel.exportLogsAsText()
-                        showExportDialog = true
-                    }) {
-                        Icon(
-                            Icons.Default.Share,
-                            contentDescription = stringResource(Res.string.cd_export_logs),
-                        )
+                        IconButton(onClick = { showClearDialog = true }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = stringResource(Res.string.cd_clear_logs),
+                            )
+                        }
                     }
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "${logs.size} logs",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
 
-                    // Clear button
-                    IconButton(onClick = { showClearDialog = true }) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = stringResource(Res.string.cd_clear_logs),
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .horizontalScroll(rememberScrollState()),
+                    ) {
+                        // Auto-scroll toggle
+                        FilterChip(
+                            selected = isAutoScrollEnabled,
+                            onClick = { logsViewModel.toggleAutoScroll() },
+                            label = { Text(stringResource(Res.string.auto_scroll)) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
                         )
+
+                        // Logging toggle
+                        FilterChip(
+                            selected = isLoggingEnabled,
+                            onClick = { logsViewModel.setLoggingEnabled(!isLoggingEnabled) },
+                            label = { Text(if (isLoggingEnabled) "Logging ON" else "Logging OFF") },
+                        )
+
+                        // Export button
+                        IconButton(onClick = {
+                            exportContent = logsViewModel.exportLogsAsText()
+                            showExportDialog = true
+                        }) {
+                            Icon(
+                                Icons.Default.Share,
+                                contentDescription = stringResource(Res.string.cd_export_logs),
+                            )
+                        }
+
+                        // Clear button
+                        IconButton(onClick = { showClearDialog = true }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = stringResource(Res.string.cd_clear_logs),
+                            )
+                        }
                     }
                 }
             }
