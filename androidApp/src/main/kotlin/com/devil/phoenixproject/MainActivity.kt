@@ -1,6 +1,7 @@
 package com.devil.phoenixproject
 
 import android.content.Context
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
@@ -19,6 +20,8 @@ class MainActivity : ComponentActivity() {
         // This reads directly from SharedPreferences instead of waiting for the
         // Compose ViewModel pipeline (which fires after the first frame).
         applyStoredLocaleBeforeComposition()
+
+        volumeControlStream = AudioManager.STREAM_MUSIC
 
         enableEdgeToEdge()
         setContent {
