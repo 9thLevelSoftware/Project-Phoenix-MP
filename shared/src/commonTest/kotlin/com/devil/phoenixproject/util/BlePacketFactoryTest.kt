@@ -316,14 +316,14 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createProgramParams(params)
 
-        // Critical: 0x58 must have the actual weight, NOT softMax (100.0f)
+        // Critical: 0x58 must have the actual operating weight.
         // This bug caused the machine to apply weight+10kg instead of the set weight
         assertEquals(weight, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
         assertEquals(15.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
     }
 
     @Test
-    fun `createProgramParams AMRAP sets softMax to machine max at 0x48`() {
+    fun `createProgramParams AMRAP writes selected per-cable softMax at 0x48`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -336,13 +336,13 @@ class BlePacketFactoryTest {
             variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
         )
 
-        assertEquals(100.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
+        assertEquals(30.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
         // Target weight at 0x58 must be the actual weight, not softMax
         assertEquals(30.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
     }
 
     @Test
-    fun `createProgramParams Just Lift sets softMax to machine max at 0x48`() {
+    fun `createProgramParams Just Lift writes selected per-cable softMax at 0x48`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -355,7 +355,7 @@ class BlePacketFactoryTest {
             variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
         )
 
-        assertEquals(100.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
+        assertEquals(25.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
         // Target weight must be at 0x58, not softMax
         assertEquals(25.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
     }
@@ -389,7 +389,7 @@ class BlePacketFactoryTest {
         assertEquals(progression, readFloatLE(packet, 0x5C))
 
         // For Just Lift OVERLAP variant, tail bytes 0x48..0x4F are firmware force config.
-        assertEquals(100.0f, readFloatLE(packet, 0x48))
+        assertEquals(targetWeight, readFloatLE(packet, 0x48))
         assertEquals(progression, readFloatLE(packet, 0x4C))
         assertEquals((-1300).toShort(), readShortLE(packet, 0x40))
         assertEquals((-1200).toShort(), readShortLE(packet, 0x42))
@@ -1192,8 +1192,9 @@ class BlePacketFactoryTest {
             variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
         )
 
-        // Just Lift forces softMax to 100.0f at 0x48 and increment to 0 at 0x4C.
-        assertEquals(100.0f, readFloatLE(packet, 0x48), "Just Lift softMax at 0x48")
+        // Just Lift keeps softMax at the selected per-cable force and uses
+        // reps=0xFF for open-ended set length.
+        assertEquals(40.0f, readFloatLE(packet, 0x48), "Just Lift softMax at 0x48")
         assertEquals(0.0f, readFloatLE(packet, 0x4C), "Just Lift increment at 0x4C")
     }
 
@@ -1423,9 +1424,9 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `issue390 AMRAP mode sets softMax to 100 regardless of weight`() {
-        // AMRAP sets softMax=100 to allow unlimited reps — verify this path
-        // since AMRAP routines also use PR% weights
+    fun `issue390 AMRAP mode keeps softMax at selected per-cable weight`() {
+        // AMRAP uses reps=0xFF for unlimited reps. The force controller still
+        // receives the selected per-cable force as softMax.
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -1436,16 +1437,16 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createProgramParams(params)
 
-        assertEquals(100.0f, readFloatLE(packet, 0x48), "AMRAP softMax must be 100 (unlimited)")
+        assertEquals(40.0f, readFloatLE(packet, 0x48), "AMRAP softMax uses selected per-cable weight")
         assertEquals(0.907f, readFloatLE(packet, 0x4C), "AMRAP increment still uses progressionKg")
 
-        // But targetWeight and forceMax still use actual weight
+        // TargetWeight and forceMax still use the adjusted operating weight.
         val adjusted = 40.0f - 0.907f
         assertEquals(adjusted, readFloatLE(packet, 0x58), "AMRAP targetWeight uses actual weight")
     }
 
     @Test
-    fun `issue390 JustLift mode sets softMax to 100 regardless of weight`() {
+    fun `issue390 JustLift mode keeps softMax at selected per-cable weight`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -1455,6 +1456,6 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createProgramParams(params)
 
-        assertEquals(100.0f, readFloatLE(packet, 0x48), "JustLift softMax must be 100 (unlimited)")
+        assertEquals(40.0f, readFloatLE(packet, 0x48), "JustLift softMax uses selected per-cable weight")
     }
 }

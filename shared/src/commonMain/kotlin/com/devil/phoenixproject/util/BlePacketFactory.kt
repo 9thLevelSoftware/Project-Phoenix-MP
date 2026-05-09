@@ -223,7 +223,10 @@ object BlePacketFactory {
 
         val effectiveKg = adjustedWeightPerCable + 10.0f
 
-        val softMax = if (params.isAMRAP || params.isJustLift) 100.0f else params.weightPerCableKg
+        // Official normal force modes keep softMax tied to the selected force
+        // per cable. Unlimited-rep behavior is controlled by the reps field
+        // (0xFF), not by raising softMax to the machine maximum.
+        val softMax = params.weightPerCableKg
 
         // Issue #390: Detect suspiciously low weight values that would cause the machine
         // to start at near-zero and ramp up slowly instead of the configured weight.
