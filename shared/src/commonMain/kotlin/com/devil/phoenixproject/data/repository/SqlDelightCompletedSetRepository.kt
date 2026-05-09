@@ -6,6 +6,8 @@ import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -169,6 +171,44 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                 completed_at = set.completedAt,
             )
         }
+    }
+
+    override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? = withContext(Dispatchers.IO) {
+        val existing = queries.selectCompletedSetsBySession(session.id, ::mapToCompletedSet).executeAsList()
+            .firstOrNull()
+        if (existing != null) return@withContext existing
+
+        val actualReps = (if (session.workingReps > 0) session.workingReps else session.totalReps)
+            .coerceAtLeast(0)
+        if (actualReps <= 0) return@withContext null
+
+        val completedSet = CompletedSet(
+            id = generateUUID(),
+            sessionId = session.id,
+            plannedSetId = null,
+            setNumber = 0,
+            setType = if (isAmrap) SetType.AMRAP else SetType.STANDARD,
+            actualReps = actualReps,
+            actualWeightKg = session.weightPerCableKg,
+            loggedRpe = session.rpe,
+            isPr = false,
+            completedAt = session.timestamp + session.duration,
+        )
+
+        queries.insertCompletedSet(
+            id = completedSet.id,
+            session_id = completedSet.sessionId,
+            planned_set_id = completedSet.plannedSetId,
+            set_number = completedSet.setNumber.toLong(),
+            set_type = completedSet.setType.name,
+            actual_reps = completedSet.actualReps.toLong(),
+            actual_weight_kg = completedSet.actualWeightKg.toDouble(),
+            logged_rpe = completedSet.loggedRpe?.toLong(),
+            is_pr = if (completedSet.isPr) 1L else 0L,
+            completed_at = completedSet.completedAt,
+        )
+
+        completedSet
     }
 
     override suspend fun saveCompletedSets(sets: List<CompletedSet>) {

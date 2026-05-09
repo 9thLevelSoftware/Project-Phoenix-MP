@@ -42,7 +42,6 @@ import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.database.AssessmentResult
-import com.devil.phoenixproject.database.ExerciseSignature
 import com.devil.phoenixproject.database.PhaseStatistics
 import com.devil.phoenixproject.di.appModule
 import com.devil.phoenixproject.di.platformModule
@@ -276,7 +275,6 @@ private val testModule = module {
             override suspend fun getFullCyclesForSync(profileId: String): List<PortalSyncAdapter.CycleWithContext> = emptyList()
             override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<com.devil.phoenixproject.domain.model.PersonalRecord> = emptyList()
             override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
-            override suspend fun getAllExerciseSignatures(): List<ExerciseSignature> = emptyList()
             override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> = emptyList()
             override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) = Unit
             override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) = Unit

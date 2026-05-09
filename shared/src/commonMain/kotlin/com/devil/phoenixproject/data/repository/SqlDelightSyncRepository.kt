@@ -1348,10 +1348,6 @@ class SqlDelightSyncRepository(
         }
     }
 
-    override suspend fun getAllExerciseSignatures(): List<com.devil.phoenixproject.database.ExerciseSignature> = withContext(Dispatchers.IO) {
-        queries.selectAllSignatures().executeAsList()
-    }
-
     override suspend fun getAllAssessments(profileId: String): List<com.devil.phoenixproject.database.AssessmentResult> = withContext(Dispatchers.IO) {
         queries.selectAllAssessments(profileId = profileId).executeAsList()
     }

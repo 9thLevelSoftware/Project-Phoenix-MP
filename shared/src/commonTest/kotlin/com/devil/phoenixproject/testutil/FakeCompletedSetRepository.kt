@@ -3,6 +3,9 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
+import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -92,6 +95,33 @@ class FakeCompletedSetRepository : CompletedSetRepository {
         completedSetsBySession.getOrPut(set.sessionId) { mutableListOf() }
             .apply { if (!contains(set.id)) add(set.id) }
         updateCompletedFlow(set.sessionId)
+    }
+
+    override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? {
+        session.exerciseId?.let { exerciseId ->
+            sessionExerciseIds[session.id] = exerciseId
+        }
+
+        getCompletedSets(session.id).firstOrNull()?.let { return it }
+
+        val actualReps = (if (session.workingReps > 0) session.workingReps else session.totalReps)
+            .coerceAtLeast(0)
+        if (actualReps <= 0) return null
+
+        val completedSet = CompletedSet(
+            id = generateUUID(),
+            sessionId = session.id,
+            plannedSetId = null,
+            setNumber = 0,
+            setType = if (isAmrap) SetType.AMRAP else SetType.STANDARD,
+            actualReps = actualReps,
+            actualWeightKg = session.weightPerCableKg,
+            loggedRpe = session.rpe,
+            isPr = false,
+            completedAt = session.timestamp + session.duration,
+        )
+        saveCompletedSet(completedSet)
+        return completedSet
     }
 
     override suspend fun saveCompletedSets(sets: List<CompletedSet>) {

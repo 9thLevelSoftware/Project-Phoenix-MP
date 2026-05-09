@@ -97,11 +97,6 @@ interface SyncRepository {
     suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<com.devil.phoenixproject.database.PhaseStatistics>
 
     /**
-     * Get all exercise signatures for sync push.
-     */
-    suspend fun getAllExerciseSignatures(): List<com.devil.phoenixproject.database.ExerciseSignature>
-
-    /**
      * Get all VBT assessment results for sync push.
      */
     suspend fun getAllAssessments(profileId: String = "default"): List<com.devil.phoenixproject.database.AssessmentResult>

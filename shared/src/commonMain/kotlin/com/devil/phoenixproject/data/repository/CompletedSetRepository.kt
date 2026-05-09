@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -69,6 +70,12 @@ interface CompletedSetRepository {
      * Save a completed set.
      */
     suspend fun saveCompletedSet(set: CompletedSet)
+
+    /**
+     * Ensure a completed-set row exists for a Just Lift session after post-set exercise tagging.
+     * Returns the existing row when one is already present so retagging does not duplicate stats.
+     */
+    suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet?
 
     /**
      * Save multiple completed sets at once.

@@ -85,7 +85,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val isCurrentExerciseBodyweight by viewModel.isCurrentExerciseBodyweight.collectAsState()
     val latestRepQuality by viewModel.latestRepQuality.collectAsState()
     val latestBiomechanicsResult by viewModel.latestBiomechanicsResult.collectAsState()
-    val detectionState by viewModel.detectionState.collectAsState()
     // Issue #237: Motion-triggered set start
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
     // Issue #297, #228: Rest timer pause state
@@ -352,7 +351,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         autoplayEnabled, userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB,
         canGoBack, canSkipForward,
         timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, latestRepQuality,
-        latestBiomechanicsResult, detectionState,
+        latestBiomechanicsResult,
         motionStartHoldProgress, isRestPaused,
         currentWarmupSetIndex, totalWarmupSets,
         justLiftRestCountdown, isExerciseTimerPaused,
@@ -388,7 +387,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
             latestRepQualityScore = latestRepQuality?.composite,
             latestBiomechanicsResult = latestBiomechanicsResult,
-            detectionState = detectionState,
             motionStartHoldProgress = motionStartHoldProgress,
             isRestPaused = isRestPaused,
             currentWarmupSetIndex = currentWarmupSetIndex,
@@ -428,10 +426,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             kgToDisplay = viewModel::kgToDisplay,
             displayToKg = viewModel::displayToKg,
             formatWeight = viewModel::formatWeight,
-            onDetectionConfirmed = { exerciseId, exerciseName ->
-                viewModel.onDetectionConfirmed(exerciseId, exerciseName)
+            onTagJustLiftSessionExercise = { sessionId, exercise, isAmrap ->
+                viewModel.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
             },
-            onDetectionDismissed = { viewModel.onDetectionDismissed() },
             onPauseExerciseTimer = { viewModel.pauseExerciseTimer() },
             onResumeExerciseTimer = { viewModel.resumeExerciseTimer() },
             onResetExerciseTimer = { viewModel.resetExerciseTimer() },
