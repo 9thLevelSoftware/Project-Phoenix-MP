@@ -214,14 +214,11 @@ object BlePacketFactory {
         val profile = getActivationPhases(profileMode)
         profile.copyInto(frame, 0x30)
 
-        // Calculate weights
-        val adjustedWeightPerCable = if (params.progressionRegressionKg != 0f) {
-            params.weightPerCableKg - params.progressionRegressionKg
-        } else {
-            params.weightPerCableKg
-        }
-
-        val effectiveKg = adjustedWeightPerCable + 10.0f
+        // Official activation force config keeps the selected force separate
+        // from per-rep progression. The increment field controls progression;
+        // targetWeight and forceMax stay anchored to the selected force.
+        val targetWeightPerCable = params.weightPerCableKg
+        val effectiveKg = targetWeightPerCable + 10.0f
 
         // Official normal force modes keep softMax tied to the selected force
         // per cable. Unlimited-rep behavior is controlled by the reps field
@@ -256,7 +253,7 @@ object BlePacketFactory {
         putFloatLE(
             frame,
             BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
-            adjustedWeightPerCable,
+            targetWeightPerCable,
         )
         putFloatLE(
             frame,
@@ -269,7 +266,7 @@ object BlePacketFactory {
             "=== MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ==="
         }
         Logger.d("BlePacket") {
-            "adjustedWeight=${adjustedWeightPerCable}kg, effectiveKg=$effectiveKg"
+            "targetWeight=${targetWeightPerCable}kg, effectiveKg=$effectiveKg"
         }
         if (effectiveVariant == ForceConfigVariant.OVERLAP) {
             Logger.d("BlePacket") {
