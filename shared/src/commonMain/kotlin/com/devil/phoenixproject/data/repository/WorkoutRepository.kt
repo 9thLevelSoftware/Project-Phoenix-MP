@@ -24,6 +24,7 @@ interface WorkoutRepository {
     // Workout sessions
     fun getAllSessions(profileId: String): Flow<List<WorkoutSession>>
     suspend fun saveSession(session: WorkoutSession)
+    suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
     suspend fun deleteSession(sessionId: String)
     suspend fun deleteAllSessions()
 

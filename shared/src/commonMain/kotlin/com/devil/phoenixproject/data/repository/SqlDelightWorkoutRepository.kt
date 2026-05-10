@@ -534,6 +534,17 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         }
     }
 
+    override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {
+        withContext(Dispatchers.IO) {
+            queries.updateSessionExerciseTag(
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+                updatedAt = currentTimeMillis(),
+                id = sessionId,
+            )
+        }
+    }
+
     override suspend fun deleteSession(sessionId: String) {
         withContext(Dispatchers.IO) {
             queries.deleteSession(sessionId)

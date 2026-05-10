@@ -16,6 +16,7 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
@@ -142,7 +143,6 @@ class DefaultWorkoutSessionManager(
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val settingsManager: SettingsManager,
-    val detectionManager: ExerciseDetectionManager,
     private val dataBackupManager: DataBackupManager? = null,
     private val userProfileRepository: UserProfileRepository,
     private val healthIntegration: HealthIntegration? = null,
@@ -224,7 +224,6 @@ class DefaultWorkoutSessionManager(
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
         scope = scope,
-        detectionManager = detectionManager,
         dataBackupManager = dataBackupManager,
         healthIntegration = healthIntegration,
         externalActivityRepository = externalActivityRepository,
@@ -355,6 +354,39 @@ class DefaultWorkoutSessionManager(
                 Logger.e(e) { "Error in workout foreground service collector" }
             }
         }
+    }
+
+    suspend fun tagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) {
+        val exerciseId = exercise.id
+        if (exerciseId.isNullOrBlank()) {
+            Logger.w { "Cannot tag Just Lift session $sessionId with exercise '${exercise.name}' because it has no ID" }
+            return
+        }
+
+        val session = workoutRepository.getSession(sessionId)
+        if (session == null) {
+            Logger.w { "Cannot tag Just Lift session $sessionId because the saved session was not found" }
+            return
+        }
+        if (!session.isJustLift) {
+            Logger.w { "Ignoring Just Lift tag request for non-Just Lift session $sessionId" }
+            return
+        }
+
+        workoutRepository.updateSessionExerciseTag(sessionId, exerciseId, exercise.name)
+        val taggedSession = session.copy(exerciseId = exerciseId, exerciseName = exercise.name)
+        completedSetRepository.ensureCompletedSetForTaggedJustLift(taggedSession, isAmrap)
+
+        val currentState = coordinator._workoutState.value
+        if (currentState is WorkoutState.SetSummary && currentState.sessionId == sessionId) {
+            coordinator._workoutState.value = currentState.copy(
+                taggedExerciseId = exerciseId,
+                taggedExerciseName = exercise.name,
+            )
+        }
+
+        syncTriggerManager?.onWorkoutCompleted()
+        coordinator._userFeedbackEvents.emit("Tagged ${exercise.name}")
     }
 
     fun clearCycleDayCompletionEvent() {
@@ -615,9 +647,6 @@ class DefaultWorkoutSessionManager(
 
                 summaryAutoAdvanceJob?.cancel()
                 summaryAutoAdvanceJob = null
-
-            // Reset detection state for the new set
-            detectionManager.resetForNewSet()
 
             val routine = coordinator._loadedRoutine.value
             val autoplay = settingsManager.autoplayEnabled.value

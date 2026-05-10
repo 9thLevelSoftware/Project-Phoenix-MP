@@ -57,6 +57,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,14 +84,15 @@ import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
+import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.VideoPlayer
-import com.devil.phoenixproject.presentation.manager.DetectionState
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
@@ -185,9 +187,7 @@ fun WorkoutTab(
         isCurrentExerciseBodyweight = state.isCurrentExerciseBodyweight,
         latestRepQualityScore = state.latestRepQualityScore,
         latestBiomechanicsResult = state.latestBiomechanicsResult,
-        detectionState = state.detectionState,
-        onDetectionConfirmed = actions::onDetectionConfirmed,
-        onDetectionDismissed = actions::onDetectionDismissed,
+        onTagJustLiftSessionExercise = actions::onTagJustLiftSessionExercise,
         motionStartHoldProgress = state.motionStartHoldProgress,
         isRestPaused = state.isRestPaused,
         justLiftRestCountdown = state.justLiftRestCountdown,
@@ -260,9 +260,7 @@ fun WorkoutTab(
     isCurrentExerciseBodyweight: Boolean = false,
     latestRepQualityScore: Int? = null, // Rep quality score (null = not available or free tier)
     latestBiomechanicsResult: BiomechanicsRepResult? = null, // Latest biomechanics analysis result
-    detectionState: DetectionState = DetectionState(), // Exercise auto-detection state
-    onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> }, // Detection confirm callback
-    onDetectionDismissed: () -> Unit = {}, // Detection dismiss callback
+    onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     // Issue #237: Motion-triggered set start
     motionStartHoldProgress: Float? = null,
     // Issue #297, #228: Rest timer pause state
@@ -311,9 +309,6 @@ fun WorkoutTab(
                 timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
                 isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                 latestBiomechanicsResult = latestBiomechanicsResult,
-                detectionState = detectionState,
-                onDetectionConfirmed = onDetectionConfirmed,
-                onDetectionDismissed = onDetectionDismissed,
                 isExerciseTimerPaused = isExerciseTimerPaused,
                 onPauseExerciseTimer = onPauseExerciseTimer,
                 onResumeExerciseTimer = onResumeExerciseTimer,
@@ -510,6 +505,10 @@ fun WorkoutTab(
                 }
 
                 is WorkoutState.SetSummary -> {
+                    val summarySessionId = workoutState.sessionId
+                    var showExerciseTagPicker by remember(summarySessionId) { mutableStateOf(false) }
+                    val scope = rememberCoroutineScope()
+
                     // Compute contextual button label
                     val buttonLabel = run {
                         val routine = loadedRoutine
@@ -547,8 +546,28 @@ fun WorkoutTab(
                             autoplayEnabled = autoplayEnabled,
                             summaryCountdownSeconds = summaryCountdownSeconds,
                             onRpeLogged = onRpeLogged,
+                            isJustLiftTaggingEnabled = workoutParameters.isJustLift && summarySessionId != null,
+                            taggedExerciseName = workoutState.taggedExerciseName,
+                            onTagExerciseClick = { showExerciseTagPicker = true },
                             buttonLabel = buttonLabel,
                         )
+
+                        if (showExerciseTagPicker && summarySessionId != null) {
+                            MiniExercisePickerDialog(
+                                exerciseRepository = exerciseRepository,
+                                onDismiss = { showExerciseTagPicker = false },
+                                onExerciseSelected = { exercise ->
+                                    showExerciseTagPicker = false
+                                    scope.launch {
+                                        onTagJustLiftSessionExercise(
+                                            summarySessionId,
+                                            exercise,
+                                            workoutState.isAmrap,
+                                        )
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
 

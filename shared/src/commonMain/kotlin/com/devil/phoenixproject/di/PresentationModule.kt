@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.di
 
-import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
@@ -12,9 +11,6 @@ import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import org.koin.dsl.module
 
 val presentationModule = module {
-    // Exercise Detection Manager (per-session, not singleton)
-    factory { ExerciseDetectionManager(get(), get(), get(), get()) }
-
     // ViewModels
     factory { ConnectionLogsViewModel() }
     factory { CycleEditorViewModel(get(), get()) }

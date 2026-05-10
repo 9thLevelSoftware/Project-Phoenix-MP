@@ -62,6 +62,9 @@ fun SetSummaryCard(
     onRpeLogged: ((Int) -> Unit)? = null, // Optional RPE callback
     isHistoryView: Boolean = false, // Hide interactive elements when viewing from history
     savedRpe: Int? = null, // Show saved RPE value in history view
+    isJustLiftTaggingEnabled: Boolean = false,
+    taggedExerciseName: String? = null,
+    onTagExerciseClick: (() -> Unit)? = null,
     buttonLabel: String = "Done", // Contextual label: "Next Set", "Next Exercise", "Complete Routine"
 ) {
     // State for RPE tracking
@@ -283,6 +286,13 @@ fun SetSummaryCard(
                 AsymmetrySummaryCard(biomechanics)
             }
 
+            if (!isHistoryView && isJustLiftTaggingEnabled && onTagExerciseClick != null) {
+                ExerciseTagSection(
+                    taggedExerciseName = taggedExerciseName,
+                    onClick = onTagExerciseClick,
+                )
+            }
+
             // RPE section - show read-only in history view, interactive in live view
             if (isHistoryView && savedRpe != null) {
                 // Show saved RPE as read-only
@@ -376,6 +386,58 @@ fun SetSummaryCard(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseTagSection(
+    taggedExerciseName: String?,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FitnessCenter,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = taggedExerciseName ?: "Tag exercise",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    taggedExerciseName?.let {
+                        Text(
+                            text = "Exercise tagged",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            TextButton(onClick = onClick) {
+                Text(if (taggedExerciseName == null) "Select" else "Change")
             }
         }
     }
