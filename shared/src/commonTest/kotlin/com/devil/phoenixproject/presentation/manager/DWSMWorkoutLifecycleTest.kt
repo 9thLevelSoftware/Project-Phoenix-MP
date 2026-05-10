@@ -646,6 +646,10 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
         advanceUntilIdle()
         val firstSetId = harness.fakeCompletedSetRepo.getCompletedSets(session.id).single().id
+        assertEquals(
+            listOf(TestFixtures.squat.id),
+            harness.fakePRRepo.updateCalls.map { it.exerciseId },
+        )
 
         harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.deadlift, isAmrap = false)
         advanceUntilIdle()
@@ -659,6 +663,10 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(firstSetId, completedSets.single().id)
         assertEquals(1, harness.fakeCompletedSetRepo.getCompletedSetsForExercise(TestFixtures.deadlift.id!!).size)
         assertEquals(0, harness.fakeCompletedSetRepo.getCompletedSetsForExercise(TestFixtures.squat.id!!).size)
+        assertEquals(
+            listOf(TestFixtures.squat.id),
+            harness.fakePRRepo.updateCalls.map { it.exerciseId },
+        )
         harness.cleanup()
     }
 

@@ -374,11 +374,13 @@ class DefaultWorkoutSessionManager(
             return
         }
 
+        val previousExerciseId = session.exerciseId?.takeIf { it.isNotBlank() }
+        val isRetaggingDifferentExercise = previousExerciseId != null && previousExerciseId != exerciseId
         workoutRepository.updateSessionExerciseTag(sessionId, exerciseId, exercise.name)
         val taggedSession = session.copy(exerciseId = exerciseId, exerciseName = exercise.name)
         val completedSet = completedSetRepository.ensureCompletedSetForTaggedJustLift(taggedSession, isAmrap)
 
-        if (completedSet != null && completedSet.actualReps > 0) {
+        if (completedSet != null && completedSet.actualReps > 0 && !isRetaggingDifferentExercise) {
             personalRecordRepository.updatePRsIfBetter(
                 exerciseId = exerciseId,
                 weightPRWeightPerCableKg = taggedSession.weightPerCableKg,
@@ -390,6 +392,10 @@ class DefaultWorkoutSessionManager(
                 cableCount = taggedSession.displayMultiplier,
             ).onFailure { error ->
                 Logger.e(error) { "Failed to update PRs while tagging Just Lift session $sessionId" }
+            }
+        } else if (completedSet != null && completedSet.actualReps > 0) {
+            Logger.i {
+                "Skipping PR update for Just Lift session $sessionId retag from $previousExerciseId to $exerciseId"
             }
         }
 
