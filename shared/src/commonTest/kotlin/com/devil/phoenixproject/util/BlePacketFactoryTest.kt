@@ -1459,9 +1459,9 @@ class BlePacketFactoryTest {
         assertEquals(40.0f, readFloatLE(packet, 0x48), "AMRAP softMax uses selected per-cable weight")
         assertEquals(0.907f, readFloatLE(packet, 0x4C), "AMRAP increment still uses progressionKg")
 
-        // TargetWeight and forceMax still use the adjusted operating weight.
-        val adjusted = 40.0f - 0.907f
-        assertEquals(adjusted, readFloatLE(packet, 0x58), "AMRAP targetWeight uses actual weight")
+        // TargetWeight stays anchored to the selected force; progression is
+        // carried separately by the increment/progression fields.
+        assertEquals(40.0f, readFloatLE(packet, 0x58), "AMRAP targetWeight uses selected weight")
     }
 
     @Test
