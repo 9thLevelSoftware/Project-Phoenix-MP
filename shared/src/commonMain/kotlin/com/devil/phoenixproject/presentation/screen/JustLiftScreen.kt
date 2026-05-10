@@ -84,7 +84,6 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AutoStopUiState
-import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EccentricLoad
@@ -97,7 +96,6 @@ import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.presentation.components.AddProfileDialog
-import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
@@ -108,7 +106,6 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -133,9 +130,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
-    // M16: Collect detection state so post-set detection sheet isn't lost on nav back
-    val detectionState by viewModel.detectionState.collectAsState()
-    val exerciseRepository: ExerciseRepository = koinInject()
 
     var selectedMode by remember { mutableStateOf(workoutParameters.programMode.toWorkoutMode(workoutParameters.echoLevel)) }
     // Initialize to match the picker's default: 1 lb = 0.453592 kg
@@ -808,20 +802,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             )
         }
 
-        // M16: Show exercise auto-detection sheet when detection fires during/after set completion.
-        // The detection state persists in ExerciseDetectionManager until explicitly reset,
-        // so if detection triggers while transitioning from ActiveWorkoutScreen back here,
-        // the pending result is still available for the user to confirm or dismiss.
-        if (detectionState.isActive && detectionState.classification != null) {
-            AutoDetectionSheet(
-                classification = detectionState.classification!!,
-                exerciseRepository = exerciseRepository,
-                onConfirm = { exerciseId, exerciseName ->
-                    scope.launch { viewModel.onDetectionConfirmed(exerciseId, exerciseName) }
-                },
-                onDismiss = { viewModel.onDetectionDismissed() },
-            )
-        }
     }
 }
 

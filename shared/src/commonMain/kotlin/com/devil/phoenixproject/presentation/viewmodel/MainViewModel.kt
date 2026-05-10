@@ -23,6 +23,7 @@ import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -43,7 +44,6 @@ import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
-import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.manager.HistoryManager
@@ -83,7 +83,6 @@ class MainViewModel constructor(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
-    private val detectionManager: ExerciseDetectionManager,
     private val dataBackupManager: DataBackupManager,
     private val userProfileRepository: UserProfileRepository,
     private val healthIntegration: HealthIntegration? = null,
@@ -129,7 +128,6 @@ class MainViewModel constructor(
         biomechanicsRepository = biomechanicsRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
         settingsManager = settingsManager,
-        detectionManager = detectionManager,
         dataBackupManager = dataBackupManager,
         userProfileRepository = userProfileRepository,
         healthIntegration = healthIntegration,
@@ -186,24 +184,8 @@ class MainViewModel constructor(
     val cycleDayCompletionEvent get() = workoutSessionManager.coordinator.cycleDayCompletionEvent
     fun clearCycleDayCompletionEvent() = workoutSessionManager.clearCycleDayCompletionEvent()
 
-    // ===== Exercise Detection Delegation =====
-    val detectionState get() = workoutSessionManager.detectionManager.detectionState
-
-    suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String) {
-        workoutSessionManager.detectionManager.onExerciseConfirmed(exerciseId, exerciseName)
-        // Populate exercise attribution on workout parameters so subsequent
-        // session saves (e.g. Just Lift) include the confirmed exercise
-        val coordinator = workoutSessionManager.coordinator
-        coordinator._workoutParameters.update { params ->
-            if (params.isJustLift && params.selectedExerciseId == null) {
-                params.copy(selectedExerciseId = exerciseId)
-            } else {
-                params
-            }
-        }
-    }
-
-    fun onDetectionDismissed() = workoutSessionManager.detectionManager.onDetectionDismissed()
+    suspend fun tagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) =
+        workoutSessionManager.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
 
     // ===== BLE Connection Delegation =====
 

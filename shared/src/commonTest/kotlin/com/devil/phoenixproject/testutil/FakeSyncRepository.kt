@@ -12,7 +12,6 @@ import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.database.AssessmentResult
-import com.devil.phoenixproject.database.ExerciseSignature
 import com.devil.phoenixproject.database.PhaseStatistics
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
@@ -156,15 +155,13 @@ class FakeSyncRepository : SyncRepository {
         hardDeletedCycleIds = ids
     }
 
-    // === Stubs for new sync interface methods (added for cycle/PR/phase/signature/assessment sync) ===
+    // === Stubs for new sync interface methods (added for cycle/PR/phase/assessment sync) ===
 
     override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = cyclesToReturn
 
     override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> = emptyList()
 
     override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
-
-    override suspend fun getAllExerciseSignatures(): List<ExerciseSignature> = emptyList()
 
     override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> = emptyList()
 

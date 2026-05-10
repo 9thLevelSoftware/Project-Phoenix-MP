@@ -16,6 +16,7 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
@@ -25,6 +26,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -142,7 +144,6 @@ class DefaultWorkoutSessionManager(
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val settingsManager: SettingsManager,
-    val detectionManager: ExerciseDetectionManager,
     private val dataBackupManager: DataBackupManager? = null,
     private val userProfileRepository: UserProfileRepository,
     private val healthIntegration: HealthIntegration? = null,
@@ -224,7 +225,6 @@ class DefaultWorkoutSessionManager(
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
         scope = scope,
-        detectionManager = detectionManager,
         dataBackupManager = dataBackupManager,
         healthIntegration = healthIntegration,
         externalActivityRepository = externalActivityRepository,
@@ -355,6 +355,60 @@ class DefaultWorkoutSessionManager(
                 Logger.e(e) { "Error in workout foreground service collector" }
             }
         }
+    }
+
+    suspend fun tagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) {
+        val exerciseId = exercise.id
+        if (exerciseId.isNullOrBlank()) {
+            Logger.w { "Cannot tag Just Lift session $sessionId with exercise '${exercise.name}' because it has no ID" }
+            return
+        }
+
+        val session = workoutRepository.getSession(sessionId)
+        if (session == null) {
+            Logger.w { "Cannot tag Just Lift session $sessionId because the saved session was not found" }
+            return
+        }
+        if (!session.isJustLift) {
+            Logger.w { "Ignoring Just Lift tag request for non-Just Lift session $sessionId" }
+            return
+        }
+
+        val previousExerciseId = session.exerciseId?.takeIf { it.isNotBlank() }
+        val isRetaggingDifferentExercise = previousExerciseId != null && previousExerciseId != exerciseId
+        workoutRepository.updateSessionExerciseTag(sessionId, exerciseId, exercise.name)
+        val taggedSession = session.copy(exerciseId = exerciseId, exerciseName = exercise.name)
+        val completedSet = completedSetRepository.ensureCompletedSetForTaggedJustLift(taggedSession, isAmrap)
+
+        if (completedSet != null && completedSet.actualReps > 0 && !isRetaggingDifferentExercise) {
+            personalRecordRepository.updatePRsIfBetter(
+                exerciseId = exerciseId,
+                weightPRWeightPerCableKg = taggedSession.weightPerCableKg,
+                volumePRWeightPerCableKg = taggedSession.weightPerCableKg,
+                reps = completedSet.actualReps,
+                workoutMode = taggedSession.mode,
+                timestamp = currentTimeMillis(),
+                profileId = taggedSession.profileId,
+                cableCount = taggedSession.displayMultiplier,
+            ).onFailure { error ->
+                Logger.e(error) { "Failed to update PRs while tagging Just Lift session $sessionId" }
+            }
+        } else if (completedSet != null && completedSet.actualReps > 0) {
+            Logger.i {
+                "Skipping PR update for Just Lift session $sessionId retag from $previousExerciseId to $exerciseId"
+            }
+        }
+
+        val currentState = coordinator._workoutState.value
+        if (currentState is WorkoutState.SetSummary && currentState.sessionId == sessionId) {
+            coordinator._workoutState.value = currentState.copy(
+                taggedExerciseId = exerciseId,
+                taggedExerciseName = exercise.name,
+            )
+        }
+
+        syncTriggerManager?.onWorkoutCompleted()
+        coordinator._userFeedbackEvents.emit("Tagged ${exercise.name}")
     }
 
     fun clearCycleDayCompletionEvent() {
@@ -615,9 +669,6 @@ class DefaultWorkoutSessionManager(
 
                 summaryAutoAdvanceJob?.cancel()
                 summaryAutoAdvanceJob = null
-
-            // Reset detection state for the new set
-            detectionManager.resetForNewSet()
 
             val routine = coordinator._loadedRoutine.value
             val autoplay = settingsManager.autoplayEnabled.value

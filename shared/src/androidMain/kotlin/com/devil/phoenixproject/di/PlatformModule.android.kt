@@ -84,7 +84,6 @@ actual val platformModule: Module = module {
             repMetricRepository = get(),
             biomechanicsRepository = get(),
             resolveWeightsUseCase = get(),
-            detectionManager = get(),
             dataBackupManager = get(),
             userProfileRepository = get(),
             healthIntegration = get(),

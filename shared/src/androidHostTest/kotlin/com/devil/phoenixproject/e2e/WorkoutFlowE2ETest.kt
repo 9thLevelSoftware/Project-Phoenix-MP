@@ -1,15 +1,10 @@
 package com.devil.phoenixproject.e2e
 
-import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
-import com.devil.phoenixproject.domain.detection.ExerciseClassifier
-import com.devil.phoenixproject.domain.detection.ExerciseSignature
-import com.devil.phoenixproject.domain.detection.SignatureExtractor
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.e2e.robot.WorkoutRobot
 import com.devil.phoenixproject.e2e.robot.workoutRobot
-import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
@@ -69,20 +64,6 @@ class WorkoutFlowE2ETest {
         repCounter = RepCounterFromMachine()
         resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository)
 
-        val fakeSignatureRepo = object : ExerciseSignatureRepository {
-            override suspend fun getSignaturesByExercise(exerciseId: String): List<ExerciseSignature> = emptyList()
-            override suspend fun getAllSignaturesAsMap(): Map<String, ExerciseSignature> = emptyMap()
-            override suspend fun saveSignature(exerciseId: String, signature: ExerciseSignature) {}
-            override suspend fun updateSignature(id: Long, signature: ExerciseSignature) {}
-            override suspend fun deleteSignaturesByExercise(exerciseId: String) {}
-        }
-        val detectionManager = ExerciseDetectionManager(
-            signatureExtractor = SignatureExtractor(),
-            exerciseClassifier = ExerciseClassifier(),
-            signatureRepository = fakeSignatureRepo,
-            exerciseRepository = fakeExerciseRepository,
-        )
-
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
             workoutRepository = fakeWorkoutRepository,
@@ -96,7 +77,6 @@ class WorkoutFlowE2ETest {
             repMetricRepository = fakeRepMetricRepository,
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
-            detectionManager = detectionManager,
             dataBackupManager = FakeDataBackupManager(),
             userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
             workoutServiceController = NoOpWorkoutServiceController,
