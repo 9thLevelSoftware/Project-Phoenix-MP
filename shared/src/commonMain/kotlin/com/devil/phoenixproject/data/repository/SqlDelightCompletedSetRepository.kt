@@ -174,25 +174,43 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
     }
 
     override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? = withContext(Dispatchers.IO) {
-        val existing = queries.selectCompletedSetsBySession(session.id, ::mapToCompletedSet).executeAsList()
-            .firstOrNull()
-        if (existing != null) return@withContext existing
-
         val actualReps = (if (session.workingReps > 0) session.workingReps else session.totalReps)
             .coerceAtLeast(0)
         if (actualReps <= 0) return@withContext null
+
+        val setType = if (isAmrap) SetType.AMRAP else SetType.STANDARD
+        val completedAt = session.timestamp + session.duration
+        val existing = queries.selectCompletedSetsBySession(session.id, ::mapToCompletedSet).executeAsList()
+            .firstOrNull()
+        if (existing != null) {
+            queries.updateCompletedSetForTaggedJustLift(
+                set_type = setType.name,
+                actual_reps = actualReps.toLong(),
+                actual_weight_kg = session.weightPerCableKg.toDouble(),
+                logged_rpe = session.rpe?.toLong(),
+                completed_at = completedAt,
+                id = existing.id,
+            )
+            return@withContext existing.copy(
+                setType = setType,
+                actualReps = actualReps,
+                actualWeightKg = session.weightPerCableKg,
+                loggedRpe = session.rpe,
+                completedAt = completedAt,
+            )
+        }
 
         val completedSet = CompletedSet(
             id = generateUUID(),
             sessionId = session.id,
             plannedSetId = null,
             setNumber = 0,
-            setType = if (isAmrap) SetType.AMRAP else SetType.STANDARD,
+            setType = setType,
             actualReps = actualReps,
             actualWeightKg = session.weightPerCableKg,
             loggedRpe = session.rpe,
             isPr = false,
-            completedAt = session.timestamp + session.duration,
+            completedAt = completedAt,
         )
 
         queries.insertCompletedSet(

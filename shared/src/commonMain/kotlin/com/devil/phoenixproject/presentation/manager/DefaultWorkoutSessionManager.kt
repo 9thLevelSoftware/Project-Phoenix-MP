@@ -26,6 +26,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -375,7 +376,22 @@ class DefaultWorkoutSessionManager(
 
         workoutRepository.updateSessionExerciseTag(sessionId, exerciseId, exercise.name)
         val taggedSession = session.copy(exerciseId = exerciseId, exerciseName = exercise.name)
-        completedSetRepository.ensureCompletedSetForTaggedJustLift(taggedSession, isAmrap)
+        val completedSet = completedSetRepository.ensureCompletedSetForTaggedJustLift(taggedSession, isAmrap)
+
+        if (completedSet != null && completedSet.actualReps > 0) {
+            personalRecordRepository.updatePRsIfBetter(
+                exerciseId = exerciseId,
+                weightPRWeightPerCableKg = taggedSession.weightPerCableKg,
+                volumePRWeightPerCableKg = taggedSession.weightPerCableKg,
+                reps = completedSet.actualReps,
+                workoutMode = taggedSession.mode,
+                timestamp = currentTimeMillis(),
+                profileId = taggedSession.profileId,
+                cableCount = taggedSession.displayMultiplier,
+            ).onFailure { error ->
+                Logger.e(error) { "Failed to update PRs while tagging Just Lift session $sessionId" }
+            }
+        }
 
         val currentState = coordinator._workoutState.value
         if (currentState is WorkoutState.SetSummary && currentState.sessionId == sessionId) {

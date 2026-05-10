@@ -1614,6 +1614,15 @@ UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
 markCompletedSetAsPr:
 UPDATE CompletedSet SET is_pr = 1 WHERE id = ?;
 
+updateCompletedSetForTaggedJustLift:
+UPDATE CompletedSet
+SET set_type = ?,
+    actual_reps = ?,
+    actual_weight_kg = ?,
+    logged_rpe = ?,
+    completed_at = ?
+WHERE id = ?;
+
 deleteCompletedSet:
 DELETE FROM CompletedSet WHERE id = ?;
 
