@@ -23,3 +23,4 @@ rootProject.name = "VitruvianProjectPhoenix"
 
 include(":shared")
 include(":androidApp")
+include(":third_party:kable-core-android-patched")
