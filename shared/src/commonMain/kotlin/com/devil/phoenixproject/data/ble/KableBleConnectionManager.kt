@@ -18,6 +18,7 @@ import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -497,17 +498,21 @@ class KableBleConnectionManager(
                                 connectedDeviceName,
                                 connectedDeviceAddress,
                             )
-                            reportConnectionState(
-                                ConnectionState.Connected(
-                                    deviceName = device.name,
-                                    deviceAddress = device.address,
-                                    hardwareModel = HardwareDetection.detectModel(device.name),
-                                ),
-                            )
-                            // Launch onDeviceReady with error handling (H3 fix)
+                            // Pixel #333: do not publish Connected until MTU, services,
+                            // critical notifications, and baseline polling are initialized.
+                            // The UI observes Connected and immediately restores the saved
+                            // LED color scheme, so publishing early can inject a 34-byte write
+                            // directly into the ready-up GATT sequence.
                             scope.launch {
                                 try {
                                     onDeviceReady()
+                                    reportConnectionState(
+                                        ConnectionState.Connected(
+                                            deviceName = device.name,
+                                            deviceAddress = device.address,
+                                            hardwareModel = HardwareDetection.detectModel(device.name),
+                                        ),
+                                    )
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
@@ -775,22 +780,20 @@ class KableBleConnectionManager(
     // 6. startObservingNotifications()
     // -------------------------------------------------------------------------
 
-    private fun startObservingNotifications() {
+    private suspend fun startObservingNotifications() {
         val p = peripheral ?: return
 
         logRepo.info(
             LogEventType.NOTIFICATION,
-            "Enabling BLE notifications and starting polling (matching parent repo)",
+            "[#333 v10] Enabling BLE notifications with ready gate",
             connectedDeviceName,
             connectedDeviceAddress,
         )
 
         // ===== FIRMWARE VERSION READ (best effort) =====
         // Try to read firmware version from Device Information Service
-        scope.launch {
-            tryReadFirmwareVersion(p)
-            tryReadVitruvianVersion(p)
-        }
+        tryReadFirmwareVersion(p)
+        tryReadVitruvianVersion(p)
 
         // ===== CORE NOTIFICATIONS =====
 
@@ -800,69 +803,133 @@ class KableBleConnectionManager(
         // Command responses (if any) come through device-specific characteristics.
 
         // Observe REPS characteristic for rep completion events (CRITICAL for rep counting!)
-        scope.launch {
-            try {
-                log.i { "Starting REPS characteristic notifications (rep events)" }
-                p.observe(repsCharacteristic)
-                    .catch { e ->
-                        log.e { "Reps observation error: ${e.message}" }
-                        logRepo.error(
-                            LogEventType.ERROR,
-                            "Reps notification error",
-                            connectedDeviceName,
-                            connectedDeviceAddress,
-                            e.message,
-                        )
-                    }
-                    .collect { data ->
-                        log.d { "REPS notification received: ${data.size} bytes" }
-                        onRepEventFromCharacteristic(data)
-                    }
-            } catch (e: Exception) {
-                log.e { "Failed to observe Reps: ${e.message}" }
-                logRepo.error(
-                    LogEventType.ERROR,
-                    "Failed to enable Reps notifications",
-                    connectedDeviceName,
-                    connectedDeviceAddress,
-                    e.message,
-                )
-            }
+        val repsReady = startObservationAndAwaitSubscription(
+            label = "REPS",
+            critical = true,
+        ) {
+            p.observe(repsCharacteristic, onSubscription = it)
+                .catch { e ->
+                    log.e { "Reps observation error: ${e.message}" }
+                    logRepo.error(
+                        LogEventType.ERROR,
+                        "Reps notification error",
+                        connectedDeviceName,
+                        connectedDeviceAddress,
+                        e.message,
+                    )
+                }
+                .collect { data ->
+                    log.d { "REPS notification received: ${data.size} bytes" }
+                    onRepEventFromCharacteristic(data)
+                }
+        }
+        if (!repsReady) {
+            throw IllegalStateException("REPS notifications did not become ready")
         }
 
         // Observe VERSION characteristic (for firmware info logging)
-        scope.launch {
-            try {
-                log.d { "Starting VERSION characteristic notifications" }
-                p.observe(versionCharacteristic)
-                    .catch { e -> log.w { "Version observation error (non-fatal): ${e.message}" } }
-                    .collect { data ->
-                        val hexString = data.joinToString(" ") { it.toHexString() }
-                        log.i { "VERSION CHARACTERISTIC DATA RECEIVED" }
-                        log.i { "  Size: ${data.size} bytes, Hex: $hexString" }
-                    }
-            } catch (e: Exception) {
-                log.d { "VERSION notifications not available (expected): ${e.message}" }
-            }
+        startObservationAndAwaitSubscription(
+            label = "VERSION",
+            critical = false,
+        ) {
+            p.observe(versionCharacteristic, onSubscription = it)
+                .catch { e -> log.w { "Version observation error (non-fatal): ${e.message}" } }
+                .collect { data ->
+                    val hexString = data.joinToString(" ") { it.toHexString() }
+                    log.i { "VERSION CHARACTERISTIC DATA RECEIVED" }
+                    log.i { "  Size: ${data.size} bytes, Hex: $hexString" }
+                }
         }
 
         // Observe MODE characteristic (for mode change logging)
-        scope.launch {
-            try {
-                log.d { "Starting MODE characteristic notifications" }
-                p.observe(modeCharacteristic)
-                    .catch { e -> log.w { "Mode observation error (non-fatal): ${e.message}" } }
-                    .collect { data ->
-                        log.d { "MODE notification: ${data.size} bytes" }
-                    }
-            } catch (e: Exception) {
-                log.d { "MODE notifications not available (expected): ${e.message}" }
-            }
+        startObservationAndAwaitSubscription(
+            label = "MODE",
+            critical = false,
+        ) {
+            p.observe(modeCharacteristic, onSubscription = it)
+                .catch { e -> log.w { "Mode observation error (non-fatal): ${e.message}" } }
+                .collect { data ->
+                    val details = modeSummary(data)
+                    log.d { "MODE notification: $details" }
+                    logRepo.debug(
+                        LogEventType.NOTIFICATION,
+                        "MODE notification",
+                        connectedDeviceName,
+                        connectedDeviceAddress,
+                        details,
+                    )
+                }
         }
 
         // ===== POLLING (delegated to MetricPollingEngine) =====
         discoMode.stop()
+        logRepo.info(
+            LogEventType.NOTIFICATION,
+            "[#333 v10] BLE ready gate complete; starting polling",
+            connectedDeviceName,
+            connectedDeviceAddress,
+        )
         pollingEngine.startAll(p)
+    }
+
+    private suspend fun startObservationAndAwaitSubscription(
+        label: String,
+        critical: Boolean,
+        collector: suspend (onSubscription: suspend () -> Unit) -> Unit,
+    ): Boolean {
+        val subscribed = CompletableDeferred<Unit>()
+        scope.launch {
+            try {
+                log.i { "[#333 v10] Starting $label notifications" }
+                collector {
+                    subscribed.complete(Unit)
+                    log.i { "[#333 v10] $label notifications subscribed" }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (!subscribed.isCompleted) {
+                    subscribed.completeExceptionally(e)
+                }
+                val message = "[#333 v10] Failed to observe $label: ${e.message}"
+                if (critical) {
+                    log.e(e) { message }
+                    logRepo.error(
+                        LogEventType.ERROR,
+                        "$label notification setup failed",
+                        connectedDeviceName,
+                        connectedDeviceAddress,
+                        e.message,
+                    )
+                } else {
+                    log.d { message }
+                }
+            }
+        }
+
+        return try {
+            withTimeout(2000L) {
+                subscribed.await()
+            }
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val message = "[#333 v10] $label notification subscription did not complete: ${e.message}"
+            if (critical) {
+                logRepo.error(
+                    LogEventType.ERROR,
+                    "$label notification setup failed",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    e.message,
+                )
+                log.e(e) { message }
+            } else {
+                log.d { message }
+            }
+            false
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1008,8 +1075,9 @@ class KableBleConnectionManager(
             return Result.failure(IllegalStateException("Not connected"))
         }
 
+        val commandDetails = commandSummary(command)
         val commandHex = command.joinToString(" ") { it.toHexString() }
-        log.d { "Sending ${command.size}-byte command to NUS TX" }
+        log.d { "Sending $commandDetails to NUS TX" }
         log.d { "Command hex: $commandHex" }
 
         // Issue #222: Log queue state before acquiring for debugging
@@ -1020,8 +1088,8 @@ class KableBleConnectionManager(
 
         if (result.isSuccess) {
             val elapsedMs = currentTimeMillis() - attemptStart
-            log.d { "TX write ok: size=${command.size}, type=WithResponse, elapsed=${elapsedMs}ms" }
-            log.i { "Command sent via NUS TX: ${command.size} bytes" }
+            log.d { "TX write ok: $commandDetails, type=WithResponse, elapsed=${elapsedMs}ms" }
+            log.i { "Command sent via NUS TX: $commandDetails" }
 
             // Issue #222 v16 (optional): One-shot diagnostic read after CONFIG to catch early faults.
             val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
@@ -1051,21 +1119,82 @@ class KableBleConnectionManager(
                 "Command sent (NUS TX)",
                 connectedDeviceName,
                 connectedDeviceAddress,
-                "Size: ${command.size} bytes",
+                commandDetails,
             )
             return Result.success(Unit)
         } else {
             val ex = result.exceptionOrNull()
-            log.e { "Failed to send command after retries: ${ex?.message}" }
+            log.e { "Failed to send $commandDetails after retries: ${ex?.message}" }
             logRepo.error(
                 LogEventType.ERROR,
                 "Failed to send command",
                 connectedDeviceName,
                 connectedDeviceAddress,
-                ex?.message,
+                "$commandDetails; error=${ex?.message}",
             )
             return Result.failure(ex ?: IllegalStateException("Unknown error"))
         }
+    }
+
+    private fun commandSummary(command: ByteArray): String {
+        val opcode = command.firstOrNull()?.toInt()?.and(0xFF)
+        val opcodeText = opcode?.let { "0x${it.toString(16).padStart(2, '0').uppercase()}" } ?: "n/a"
+        val commandIdText = if (command.size >= 4) {
+            val commandId = (command[0].toInt() and 0xFF) or
+                ((command[1].toInt() and 0xFF) shl 8) or
+                ((command[2].toInt() and 0xFF) shl 16) or
+                ((command[3].toInt() and 0xFF) shl 24)
+            ", commandIdLE=$commandId"
+        } else {
+            ""
+        }
+        val preview = command.take(8).joinToString(" ") { it.toHexString() }
+        val configDetails = activationConfigSummary(command)
+        return "Size: ${command.size} bytes, opcode=$opcodeText$commandIdText, first8=$preview$configDetails"
+    }
+
+    private fun activationConfigSummary(command: ByteArray): String {
+        if (command.size < 96 || command[0] != 0x04.toByte()) {
+            return ""
+        }
+        return ", profileTail[0x48]=${readFloatLE(command, 0x48)}" +
+            ", profileTail[0x4C]=${readFloatLE(command, 0x4C)}" +
+            ", forceMin[0x50]=${readFloatLE(command, 0x50)}" +
+            ", forceMax[0x54]=${readFloatLE(command, 0x54)}" +
+            ", officialSoftMax[0x58]=${readFloatLE(command, 0x58)}" +
+            ", officialIncrement[0x5C]=${readFloatLE(command, 0x5C)}"
+    }
+
+    private fun readFloatLE(data: ByteArray, offset: Int): Float {
+        val bits = (data[offset].toInt() and 0xFF) or
+            ((data[offset + 1].toInt() and 0xFF) shl 8) or
+            ((data[offset + 2].toInt() and 0xFF) shl 16) or
+            ((data[offset + 3].toInt() and 0xFF) shl 24)
+        return Float.fromBits(bits)
+    }
+
+    private fun modeSummary(data: ByteArray): String {
+        val raw = data.joinToString(" ") { it.toHexString() }
+        if (data.isEmpty()) {
+            return "Size: 0 bytes, value=0 (BASELINE by official parser), raw="
+        }
+        val value = if (data.size >= 4) {
+            (data[0].toInt() and 0xFF) or
+                ((data[1].toInt() and 0xFF) shl 8) or
+                ((data[2].toInt() and 0xFF) shl 16) or
+                ((data[3].toInt() and 0xFF) shl 24)
+        } else {
+            data[0].toInt() and 0xFF
+        }
+        val name = when (value) {
+            0 -> "BASELINE"
+            1 -> "SOFTWARE"
+            2 -> "STATIC"
+            3 -> "TWO_PHASE"
+            4 -> "MASTER"
+            else -> "UNKNOWN"
+        }
+        return "Size: ${data.size} bytes, value=$value ($name), raw=$raw"
     }
 
     // -------------------------------------------------------------------------
