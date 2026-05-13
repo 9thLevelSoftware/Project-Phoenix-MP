@@ -7,16 +7,13 @@ import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.HardwareDetection
 import com.juul.kable.Advertisement
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
 import com.juul.kable.WriteType
-import kotlin.concurrent.Volatile
-import kotlin.time.Clock
-import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +32,10 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.Volatile
+import kotlin.time.Clock
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Manages the BLE connection lifecycle for Vitruvian machines.
@@ -827,6 +828,19 @@ class KableBleConnectionManager(
             throw IllegalStateException("REPS notifications did not become ready")
         }
 
+        // Observe SAMPLE/MONITOR characteristic (raw monitor packets without opcode prefix)
+        startObservationAndAwaitSubscription(
+            label = "SAMPLE",
+            critical = false,
+        ) {
+            p.observe(monitorCharacteristic, onSubscription = it)
+                .catch { e -> log.w { "Monitor notification error (non-fatal): ${e.message}" } }
+                .collect { data ->
+                    log.d { "SAMPLE notification received: ${data.size} bytes" }
+                    onMetricFromRx(data)
+                }
+        }
+
         // Observe VERSION characteristic (for firmware info logging)
         startObservationAndAwaitSubscription(
             label = "VERSION",
@@ -1095,8 +1109,12 @@ class KableBleConnectionManager(
             val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
             val isProgramConfig = command.size == 96 && command[0] == 0x04.toByte()
             if (isEchoConfig || isProgramConfig) {
+                val preDelayMs = if (isProgramConfig && DeviceInfo.isPixel()) 500L else 0L
                 val delayMs = if (isProgramConfig) 350L else 200L
                 scope.launch {
+                    if (preDelayMs > 0L) {
+                        delay(preDelayMs)
+                    }
                     delay(delayMs)
                     try {
                         val data = withTimeoutOrNull(500L) {

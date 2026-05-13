@@ -15,7 +15,6 @@ import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BlePacketFactory
-import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
 
 /**
  * Thin facade delegating to 6 extracted modules (BleOperationQueue, DiscoMode,
@@ -288,11 +288,17 @@ class KableBleRepository : BleRepository {
 
     // ===== Parsing methods (stay in facade) =====
 
-    /** Parse metrics packet from RX notifications (0x01). Delegates to [parseMonitorPacket] for unit consistency. */
+    /** Parse metrics packet from monitor-style notifications (RX opcode 0x01 or SAMPLE characteristic). */
     private fun parseMetricsPacket(data: ByteArray) {
-        if (data.size < 17) return
+        if (data.isEmpty()) return
         try {
-            val monitor = parseMonitorPacket(data.copyOfRange(1, data.size)) ?: return
+            val payload = if (data.size >= 17 && data[0] == 0x01.toByte()) {
+                data.copyOfRange(1, data.size)
+            } else {
+                data
+            }
+
+            val monitor = parseMonitorPacket(payload) ?: return
             val currentTime = currentTimeMillis()
             val rawVelocityA = monitor.firmwareVelA / 10.0
             val rawVelocityB = monitor.firmwareVelB / 10.0
