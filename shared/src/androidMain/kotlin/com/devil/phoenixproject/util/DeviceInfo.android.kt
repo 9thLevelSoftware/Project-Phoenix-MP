@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import android.os.Build
+import com.devil.phoenixproject.util.DeviceInfo.initialize
 
 /**
  * Android implementation of DeviceInfo.
@@ -104,12 +105,12 @@ actual object DeviceInfo {
     /**
      * Check if running on Samsung device
      */
-    fun isSamsung(): Boolean = manufacturer.equals("samsung", ignoreCase = true)
+    actual fun isSamsung(): Boolean = manufacturer.equals("samsung", ignoreCase = true)
 
     /**
      * Check if running on Google Pixel
      */
-    fun isPixel(): Boolean = manufacturer.equals("Google", ignoreCase = true)
+    actual fun isPixel(): Boolean = manufacturer.equals("Google", ignoreCase = true)
 
     /**
      * Check if running on Amazon Fire OS (Fire Tablets, Fire TV)
