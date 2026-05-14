@@ -107,6 +107,11 @@ sealed class WorkoutState {
         val qualitySummary: SetQualitySummary? = null,
         // Biomechanics Set Summary (null for Free tier or if no reps processed by engine)
         val biomechanicsSummary: BiomechanicsSetSummary? = null,
+        // Persisted session metadata used by post-set actions such as Just Lift tagging.
+        val sessionId: String? = null,
+        val taggedExerciseId: String? = null,
+        val taggedExerciseName: String? = null,
+        val isAmrap: Boolean = false,
     ) : WorkoutState()
     object Paused : WorkoutState()
     object Completed : WorkoutState()
@@ -584,6 +589,9 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         workingAvgWeightKg = workingAvgWeightKg ?: 0f,
         burnoutAvgWeightKg = burnoutAvgWeightKg ?: 0f,
         peakWeightKg = peakWeightKg ?: 0f,
+        sessionId = id,
+        taggedExerciseId = exerciseId,
+        taggedExerciseName = exerciseName,
     )
 }
 

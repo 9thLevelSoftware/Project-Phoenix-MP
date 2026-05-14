@@ -44,6 +44,65 @@ class SupersetReorderTest {
         supersets = supersets,
     )
 
+    private fun itemIds(routine: Routine): List<String> = routine.getItems().map { item ->
+        when (item) {
+            is RoutineItem.Single -> item.exercise.id
+            is RoutineItem.SupersetItem -> item.superset.id
+        }
+    }
+
+    // ── reorderRoutineItems ─────────────────────────────────────────
+
+    @Test
+    fun reorderRoutineItems_movesSupersetBelowAnotherSuperset() {
+        val exercises = listOf(
+            exercise("A1", orderIndex = 0, supersetId = "ssA", orderInSuperset = 0),
+            exercise("A2", orderIndex = 1, supersetId = "ssA", orderInSuperset = 1),
+            exercise("B1", orderIndex = 2, supersetId = "ssB", orderInSuperset = 0),
+            exercise("B2", orderIndex = 3, supersetId = "ssB", orderInSuperset = 1),
+            exercise("E1", orderIndex = 4),
+            exercise("E2", orderIndex = 5),
+        )
+        val supersets = listOf(
+            Superset(id = "ssA", routineId = "r1", name = "Superset A", orderIndex = 0),
+            Superset(id = "ssB", routineId = "r1", name = "Superset B", orderIndex = 2),
+        )
+        val routine = routineWithSuperset(exercises = exercises, supersets = supersets)
+
+        val result = reorderRoutineItems(routine, fromIndex = 0, toIndex = 1)
+
+        val orderedExerciseIds = result.exercises.sortedBy { it.orderIndex }.map { it.id }
+        assertEquals(listOf("ssB", "ssA", "E1", "E2"), itemIds(result))
+        assertEquals(listOf("B1", "B2", "A1", "A2", "E1", "E2"), orderedExerciseIds)
+        assertEquals(0, result.supersets.single { it.id == "ssB" }.orderIndex)
+        assertEquals(2, result.supersets.single { it.id == "ssA" }.orderIndex)
+    }
+
+    @Test
+    fun reorderRoutineItems_movesStandaloneExerciseBetweenSupersets() {
+        val exercises = listOf(
+            exercise("A1", orderIndex = 0, supersetId = "ssA", orderInSuperset = 0),
+            exercise("A2", orderIndex = 1, supersetId = "ssA", orderInSuperset = 1),
+            exercise("B1", orderIndex = 2, supersetId = "ssB", orderInSuperset = 0),
+            exercise("B2", orderIndex = 3, supersetId = "ssB", orderInSuperset = 1),
+            exercise("E1", orderIndex = 4),
+            exercise("E2", orderIndex = 5),
+        )
+        val supersets = listOf(
+            Superset(id = "ssA", routineId = "r1", name = "Superset A", orderIndex = 0),
+            Superset(id = "ssB", routineId = "r1", name = "Superset B", orderIndex = 2),
+        )
+        val routine = routineWithSuperset(exercises = exercises, supersets = supersets)
+
+        val result = reorderRoutineItems(routine, fromIndex = 2, toIndex = 1)
+
+        val orderedExerciseIds = result.exercises.sortedBy { it.orderIndex }.map { it.id }
+        assertEquals(listOf("ssA", "E1", "ssB", "E2"), itemIds(result))
+        assertEquals(listOf("A1", "A2", "E1", "B1", "B2", "E2"), orderedExerciseIds)
+        assertEquals(0, result.supersets.single { it.id == "ssA" }.orderIndex)
+        assertEquals(3, result.supersets.single { it.id == "ssB" }.orderIndex)
+    }
+
     // ── reorderExercisesInSuperset ──────────────────────────────────
 
     @Test

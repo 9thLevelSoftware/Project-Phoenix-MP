@@ -74,6 +74,7 @@ import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.normalizeRoutine
 import com.devil.phoenixproject.domain.model.reorderExercisesInSuperset
+import com.devil.phoenixproject.domain.model.reorderRoutineItems
 import com.devil.phoenixproject.presentation.components.BulkWeightAdjustDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExerciseRowInSuperset
@@ -386,30 +387,11 @@ fun RoutineEditorScreen(
 
     // Reorderable state for drag-and-drop on routine items
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val routine = state.routine ?: return@rememberReorderableLazyListState
-        val items = routine.getItems().toMutableList()
         val fromIndex = from.index
         val toIndex = to.index
 
-        if (fromIndex in items.indices && toIndex in items.indices) {
-            val moved = items.removeAt(fromIndex)
-            items.add(toIndex, moved)
-
-            // Issue #351: Assign new orderIndex values to preserve the visual reorder.
-            // Without this, normalizeRoutine's getItems() call re-sorts by stale orderIndex,
-            // undoing the drag operation.
-            val reorderedExercises = items.flatMapIndexed { itemIndex, item ->
-                when (item) {
-                    is RoutineItem.Single -> listOf(item.exercise.copy(orderIndex = itemIndex))
-
-                    is RoutineItem.SupersetItem ->
-                        item.superset.exercises
-                            .sortedBy { it.orderInSuperset }
-                            .map { it.copy(orderIndex = itemIndex) }
-                }
-            }
-
-            updateRoutine { it.copy(exercises = reorderedExercises) }
+        updateRoutine(preserveIntraSupersetOrder = true) {
+            reorderRoutineItems(it, fromIndex, toIndex)
         }
     }
 

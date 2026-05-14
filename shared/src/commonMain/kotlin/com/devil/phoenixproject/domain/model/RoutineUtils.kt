@@ -58,6 +58,68 @@ fun normalizeRoutine(routine: Routine, preserveIntraSupersetOrder: Boolean = fal
 }
 
 /**
+ * Reorder top-level routine items (standalone exercises and whole supersets).
+ *
+ * Superset containers have their own orderIndex, separate from member exercise
+ * orderIndex values. Updating both keeps normalizeRoutine() from sorting a
+ * dragged superset back to its stale container position.
+ */
+fun reorderRoutineItems(
+    routine: Routine,
+    fromIndex: Int,
+    toIndex: Int,
+): Routine {
+    if (fromIndex == toIndex) return routine
+
+    val items = routine.getItems().toMutableList()
+    if (fromIndex !in items.indices || toIndex !in items.indices) {
+        return routine
+    }
+
+    val moved = items.removeAt(fromIndex)
+    items.add(toIndex, moved)
+
+    var nextOrderIndex = 0
+    val reorderedExercises = mutableListOf<RoutineExercise>()
+    val supersetOrderById = mutableMapOf<String, Int>()
+
+    items.forEach { item ->
+        when (item) {
+            is RoutineItem.Single -> {
+                reorderedExercises += item.exercise.copy(orderIndex = nextOrderIndex)
+                nextOrderIndex += 1
+            }
+
+            is RoutineItem.SupersetItem -> {
+                supersetOrderById[item.superset.id] = nextOrderIndex
+                val supersetExercises = item.superset.exercises.sortedBy { it.orderInSuperset }
+                supersetExercises.forEachIndexed { index, exercise ->
+                    reorderedExercises += exercise.copy(
+                        orderIndex = nextOrderIndex + index,
+                        orderInSuperset = index,
+                    )
+                }
+                nextOrderIndex += supersetExercises.size
+            }
+        }
+    }
+
+    val reorderedSupersets = routine.supersets.map { superset ->
+        supersetOrderById[superset.id]?.let { orderIndex ->
+            superset.copy(orderIndex = orderIndex)
+        } ?: superset
+    }
+
+    return normalizeRoutine(
+        routine.copy(
+            exercises = reorderedExercises,
+            supersets = reorderedSupersets,
+        ),
+        preserveIntraSupersetOrder = true,
+    )
+}
+
+/**
  * Reorder exercises within a single superset by moving an exercise from one position to another.
  *
  * This updates only the orderInSuperset values for exercises in the target superset.

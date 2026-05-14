@@ -9,8 +9,10 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.manager.WorkoutServicePhase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -567,6 +569,104 @@ class DWSMWorkoutLifecycleTest {
         advanceTimeBy(40_000)
         runCurrent()
         assertEquals(0, harness.dwsm.coordinator.justLiftRestCountdown.value)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `tagJustLiftSessionExercise updates session and creates one completed set`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-session",
+            timestamp = 1_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 30f,
+            duration = 12_000L,
+            totalReps = 7,
+            workingReps = 7,
+            isJustLift = true,
+            rpe = 8,
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 30f,
+            avgLoadKgPerCable = 25f,
+            repCount = 7,
+            sessionId = session.id,
+            isAmrap = true,
+        )
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.deadlift, isAmrap = true)
+        advanceUntilIdle()
+
+        val updatedSession = harness.fakeWorkoutRepo.getSession(session.id)
+        assertEquals(TestFixtures.deadlift.id, updatedSession?.exerciseId)
+        assertEquals(TestFixtures.deadlift.name, updatedSession?.exerciseName)
+
+        val completedSets = harness.fakeCompletedSetRepo.getCompletedSets(session.id)
+        assertEquals(1, completedSets.size)
+        val completedSet = completedSets.single()
+        assertEquals(0, completedSet.setNumber)
+        assertEquals(7, completedSet.actualReps)
+        assertEquals(30f, completedSet.actualWeightKg)
+        assertEquals(8, completedSet.loggedRpe)
+        assertEquals(SetType.AMRAP, completedSet.setType)
+        assertFalse(completedSet.isPr)
+
+        val summary = assertIs<WorkoutState.SetSummary>(harness.dwsm.coordinator.workoutState.value)
+        assertEquals(TestFixtures.deadlift.id, summary.taggedExerciseId)
+        assertEquals(TestFixtures.deadlift.name, summary.taggedExerciseName)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `retagging Just Lift session updates tag without duplicating completed set`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-retag-session",
+            timestamp = 1_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 20f,
+            duration = 10_000L,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 20f,
+            avgLoadKgPerCable = 18f,
+            repCount = 5,
+            sessionId = session.id,
+        )
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
+        advanceUntilIdle()
+        val firstSetId = harness.fakeCompletedSetRepo.getCompletedSets(session.id).single().id
+        assertEquals(
+            listOf(TestFixtures.squat.id),
+            harness.fakePRRepo.updateCalls.map { it.exerciseId },
+        )
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.deadlift, isAmrap = false)
+        advanceUntilIdle()
+
+        val updatedSession = harness.fakeWorkoutRepo.getSession(session.id)
+        assertEquals(TestFixtures.deadlift.id, updatedSession?.exerciseId)
+        assertEquals(TestFixtures.deadlift.name, updatedSession?.exerciseName)
+
+        val completedSets = harness.fakeCompletedSetRepo.getCompletedSets(session.id)
+        assertEquals(1, completedSets.size)
+        assertEquals(firstSetId, completedSets.single().id)
+        assertEquals(1, harness.fakeCompletedSetRepo.getCompletedSetsForExercise(TestFixtures.deadlift.id!!).size)
+        assertEquals(0, harness.fakeCompletedSetRepo.getCompletedSetsForExercise(TestFixtures.squat.id!!).size)
+        assertEquals(
+            listOf(TestFixtures.squat.id),
+            harness.fakePRRepo.updateCalls.map { it.exerciseId },
+        )
         harness.cleanup()
     }
 

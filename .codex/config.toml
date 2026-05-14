@@ -1,0 +1,2 @@
+[mcp_servers.daem0nmcp]
+url = "http://localhost:9876/mcp"

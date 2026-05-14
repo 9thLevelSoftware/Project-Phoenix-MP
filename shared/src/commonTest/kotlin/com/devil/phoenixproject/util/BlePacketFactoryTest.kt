@@ -242,7 +242,7 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createProgramParams(params)
 
-        assertEquals(weight - progression + 10.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
+        assertEquals(weight + 10.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
     }
 
     @Test
@@ -300,8 +300,8 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createProgramParams(params)
 
-        // 0x58 must contain the actual target weight (adjustedWeight), not softMax
-        assertEquals(weight - progression, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        // 0x58 must contain the selected target weight. Progression is carried separately at 0x5C.
+        assertEquals(weight, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
     }
 
     @Test
@@ -316,14 +316,14 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createProgramParams(params)
 
-        // Critical: 0x58 must have the actual weight, NOT softMax (100.0f)
+        // Critical: 0x58 must have the actual operating weight.
         // This bug caused the machine to apply weight+10kg instead of the set weight
         assertEquals(weight, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
         assertEquals(15.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
     }
 
     @Test
-    fun `createProgramParams AMRAP sets softMax to machine max at 0x48`() {
+    fun `createProgramParams AMRAP writes selected per-cable softMax at 0x48`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -336,13 +336,13 @@ class BlePacketFactoryTest {
             variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
         )
 
-        assertEquals(100.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
+        assertEquals(30.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
         // Target weight at 0x58 must be the actual weight, not softMax
         assertEquals(30.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
     }
 
     @Test
-    fun `createProgramParams Just Lift sets softMax to machine max at 0x48`() {
+    fun `createProgramParams Just Lift writes selected per-cable softMax at 0x48`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -355,7 +355,7 @@ class BlePacketFactoryTest {
             variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
         )
 
-        assertEquals(100.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
+        assertEquals(25.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
         // Target weight must be at 0x58, not softMax
         assertEquals(25.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
     }
@@ -379,17 +379,17 @@ class BlePacketFactoryTest {
             variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
         )
 
-        // Just Lift must carry the actual operating target at 0x58.
-        assertEquals(targetWeight - progression, readFloatLE(packet, 0x58))
+        // Just Lift must carry the selected operating target at 0x58.
+        assertEquals(targetWeight, readFloatLE(packet, 0x58))
 
         // Protocol force/progression block must remain fully populated.
         assertEquals(0.0f, readFloatLE(packet, 0x50))
-        assertEquals(targetWeight - progression + 10.0f, readFloatLE(packet, 0x54))
-        assertEquals(targetWeight - progression, readFloatLE(packet, 0x58))
+        assertEquals(targetWeight + 10.0f, readFloatLE(packet, 0x54))
+        assertEquals(targetWeight, readFloatLE(packet, 0x58))
         assertEquals(progression, readFloatLE(packet, 0x5C))
 
         // For Just Lift OVERLAP variant, tail bytes 0x48..0x4F are firmware force config.
-        assertEquals(100.0f, readFloatLE(packet, 0x48))
+        assertEquals(targetWeight, readFloatLE(packet, 0x48))
         assertEquals(progression, readFloatLE(packet, 0x4C))
         assertEquals((-1300).toShort(), readShortLE(packet, 0x40))
         assertEquals((-1200).toShort(), readShortLE(packet, 0x42))
@@ -431,9 +431,30 @@ class BlePacketFactoryTest {
 
         // Protocol force config (0x50-0x5F)
         assertEquals(0.0f, readFloatLE(packet, 0x50)) // forceMin
-        assertEquals(47.0f, readFloatLE(packet, 0x54)) // forceMax = 40-3+10
-        assertEquals(37.0f, readFloatLE(packet, 0x58)) // targetWeight = 40-3
+        assertEquals(50.0f, readFloatLE(packet, 0x54)) // forceMax = selected weight + 10
+        assertEquals(40.0f, readFloatLE(packet, 0x58)) // targetWeight = selected weight
         assertEquals(3.0f, readFloatLE(packet, 0x5C)) // progression
+    }
+
+    @Test
+    fun `createProgramParams keeps target and forceMax independent of progression sign`() {
+        listOf(3.0f, -3.0f).forEach { progression ->
+            val params = WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                weightPerCableKg = 40f,
+                progressionRegressionKg = progression,
+            )
+
+            val packet = BlePacketFactory.createProgramParams(
+                params,
+                variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
+            )
+
+            assertEquals(40.0f, readFloatLE(packet, 0x58), "targetWeight for progression=$progression")
+            assertEquals(50.0f, readFloatLE(packet, 0x54), "forceMax for progression=$progression")
+            assertEquals(progression, readFloatLE(packet, 0x5C), "progression for progression=$progression")
+        }
     }
 
     @Test
@@ -484,9 +505,9 @@ class BlePacketFactoryTest {
         assertEquals(40.0f, readFloatLE(overlapPacket, 0x48))
         assertEquals(3.0f, readFloatLE(overlapPacket, 0x4C))
 
-        assertEquals(37.0f, readFloatLE(nonOverlapPacket, 0x58))
+        assertEquals(40.0f, readFloatLE(nonOverlapPacket, 0x58))
         assertEquals(3.0f, readFloatLE(nonOverlapPacket, 0x5C))
-        assertEquals(37.0f, readFloatLE(overlapPacket, 0x58))
+        assertEquals(40.0f, readFloatLE(overlapPacket, 0x58))
         assertEquals(3.0f, readFloatLE(overlapPacket, 0x5C))
 
         assertTrue(nonOverlapPacket.copyOfRange(0x48, 0x50).contentEquals(overlapPacket.copyOfRange(0x48, 0x50)).not())
@@ -1192,8 +1213,9 @@ class BlePacketFactoryTest {
             variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
         )
 
-        // Just Lift forces softMax to 100.0f at 0x48 and increment to 0 at 0x4C.
-        assertEquals(100.0f, readFloatLE(packet, 0x48), "Just Lift softMax at 0x48")
+        // Just Lift keeps softMax at the selected per-cable force and uses
+        // reps=0xFF for open-ended set length.
+        assertEquals(40.0f, readFloatLE(packet, 0x48), "Just Lift softMax at 0x48")
         assertEquals(0.0f, readFloatLE(packet, 0x4C), "Just Lift increment at 0x4C")
     }
 
@@ -1338,16 +1360,15 @@ class BlePacketFactoryTest {
     }
 
     // ========== Issue #390 Regression: Calf Raise Weight Scenario ==========
-    // Reproduces the exact user scenario: OldSchool calf raise at ~40kg per cable
-    // (80% of PR), with ~0.907kg/rep progression (2 lbs displayed = 0.907 kg).
-    // Machine was starting at ~3.7kg per cable instead of ~40kg.
+    // Reproduces the exact no-warm-up user scenario: OldSchool calf raise at
+    // 80kg per cable (80% of PR), with ~4.536kg/rep progression (10 lbs).
+    // Machine was starting near-zero instead of the selected PR-scaled weight.
 
     @Test
     fun `issue390 calf raise OldSchool weight lands at correct offsets`() {
-        // User scenario: 80% of 100 kg PR = 80 kg total = 40 kg per cable
-        // Progression: 2 lbs/rep displayed → 2 / 2.20462 ≈ 0.907 kg per cable
-        val weightPerCableKg = 40.0f
-        val progressionKg = 0.907f
+        // User scenario from Issue #390 no-warm-up logs.
+        val weightPerCableKg = 80.0f
+        val progressionKg = 4.535929f
 
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
@@ -1364,23 +1385,22 @@ class BlePacketFactoryTest {
         // OVERLAP offsets (0x48-0x4F) — firmware force config
         val softMax = readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)
         val increment = readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_INCREMENT)
-        assertEquals(weightPerCableKg, softMax, "softMax at 0x48 must be weightPerCableKg (40kg)")
-        assertEquals(progressionKg, increment, "increment at 0x4C must be progressionKg (0.907kg)")
+        assertEquals(weightPerCableKg, softMax, "softMax at 0x48 must be weightPerCableKg (80kg)")
+        assertEquals(progressionKg, increment, "increment at 0x4C must be progressionKg (4.535929kg)")
 
         // Protocol force config (0x50-0x5F)
-        val adjustedWeight = weightPerCableKg - progressionKg  // 40 - 0.907 = 39.093
-        val forceMax = adjustedWeight + 10.0f                   // 49.093
+        val forceMax = weightPerCableKg + 10.0f
 
         assertEquals(0.0f, readFloatLE(packet, 0x50), "forceMin at 0x50 must be 0")
         assertEquals(
             forceMax,
             readFloatLE(packet, 0x54),
-            "forceMax at 0x54 must be adjustedWeight + 10",
+            "forceMax at 0x54 must be selected weight + 10",
         )
         assertEquals(
-            adjustedWeight,
+            weightPerCableKg,
             readFloatLE(packet, 0x58),
-            "targetWeight at 0x58 must be adjustedWeight",
+            "targetWeight at 0x58 must be selected weight",
         )
         assertEquals(
             progressionKg,
@@ -1392,12 +1412,12 @@ class BlePacketFactoryTest {
         assertTrue(
             softMax > 10f,
             "Issue #390: softMax ($softMax kg) must not be near-zero. " +
-                "Expected ~40kg for calf raise at 80% of 100kg PR.",
+                "Expected 80kg for calf raise at 80% of PR.",
         )
         assertTrue(
             readFloatLE(packet, 0x58) > 10f,
             "Issue #390: targetWeight must not be near-zero. " +
-                "Expected ~39kg for first set of calf raise.",
+                "Expected 80kg for first set of calf raise.",
         )
     }
 
@@ -1418,14 +1438,14 @@ class BlePacketFactoryTest {
         assertEquals(96, packet.size)
         assertEquals(1.5f, readFloatLE(packet, 0x48), "softMax = weightPerCableKg even if low")
         assertEquals(0.5f, readFloatLE(packet, 0x4C), "increment = progressionKg")
-        assertEquals(1.0f, readFloatLE(packet, 0x58), "targetWeight = 1.5 - 0.5")
-        assertEquals(11.0f, readFloatLE(packet, 0x54), "forceMax = 1.0 + 10")
+        assertEquals(1.5f, readFloatLE(packet, 0x58), "targetWeight = selected weight")
+        assertEquals(11.5f, readFloatLE(packet, 0x54), "forceMax = selected weight + 10")
     }
 
     @Test
-    fun `issue390 AMRAP mode sets softMax to 100 regardless of weight`() {
-        // AMRAP sets softMax=100 to allow unlimited reps — verify this path
-        // since AMRAP routines also use PR% weights
+    fun `issue390 AMRAP mode keeps softMax at selected per-cable weight`() {
+        // AMRAP uses reps=0xFF for unlimited reps. The force controller still
+        // receives the selected per-cable force as softMax.
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -1436,16 +1456,16 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createProgramParams(params)
 
-        assertEquals(100.0f, readFloatLE(packet, 0x48), "AMRAP softMax must be 100 (unlimited)")
+        assertEquals(40.0f, readFloatLE(packet, 0x48), "AMRAP softMax uses selected per-cable weight")
         assertEquals(0.907f, readFloatLE(packet, 0x4C), "AMRAP increment still uses progressionKg")
 
-        // But targetWeight and forceMax still use actual weight
-        val adjusted = 40.0f - 0.907f
-        assertEquals(adjusted, readFloatLE(packet, 0x58), "AMRAP targetWeight uses actual weight")
+        // TargetWeight stays anchored to the selected force; progression is
+        // carried separately by the increment/progression fields.
+        assertEquals(40.0f, readFloatLE(packet, 0x58), "AMRAP targetWeight uses selected weight")
     }
 
     @Test
-    fun `issue390 JustLift mode sets softMax to 100 regardless of weight`() {
+    fun `issue390 JustLift mode keeps softMax at selected per-cable weight`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -1455,6 +1475,6 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createProgramParams(params)
 
-        assertEquals(100.0f, readFloatLE(packet, 0x48), "JustLift softMax must be 100 (unlimited)")
+        assertEquals(40.0f, readFloatLE(packet, 0x48), "JustLift softMax uses selected per-cable weight")
     }
 }

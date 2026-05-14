@@ -68,6 +68,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseFilterShelf
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseListEmptyState
 import com.devil.phoenixproject.presentation.components.exercisepicker.GroupedExerciseList
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.PhoenixOrangeDark
 import com.devil.phoenixproject.ui.theme.PhoenixOrangeLight
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -410,6 +411,7 @@ fun ExercisePickerContent(
     var videoDialogVideos by remember { mutableStateOf<List<ExerciseVideoEntity>>(emptyList()) }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
+    val useCompactAccessibility = isCompactAccessibilityLayout()
 
     val hasActiveFilters = searchQuery.isNotBlank() ||
         showFavoritesOnly ||
@@ -442,8 +444,9 @@ fun ExercisePickerContent(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            // Title (only in bottom sheet mode)
-            if (!fullScreen) {
+            // Title (only in bottom sheet mode). Omit it in compact accessibility
+            // mode so search results keep usable space above the iOS keyboard.
+            if (!fullScreen && !useCompactAccessibility) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -529,7 +532,7 @@ fun ExercisePickerContent(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = createButtonLabel,
-                        maxLines = 1,
+                        maxLines = if (useCompactAccessibility) 2 else 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

@@ -186,6 +186,39 @@ class WeightDisplaySourceGuardTest {
         )
     }
 
+    @Test
+    fun workoutHud_liveForceDisplayRemainsPerCable() {
+        val path = "com/devil/phoenixproject/presentation/screen/WorkoutHud.kt"
+        val source = readSourceFile(path)
+        if (source != null) {
+            assertFalse(
+                source.contains("WeightDisplayFormatter"),
+                "GUARD VIOLATION: WorkoutHud.kt must not use WeightDisplayFormatter. " +
+                    "The live HUD displays selected and measured force per cable; " +
+                    "total-weight formatting belongs only on explicitly labeled total fields.",
+            )
+            assertFalse(
+                source.contains("""subLabel = "TOTAL""""),
+                "GUARD VIOLATION: WorkoutHud.kt labels live force as TOTAL. " +
+                    "Official live force displays are per-cable.",
+            )
+            assertTrue(
+                source.contains("""subLabel = "PER CABLE""""),
+                "WorkoutHud.kt should label the circular force gauge as PER CABLE.",
+            )
+            assertTrue(
+                source.contains("formatWeight(perCableKg, weightUnit)"),
+                "WorkoutHud.kt should format measured live force directly from perCableKg.",
+            )
+            assertTrue(
+                source.contains("formatWeight(workoutParameters.weightPerCableKg, weightUnit)"),
+                "WorkoutHud.kt should format selected live weight directly from weightPerCableKg.",
+            )
+        } else {
+            assertTrue(true, "WorkoutHud.kt not found; guard passes")
+        }
+    }
+
     // ===== Guard: CSV export has its own multiplication =====
 
     @Test

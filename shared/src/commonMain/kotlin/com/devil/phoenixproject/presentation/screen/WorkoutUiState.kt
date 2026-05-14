@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.screen
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
@@ -11,7 +12,6 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepRanges
-import com.devil.phoenixproject.presentation.manager.DetectionState
 
 /**
  * UI State holder for WorkoutTab.
@@ -77,7 +77,6 @@ data class WorkoutUiState(
     val isCurrentExerciseBodyweight: Boolean = false,
     val latestRepQualityScore: Int? = null,
     val latestBiomechanicsResult: BiomechanicsRepResult? = null,
-    val detectionState: DetectionState = DetectionState(),
     // Issue #237: Motion-triggered set start hold progress (0.0-1.0, null = not active)
     val motionStartHoldProgress: Float? = null,
     // Issue #297, #228: Rest timer pause state for UI display
@@ -177,11 +176,8 @@ interface WorkoutActions {
     /** Format weight with unit */
     fun formatWeight(weight: Float, unit: WeightUnit): String
 
-    /** Confirm detected exercise selection */
-    suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String)
-
-    /** Dismiss detection sheet without confirming */
-    fun onDetectionDismissed()
+    /** Tag an already-saved Just Lift session from the set summary. */
+    suspend fun onTagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean)
 
     /** Pause the exercise timer for timed exercises (Issue #190) */
     fun onPauseExerciseTimer()
@@ -218,8 +214,7 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun kgToDisplay(kg: Float, unit: WeightUnit): Float = kg
     override fun displayToKg(display: Float, unit: WeightUnit): Float = display
     override fun formatWeight(weight: Float, unit: WeightUnit): String = "${weight.toInt()} kg"
-    override suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String) {}
-    override fun onDetectionDismissed() {}
+    override suspend fun onTagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) {}
     override fun onPauseExerciseTimer() {}
     override fun onResumeExerciseTimer() {}
     override fun onResetExerciseTimer() {}
@@ -251,8 +246,7 @@ fun workoutActions(
     kgToDisplay: (Float, WeightUnit) -> Float,
     displayToKg: (Float, WeightUnit) -> Float,
     formatWeight: (Float, WeightUnit) -> String,
-    onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> },
-    onDetectionDismissed: () -> Unit = {},
+    onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onPauseExerciseTimer: () -> Unit = {},
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
@@ -278,8 +272,7 @@ fun workoutActions(
     override fun kgToDisplay(kg: Float, unit: WeightUnit) = kgToDisplay(kg, unit)
     override fun displayToKg(display: Float, unit: WeightUnit) = displayToKg(display, unit)
     override fun formatWeight(weight: Float, unit: WeightUnit) = formatWeight(weight, unit)
-    override suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String) = onDetectionConfirmed(exerciseId, exerciseName)
-    override fun onDetectionDismissed() = onDetectionDismissed()
+    override suspend fun onTagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) = onTagJustLiftSessionExercise(sessionId, exercise, isAmrap)
     override fun onPauseExerciseTimer() = onPauseExerciseTimer()
     override fun onResumeExerciseTimer() = onResumeExerciseTimer()
     override fun onResetExerciseTimer() = onResetExerciseTimer()

@@ -15,9 +15,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material3.Card
+import androidx.compose.material3.Surface
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -75,6 +77,57 @@ private fun ResponsiveCardWrapper(modifier: Modifier = Modifier, content: @Compo
         ) {
             content()
         }
+    }
+}
+
+
+
+@Composable
+private fun InsightSectionHeader(title: String, subtitle: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
+    Text(
+        text = subtitle,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun InsightMetadata(definition: String, timeframe: String, soWhat: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = definition,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TimeframeBadge(timeframe)
+        Text(
+            text = "So what? $soWhat",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+
+@Composable
+private fun TimeframeBadge(label: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(999.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+        )
     }
 }
 
@@ -190,8 +243,14 @@ fun InsightsTab(
             }
         }
 
+        // 1) Snapshot
+        item {
+            InsightSectionHeader("1. Snapshot", "Current status")
+        }
+
         // This Week Summary Card - week-over-week comparison
         item {
+            InsightMetadata("Summary of completed sessions and personal records.", selectedPeriod.label, "Check if this period is on track before changing your plan.")
             ResponsiveCardWrapper {
                 ThisWeekSummaryCard(
                     workoutSessions = filteredSessions,
@@ -202,8 +261,16 @@ fun InsightsTab(
             }
         }
 
+        // 2) Trends
+        item {
+            InsightSectionHeader("2. Trends", "How performance changed")
+        }
+
         // 1. Muscle Balance Radar Chart (Replaces linear progress bars)
         if (prs.isNotEmpty()) {
+            item {
+                InsightMetadata("Distribution of PR coverage by muscle group.", "All-time PRs", "Spot overtrained and undertrained regions before plateaus happen.")
+            }
             item {
                 ResponsiveCardWrapper {
                     MuscleBalanceRadarCard(
@@ -215,8 +282,14 @@ fun InsightsTab(
             }
         }
 
+        // 3) Diagnostics
+        item {
+            InsightSectionHeader("3. Diagnostics", "Why outcomes look this way")
+        }
+
         // 2. Workout Consistency Gauge (Replaces circular progress)
         item {
+            InsightMetadata("Session frequency consistency score.", selectedPeriod.label, "Inconsistency usually explains stalled progress more than load choices.")
             ResponsiveCardWrapper {
                 ConsistencyGaugeCard(
                     workoutSessions = filteredSessions,
@@ -225,8 +298,16 @@ fun InsightsTab(
             }
         }
 
+        // 4) Actions
+        item {
+            InsightSectionHeader("4. Actions", "What to do next")
+        }
+
         // 3. Volume vs Intensity Combo Chart (New Metric)
         if (filteredSessions.isNotEmpty()) {
+            item {
+                InsightMetadata("How training load (volume) and effort (intensity) move together.", selectedPeriod.label, "If intensity rises while volume crashes, schedule a lighter recovery microcycle.")
+            }
             item {
                 ResponsiveCardWrapper {
                     VolumeVsIntensityCard(
@@ -241,6 +322,9 @@ fun InsightsTab(
         // 4. Total Volume Trend (User Request)
         if (filteredSessions.isNotEmpty()) {
             item {
+                InsightMetadata("Total lifted workload trend.", selectedPeriod.label, "Increase volume gradually (5–10%) to avoid spikes and fatigue.")
+            }
+            item {
                 ResponsiveCardWrapper {
                     TotalVolumeCard(
                         workoutSessions = filteredSessions,
@@ -252,8 +336,11 @@ fun InsightsTab(
             }
         }
 
-        // 5. Mode Distribution Donut Chart (New Metric)
+                // Mode drill-down detail (kept as allocation context, not duplicate primary metric)
         if (filteredSessions.isNotEmpty()) {
+            item {
+                InsightMetadata("Workout mode allocation drill-down.", selectedPeriod.label, "Use this as context after adjusting volume/intensity, not as a primary KPI.")
+            }
             item {
                 ResponsiveCardWrapper {
                     WorkoutModeDistributionCard(

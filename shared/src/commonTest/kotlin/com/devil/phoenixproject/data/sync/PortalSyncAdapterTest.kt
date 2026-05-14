@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import kotlinx.serialization.json.Json
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,6 +20,11 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PortalSyncAdapterTest {
+
+    private val portalPayloadJson = Json {
+        encodeDefaults = true
+        explicitNulls = false
+    }
 
     // ========== Session Grouping ==========
 
@@ -682,13 +688,32 @@ class PortalSyncAdapterTest {
     @Test
     fun `toPortalRoutine maps stall detection flag`() {
         val exercises = listOf(
+            makeRoutineExercise(stallDetectionEnabled = true),
             makeRoutineExercise(stallDetectionEnabled = false),
         )
         val routine = makeRoutine(exercises = exercises)
 
         val result = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
 
-        assertEquals(false, result.exercises[0].stallDetection)
+        assertEquals(true, result.exercises[0].stallDetection)
+        assertEquals(false, result.exercises[1].stallDetection)
+    }
+
+    @Test
+    fun `portal payload serialization includes default true stall detection`() {
+        val routine = makeRoutine(
+            exercises = listOf(makeRoutineExercise(stallDetectionEnabled = true)),
+        )
+        val payload = PortalSyncPayload(
+            deviceId = "device-1",
+            platform = "android",
+            lastSync = 0L,
+            routines = listOf(PortalSyncAdapter.toPortalRoutine(routine, "user-1")),
+        )
+
+        val serialized = portalPayloadJson.encodeToString(PortalSyncPayload.serializer(), payload)
+
+        assertTrue(serialized.contains("\"stallDetection\":true"))
     }
 
     @Test

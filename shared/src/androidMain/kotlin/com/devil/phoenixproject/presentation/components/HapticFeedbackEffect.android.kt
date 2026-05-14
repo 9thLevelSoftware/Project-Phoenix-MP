@@ -3,7 +3,6 @@ package com.devil.phoenixproject.presentation.components
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.SoundPool
 import android.os.Build
@@ -17,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.shared.R
 import com.devil.phoenixproject.util.DeviceInfo
 import kotlinx.coroutines.flow.SharedFlow
 import kotlin.random.Random
@@ -39,18 +39,13 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     // Track which sounds are loaded and ready to play
     val loadedSounds = remember { mutableSetOf<Int>() }
 
-    // Create SoundPool for audio feedback
-    // Uses USAGE_GAME to:
-    // 1. Tie sounds to media volume (not notification - so they play through DND)
-    // 2. Mix with music without interrupting it (game audio is designed for this)
+    // Create SoundPool for audio feedback. USAGE_MEDIA keeps cues on STREAM_MUSIC,
+    // matching Spotify mix behavior and foreground hardware volume buttons.
     val soundPool = remember {
         SoundPool.Builder()
             .setMaxStreams(3)
             .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_GAME)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build(),
+                buildCueAudioAttributes(),
             )
             .build().apply {
                 setOnLoadCompleteListener { _, sampleId, status ->
@@ -61,24 +56,14 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
             }
     }
 
-    // Load sounds using resource identifiers (works across modules)
+    // Load sounds from static shared-module raw resource IDs so release shrinking
+    // can see and keep every cue resource.
     val soundIds = remember(soundPool) {
         mutableMapOf<HapticEvent, Int>().apply {
             try {
-                // Issue #100: chirpchirp is louder/more audible than beep for rep completion
-                loadSoundByName(context, soundPool, "chirpchirp")?.let { put(HapticEvent.REP_COMPLETED, it) }
-                // Issue #100: Distinct boopbeepbeep sound on final working rep
-                loadSoundByName(context, soundPool, "boopbeepbeep")?.let { put(HapticEvent.FINAL_REP, it) }
-                loadSoundByName(context, soundPool, "beepboop")?.let { put(HapticEvent.WARMUP_COMPLETE, it) }
-                loadSoundByName(context, soundPool, "boopbeepbeep")?.let { put(HapticEvent.WORKOUT_COMPLETE, it) }
-                loadSoundByName(context, soundPool, "chirpchirp")?.let { put(HapticEvent.WORKOUT_START, it) }
-                loadSoundByName(context, soundPool, "chirpchirp")?.let { put(HapticEvent.WORKOUT_END, it) }
-                loadSoundByName(context, soundPool, "restover")?.let { put(HapticEvent.REST_ENDING, it) }
-                loadSoundByName(context, soundPool, "discomode")?.let { put(HapticEvent.DISCO_MODE_UNLOCKED, it) }
-                // Issue #100: Warmup-to-working transition (ascending tone)
-                loadSoundByName(context, soundPool, "beepboop")?.let { put(HapticEvent.WARMUP_TO_WORKING, it) }
-                // Issue #313: Velocity loss threshold alert (attention-getting)
-                loadSoundByName(context, soundPool, "boopbeepbeep")?.let { put(HapticEvent.VELOCITY_THRESHOLD_REACHED, it) }
+                AndroidCueResources.eventCues.forEach { (event, cue) ->
+                    loadSound(context, soundPool, cue)?.let { put(event, it) }
+                }
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to load sounds" }
             }
@@ -87,37 +72,22 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
 
     // Load badge celebration sounds
     val badgeSoundIds = remember(soundPool) {
-        val badgeSoundNames = listOf(
-            "absolute_domination", "absolute_unit", "another_milestone_crushed",
-            "beast_mode", "insane_performance", "maxed_out", "new_peak_achieved",
-            "new_record_secured", "no_ones_stopping_you_now", "power", "pr",
-            "pressure_create_greatness", "record", "shattered", "strenght_unlocked",
-            "that_bar_never_stood_a_chance", "that_was_a_demolition", "that_was_god_mode",
-            "that_was_monster_level", "that_was_next_tier_strenght", "that_was_pure_savagery",
-            "the_grind_continues", "the_grind_is_real", "this_is_what_champions_are_made",
-            "unchained_power", "unstoppable", "victory", "you_crushed_that",
-            "you_dominated_that_set", "you_just_broke_your_limits", "you_just_destroyed_that_weight",
-            "you_just_levelled_up", "you_went_full_throttle",
-        )
-        badgeSoundNames.mapNotNull { loadSoundByName(context, soundPool, it) }
+        AndroidCueResources.badgeCues.mapNotNull { loadSound(context, soundPool, it) }
     }
 
     // Load PR-specific sounds
     val prSoundIds = remember(soundPool) {
-        listOf("new_personal_record", "new_personal_record_2")
-            .mapNotNull { loadSoundByName(context, soundPool, it) }
+        AndroidCueResources.prCues.mapNotNull { loadSound(context, soundPool, it) }
     }
 
     // Load rep count sounds (1-25)
     val repCountSoundIds = remember(soundPool) {
-        (1..25).mapNotNull { num ->
-            loadSoundByName(context, soundPool, "rep_%02d".format(num))
-        }
+        AndroidCueResources.repCountCues.mapNotNull { loadSound(context, soundPool, it) }
     }
 
-    // Issue #100: Load countdown tick sound (reuses beep for short tick)
+    // Load countdown tick sound (reuses beep for short tick)
     val countdownTickSoundId = remember(soundPool) {
-        loadSoundByName(context, soundPool, "beep")
+        loadSound(context, soundPool, AndroidCueResources.countdownTickCue)
     }
 
     LaunchedEffect(hapticEvents) {
@@ -135,54 +105,12 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     }
 }
 
-/**
- * Load a sound by name using resource identifier lookup.
- * This works across modules since we're using the application context.
- * Note: Uses base package name (without .debug suffix) for resource lookup.
- */
-private fun loadSoundByName(context: Context, soundPool: SoundPool, name: String): Int? {
-    // For debug builds, package name might be "com.devil.phoenixproject.debug"
-    // but resources are registered under "com.devil.phoenixproject"
-    val packageName = context.packageName.removeSuffix(".debug")
-    var resId = context.resources.getIdentifier(name, "raw", packageName)
-
-    // Fallback to actual package name if base didn't work
-    if (resId == 0) {
-        resId = context.resources.getIdentifier(name, "raw", context.packageName)
-    }
-
-    if (resId == 0) {
-        Logger.w { "Sound resource not found: '$name' (tried packages: $packageName, ${context.packageName})" }
-        return null
-    }
-
+private fun loadSound(context: Context, soundPool: SoundPool, cue: AndroidCueResource): Int? {
     return try {
-        soundPool.load(context, resId, 1)
+        soundPool.load(context, cue.rawResId, 1)
     } catch (e: Exception) {
-        Logger.e(e) { "Failed to load sound '$name' (resId=$resId)" }
+        Logger.e(e) { "Failed to load sound '${cue.name}'" }
         null
-    }
-}
-
-/**
- * Issue #409: Check media volume and log warning if muted.
- * USAGE_GAME routes to STREAM_MUSIC — if media volume is 0, all sounds are inaudible.
- * Requires Activity.volumeControlStream = AudioManager.STREAM_MUSIC to let
- * hardware volume buttons control the correct stream.
- */
-private fun warnIfMediaVolumeMuted(context: Context) {
-    try {
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (currentVolume == 0) {
-            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            Logger.w {
-                "Issue #409: Media volume is 0/$maxVolume — workout sounds will be inaudible. " +
-                    "Sounds use USAGE_GAME (STREAM_MUSIC). Raise media volume to hear audio cues."
-            }
-        }
-    } catch (_: Exception) {
-        // Non-critical diagnostic — don't crash
     }
 }
 
@@ -203,9 +131,6 @@ private fun playSound(
 ) {
     // ERROR event has no sound
     if (event is HapticEvent.ERROR) return
-
-    // Issue #409: Log warning if media volume is muted
-    warnIfMediaVolumeMuted(context)
 
     // Fire OS: Always use MediaPlayer (SoundPool has volume bug)
     if (DeviceInfo.isFireOS()) {
@@ -245,14 +170,7 @@ private fun playSound(
     }
 
     if (soundId == null) {
-        Logger.d { "No SoundPool ID for event $event — falling back to MediaPlayer" }
-        playWithMediaPlayer(event, context)
-        return
-    }
-
-    // Issue #409: Check if sound has finished async loading before attempting playback
-    if (soundId !in loadedSounds) {
-        Logger.d { "Sound $soundId not yet loaded for $event — using MediaPlayer fallback" }
+        // Try MediaPlayer fallback for key events
         playWithMediaPlayer(event, context)
         return
     }
@@ -268,96 +186,160 @@ private fun playSound(
         )
         // If SoundPool fails, try MediaPlayer fallback
         if (streamId == 0) {
-            Logger.d { "SoundPool.play returned 0 for $event (soundId=$soundId) — MediaPlayer fallback" }
             playWithMediaPlayer(event, context)
         }
-    } catch (e: Exception) {
-        Logger.w(e) { "SoundPool.play threw for $event — MediaPlayer fallback" }
+    } catch (_: Exception) {
         playWithMediaPlayer(event, context)
     }
 }
 
 /**
  * Fallback sound playback using MediaPlayer for when SoundPool fails or on Fire OS.
- * Fire OS: Uses USAGE_MEDIA to work around SoundPool volume bug.
- * Standard Android: Uses USAGE_GAME to ensure sounds play through DND and use media volume.
+ * Uses explicit USAGE_MEDIA for all Android variants so fallback cues match
+ * SoundPool routing and foreground hardware volume behavior.
  */
 private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
-    val soundName = when (event) {
-        is HapticEvent.REP_COMPLETED -> "chirpchirp" // Issue #100: More audible than beep
-        is HapticEvent.FINAL_REP -> "boopbeepbeep" // Issue #100: Distinct final rep sound
-        is HapticEvent.WARMUP_COMPLETE -> "beepboop"
-        is HapticEvent.WORKOUT_COMPLETE -> "boopbeepbeep"
-        is HapticEvent.WORKOUT_START -> "chirpchirp"
-        is HapticEvent.WORKOUT_END -> "chirpchirp"
-        is HapticEvent.REST_ENDING -> "restover"
-        is HapticEvent.DISCO_MODE_UNLOCKED -> "discomode"
-        is HapticEvent.BADGE_EARNED -> getRandomBadgeSound()
-        is HapticEvent.PERSONAL_RECORD -> getRandomPRSound()
-        is HapticEvent.REP_COUNT_ANNOUNCED -> "rep_%02d".format(event.repNumber)
-        is HapticEvent.COUNTDOWN_TICK -> "beep"
-        is HapticEvent.WARMUP_TO_WORKING -> "beepboop"
-        is HapticEvent.VELOCITY_THRESHOLD_REACHED -> "boopbeepbeep"
-        is HapticEvent.ERROR -> return
-    }
+    val cue = AndroidCueResources.cueForEvent(event) ?: return
 
-    val packageName = context.packageName.removeSuffix(".debug")
-    var resId = context.resources.getIdentifier(soundName, "raw", packageName)
-
-    // Fallback to actual package name if base didn't work
-    if (resId == 0) {
-        resId = context.resources.getIdentifier(soundName, "raw", context.packageName)
-    }
-    if (resId == 0) return
-
+    var mediaPlayer: MediaPlayer? = null
     try {
-        // Fire OS: Use USAGE_MEDIA to work around SoundPool volume bug
-        // Standard Android: Use USAGE_GAME to mix with music without interrupting
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(
-                if (DeviceInfo.isFireOS()) {
-                    AudioAttributes.USAGE_MEDIA
-                } else {
-                    AudioAttributes.USAGE_GAME
-                },
-            )
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
+        mediaPlayer = MediaPlayer.create(context, cue.rawResId, buildCueAudioAttributes(), 0) ?: return
 
-        val mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0) ?: return
         mediaPlayer.setVolume(1.0f, 1.0f)
         mediaPlayer.setOnCompletionListener { it.release() }
+        mediaPlayer.setOnErrorListener { player, _, _ ->
+            player.release()
+            true
+        }
         mediaPlayer.start()
     } catch (_: Exception) {
+        mediaPlayer?.release()
         // Silently fail - sound is not critical
     }
 }
 
-/**
- * Get a random badge celebration sound name.
- */
-private fun getRandomBadgeSound(): String {
-    val badgeSoundNames = listOf(
-        "absolute_domination", "absolute_unit", "another_milestone_crushed",
-        "beast_mode", "insane_performance", "maxed_out", "new_peak_achieved",
-        "new_record_secured", "no_ones_stopping_you_now", "power", "pr",
-        "pressure_create_greatness", "record", "shattered", "strenght_unlocked",
-        "that_bar_never_stood_a_chance", "that_was_a_demolition", "that_was_god_mode",
-        "that_was_monster_level", "that_was_next_tier_strenght", "that_was_pure_savagery",
-        "the_grind_continues", "the_grind_is_real", "this_is_what_champions_are_made",
-        "unchained_power", "unstoppable", "victory", "you_crushed_that",
-        "you_dominated_that_set", "you_just_broke_your_limits", "you_just_destroyed_that_weight",
-        "you_just_levelled_up", "you_went_full_throttle",
-    )
-    return badgeSoundNames[Random.nextInt(badgeSoundNames.size)]
-}
+private fun buildCueAudioAttributes(): AudioAttributes =
+    AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
 
-/**
- * Get a random PR celebration sound name.
- */
-private fun getRandomPRSound(): String {
-    val prSoundNames = listOf("new_personal_record", "new_personal_record_2")
-    return prSoundNames[Random.nextInt(prSoundNames.size)]
+internal data class AndroidCueResource(
+    val name: String,
+    val rawResId: Int,
+)
+
+internal object AndroidCueResources {
+    private val beep = AndroidCueResource("beep", R.raw.beep)
+    private val beepBoop = AndroidCueResource("beepboop", R.raw.beepboop)
+    private val boopBeepBeep = AndroidCueResource("boopbeepbeep", R.raw.boopbeepbeep)
+    private val chirpChirp = AndroidCueResource("chirpchirp", R.raw.chirpchirp)
+    private val discoMode = AndroidCueResource("discomode", R.raw.discomode)
+    private val restOver = AndroidCueResource("restover", R.raw.restover)
+
+    val eventCues: Map<HapticEvent, AndroidCueResource> = mapOf(
+        HapticEvent.REP_COMPLETED to chirpChirp,
+        HapticEvent.FINAL_REP to boopBeepBeep,
+        HapticEvent.WARMUP_COMPLETE to beepBoop,
+        HapticEvent.WORKOUT_COMPLETE to boopBeepBeep,
+        HapticEvent.WORKOUT_START to chirpChirp,
+        HapticEvent.WORKOUT_END to chirpChirp,
+        HapticEvent.REST_ENDING to restOver,
+        HapticEvent.DISCO_MODE_UNLOCKED to discoMode,
+        HapticEvent.WARMUP_TO_WORKING to beepBoop,
+        HapticEvent.VELOCITY_THRESHOLD_REACHED to boopBeepBeep,
+    )
+
+    val badgeCues: List<AndroidCueResource> = listOf(
+        AndroidCueResource("absolute_domination", R.raw.absolute_domination),
+        AndroidCueResource("absolute_unit", R.raw.absolute_unit),
+        AndroidCueResource("another_milestone_crushed", R.raw.another_milestone_crushed),
+        AndroidCueResource("beast_mode", R.raw.beast_mode),
+        AndroidCueResource("insane_performance", R.raw.insane_performance),
+        AndroidCueResource("maxed_out", R.raw.maxed_out),
+        AndroidCueResource("new_peak_achieved", R.raw.new_peak_achieved),
+        AndroidCueResource("new_record_secured", R.raw.new_record_secured),
+        AndroidCueResource("no_ones_stopping_you_now", R.raw.no_ones_stopping_you_now),
+        AndroidCueResource("power", R.raw.power),
+        AndroidCueResource("pr", R.raw.pr),
+        AndroidCueResource("pressure_create_greatness", R.raw.pressure_create_greatness),
+        AndroidCueResource("record", R.raw.record),
+        AndroidCueResource("shattered", R.raw.shattered),
+        AndroidCueResource("strenght_unlocked", R.raw.strenght_unlocked),
+        AndroidCueResource("that_bar_never_stood_a_chance", R.raw.that_bar_never_stood_a_chance),
+        AndroidCueResource("that_was_a_demolition", R.raw.that_was_a_demolition),
+        AndroidCueResource("that_was_god_mode", R.raw.that_was_god_mode),
+        AndroidCueResource("that_was_monster_level", R.raw.that_was_monster_level),
+        AndroidCueResource("that_was_next_tier_strenght", R.raw.that_was_next_tier_strenght),
+        AndroidCueResource("that_was_pure_savagery", R.raw.that_was_pure_savagery),
+        AndroidCueResource("the_grind_continues", R.raw.the_grind_continues),
+        AndroidCueResource("the_grind_is_real", R.raw.the_grind_is_real),
+        AndroidCueResource("this_is_what_champions_are_made", R.raw.this_is_what_champions_are_made),
+        AndroidCueResource("unchained_power", R.raw.unchained_power),
+        AndroidCueResource("unstoppable", R.raw.unstoppable),
+        AndroidCueResource("victory", R.raw.victory),
+        AndroidCueResource("you_crushed_that", R.raw.you_crushed_that),
+        AndroidCueResource("you_dominated_that_set", R.raw.you_dominated_that_set),
+        AndroidCueResource("you_just_broke_your_limits", R.raw.you_just_broke_your_limits),
+        AndroidCueResource("you_just_destroyed_that_weight", R.raw.you_just_destroyed_that_weight),
+        AndroidCueResource("you_just_levelled_up", R.raw.you_just_levelled_up),
+        AndroidCueResource("you_went_full_throttle", R.raw.you_went_full_throttle),
+    )
+
+    val prCues: List<AndroidCueResource> = listOf(
+        AndroidCueResource("new_personal_record", R.raw.new_personal_record),
+        AndroidCueResource("new_personal_record_2", R.raw.new_personal_record_2),
+    )
+
+    val repCountCues: List<AndroidCueResource> = listOf(
+        AndroidCueResource("rep_01", R.raw.rep_01),
+        AndroidCueResource("rep_02", R.raw.rep_02),
+        AndroidCueResource("rep_03", R.raw.rep_03),
+        AndroidCueResource("rep_04", R.raw.rep_04),
+        AndroidCueResource("rep_05", R.raw.rep_05),
+        AndroidCueResource("rep_06", R.raw.rep_06),
+        AndroidCueResource("rep_07", R.raw.rep_07),
+        AndroidCueResource("rep_08", R.raw.rep_08),
+        AndroidCueResource("rep_09", R.raw.rep_09),
+        AndroidCueResource("rep_10", R.raw.rep_10),
+        AndroidCueResource("rep_11", R.raw.rep_11),
+        AndroidCueResource("rep_12", R.raw.rep_12),
+        AndroidCueResource("rep_13", R.raw.rep_13),
+        AndroidCueResource("rep_14", R.raw.rep_14),
+        AndroidCueResource("rep_15", R.raw.rep_15),
+        AndroidCueResource("rep_16", R.raw.rep_16),
+        AndroidCueResource("rep_17", R.raw.rep_17),
+        AndroidCueResource("rep_18", R.raw.rep_18),
+        AndroidCueResource("rep_19", R.raw.rep_19),
+        AndroidCueResource("rep_20", R.raw.rep_20),
+        AndroidCueResource("rep_21", R.raw.rep_21),
+        AndroidCueResource("rep_22", R.raw.rep_22),
+        AndroidCueResource("rep_23", R.raw.rep_23),
+        AndroidCueResource("rep_24", R.raw.rep_24),
+        AndroidCueResource("rep_25", R.raw.rep_25),
+    )
+
+    val countdownTickCue: AndroidCueResource = beep
+
+    val allCues: List<AndroidCueResource> = (
+        eventCues.values +
+            badgeCues +
+            prCues +
+            repCountCues +
+            countdownTickCue
+        )
+        .distinctBy { it.name }
+        .sortedBy { it.name }
+
+    fun cueForEvent(event: HapticEvent): AndroidCueResource? =
+        when (event) {
+            is HapticEvent.BADGE_EARNED -> badgeCues[Random.nextInt(badgeCues.size)]
+            is HapticEvent.PERSONAL_RECORD -> prCues[Random.nextInt(prCues.size)]
+            is HapticEvent.REP_COUNT_ANNOUNCED -> repCountCues.getOrNull(event.repNumber - 1)
+            is HapticEvent.COUNTDOWN_TICK -> countdownTickCue
+            is HapticEvent.ERROR -> null
+            else -> eventCues[event]
+        }
 }
 
 @SuppressLint("MissingPermission")
@@ -374,7 +356,7 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
             }
 
             is HapticEvent.FINAL_REP -> {
-                // Issue #100: Stronger vibration for final rep — double pulse with escalating amplitude
+                // Stronger vibration for final rep — double pulse with escalating amplitude
                 VibrationEffect.createWaveform(
                     longArrayOf(0, 80, 60, 120),
                     intArrayOf(0, 200, 0, 255),
@@ -385,17 +367,17 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
             is HapticEvent.WARMUP_COMPLETE -> {
                 // Double pulse - strong
                 VibrationEffect.createWaveform(
-                    longArrayOf(0, 100, 100, 100), // timings: delay, on, off, on
-                    intArrayOf(0, 200, 0, 200), // amplitudes
-                    -1, // don't repeat
+                    longArrayOf(0, 100, 100, 100),
+                    intArrayOf(0, 200, 0, 200),
+                    -1,
                 )
             }
 
             is HapticEvent.WORKOUT_COMPLETE -> {
                 // Triple pulse - celebration pattern
                 VibrationEffect.createWaveform(
-                    longArrayOf(0, 100, 80, 100, 80, 150), // timings
-                    intArrayOf(0, 150, 0, 200, 0, 255), // amplitudes (escalating)
+                    longArrayOf(0, 100, 80, 100, 80, 150),
+                    intArrayOf(0, 150, 0, 200, 0, 255),
                     -1,
                 )
             }
@@ -451,7 +433,7 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
             }
 
             is HapticEvent.VELOCITY_THRESHOLD_REACHED -> {
-                // Issue #313: Strong alert — double heavy pulse for velocity threshold
+                // Strong alert — double heavy pulse for velocity threshold
                 VibrationEffect.createWaveform(
                     longArrayOf(0, 120, 80, 150),
                     intArrayOf(0, 255, 0, 255),
@@ -460,12 +442,12 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
             }
 
             is HapticEvent.COUNTDOWN_TICK -> {
-                // Issue #100: Very light tick for rest countdown (last 10 seconds)
+                // Very light tick for rest countdown (last 10 seconds)
                 VibrationEffect.createOneShot(30, 80)
             }
 
             is HapticEvent.WARMUP_TO_WORKING -> {
-                // Issue #100: Ascending double pulse for warmup-to-working transition
+                // Ascending double pulse for warmup-to-working transition
                 VibrationEffect.createWaveform(
                     longArrayOf(0, 80, 60, 120),
                     intArrayOf(0, 150, 0, 220),
@@ -488,7 +470,6 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
             }
 
             is HapticEvent.FINAL_REP -> {
-                // Issue #100: Stronger double pulse for final rep
                 vibrator.vibrate(longArrayOf(0, 80, 60, 120), -1)
             }
 
@@ -525,12 +506,10 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
             }
 
             is HapticEvent.COUNTDOWN_TICK -> {
-                // Issue #100: Light tick for countdown
                 vibrator.vibrate(30)
             }
 
             is HapticEvent.WARMUP_TO_WORKING -> {
-                // Issue #100: Double pulse for transition
                 vibrator.vibrate(longArrayOf(0, 80, 60, 120), -1)
             }
 

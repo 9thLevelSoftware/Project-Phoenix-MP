@@ -92,7 +92,6 @@ class ActiveSessionEngine(
     private val settingsManager: SettingsManager,
     private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope,
-    private val detectionManager: ExerciseDetectionManager? = null,
     private val dataBackupManager: DataBackupManager? = null,
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
@@ -877,21 +876,6 @@ class ActiveSessionEngine(
             // Segment metrics for this rep and process biomechanics (GATE-04: unconditional capture)
             processBiomechanicsForRep(repCountAfter, now)
 
-            // Exercise auto-detection: trigger after MIN_REPS working reps
-            // Only for working reps (warmup complete) when no exercise is assigned
-            val repCount = repCounter.getRepCount()
-            if (repCount.isWarmupComplete) {
-                val params = coordinator._workoutParameters.value
-                // Check if exercise already assigned (routine mode has selectedExerciseId)
-                val hasExerciseAssigned = !params.selectedExerciseId.isNullOrBlank()
-
-                detectionManager?.onRepCompleted(
-                    repNumber = repCount.workingReps,
-                    metrics = coordinator.collectedMetrics.value,
-                    scope = scope,
-                    hasExerciseAssigned = hasExerciseAssigned,
-                )
-            }
         }
     }
 
@@ -1498,24 +1482,6 @@ class ActiveSessionEngine(
             preferencesManager.saveJustLiftDefaults(prefsDefaults)
             Logger.d("saveJustLiftDefaults: weight=${defaults.weightPerCableKg}kg, mode=${defaults.workoutModeId}, restSeconds=${defaults.restSeconds}")
         }
-    }
-
-    /**
-     * Applies an auto-accepted exercise detection (if any) to the workout parameters.
-     * Called before saving a session so the detected exerciseId is persisted.
-     * Returns true if an auto-accepted detection was applied.
-     */
-    private suspend fun applyAutoAcceptedDetection(): Boolean {
-        val detection = detectionManager?.detectionState?.value ?: return false
-        if (!detection.isAutoAccepted || detection.classification == null) return false
-        val cls = detection.classification
-        val confirmedId = cls.exerciseId
-        if (confirmedId.isNullOrBlank()) return false
-        detectionManager.onExerciseConfirmed(confirmedId, cls.exerciseName)
-        coordinator._workoutParameters.update { p -> p.copy(selectedExerciseId = confirmedId) }
-        coordinator._userFeedbackEvents.emit("Exercise detected: ${cls.exerciseName}")
-        Logger.d("Just Lift: Auto-accepted exercise '${cls.exerciseName}' (id=$confirmedId)")
-        return true
     }
 
     private suspend fun saveJustLiftDefaultsFromWorkout() {
@@ -2573,10 +2539,9 @@ class ActiveSessionEngine(
             if (isJustLift) {
                 Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
                 bleRepository.restartMonitorPolling()
-                applyAutoAcceptedDetection()
             }
 
-            // Re-read params after potential auto-accept update
+            // Re-read params after stop-time state updates.
             val params = coordinator._workoutParameters.value
 
             val selectedExercise = resolveSelectedExercise(params)
@@ -2640,6 +2605,12 @@ class ActiveSessionEngine(
                 profileId = userProfileRepository.activeProfile.value?.id ?: "default",
             )
             workoutRepository.saveSession(session)
+            val persistedSummary = summary.copy(
+                sessionId = session.id,
+                taggedExerciseId = params.selectedExerciseId,
+                taggedExerciseName = exerciseName,
+                isAmrap = params.isAMRAP,
+            )
 
             var completedSetId: String? = null
             if (params.selectedExerciseId != null && repCount.workingReps > 0) {
@@ -2687,8 +2658,6 @@ class ActiveSessionEngine(
 
             if (isJustLift) {
                 saveJustLiftDefaultsFromWorkout()
-                // Reset detection for the next Just Lift set
-                detectionManager?.resetForNewSet()
                 coordinator._workoutParameters.update { p ->
                     p.copy(selectedExerciseId = null)
                 }
@@ -2707,7 +2676,7 @@ class ActiveSessionEngine(
                 coordinator.currentRoutineId = null
                 coordinator.routineAccumulatedCalories = 0f
             } else {
-                coordinator._workoutState.value = summary
+                coordinator._workoutState.value = persistedSummary
             }
         }
     }
@@ -3246,12 +3215,6 @@ class ActiveSessionEngine(
 
             coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
 
-            // Just Lift: apply auto-accepted exercise detection before saving session
-            // so the exerciseId is populated in the persisted WorkoutSession
-            if (isJustLift) {
-                applyAutoAcceptedDetection()
-            }
-
             saveWorkoutSession()
 
             // Persist per-rep metric data (GATE-04: captured for all tiers)
@@ -3327,6 +3290,10 @@ class ActiveSessionEngine(
             val summary = baseSummary.copy(
                 qualitySummary = qualitySummary,
                 biomechanicsSummary = biomechanicsSummary,
+                sessionId = sessionId,
+                taggedExerciseId = params.selectedExerciseId,
+                taggedExerciseName = selectedExercise?.name,
+                isAmrap = params.isAMRAP,
             )
 
             // Process quality event for Form Master badge tracking
@@ -3358,10 +3325,6 @@ class ActiveSessionEngine(
                 repCounter.reset()
                 resetAutoStopState()
 
-                // Reset detection state for the next Just Lift set so detection
-                // can re-trigger fresh (each set may be a different exercise)
-                detectionManager?.resetForNewSet()
-                // Clear exercise attribution so detection has a clean slate
                 coordinator._workoutParameters.update { p ->
                     p.copy(selectedExerciseId = null)
                 }

@@ -6,6 +6,8 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.metadata.Device
+import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Energy
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -13,6 +15,12 @@ import java.time.Instant
 import java.time.ZoneId
 
 private val log = Logger.withTag("HealthIntegration.Android")
+
+private val VITRUVIAN_DEVICE = Device(
+    manufacturer = "Vitruvian",
+    model = "Trainer",
+    type = Device.TYPE_UNKNOWN,
+)
 
 internal val requiredHealthPermissions = setOf(
     HealthPermission.getWritePermission(ExerciseSessionRecord::class),
@@ -96,6 +104,7 @@ actual class HealthIntegration(private val context: Context) {
                         endZoneOffset = zoneOffset,
                         exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING,
                         title = buildExerciseTitle(session),
+                        metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
                     ),
                 )
 
@@ -108,6 +117,7 @@ actual class HealthIntegration(private val context: Context) {
                             endTime = endInstant,
                             endZoneOffset = zoneOffset,
                             energy = Energy.kilocalories(calories.toDouble()),
+                            metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
                         ),
                     )
                 }
@@ -154,6 +164,7 @@ actual class HealthIntegration(private val context: Context) {
                         endZoneOffset = zoneOffset,
                         exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING,
                         title = data.routineName,
+                        metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
                     ),
                 )
 
@@ -166,6 +177,7 @@ actual class HealthIntegration(private val context: Context) {
                             endTime = endInstant,
                             endZoneOffset = zoneOffset,
                             energy = Energy.kilocalories(calories.toDouble()),
+                            metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
                         ),
                     )
                 }
