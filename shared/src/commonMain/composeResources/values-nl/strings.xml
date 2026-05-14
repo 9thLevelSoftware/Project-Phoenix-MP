@@ -354,7 +354,7 @@
     <string name="insights_training_balance">Trainingsbalans</string>
     <string name="insights_exercise_variety">Oefeningsvariatie</string>
     <string name="insights_plateau_alert">Plateau-waarschuwing</string>
-    <string name="insights_best_window">Beste trainingsmoment</string>
+    <string name="insights_best_window">Moment met hoogste gemiddelde intensiteit</string>
     <string name="insights_col_muscle_group">Spiergroep</string>
     <string name="insights_col_sets">Series</string>
     <string name="insights_col_reps">Herhalingen</string>
@@ -364,8 +364,8 @@
     <string name="insights_legs">Benen</string>
     <string name="insights_well_balanced">Je training is goed gebalanceerd</string>
     <string name="insights_days_ago">%1$d dagen geleden</string>
-    <string name="insights_need_more_sessions">Train meer om tijdinzichten te ontgrendelen (10+ sessies nodig)</string>
-    <string name="insights_perform_best_in">Je presteert het best in de</string>
+    <string name="insights_need_more_sessions">Meer sessies op verschillende dagen nodig om je beste tijdvenster te bepalen</string>
+    <string name="insights_perform_best_in">Je hoogste gemiddelde intensiteit is in de</string>
 
     <!-- Issue 3: ExerciseConfigModal -->
     <string name="config_beast_mode">BEAST MODE</string>

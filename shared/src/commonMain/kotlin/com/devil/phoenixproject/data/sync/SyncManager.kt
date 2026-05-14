@@ -692,8 +692,6 @@ class SyncManager(
         val phaseStatsBySessionId = syncRepository.getPhaseStatisticsForSessions(sessionIds)
             .map { PortalSyncAdapter.toPortalPhaseStatistics(it) }
             .groupBy { it.sessionId }
-        val signatureDtos = syncRepository.getAllExerciseSignatures()
-            .map { PortalSyncAdapter.toPortalExerciseSignature(it) }
         val assessmentDtos = syncRepository.getAllAssessments(activeProfileId)
             .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
 
@@ -742,7 +740,7 @@ class SyncManager(
 
         // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB)
         //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH).
-        //    Non-session data (routines, cycles, badges, RPG, gamification, signatures, assessments)
+        //    Non-session data (routines, cycles, badges, RPG, gamification, assessments)
         //    is included only in the final batch to avoid duplicate upserts.
         //    IMPORTANT: We do NOT update lastSync until ALL batches succeed. This prevents
         //    data consistency gaps where a partial batch sequence leaves the timestamp
@@ -762,7 +760,6 @@ class SyncManager(
                 "${effectiveTelemetry.size} telemetry points, " +
                 "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
                 "${phaseStatsBySessionId.size} sessions with phase stats, " +
-                "${signatureDtos.size} signatures, " +
                 "${assessmentDtos.size} assessments"
         }
 
@@ -784,7 +781,6 @@ class SyncManager(
                 badges = badgeDtos,
                 gamificationStats = gamStatsDto,
                 phaseStatistics = phaseStatsBySessionId.values.flatten(),
-                exerciseSignatures = signatureDtos,
                 assessments = assessmentDtos,
                 profileId = activeProfile?.id,
                 profileName = activeProfile?.name,
@@ -833,7 +829,6 @@ class SyncManager(
                     badges = if (isLastBatch) badgeDtos else emptyList(),
                     gamificationStats = if (isLastBatch) gamStatsDto else null,
                     phaseStatistics = batchPhaseStats,
-                    exerciseSignatures = if (isLastBatch) signatureDtos else emptyList(),
                     assessments = if (isLastBatch) assessmentDtos else emptyList(),
                     profileId = activeProfile?.id,
                     profileName = activeProfile?.name,

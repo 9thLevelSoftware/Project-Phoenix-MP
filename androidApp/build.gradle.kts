@@ -1,6 +1,104 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.TaskAction
+import java.util.zip.CRC32
+import java.util.zip.ZipFile
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+abstract class VerifyReleaseCueResourcesTask : DefaultTask() {
+    @get:InputDirectory
+    abstract val rawCueDir: DirectoryProperty
+
+    @get:Internal
+    abstract val releaseApkDir: DirectoryProperty
+
+    @get:Internal
+    abstract val releaseBundleDir: DirectoryProperty
+
+    @get:Internal
+    abstract val projectRootDir: DirectoryProperty
+
+    @TaskAction
+    fun verifyCueResources() {
+        data class CueFingerprint(val size: Long, val crc32: Long)
+
+        fun File.fingerprint(): CueFingerprint {
+            val crc = CRC32()
+            inputStream().use { input ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    crc.update(buffer, 0, read)
+                }
+            }
+            return CueFingerprint(length(), crc.value)
+        }
+
+        val projectRoot = projectRootDir.get().asFile
+        val rawCueDirectory = rawCueDir.get().asFile
+        val expectedCueFiles = rawCueDirectory.listFiles { file -> file.isFile && file.extension == "ogg" }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+
+        if (expectedCueFiles.isEmpty()) {
+            throw GradleException("No shared Android cue resources found in ${rawCueDirectory.relativeTo(projectRoot)}.")
+        }
+
+        val expectedCueFingerprints = expectedCueFiles.groupBy { it.fingerprint() }
+
+        val artifacts = buildList {
+            val apkDirectory = releaseApkDir.get().asFile
+            val bundleDirectory = releaseBundleDir.get().asFile
+            if (apkDirectory.exists()) {
+                addAll(apkDirectory.walkTopDown().filter { it.isFile && it.extension.equals("apk", ignoreCase = true) })
+            }
+            if (bundleDirectory.exists()) {
+                addAll(bundleDirectory.walkTopDown().filter { it.isFile && it.extension.equals("aab", ignoreCase = true) })
+            }
+        }
+
+        if (artifacts.isEmpty()) {
+            throw GradleException("No Android release APK or AAB artifacts found. Run :androidApp:assembleRelease first.")
+        }
+
+        artifacts.forEach { artifact ->
+            val packagedCueFingerprints = ZipFile(artifact).use { zip ->
+                zip.entries()
+                    .asSequence()
+                    .filter { !it.isDirectory && it.name.endsWith(".ogg") }
+                    .groupingBy { CueFingerprint(it.size, it.crc) }
+                    .eachCount()
+            }
+
+            val missing = expectedCueFingerprints.flatMap { (fingerprint, cueFiles) ->
+                val packagedCount = packagedCueFingerprints[fingerprint] ?: 0
+                if (packagedCount >= cueFiles.size) {
+                    emptyList()
+                } else {
+                    cueFiles.drop(packagedCount).map { it.name }
+                }
+            }
+
+            if (missing.isNotEmpty()) {
+                throw GradleException(
+                    "Release artifact ${artifact.relativeTo(projectRoot)} is missing cue resources:\n" +
+                        missing.joinToString("\n") { "  - res/raw/$it" },
+                )
+            }
+
+            println(
+                "Verified ${expectedCueFiles.size} Android cue resources in ${artifact.relativeTo(projectRoot)} " +
+                    "by packaged .ogg fingerprints.",
+            )
+        }
+    }
 }
 
 // Read Supabase config from local.properties, falling back to environment variables for CI/CD
@@ -120,6 +218,19 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+tasks.register<VerifyReleaseCueResourcesTask>("verifyReleaseCueResources") {
+    group = "verification"
+    description = "Fails if Android release artifacts are missing packaged workout cue audio resources."
+
+    dependsOn("assembleRelease")
+    mustRunAfter("bundleRelease")
+
+    rawCueDir.set(rootProject.layout.projectDirectory.dir("shared/src/androidMain/res/raw"))
+    releaseApkDir.set(layout.buildDirectory.dir("outputs/apk/release"))
+    releaseBundleDir.set(layout.buildDirectory.dir("outputs/bundle/release"))
+    projectRootDir.set(rootProject.layout.projectDirectory)
 }
 
 dependencies {

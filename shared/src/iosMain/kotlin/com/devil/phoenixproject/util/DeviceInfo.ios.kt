@@ -2,7 +2,6 @@
 
 package com.devil.phoenixproject.util
 
-import kotlin.native.Platform
 import platform.Foundation.NSBundle
 import platform.UIKit.UIDevice
 
@@ -68,6 +67,10 @@ actual object DeviceInfo {
     actual fun getCompactInfo(): String = "$manufacturer $model (iOS $osVersion)"
 
     actual fun getAppVersionInfo(): String = "v$appVersionName ($buildType)"
+
+    actual fun isPixel(): Boolean = false
+
+    actual fun isSamsung(): Boolean = false
 
     actual fun toJson(): String = buildString {
         append("{")

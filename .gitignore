@@ -99,3 +99,4 @@ bugreport-*.zip
 .codex_tmp/
 /.gradle-local/
 /.gradle-local-test/
+/code-review/

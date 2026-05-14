@@ -170,7 +170,7 @@ kotlin {
                 // DocumentFile for directory picker display name extraction
                 implementation(libs.androidx.documentfile)
 
-                // Health Connect (Google Health) — pinned to alpha11, see libs.versions.toml
+                // Health Connect (Google Health)
                 implementation(libs.androidx.health.connect)
             }
         }

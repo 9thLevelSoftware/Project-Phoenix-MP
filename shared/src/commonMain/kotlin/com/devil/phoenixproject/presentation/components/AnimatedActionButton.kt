@@ -197,7 +197,7 @@ fun AnimatedActionButton(
     val windowSizeClass = LocalWindowSizeClass.current
     val useCompactAccessibility = isCompactAccessibilityLayout()
     val buttonHeight = if (useCompactAccessibility) {
-        72.dp
+        88.dp
     } else {
         when (windowSizeClass.widthSizeClass) {
             WindowWidthSizeClass.Expanded -> 80.dp
@@ -341,9 +341,10 @@ fun AnimatedActionButton(
                             text = label,
                             color = Color.White,
                             style = labelStyle,
-                            maxLines = 1,
+                            maxLines = if (useCompactAccessibility) 2 else 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp),
                         )
                     }
                 }
@@ -375,6 +376,7 @@ fun AnimatedActionButton(
                         maxLines = if (useCompactAccessibility) 2 else 1,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 },
             )
@@ -395,6 +397,7 @@ fun AnimatedActionButton(
                         maxLines = if (useCompactAccessibility) 2 else 1,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 },
             )

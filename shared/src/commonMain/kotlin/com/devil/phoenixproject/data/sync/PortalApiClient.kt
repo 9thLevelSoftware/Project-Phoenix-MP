@@ -468,7 +468,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
 
         // Serialize once to measure size. Reuse the serialized bytes so we
         // do not pay the JSON cost twice.
-        val serialized = Json.encodeToString(PortalSyncPayload.serializer(), payload)
+        val serialized = json.encodeToString(PortalSyncPayload.serializer(), payload)
         if (serialized.encodeToByteArray().size > SyncConfig.MAX_PAYLOAD_BYTES) {
             return Result.failure(
                 PortalApiException(

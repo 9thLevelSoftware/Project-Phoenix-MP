@@ -86,8 +86,26 @@ fun calculateWindowSizeClass(widthDp: Dp, heightDp: Dp): WindowSizeClass {
 fun isCompactAccessibilityLayout(fontScaleThreshold: Float = 1.15f): Boolean {
     val windowSizeClass = LocalWindowSizeClass.current
     val fontScale = LocalDensity.current.fontScale
-    return windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact &&
-        (windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact || fontScale >= fontScaleThreshold)
+    val accessibilitySettings = LocalPlatformAccessibilitySettings.current
+    return shouldUseCompactAccessibilityLayout(
+        windowSizeClass = windowSizeClass,
+        fontScale = fontScale,
+        boldTextEnabled = accessibilitySettings.boldTextEnabled,
+        fontScaleThreshold = fontScaleThreshold,
+    )
+}
+
+fun shouldUseCompactAccessibilityLayout(
+    windowSizeClass: WindowSizeClass,
+    fontScale: Float,
+    boldTextEnabled: Boolean,
+    fontScaleThreshold: Float = 1.15f,
+): Boolean {
+    return windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact ||
+        (
+            windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact &&
+                (fontScale >= fontScaleThreshold || boldTextEnabled)
+            )
 }
 
 /**

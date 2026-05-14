@@ -352,7 +352,7 @@
     <string name="insights_training_balance">Équilibre d'entraînement</string>
     <string name="insights_exercise_variety">Variété des exercices</string>
     <string name="insights_plateau_alert">Alerte de plateau</string>
-    <string name="insights_best_window">Meilleure fenêtre</string>
+    <string name="insights_best_window">Fenêtre d'intensité moyenne la plus élevée</string>
     <string name="insights_col_muscle_group">Groupe musculaire</string>
     <string name="insights_col_sets">Sets</string>
     <string name="insights_col_reps">Reps</string>
@@ -362,8 +362,8 @@
     <string name="insights_legs">Legs</string>
     <string name="insights_well_balanced">Votre entraînement est bien équilibré</string>
     <string name="insights_days_ago">Il y a %1$d jours</string>
-    <string name="insights_need_more_sessions">Train more to unlock time insights (need 10+ sessions)</string>
-    <string name="insights_perform_best_in">Vous performez le mieux le</string>
+    <string name="insights_need_more_sessions">Plus de séances sur des jours différents sont nécessaires pour identifier votre meilleur créneau</string>
+    <string name="insights_perform_best_in">Votre intensité moyenne la plus élevée est le</string>
 
     <!-- ==================== Issue 3: ExerciseConfigModal ==================== -->
     <string name="config_beast_mode">BEAST MODE</string>

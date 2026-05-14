@@ -19,6 +19,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,8 +29,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Timer
@@ -42,6 +45,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -80,7 +84,6 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AutoStopUiState
-import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EccentricLoad
@@ -93,17 +96,16 @@ import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.presentation.components.AddProfileDialog
-import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -128,9 +130,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
-    // M16: Collect detection state so post-set detection sheet isn't lost on nav back
-    val detectionState by viewModel.detectionState.collectAsState()
-    val exerciseRepository: ExerciseRepository = koinInject()
 
     var selectedMode by remember { mutableStateOf(workoutParameters.programMode.toWorkoutMode(workoutParameters.echoLevel)) }
     // Initialize to match the picker's default: 1 lb = 0.453592 kg
@@ -279,6 +278,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         viewModel.updateTopBarTitle("Just Lift")
     }
 
+    val useCompactAccessibility = isCompactAccessibilityLayout()
+    val contentScrollState = rememberScrollState()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -288,8 +290,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
-                .padding(horizontal = Spacing.medium, vertical = Spacing.small),
-            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                .padding(horizontal = Spacing.medium, vertical = Spacing.small)
+                .then(if (useCompactAccessibility) Modifier.verticalScroll(contentScrollState) else Modifier),
+            verticalArrangement = Arrangement.spacedBy(if (useCompactAccessibility) Spacing.medium else Spacing.small),
         ) {
             // Auto-Start/Stop Banner (compact, always visible when idle)
             if (workoutState is WorkoutState.Idle) {
@@ -311,7 +314,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
@@ -319,9 +322,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                         .padding(Spacing.medium),
-                    verticalArrangement = Arrangement.SpaceEvenly,
+                    verticalArrangement = if (useCompactAccessibility) {
+                        Arrangement.spacedBy(Spacing.small)
+                    } else {
+                        Arrangement.SpaceEvenly
+                    },
                 ) {
                     Text(
                         "Workout Mode",
@@ -330,14 +337,29 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         color = MaterialTheme.colorScheme.onSurface,
                     )
 
-                    SingleChoiceSegmentedButtonRow(
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        val modes = listOf(
-                            "Old School" to WorkoutMode.OldSchool,
-                            "Pump" to WorkoutMode.Pump,
-                            "Echo" to WorkoutMode.Echo(echoLevel),
-                        )
+                    val modes = listOf(
+                        "Old School" to WorkoutMode.OldSchool,
+                        "Pump" to WorkoutMode.Pump,
+                        "Echo" to WorkoutMode.Echo(echoLevel),
+                    )
+                    if (useCompactAccessibility) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            modes.forEach { (label, mode) ->
+                                FilterChip(
+                                    selected = selectedMode::class == mode::class,
+                                    onClick = { selectedMode = mode },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
+                    } else {
+                        SingleChoiceSegmentedButtonRow(
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
                         modes.forEachIndexed { index, (label, mode) ->
                             SegmentedButton(
                                 shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
@@ -347,6 +369,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             ) {
                                 Text(label, maxLines = 1)
                             }
+                        }
                         }
                     }
 
@@ -370,7 +393,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -378,7 +401,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.medium),
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -426,7 +449,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -434,9 +457,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.medium),
-                        verticalArrangement = Arrangement.SpaceEvenly,
+                        verticalArrangement = if (useCompactAccessibility) {
+                            Arrangement.spacedBy(Spacing.small)
+                        } else {
+                            Arrangement.SpaceEvenly
+                        },
                     ) {
                         Text(
                             "Weight Change Per Rep",
@@ -468,7 +495,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -476,9 +503,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.medium),
-                        verticalArrangement = Arrangement.SpaceEvenly,
+                        verticalArrangement = if (useCompactAccessibility) {
+                            Arrangement.spacedBy(Spacing.small)
+                        } else {
+                            Arrangement.SpaceEvenly
+                        },
                     ) {
                         Text(
                             "Eccentric Load",
@@ -533,7 +564,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -541,9 +572,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.medium),
-                        verticalArrangement = Arrangement.SpaceEvenly,
+                        verticalArrangement = if (useCompactAccessibility) {
+                            Arrangement.spacedBy(Spacing.small)
+                        } else {
+                            Arrangement.SpaceEvenly
+                        },
                     ) {
                         Text(
                             "Echo Level",
@@ -552,19 +587,38 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             color = MaterialTheme.colorScheme.onSurface,
                         )
 
-                        SingleChoiceSegmentedButtonRow(
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            EchoLevel.entries.forEachIndexed { index, level ->
-                                SegmentedButton(
-                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = EchoLevel.entries.size),
-                                    onClick = {
-                                        echoLevel = level
-                                        selectedMode = WorkoutMode.Echo(level)
-                                    },
-                                    selected = echoLevel == level,
-                                ) {
-                                    Text(level.displayName, maxLines = 1)
+                        if (useCompactAccessibility) {
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                EchoLevel.entries.forEach { level ->
+                                    FilterChip(
+                                        selected = echoLevel == level,
+                                        onClick = {
+                                            echoLevel = level
+                                            selectedMode = WorkoutMode.Echo(level)
+                                        },
+                                        label = { Text(level.displayName) },
+                                    )
+                                }
+                            }
+                        } else {
+                            SingleChoiceSegmentedButtonRow(
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                EchoLevel.entries.forEachIndexed { index, level ->
+                                    SegmentedButton(
+                                        shape = SegmentedButtonDefaults.itemShape(index = index, count = EchoLevel.entries.size),
+                                        onClick = {
+                                            echoLevel = level
+                                            selectedMode = WorkoutMode.Echo(level)
+                                        },
+                                        selected = echoLevel == level,
+                                    ) {
+                                        Text(level.displayName, maxLines = 1)
+                                    }
                                 }
                             }
                         }
@@ -748,20 +802,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             )
         }
 
-        // M16: Show exercise auto-detection sheet when detection fires during/after set completion.
-        // The detection state persists in ExerciseDetectionManager until explicitly reset,
-        // so if detection triggers while transitioning from ActiveWorkoutScreen back here,
-        // the pending result is still available for the user to confirm or dismiss.
-        if (detectionState.isActive && detectionState.classification != null) {
-            AutoDetectionSheet(
-                classification = detectionState.classification!!,
-                exerciseRepository = exerciseRepository,
-                onConfirm = { exerciseId, exerciseName ->
-                    scope.launch { viewModel.onDetectionConfirmed(exerciseId, exerciseName) }
-                },
-                onDismiss = { viewModel.onDetectionDismissed() },
-            )
-        }
     }
 }
 
