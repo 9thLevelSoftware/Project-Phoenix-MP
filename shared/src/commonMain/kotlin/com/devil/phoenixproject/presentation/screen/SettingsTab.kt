@@ -99,6 +99,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.ble.PixelGattFlags
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
@@ -2273,6 +2274,192 @@ fun SettingsTab(
                     "Play workout sounds to test audio configuration and volume",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                // ═══════════════════════════════════════════════
+                // Issue #333: Pixel BLE GATT Experiments
+                // ═══════════════════════════════════════════════
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                Text(
+                    "Pixel BLE GATT Experiments (#333)",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFF59E0B),
+                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+                )
+
+                Text(
+                    "Experimental fixes for GATT_ERROR(133) on Pixel 6/7 " +
+                        "(BCM4389 controller). Enable individually or together.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+
+                // Flag D: GATT Cache Refresh
+                var flagDEnabled by remember { mutableStateOf(PixelGattFlags.refreshGattCache) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Flag D: GATT Cache Refresh",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Calls BluetoothGatt.refresh() after connect, before " +
+                                "service discovery. Clears stale cached GATT data.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagDEnabled,
+                        onCheckedChange = {
+                            flagDEnabled = it
+                            PixelGattFlags.refreshGattCache = it
+                        },
+                    )
+                }
+
+                // Flag E: Force Immediate GATT Close
+                var flagEEnabled by remember { mutableStateOf(PixelGattFlags.forceImmediateClose) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Flag E: Force GATT Close",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Forces immediate gatt.close() on disconnect (matches " +
+                                "official Vitruvian app). Prevents stale GATT handles.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagEEnabled,
+                        onCheckedChange = {
+                            flagEEnabled = it
+                            PixelGattFlags.forceImmediateClose = it
+                        },
+                    )
+                }
+
+                // Flag F: Polling Quiesce around CONFIG/START
+                var flagFEnabled by remember { mutableStateOf(PixelGattFlags.quiescePolling) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Flag F: Polling Quiesce",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Pauses all polling loops + 150ms drain before sending the " +
+                                "CONFIG/START packet at workout start. Mirrors the " +
+                                "official app's silent BLE channel during this critical " +
+                                "moment. Targets the GATT_ERROR(133) at countdown=0.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagFEnabled,
+                        onCheckedChange = {
+                            flagFEnabled = it
+                            PixelGattFlags.quiescePolling = it
+                        },
+                    )
+                }
+
+                // Flag G: Skip Phantom START
+                var flagGEnabled by remember { mutableStateOf(PixelGattFlags.skipPhantomStart) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Flag G: Skip Phantom START",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Removes the 0x03 START command sent after CONFIG. The " +
+                                "official app's CommandId enum has no ID 3 — the " +
+                                "workout starts from the ActivationPacket (0x04) " +
+                                "alone. Eliminates one unnecessary write on an " +
+                                "already-stressed BLE channel.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagGEnabled,
+                        onCheckedChange = {
+                            flagGEnabled = it
+                            PixelGattFlags.skipPhantomStart = it
+                        },
+                    )
+                }
+
+                // Flag H: Raw GATT Write
+                var flagHEnabled by remember { mutableStateOf(PixelGattFlags.rawGattWrite) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Flag H: Raw GATT Write",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFDC2626), // Flame Red — this is the critical experiment
+                        )
+                        Text(
+                            "Bypasses Kable entirely for CONFIG writes. Calls " +
+                                "BluetoothGatt.writeCharacteristic() directly via " +
+                                "reflection — matching the official app's exact " +
+                                "write path. Eliminates the double-Mutex and " +
+                                "connectionScope cancellation that causes " +
+                                "'StandaloneCoroutine was cancelled' on BCM4389.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagHEnabled,
+                        onCheckedChange = {
+                            flagHEnabled = it
+                            PixelGattFlags.rawGattWrite = it
+                        },
+                    )
+                }
+
+                // Active flags summary
+                Text(
+                    "Active: ${PixelGattFlags.activeFlagsSummary()}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (flagDEnabled || flagEEnabled || flagFEnabled || flagGEnabled || flagHEnabled)
+                        Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
         }

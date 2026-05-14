@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.PixelGattFlags
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.RoutineHealthData
@@ -2253,6 +2254,34 @@ class ActiveSessionEngine(
                     stopMotionStartDetection()
                 }
 
+                // Issue #333 Flag F: Quiesce all polling before the CONFIG/START writes.
+                // The official Vitruvian app uses zero polling and zero heartbeat, so its
+                // BLE channel is silent when sending the 96-byte CONFIG packet. Phoenix's
+                // 4 polling loops saturate BCM4389 (Pixel 6/7), causing the
+                // WithResponse CONFIG write to fail with GATT_ERROR(133). Pausing polling
+                // mimics that quiet-channel behavior at the most fragile moment.
+                val quiescePolling = PixelGattFlags.quiescePolling
+                if (quiescePolling) {
+                    Logger.i { "[#333 Flag F] Quiescing polling before CONFIG write" }
+                    bleRepository.stopPolling()
+                    // Wait for any in-flight BLE operation to complete.
+                    // Polling reads have a 1500ms timeout, so we need to wait
+                    // long enough for the current operation to finish.
+                    // Poll bleQueue.isLocked for up to 2000ms, then add 150ms settle.
+                    val quiesceStart = currentTimeMillis()
+                    var waited = 0L
+                    while (bleRepository.isBleQueueLocked() && waited < 2000L) {
+                        delay(50)
+                        waited = currentTimeMillis() - quiesceStart
+                    }
+                    if (waited > 0) {
+                        Logger.i { "[#333 Flag F] Waited ${waited}ms for BLE queue to drain" }
+                    }
+                    // Extra settle time for the BLE stack to fully quiesce
+                    delay(150)
+                    Logger.i { "[#333 Flag F] BLE channel quiesced — ready for CONFIG write" }
+                }
+
                 try {
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
@@ -2285,7 +2314,33 @@ class ActiveSessionEngine(
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
+                    // Issue #333 Flag F: re-arm polling on error so the connection
+                    // isn't left dead — the user can retry without reconnecting.
+                    if (quiescePolling) bleRepository.startActiveWorkoutPolling()
                     return@launch
+                }
+
+                // Issue #333 Flag G: The official Vitruvian app's CommandId enum has no
+                // ID 3 (0x03). It sends ONLY the ActivationPacket (0x04) to start a
+                // workout. The 0x03 START command was invented by the parent repo and
+                // has no effect on the device — but sending it doubles the chance of
+                // hitting GATT_ERROR(133) on BCM4389 since the controller is still
+                // processing the 96-byte CONFIG write.
+                val skipPhantomStart = PixelGattFlags.skipPhantomStart
+                if (!effectiveParams.isEchoMode && !skipPhantomStart) {
+                    delay(100)
+                    try {
+                        val startCommand = BlePacketFactory.createStartCommand()
+                        bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
+                        Logger.i { "START command sent (0x03)" }
+                    } catch (e: Exception) {
+                        Logger.e(e) { "Failed to send START command" }
+                        coordinator._bleErrorEvents.tryEmit("Failed to start workout: ${e.message}")
+                        if (quiescePolling) bleRepository.startActiveWorkoutPolling()
+                        return@launch
+                    }
+                } else if (skipPhantomStart && !effectiveParams.isEchoMode) {
+                    Logger.i { "[#333 Flag G] Skipping phantom START command (0x03) — not in official protocol" }
                 }
 
                 bleRepository.startActiveWorkoutPolling()

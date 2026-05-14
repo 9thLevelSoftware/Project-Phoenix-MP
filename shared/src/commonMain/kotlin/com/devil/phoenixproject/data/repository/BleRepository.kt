@@ -211,6 +211,13 @@ interface BleRepository {
     fun stopPolling()
 
     /**
+     * Check if the BLE operation queue is currently locked (an operation is in-flight).
+     * Used by Flag F quiesce logic to wait for in-flight reads to complete before
+     * dispatching the CONFIG write.
+     */
+    fun isBleQueueLocked(): Boolean
+
+    /**
      * Stop only monitor and heuristic polling, keeping diagnostic polling and heartbeat running.
      * Use this during bodyweight exercises to keep BLE connection "warm" (via diagnostic polling
      * at 500ms intervals) while not emitting workout metrics.
