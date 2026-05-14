@@ -11,6 +11,8 @@ cmp-material-icons = "1.7.3"
 kotlinx-coroutines = "1.10.2"
 kotlinx-serialization = "1.11.0"
 kotlinx-datetime = "0.7.1"
+kotlinx-io = "0.8.0"
+atomicfu = "0.29.0"
 
 # Compose
 compose-bom = "2026.05.00"
@@ -30,6 +32,7 @@ androidx-security-crypto = "1.1.0"
 androidx-browser = "1.10.0"
 androidx-documentfile = "1.1.0"
 androidx-health-connect = "1.1.0"
+androidx-startup = "1.2.0"
 
 # Dependency Injection - Koin (Multiplatform alternative to Hilt)
 koin = "4.2.1"
@@ -43,6 +46,7 @@ multiplatform-settings = "1.3.0"
 
 # BLE - Kable (Kotlin Multiplatform)
 kable = "0.42.0"
+tuulbox = "8.1.0"
 
 # Ktor
 ktor = "3.4.3"
@@ -88,6 +92,8 @@ kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutine
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
+kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
+atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
 
 # Compose BOM (Android)
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
@@ -108,6 +114,7 @@ androidx-security-crypto = { module = "androidx.security:security-crypto", versi
 androidx-browser = { module = "androidx.browser:browser", version.ref = "androidx-browser" }
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "androidx-documentfile" }
 androidx-health-connect = { module = "androidx.health.connect:connect-client", version.ref = "androidx-health-connect" }
+androidx-startup-runtime = { module = "androidx.startup:startup-runtime", version.ref = "androidx-startup" }
 
 # Compose Multiplatform (explicit coordinates - migrated from deprecated plugin accessors)
 cmp-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
@@ -150,6 +157,7 @@ multiplatform-settings-coroutines = { module = "com.russhwolf:multiplatform-sett
 
 # BLE - Kable (Multiplatform)
 kable-core = { module = "com.juul.kable:kable-core", version.ref = "kable" }
+tuulbox-coroutines = { module = "com.juul.tuulbox:coroutines", version.ref = "tuulbox" }
 
 # Logging (Multiplatform)
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
@@ -186,6 +194,7 @@ android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "kotlin" }
 
 # Compose Multiplatform
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
