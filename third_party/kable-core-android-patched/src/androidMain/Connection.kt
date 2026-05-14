@@ -171,9 +171,7 @@ internal class Connection(
             }
 
             try {
-                connectionScope.async {
-                    callback.onResponse.receive()
-                }.await()
+                callback.onResponse.receive()
             } catch (e: CancellationException) {
                 coroutineContext.ensureActive()
                 throw e.unwrapCancellationException()

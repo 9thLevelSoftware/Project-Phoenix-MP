@@ -71,4 +71,14 @@ expect object DeviceInfo {
      * Get device info as structured JSON string for metadata storage
      */
     fun toJson(): String
+
+    /**
+     * Returns true when running on a Google Pixel device.
+     */
+    fun isPixel(): Boolean
+
+    /**
+     * Returns true when running on a Samsung device.
+     */
+    fun isSamsung(): Boolean
 }

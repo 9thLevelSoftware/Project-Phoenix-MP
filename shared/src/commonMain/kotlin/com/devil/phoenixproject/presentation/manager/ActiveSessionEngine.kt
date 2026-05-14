@@ -39,10 +39,10 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
-import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
+import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
@@ -57,7 +57,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
 
 /**
@@ -2287,19 +2286,6 @@ class ActiveSessionEngine(
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
                     return@launch
-                }
-
-                if (!effectiveParams.isEchoMode) {
-                    delay(100)
-                    try {
-                        val startCommand = BlePacketFactory.createStartCommand()
-                        bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
-                        Logger.i { "START command sent (0x03)" }
-                    } catch (e: Exception) {
-                        Logger.e(e) { "Failed to send START command" }
-                        coordinator._bleErrorEvents.tryEmit("Failed to start workout: ${e.message}")
-                        return@launch
-                    }
                 }
 
                 bleRepository.startActiveWorkoutPolling()
