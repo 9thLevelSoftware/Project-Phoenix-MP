@@ -39,10 +39,10 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
-import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
+import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
@@ -57,7 +57,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
 
 /**
@@ -547,6 +546,9 @@ class ActiveSessionEngine(
         // Issue #358: Cap position deltas to POSITION_JUMP_THRESHOLD (20mm) to prevent
         // BLE glitches from inflating calorie estimates. This matches the validation
         // applied in MonitorDataProcessor.validateSample().
+        var calorieMaxRawDeltaMm = 0f
+        var calorieMaxCappedDeltaMm = 0f
+        var calorieTotalWorkJoules = 0.0
         val estimatedCalories = run {
             if (metrics.size < 2) {
                 // Fallback for insufficient samples
@@ -560,15 +562,31 @@ class ActiveSessionEngine(
                     // Average force in N across both cables
                     val avgForceN = ((prev.totalLoad + curr.totalLoad) / 2f) * 9.81f
                     // Distance in meters (position is in mm, capped to filter BLE glitches)
-                    val deltaA = kotlin.math.abs(curr.positionA - prev.positionA)
-                        .coerceAtMost(maxDeltaMm) / 1000f
-                    val deltaB = kotlin.math.abs(curr.positionB - prev.positionB)
-                        .coerceAtMost(maxDeltaMm) / 1000f
+                    val rawDeltaA = kotlin.math.abs(curr.positionA - prev.positionA)
+                    val rawDeltaB = kotlin.math.abs(curr.positionB - prev.positionB)
+                    calorieMaxRawDeltaMm = maxOf(calorieMaxRawDeltaMm, rawDeltaA, rawDeltaB)
+                    val cappedDeltaA = rawDeltaA.coerceAtMost(maxDeltaMm)
+                    val cappedDeltaB = rawDeltaB.coerceAtMost(maxDeltaMm)
+                    calorieMaxCappedDeltaMm = maxOf(calorieMaxCappedDeltaMm, cappedDeltaA, cappedDeltaB)
+                    val deltaA = cappedDeltaA / 1000f
+                    val deltaB = cappedDeltaB / 1000f
                     val avgDelta = if (isSingleCable) maxOf(deltaA, deltaB) else (deltaA + deltaB) / 2f
                     totalWorkJoules += avgForceN * avgDelta
                 }
+                calorieTotalWorkJoules = totalWorkJoules
                 ((totalWorkJoules / 4184.0) * 5.0).toFloat().coerceAtLeast(1f)
             }
+        }
+
+        Logger.i("ActiveSessionEngine") {
+            "HEALTH_DEBUG_SUMMARY: cableCountHint=${cableCountHint ?: -1}, " +
+                "heuristicIsSingleCable=$heuristicIsSingleCable, resolvedCableCount=$cableCount, " +
+                "peakCableA=$peakCableA, peakCableB=$peakCableB, " +
+                "configuredWeightKgPerCable=$configuredWeightKgPerCable, " +
+                "heaviestLiftKgPerCable=$heaviestLiftKgPerCable, totalVolumeKg=$totalVolumeKg, " +
+                "estimatedCalories=$estimatedCalories, metrics=${metrics.size}, " +
+                "maxRawDeltaMm=$calorieMaxRawDeltaMm, maxCappedDeltaMm=$calorieMaxCappedDeltaMm, " +
+                "totalWorkJoules=$calorieTotalWorkJoules"
         }
 
         val peakLoadKgPerCable = heaviestLiftKgPerCable
@@ -1627,6 +1645,9 @@ class ActiveSessionEngine(
         cancelJustLiftEggTimer()
         interruptedSetRecovery = null
         pendingStartOverride = null
+        coordinator.currentSessionId = null
+        coordinator.workoutStartTime = 0
+        coordinator.collectedMetrics.value = emptyList()
         coordinator.restDeadlineElapsedRealtimeMs = null
         coordinator._restSecondsRemaining.value = 0
         coordinator._restOriginalDuration.value = 0
@@ -2377,6 +2398,7 @@ class ActiveSessionEngine(
             coordinator.currentRoutineName = null
             coordinator.currentRoutineId = null
             coordinator.routineAccumulatedCalories = 0f
+            coordinator._completedRoutineSetKeys.value = emptySet()
             return
         }
 
@@ -2563,6 +2585,17 @@ class ActiveSessionEngine(
                 profileId = userProfileRepository.activeProfile.value?.id ?: "default",
             )
             workoutRepository.saveSession(session)
+            val isRoutineSet = session.routineSessionId != null
+            if (isRoutineSet && isValidCompletedSession(session)) {
+                session.estimatedCalories?.let { cal ->
+                    if (cal > 0f) coordinator.routineAccumulatedCalories += cal
+                }
+                coordinator._completedRoutineSetKeys.update {
+                    it + (coordinator._currentExerciseIndex.value to coordinator._currentSetIndex.value)
+                }
+            } else if (!isRoutineSet) {
+                enqueueWorkoutHealthPush(session)
+            }
             val persistedSummary = summary.copy(
                 sessionId = session.id,
                 taggedExerciseId = params.selectedExerciseId,
@@ -2633,6 +2666,7 @@ class ActiveSessionEngine(
                 coordinator.currentRoutineName = null
                 coordinator.currentRoutineId = null
                 coordinator.routineAccumulatedCalories = 0f
+                coordinator._completedRoutineSetKeys.value = emptySet()
             } else {
                 coordinator._workoutState.value = persistedSummary
             }
@@ -2807,6 +2841,58 @@ class ActiveSessionEngine(
         return plannedSets.find { it.setNumber == setIndex }?.id
     }
 
+    private fun isValidCompletedSession(session: WorkoutSession): Boolean =
+        session.workingReps > 0 && session.duration > 0L
+
+    private fun healthProviderForPlatform(): IntegrationProvider = if (getPlatform().name.startsWith("iOS")) {
+        IntegrationProvider.APPLE_HEALTH
+    } else {
+        IntegrationProvider.GOOGLE_HEALTH
+    }
+
+    private fun enqueueWorkoutHealthPush(session: WorkoutSession) {
+        val healthIntegration = healthIntegration ?: return
+        val externalActivityRepository = externalActivityRepository ?: return
+
+        if (!isValidCompletedSession(session)) {
+            Logger.i("ActiveSessionEngine") {
+                "HEALTH_DEBUG_PUSH: skipped invalid workout sessionId=${session.id}, " +
+                    "exerciseId=${session.exerciseId ?: "NULL"}, workingReps=${session.workingReps}, durationMs=${session.duration}"
+            }
+            return
+        }
+
+        val profileId = session.profileId
+        scope.launch {
+            try {
+                val provider = healthProviderForPlatform()
+                val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
+                Logger.i("ActiveSessionEngine") {
+                    "HEALTH_DEBUG_PUSH: provider=${provider.key}, status=${status?.status}, " +
+                        "sessionId=${session.id}, exercise=${session.exerciseName ?: "NULL"}, " +
+                        "weightPerCableKg=${session.weightPerCableKg}, cableCount=${session.cableCount ?: -1}, " +
+                        "estimatedCalories=${session.estimatedCalories ?: -1f}"
+                }
+                if (status?.status != ConnectionStatus.CONNECTED) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Health auto-push skipped: ${provider.displayName} is not connected (status=${status?.status})"
+                    }
+                    return@launch
+                }
+
+                healthIntegration.writeWorkout(session)
+                    .onSuccess {
+                        Logger.i("ActiveSessionEngine") { "Auto-pushed workout to ${provider.displayName}: sessionId=${session.id}" }
+                    }
+                    .onFailure { e ->
+                        Logger.w("ActiveSessionEngine") { "Health auto-push failed (non-fatal): ${e.message}" }
+                    }
+            } catch (e: Exception) {
+                Logger.w("ActiveSessionEngine") { "Health auto-push failed (non-fatal): ${e.message}" }
+            }
+        }
+    }
+
     /**
      * Issue #395: Write a single aggregate workout to the health platform
      * for a completed routine. Fire-and-forget; failure is non-fatal.
@@ -2817,34 +2903,61 @@ class ActiveSessionEngine(
         val routineSessionId = coordinator.currentRoutineSessionId ?: return
         val startTime = coordinator.routineStartTime
         if (startTime <= 0L) return
-        if (healthIntegration == null || externalActivityRepository == null) return
+        val healthIntegration = healthIntegration ?: return
+        val externalActivityRepository = externalActivityRepository ?: return
 
         val routineName = coordinator.currentRoutineName ?: "Phoenix Routine"
         val durationMs = currentTimeMillis() - startTime
         val totalCalories = coordinator.routineAccumulatedCalories.takeIf { it > 0f }
         val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+        val skippedIndices = coordinator._skippedExercises.value
+        val completedSetKeys = coordinator._completedRoutineSetKeys.value.filterNot { it.first in skippedIndices }
+        val completedExerciseCount = (
+            (coordinator._completedExercises.value - skippedIndices) +
+                completedSetKeys.map { it.first }.toSet()
+            ).size
+
+        if (completedExerciseCount <= 0 || completedSetKeys.isEmpty()) {
+            Logger.i("ActiveSessionEngine") {
+                "Routine health push skipped: no valid completed routine sets " +
+                    "(routineSessionId=$routineSessionId, completedExercises=$completedExerciseCount, completedSets=${completedSetKeys.size})"
+            }
+            coordinator.routineAccumulatedCalories = 0f
+            return
+        }
 
         scope.launch {
             try {
-                val provider = if (getPlatform().name.startsWith("iOS")) {
-                    IntegrationProvider.APPLE_HEALTH
-                } else {
-                    IntegrationProvider.GOOGLE_HEALTH
-                }
+                val provider = healthProviderForPlatform()
                 val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
-                if (status?.status == ConnectionStatus.CONNECTED) {
-                    val data = RoutineHealthData(
-                        routineName = routineName,
-                        startTimeMs = startTime,
-                        durationMs = durationMs,
-                        totalCalories = totalCalories,
-                        externalId = routineSessionId,
-                    )
-                    healthIntegration.writeRoutineWorkout(data)
-                    Logger.i("ActiveSessionEngine") {
-                        "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s)"
-                    }
+                Logger.i("ActiveSessionEngine") {
+                    "HEALTH_DEBUG_ROUTINE_PUSH: provider=${provider.key}, status=${status?.status}, " +
+                        "routineSessionId=$routineSessionId, completedExercises=$completedExerciseCount, " +
+                        "completedSets=${completedSetKeys.size}, skippedExercises=${skippedIndices.size}, calories=${totalCalories ?: -1f}"
                 }
+                if (status?.status != ConnectionStatus.CONNECTED) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Routine health push skipped: ${provider.displayName} is not connected (status=${status?.status})"
+                    }
+                    return@launch
+                }
+
+                val data = RoutineHealthData(
+                    routineName = routineName,
+                    startTimeMs = startTime,
+                    durationMs = durationMs,
+                    totalCalories = totalCalories,
+                    externalId = routineSessionId,
+                )
+                healthIntegration.writeRoutineWorkout(data)
+                    .onSuccess {
+                        Logger.i("ActiveSessionEngine") {
+                            "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s)"
+                        }
+                    }
+                    .onFailure { e ->
+                        Logger.w("ActiveSessionEngine") { "Routine health push failed (non-fatal): ${e.message}" }
+                    }
             } catch (e: Exception) {
                 Logger.w("ActiveSessionEngine") { "Routine health push failed (non-fatal): ${e.message}" }
             } finally {
@@ -2958,38 +3071,37 @@ class ActiveSessionEngine(
             profileId = userProfileRepository.activeProfile.value?.id ?: "default",
         )
 
+        Logger.i("ActiveSessionEngine") {
+            "HEALTH_DEBUG_SESSION: sessionId=${session.id}, " +
+                "exercise=${session.exerciseName ?: "NULL"}, " +
+                "routineSessionId=${session.routineSessionId ?: "NULL"}, " +
+                "weightPerCableKg=${session.weightPerCableKg}, cableCount=${session.cableCount ?: -1}, " +
+                "displayMultiplier=${session.displayMultiplier ?: -1}, " +
+                "heaviestLiftKg=${session.heaviestLiftKg ?: -1f}, " +
+                "totalVolumeKg=${session.totalVolumeKg ?: -1f}, " +
+                "estimatedCalories=${session.estimatedCalories ?: -1f}, durationMs=${session.duration}, " +
+                "totalReps=${session.totalReps}, metrics=${metricsSnapshot.size}"
+        }
+
         workoutRepository.saveSession(session)
 
         // Issue #395: Accumulate calories for routine-level aggregate health write.
         // Only write per-set to health platform for non-routine (Just Lift) workouts.
         val isRoutineSet = session.routineSessionId != null
-        if (isRoutineSet) {
+        if (isRoutineSet && isValidCompletedSession(session)) {
             session.estimatedCalories?.let { cal ->
                 if (cal > 0f) coordinator.routineAccumulatedCalories += cal
+            }
+            coordinator._completedRoutineSetKeys.update {
+                it + (coordinator._currentExerciseIndex.value to coordinator._currentSetIndex.value)
             }
         }
 
         // Fire-and-forget health push: auto-push to Health Connect (Android) or HealthKit (iOS)
         // after the session is persisted. Failure is non-fatal and never blocks workout completion.
         // Issue #395: Skip per-set writes for routine sets — aggregate written at routine completion.
-        if (!isRoutineSet && healthIntegration != null && externalActivityRepository != null) {
-            val profileId = session.profileId
-            scope.launch {
-                try {
-                    val provider = if (getPlatform().name.startsWith("iOS")) {
-                        IntegrationProvider.APPLE_HEALTH
-                    } else {
-                        IntegrationProvider.GOOGLE_HEALTH
-                    }
-                    val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
-                    if (status?.status == ConnectionStatus.CONNECTED) {
-                        healthIntegration.writeWorkout(session)
-                        Logger.i("ActiveSessionEngine") { "Auto-pushed workout to ${provider.displayName}" }
-                    }
-                } catch (e: Exception) {
-                    Logger.w("ActiveSessionEngine") { "Health auto-push failed (non-fatal): ${e.message}" }
-                }
-            }
+        if (!isRoutineSet) {
+            enqueueWorkoutHealthPush(session)
         }
 
         if (metricsSnapshot.isNotEmpty()) {
@@ -3849,6 +3961,7 @@ class ActiveSessionEngine(
             coordinator.currentRoutineSessionId = null
             coordinator.currentRoutineName = null
             coordinator.currentRoutineId = null
+            coordinator._completedRoutineSetKeys.value = emptySet()
             repCounter.reset()
             resetAutoStopState()
         }

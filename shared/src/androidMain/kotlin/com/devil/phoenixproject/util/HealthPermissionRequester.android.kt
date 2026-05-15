@@ -6,6 +6,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.health.connect.client.PermissionController
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.integration.optionalHealthPermissions
+import com.devil.phoenixproject.data.integration.requestedHealthPermissions
 import com.devil.phoenixproject.data.integration.requiredHealthPermissions
 
 private val log = Logger.withTag("HealthPermissionRequester")
@@ -17,17 +19,20 @@ actual class HealthPermissionRequester {
         val launcher = rememberLauncherForActivityResult(
             contract = PermissionController.createRequestPermissionResultContract(),
         ) { grantedPermissions ->
-            val allGranted = grantedPermissions.containsAll(requiredHealthPermissions)
+            val requiredGranted = grantedPermissions.containsAll(requiredHealthPermissions)
+            val optionalGranted = grantedPermissions.containsAll(optionalHealthPermissions)
             log.d {
-                "Health Connect permission contract returned: granted=$allGranted, received=${grantedPermissions.size} permissions: $grantedPermissions"
+                "Health Connect permission contract returned: requiredGranted=$requiredGranted, " +
+                    "optionalCaloriesGranted=$optionalGranted, received=${grantedPermissions.size} permissions: $grantedPermissions"
             }
             log.d { "Required permissions: $requiredHealthPermissions" }
-            onPermissionsResult(allGranted)
+            log.d { "Optional permissions: $optionalHealthPermissions" }
+            onPermissionsResult(requiredGranted)
         }
 
         LaunchedEffect(Unit) {
-            log.d { "Launching Health Connect permission request for: $requiredHealthPermissions" }
-            launcher.launch(requiredHealthPermissions)
+            log.d { "Launching Health Connect permission request for: $requestedHealthPermissions" }
+            launcher.launch(requestedHealthPermissions)
         }
     }
 }

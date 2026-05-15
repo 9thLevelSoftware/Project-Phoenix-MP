@@ -83,6 +83,23 @@ class RoutineFlowManager(
      */
     internal lateinit var lifecycleDelegate: WorkoutLifecycleDelegate
 
+    private fun markExerciseSkipped(index: Int) {
+        coordinator._skippedExercises.update { it + index }
+        coordinator._completedExercises.update { it - index }
+        coordinator._completedRoutineSetKeys.update { completed ->
+            completed.filterNot { it.first == index }.toSet()
+        }
+    }
+
+    private fun markExerciseCompleted(index: Int) {
+        coordinator._completedExercises.update { it + index }
+        coordinator._skippedExercises.update { it - index }
+    }
+
+    private fun markExerciseActive(index: Int) {
+        coordinator._skippedExercises.update { it - index }
+    }
+
     // ===== Init Block: Routine-Related Collectors =====
     // These were collectors #1 and #2 in DWSM's init block.
     // RoutineFlowManager is constructed before other sub-managers in DWSM,
@@ -703,6 +720,7 @@ class RoutineFlowManager(
         coordinator._currentSetIndex.value = 0
         coordinator._skippedExercises.value = emptySet()
         coordinator._completedExercises.value = emptySet()
+        coordinator._completedRoutineSetKeys.value = emptySet()
 
         // Issue #222 diagnostic: Reset bodyweight counter for new routine
         coordinator.bodyweightSetsCompletedInRoutine = 0
@@ -808,6 +826,7 @@ class RoutineFlowManager(
             coordinator._currentSetIndex.value = 0
             coordinator._skippedExercises.value = emptySet()
             coordinator._completedExercises.value = emptySet()
+            coordinator._completedRoutineSetKeys.value = emptySet()
             coordinator._workoutState.value = WorkoutState.Idle
             coordinator._routineFlowState.value = RoutineFlowState.Overview(
                 routine = normalized,
@@ -1066,6 +1085,7 @@ class RoutineFlowManager(
         coordinator.currentRoutineName = null
         coordinator.currentRoutineId = null
         coordinator.routineAccumulatedCalories = 0f
+        coordinator._completedRoutineSetKeys.value = emptySet()
     }
 
     /**
@@ -1079,6 +1099,17 @@ class RoutineFlowManager(
             return
         }
         val routine = coordinator._loadedRoutine.value ?: return
+        val skippedIndices = coordinator._skippedExercises.value
+        val completedSetKeys = coordinator._completedRoutineSetKeys.value
+            .filterNot { it.first in skippedIndices }
+            .toSet()
+        val completedExerciseIndices = (
+            (coordinator._completedExercises.value - skippedIndices) +
+                completedSetKeys.map { it.first }.toSet()
+            ).filter { it in routine.exercises.indices }
+            .toSet()
+        val completedSetCount = completedSetKeys.size.takeIf { it > 0 }
+            ?: completedExerciseIndices.sumOf { index -> routine.exercises.getOrNull(index)?.setReps?.size ?: 0 }
         // Issue #195: Use coordinator.routineStartTime (set on first set) for total duration
         val duration = if (coordinator.routineStartTime > 0) {
             currentTimeMillis() - coordinator.routineStartTime
@@ -1087,8 +1118,8 @@ class RoutineFlowManager(
         }
         coordinator._routineFlowState.value = RoutineFlowState.Complete(
             routineName = routine.name,
-            totalSets = routine.exercises.sumOf { it.setReps.size },
-            totalExercises = routine.exercises.size,
+            totalSets = completedSetCount,
+            totalExercises = completedExerciseIndices.size,
             totalDurationMs = duration,
         )
     }
@@ -1102,6 +1133,7 @@ class RoutineFlowManager(
         coordinator.currentRoutineName = null
         coordinator.currentRoutineId = null
         coordinator.routineAccumulatedCalories = 0f
+        coordinator._completedRoutineSetKeys.value = emptySet()
     }
 
     // ===== Exercise Navigation =====
@@ -1120,6 +1152,7 @@ class RoutineFlowManager(
      * Internal helper to perform the actual exercise navigation.
      */
     private fun navigateToExerciseInternal(routine: Routine, index: Int) {
+        markExerciseActive(index)
         coordinator._currentExerciseIndex.value = index
         coordinator._currentSetIndex.value = 0
 
@@ -1199,12 +1232,12 @@ class RoutineFlowManager(
         // Save current exercise progress
         val currentRepCount = coordinator._repCount.value
         if (currentRepCount.workingReps > 0 && coordinator._workoutState.value !is WorkoutState.Completed) {
-            coordinator._completedExercises.update { it + coordinator._currentExerciseIndex.value }
+            markExerciseCompleted(coordinator._currentExerciseIndex.value)
             Logger.d("RoutineFlowManager") {
                 "Saving progress for exercise ${coordinator._currentExerciseIndex.value}: ${currentRepCount.workingReps} reps"
             }
         } else if (coordinator._workoutState.value !is WorkoutState.Completed) {
-            coordinator._skippedExercises.update { it + coordinator._currentExerciseIndex.value }
+            markExerciseSkipped(coordinator._currentExerciseIndex.value)
             Logger.d("RoutineFlowManager") { "Skipping exercise ${coordinator._currentExerciseIndex.value}" }
         }
 
@@ -1245,7 +1278,7 @@ class RoutineFlowManager(
         val currentExIndex = coordinator._currentExerciseIndex.value
         // Mark as skipped first so getNextStep skips past the current exercise
         // when looking for the next navigable exercise.
-        coordinator._skippedExercises.update { it + currentExIndex }
+        markExerciseSkipped(currentExIndex)
         val next = getNextStep(routine, currentExIndex, currentSetIndex = 0)
         if (next != null) {
             jumpToExercise(next.first)
@@ -1261,7 +1294,7 @@ class RoutineFlowManager(
         val currentExIndex = coordinator._currentExerciseIndex.value
         val currentSetIndex = coordinator._currentSetIndex.value
 
-        coordinator._skippedExercises.update { it + currentExIndex }
+        markExerciseSkipped(currentExIndex)
 
         val nextStep = getNextStep(routine, currentExIndex, currentSetIndex) ?: return false
         val (nextExIdx, nextSetIdx) = nextStep

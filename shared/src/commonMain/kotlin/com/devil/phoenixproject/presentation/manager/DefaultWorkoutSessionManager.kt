@@ -691,9 +691,13 @@ class DefaultWorkoutSessionManager(
                 val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
                 val isLastSetOfExercise = coordinator._currentSetIndex.value >= (currentExercise?.setReps?.size ?: 1) - 1
 
-                // Mark exercise as completed if this was the last set of THIS exercise
-                if (isLastSetOfExercise) {
-                    coordinator._completedExercises.value = coordinator._completedExercises.value + coordinator._currentExerciseIndex.value
+                // Mark exercise as completed if this was the last set of THIS exercise and it has valid working reps.
+                val summary = coordinator._workoutState.value as? WorkoutState.SetSummary
+                val completedWorkingReps = maxOf(summary?.workingReps ?: 0, summary?.repCount ?: 0)
+                if (isLastSetOfExercise && completedWorkingReps > 0) {
+                    val currentExerciseIndex = coordinator._currentExerciseIndex.value
+                    coordinator._completedExercises.value = coordinator._completedExercises.value + currentExerciseIndex
+                    coordinator._skippedExercises.value = coordinator._skippedExercises.value - currentExerciseIndex
                 }
 
                 // Check if there are ANY more steps using superset-aware navigation
@@ -723,6 +727,7 @@ class DefaultWorkoutSessionManager(
                     coordinator.currentRoutineSessionId = null
                     coordinator.currentRoutineName = null
                     coordinator.currentRoutineId = null
+                    coordinator._completedRoutineSetKeys.value = emptySet()
                     return@launch
                 }
 

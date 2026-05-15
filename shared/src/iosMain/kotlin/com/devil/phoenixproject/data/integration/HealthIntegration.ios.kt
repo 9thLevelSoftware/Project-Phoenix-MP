@@ -43,16 +43,16 @@ actual class HealthIntegration {
         HKQuantityType.quantityTypeForIdentifier(HKQuantityTypeIdentifierActiveEnergyBurned)
     }
 
-    /**
-     * The set of HealthKit types this integration writes.
-     * Used for both authorization requests and status checks.
-     */
-    private val writeTypes: Set<HKObjectType> by lazy {
-        buildSet {
-            add(workoutType)
-            activeEnergyType?.let { add(it) }
-        }
+    /** Required HealthKit write types. Calories are optional so disabling them does not block workout sync. */
+    private val requiredWriteTypes: Set<HKObjectType> by lazy { setOf(workoutType) }
+
+    /** Optional HealthKit write types requested for richer workout metadata. */
+    private val optionalWriteTypes: Set<HKObjectType> by lazy {
+        buildSet { activeEnergyType?.let { add(it) } }
     }
+
+    /** The full set requested from HealthKit when presenting authorization UI. */
+    private val writeTypes: Set<HKObjectType> by lazy { requiredWriteTypes + optionalWriteTypes }
 
     /**
      * Checks whether HealthKit is available on this device.
@@ -76,12 +76,23 @@ actual class HealthIntegration {
         if (!isAvailable()) return false
 
         return try {
-            writeTypes.all { type ->
-                healthStore.authorizationStatusForType(type) ==
-                    HKAuthorizationStatusSharingAuthorized
-            }
+            hasAuthorizationForTypes(requiredWriteTypes)
         } catch (e: Exception) {
             log.w(e) { "Error checking HealthKit authorization status" }
+            false
+        }
+    }
+
+    private fun hasAuthorizationForTypes(types: Set<HKObjectType>): Boolean = types.all { type ->
+        healthStore.authorizationStatusForType(type) == HKAuthorizationStatusSharingAuthorized
+    }
+
+    private fun canWriteActiveEnergy(): Boolean {
+        val type = activeEnergyType ?: return false
+        return try {
+            hasAuthorizationForTypes(setOf(type))
+        } catch (e: Exception) {
+            log.w(e) { "Error checking HealthKit active energy authorization" }
             false
         }
     }
@@ -140,8 +151,8 @@ actual class HealthIntegration {
      * - Optional calorie data from session.estimatedCalories
      * - Metadata with external UUID (session.id) for deduplication
      *
-     * Weight display uses actual cableCount: weightPerCableKg * cableCount.
-     * Defaults to 1 for legacy sessions without cableCount metadata (Issue #358).
+     * Weight display follows persisted display semantics: prefer displayMultiplier,
+     * fall back to raw physical cableCount only for legacy sessions, then default to 1.
      */
     actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
         if (!isAvailable()) {
@@ -175,9 +186,10 @@ actual class HealthIntegration {
                     (epochSeconds + durationSeconds) - UNIX_TO_APPLE_EPOCH_OFFSET,
             )
 
-            // Build optional calorie quantity
+            // Build optional calorie quantity. Active energy permission is optional; do not block workout sync.
+            val canWriteCalories = canWriteActiveEnergy()
             val calorieQuantity: HKQuantity? = session.estimatedCalories?.let { cal ->
-                if (cal > 0f) {
+                if (cal > 0f && canWriteCalories) {
                     HKQuantity.quantityWithUnit(
                         unit = HKUnit.unitFromString("kcal"),
                         doubleValue = cal.toDouble(),
@@ -186,8 +198,11 @@ actual class HealthIntegration {
                     null
                 }
             }
+            if ((session.estimatedCalories ?: 0f) > 0f && !canWriteCalories) {
+                log.i { "Skipping HealthKit calorie value for session ${session.id}: optional active energy permission not granted" }
+            }
 
-            // Build exercise title with dual-cable weight convention
+            // Build exercise title with Android-parity persisted display semantics
             val title = buildExerciseTitle(session)
 
             // Build metadata for deduplication and display
@@ -270,8 +285,9 @@ actual class HealthIntegration {
                     (epochSeconds + durationSeconds) - UNIX_TO_APPLE_EPOCH_OFFSET,
             )
 
+            val canWriteCalories = canWriteActiveEnergy()
             val calorieQuantity: HKQuantity? = data.totalCalories?.let { cal ->
-                if (cal > 0f) {
+                if (cal > 0f && canWriteCalories) {
                     HKQuantity.quantityWithUnit(
                         unit = HKUnit.unitFromString("kcal"),
                         doubleValue = cal.toDouble(),
@@ -279,6 +295,9 @@ actual class HealthIntegration {
                 } else {
                     null
                 }
+            }
+            if ((data.totalCalories ?: 0f) > 0f && !canWriteCalories) {
+                log.i { "Skipping HealthKit calorie value for routine ${data.externalId}: optional active energy permission not granted" }
             }
 
             val metadata = mutableMapOf<Any?, Any?>(
@@ -329,14 +348,15 @@ actual class HealthIntegration {
 
     /**
      * Builds a human-readable title for the exercise session.
-     * Total weight shown is per-cable x cableCount (respects single vs dual cable).
+     * Total weight shown is per-cable x persisted displayMultiplier when available.
      *
-     * Default to 1 cable for legacy sessions without cableCount metadata (Issue #358).
-     * This matches Android behavior, effectiveTotalVolumeKg(), and official Vitruvian app.
+     * Falls back to raw physical cableCount only for legacy sessions without displayMultiplier,
+     * then defaults to 1. This preserves Android/iOS Health title parity (Issue #358).
      */
     private fun buildExerciseTitle(session: WorkoutSession): String {
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        val totalWeightKg = session.weightPerCableKg * (session.cableCount ?: 1).toFloat()
+        val totalWeightKg = session.weightPerCableKg *
+            (session.displayMultiplier ?: session.cableCount ?: 1).toFloat()
         return if (totalWeightKg > 0f) {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {

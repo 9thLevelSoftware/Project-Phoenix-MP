@@ -85,20 +85,30 @@ class GamificationManager(
         }
         val effectiveProfileId = profileId.ifBlank { "default" }
 
+        if (workingReps <= 0) {
+            Logger.w {
+                "GAMIFICATION: Skipped — invalid completion (workingReps=$workingReps)"
+            }
+            return false
+        }
+
         // Always track PRs (skip for Just Lift and Echo modes)
         // Uses mode-specific PR lookup to track PRs separately per workout mode (#111)
-        if (exerciseId == null) {
-            Logger.w { "PR_TRACK: Skipped — exerciseId is null (exercise not in library?)" }
-        }
-        exerciseId?.let { exId ->
-            if (workingReps <= 0) {
-                Logger.w { "PR_TRACK: Skipped — workingReps=$workingReps (no completed reps)" }
-            } else if (isJustLift) {
+        when {
+            exerciseId.isNullOrBlank() -> {
+                Logger.d { "PR_TRACK: Skipped — no exerciseId for completed workout" }
+            }
+
+            isJustLift -> {
                 Logger.d { "PR_TRACK: Skipped — Just Lift mode (PRs not tracked)" }
-            } else if (isEchoMode) {
+            }
+
+            isEchoMode -> {
                 Logger.d { "PR_TRACK: Skipped — Echo mode (PRs not tracked)" }
             }
-            if (workingReps > 0 && !isJustLift && !isEchoMode) {
+
+            else -> {
+                val exId = exerciseId
                 try {
                     val workoutMode = programMode.displayName
                     val timestamp = currentTimeMillis()
@@ -224,6 +234,8 @@ class GamificationManager(
      * @param profileId Active profile ID for profile-scoped badge awarding
      */
     suspend fun processSetQualityEvent(averageSetQuality: Int, profileId: String = "default") {
+        if (!gamificationEnabled.value) return
+
         if (averageSetQuality >= 85) {
             consecutiveQualitySets++
             Logger.d(

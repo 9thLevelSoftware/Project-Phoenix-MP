@@ -24,8 +24,13 @@ private val VITRUVIAN_DEVICE = Device(
 
 internal val requiredHealthPermissions = setOf(
     HealthPermission.getWritePermission(ExerciseSessionRecord::class),
+)
+
+internal val optionalHealthPermissions = setOf(
     HealthPermission.getWritePermission(TotalCaloriesBurnedRecord::class),
 )
+
+internal val requestedHealthPermissions = requiredHealthPermissions + optionalHealthPermissions
 
 /**
  * Android implementation of HealthIntegration using Google Health Connect.
@@ -63,11 +68,15 @@ actual class HealthIntegration(private val context: Context) {
      */
     actual suspend fun requestPermissions(): Boolean = hasPermissions()
 
-    actual suspend fun hasPermissions(): Boolean {
+    actual suspend fun hasPermissions(): Boolean = hasGrantedPermissions(requiredHealthPermissions)
+
+    private suspend fun hasCalorieWritePermission(): Boolean = hasGrantedPermissions(optionalHealthPermissions)
+
+    private suspend fun hasGrantedPermissions(permissions: Set<String>): Boolean {
         val c = client ?: return false
         return try {
             val granted = c.permissionController.getGrantedPermissions()
-            granted.containsAll(requiredHealthPermissions)
+            granted.containsAll(permissions)
         } catch (e: Exception) {
             log.w(e) { "Error checking Health Connect permissions" }
             false
@@ -94,6 +103,18 @@ actual class HealthIntegration(private val context: Context) {
             val durationSeconds = durationMs / 1000L
             val endInstant = startInstant.plusSeconds(durationSeconds)
             val zoneOffset = ZoneId.systemDefault().rules.getOffset(startInstant)
+            val title = buildExerciseTitle(session)
+            val canWriteCalories = hasCalorieWritePermission()
+
+            log.i {
+                "HEALTH_DEBUG_ANDROID_WRITE: sessionId=${session.id}, " +
+                    "exercise=${session.exerciseName ?: "NULL"}, " +
+                    "weightPerCableKg=${session.weightPerCableKg}, cableCount=${session.cableCount ?: -1}, " +
+                    "displayMultiplier=${session.displayMultiplier ?: -1}, " +
+                    "builtTitle=$title, estimatedCalories=${session.estimatedCalories ?: -1f}, " +
+                    "canWriteCalories=$canWriteCalories, " +
+                    "durationMs=${session.duration}, durationSeconds=$durationSeconds"
+            }
 
             val records = buildList {
                 add(
@@ -103,23 +124,27 @@ actual class HealthIntegration(private val context: Context) {
                         endTime = endInstant,
                         endZoneOffset = zoneOffset,
                         exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING,
-                        title = buildExerciseTitle(session),
+                        title = title,
                         metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
                     ),
                 )
 
                 val calories = session.estimatedCalories
                 if (calories != null && calories > 0f) {
-                    add(
-                        TotalCaloriesBurnedRecord(
-                            startTime = startInstant,
-                            startZoneOffset = zoneOffset,
-                            endTime = endInstant,
-                            endZoneOffset = zoneOffset,
-                            energy = Energy.kilocalories(calories.toDouble()),
-                            metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
-                        ),
-                    )
+                    if (canWriteCalories) {
+                        add(
+                            TotalCaloriesBurnedRecord(
+                                startTime = startInstant,
+                                startZoneOffset = zoneOffset,
+                                endTime = endInstant,
+                                endZoneOffset = zoneOffset,
+                                energy = Energy.kilocalories(calories.toDouble()),
+                                metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
+                            ),
+                        )
+                    } else {
+                        log.i { "Skipping Health Connect calorie record for session ${session.id}: optional calorie write permission not granted" }
+                    }
                 }
             }
 
@@ -154,6 +179,14 @@ actual class HealthIntegration(private val context: Context) {
             val durationSeconds = durationMs / 1000L
             val endInstant = startInstant.plusSeconds(durationSeconds)
             val zoneOffset = ZoneId.systemDefault().rules.getOffset(startInstant)
+            val canWriteCalories = hasCalorieWritePermission()
+
+            log.i {
+                "HEALTH_DEBUG_ANDROID_ROUTINE: externalId=${data.externalId}, " +
+                    "routineName=${data.routineName}, durationMs=${data.durationMs}, " +
+                    "durationSeconds=$durationSeconds, totalCalories=${data.totalCalories ?: -1f}, " +
+                    "canWriteCalories=$canWriteCalories"
+            }
 
             val records = buildList {
                 add(
@@ -170,16 +203,20 @@ actual class HealthIntegration(private val context: Context) {
 
                 val calories = data.totalCalories
                 if (calories != null && calories > 0f) {
-                    add(
-                        TotalCaloriesBurnedRecord(
-                            startTime = startInstant,
-                            startZoneOffset = zoneOffset,
-                            endTime = endInstant,
-                            endZoneOffset = zoneOffset,
-                            energy = Energy.kilocalories(calories.toDouble()),
-                            metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
-                        ),
-                    )
+                    if (canWriteCalories) {
+                        add(
+                            TotalCaloriesBurnedRecord(
+                                startTime = startInstant,
+                                startZoneOffset = zoneOffset,
+                                endTime = endInstant,
+                                endZoneOffset = zoneOffset,
+                                energy = Energy.kilocalories(calories.toDouble()),
+                                metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
+                            ),
+                        )
+                    } else {
+                        log.i { "Skipping Health Connect calorie record for routine ${data.externalId}: optional calorie write permission not granted" }
+                    }
                 }
             }
 
@@ -196,17 +233,18 @@ actual class HealthIntegration(private val context: Context) {
      * Builds a human-readable title for the exercise session.
      *
      * Weight display logic:
-     * - If cableCount is explicitly set (1 or 2), use it
-     * - If null (legacy data), default to 1 (per-cable weight shown as-is)
+     * - Prefer persisted displayMultiplier when present (established display semantics)
+     * - Fall back to raw physical cableCount only for legacy sessions without displayMultiplier
+     * - If both are null, default to 1 (per-cable weight shown as-is)
      *
-     * This matches the rest of the codebase (effectiveTotalVolumeKg, InsightCards, etc.)
-     * and the official Vitruvian app which displays weight per-cable without doubling.
+     * This keeps Health titles aligned with persisted WorkoutSession display semantics.
      */
     private fun buildExerciseTitle(session: WorkoutSession): String {
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        // Default to 1 cable for legacy sessions without cableCount metadata
-        // This prevents incorrect weight inflation (Issue #358: 80kg showing as 160kg)
-        val totalWeightKg = session.weightPerCableKg * (session.cableCount ?: 1).toFloat()
+        // Prefer displayMultiplier; raw physical cableCount is only the legacy fallback.
+        // This prevents incorrect bilateral handle inflation (Issue #358: 80kg showing as 160kg).
+        val totalWeightKg = session.weightPerCableKg *
+            (session.displayMultiplier ?: session.cableCount ?: 1).toFloat()
         return if (totalWeightKg > 0f) {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {

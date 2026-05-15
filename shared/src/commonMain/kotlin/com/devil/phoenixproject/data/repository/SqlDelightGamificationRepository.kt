@@ -6,11 +6,13 @@ import app.cash.sqldelight.coroutines.mapToOneOrNull
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.database.VitruvianDatabase
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.BadgeRequirement
+import com.devil.phoenixproject.domain.model.EarnedBadge
+import com.devil.phoenixproject.domain.model.GamificationStats
 import com.devil.phoenixproject.domain.model.RpgInput
 import com.devil.phoenixproject.domain.model.RpgProfile
-import kotlin.time.Clock
-import kotlin.time.Instant
+import com.devil.phoenixproject.domain.model.StreakInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +22,8 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * SQLDelight implementation of GamificationRepository.
@@ -288,7 +292,7 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
 
         // Count sessions with timestamp >= weekStartMs
         val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
-        return sessions.count { it.timestamp >= weekStartMs }
+        return sessions.count { it.workingReps > 0 && it.timestamp >= weekStartMs }
     }
 
     /**
@@ -298,6 +302,7 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
      */
     private fun getMaxSingleSessionVolume(profileId: String): Int {
         val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
+            .filter { it.workingReps > 0 }
         if (sessions.isEmpty()) return 0
 
         return sessions.maxOfOrNull { session ->
@@ -318,6 +323,7 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
      */
     private fun hasWorkoutAtTime(hourStart: Int, hourEnd: Int, profileId: String): Boolean {
         val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
+            .filter { it.workingReps > 0 }
 
         return sessions.any { session ->
             val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
@@ -339,6 +345,7 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
      */
     private fun countWorkoutsAtTime(hourStart: Int, hourEnd: Int, profileId: String): Int {
         val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
+            .filter { it.workingReps > 0 }
 
         return sessions.count { session ->
             val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
@@ -440,6 +447,7 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
      */
     private fun hasComebackAfterBreak(breakDays: Int, profileId: String): Boolean {
         val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
+            .filter { it.workingReps > 0 }
         if (sessions.size < 2) return false
 
         val sortedSessions = sessions.sortedBy { it.timestamp }
