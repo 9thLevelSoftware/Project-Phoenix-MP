@@ -1,17 +1,18 @@
 package com.devil.phoenixproject.presentation.manager
 
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runTest
 
 /**
  * Characterization tests for DefaultWorkoutSessionManager routine flow.
@@ -344,6 +345,64 @@ class DWSMRoutineFlowTest {
             params.selectedExerciseId,
             "After skip, selected exercise should be the second exercise",
         )
+        harness.cleanup()
+    }
+
+    @Test
+    fun showRoutineComplete_countsOnlyCompletedNonSkippedExercisesAndSets() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 3, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._completedRoutineSetKeys.value = setOf(
+            0 to 0,
+            0 to 1,
+            2 to 0,
+        )
+        harness.dwsm.coordinator._completedExercises.value = setOf(0, 1, 2)
+        harness.dwsm.coordinator._skippedExercises.value = setOf(1)
+
+        harness.dwsm.showRoutineComplete()
+
+        val complete = assertIs<RoutineFlowState.Complete>(harness.dwsm.coordinator.routineFlowState.value)
+        assertEquals(3, complete.totalSets, "Skipped exercises should not contribute completed set count")
+        assertEquals(2, complete.totalExercises, "Skipped exercises should not contribute completed exercise count")
+        harness.cleanup()
+    }
+
+    @Test
+    fun proceedFromSummary_warmupOnlySetDoesNotMarkExerciseCompleted() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 20f,
+            avgLoadKgPerCable = 18f,
+            repCount = 3,
+            workingReps = 0,
+            warmupReps = 3,
+        )
+
+        harness.dwsm.proceedFromSummary()
+        advanceUntilIdle()
+
+        assertEquals(
+            emptySet(),
+            harness.dwsm.coordinator.completedExercises.value,
+            "Warmup-only summary should not mark the exercise complete",
+        )
+        val complete = assertIs<RoutineFlowState.Complete>(harness.dwsm.coordinator.routineFlowState.value)
+        assertEquals(0, complete.totalExercises, "Warmup-only completion should not count as a completed exercise")
         harness.cleanup()
     }
 

@@ -2,6 +2,10 @@ package com.devil.phoenixproject.presentation.manager
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.BadgeCategory
+import com.devil.phoenixproject.domain.model.BadgeRequirement
+import com.devil.phoenixproject.domain.model.BadgeTier
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.PRType
@@ -14,7 +18,6 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
-import com.devil.phoenixproject.presentation.manager.WorkoutServicePhase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
@@ -290,6 +293,43 @@ class DWSMWorkoutLifecycleTest {
             null,
             harness.dwsm.coordinator.repRanges.value,
             "resetForNewWorkout should clear repRanges to null",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `resetForNewWorkout clears retained session scope and metrics`() = runTest {
+        val harness = activeDWSM()
+
+        harness.dwsm.coordinator.currentSessionId = "stale-session-id"
+        harness.dwsm.coordinator.workoutStartTime = 1700000000000L
+        harness.dwsm.coordinator.collectedMetrics.value = listOf(
+            WorkoutMetric(
+                timestamp = 100L,
+                loadA = 25f,
+                loadB = 25f,
+                positionA = 120f,
+                positionB = 120f,
+                velocityA = 40.0,
+                velocityB = 40.0,
+            ),
+        )
+
+        harness.dwsm.resetForNewWorkout()
+
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.currentSessionId,
+            "resetForNewWorkout should clear stale session id",
+        )
+        assertEquals(
+            0L,
+            harness.dwsm.coordinator.workoutStartTime,
+            "resetForNewWorkout should zero stale workout start time",
+        )
+        assertTrue(
+            harness.dwsm.coordinator.collectedMetrics.value.isEmpty(),
+            "resetForNewWorkout should clear collected metrics",
         )
         harness.cleanup()
     }
@@ -1540,6 +1580,66 @@ class DWSMWorkoutLifecycleTest {
             session.routineName,
             "Single-exercise temp routines should not set routineName",
         )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `gamification skips invalid completions with no working reps`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeGamificationRepo.pendingBadges += Badge(
+            id = "test_invalid_completion",
+            name = "Invalid Completion",
+            description = "Should not be awarded for skipped sets",
+            category = BadgeCategory.DEDICATION,
+            iconResource = "test",
+            tier = BadgeTier.BRONZE,
+            requirement = BadgeRequirement.TotalWorkouts(1),
+        )
+
+        val result = harness.gamificationManager.processPostSaveEvents(
+            exerciseId = TestFixtures.benchPress.id,
+            workingReps = 0,
+            achievedWeightKg = 50f,
+            volumeWeightKg = 50f,
+            programMode = ProgramMode.OldSchool,
+            isJustLift = false,
+            isEchoMode = false,
+        )
+
+        assertFalse(result)
+        assertEquals(0, harness.fakePRRepo.updateCalls.size, "Invalid completions should not update PRs")
+        assertEquals(0, harness.fakeGamificationRepo.updateStatsCallCount, "Invalid completions should not update gamification stats")
+        assertEquals(0, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount, "Invalid completions should not award badges")
+        harness.cleanup()
+    }
+
+    @Test
+    fun `gamification updates stats for valid completions without exercise id`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeGamificationRepo.pendingBadges += Badge(
+            id = "test_untagged_completion",
+            name = "Untagged Completion",
+            description = "Should be awarded for a valid untagged workout",
+            category = BadgeCategory.DEDICATION,
+            iconResource = "test",
+            tier = BadgeTier.BRONZE,
+            requirement = BadgeRequirement.TotalWorkouts(1),
+        )
+
+        val result = harness.gamificationManager.processPostSaveEvents(
+            exerciseId = null,
+            workingReps = 8,
+            achievedWeightKg = 50f,
+            volumeWeightKg = 50f,
+            programMode = ProgramMode.OldSchool,
+            isJustLift = false,
+            isEchoMode = false,
+        )
+
+        assertFalse(result)
+        assertEquals(0, harness.fakePRRepo.updateCalls.size, "Untagged completions should not update PRs")
+        assertEquals(1, harness.fakeGamificationRepo.updateStatsCallCount, "Valid untagged completions should update gamification stats")
+        assertEquals(1, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount, "Valid untagged completions should award stat badges")
         harness.cleanup()
     }
 

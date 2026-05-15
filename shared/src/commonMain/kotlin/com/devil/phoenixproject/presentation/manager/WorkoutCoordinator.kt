@@ -238,6 +238,9 @@ class WorkoutCoordinator(
     internal val _completedExercises = MutableStateFlow<Set<Int>>(emptySet())
     val completedExercises: StateFlow<Set<Int>> = _completedExercises.asStateFlow()
 
+    /** Completed routine working-set positions, keyed by exercise index to set index. */
+    internal val _completedRoutineSetKeys = MutableStateFlow<Set<Pair<Int, Int>>>(emptySet())
+
     // RPE tracking for current set (Phase 2: Training Cycles)
     internal val _currentSetRpe = MutableStateFlow<Int?>(null)
     val currentSetRpe: StateFlow<Int?> = _currentSetRpe.asStateFlow()

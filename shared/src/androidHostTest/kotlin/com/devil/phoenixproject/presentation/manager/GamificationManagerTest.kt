@@ -9,22 +9,21 @@ import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GamificationManagerTest {
@@ -156,6 +155,63 @@ class GamificationManagerTest {
             prJob.cancel()
             badgeJob.cancel()
             hapticJob.cancel()
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `processPostSaveEvents awards badges for valid completion without exercise id`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = GamificationManager(
+                gamificationRepository = fakeGamificationRepository,
+                personalRecordRepository = fakePersonalRecordRepository,
+                exerciseRepository = fakeExerciseRepository,
+                hapticEvents = hapticEvents,
+                scope = managerScope,
+                gamificationEnabled = MutableStateFlow(true),
+            )
+            val badge = BadgeDefinitions.allBadges.first()
+            fakeGamificationRepository.pendingBadges = mutableListOf(badge)
+
+            val hasCelebrationSound = manager.processPostSaveEvents(
+                exerciseId = null,
+                workingReps = 8,
+                achievedWeightKg = 20f,
+                volumeWeightKg = 20f,
+                programMode = ProgramMode.OldSchool,
+                isJustLift = false,
+                isEchoMode = false,
+            )
+            advanceUntilIdle()
+
+            assertFalse(hasCelebrationSound)
+            assertEquals(0, fakePersonalRecordRepository.updateCalls.size)
+            assertEquals(1, fakeGamificationRepository.updateStatsCallCount)
+            assertEquals(1, fakeGamificationRepository.checkAndAwardBadgesCallCount)
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `processSetQualityEvent does not award badges when gamification is disabled`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = GamificationManager(
+                gamificationRepository = fakeGamificationRepository,
+                personalRecordRepository = fakePersonalRecordRepository,
+                exerciseRepository = fakeExerciseRepository,
+                hapticEvents = hapticEvents,
+                scope = managerScope,
+                gamificationEnabled = MutableStateFlow(false),
+            )
+
+            repeat(3) { manager.processSetQualityEvent(90) }
+            advanceUntilIdle()
+
+            assertFalse(fakeGamificationRepository.isBadgeEarned("form_master_bronze", "default"))
         } finally {
             managerScope.cancel()
         }

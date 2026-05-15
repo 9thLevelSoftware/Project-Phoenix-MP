@@ -32,6 +32,9 @@ class FakeGamificationRepository : GamificationRepository {
     // Badges that will be awarded on next checkAndAwardBadges call
     var pendingBadges = mutableListOf<Badge>()
 
+    var updateStatsCallCount = 0
+    var checkAndAwardBadgesCallCount = 0
+
     // Captured RPG profile from saveRpgProfile calls
     var savedRpgProfile: RpgProfile? = null
 
@@ -61,6 +64,8 @@ class FakeGamificationRepository : GamificationRepository {
         uncelebratedBadgeIds.clear()
         badgeProgress.clear()
         pendingBadges.clear()
+        updateStatsCallCount = 0
+        checkAndAwardBadgesCallCount = 0
         savedRpgProfile = null
         _earnedBadgesFlow.value = emptyList()
         _streakInfoFlow.value = StreakInfo.EMPTY
@@ -132,10 +137,12 @@ class FakeGamificationRepository : GamificationRepository {
     }
 
     override suspend fun updateStats(profileId: String) {
+        updateStatsCallCount++
         // No-op in fake - stats are set directly via setGamificationStats
     }
 
     override suspend fun checkAndAwardBadges(profileId: String): List<Badge> {
+        checkAndAwardBadgesCallCount++
         val awarded = pendingBadges.toList()
         pendingBadges.forEach { badge ->
             earnedBadges[badge.id] = EarnedBadge(

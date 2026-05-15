@@ -14,14 +14,14 @@ class HealthDataMappingTest {
 
     @Test
     fun titleWithExerciseNameAndWeight() {
-        // Single cable exercise (default when cableCount is unspecified/null)
+        // Default display semantics when displayMultiplier/cableCount are unspecified/null
         val title = buildTitle(exerciseName = "Calf Raise", weightPerCableKg = 80f)
         assertEquals("Calf Raise \u2014 80.0kg", title)
     }
 
     @Test
     fun titleWithDualCableExercise() {
-        // Dual cable exercise - weight is doubled (50kg per cable x 2)
+        // Legacy fallback: dual physical cable count doubles when displayMultiplier is absent
         val title = buildTitle(exerciseName = "Bench Press", weightPerCableKg = 50f, cableCount = 2)
         assertEquals("Bench Press \u2014 100.0kg", title)
     }
@@ -45,10 +45,27 @@ class HealthDataMappingTest {
     }
 
     @Test
-    fun titleWeightIsDoubledForDualCable() {
-        // Weight convention: stored per-cable, displayed as total (x2) for dual-cable
-        val title = buildTitle(exerciseName = "Squat", weightPerCableKg = 110f, cableCount = 2)
+    fun titleWeightIsDoubledForUnifiedDualDisplay() {
+        // Persisted display semantics: unified dual display doubles title weight
+        val title = buildTitle(
+            exerciseName = "Squat",
+            weightPerCableKg = 110f,
+            cableCount = 2,
+            displayMultiplier = 2,
+        )
         assertEquals("Squat \u2014 220.0kg", title)
+    }
+
+    @Test
+    fun titleWeightIsNotDoubledForBilateralHandleDisplay() {
+        // Persisted display semantics take precedence over raw physical cableCount.
+        val title = buildTitle(
+            exerciseName = "Bench Press",
+            weightPerCableKg = 50f,
+            cableCount = 2,
+            displayMultiplier = 1,
+        )
+        assertEquals("Bench Press \u2014 50.0kg", title)
     }
 
     @Test
@@ -148,10 +165,15 @@ class HealthDataMappingTest {
 
     // ---- Extracted pure functions matching both platform implementations ----
 
-    private fun buildTitle(exerciseName: String?, weightPerCableKg: Float, cableCount: Int? = null): String {
+    private fun buildTitle(
+        exerciseName: String?,
+        weightPerCableKg: Float,
+        cableCount: Int? = null,
+        displayMultiplier: Int? = null,
+    ): String {
         val name = exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        // Default to 1 cable for legacy sessions without cableCount metadata
-        val totalWeightKg = weightPerCableKg * (cableCount ?: 1).toFloat()
+        // Prefer persisted displayMultiplier; cableCount is only the legacy fallback.
+        val totalWeightKg = weightPerCableKg * (displayMultiplier ?: cableCount ?: 1).toFloat()
         return if (totalWeightKg > 0f) {
             val rounded = (totalWeightKg * 10).toInt() / 10.0
             "$name \u2014 ${rounded}kg"
