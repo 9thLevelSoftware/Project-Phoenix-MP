@@ -693,7 +693,7 @@ class DefaultWorkoutSessionManager(
 
                 // Mark exercise as completed if this was the last set of THIS exercise and it has valid working reps.
                 val summary = coordinator._workoutState.value as? WorkoutState.SetSummary
-                val completedWorkingReps = maxOf(summary?.workingReps ?: 0, summary?.repCount ?: 0)
+                val completedWorkingReps = summary?.workingReps ?: 0
                 if (isLastSetOfExercise && completedWorkingReps > 0) {
                     val currentExerciseIndex = coordinator._currentExerciseIndex.value
                     coordinator._completedExercises.value = coordinator._completedExercises.value + currentExerciseIndex

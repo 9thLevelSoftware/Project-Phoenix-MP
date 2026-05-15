@@ -375,6 +375,38 @@ class DWSMRoutineFlowTest {
     }
 
     @Test
+    fun proceedFromSummary_warmupOnlySetDoesNotMarkExerciseCompleted() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 20f,
+            avgLoadKgPerCable = 18f,
+            repCount = 3,
+            workingReps = 0,
+            warmupReps = 3,
+        )
+
+        harness.dwsm.proceedFromSummary()
+        advanceUntilIdle()
+
+        assertEquals(
+            emptySet(),
+            harness.dwsm.coordinator.completedExercises.value,
+            "Warmup-only summary should not mark the exercise complete",
+        )
+        val complete = assertIs<RoutineFlowState.Complete>(harness.dwsm.coordinator.routineFlowState.value)
+        assertEquals(0, complete.totalExercises, "Warmup-only completion should not count as a completed exercise")
+        harness.cleanup()
+    }
+
+    @Test
     fun goToPreviousExercise_navigatesBackward() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 3)

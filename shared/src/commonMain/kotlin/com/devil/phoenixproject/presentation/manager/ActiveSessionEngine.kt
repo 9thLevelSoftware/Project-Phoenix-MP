@@ -578,7 +578,7 @@ class ActiveSessionEngine(
             }
         }
 
-        Logger.i("ActiveSessionEngine") {
+        Logger.d("ActiveSessionEngine") {
             "HEALTH_DEBUG_SUMMARY: cableCountHint=${cableCountHint ?: -1}, " +
                 "heuristicIsSingleCable=$heuristicIsSingleCable, resolvedCableCount=$cableCount, " +
                 "peakCableA=$peakCableA, peakCableB=$peakCableB, " +
@@ -3071,7 +3071,7 @@ class ActiveSessionEngine(
             profileId = userProfileRepository.activeProfile.value?.id ?: "default",
         )
 
-        Logger.i("ActiveSessionEngine") {
+        Logger.d("ActiveSessionEngine") {
             "HEALTH_DEBUG_SESSION: sessionId=${session.id}, " +
                 "exercise=${session.exerciseName ?: "NULL"}, " +
                 "routineSessionId=${session.routineSessionId ?: "NULL"}, " +
