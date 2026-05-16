@@ -710,7 +710,9 @@ class ActiveSessionEngine(
 
         val exerciseName = currentExercise.exercise.name
         val repCount = summary.repCount
-        val percentage = selectedVariant?.percentage
+        val resolvedVariant = selectedVariant
+            ?: coordinator._selectedBodyweightVariants.value[bodyweightVariantKey(currentExercise)]
+        val percentage = resolvedVariant?.percentage
         val volume = if (percentage != null) {
             BodyweightVolumeCalculator.calculateVolume(bodyWeightKg, repCount, percentage)
         } else {
@@ -724,7 +726,7 @@ class ActiveSessionEngine(
 
         Logger.d("ActiveSessionEngine") {
             "applyBodyweightVolume: exercise=$exerciseName, bodyWeight=${bodyWeightKg}kg, " +
-                "variant=${selectedVariant?.label ?: "name-match"}, reps=$repCount, " +
+                "variant=${resolvedVariant?.label ?: "name-match"}, reps=$repCount, " +
                 "volume=${volume}kg, effectiveWeight=${effectiveWeight}kg"
         }
 

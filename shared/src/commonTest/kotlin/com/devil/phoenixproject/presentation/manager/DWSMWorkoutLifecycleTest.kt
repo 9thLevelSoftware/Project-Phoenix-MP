@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeCategory
 import com.devil.phoenixproject.domain.model.BadgeRequirement
 import com.devil.phoenixproject.domain.model.BadgeTier
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.PRType
@@ -1748,6 +1749,36 @@ class DWSMWorkoutLifecycleTest {
         val completedSet = harness.fakeCompletedSetRepo.getCompletedSets(session.id).single()
         assertEquals(12, completedSet.actualReps)
         assertFloatEquals(58.4f, completedSet.actualWeightKg)
+
+        harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 427 - saved SetReady variant is used when bodyweight completion has no explicit override`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 1)
+        val exercise = routine.exercises.single()
+        val decline24 = BodyweightVariantOption("Decline 24\"", 0.75f)
+
+        harness.dwsm.selectBodyweightVariant(
+            exerciseKey = harness.dwsm.bodyweightVariantKey(exercise),
+            variant = decline24,
+        )
+
+        val summary = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 0f,
+            avgLoadKgPerCable = 0f,
+            repCount = 10,
+        )
+        val bodyweightSummary = harness.activeSessionEngine.applyBodyweightVolume(
+            summary = summary,
+            currentExercise = exercise,
+            bodyWeightKg = 80f,
+        )
+
+        assertFloatEquals(60f, bodyweightSummary.heaviestLiftKgPerCable)
+        assertFloatEquals(600f, bodyweightSummary.totalVolumeKg)
 
         harness.cleanup()
     }

@@ -38,6 +38,8 @@ object WorkoutServiceProtocol {
     const val ACTION_SYNC = "com.devil.phoenixproject.WORKOUT_SERVICE_SYNC"
     const val ACTION_STOP = "com.devil.phoenixproject.WORKOUT_SERVICE_STOP"
 
+    const val WORKOUT_MODE_BODYWEIGHT = "__phoenix_workout_mode_bodyweight__"
+
     const val EXTRA_PHASE = "phase"
     const val EXTRA_WORKOUT_MODE = "workout_mode"
     const val EXTRA_EXERCISE_NAME = "exercise_name"

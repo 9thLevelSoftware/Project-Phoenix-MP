@@ -502,7 +502,7 @@ class DefaultWorkoutSessionManager(
 
             is WorkoutState.BodyweightRepEntry -> WorkoutServiceSnapshot(
                 phase = WorkoutServicePhase.SET_SUMMARY,
-                workoutModeName = "Bodyweight",
+                workoutModeName = WorkoutServiceProtocol.WORKOUT_MODE_BODYWEIGHT,
                 exerciseName = state.exerciseName,
                 currentSet = state.currentSet,
                 totalSets = state.totalSets,

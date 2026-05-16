@@ -103,6 +103,14 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_no_weight_volume
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_completed
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_title
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_set_progress
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_variant
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_variant_percent
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_volume
 import vitruvianprojectphoenix.shared.generated.resources.cd_configure_workout
 import vitruvianprojectphoenix.shared.generated.resources.cd_connection_lost
 import vitruvianprojectphoenix.shared.generated.resources.cd_disconnect
@@ -120,6 +128,7 @@ import vitruvianprojectphoenix.shared.generated.resources.not_connected
 import vitruvianprojectphoenix.shared.generated.resources.reconnect
 import vitruvianprojectphoenix.shared.generated.resources.scan
 import vitruvianprojectphoenix.shared.generated.resources.scanning_for_devices
+import vitruvianprojectphoenix.shared.generated.resources.save_set
 import vitruvianprojectphoenix.shared.generated.resources.stop_workout
 
 /**
@@ -1137,11 +1146,16 @@ private fun BodyweightRepEntryDialog(
 
     AlertDialog(
         onDismissRequest = {},
-        title = { Text("Enter bodyweight reps") },
+        title = { Text(stringResource(Res.string.bodyweight_reps_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.medium)) {
                 Text(
-                    "${entry.exerciseName} • Set ${entry.currentSet} of ${entry.totalSets}",
+                    stringResource(
+                        Res.string.bodyweight_set_progress,
+                        entry.exerciseName,
+                        entry.currentSet,
+                        entry.totalSets,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1151,7 +1165,7 @@ private fun BodyweightRepEntryDialog(
                     onValueChange = { value ->
                         repsText = value.filter { it.isDigit() }.take(3)
                     },
-                    label = { Text("Reps completed") },
+                    label = { Text(stringResource(Res.string.bodyweight_reps_completed)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -1165,7 +1179,7 @@ private fun BodyweightRepEntryDialog(
                         value = selectedVariant.label,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Variant") },
+                        label = { Text(stringResource(Res.string.bodyweight_variant)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                         modifier = Modifier
                             .menuAnchor()
@@ -1178,7 +1192,15 @@ private fun BodyweightRepEntryDialog(
                     ) {
                         entry.variants.forEach { variant ->
                             DropdownMenuItem(
-                                text = { Text("${variant.label} (${(variant.percentage * 100).toInt()}%)") },
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            Res.string.bodyweight_variant_percent,
+                                            variant.label,
+                                            (variant.percentage * 100).toInt(),
+                                        ),
+                                    )
+                                },
                                 onClick = {
                                     selectedVariant = variant
                                     expanded = false
@@ -1190,18 +1212,24 @@ private fun BodyweightRepEntryDialog(
 
                 if (entry.bodyWeightKg > 0f) {
                     Text(
-                        "Effective load: ${formatWeight(effectiveWeightKg, weightUnit)}",
+                        stringResource(
+                            Res.string.bodyweight_effective_load,
+                            formatWeight(effectiveWeightKg, weightUnit),
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
-                        "Volume: ${formatWeight(volumeKg, weightUnit)}",
+                        stringResource(
+                            Res.string.bodyweight_volume,
+                            formatWeight(volumeKg, weightUnit),
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 } else {
                     Text(
-                        "Body weight is not set, so volume will be saved as 0.",
+                        stringResource(Res.string.bodyweight_no_weight_volume),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -1210,7 +1238,7 @@ private fun BodyweightRepEntryDialog(
         },
         confirmButton = {
             Button(onClick = { onConfirm(reps, selectedVariant) }) {
-                Text("Save Set")
+                Text(stringResource(Res.string.save_set))
             }
         },
     )

@@ -75,6 +75,15 @@
     <string name="stop_label">STOP</string>
     <string name="waiting_for_data">Waiting for data…</string>
     <string name="reconnect">Reconnect</string>
+    <string name="save_set">Save Set</string>
+    <string name="bodyweight_reps_title">Enter bodyweight reps</string>
+    <string name="bodyweight_set_progress">%1$s • Set %2$d of %3$d</string>
+    <string name="bodyweight_reps_completed">Reps completed</string>
+    <string name="bodyweight_variant">Variant</string>
+    <string name="bodyweight_variant_percent">%1$s (%2$d%%)</string>
+    <string name="bodyweight_effective_load">Effective load: %1$s</string>
+    <string name="bodyweight_volume">Volume: %1$s</string>
+    <string name="bodyweight_no_weight_volume">Body weight is not set, so volume will be saved as 0.</string>
 
     <!-- Stop set dialog -->
     <string name="stop_current_set_title">Stop Current Set?</string>

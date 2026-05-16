@@ -12,6 +12,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.MainActivity
+import com.devil.phoenixproject.R
 import com.devil.phoenixproject.presentation.manager.WorkoutServicePhase
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceProtocol
 
@@ -220,7 +221,9 @@ class WorkoutForegroundService : Service() {
 
         return NotificationState(
             phase = phase,
-            workoutMode = getStringExtra(WorkoutServiceProtocol.EXTRA_WORKOUT_MODE) ?: previous.workoutMode,
+            workoutMode = getStringExtra(WorkoutServiceProtocol.EXTRA_WORKOUT_MODE)
+                ?.let(::localizedWorkoutMode)
+                ?: previous.workoutMode,
             exerciseName = getNullableStringExtra(WorkoutServiceProtocol.EXTRA_EXERCISE_NAME),
             nextExerciseName = getNullableStringExtra(WorkoutServiceProtocol.EXTRA_NEXT_EXERCISE_NAME),
             currentSet = getNullableIntExtra(WorkoutServiceProtocol.EXTRA_CURRENT_SET),
@@ -229,6 +232,11 @@ class WorkoutForegroundService : Service() {
             targetReps = getNullableIntExtra(WorkoutServiceProtocol.EXTRA_TARGET_REPS),
             secondsRemaining = getNullableIntExtra(WorkoutServiceProtocol.EXTRA_SECONDS_REMAINING),
         )
+    }
+
+    private fun localizedWorkoutMode(mode: String): String = when (mode) {
+        WorkoutServiceProtocol.WORKOUT_MODE_BODYWEIGHT -> getString(R.string.workout_mode_bodyweight)
+        else -> mode
     }
 
     private fun Intent.getNullableIntExtra(name: String): Int? {

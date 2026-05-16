@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Project Phoenix</string>
+    <string name="workout_mode_bodyweight">Bodyweight</string>
 </resources>
