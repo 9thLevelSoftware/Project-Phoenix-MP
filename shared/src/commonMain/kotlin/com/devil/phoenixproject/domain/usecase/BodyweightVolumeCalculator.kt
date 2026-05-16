@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.domain.usecase
 
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
+
 /**
  * Issue #229: Calculate volume for bodyweight exercises.
  *
@@ -19,6 +21,7 @@ object BodyweightVolumeCalculator {
         // Push-up variations — height-specific decline BEFORE generic decline
         // Issue #229: Decline heights from research (4.5"/11"/16"/24")
         listOf("decline 24", "decline push 24") to 0.75f,
+        listOf("decline 18", "decline push 18") to 0.73f,
         listOf("decline 16", "decline push 16") to 0.72f,
         listOf("decline 11", "decline push 11") to 0.70f,
         listOf("decline 4.5", "decline push 4.5", "decline 4½") to 0.66f,
@@ -63,25 +66,26 @@ object BodyweightVolumeCalculator {
 
     /**
      * Bodyweight exercise variant options for the transient variant picker.
-     * Each entry maps a base exercise keyword to a list of (displayLabel, percentage) pairs.
-     * Used by the SetReady screen to let users select the specific variant they are performing.
+     * Each entry maps a base exercise keyword to the selectable variants for that exercise.
+     * Used by the SetReady screen and post-timer bodyweight prompt.
      */
-    val VARIANT_OPTIONS: Map<String, List<Pair<String, Float>>> = mapOf(
+    val VARIANT_OPTIONS: Map<String, List<BodyweightVariantOption>> = mapOf(
         "push up" to listOf(
-            "Standard Push-Up" to 0.64f,
-            "Incline (hands elevated)" to 0.40f,
-            "Decline 4.5\"" to 0.66f,
-            "Decline 11\"" to 0.70f,
-            "Decline 16\"" to 0.72f,
-            "Decline 24\"" to 0.75f,
-            "Diamond Push-Up" to 0.64f,
-            "Pike Push-Up" to 0.70f,
-            "Handstand Push-Up" to 1.00f,
+            BodyweightVariantOption("Standard Push-Up", 0.64f),
+            BodyweightVariantOption("Incline (hands elevated)", 0.40f),
+            BodyweightVariantOption("Decline 4.5\"", 0.66f),
+            BodyweightVariantOption("Decline 11\"", 0.70f),
+            BodyweightVariantOption("Decline 16\"", 0.72f),
+            BodyweightVariantOption("Decline 18\"", 0.73f),
+            BodyweightVariantOption("Decline 24\"", 0.75f),
+            BodyweightVariantOption("Diamond Push-Up", 0.64f),
+            BodyweightVariantOption("Pike Push-Up", 0.70f),
+            BodyweightVariantOption("Handstand Push-Up", 1.00f),
         ),
         "pull up" to listOf(
-            "Standard Pull-Up" to 0.95f,
-            "Chin-Up" to 0.95f,
-            "Wide-Grip Pull-Up" to 0.90f,
+            BodyweightVariantOption("Standard Pull-Up", 0.95f),
+            BodyweightVariantOption("Chin-Up", 0.95f),
+            BodyweightVariantOption("Wide-Grip Pull-Up", 0.90f),
         ),
     )
 
@@ -89,12 +93,20 @@ object BodyweightVolumeCalculator {
      * Find applicable variant options for an exercise name.
      * Returns null if no variants are available for this exercise.
      */
-    fun getVariantsForExercise(exerciseName: String): List<Pair<String, Float>>? {
+    fun getVariantsForExercise(exerciseName: String): List<BodyweightVariantOption>? {
         val nameLower = exerciseName.lowercase()
         return VARIANT_OPTIONS.entries.firstOrNull { (key, _) ->
             nameLower.contains(key)
         }?.value
     }
+
+    /**
+     * Default selectable variant for an exercise. Falls back to the name-derived percentage when
+     * the exercise does not have a dedicated picker list.
+     */
+    fun getDefaultVariantForExercise(exerciseName: String): BodyweightVariantOption =
+        getVariantsForExercise(exerciseName)?.first()
+            ?: BodyweightVariantOption(exerciseName, getPercentageForExercise(exerciseName))
 
     /**
      * Get the estimated body weight percentage for an exercise.
@@ -127,6 +139,14 @@ object BodyweightVolumeCalculator {
     }
 
     /**
+     * Calculate volume from an explicit selected variant percentage.
+     */
+    fun calculateVolume(bodyWeightKg: Float, reps: Int, percentage: Float): Float {
+        if (bodyWeightKg <= 0f || reps <= 0 || percentage <= 0f) return 0f
+        return bodyWeightKg * percentage * reps
+    }
+
+    /**
      * Calculate the effective "weight per rep" for display purposes.
      *
      * @param exerciseName The exercise name
@@ -136,5 +156,13 @@ object BodyweightVolumeCalculator {
     fun effectiveWeight(exerciseName: String, bodyWeightKg: Float): Float {
         if (bodyWeightKg <= 0f) return 0f
         return bodyWeightKg * getPercentageForExercise(exerciseName)
+    }
+
+    /**
+     * Calculate effective "weight per rep" from an explicit selected variant percentage.
+     */
+    fun effectiveWeight(bodyWeightKg: Float, percentage: Float): Float {
+        if (bodyWeightKg <= 0f || percentage <= 0f) return 0f
+        return bodyWeightKg * percentage
     }
 }

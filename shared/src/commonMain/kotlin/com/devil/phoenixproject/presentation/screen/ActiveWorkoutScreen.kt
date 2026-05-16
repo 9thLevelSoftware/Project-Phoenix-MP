@@ -183,7 +183,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             val isWorkoutActive = workoutState is WorkoutState.Active ||
                 workoutState is WorkoutState.Resting ||
                 workoutState is WorkoutState.Countdown ||
-                workoutState is WorkoutState.SetSummary
+                workoutState is WorkoutState.SetSummary ||
+                workoutState is WorkoutState.BodyweightRepEntry
 
             if (isWorkoutActive) {
                 if (isRoutineFlow) {
@@ -294,6 +295,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             workoutState is WorkoutState.Countdown ||
             workoutState is WorkoutState.Initializing ||
             workoutState is WorkoutState.SetSummary ||
+            workoutState is WorkoutState.BodyweightRepEntry ||
             workoutState is WorkoutState.Resting
 
         when (routineFlowState) {
@@ -334,7 +336,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     // Issue #53: Compute canGoBack/canSkipForward based on routine and exercise index
     // Issue #152: Defensive gating — also disable during Active state (belt-and-suspenders
     // with the navigator visibility check in WorkoutTab)
-    val isSetActive = workoutState is WorkoutState.Active
+    val isSetActive = workoutState is WorkoutState.Active || workoutState is WorkoutState.BodyweightRepEntry
     val canGoBack = !isSetActive && loadedRoutine != null && currentExerciseIndex > 0
     val canSkipForward =
         !isSetActive && loadedRoutine != null &&
@@ -432,6 +434,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             onPauseExerciseTimer = { viewModel.pauseExerciseTimer() },
             onResumeExerciseTimer = { viewModel.resumeExerciseTimer() },
             onResetExerciseTimer = { viewModel.resetExerciseTimer() },
+            onConfirmBodyweightSetResult = { reps, variant ->
+                viewModel.confirmBodyweightSetResult(reps, variant)
+            },
         )
     }
 

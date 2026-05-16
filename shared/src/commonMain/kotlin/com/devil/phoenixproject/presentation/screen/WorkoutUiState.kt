@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.screen
 
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -187,6 +188,9 @@ interface WorkoutActions {
 
     /** Reset the exercise timer to original duration (Issue #190) */
     fun onResetExerciseTimer()
+
+    /** Confirm performed reps for a timed bodyweight set. */
+    fun onConfirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption)
 }
 
 /**
@@ -218,6 +222,7 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun onPauseExerciseTimer() {}
     override fun onResumeExerciseTimer() {}
     override fun onResetExerciseTimer() {}
+    override fun onConfirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) {}
 }
 
 /**
@@ -250,6 +255,7 @@ fun workoutActions(
     onPauseExerciseTimer: () -> Unit = {},
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
+    onConfirmBodyweightSetResult: (Int, BodyweightVariantOption) -> Unit = { _, _ -> },
 ): WorkoutActions = object : WorkoutActions {
     override fun onScan() = onScan()
     override fun onCancelScan() = onCancelScan()
@@ -276,4 +282,5 @@ fun workoutActions(
     override fun onPauseExerciseTimer() = onPauseExerciseTimer()
     override fun onResumeExerciseTimer() = onResumeExerciseTimer()
     override fun onResetExerciseTimer() = onResetExerciseTimer()
+    override fun onConfirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) = onConfirmBodyweightSetResult(reps, variant)
 }

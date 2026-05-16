@@ -18,6 +18,7 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.HapticEvent
@@ -451,6 +452,9 @@ class ActiveSessionEngine(
                 displayMultiplier = displayMultiplierHint ?: 1,
                 heaviestLiftKgPerCable = fallbackWeightKg,
                 configuredWeightKgPerCable = configuredWeightKgPerCable,
+                isEchoMode = isEchoMode,
+                warmupReps = warmupRepsCount,
+                workingReps = workingRepsCount,
             )
         }
 
@@ -698,6 +702,7 @@ class ActiveSessionEngine(
         summary: WorkoutState.SetSummary,
         currentExercise: RoutineExercise?,
         bodyWeightKg: Float,
+        selectedVariant: BodyweightVariantOption? = null,
     ): WorkoutState.SetSummary {
         if (currentExercise == null) return summary
         if (currentExercise.exercise.hasCableAccessory) return summary
@@ -705,17 +710,85 @@ class ActiveSessionEngine(
 
         val exerciseName = currentExercise.exercise.name
         val repCount = summary.repCount
-        val volume = BodyweightVolumeCalculator.calculateVolume(exerciseName, bodyWeightKg, repCount)
-        val effectiveWeight = BodyweightVolumeCalculator.effectiveWeight(exerciseName, bodyWeightKg)
+        val percentage = selectedVariant?.percentage
+        val volume = if (percentage != null) {
+            BodyweightVolumeCalculator.calculateVolume(bodyWeightKg, repCount, percentage)
+        } else {
+            BodyweightVolumeCalculator.calculateVolume(exerciseName, bodyWeightKg, repCount)
+        }
+        val effectiveWeight = if (percentage != null) {
+            BodyweightVolumeCalculator.effectiveWeight(bodyWeightKg, percentage)
+        } else {
+            BodyweightVolumeCalculator.effectiveWeight(exerciseName, bodyWeightKg)
+        }
 
         Logger.d("ActiveSessionEngine") {
             "applyBodyweightVolume: exercise=$exerciseName, bodyWeight=${bodyWeightKg}kg, " +
-                "reps=$repCount, volume=${volume}kg, effectiveWeight=${effectiveWeight}kg"
+                "variant=${selectedVariant?.label ?: "name-match"}, reps=$repCount, " +
+                "volume=${volume}kg, effectiveWeight=${effectiveWeight}kg"
         }
 
         return summary.copy(
+            peakLoadKgPerCable = effectiveWeight,
+            avgLoadKgPerCable = effectiveWeight,
             totalVolumeKg = volume,
+            cableCount = 1,
+            displayMultiplier = 1,
             heaviestLiftKgPerCable = effectiveWeight,
+            configuredWeightKgPerCable = effectiveWeight,
+        )
+    }
+
+    internal fun bodyweightVariantKey(exercise: RoutineExercise): String =
+        exercise.exercise.id?.takeIf { it.isNotBlank() } ?: exercise.exercise.name.lowercase()
+
+    internal fun selectBodyweightVariant(exerciseKey: String, variant: BodyweightVariantOption) {
+        coordinator._selectedBodyweightVariants.update { selections ->
+            selections + (exerciseKey to variant)
+        }
+        val entry = coordinator._workoutState.value as? WorkoutState.BodyweightRepEntry
+        if (entry != null && entry.exerciseKey == exerciseKey) {
+            coordinator._workoutState.value = entry.copy(selectedVariant = variant)
+        }
+    }
+
+    fun confirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) {
+        val entry = coordinator._workoutState.value as? WorkoutState.BodyweightRepEntry ?: return
+        val coercedReps = reps.coerceAtLeast(0)
+        selectBodyweightVariant(entry.exerciseKey, variant)
+        coordinator.bodyweightCompletionVariantOverride = variant
+        coordinator._repCount.value = RepCount(
+            workingReps = coercedReps,
+            totalReps = coercedReps,
+            isWarmupComplete = true,
+        )
+        handleSetCompletion()
+    }
+
+    private suspend fun showBodyweightRepEntry(currentExercise: RoutineExercise) {
+        val exerciseName = currentExercise.exercise.displayName.takeIf { it.isNotBlank() }
+            ?: currentExercise.exercise.name
+        val variants = BodyweightVolumeCalculator.getVariantsForExercise(currentExercise.exercise.name)
+            ?: listOf(BodyweightVolumeCalculator.getDefaultVariantForExercise(currentExercise.exercise.name))
+        val exerciseKey = bodyweightVariantKey(currentExercise)
+        val savedVariant = coordinator._selectedBodyweightVariants.value[exerciseKey]
+        val selectedVariant = savedVariant?.takeIf { saved ->
+            variants.any { it.label == saved.label && it.percentage == saved.percentage }
+        } ?: variants.first()
+        selectBodyweightVariant(exerciseKey, selectedVariant)
+
+        val currentSetIndex = coordinator._currentSetIndex.value
+        val plannedReps = currentExercise.setReps.getOrNull(currentSetIndex)?.coerceAtLeast(0) ?: 0
+
+        coordinator._workoutState.value = WorkoutState.BodyweightRepEntry(
+            exerciseKey = exerciseKey,
+            exerciseName = exerciseName,
+            plannedReps = plannedReps,
+            currentSet = currentSetIndex + 1,
+            totalSets = currentExercise.setReps.size.coerceAtLeast(1),
+            bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg,
+            variants = variants,
+            selectedVariant = selectedVariant,
         )
     }
 
@@ -1665,6 +1738,8 @@ class ActiveSessionEngine(
         // Reset variable warm-up state
         coordinator._currentWarmupSetIndex.value = -1
         coordinator._totalWarmupSets.value = 0
+        coordinator._selectedBodyweightVariants.value = emptyMap()
+        coordinator.bodyweightCompletionVariantOverride = null
     }
 
     fun recaptureLoadBaseline() {
@@ -3003,6 +3078,7 @@ class ActiveSessionEngine(
         val exerciseName = selectedExercise?.name
 
         val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+        val bodyweightVariant = coordinator.bodyweightCompletionVariantOverride
 
         val summary = calculateSetSummaryMetrics(
             metrics = metricsSnapshot,
@@ -3018,7 +3094,12 @@ class ActiveSessionEngine(
         ).let { baseSummary ->
             // Issue #229: Override volume for bodyweight exercises
             val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
-            applyBodyweightVolume(baseSummary, currentExercise, bodyWeightKg)
+            applyBodyweightVolume(baseSummary, currentExercise, bodyWeightKg, bodyweightVariant)
+        }
+        val savedWeightKg = if (isBodyweightExercise(currentExercise)) {
+            summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: params.weightPerCableKg
+        } else {
+            params.weightPerCableKg
         }
 
         // Capture biomechanics summary for WorkoutSession fields.
@@ -3123,20 +3204,20 @@ class ActiveSessionEngine(
                 setNumber = setIndex,
                 setType = if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
                 actualReps = working,
-                actualWeightKg = params.weightPerCableKg,
+                actualWeightKg = savedWeightKg,
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
                 completedAt = currentTimeMillis(),
             )
             completedSetRepository.saveCompletedSet(completedSet)
-            Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${params.weightPerCableKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
+            Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${savedWeightKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
         }
 
         val hasPR = gamificationManager.processPostSaveEvents(
             exerciseId = params.selectedExerciseId,
             workingReps = working,
             achievedWeightKg = summary.heaviestLiftKgPerCable,
-            volumeWeightKg = params.weightPerCableKg,
+            volumeWeightKg = savedWeightKg,
             programMode = params.programMode,
             isJustLift = params.isJustLift,
             isEchoMode = params.isEchoMode,
@@ -3218,6 +3299,17 @@ class ActiveSessionEngine(
 
             val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
             val wasBodyweight = isBodyweightExercise(currentExercise)
+            val selectedBodyweightVariant = coordinator.bodyweightCompletionVariantOverride
+
+            if (wasBodyweight && selectedBodyweightVariant == null && currentExercise != null) {
+                Logger.d("ActiveSessionEngine") {
+                    "Timed bodyweight set finished; prompting for reps before saving " +
+                        "(exercise=${currentExercise.exercise.name}, set=${coordinator._currentSetIndex.value + 1})"
+                }
+                showBodyweightRepEntry(currentExercise)
+                coordinator.setCompletionInProgress.value = false
+                return@launch
+            }
 
             if (wasBodyweight) {
                 coordinator.bodyweightSetsCompletedInRoutine++
@@ -3353,7 +3445,7 @@ class ActiveSessionEngine(
             ).let { raw ->
                 // Issue #229: Override volume for bodyweight exercises
                 val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
-                applyBodyweightVolume(raw, currentExercise, bodyWeightKg)
+                applyBodyweightVolume(raw, currentExercise, bodyWeightKg, selectedBodyweightVariant)
             }
 
             // Attach quality and biomechanics summaries to the set summary
@@ -3365,6 +3457,7 @@ class ActiveSessionEngine(
                 taggedExerciseName = selectedExercise?.name,
                 isAmrap = params.isAMRAP,
             )
+            coordinator.bodyweightCompletionVariantOverride = null
 
             // Process quality event for Form Master badge tracking
             qualitySummary?.let { qs ->
@@ -3377,8 +3470,7 @@ class ActiveSessionEngine(
             val skipSummary = summaryCountdownSeconds < 0
             val summaryDelayMs = if (skipSummary) 0L else summaryCountdownSeconds * 1000L
 
-            val skipSummaryForBodyweight = wasBodyweight
-            val effectiveSkipSummary = skipSummary || skipSummaryForBodyweight
+            val effectiveSkipSummary = skipSummary
 
             Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
 

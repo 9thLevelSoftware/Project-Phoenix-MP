@@ -35,6 +35,7 @@ class BodyweightVolumeCalculatorTest {
         assertEquals(0.66f, BodyweightVolumeCalculator.getPercentageForExercise("Decline 4.5\" Push Up"))
         assertEquals(0.70f, BodyweightVolumeCalculator.getPercentageForExercise("Decline 11\" Push Up"))
         assertEquals(0.72f, BodyweightVolumeCalculator.getPercentageForExercise("Decline 16\" Push Up"))
+        assertEquals(0.73f, BodyweightVolumeCalculator.getPercentageForExercise("Decline 18\" Push Up"))
         assertEquals(0.75f, BodyweightVolumeCalculator.getPercentageForExercise("Decline 24\" Push Up"))
     }
 
@@ -67,8 +68,12 @@ class BodyweightVolumeCalculatorTest {
         val variants = BodyweightVolumeCalculator.getVariantsForExercise("Push Up")
         assertTrue(variants != null && variants.size > 1, "Push Up should have variant options")
         // First should be standard
-        assertEquals("Standard Push-Up", variants!!.first().first)
-        assertEquals(0.64f, variants.first().second)
+        assertEquals("Standard Push-Up", variants.first().label)
+        assertEquals(0.64f, variants.first().percentage)
+        assertTrue(
+            variants.any { it.label == "Decline 18\"" && it.percentage == 0.73f },
+            "Push Up variants should include the 18-inch decline option",
+        )
     }
 
     @Test
@@ -105,6 +110,17 @@ class BodyweightVolumeCalculatorTest {
         val volume = BodyweightVolumeCalculator.calculateVolume("Pull Up", 70f, 5)
         // Expected: 70 * 0.95 * 5 = 332.5
         assertTrue(abs(volume - 332.5f) < 0.1f, "Expected ~332.5, got $volume")
+    }
+
+    @Test
+    fun calculateVolume_explicitVariantPercentage_overridesExerciseName() {
+        val volume = BodyweightVolumeCalculator.calculateVolume(
+            bodyWeightKg = 80f,
+            reps = 12,
+            percentage = 0.73f,
+        )
+
+        assertTrue(abs(volume - 700.8f) < 0.1f, "Expected ~700.8, got $volume")
     }
 
     @Test
@@ -185,5 +201,11 @@ class BodyweightVolumeCalculatorTest {
         val weight = BodyweightVolumeCalculator.effectiveWeight("Decline 24\" Push Up", 80f)
         // Expected: 80 * 0.75 = 60
         assertTrue(abs(weight - 60f) < 0.1f, "Expected ~60, got $weight")
+    }
+
+    @Test
+    fun effectiveWeight_explicitVariantPercentage_returnsCorrectWeight() {
+        val weight = BodyweightVolumeCalculator.effectiveWeight(80f, 0.73f)
+        assertTrue(abs(weight - 58.4f) < 0.1f, "Expected ~58.4, got $weight")
     }
 }

@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.HandleState
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -347,6 +348,12 @@ class WorkoutCoordinator(
 
     // Issue #222 diagnostic: Track bodyweight sets completed in this routine
     internal var bodyweightSetsCompletedInRoutine: Int = 0
+
+    // Issue #427: Runtime-only selected bodyweight variant per exercise. This keeps SetReady
+    // and post-timer rep entry in sync without changing persisted workout schema.
+    internal val _selectedBodyweightVariants = MutableStateFlow<Map<String, BodyweightVariantOption>>(emptyMap())
+    val selectedBodyweightVariants: StateFlow<Map<String, BodyweightVariantOption>> = _selectedBodyweightVariants.asStateFlow()
+    internal var bodyweightCompletionVariantOverride: BodyweightVariantOption? = null
 
     // Issue #222 v8: Track if previous exercise was bodyweight (for StopPacket on transition)
     internal var previousExerciseWasBodyweight: Boolean = false

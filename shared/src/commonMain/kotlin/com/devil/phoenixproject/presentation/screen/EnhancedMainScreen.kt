@@ -903,6 +903,7 @@ private fun shouldResumeActiveWorkout(workoutState: WorkoutState): Boolean = whe
     is WorkoutState.Active,
     is WorkoutState.Resting,
     is WorkoutState.SetSummary,
+    is WorkoutState.BodyweightRepEntry,
     -> true
 
     else -> false

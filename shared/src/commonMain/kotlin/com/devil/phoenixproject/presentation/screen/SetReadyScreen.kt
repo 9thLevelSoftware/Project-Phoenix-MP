@@ -335,14 +335,20 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Issue #229: Bodyweight variant picker (transient, not persisted)
+            // Issue #229/#427: Bodyweight variant picker (runtime state, carried across sets)
             if (isBodyweight) {
                 val variants = remember(currentExercise.exercise.name) {
                     BodyweightVolumeCalculator.getVariantsForExercise(currentExercise.exercise.name)
                 }
                 if (variants != null && variants.size > 1) {
                     var expanded by remember { mutableStateOf(false) }
-                    var selectedVariant by remember { mutableStateOf(variants[0]) }
+                    val selectedBodyweightVariants by viewModel.selectedBodyweightVariants.collectAsState()
+                    val bodyweightVariantKey = remember(currentExercise) {
+                        viewModel.bodyweightVariantKey(currentExercise)
+                    }
+                    val selectedVariant = selectedBodyweightVariants[bodyweightVariantKey]?.takeIf { saved ->
+                        variants.any { it.label == saved.label && it.percentage == saved.percentage }
+                    } ?: variants[0]
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -367,7 +373,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 onExpandedChange = { expanded = it },
                             ) {
                                 OutlinedTextField(
-                                    value = selectedVariant.first,
+                                    value = selectedVariant.label,
                                     onValueChange = {},
                                     readOnly = true,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
@@ -384,12 +390,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                         DropdownMenuItem(
                                             text = {
                                                 Text(
-                                                    "${variant.first} (${(variant.second * 100).toInt()}%)",
+                                                    "${variant.label} (${(variant.percentage * 100).toInt()}%)",
                                                     style = MaterialTheme.typography.bodyMedium,
                                                 )
                                             },
                                             onClick = {
-                                                selectedVariant = variant
+                                                viewModel.selectBodyweightVariant(bodyweightVariantKey, variant)
                                                 expanded = false
                                             },
                                         )
@@ -398,7 +404,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             }
                             val userPrefs by viewModel.userPreferences.collectAsState()
                             if (userPrefs.bodyWeightKg > 0f) {
-                                val effectiveKg = userPrefs.bodyWeightKg * selectedVariant.second
+                                val effectiveKg = userPrefs.bodyWeightKg * selectedVariant.percentage
                                 val displayWeight = if (weightUnit == WeightUnit.KG) {
                                     "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(effectiveKg)} kg"
                                 } else {

@@ -12,6 +12,8 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -28,6 +30,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -1672,6 +1675,122 @@ class DWSMWorkoutLifecycleTest {
         }
     }
 
+    // ===== Issue #427: Timed bodyweight reps and variant selection =====
+
+    @Test
+    fun `Issue 427 - timed bodyweight set prompts for reps instead of saving zero volume`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakePrefsManager.setBodyWeightKg(80f)
+        val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+
+        harness.dwsm.startWorkout(skipCountdown = true)
+        runCurrent()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        advanceTimeBy(1_100)
+        runCurrent()
+
+        val entry = assertIs<WorkoutState.BodyweightRepEntry>(
+            harness.dwsm.coordinator.workoutState.value,
+            "Timed bodyweight completion should ask for performed reps before saving",
+        )
+        assertEquals(10, entry.plannedReps)
+        assertEquals("Standard Push-Up", entry.selectedVariant.label)
+        assertEquals(0, harness.fakeWorkoutRepo.getAllSessions("default").first().size)
+
+        harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 427 - confirming bodyweight reps saves selected variant volume`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakePrefsManager.setBodyWeightKg(80f)
+        val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceTimeBy(1_100)
+        runCurrent()
+
+        val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.dwsm.coordinator.workoutState.value)
+        val decline18 = entry.variants.first { it.label == "Decline 18\"" }
+
+        harness.dwsm.confirmBodyweightSetResult(reps = 12, variant = decline18)
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        val summary = assertIs<WorkoutState.SetSummary>(
+            harness.dwsm.coordinator.workoutState.value,
+            "Confirmed bodyweight reps should use the normal summary flow",
+        )
+        assertEquals(12, summary.repCount)
+        assertEquals(12, summary.workingReps)
+        assertFloatEquals(58.4f, summary.heaviestLiftKgPerCable)
+        assertFloatEquals(700.8f, summary.totalVolumeKg)
+
+        val session = harness.fakeWorkoutRepo.getAllSessions("default").first().single()
+        assertEquals(12, session.workingReps)
+        assertFloatEquals(58.4f, session.heaviestLiftKg ?: 0f)
+        assertFloatEquals(700.8f, session.totalVolumeKg ?: 0f)
+
+        val completedSet = harness.fakeCompletedSetRepo.getCompletedSets(session.id).single()
+        assertEquals(12, completedSet.actualReps)
+        assertFloatEquals(58.4f, completedSet.actualWeightKg)
+
+        harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 427 - bodyweight variant carries into later set prompt`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakePrefsManager.setBodyWeightKg(80f)
+        val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceTimeBy(1_100)
+        runCurrent()
+
+        val firstEntry = assertIs<WorkoutState.BodyweightRepEntry>(harness.dwsm.coordinator.workoutState.value)
+        val decline18 = firstEntry.variants.first { it.label == "Decline 18\"" }
+        harness.dwsm.confirmBodyweightSetResult(reps = 12, variant = decline18)
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        harness.dwsm.enterSetReady(0, 1)
+        runCurrent()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceTimeBy(1_100)
+        runCurrent()
+
+        val secondEntry = assertIs<WorkoutState.BodyweightRepEntry>(
+            harness.dwsm.coordinator.workoutState.value,
+            "Later timed bodyweight sets should prompt again",
+        )
+        assertEquals(2, secondEntry.currentSet)
+        assertEquals("Decline 18\"", secondEntry.selectedVariant.label)
+        assertEquals(0.73f, secondEntry.selectedVariant.percentage)
+
+        harness.cleanup()
+    }
+
     // ===== Issue #320: Stall/stop saves partial reps in routine mode =====
 
     @Test
@@ -1853,6 +1972,38 @@ class DWSMWorkoutLifecycleTest {
                 rawData = ByteArray(24),
                 timestamp = (warmupTarget + 1).toLong(),
             ),
+        )
+    }
+
+    private fun createBodyweightRoutine(sets: Int, repsPerSet: Int, durationSeconds: Int): Routine {
+        val pushUp = Exercise(
+            name = "Push Up",
+            muscleGroup = "Chest",
+            muscleGroups = "Chest,Triceps,Shoulders",
+            equipment = "",
+            id = "push-up-001",
+        )
+        return Routine(
+            id = "bodyweight-routine",
+            name = "Bodyweight Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "bodyweight-push-up",
+                    exercise = pushUp,
+                    orderIndex = 0,
+                    setReps = List(sets) { repsPerSet },
+                    weightPerCableKg = 0f,
+                    duration = durationSeconds,
+                    setRestSeconds = List(sets) { 0 },
+                ),
+            ),
+        )
+    }
+
+    private fun assertFloatEquals(expected: Float, actual: Float, tolerance: Float = 0.1f) {
+        assertTrue(
+            abs(expected - actual) < tolerance,
+            "Expected $expected ± $tolerance, got $actual",
         )
     }
 }

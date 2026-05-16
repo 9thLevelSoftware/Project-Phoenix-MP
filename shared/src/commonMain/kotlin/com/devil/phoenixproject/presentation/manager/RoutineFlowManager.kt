@@ -724,6 +724,8 @@ class RoutineFlowManager(
 
         // Issue #222 diagnostic: Reset bodyweight counter for new routine
         coordinator.bodyweightSetsCompletedInRoutine = 0
+        coordinator._selectedBodyweightVariants.value = emptyMap()
+        coordinator.bodyweightCompletionVariantOverride = null
         // Issue #222 v8: Reset transition flag for new routine
         coordinator.previousExerciseWasBodyweight = false
 

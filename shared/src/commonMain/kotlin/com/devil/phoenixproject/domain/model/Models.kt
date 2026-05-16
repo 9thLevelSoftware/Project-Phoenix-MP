@@ -113,6 +113,16 @@ sealed class WorkoutState {
         val taggedExerciseName: String? = null,
         val isAmrap: Boolean = false,
     ) : WorkoutState()
+    data class BodyweightRepEntry(
+        val exerciseKey: String,
+        val exerciseName: String,
+        val plannedReps: Int,
+        val currentSet: Int,
+        val totalSets: Int,
+        val bodyWeightKg: Float,
+        val variants: List<BodyweightVariantOption>,
+        val selectedVariant: BodyweightVariantOption,
+    ) : WorkoutState()
     object Paused : WorkoutState()
     object Completed : WorkoutState()
     object ExerciseComplete : WorkoutState()

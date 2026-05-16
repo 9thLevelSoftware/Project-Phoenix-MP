@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
@@ -43,12 +44,16 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -63,12 +68,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
@@ -195,6 +202,7 @@ fun WorkoutTab(
         onPauseExerciseTimer = actions::onPauseExerciseTimer,
         onResumeExerciseTimer = actions::onResumeExerciseTimer,
         onResetExerciseTimer = actions::onResetExerciseTimer,
+        onConfirmBodyweightSetResult = actions::onConfirmBodyweightSetResult,
         velocityLossThresholdPercent = state.velocityLossThresholdPercent,
         weightStepKg = state.weightStepKg,
     )
@@ -272,6 +280,7 @@ fun WorkoutTab(
     onPauseExerciseTimer: () -> Unit = {},
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
+    onConfirmBodyweightSetResult: (Int, BodyweightVariantOption) -> Unit = { _, _ -> },
     // Issue #313: VBT velocity loss threshold for HUD visualization
     velocityLossThresholdPercent: Int = 20,
     // Issue #266/#410: Configurable weight step from user preferences (kg)
@@ -502,6 +511,15 @@ fun WorkoutTab(
                             motionStartHoldProgress = motionStartHoldProgress,
                         )
                     }
+                }
+
+                is WorkoutState.BodyweightRepEntry -> {
+                    BodyweightRepEntryDialog(
+                        entry = workoutState,
+                        weightUnit = weightUnit,
+                        formatWeight = formatWeight,
+                        onConfirm = onConfirmBodyweightSetResult,
+                    )
                 }
 
                 is WorkoutState.SetSummary -> {
@@ -1091,6 +1109,111 @@ private fun ActiveWorkoutCard(workoutParameters: WorkoutParameters, onStopWorkou
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BodyweightRepEntryDialog(
+    entry: WorkoutState.BodyweightRepEntry,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+    onConfirm: (Int, BodyweightVariantOption) -> Unit,
+) {
+    var repsText by remember(entry.exerciseKey, entry.currentSet) {
+        mutableStateOf(entry.plannedReps.takeIf { it > 0 }?.toString() ?: "")
+    }
+    var selectedVariant by remember(entry.exerciseKey, entry.currentSet, entry.selectedVariant) {
+        mutableStateOf(entry.selectedVariant)
+    }
+    var expanded by remember { mutableStateOf(false) }
+
+    val reps = repsText.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    val effectiveWeightKg = if (entry.bodyWeightKg > 0f) {
+        entry.bodyWeightKg * selectedVariant.percentage
+    } else {
+        0f
+    }
+    val volumeKg = effectiveWeightKg * reps
+
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Enter bodyweight reps") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.medium)) {
+                Text(
+                    "${entry.exerciseName} • Set ${entry.currentSet} of ${entry.totalSets}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                OutlinedTextField(
+                    value = repsText,
+                    onValueChange = { value ->
+                        repsText = value.filter { it.isDigit() }.take(3)
+                    },
+                    label = { Text("Reps completed") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = it },
+                ) {
+                    OutlinedTextField(
+                        value = selectedVariant.label,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Variant") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                    ) {
+                        entry.variants.forEach { variant ->
+                            DropdownMenuItem(
+                                text = { Text("${variant.label} (${(variant.percentage * 100).toInt()}%)") },
+                                onClick = {
+                                    selectedVariant = variant
+                                    expanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+
+                if (entry.bodyWeightKg > 0f) {
+                    Text(
+                        "Effective load: ${formatWeight(effectiveWeightKg, weightUnit)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        "Volume: ${formatWeight(volumeKg, weightUnit)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Text(
+                        "Body weight is not set, so volume will be saved as 0.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(reps, selectedVariant) }) {
+                Text("Save Set")
+            }
+        },
+    )
 }
 
 /**

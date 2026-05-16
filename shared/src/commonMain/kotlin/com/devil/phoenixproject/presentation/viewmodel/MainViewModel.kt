@@ -21,6 +21,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -177,6 +178,7 @@ class MainViewModel constructor(
     val completedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.coordinator.completedExercises
     val currentSetRpe: StateFlow<Int?> get() = workoutSessionManager.coordinator.currentSetRpe
     val isCurrentExerciseBodyweight: StateFlow<Boolean> get() = workoutSessionManager.coordinator.isCurrentExerciseBodyweight
+    val selectedBodyweightVariants: StateFlow<Map<String, BodyweightVariantOption>> get() = workoutSessionManager.selectedBodyweightVariants
     val latestRepQuality get() = workoutSessionManager.coordinator.latestRepQuality
     val latestBiomechanicsResult get() = workoutSessionManager.coordinator.latestBiomechanicsResult
     val motionStartHoldProgress: StateFlow<Float?> get() = workoutSessionManager.coordinator.motionStartHoldProgress
@@ -359,6 +361,9 @@ class MainViewModel constructor(
     fun updateSetReadyEchoLevel(level: EchoLevel) = workoutSessionManager.updateSetReadyEchoLevel(level)
     fun updateSetReadyEccentricLoad(percent: Int) = workoutSessionManager.updateSetReadyEccentricLoad(percent)
     fun startSetFromReady() = workoutSessionManager.startSetFromReady()
+    fun bodyweightVariantKey(exercise: RoutineExercise): String = workoutSessionManager.bodyweightVariantKey(exercise)
+    fun selectBodyweightVariant(exerciseKey: String, variant: BodyweightVariantOption) = workoutSessionManager.selectBodyweightVariant(exerciseKey, variant)
+    fun confirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) = workoutSessionManager.confirmBodyweightSetResult(reps, variant)
     fun returnToOverview() = workoutSessionManager.returnToOverview()
     fun exitRoutineFlow() = workoutSessionManager.exitRoutineFlow()
     fun showRoutineComplete() = workoutSessionManager.showRoutineComplete()

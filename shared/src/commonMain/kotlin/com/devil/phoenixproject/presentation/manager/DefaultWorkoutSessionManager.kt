@@ -14,6 +14,7 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -37,6 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -498,6 +500,15 @@ class DefaultWorkoutSessionManager(
                 targetReps = params.reps.takeIf { it > 0 },
             )
 
+            is WorkoutState.BodyweightRepEntry -> WorkoutServiceSnapshot(
+                phase = WorkoutServicePhase.SET_SUMMARY,
+                workoutModeName = "Bodyweight",
+                exerciseName = state.exerciseName,
+                currentSet = state.currentSet,
+                totalSets = state.totalSets,
+                targetReps = state.plannedReps.takeIf { it > 0 },
+            )
+
             is WorkoutState.Resting -> WorkoutServiceSnapshot(
                 phase = WorkoutServicePhase.RESTING,
                 workoutModeName = params.programMode.displayName,
@@ -644,6 +655,15 @@ class DefaultWorkoutSessionManager(
     fun pauseExerciseTimer() = activeSessionEngine.pauseExerciseTimer()
     fun resumeExerciseTimer() = activeSessionEngine.resumeExerciseTimer()
     fun resetExerciseTimer() = activeSessionEngine.resetExerciseTimer()
+
+    // ===== Bodyweight Variant / Completion Entry — delegated to ActiveSessionEngine =====
+
+    val selectedBodyweightVariants: StateFlow<Map<String, BodyweightVariantOption>>
+        get() = coordinator.selectedBodyweightVariants
+
+    fun bodyweightVariantKey(exercise: RoutineExercise): String = activeSessionEngine.bodyweightVariantKey(exercise)
+    fun selectBodyweightVariant(exerciseKey: String, variant: BodyweightVariantOption) = activeSessionEngine.selectBodyweightVariant(exerciseKey, variant)
+    fun confirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) = activeSessionEngine.confirmBodyweightSetResult(reps, variant)
 
     // ===== Orchestration: proceedFromSummary (cross-cutting, stays in DWSM) =====
 
