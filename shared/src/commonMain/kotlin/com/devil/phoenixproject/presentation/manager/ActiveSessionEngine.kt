@@ -3301,9 +3301,10 @@ class ActiveSessionEngine(
 
             val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
             val wasBodyweight = isBodyweightExercise(currentExercise)
+            val wasTimedBodyweight = wasBodyweight && currentExercise?.duration?.let { it > 0 } == true
             val selectedBodyweightVariant = coordinator.bodyweightCompletionVariantOverride
 
-            if (wasBodyweight && selectedBodyweightVariant == null && currentExercise != null) {
+            if (wasTimedBodyweight && selectedBodyweightVariant == null && currentExercise != null) {
                 Logger.d("ActiveSessionEngine") {
                     "Timed bodyweight set finished; prompting for reps before saving " +
                         "(exercise=${currentExercise.exercise.name}, set=${coordinator._currentSetIndex.value + 1})"

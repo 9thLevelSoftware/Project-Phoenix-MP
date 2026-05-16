@@ -1710,6 +1710,34 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `Issue 427 - untimed bodyweight set does not prompt for manual reps`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakePrefsManager.setBodyWeightKg(80f)
+        val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 0)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        runCurrent()
+
+        advanceTimeBy(30_100)
+        runCurrent()
+
+        val state = harness.dwsm.coordinator.workoutState.value
+        assertFalse(
+            state is WorkoutState.BodyweightRepEntry,
+            "Untimed bodyweight completion should not force the timed rep-entry prompt",
+        )
+        assertIs<WorkoutState.SetSummary>(state)
+
+        harness.cleanup()
+    }
+
+    @Test
     fun `Issue 427 - confirming bodyweight reps saves selected variant volume`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
