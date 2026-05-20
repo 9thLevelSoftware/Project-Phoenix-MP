@@ -2227,6 +2227,7 @@ class ActiveSessionEngine(
                 val warmupSetIndex = coordinator._currentWarmupSetIndex.value
                 val isInWarmupPhase = warmupSetIndex >= 0
                 val skipVariableWarmupOverride = startOverride?.skipVariableWarmupOverride == true
+                val hasVariableWarmupOverrideApplied: Boolean
                 val warmupOverrideParams = if (!skipVariableWarmupOverride && isInWarmupPhase && currentExercise != null) {
                     val warmupSet = currentExercise.warmupSets.getOrNull(warmupSetIndex)
                     if (warmupSet != null) {
@@ -2236,6 +2237,7 @@ class ActiveSessionEngine(
                             "WarmupSet ${warmupSetIndex + 1}/${currentExercise.warmupSets.size}: " +
                                 "${warmupSet.reps} reps @ ${warmupSet.percentOfWorking}% = ${warmupWeight}kg (working=${effectiveParams.weightPerCableKg}kg)"
                         }
+                        hasVariableWarmupOverrideApplied = true
                         effectiveParams.copy(
                             weightPerCableKg = warmupWeight,
                             reps = warmupSet.reps,
@@ -2245,13 +2247,15 @@ class ActiveSessionEngine(
                     } else {
                         Logger.w { "WarmupSet index $warmupSetIndex out of bounds for ${currentExercise.warmupSets.size} warmup sets - falling through to working set" }
                         coordinator._currentWarmupSetIndex.value = -1
+                        hasVariableWarmupOverrideApplied = false
                         effectiveParams
                     }
                 } else {
+                    hasVariableWarmupOverrideApplied = false
                     effectiveParams
                 }
                 // Update coordinator params if warm-up override applied
-                if (isInWarmupPhase && warmupOverrideParams !== effectiveParams) {
+                if (hasVariableWarmupOverrideApplied) {
                     coordinator._workoutParameters.value = warmupOverrideParams
                 }
 
@@ -2330,7 +2334,7 @@ class ActiveSessionEngine(
                 // Using effectiveParams caused the rep counter to misclassify the first 3
                 // reps of each warm-up set as firmware warmup reps, making sets appear to
                 // end 3 reps early and corrupting weight tracking.
-                val repCounterWarmupTarget = if (isInWarmupPhase && warmupOverrideParams !== effectiveParams) {
+                val repCounterWarmupTarget = if (hasVariableWarmupOverrideApplied) {
                     // Variable warm-up set active: firmware warmup is intentionally disabled (0)
                     warmupOverrideParams.warmupReps
                 } else {
