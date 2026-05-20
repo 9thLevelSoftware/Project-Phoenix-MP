@@ -2330,8 +2330,15 @@ class ActiveSessionEngine(
                 // Using effectiveParams caused the rep counter to misclassify the first 3
                 // reps of each warm-up set as firmware warmup reps, making sets appear to
                 // end 3 reps early and corrupting weight tracking.
+                val repCounterWarmupTarget = if (isInWarmupPhase && warmupOverrideParams !== effectiveParams) {
+                    // Variable warm-up set active: firmware warmup is intentionally disabled (0)
+                    warmupOverrideParams.warmupReps
+                } else {
+                    // Normal cable sets: mirror machine firmware warmup target (typically 3)
+                    effectiveParams.warmupReps
+                }
                 repCounter.configure(
-                    warmupTarget = warmupOverrideParams.warmupReps,
+                    warmupTarget = repCounterWarmupTarget,
                     workingTarget = if (isTimedCableExercise) 0 else warmupOverrideParams.reps,
                     isJustLift = isJustLiftMode,
                     stopAtTop = warmupOverrideParams.stopAtTop,
