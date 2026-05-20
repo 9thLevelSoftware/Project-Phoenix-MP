@@ -15,7 +15,6 @@ import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BlePacketFactory
-import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
 
 /**
  * Thin facade delegating to 6 extracted modules (BleOperationQueue, DiscoMode,
@@ -131,6 +131,7 @@ class KableBleRepository : BleRepository {
         },
         onHeuristicData = { stats -> _heuristicData.value = stats },
         onConnectionLost = { connectionManager.disconnect() },
+        logRepo = logRepo,
     )
 
     // ConnectionManager declared LAST (depends on all above modules for init-order safety)
@@ -208,30 +209,71 @@ class KableBleRepository : BleRepository {
 
     override suspend fun stopWorkout(): Result<Unit> {
         log.i { "Stopping workout" }
+        val startMs = currentTimeMillis()
         return try {
             val resetCmd = BlePacketFactory.createResetCommand()
+            val description = BlePacketFactory.describeCommand(resetCmd)
+            logRepo.warning(
+                LogEventType.ISSUE_232_STOP_RESET,
+                "Hard reset stopWorkout requested",
+                details = "caller=KableBleRepository.stopWorkout, reason=hard_reset_stop, opcode=${description.opcode}, family=${description.family}, size=${description.size}, hex=${description.hex}",
+            )
             log.d { "Sending RESET command (0x0A)..." }
-            sendWorkoutCommand(resetCmd)
+            val result = sendWorkoutCommand(resetCmd)
+            logRepo.info(
+                LogEventType.ISSUE_232_STOP_RESET,
+                "Hard reset command result",
+                details = "result=${if (result.isSuccess) "success" else "failure"}, error=${result.exceptionOrNull()?.message ?: "none"}, elapsedMs=${currentTimeMillis() - startMs}, opcode=${description.opcode}, family=${description.family}",
+            )
             delay(50)
 
             log.d { "Stopping polling after RESET..." }
+            val stopPollingStartMs = currentTimeMillis()
             stopPolling()
+            logRepo.info(
+                LogEventType.ISSUE_232_STOP_RESET,
+                "Polling stopped after hard reset",
+                details = "caller=KableBleRepository.stopWorkout, pollingStopDurationMs=${currentTimeMillis() - stopPollingStartMs}, totalDurationMs=${currentTimeMillis() - startMs}",
+            )
 
-            Result.success(Unit)
+            result
         } catch (e: Exception) {
             log.e { "Failed to stop workout: ${e.message}" }
+            logRepo.error(
+                LogEventType.ISSUE_232_STOP_RESET,
+                "Hard reset stopWorkout failed",
+                details = "caller=KableBleRepository.stopWorkout, elapsedMs=${currentTimeMillis() - startMs}, error=${e.message}",
+            )
             Result.failure(e)
         }
     }
 
     override suspend fun sendStopCommand(): Result<Unit> {
         log.i { "Sending stop command (polling continues)" }
+        val startMs = currentTimeMillis()
         return try {
             val stopPacket = BlePacketFactory.createOfficialStopPacket()
+            val description = BlePacketFactory.describeCommand(stopPacket)
+            logRepo.warning(
+                LogEventType.ISSUE_232_STOP_RESET,
+                "Soft stop command requested",
+                details = "caller=KableBleRepository.sendStopCommand, reason=soft_stop_polling_continues, opcode=${description.opcode}, family=${description.family}, size=${description.size}, hex=${description.hex}",
+            )
             log.d { "Sending StopPacket (0x50)..." }
-            sendWorkoutCommand(stopPacket)
+            val result = sendWorkoutCommand(stopPacket)
+            logRepo.info(
+                LogEventType.ISSUE_232_STOP_RESET,
+                "Soft stop command result",
+                details = "result=${if (result.isSuccess) "success" else "failure"}, error=${result.exceptionOrNull()?.message ?: "none"}, elapsedMs=${currentTimeMillis() - startMs}, pollingAction=continues, opcode=${description.opcode}, family=${description.family}",
+            )
+            result
         } catch (e: Exception) {
             log.e { "Failed to send stop command: ${e.message}" }
+            logRepo.error(
+                LogEventType.ISSUE_232_STOP_RESET,
+                "Soft stop command failed",
+                details = "caller=KableBleRepository.sendStopCommand, elapsedMs=${currentTimeMillis() - startMs}, error=${e.message}",
+            )
             Result.failure(e)
         }
     }
@@ -341,7 +383,7 @@ class KableBleRepository : BleRepository {
             logRepo.debug(
                 LogEventType.REP_RECEIVED,
                 if (notification.isLegacyFormat) "Legacy rep (6-byte)" else "Modern rep (24-byte)",
-                details = "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}",
+                details = repNotificationDetails("RX", data, notification),
             )
         } catch (e: Exception) {
             log.e { "Error parsing rep notification: ${e.message}" }
@@ -379,7 +421,7 @@ class KableBleRepository : BleRepository {
             logRepo.debug(
                 LogEventType.REP_RECEIVED,
                 if (notification.isLegacyFormat) "Legacy rep (6-byte)" else "Modern rep (24-byte)",
-                details = "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}",
+                details = repNotificationDetails("REPS_CHAR", data, notification),
             )
         } catch (e: Exception) {
             log.e { "Error parsing REPS characteristic data: ${e.message}" }
@@ -387,6 +429,13 @@ class KableBleRepository : BleRepository {
     }
 
     private fun currentTimeMillis(): Long = Clock.System.now().toEpochMilliseconds()
+
+    private fun repNotificationDetails(source: String, data: ByteArray, notification: RepNotification): String =
+        "source=$source, rawHex=${BlePacketFactory.formatHex(data)}, format=${if (notification.isLegacyFormat) "legacy" else "modern"}, " +
+            "topCounter=${notification.topCounter}, completeCounter=${notification.completeCounter}, " +
+            "repsRomCount=${notification.repsRomCount}, repsRomTotal=${notification.repsRomTotal}, " +
+            "repsSetCount=${notification.repsSetCount}, repsSetTotal=${notification.repsSetTotal}, " +
+            "rangeTop=${notification.rangeTop}, rangeBottom=${notification.rangeBottom}"
 
     // ===== Disco Mode (Easter Egg) =====
     override fun startDiscoMode() {

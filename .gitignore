@@ -100,3 +100,4 @@ bugreport-*.zip
 /.gradle-local/
 /.gradle-local-test/
 /code-review/
+/docs/

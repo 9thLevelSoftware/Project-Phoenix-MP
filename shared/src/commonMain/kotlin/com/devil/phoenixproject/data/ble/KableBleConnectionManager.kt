@@ -7,16 +7,13 @@ import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.HardwareDetection
 import com.juul.kable.Advertisement
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
 import com.juul.kable.WriteType
-import kotlin.concurrent.Volatile
-import kotlin.time.Clock
-import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -34,6 +31,10 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.Volatile
+import kotlin.time.Clock
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Manages the BLE connection lifecycle for Vitruvian machines.
@@ -135,6 +136,19 @@ class KableBleConnectionManager(
     /** Negotiated MTU (for diagnostic logging). */
     @Volatile
     private var negotiatedMtu: Int? = null
+
+    private data class LastNusTxCommand(
+        val opcode: String,
+        val family: String,
+        val size: Int,
+        val hex: String,
+        val sentAtMs: Long,
+        val result: String,
+        val durationMs: Long,
+        val error: String?,
+    )
+
+    private var lastNusTxCommand: LastNusTxCommand? = null
 
     // -------------------------------------------------------------------------
     // Local state tracking for stopScanning guard
@@ -540,6 +554,7 @@ class KableBleConnectionManager(
                             val deviceName = connectedDeviceName
                             val deviceAddress = connectedDeviceAddress
                             val hadConnection = wasEverConnected
+                            val lastCommandDetails = formatLastCommandForDisconnect(currentTimeMillis())
 
                             // Only process disconnect if we were actually connected
                             if (hadConnection) {
@@ -548,6 +563,7 @@ class KableBleConnectionManager(
                                     "Device disconnected",
                                     deviceName,
                                     deviceAddress,
+                                    lastCommandDetails,
                                 )
 
                                 // Stop all polling jobs
@@ -779,6 +795,14 @@ class KableBleConnectionManager(
         val p = peripheral ?: return
 
         logRepo.info(
+            LogEventType.ISSUE_232_CONNECTION,
+            "Notification setup start",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            "phase=notification_setup_start, peripheralPresent=true, pollingEngine=MetricPollingEngine",
+        )
+
+        logRepo.info(
             LogEventType.NOTIFICATION,
             "Enabling BLE notifications and starting polling (matching parent repo)",
             connectedDeviceName,
@@ -787,6 +811,13 @@ class KableBleConnectionManager(
 
         // ===== FIRMWARE VERSION READ (best effort) =====
         // Try to read firmware version from Device Information Service
+        logRepo.debug(
+            LogEventType.ISSUE_232_CONNECTION,
+            "Firmware/version reads scheduled",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            "phase=firmware_version_reads_scheduled, reads=DIS_firmware+Vitruvian_version",
+        )
         scope.launch {
             tryReadFirmwareVersion(p)
             tryReadVitruvianVersion(p)
@@ -800,6 +831,13 @@ class KableBleConnectionManager(
         // Command responses (if any) come through device-specific characteristics.
 
         // Observe REPS characteristic for rep completion events (CRITICAL for rep counting!)
+        logRepo.debug(
+            LogEventType.ISSUE_232_CONNECTION,
+            "Observation coroutine launched: REPS",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            "characteristic=$repsCharacteristic",
+        )
         scope.launch {
             try {
                 log.i { "Starting REPS characteristic notifications (rep events)" }
@@ -831,6 +869,13 @@ class KableBleConnectionManager(
         }
 
         // Observe VERSION characteristic (for firmware info logging)
+        logRepo.debug(
+            LogEventType.ISSUE_232_CONNECTION,
+            "Observation coroutine launched: VERSION",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            "characteristic=$versionCharacteristic",
+        )
         scope.launch {
             try {
                 log.d { "Starting VERSION characteristic notifications" }
@@ -847,6 +892,13 @@ class KableBleConnectionManager(
         }
 
         // Observe MODE characteristic (for mode change logging)
+        logRepo.debug(
+            LogEventType.ISSUE_232_CONNECTION,
+            "Observation coroutine launched: MODE",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            "characteristic=$modeCharacteristic",
+        )
         scope.launch {
             try {
                 log.d { "Starting MODE characteristic notifications" }
@@ -861,8 +913,29 @@ class KableBleConnectionManager(
         }
 
         // ===== POLLING (delegated to MetricPollingEngine) =====
+        logRepo.debug(
+            LogEventType.ISSUE_232_CONNECTION,
+            "Disco mode stop requested before polling",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            "phase=disco_mode_stop_before_polling",
+        )
         discoMode.stop()
+        logRepo.info(
+            LogEventType.ISSUE_232_CONNECTION,
+            "Polling start requested from notification handoff",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            "phase=polling_start_requested, source=startObservingNotifications",
+        )
         pollingEngine.startAll(p)
+        logRepo.info(
+            LogEventType.ISSUE_232_CONNECTION,
+            "Polling start completed from notification handoff",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            "phase=polling_start_completed, source=startObservingNotifications",
+        )
     }
 
     // -------------------------------------------------------------------------
@@ -1009,11 +1082,19 @@ class KableBleConnectionManager(
         }
 
         val commandHex = command.joinToString(" ") { it.toHexString() }
+        val commandDescription = BlePacketFactory.describeCommand(command)
         log.d { "Sending ${command.size}-byte command to NUS TX" }
         log.d { "Command hex: $commandHex" }
 
         // Issue #222: Log queue state before acquiring for debugging
         log.d { "BLE queue locked: ${bleQueue.isLocked}, acquiring..." }
+        logRepo.info(
+            LogEventType.ISSUE_232_NUS_TX,
+            "NUS TX pre-send",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            "opcode=${commandDescription.opcode}, family=${commandDescription.family}, size=${commandDescription.size}, hex=${commandDescription.hex}, queueLocked=${bleQueue.isLocked}, device=$connectedDeviceName ($connectedDeviceAddress)",
+        )
 
         val attemptStart = currentTimeMillis()
         val result = bleQueue.write(p, txCharacteristic, command, WriteType.WithResponse)
@@ -1037,14 +1118,54 @@ class KableBleConnectionManager(
                         if (data != null) {
                             log.d { "Post-CONFIG diagnostic read (${data.size} bytes)" }
                             parseDiagnosticData(data)
+                            logRepo.debug(
+                                LogEventType.ISSUE_232_NUS_TX,
+                                "Post-command diagnostic read result",
+                                connectedDeviceName,
+                                connectedDeviceAddress,
+                                "opcode=${commandDescription.opcode}, family=${commandDescription.family}, result=success, size=${data.size}, hex=${BlePacketFactory.formatHex(data)}",
+                            )
                         } else {
                             log.d { "Post-CONFIG diagnostic read timed out" }
+                            logRepo.debug(
+                                LogEventType.ISSUE_232_NUS_TX,
+                                "Post-command diagnostic read result",
+                                connectedDeviceName,
+                                connectedDeviceAddress,
+                                "opcode=${commandDescription.opcode}, family=${commandDescription.family}, result=timeout",
+                            )
                         }
                     } catch (e: Exception) {
                         log.w { "Post-CONFIG diagnostic read failed: ${e.message}" }
+                        logRepo.warning(
+                            LogEventType.ISSUE_232_NUS_TX,
+                            "Post-command diagnostic read result",
+                            connectedDeviceName,
+                            connectedDeviceAddress,
+                            "opcode=${commandDescription.opcode}, family=${commandDescription.family}, result=failure, error=${e.message}",
+                        )
                     }
                 }
             }
+
+            lastNusTxCommand = LastNusTxCommand(
+                opcode = commandDescription.opcode,
+                family = commandDescription.family,
+                size = commandDescription.size,
+                hex = commandDescription.hex,
+                sentAtMs = currentTimeMillis(),
+                result = "success",
+                durationMs = elapsedMs,
+                error = null,
+            )
+
+            logRepo.info(
+                LogEventType.ISSUE_232_NUS_TX,
+                "NUS TX post-success",
+                connectedDeviceName,
+                connectedDeviceAddress,
+                "opcode=${commandDescription.opcode}, family=${commandDescription.family}, size=${commandDescription.size}, hex=${commandDescription.hex}, queueLocked=${bleQueue.isLocked}, durationMs=$elapsedMs, device=$connectedDeviceName ($connectedDeviceAddress), diagnosticReadScheduled=${isEchoConfig || isProgramConfig}",
+            )
 
             logRepo.debug(
                 LogEventType.COMMAND_SENT,
@@ -1056,7 +1177,25 @@ class KableBleConnectionManager(
             return Result.success(Unit)
         } else {
             val ex = result.exceptionOrNull()
+            val elapsedMs = currentTimeMillis() - attemptStart
+            lastNusTxCommand = LastNusTxCommand(
+                opcode = commandDescription.opcode,
+                family = commandDescription.family,
+                size = commandDescription.size,
+                hex = commandDescription.hex,
+                sentAtMs = currentTimeMillis(),
+                result = "failure",
+                durationMs = elapsedMs,
+                error = ex?.message,
+            )
             log.e { "Failed to send command after retries: ${ex?.message}" }
+            logRepo.error(
+                LogEventType.ISSUE_232_NUS_TX,
+                "NUS TX failure",
+                connectedDeviceName,
+                connectedDeviceAddress,
+                "opcode=${commandDescription.opcode}, family=${commandDescription.family}, size=${commandDescription.size}, hex=${commandDescription.hex}, queueLocked=${bleQueue.isLocked}, durationMs=$elapsedMs, device=$connectedDeviceName ($connectedDeviceAddress), error=${ex?.message ?: "unknown"}",
+            )
             logRepo.error(
                 LogEventType.ERROR,
                 "Failed to send command",
@@ -1161,4 +1300,11 @@ class KableBleConnectionManager(
      * Get current time in milliseconds (KMP-compatible).
      */
     private fun currentTimeMillis(): Long = Clock.System.now().toEpochMilliseconds()
+
+    private fun formatLastCommandForDisconnect(nowMs: Long): String {
+        val last = lastNusTxCommand ?: return "lastNusTx=none"
+        return "lastNusTxOpcode=${last.opcode}, lastNusTxFamily=${last.family}, lastNusTxSize=${last.size}, " +
+            "lastNusTxAgeMs=${nowMs - last.sentAtMs}, lastNusTxResult=${last.result}, " +
+            "lastNusTxDurationMs=${last.durationMs}, lastNusTxError=${last.error ?: "none"}, lastNusTxHex=${last.hex}"
+    }
 }

@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.ble
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ConnectionLogRepository
+import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -40,6 +42,7 @@ class MetricPollingEngine(
     private val onMetricEmit: (WorkoutMetric) -> Boolean,
     private val onHeuristicData: (HeuristicStatistics) -> Unit,
     private val onConnectionLost: suspend () -> Unit,
+    private val logRepo: ConnectionLogRepository? = null,
 ) {
     private val log = Logger.withTag("MetricPollingEngine")
 
@@ -54,6 +57,11 @@ class MetricPollingEngine(
     private var diagnosticPollingJob: Job? = null
     private var heuristicPollingJob: Job? = null
     private var heartbeatJob: Job? = null
+
+    private var monitorSampleLogsRemaining = 3
+    private var diagnosticSampleLogsRemaining = 3
+    private var heuristicSampleLogsRemaining = 3
+    private var heartbeatSampleLogsRemaining = 3
 
     // Monitor polling mutex — prevents concurrent monitor loops
     private val monitorPollingMutex = Mutex()
@@ -180,10 +188,22 @@ class MetricPollingEngine(
     /** Start all 4 polling loops. Called from startObservingNotifications(). */
     fun startAll(peripheral: Peripheral) {
         log.i { "Starting all polling loops" }
+        logPollingLifecycle(
+            loopName = "all",
+            phase = "startAll_requested",
+            intervalMs = null,
+            previousJobState = pollingJobStates(),
+        )
         startMonitorPolling(peripheral)
         startDiagnosticPolling(peripheral)
         startHeuristicPolling(peripheral)
         startHeartbeat(peripheral)
+        logPollingLifecycle(
+            loopName = "all",
+            phase = "startAll_launched",
+            intervalMs = null,
+            previousJobState = pollingJobStates(),
+        )
     }
 
     /**
@@ -196,10 +216,17 @@ class MetricPollingEngine(
      * @param forAutoStart If true, enables handle detection for Just Lift auto-start.
      */
     fun startMonitorPolling(peripheral: Peripheral, forAutoStart: Boolean = false) {
+        val previousJobState = jobState(monitorPollingJob)
         // Reset monitor processing state for new session
         val previousCount = monitorProcessor.notificationCount
         monitorProcessor.resetForNewSession()
         log.i { "Monitor processor reset (previous session: $previousCount notifications)" }
+        logPollingLifecycle(
+            loopName = "monitor",
+            phase = "start_requested forAutoStart=$forAutoStart",
+            intervalMs = 0L,
+            previousJobState = previousJobState,
+        )
 
         if (forAutoStart) {
             handleDetector.enable(autoStart = true)
@@ -238,6 +265,7 @@ class MetricPollingEngine(
                             if (data != null) {
                                 successCount++
                                 consecutiveTimeouts = 0
+                                logPollingSample("monitor", data, successCount, null)
                                 if (successCount == 1L || successCount % 500 == 0L) {
                                     log.i { "Monitor poll SUCCESS #$successCount, data size: ${data.size}" }
                                 }
@@ -276,6 +304,12 @@ class MetricPollingEngine(
                     log.e { "Monitor polling stopped: ${e.message}" }
                 }
                 log.i { "Monitor polling ended (reads: $successCount, failures: $failCount, timeouts: $consecutiveTimeouts)" }
+                logPollingLifecycle(
+                    loopName = "monitor",
+                    phase = "ended reads=$successCount failures=$failCount timeouts=$consecutiveTimeouts",
+                    intervalMs = 0L,
+                    previousJobState = "ending",
+                )
             }
         }
     }
@@ -284,6 +318,13 @@ class MetricPollingEngine(
      * Poll DIAGNOSTIC characteristic every 500ms for keep-alive and health monitoring.
      */
     fun startDiagnosticPolling(peripheral: Peripheral) {
+        val previousJobState = jobState(diagnosticPollingJob)
+        logPollingLifecycle(
+            loopName = "diagnostic",
+            phase = "start_requested",
+            intervalMs = BleConstants.Timing.DIAGNOSTIC_POLL_INTERVAL_MS,
+            previousJobState = previousJobState,
+        )
         diagnosticPollingJob?.cancel()
         diagnosticPollingJob = scope.launch {
             log.d { "Starting SEQUENTIAL diagnostic polling (${BleConstants.Timing.DIAGNOSTIC_POLL_INTERVAL_MS}ms interval)" }
@@ -301,6 +342,7 @@ class MetricPollingEngine(
                     if (data != null) {
                         successfulReads++
                         diagnosticPollCount++
+                        logPollingSample("diagnostic", data, successfulReads, null)
                         if (diagnosticPollCount == 1L || diagnosticPollCount % BleConstants.Timing.DIAGNOSTIC_LOG_EVERY == 0L) {
                             log.d { "Diagnostic poll #$diagnosticPollCount (bytes=${data.size}, failed=$failedReads)" }
                         }
@@ -319,6 +361,12 @@ class MetricPollingEngine(
                 }
             }
             log.d { "Diagnostic polling ended (success: $successfulReads, failed: $failedReads)" }
+            logPollingLifecycle(
+                loopName = "diagnostic",
+                phase = "ended success=$successfulReads failed=$failedReads",
+                intervalMs = BleConstants.Timing.DIAGNOSTIC_POLL_INTERVAL_MS,
+                previousJobState = "ending",
+            )
         }
     }
 
@@ -326,6 +374,13 @@ class MetricPollingEngine(
      * Poll HEURISTIC characteristic every 250ms (4Hz) for force telemetry.
      */
     fun startHeuristicPolling(peripheral: Peripheral) {
+        val previousJobState = jobState(heuristicPollingJob)
+        logPollingLifecycle(
+            loopName = "heuristic",
+            phase = "start_requested",
+            intervalMs = BleConstants.Timing.HEURISTIC_POLL_INTERVAL_MS,
+            previousJobState = previousJobState,
+        )
         heuristicPollingJob?.cancel()
         heuristicPollingJob = scope.launch {
             log.d { "Starting SEQUENTIAL heuristic polling (${BleConstants.Timing.HEURISTIC_POLL_INTERVAL_MS}ms interval / 4Hz)" }
@@ -340,6 +395,7 @@ class MetricPollingEngine(
 
                     if (data != null && data.isNotEmpty()) {
                         successfulReads++
+                        logPollingSample("heuristic", data, successfulReads, null)
                         if (successfulReads % 100 == 0L) {
                             log.v { "Heuristic poll #$successfulReads (failed: $failedReads)" }
                         }
@@ -361,6 +417,12 @@ class MetricPollingEngine(
                 }
             }
             log.d { "Heuristic polling ended (success: $successfulReads, failed: $failedReads)" }
+            logPollingLifecycle(
+                loopName = "heuristic",
+                phase = "ended success=$successfulReads failed=$failedReads",
+                intervalMs = BleConstants.Timing.HEURISTIC_POLL_INTERVAL_MS,
+                previousJobState = "ending",
+            )
         }
     }
 
@@ -370,6 +432,13 @@ class MetricPollingEngine(
      * Issue #222 v15.1: V-Form requires WriteType.WithResponse.
      */
     fun startHeartbeat(peripheral: Peripheral) {
+        val previousJobState = jobState(heartbeatJob)
+        logPollingLifecycle(
+            loopName = "heartbeat",
+            phase = "start_requested",
+            intervalMs = BleConstants.Timing.HEARTBEAT_INTERVAL_MS,
+            previousJobState = previousJobState,
+        )
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             log.d {
@@ -401,6 +470,12 @@ class MetricPollingEngine(
     fun stopAll() {
         val timestamp = currentTimeMillis()
         log.d { "STOP_DEBUG: [$timestamp] stopAll() called" }
+        logPollingLifecycle(
+            loopName = "all",
+            phase = "stopAll_requested",
+            intervalMs = null,
+            previousJobState = pollingJobStates(),
+        )
         log.d {
             "STOP_DEBUG: Job states before cancel - monitor=${monitorPollingJob?.isActive}, " +
                 "diagnostic=${diagnosticPollingJob?.isActive}, heuristic=${heuristicPollingJob?.isActive}, " +
@@ -441,6 +516,12 @@ class MetricPollingEngine(
 
         val afterCancel = currentTimeMillis()
         log.d { "STOP_DEBUG: [$afterCancel] Jobs cancelled (took ${afterCancel - timestamp}ms)" }
+        logPollingLifecycle(
+            loopName = "all",
+            phase = "stopAll_completed durationMs=${afterCancel - timestamp}",
+            intervalMs = null,
+            previousJobState = pollingJobStates(),
+        )
     }
 
     /**
@@ -449,6 +530,12 @@ class MetricPollingEngine(
      */
     fun stopMonitorOnly() {
         log.d { "Stopping monitor polling only - diagnostic polling + heartbeat continue" }
+        logPollingLifecycle(
+            loopName = "monitor",
+            phase = "stopMonitorOnly_requested",
+            intervalMs = null,
+            previousJobState = jobState(monitorPollingJob),
+        )
         monitorPollingJob?.cancel()
         monitorPollingJob = null
         log.d {
@@ -464,6 +551,12 @@ class MetricPollingEngine(
      */
     fun restartAll(peripheral: Peripheral) {
         log.i { "Restarting all polling loops" }
+        logPollingLifecycle(
+            loopName = "all",
+            phase = "restartAll_requested",
+            intervalMs = null,
+            previousJobState = pollingJobStates(),
+        )
         log.d {
             "Issue #222 v16: Polling job states before restart - " +
                 "monitor=${monitorPollingJob?.isActive}, " +
@@ -496,6 +589,12 @@ class MetricPollingEngine(
      */
     fun restartDiagnosticAndHeartbeat(peripheral: Peripheral) {
         log.d { "Restarting diagnostic polling + heartbeat (Issue #222 v10)" }
+        logPollingLifecycle(
+            loopName = "diagnostic+heartbeat",
+            phase = "restart_requested",
+            intervalMs = null,
+            previousJobState = pollingJobStates(),
+        )
 
         if (diagnosticPollingJob?.isActive != true) {
             startDiagnosticPolling(peripheral)
@@ -574,7 +673,8 @@ class MetricPollingEngine(
      * which triggers the no-op write fallback. Returns true if read succeeded.
      */
     private suspend fun performHeartbeatRead(peripheral: Peripheral): Boolean = try {
-        bleQueue.read { peripheral.read(txCharacteristic) }
+        val data = bleQueue.read { peripheral.read(txCharacteristic) }
+        logPollingSample("heartbeat", data, null, "read")
         log.v { "Heartbeat read succeeded (TX char)" }
         true
     } catch (e: Exception) {
@@ -589,9 +689,58 @@ class MetricPollingEngine(
     private suspend fun sendHeartbeatNoOp(peripheral: Peripheral) {
         try {
             bleQueue.writeSimple(peripheral, txCharacteristic, BleConstants.HEARTBEAT_NO_OP, WriteType.WithResponse)
+            logPollingSample("heartbeat", BleConstants.HEARTBEAT_NO_OP, null, "no_op_write")
             log.v { "Heartbeat no-op write sent" }
         } catch (e: Exception) {
             log.w { "Heartbeat no-op write failed: ${e.message}" }
         }
+    }
+
+    private fun logPollingLifecycle(loopName: String, phase: String, intervalMs: Long?, previousJobState: String) {
+        logRepo?.debug(
+            LogEventType.ISSUE_232_POLLING,
+            "Polling $loopName $phase",
+            details = "loop=$loopName, phase=$phase, previousJobState=$previousJobState, intervalMs=${intervalMs ?: "n/a"}",
+        )
+    }
+
+    private fun logPollingSample(loopName: String, data: ByteArray, sampleIndex: Long?, operation: String?) {
+        val remaining = when (loopName) {
+            "monitor" -> monitorSampleLogsRemaining
+            "diagnostic" -> diagnosticSampleLogsRemaining
+            "heuristic" -> heuristicSampleLogsRemaining
+            "heartbeat" -> heartbeatSampleLogsRemaining
+            else -> 0
+        }
+        if (remaining <= 0) return
+
+        when (loopName) {
+            "monitor" -> monitorSampleLogsRemaining--
+            "diagnostic" -> diagnosticSampleLogsRemaining--
+            "heuristic" -> heuristicSampleLogsRemaining--
+            "heartbeat" -> heartbeatSampleLogsRemaining--
+        }
+
+        logRepo?.debug(
+            LogEventType.ISSUE_232_POLLING,
+            "Bounded polling sample: $loopName",
+            details = "loop=$loopName, operation=${operation ?: "read"}, sample=${sampleIndex ?: "n/a"}, size=${data.size}, hex=${formatHex(data)}",
+        )
+    }
+
+    private fun pollingJobStates(): String = "monitor=${jobState(monitorPollingJob)}, diagnostic=${jobState(diagnosticPollingJob)}, heuristic=${jobState(heuristicPollingJob)}, heartbeat=${jobState(heartbeatJob)}"
+
+    private fun jobState(job: Job?): String = when {
+        job == null -> "null"
+        job.isActive -> "active"
+        job.isCancelled -> "cancelled"
+        job.isCompleted -> "completed"
+        else -> "inactive"
+    }
+
+    private fun formatHex(bytes: ByteArray): String = if (bytes.isEmpty()) {
+        "<empty>"
+    } else {
+        bytes.joinToString(" ") { it.toVitruvianHex() }
     }
 }

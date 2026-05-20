@@ -9,8 +9,10 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
+import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.RepNotification
@@ -96,6 +98,7 @@ class ActiveSessionEngine(
     private val externalActivityRepository: ExternalActivityRepository? = null,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
 ) {
+    private val logRepo = ConnectionLogRepository.instance
 
     /**
      * Delegate interface for operations that require routine navigation or
@@ -2086,6 +2089,10 @@ class ActiveSessionEngine(
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) {
         Logger.d { "startWorkout called: skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode" }
         Logger.d { "startWorkout: loadedRoutine=${coordinator._loadedRoutine.value?.name}, params=${coordinator._workoutParameters.value}" }
+        logIssue232WorkoutSession(
+            message = "Workout start requested",
+            extra = "skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode, state=${coordinator._workoutState.value}",
+        )
 
         cancelJustLiftEggTimer()
         coordinator.stopWorkoutInProgress.value = false
@@ -2139,6 +2146,12 @@ class ActiveSessionEngine(
                     Logger.d("Starting bodyweight exercise: ${currentExercise?.exercise?.name} for ${effectiveDuration}s (bodyweightDuration=$bodyweightDuration)")
 
                     Logger.d("ActiveSessionEngine") { "Issue #222 v6: Bodyweight start - keeping existing polling state (matching parent repo)" }
+                    logIssue232WorkoutSession(
+                        message = "Bodyweight workout start path selected",
+                        params = params,
+                        currentExercise = currentExercise,
+                        extra = "bleCommandWillBeSent=false, bleStopResetOnCompletion=false, effectiveDuration=$effectiveDuration",
+                    )
 
                     repCounter.reset()
                     repCounter.configure(
@@ -2162,6 +2175,12 @@ class ActiveSessionEngine(
                     }
 
                     coordinator._workoutState.value = WorkoutState.Active
+                    logIssue232WorkoutSession(
+                        message = "Workout state transitioned active",
+                        params = params,
+                        currentExercise = currentExercise,
+                        extra = "path=bodyweight, bleCommandSent=false, bodyweight=true, sessionId=${coordinator.currentSessionId ?: "pending"}",
+                    )
                     coordinator.workoutStartTime = currentTimeMillis()
                     if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
                         coordinator.routineStartTime = coordinator.workoutStartTime
@@ -2316,6 +2335,13 @@ class ActiveSessionEngine(
                 } else {
                     BlePacketFactory.createProgramParams(bleParams)
                 }
+                val commandDescription = BlePacketFactory.describeCommand(command)
+                logIssue232WorkoutSession(
+                    message = "Workout command selected",
+                    params = bleParams,
+                    currentExercise = currentExercise,
+                    extra = "opcode=${commandDescription.opcode}, family=${commandDescription.family}, size=${commandDescription.size}, hex=${commandDescription.hex}, bleStartCommandWillFollow=${!effectiveParams.isEchoMode}, variableWarmup=$hasVariableWarmupOverrideApplied, timedCable=$isTimedCableExercise, repCounterWarmupTarget=${if (hasVariableWarmupOverrideApplied) warmupOverrideParams.warmupReps else effectiveParams.warmupReps}",
+                )
                 Logger.d { "Built ${command.size}-byte workout command for ${bleParams.programMode}" }
 
                 coordinator.currentSessionId = KmpUtils.randomUUID()
@@ -2364,6 +2390,12 @@ class ActiveSessionEngine(
                 }
 
                 try {
+                    logIssue232WorkoutSession(
+                        message = "Sending workout config command",
+                        params = bleParams,
+                        currentExercise = currentExercise,
+                        extra = "opcode=${commandDescription.opcode}, family=${commandDescription.family}, size=${commandDescription.size}",
+                    )
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
                     val preview = command.take(16).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
@@ -2402,6 +2434,13 @@ class ActiveSessionEngine(
                     delay(100)
                     try {
                         val startCommand = BlePacketFactory.createStartCommand()
+                        val startDescription = BlePacketFactory.describeCommand(startCommand)
+                        logIssue232WorkoutSession(
+                            message = "Sending START command",
+                            params = bleParams,
+                            currentExercise = currentExercise,
+                            extra = "opcode=${startDescription.opcode}, family=${startDescription.family}, size=${startDescription.size}, hex=${startDescription.hex}",
+                        )
                         bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
                         Logger.i { "START command sent (0x03)" }
                     } catch (e: Exception) {
@@ -2414,6 +2453,12 @@ class ActiveSessionEngine(
                 bleRepository.startActiveWorkoutPolling()
 
                 coordinator._workoutState.value = WorkoutState.Active
+                logIssue232WorkoutSession(
+                    message = "Workout state transitioned active",
+                    params = bleParams,
+                    currentExercise = currentExercise,
+                    extra = "path=cable, bleCommandSent=true, pollingStartCalled=true, bodyweight=false, sessionId=${coordinator.currentSessionId ?: "pending"}",
+                )
                 coordinator.workoutStartTime = currentTimeMillis()
                 if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
                     coordinator.routineStartTime = coordinator.workoutStartTime
@@ -2569,7 +2614,13 @@ class ActiveSessionEngine(
 
     fun stopWorkout(exitingWorkout: Boolean = false) {
         // C1: Atomic compareAndSet prevents TOCTOU race — only the first caller proceeds
-        if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+        if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) {
+            logIssue232WorkoutSession(
+                message = "Manual stop ignored because stop already in progress",
+                extra = "caller=ActiveSessionEngine.stopWorkout, exitingWorkout=$exitingWorkout",
+            )
+            return
+        }
 
         val shouldExitToIdle = exitingWorkout
 
@@ -2593,6 +2644,12 @@ class ActiveSessionEngine(
             val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
             val isBodyweight = isBodyweightExercise(currentExercise)
             Logger.d("ActiveSessionEngine") { "Manual stop: isBodyweight=$isBodyweight, exitingWorkout=$shouldExitToIdle" }
+            logIssue232WorkoutSession(
+                message = "Manual stop path entered",
+                params = coordinator._workoutParameters.value,
+                currentExercise = currentExercise,
+                extra = "caller=ActiveSessionEngine.stopWorkout, exitingWorkout=$shouldExitToIdle, stopReason=manual, bleStopResetWillBeCalled=${!isBodyweight}, bodyweight=$isBodyweight",
+            )
             if (!isBodyweight) {
                 Logger.d("ActiveSessionEngine") { "Manual stop: calling bleRepository.stopWorkout()" }
                 bleRepository.stopWorkout()
@@ -3279,6 +3336,10 @@ class ActiveSessionEngine(
         // 1.2: Atomic compareAndSet prevents duplicate set completion across dispatchers
         if (!coordinator.setCompletionInProgress.compareAndSet(expect = false, update = true)) {
             Logger.d("handleSetCompletion: already in progress - ignoring")
+            logIssue232WorkoutSession(
+                message = "Auto-completion ignored because completion already in progress",
+                extra = "caller=handleSetCompletion",
+            )
             return
         }
 
@@ -3294,6 +3355,11 @@ class ActiveSessionEngine(
                 "sessionId=${coordinator.currentSessionId ?: "NULL"}, " +
                 "weight=${entryParams.weightPerCableKg}kg"
         }
+        logIssue232WorkoutSession(
+            message = "Auto-completion entered",
+            params = entryParams,
+            extra = "caller=handleSetCompletion, stopReason=auto_completion, warmupReps=${repCount.warmupReps}, workingReps=${repCount.workingReps}, totalReps=${repCount.totalReps}, bleStopResetWillBeCalled=pending_bodyweight_check",
+        )
 
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
@@ -3334,9 +3400,21 @@ class ActiveSessionEngine(
             Logger.d { "Issue #222 v8: Set coordinator.previousExerciseWasBodyweight=$wasBodyweight" }
 
             if (!wasBodyweight) {
+                logIssue232WorkoutSession(
+                    message = "Auto-completion will call BLE stop/reset",
+                    params = params,
+                    currentExercise = currentExercise,
+                    extra = "caller=handleSetCompletion, stopReason=auto_completion, wasBodyweight=false, wasTimedBodyweight=$wasTimedBodyweight, bleStopResetWillBeCalled=true",
+                )
                 bleRepository.stopWorkout()
                 Logger.d("handleSetCompletion: Called stopWorkout() (auto-complete)")
             } else {
+                logIssue232WorkoutSession(
+                    message = "Auto-completion skips BLE stop/reset",
+                    params = params,
+                    currentExercise = currentExercise,
+                    extra = "caller=handleSetCompletion, stopReason=auto_completion, wasBodyweight=true, wasTimedBodyweight=$wasTimedBodyweight, bleStopResetWillBeCalled=false",
+                )
                 Logger.d("handleSetCompletion: Skipping BLE stop (bodyweight exercise)")
             }
 
@@ -4260,5 +4338,25 @@ class ActiveSessionEngine(
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.repEventsCollectionJob?.cancel()
         coordinator.workoutJob?.cancel()
+    }
+
+    private fun logIssue232WorkoutSession(
+        message: String,
+        params: WorkoutParameters? = coordinator._workoutParameters.value,
+        currentExercise: RoutineExercise? = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value),
+        extra: String,
+    ) {
+        val routine = coordinator._loadedRoutine.value
+        val p = params
+        logRepo.info(
+            LogEventType.ISSUE_232_WORKOUT_SESSION,
+            message,
+            details = "routineId=${routine?.id ?: "none"}, routineName=${routine?.name ?: "none"}, " +
+                "exerciseIndex=${coordinator._currentExerciseIndex.value}, setIndex=${coordinator._currentSetIndex.value}, warmupSetIndex=${coordinator._currentWarmupSetIndex.value}, " +
+                "exercise=${currentExercise?.exercise?.name ?: "none"}, bodyweight=${currentExercise?.let { isBodyweightExercise(it) } ?: false}, " +
+                "mode=${p?.programMode?.displayName ?: "none"}, isEcho=${p?.isEchoMode}, isJustLift=${p?.isJustLift}, isAMRAP=${p?.isAMRAP}, stopAtTop=${p?.stopAtTop}, " +
+                "echoLevel=${p?.echoLevel?.displayName ?: "none"}, eccentricPct=${p?.eccentricLoad?.percentage ?: "none"}, warmupReps=${p?.warmupReps ?: "none"}, targetReps=${p?.reps ?: "none"}, " +
+                "weightPerCableKg=${p?.weightPerCableKg ?: "none"}, $extra",
+        )
     }
 }

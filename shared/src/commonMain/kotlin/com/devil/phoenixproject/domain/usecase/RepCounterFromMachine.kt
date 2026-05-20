@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.domain.usecase
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ConnectionLogRepository
+import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepEvent
 import com.devil.phoenixproject.domain.model.RepPhase
@@ -25,6 +27,7 @@ import com.devil.phoenixproject.domain.model.RepType
 class RepCounterFromMachine {
 
     private val log = Logger.withTag("RepCounterFromMachine")
+    private val logRepo = ConnectionLogRepository.instance
 
     private var warmupReps = 0
     private var workingReps = 0
@@ -34,6 +37,10 @@ class RepCounterFromMachine {
     private var stopAtTop = false
     private var shouldStop = false
     private var isAMRAP = false
+    private var loggedWarmupComplete = false
+    private var loggedStopFlag = false
+    private var loggedTargetReached = false
+    private var firstModernSamplesRemaining = 3
 
     // Pending rep state - true when at TOP, waiting for machine confirm
     private var hasPendingRep = false
@@ -100,6 +107,11 @@ class RepCounterFromMachine {
         logDebug("  isJustLift: $isJustLift")
         logDebug("  stopAtTop: $stopAtTop")
         logDebug("  isAMRAP: $isAMRAP")
+        logRepo.info(
+            LogEventType.ISSUE_232_REP_COUNTER,
+            "Rep counter configured",
+            details = "warmupTarget=$warmupTarget, workingTarget=$workingTarget, isJustLift=$isJustLift, stopAtTop=$stopAtTop, isAMRAP=$isAMRAP",
+        )
     }
 
     fun reset() {
@@ -134,6 +146,7 @@ class RepCounterFromMachine {
         lastRepTopB = null
         lastRepBottomA = null
         lastRepBottomB = null
+        resetDiagnosticFlags()
     }
 
     /**
@@ -154,6 +167,7 @@ class RepCounterFromMachine {
         phaseProgress = 0f
         lastTopCounter = 0
         lastCompleteCounter = 0
+        resetDiagnosticFlags()
         // NOTE: Do NOT clear position tracking lists or min/max ranges!
         // This preserves hasMeaningfulRange() for auto-stop detection
     }
@@ -383,6 +397,14 @@ class RepCounterFromMachine {
      * - Actual rep counting comes from repsRomCount/repsSetCount
      */
     private fun processModern(repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
+        if (firstModernSamplesRemaining > 0) {
+            firstModernSamplesRemaining--
+            logRepo.debug(
+                LogEventType.ISSUE_232_REP_COUNTER,
+                "Modern rep sample",
+                details = repCounterDetails("sample", repsRomCount, repsSetCount, up, down, posA, posB),
+            )
+        }
         // Track UP movement - for working reps, show PENDING (grey) at TOP
         // Issue #210 FIX: No null check needed - lastTopCounter initialized to 0
         val upDelta = calculateDelta(lastTopCounter, up)
@@ -420,6 +442,7 @@ class RepCounterFromMachine {
                     if (!shouldStop) {
                         logDebug("🛑 STOP_AT_TOP: target reached at TOP, completing set")
                         shouldStop = true
+                        logStopFlagTransition("stop_at_top", repsRomCount, repsSetCount, up, down, posA, posB)
                         onRepEvent?.invoke(
                             RepEvent(
                                 type = RepType.WORKOUT_COMPLETE,
@@ -463,6 +486,7 @@ class RepCounterFromMachine {
             )
 
             if (warmupReps >= warmupTarget) {
+                logWarmupComplete("machine_rom_count", repsRomCount, repsSetCount, up, down, posA, posB)
                 onRepEvent?.invoke(
                     RepEvent(
                         type = RepType.WARMUP_COMPLETE,
@@ -487,6 +511,7 @@ class RepCounterFromMachine {
             )
 
             if (warmupReps >= warmupTarget) {
+                logWarmupComplete("fallback_up_counter", repsRomCount, repsSetCount, up, down, posA, posB)
                 onRepEvent?.invoke(
                     RepEvent(
                         type = RepType.WARMUP_COMPLETE,
@@ -506,6 +531,7 @@ class RepCounterFromMachine {
             if (warmupReps < warmupTarget) {
                 logDebug("Machine reports working reps (repsSetCount=$repsSetCount) - warmup must be complete")
                 warmupReps = warmupTarget
+                logWarmupComplete("machine_working_rep_implies_warmup", repsRomCount, repsSetCount, up, down, posA, posB)
                 onRepEvent?.invoke(
                     RepEvent(
                         type = RepType.WARMUP_COMPLETE,
@@ -522,6 +548,11 @@ class RepCounterFromMachine {
             phaseProgress = 0f
 
             logDebug("WORKING_COMPLETED: rep $workingReps confirmed at eccentric valley")
+            logRepo.info(
+                LogEventType.ISSUE_232_REP_COUNTER,
+                "Working rep advanced",
+                details = repCounterDetails("working_rep_advanced", repsRomCount, repsSetCount, up, down, posA, posB),
+            )
 
             onRepEvent?.invoke(
                 RepEvent(
@@ -536,6 +567,15 @@ class RepCounterFromMachine {
                 logDebug("shouldStop set to TRUE (target reached)")
                 logDebug("  workingTarget=$workingTarget, workingReps=$workingReps")
                 shouldStop = true
+                if (!loggedTargetReached) {
+                    loggedTargetReached = true
+                    logRepo.warning(
+                        LogEventType.ISSUE_232_REP_COUNTER,
+                        "Target reached",
+                        details = repCounterDetails("target_reached", repsRomCount, repsSetCount, up, down, posA, posB),
+                    )
+                }
+                logStopFlagTransition("target_reached", repsRomCount, repsSetCount, up, down, posA, posB)
                 onRepEvent?.invoke(
                     RepEvent(
                         type = RepType.WORKOUT_COMPLETE,
@@ -738,6 +778,38 @@ class RepCounterFromMachine {
     }
 
     fun shouldStopWorkout(): Boolean = shouldStop
+
+    private fun resetDiagnosticFlags() {
+        loggedWarmupComplete = false
+        loggedStopFlag = false
+        loggedTargetReached = false
+        firstModernSamplesRemaining = 3
+    }
+
+    private fun logWarmupComplete(reason: String, repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
+        if (loggedWarmupComplete) return
+        loggedWarmupComplete = true
+        logRepo.info(
+            LogEventType.ISSUE_232_REP_COUNTER,
+            "Warmup complete",
+            details = repCounterDetails(reason, repsRomCount, repsSetCount, up, down, posA, posB),
+        )
+    }
+
+    private fun logStopFlagTransition(reason: String, repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
+        if (loggedStopFlag) return
+        loggedStopFlag = true
+        logRepo.warning(
+            LogEventType.ISSUE_232_REP_COUNTER,
+            "shouldStopWorkout became true",
+            details = repCounterDetails(reason, repsRomCount, repsSetCount, up, down, posA, posB),
+        )
+    }
+
+    private fun repCounterDetails(reason: String, repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float): String =
+        "reason=$reason, warmupReps=$warmupReps, workingReps=$workingReps, warmupTarget=$warmupTarget, workingTarget=$workingTarget, " +
+            "machineRepsRomCount=$repsRomCount, machineRepsSetCount=$repsSetCount, up=$up, down=$down, posA=$posA, posB=$posB, " +
+            "isJustLift=$isJustLift, stopAtTop=$stopAtTop, isAMRAP=$isAMRAP, shouldStop=$shouldStop"
 
     fun getRepRanges(): RepRanges = RepRanges(
         minPosA = minRepPosA,

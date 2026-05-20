@@ -22,6 +22,47 @@ object BlePacketFactory {
     @Volatile
     var defaultForceConfigVariant: ForceConfigVariant = ForceConfigVariant.OVERLAP
 
+    data class CommandDescription(
+        val opcode: String,
+        val family: String,
+        val size: Int,
+        val hex: String,
+    )
+
+    fun formatHex(bytes: ByteArray): String = if (bytes.isEmpty()) {
+        "<empty>"
+    } else {
+        bytes.joinToString(" ") { byte ->
+            val value = byte.toInt() and 0xFF
+            val hex = "0123456789ABCDEF"
+            "${hex[value shr 4]}${hex[value and 0x0F]}"
+        }
+    }
+
+    fun describeCommand(command: ByteArray): CommandDescription {
+        val opcodeValue = command.firstOrNull()?.toInt()?.and(0xFF)
+        val opcode = opcodeValue?.let { "0x${it.toString(16).uppercase().padStart(2, '0')}" } ?: "<none>"
+        val family = when (opcodeValue) {
+            0x01 -> "INIT_SEQUENCE"
+            0x02 -> "LEGACY_WORKOUT_START"
+            0x03 -> "START"
+            0x04 -> "PROGRAM_CONFIG"
+            0x05 -> "LEGACY_STOP"
+            0x0A -> "HARD_RESET_INIT"
+            0x11 -> "COLOR_OR_INIT_PRESET"
+            0x4E -> "ECHO_CONFIG"
+            0x50 -> "SOFT_STOP"
+            null -> "EMPTY"
+            else -> "UNKNOWN"
+        }
+        return CommandDescription(
+            opcode = opcode,
+            family = family,
+            size = command.size,
+            hex = formatHex(command),
+        )
+    }
+
     // ========== Little-Endian Byte Helpers ==========
 
     private fun putIntLE(buffer: ByteArray, offset: Int, value: Int) {

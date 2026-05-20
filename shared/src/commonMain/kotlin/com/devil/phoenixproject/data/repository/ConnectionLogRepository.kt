@@ -2,14 +2,14 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.local.ConnectionLogEntity
 import com.devil.phoenixproject.util.withPlatformLock
-import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Log level for connection events.
@@ -42,6 +42,12 @@ object LogEventType {
     const val COMMAND_RESPONSE = "COMMAND_RESPONSE"
     const val HEARTBEAT = "HEARTBEAT"
     const val REP_RECEIVED = "REP_RECEIVED"
+    const val ISSUE_232_CONNECTION = "ISSUE_232_CONNECTION"
+    const val ISSUE_232_NUS_TX = "ISSUE_232_NUS_TX"
+    const val ISSUE_232_POLLING = "ISSUE_232_POLLING"
+    const val ISSUE_232_STOP_RESET = "ISSUE_232_STOP_RESET"
+    const val ISSUE_232_REP_COUNTER = "ISSUE_232_REP_COUNTER"
+    const val ISSUE_232_WORKOUT_SESSION = "ISSUE_232_WORKOUT_SESSION"
 }
 
 /**
