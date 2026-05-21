@@ -68,14 +68,14 @@ The app icon source image is located at:
 iOS sound playback is implemented in `HapticFeedbackEffect.ios.kt` using AVAudioPlayer. The code automatically looks for sound files in the app bundle.
 
 ### Source Files
-Android sound files are located at:
-- `androidApp/src/main/res/raw/beep.ogg` → REP_COMPLETED
-- `androidApp/src/main/res/raw/beepboop.ogg` → WARMUP_COMPLETE
-- `androidApp/src/main/res/raw/boopbeepbeep.ogg` → WORKOUT_COMPLETE
-- `androidApp/src/main/res/raw/chirpchirp.ogg` → WORKOUT_START/END
-- `androidApp/src/main/res/raw/restover.ogg` → REST_ENDING
+Android sound files are located in the shared Kotlin Multiplatform library resources:
+- `shared/src/androidMain/res/raw/*.ogg`
+
+This directory contains 60+ sound files including core workout tones, rep-count announcements (`rep_01` through `rep_25`), and various badge/PR celebration tracks.
 
 ### Automated Conversion (Recommended)
+
+To dynamically scan and convert all raw sound files from the shared KMP resources to iOS Core Audio Format (.caf) and place them directly in the synced Xcode target folder:
 
 Run the conversion script on macOS:
 ```bash
@@ -84,7 +84,7 @@ chmod +x convert_sounds.sh
 ./convert_sounds.sh
 ```
 
-This script requires ffmpeg: `brew install ffmpeg`
+This script works dynamically and utilizes either `afconvert` (native macOS tool) + `ffmpeg` (to generate highly optimized ADPCM `ima4` compressed `.caf` audio files) or falls back to `ffmpeg` alone.
 
 ### Manual Conversion Steps
 
@@ -100,10 +100,9 @@ This script requires ffmpeg: `brew install ffmpeg`
      afconvert beep.wav beep.caf -d ima4 -f caff
      ```
 
-2. **Add to Xcode Project**
-   - Drag the `Sounds` folder into `VitruvianPhoenix/VitruvianPhoenix/` in Xcode
-   - Ensure "Copy items if needed" is checked
-   - Verify target membership is set for VitruvianPhoenix
+2. **Verification in Xcode Project**
+   - The converted files are placed directly in the `VitruvianPhoenix/VitruvianPhoenix/Sounds/` folder on disk.
+   - Because the Xcode project uses file-system synchronized groups, these files are **automatically** picked up and bundled with the iOS target. No manual dragging or target membership configuration is needed.
 
 3. **Verify Sound Loading**
    - The app will log sound loading status at startup
@@ -117,8 +116,7 @@ This script requires ffmpeg: `brew install ffmpeg`
 - [ ] Create `LaunchIcon.imageset` with logo
 - [ ] Create `LaunchScreenBackground.colorset` with theme colors (#0F172A dark / #F8FAFC light)
 - [ ] Verify `Info.plist` references launch assets correctly
-- [ ] Run `./convert_sounds.sh` to convert sound files (requires macOS + ffmpeg)
-- [ ] Add Sounds folder to Xcode project bundle
+- [ ] Run `./convert_sounds.sh` to dynamically convert and synchronize all sound files
 - [ ] Build shared framework: `./gradlew :shared:assembleXCFramework`
 - [ ] Verify shared.xcframework is linked in Xcode
 - [ ] Test app icons display correctly on device

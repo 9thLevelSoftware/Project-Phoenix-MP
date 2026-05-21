@@ -12,7 +12,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-ANDROID_RAW="$PROJECT_ROOT/androidApp/src/main/res/raw"
+ANDROID_RAW="$PROJECT_ROOT/shared/src/androidMain/res/raw"
 IOS_SOUNDS="$SCRIPT_DIR/VitruvianPhoenix/VitruvianPhoenix/Sounds"
 
 # Create output directory
@@ -23,11 +23,25 @@ echo "Source: $ANDROID_RAW"
 echo "Destination: $IOS_SOUNDS"
 echo ""
 
-# Sound files to convert
-SOUNDS=("beep" "beepboop" "boopbeepbeep" "chirpchirp" "restover")
+# Find all sound files dynamically
+if [ ! -d "$ANDROID_RAW" ]; then
+    echo "Error: Source directory not found: $ANDROID_RAW"
+    exit 1
+fi
 
-for sound in "${SOUNDS[@]}"; do
-    INPUT="$ANDROID_RAW/$sound.ogg"
+echo "Scanning $ANDROID_RAW for OGG files..."
+SOUND_FILES=()
+while IFS= read -r -d '' file; do
+    SOUND_FILES+=("$file")
+done < <(find "$ANDROID_RAW" -maxdepth 1 -name "*.ogg" -print0)
+
+echo "Found ${#SOUND_FILES[@]} sound files to convert."
+echo ""
+
+for input_path in "${SOUND_FILES[@]}"; do
+    filename=$(basename "$input_path")
+    sound="${filename%.*}"
+    INPUT="$input_path"
     OUTPUT="$IOS_SOUNDS/$sound.caf"
 
     if [ -f "$INPUT" ]; then
