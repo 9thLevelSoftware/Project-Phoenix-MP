@@ -391,7 +391,7 @@ class DefaultWorkoutSessionManager(
                 workoutMode = taggedSession.mode,
                 timestamp = currentTimeMillis(),
                 profileId = taggedSession.profileId,
-                cableCount = taggedSession.displayMultiplier,
+                cableCount = taggedSession.cableCount,
             ).onFailure { error ->
                 Logger.e(error) { "Failed to update PRs while tagging Just Lift session $sessionId" }
             }

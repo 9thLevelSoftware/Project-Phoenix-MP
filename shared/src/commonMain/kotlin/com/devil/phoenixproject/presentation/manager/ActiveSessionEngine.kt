@@ -41,6 +41,7 @@ import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
+import com.devil.phoenixproject.domain.usecase.CableUsageDetector
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BleConstants
@@ -469,20 +470,18 @@ class ActiveSessionEngine(
         val peakCableA = metrics.maxOf { it.loadA }
         val peakCableB = metrics.maxOf { it.loadB }
 
-        // Issue #6 Fix: Detect single-cable (unilateral) exercises and don't halve the weight.
-        // Heuristic: if one cable's peak load is > 5x the other's, treat as single-cable.
-        // For single-cable, use the max of the active cable. For double-cable, use totalLoad/2.
-        val heuristicIsSingleCable = (
-            peakCableA > 0f && peakCableB > 0f &&
-                (peakCableA / peakCableB > 5f || peakCableB / peakCableA > 5f)
-            ) ||
-            (peakCableA > 0f && peakCableB == 0f) ||
-            (peakCableB > 0f && peakCableA == 0f)
+        // Issue #340: Telemetry can override dual-cable metadata when only one cable is active
+        // (e.g. pulldown with both retractors attached but ROM/velocity on one side only).
+        val heuristicIsSingleCable = CableUsageDetector.isSingleCableUsage(metrics)
 
-        val cableCount = when (cableCountHint) {
-            1 -> 1
-            2 -> 2
-            else -> if (heuristicIsSingleCable) 1 else 2
+        val cableCount = if (heuristicIsSingleCable) {
+            1
+        } else {
+            when (cableCountHint) {
+                1 -> 1
+                2 -> 2
+                else -> 2
+            }
         }
         val isSingleCable = cableCount == 1
 
@@ -662,7 +661,8 @@ class ActiveSessionEngine(
             durationMs = durationMs,
             totalVolumeKg = totalVolumeKg,
             cableCount = cableCount,
-            displayMultiplier = displayMultiplierHint ?: cableCount,
+            // Persist per-cable display when telemetry proves single-cable usage (Issue #340).
+            displayMultiplier = if (cableCount == 1) 1 else (displayMultiplierHint ?: cableCount),
             heaviestLiftKgPerCable = heaviestLiftKgPerCable,
             configuredWeightKgPerCable = configuredWeightKgPerCable,
             peakForceConcentricA = peakConcentricA,

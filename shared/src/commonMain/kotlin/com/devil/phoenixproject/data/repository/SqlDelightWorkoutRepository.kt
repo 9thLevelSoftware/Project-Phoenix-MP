@@ -860,7 +860,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             val newVolume = weightKg * reps
             val exercise = exerciseRepository.getExerciseById(exerciseId)
             val exerciseName = exercise?.name ?: ""
-            val cableCount = exercise?.displayMultiplier
+            val cableCount = exercise?.preferredCableCount
 
             val combinedPhase = "COMBINED"
 

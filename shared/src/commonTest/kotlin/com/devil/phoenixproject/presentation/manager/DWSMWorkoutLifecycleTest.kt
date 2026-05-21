@@ -1185,6 +1185,45 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `Issue 340 - dual cable hint downgrades to single cable when telemetry shows one active side`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        val summary = harness.activeSessionEngine.calculateSetSummaryMetrics(
+            metrics = listOf(
+                WorkoutMetric(
+                    timestamp = 100L,
+                    loadA = 28f,
+                    loadB = 18f,
+                    positionA = 100f,
+                    positionB = 100f,
+                    velocityA = 80.0,
+                    velocityB = 12.0,
+                ),
+                WorkoutMetric(
+                    timestamp = 200L,
+                    loadA = 30f,
+                    loadB = 20f,
+                    positionA = 220f,
+                    positionB = 105f,
+                    velocityA = -70.0,
+                    velocityB = -10.0,
+                ),
+            ),
+            repCount = 10,
+            fallbackWeightKg = 30f,
+            configuredWeightKgPerCable = 30f,
+            isEchoMode = false,
+            cableCountHint = 2,
+            displayMultiplierHint = 2,
+        )
+
+        assertEquals(1, summary.cableCount)
+        assertEquals(1, summary.displayMultiplier)
+        assertEquals(300f, summary.totalVolumeKg)
+        harness.cleanup()
+    }
+
+    @Test
     fun `set summary honors unilateral cable hint when inactive side has noisy load`() = runTest {
         val harness = DWSMTestHarness(this)
 
