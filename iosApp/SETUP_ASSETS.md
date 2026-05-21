@@ -101,7 +101,7 @@ This script works dynamically and utilizes either `afconvert` (native macOS tool
      ```
 
 2. **Verification in Xcode Project**
-   - The converted files are placed directly in the `VitruvianPhoenix/VitruvianPhoenix/` folder on disk.
+   - The converted files are placed directly in the `VitruvianPhoenix/VitruvianPhoenix/Sounds/` folder on disk.
    - Because the Xcode project uses file-system synchronized groups, these files are **automatically** picked up and bundled with the iOS target. No manual dragging or target membership configuration is needed.
 
 3. **Verify Sound Loading**

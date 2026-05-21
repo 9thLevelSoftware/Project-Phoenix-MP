@@ -13,7 +13,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ANDROID_RAW="$PROJECT_ROOT/shared/src/androidMain/res/raw"
-IOS_SOUNDS="$SCRIPT_DIR/VitruvianPhoenix/VitruvianPhoenix"
+IOS_SOUNDS="$SCRIPT_DIR/VitruvianPhoenix/VitruvianPhoenix/Sounds"
 
 # Create output directory
 mkdir -p "$IOS_SOUNDS"
