@@ -45,8 +45,9 @@ import com.devil.phoenixproject.database.AssessmentResult
 import com.devil.phoenixproject.database.PhaseStatistics
 import com.devil.phoenixproject.di.appModule
 import com.devil.phoenixproject.di.platformModule
-import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -206,6 +207,7 @@ class AppE2ETest : KoinTest {
 
     private fun startWorkoutAndWaitForActiveState() {
         composeRule.runOnIdle {
+            fakeBleRepository.simulateConnect("Vee_Test")
             resolvedMainViewModel.updateWorkoutParameters(
                 WorkoutParameters(
                     programMode = ProgramMode.OldSchool,
@@ -233,7 +235,8 @@ class AppE2ETest : KoinTest {
 
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            resolvedMainViewModel.workoutState.value is WorkoutState.Active
+            resolvedMainViewModel.workoutState.value is WorkoutState.Active &&
+                resolvedMainViewModel.connectionState.value is ConnectionState.Connected
         }
     }
 
