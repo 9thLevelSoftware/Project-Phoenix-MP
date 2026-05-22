@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import co.touchlab.kermit.Logger
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -60,7 +61,7 @@ fun ConnectingOverlay(onCancel: () -> Unit = {}) {
                     )
                     TextButton(
                         onClick = {
-                            // TODO: Add logging when timber is available in KMP
+                            Logger.i("ConnectingOverlay") { "User cancelled device connection attempt" }
                             onCancel()
                         },
                         modifier = Modifier.padding(top = 8.dp),
