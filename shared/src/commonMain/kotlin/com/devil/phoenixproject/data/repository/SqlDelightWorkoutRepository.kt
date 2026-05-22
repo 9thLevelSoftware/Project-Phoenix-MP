@@ -126,6 +126,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         heaviestLiftKg = heaviestLiftKg?.toFloat(),
         totalVolumeKg = totalVolumeKg?.toFloat(),
         cableCount = cableCount?.toInt(),
+        displayMultiplier = displayMultiplier?.toInt(),
         estimatedCalories = estimatedCalories?.toFloat(),
         warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
         workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
@@ -526,7 +527,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 formScore = session.formScore?.toLong(),
                 // Multi-profile support
                 profile_id = session.profileId,
-                display_multiplier = null,
+                display_multiplier = session.displayMultiplier?.toLong(),
             )
         }
     }

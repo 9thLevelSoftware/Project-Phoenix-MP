@@ -502,7 +502,6 @@ fun WorkoutTab(
                     if (!workoutParameters.isJustLift) {
                         val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
                         val effectiveCableCount = currentExercise?.displayCableCount
-                            ?: currentExercise?.exercise?.displayCableCount
                             ?: 1
                         val totalWeight = workoutParameters.weightPerCableKg * effectiveCableCount
                         CountdownCard(

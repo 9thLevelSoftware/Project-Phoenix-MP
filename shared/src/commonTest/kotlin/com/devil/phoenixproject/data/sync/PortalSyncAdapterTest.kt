@@ -853,6 +853,75 @@ class PortalSyncAdapterTest {
         assertTrue(buildResult.telemetry.isEmpty())
     }
 
+    @Test
+    fun `portal payload IDs remain unique for repeated exercises and supersets`() {
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "11111111-1111-4111-8111-111111111111",
+                routineSessionId = "22222222-2222-4222-8222-222222222222",
+                exerciseName = "Bench Press",
+                repMetrics = listOf(makeRepMetricData(repNumber = 1)),
+            ),
+            makeSessionWithReps(
+                sessionId = "33333333-3333-4333-8333-333333333333",
+                routineSessionId = "22222222-2222-4222-8222-222222222222",
+                exerciseName = "Bench Press",
+                repMetrics = listOf(makeRepMetricData(repNumber = 1)),
+            ),
+        )
+        val sessionBuild = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(sessions, "user-1")
+        val sessionExerciseIds = sessionBuild.sessions.flatMap { session -> session.exercises.map { it.id } }
+        val setIds = sessionBuild.sessions.flatMap { session ->
+            session.exercises.flatMap { exercise -> exercise.sets.map { it.id } }
+        }
+        val repSummaryIds = sessionBuild.sessions.flatMap { session ->
+            session.exercises.flatMap { exercise ->
+                exercise.sets.flatMap { set -> set.repSummaries.map { it.id } }
+            }
+        }
+        val telemetryIds = sessionBuild.telemetry.map { it.id }
+
+        assertEquals(sessionExerciseIds.size, sessionExerciseIds.toSet().size)
+        assertEquals(setIds.size, setIds.toSet().size)
+        assertEquals(repSummaryIds.size, repSummaryIds.toSet().size)
+        assertEquals(telemetryIds.size, telemetryIds.toSet().size)
+
+        val supersetId = "44444444-4444-4444-8444-444444444444"
+        val routineId = "55555555-5555-4555-8555-555555555555"
+        val routine = makeRoutine(
+            id = routineId,
+            exercises = listOf(
+                makeRoutineExercise(
+                    id = "66666666-6666-4666-8666-666666666666",
+                    name = "Bench Press",
+                    orderIndex = 0,
+                    supersetId = supersetId,
+                    orderInSuperset = 0,
+                ),
+                makeRoutineExercise(
+                    id = "77777777-7777-4777-8777-777777777777",
+                    name = "Bench Press",
+                    orderIndex = 1,
+                    supersetId = supersetId,
+                    orderInSuperset = 1,
+                ),
+            ),
+            supersets = listOf(
+                Superset(
+                    id = supersetId,
+                    routineId = routineId,
+                    name = "Superset 1",
+                    colorIndex = SupersetColors.PINK,
+                ),
+            ),
+        )
+        val routineExerciseIds = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+            .exercises
+            .map { it.id }
+
+        assertEquals(routineExerciseIds.size, routineExerciseIds.toSet().size)
+    }
+
     // ========== PR count computation (Task 1.4) ==========
 
     @Test

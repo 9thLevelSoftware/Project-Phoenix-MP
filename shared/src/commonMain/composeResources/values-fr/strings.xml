@@ -207,6 +207,10 @@
 
     <string name="exercise_name_label">Nom de l\'exercice *</string>
     <string name="label_cables">Câbles</string>
+    <string name="label_cable_count">Nombre de câbles</string>
+    <string name="label_one_cable">1 câble</string>
+    <string name="label_two_cables">2 câbles</string>
+    <string name="cable_count_helper">La charge totale est le poids × le nombre de câbles</string>
     <string name="label_bodyweight">Poids corporel</string>
     <string name="delete_exercise_title">Supprimer l\'exercice ?</string>
     <string name="delete_exercise_message">Êtes-vous sûr de vouloir supprimer \"%1$s\" ? Cette action est irréversible.</string>

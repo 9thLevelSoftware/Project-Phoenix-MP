@@ -2370,7 +2370,7 @@ class ActiveSessionEngine(
                         Logger.w {
                             "BLE-ACTIVATION-VERIFY (temporary): offsets 0x48..0x5F => $activationTailDump"
                         }
-                        // Issue #390: Decode the key float values from packet bytes for readability
+                        // Issue #390: Decode official force config values from packet bytes for readability.
                         fun readFloatLE(buf: ByteArray, off: Int): Float {
                             val bits = (buf[off].toInt() and 0xFF) or
                                 ((buf[off + 1].toInt() and 0xFF) shl 8) or
@@ -2379,12 +2379,11 @@ class ActiveSessionEngine(
                             return Float.fromBits(bits)
                         }
                         Logger.w("Issue390") {
-                            "PACKET DECODED: softMax@0x48=${readFloatLE(command, 0x48)}kg, " +
-                                "increment@0x4C=${readFloatLE(command, 0x4C)}kg, " +
+                            "PACKET DECODED: profileTail@0x48..0x4F preserved, " +
                                 "forceMin@0x50=${readFloatLE(command, 0x50)}kg, " +
                                 "forceMax@0x54=${readFloatLE(command, 0x54)}kg, " +
-                                "targetWeight@0x58=${readFloatLE(command, 0x58)}kg, " +
-                                "progression@0x5C=${readFloatLE(command, 0x5C)}kg"
+                                "softMax@0x58=${readFloatLE(command, 0x58)}kg, " +
+                                "increment@0x5C=${readFloatLE(command, 0x5C)}kg"
                         }
                     }
                 } catch (e: Exception) {

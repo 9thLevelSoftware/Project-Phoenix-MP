@@ -208,6 +208,10 @@
     <!-- Exercise Create/Edit -->
     <string name="exercise_name_label">Oefening naam *</string>
     <string name="label_cables">Kabels</string>
+    <string name="label_cable_count">Aantal kabels</string>
+    <string name="label_one_cable">1 kabel</string>
+    <string name="label_two_cables">2 kabels</string>
+    <string name="cable_count_helper">Totale belasting is gewicht × aantal kabels</string>
     <string name="label_bodyweight">Lichaamsgewicht</string>
     <string name="delete_exercise_title">Oefening verwijderen?</string>
     <string name="delete_exercise_message">Weet je zeker dat je \"%1$s\" wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.</string>

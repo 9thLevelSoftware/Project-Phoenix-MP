@@ -92,8 +92,12 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_add_set
 import vitruvianprojectphoenix.shared.generated.resources.cd_close
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_set
 import vitruvianprojectphoenix.shared.generated.resources.cd_personal_record
+import vitruvianprojectphoenix.shared.generated.resources.cable_count_helper
+import vitruvianprojectphoenix.shared.generated.resources.label_cable_count
 import vitruvianprojectphoenix.shared.generated.resources.label_duration
+import vitruvianprojectphoenix.shared.generated.resources.label_one_cable
 import vitruvianprojectphoenix.shared.generated.resources.label_reps
+import vitruvianprojectphoenix.shared.generated.resources.label_two_cables
 import vitruvianprojectphoenix.shared.generated.resources.percent_label
 import kotlin.math.roundToInt
 
@@ -176,6 +180,7 @@ fun ExerciseEditBottomSheet(
         if (weightUnit == WeightUnit.LB) 0.5f else 0.25f
     }
     val maxWeightChange = 10
+    val canConfigureCableCount = exerciseType == ExerciseType.STANDARD && exercise.exercise.hasCableAccessory
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -321,46 +326,47 @@ fun ExerciseEditBottomSheet(
                         onWeightPercentOfPRChange = viewModel::onWeightPercentOfPRChange,
                     )
 
-                    // Cable Count Selection
-                    val effectiveCableCount = cableCountOverride ?: exercise.exercise.displayCableCount
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                        shadowElevation = 2.dp,
-                    ) {
-                        Column(modifier = Modifier.padding(Spacing.small)) {
-                            Text(
-                                "Cable Count",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(bottom = Spacing.extraSmall),
-                            )
-                            SingleChoiceSegmentedButtonRow(
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                SegmentedButton(
-                                    selected = effectiveCableCount == 1,
-                                    onClick = { viewModel.onCableCountOverrideChange(1) },
-                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    if (canConfigureCableCount) {
+                        val effectiveCableCount = cableCountOverride ?: exercise.exercise.displayCableCount
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                            shadowElevation = 2.dp,
+                        ) {
+                            Column(modifier = Modifier.padding(Spacing.small)) {
+                                Text(
+                                    stringResource(Res.string.label_cable_count),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(bottom = Spacing.extraSmall),
+                                )
+                                SingleChoiceSegmentedButtonRow(
+                                    modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    Text("1 Cable")
+                                    SegmentedButton(
+                                        selected = effectiveCableCount == 1,
+                                        onClick = { viewModel.onCableCountOverrideChange(1) },
+                                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                                    ) {
+                                        Text(stringResource(Res.string.label_one_cable))
+                                    }
+                                    SegmentedButton(
+                                        selected = effectiveCableCount == 2,
+                                        onClick = { viewModel.onCableCountOverrideChange(2) },
+                                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                                    ) {
+                                        Text(stringResource(Res.string.label_two_cables))
+                                    }
                                 }
-                                SegmentedButton(
-                                    selected = effectiveCableCount == 2,
-                                    onClick = { viewModel.onCableCountOverrideChange(2) },
-                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                                ) {
-                                    Text("2 Cables")
-                                }
+                                Text(
+                                    stringResource(Res.string.cable_count_helper),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = Spacing.small),
+                                )
                             }
-                            Text(
-                                "Total load will be weight × cable count",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = Spacing.small),
-                            )
                         }
                     }
                 }

@@ -541,6 +541,10 @@ class SqlDelightSyncRepository(
                     // partial response, or deserialization issue). Deleting local exercises
                     // when we have nothing to replace them with causes permanent data loss.
                     if (portalRoutine.exercises.isNotEmpty()) {
+                        val existingCableOverridesByExerciseId = queries.selectExercisesByRoutine(portalRoutine.id)
+                            .executeAsList()
+                            .associate { it.id to it.cableCountOverride }
+
                         // Replace routine exercises and supersets: delete existing then insert portal versions
                         queries.deleteRoutineExercises(portalRoutine.id)
                         queries.deleteSupersetsByRoutine(portalRoutine.id)
@@ -629,13 +633,7 @@ class SqlDelightSyncRepository(
                                 queries.selectExerciseById(id).executeAsOneOrNull()
                             } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
-                            val resolvedEquipment = when {
-                                exercise.isBodyweight -> "Bodyweight"
-                                catalogExercise != null -> catalogExercise.equipment
-                                else -> exercise.exerciseEquipment?.takeIf { equipment ->
-                                    Exercise(name = exercise.name, muscleGroup = exercise.muscleGroup, equipment = equipment).hasCableAccessory
-                                } ?: "HANDLES"
-                            }
+                            val resolvedEquipment = exercise.resolveEquipment(catalogExercise?.equipment)
                             val behaviorFields = exercise.sanitizedBehaviorFields(resolvedEquipment)
 
                             queries.insertRoutineExercise(
@@ -666,7 +664,9 @@ class SqlDelightSyncRepository(
                                 weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
                                 prTypeForScaling = "MAX_WEIGHT",
                                 setWeightsPercentOfPR = null,
-                                cableCountOverride = null,
+                                cableCountOverride = exercise.resolvedCableCountOverride(
+                                    existingCableOverridesByExerciseId[exercise.id],
+                                ),
                                 stallDetectionEnabled = if (behaviorFields.stallDetectionEnabled) 1L else 0L,
                                 stopAtTop = if (behaviorFields.stopAtTop) 1L else 0L,
                                 repCountTiming = behaviorFields.repCountTiming,
@@ -1251,6 +1251,7 @@ class SqlDelightSyncRepository(
         heaviestLiftKg = heaviestLiftKg?.toFloat(),
         totalVolumeKg = totalVolumeKg?.toFloat(),
         cableCount = cableCount?.toInt(),
+        displayMultiplier = displayMultiplier?.toInt(),
         estimatedCalories = estimatedCalories?.toFloat(),
         warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
         workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
@@ -1520,6 +1521,10 @@ class SqlDelightSyncRepository(
 
                     // Replace exercises if portal provided them (non-empty list)
                     if (portalRoutine.exercises.isNotEmpty()) {
+                        val existingCableOverridesByExerciseId = queries.selectExercisesByRoutine(portalRoutine.id)
+                            .executeAsList()
+                            .associate { it.id to it.cableCountOverride }
+
                         queries.deleteRoutineExercises(portalRoutine.id)
                         queries.deleteSupersetsByRoutine(portalRoutine.id)
 
@@ -1594,13 +1599,7 @@ class SqlDelightSyncRepository(
                                 queries.selectExerciseById(id).executeAsOneOrNull()
                             } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
-                            val resolvedEquipmentBulk = when {
-                                exercise.isBodyweight -> "Bodyweight"
-                                catalogExercise != null -> catalogExercise.equipment
-                                else -> exercise.exerciseEquipment?.takeIf { equipment ->
-                                    Exercise(name = exercise.name, muscleGroup = exercise.muscleGroup, equipment = equipment).hasCableAccessory
-                                } ?: "HANDLES"
-                            }
+                            val resolvedEquipmentBulk = exercise.resolveEquipment(catalogExercise?.equipment)
                             val behaviorFields = exercise.sanitizedBehaviorFields(resolvedEquipmentBulk)
 
                             queries.insertRoutineExercise(
@@ -1631,7 +1630,9 @@ class SqlDelightSyncRepository(
                                 weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
                                 prTypeForScaling = "MAX_WEIGHT",
                                 setWeightsPercentOfPR = null,
-                                cableCountOverride = null,
+                                cableCountOverride = exercise.resolvedCableCountOverride(
+                                    existingCableOverridesByExerciseId[exercise.id],
+                                ),
                                 stallDetectionEnabled = if (behaviorFields.stallDetectionEnabled) 1L else 0L,
                                 stopAtTop = if (behaviorFields.stopAtTop) 1L else 0L,
                                 repCountTiming = behaviorFields.repCountTiming,
@@ -1918,7 +1919,7 @@ class SqlDelightSyncRepository(
                     formScore = session.formScore?.toLong(),
                     updatedAt = incomingTs,
                     profile_id = session.profileId,
-                    display_multiplier = null,
+                    display_multiplier = session.displayMultiplier?.toLong(),
                 )
             }
         }
@@ -1953,6 +1954,20 @@ class SqlDelightSyncRepository(
         val stopAtTop: Boolean,
         val repCountTiming: String,
     )
+
+    private fun PullRoutineExerciseDto.resolveEquipment(catalogEquipment: String?): String = when {
+        isBodyweight -> "Bodyweight"
+        catalogEquipment != null -> catalogEquipment
+        else -> exerciseEquipment?.takeIf { equipment ->
+            Exercise(name = name, muscleGroup = muscleGroup, equipment = equipment).hasCableAccessory
+        } ?: "HANDLES"
+    }
+
+    private fun PullRoutineExerciseDto.resolvedCableCountOverride(existingOverride: Long?): Long? =
+        cableCountOverride
+            ?.takeIf { it in 1..2 }
+            ?.toLong()
+            ?: existingOverride?.takeIf { it in 1L..2L }
 
     private fun PullRoutineExerciseDto.sanitizedBehaviorFields(resolvedEquipment: String): RoutineExerciseBehaviorFields {
         val isBodyweightExercise = Exercise(

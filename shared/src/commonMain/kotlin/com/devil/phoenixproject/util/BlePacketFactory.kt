@@ -16,11 +16,19 @@ object BlePacketFactory {
 
     enum class ForceConfigVariant {
         NON_OVERLAP,
+
+        /**
+         * Legacy diagnostic layout. Do not use for production activation packets:
+         * it overwrites official eccentric-up profile bytes at 0x48..0x4F.
+         */
         OVERLAP,
     }
 
     @Volatile
-    var defaultForceConfigVariant: ForceConfigVariant = ForceConfigVariant.OVERLAP
+    var defaultForceConfigVariant: ForceConfigVariant = ForceConfigVariant.NON_OVERLAP
+
+    private const val OFFICIAL_MAX_SOFT_MAX = 100.0f
+    private const val OFFICIAL_MAX_INCREMENT = 10.0f
 
     // ========== Little-Endian Byte Helpers ==========
 
@@ -117,21 +125,10 @@ object BlePacketFactory {
      * Build the 96-byte activation/program parameters frame.
      *
      * Activation modes serialize a 32-byte mode profile at 0x30-0x4F, followed by
-     * the force config block at 0x50-0x5F.
-     * - NON_OVERLAP keeps 0x48-0x4F untouched so profile bytes are preserved.
-     * - OVERLAP writes legacy softMax/increment at 0x48/0x4C when required.
-     *
-     * Issue #262: Firmware reads softMax (weight ceiling) at 0x48 and increment
-     * (per-rep progression) at 0x4C. These offsets fall within the mode profile
-     * block (0x30-0x4F), so we overwrite the last 8 bytes of the eccentric phase
-     * with the correct force config values after copying the profile.
-     *
-     * Variant override: when the profile actually copied into the packet is
-     * [ProgramMode.EccentricOnly], the [variant] argument is forced to
-     * [ForceConfigVariant.NON_OVERLAP] to preserve the eccentric-up ramp bytes
-     * at 0x48-0x4F. The override keys off the resolved profile, not
-     * `params.programMode`, so Just Lift / Echo selections (which always use
-     * the OldSchool profile) continue to honor the requested variant.
+     * the official force config block at 0x50-0x5F. Production uses the
+     * non-overlap layout so 0x48..0x4F remain the eccentric-up profile bytes.
+     * The [ForceConfigVariant.OVERLAP] path is retained only for explicit legacy
+     * diagnostics and should not be used for normal activation packets.
      */
     fun createProgramParams(params: WorkoutParameters, variant: ForceConfigVariant = defaultForceConfigVariant): ByteArray {
         // Resolve the profile up front so the variant decision can key off it.
@@ -141,19 +138,6 @@ object BlePacketFactory {
             params.programMode
         }
 
-        // EccentricOnly relies on the eccentric-up ramp bytes at 0x48-0x4F
-        // (minMmS=-100, maxMmS=-50, ramp=20.0f). The OVERLAP variant overwrites
-        // those bytes with softMax/increment, which leaves the firmware unable
-        // to apply weight during the eccentric phase (reps count, but the
-        // chosen weight is never engaged). The official app preserves the
-        // profile tail for this mode. Gate on the resolved profile, not the
-        // requested mode, so Just Lift packets (which use the OldSchool
-        // profile) keep the OVERLAP overwrites they were designed for.
-        val effectiveVariant = if (profileMode is ProgramMode.EccentricOnly) {
-            ForceConfigVariant.NON_OVERLAP
-        } else {
-            variant
-        }
         val frame = ByteArray(96)
 
         // Header section - Command 0x04 for PROGRAM mode
@@ -169,7 +153,7 @@ object BlePacketFactory {
             ) {
                 0xFF.toByte()
             } else {
-                (params.reps + params.warmupReps).toByte()
+                (params.reps + params.warmupReps).coerceIn(0, 255).toByte()
             }
 
         frame[5] = 0x03
@@ -224,6 +208,7 @@ object BlePacketFactory {
         // per cable. Unlimited-rep behavior is controlled by the reps field
         // (0xFF), not by raising softMax to the machine maximum.
         val softMax = params.weightPerCableKg
+        validateActivationForceConfig(softMax, params.progressionRegressionKg)
 
         // Issue #390: Detect suspiciously low weight values that would cause the machine
         // to start at near-zero and ramp up slowly instead of the configured weight.
@@ -234,15 +219,15 @@ object BlePacketFactory {
             }
         }
 
-        if (effectiveVariant == ForceConfigVariant.OVERLAP) {
+        if (variant == ForceConfigVariant.OVERLAP) {
             // Issue #262: Firmware reads softMax at 0x48 and increment at 0x4C.
             // These overlap the last 8 bytes of the mode profile, but the firmware
             // interprets them as force config, not mode data. Write them AFTER the
             // profile copy so they take priority.
-            putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_SOFT_MAX, softMax)
+            putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_LEGACY_OVERLAP_SOFT_MAX, softMax)
             putFloatLE(
                 frame,
-                BleConstants.ActivationPacket.OFFSET_INCREMENT,
+                BleConstants.ActivationPacket.OFFSET_LEGACY_OVERLAP_INCREMENT,
                 params.progressionRegressionKg,
             )
         }
@@ -252,12 +237,12 @@ object BlePacketFactory {
         putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_FORCE_MAX, effectiveKg)
         putFloatLE(
             frame,
-            BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
+            BleConstants.ActivationPacket.OFFSET_SOFT_MAX,
             targetWeightPerCable,
         )
         putFloatLE(
             frame,
-            BleConstants.ActivationPacket.OFFSET_PROGRESSION,
+            BleConstants.ActivationPacket.OFFSET_INCREMENT,
             params.progressionRegressionKg,
         )
 
@@ -268,20 +253,20 @@ object BlePacketFactory {
         Logger.d("BlePacket") {
             "targetWeight=${targetWeightPerCable}kg, effectiveKg=$effectiveKg"
         }
-        if (effectiveVariant == ForceConfigVariant.OVERLAP) {
+        if (variant == ForceConfigVariant.OVERLAP) {
             Logger.d("BlePacket") {
-                "softMax[0x48]=${readFloatLE(
+                "legacyOverlapSoftMax[0x48]=${readFloatLE(
                     frame,
-                    BleConstants.ActivationPacket.OFFSET_SOFT_MAX,
+                    BleConstants.ActivationPacket.OFFSET_LEGACY_OVERLAP_SOFT_MAX,
                 )}kg, " +
-                    "increment[0x4C]=${readFloatLE(
+                    "legacyOverlapIncrement[0x4C]=${readFloatLE(
                         frame,
-                        BleConstants.ActivationPacket.OFFSET_INCREMENT,
+                        BleConstants.ActivationPacket.OFFSET_LEGACY_OVERLAP_INCREMENT,
                     )}kg/rep"
             }
         } else {
             Logger.d("BlePacket") {
-                "non-overlap layout active (0x48..0x4F preserved as profile bytes)"
+                "official non-overlap layout active (0x48..0x4F preserved as profile bytes)"
             }
         }
         Logger.d("BlePacket") {
@@ -295,13 +280,13 @@ object BlePacketFactory {
                 )}kg"
         }
         Logger.d("BlePacket") {
-            "targetWeight[0x58]=${readFloatLE(
+            "softMax[0x58]=${readFloatLE(
                 frame,
-                BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
+                BleConstants.ActivationPacket.OFFSET_SOFT_MAX,
             )}kg, " +
-                "progression[0x5C]=${readFloatLE(
+                "increment[0x5C]=${readFloatLE(
                     frame,
-                    BleConstants.ActivationPacket.OFFSET_PROGRESSION,
+                    BleConstants.ActivationPacket.OFFSET_INCREMENT,
                 )}kg/rep"
         }
         val repsHex = frame[0x04].toUByte().toString(16).padStart(2, '0').uppercase()
@@ -416,6 +401,20 @@ object BlePacketFactory {
             ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
             ((buffer[offset + 3].toInt() and 0xFF) shl 24)
         return Float.fromBits(bits)
+    }
+
+    private fun validateActivationForceConfig(softMax: Float, increment: Float) {
+        require(!softMax.isNaN() && softMax >= 0.0f && softMax <= OFFICIAL_MAX_SOFT_MAX) {
+            "ActivationForceConfig softMax must be between 0.0 and $OFFICIAL_MAX_SOFT_MAX kg; was $softMax"
+        }
+        require(
+            !increment.isNaN() &&
+                increment != Float.POSITIVE_INFINITY &&
+                increment != Float.NEGATIVE_INFINITY &&
+                increment <= OFFICIAL_MAX_INCREMENT,
+        ) {
+            "ActivationForceConfig increment must be <= $OFFICIAL_MAX_INCREMENT kg; was $increment"
+        }
     }
 
     // ========== Activation Phases (Mode Profiles) ==========

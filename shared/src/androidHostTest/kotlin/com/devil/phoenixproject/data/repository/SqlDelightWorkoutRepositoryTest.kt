@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.displayLoadMultiplier
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlinx.coroutines.test.runTest
@@ -104,6 +105,65 @@ class SqlDelightWorkoutRepositoryTest {
             assertTrue(sessions.isEmpty())
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `getSession maps legacy display multiplier for historical display loads`() = runTest {
+        database.vitruvianDatabaseQueries.insertSession(
+            id = "legacy-display-session",
+            timestamp = 1_700_000_000_000L,
+            mode = "OldSchool",
+            targetReps = 8L,
+            weightPerCableKg = 50.0,
+            progressionKg = 0.0,
+            duration = 60_000L,
+            totalReps = 8L,
+            warmupReps = 0L,
+            workingReps = 8L,
+            isJustLift = 0L,
+            stopAtTop = 0L,
+            eccentricLoad = 100L,
+            echoLevel = 1L,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+            safetyFlags = 0L,
+            deloadWarningCount = 0L,
+            romViolationCount = 0L,
+            spotterActivations = 0L,
+            peakForceConcentricA = null,
+            peakForceConcentricB = null,
+            peakForceEccentricA = null,
+            peakForceEccentricB = null,
+            avgForceConcentricA = null,
+            avgForceConcentricB = null,
+            avgForceEccentricA = null,
+            avgForceEccentricB = null,
+            heaviestLiftKg = null,
+            totalVolumeKg = null,
+            cableCount = 2L,
+            estimatedCalories = null,
+            warmupAvgWeightKg = null,
+            workingAvgWeightKg = null,
+            burnoutAvgWeightKg = null,
+            peakWeightKg = null,
+            rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "default",
+            display_multiplier = 1L,
+        )
+
+        val retrieved = assertNotNull(repository.getSession("legacy-display-session"))
+
+        assertEquals(1, retrieved.displayMultiplier)
+        assertEquals(1, retrieved.displayLoadMultiplier())
     }
 
     // ========== Session Properties Tests ==========

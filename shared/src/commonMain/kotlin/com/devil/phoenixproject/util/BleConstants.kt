@@ -63,37 +63,38 @@ object BleConstants {
     /**
      * Activation packet (0x04) byte layout — 96-byte frame.
      *
-     * Layout:
+     * Official layout:
      * - 0x30-0x3F: concentric activation phase
      * - 0x40-0x4F: eccentric activation phase
-     * - 0x48-0x4B: legacy softMax for overlap firmware variants (overlaps eccentric tail)
-     * - 0x4C-0x4F: legacy increment for overlap firmware variants (overlaps eccentric tail)
+     * - 0x48-0x4B: eccentric-up ramp min/max bytes
+     * - 0x4C-0x4F: eccentric-up ramp float
      * - 0x50-0x53: forceMin (0.0f)
      * - 0x54-0x57: forceMax (adjustedWeight + 10.0f — force ceiling)
-     * - 0x58-0x5B: target weight (adjustedWeight — actual operating weight)
-     * - 0x5C-0x5F: progression (progressionRegressionKg)
-     *
-     * Firmware variants differ:
-     * - NON_OVERLAP: keep 0x48-0x4F as profile bytes and use 0x58/0x5C for active weights.
-     * - OVERLAP: write legacy softMax/increment at 0x48/0x4C after profile copy.
-     *
-     * Issue #262: Firmware reads softMax (0x48) and increment (0x4C) from offsets
-     * that overlap the mode profile block (0x30-0x4F). We write these values AFTER
-     * copying the profile so they overwrite the eccentric phase's last 8 bytes.
+     * - 0x58-0x5B: softMax / selected force (adjustedWeight)
+     * - 0x5C-0x5F: increment (progressionRegressionKg)
      */
     object ActivationPacket {
         const val SIZE = 96
         const val OFFSET_MODE_PROFILE = 0x30 // 32 bytes (concentric + eccentric phases)
 
-        // Firmware force config (overlaps end of mode profile — write AFTER profile copy)
-        const val OFFSET_SOFT_MAX = 0x48 // Weight ceiling (float LE) — caps progression
-        const val OFFSET_INCREMENT = 0x4C // Per-rep progression kg (float LE)
+        // Official eccentric-up ramp bytes inside the mode profile.
+        const val OFFSET_ECC_UP_MIN_MMS = 0x48
+        const val OFFSET_ECC_UP_MAX_MMS = 0x4A
+        const val OFFSET_ECC_UP_RAMP = 0x4C
 
-        // Force config block
+        // Legacy overlap offsets retained only for explicit diagnostic calls.
+        const val OFFSET_LEGACY_OVERLAP_SOFT_MAX = 0x48
+        const val OFFSET_LEGACY_OVERLAP_INCREMENT = 0x4C
+
+        // Official force config block.
         const val OFFSET_FORCE_MIN = 0x50 // 0.0f in activation packets
         const val OFFSET_FORCE_MAX = 0x54 // adjustedWeight + 10.0f (force ceiling)
-        const val OFFSET_TARGET_WEIGHT = 0x58 // adjustedWeight (actual operating weight)
-        const val OFFSET_PROGRESSION = 0x5C // progressionRegressionKg
+        const val OFFSET_SOFT_MAX = 0x58 // selected force / actual operating weight
+        const val OFFSET_INCREMENT = 0x5C // progressionRegressionKg
+
+        // Backward-compatible aliases for older Phoenix naming.
+        const val OFFSET_TARGET_WEIGHT = OFFSET_SOFT_MAX
+        const val OFFSET_PROGRESSION = OFFSET_INCREMENT
     }
 
     // Legacy aliases for backward compatibility

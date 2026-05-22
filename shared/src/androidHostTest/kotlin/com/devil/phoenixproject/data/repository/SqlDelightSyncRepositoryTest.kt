@@ -192,4 +192,84 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("TOP", rows.getValue("portal-cable-invalid").repCountTiming)
         assertEquals("TOP", rows.getValue("portal-cable-null").repCountTiming)
     }
+
+    @Test
+    fun `mergePortalRoutines preserves local cable count override when portal omits override`() = runTest {
+        val routineId = "portal-routine-preserve-cable-override"
+        val routineExerciseId = "portal-exercise-preserve-cable-override"
+
+        database.vitruvianDatabaseQueries.insertRoutine(
+            id = routineId,
+            name = "Local Cable Routine",
+            description = "",
+            createdAt = 1_700_000_000_000L,
+            lastUsed = null,
+            useCount = 0L,
+            profile_id = "active-profile",
+            groupId = null,
+        )
+        database.vitruvianDatabaseQueries.insertRoutineExercise(
+            id = routineExerciseId,
+            routineId = routineId,
+            exerciseName = "Cable Row",
+            exerciseMuscleGroup = "Back",
+            exerciseEquipment = "HANDLES",
+            exerciseDefaultCableConfig = "DOUBLE",
+            exerciseId = null,
+            cableConfig = "DOUBLE",
+            orderIndex = 0L,
+            setReps = "10,10,10",
+            weightPerCableKg = 30.0,
+            setWeights = "",
+            mode = "OLD_SCHOOL",
+            eccentricLoad = 100L,
+            echoLevel = 1L,
+            progressionKg = 0.0,
+            restSeconds = 90L,
+            duration = null,
+            setRestSeconds = "[]",
+            perSetRestTime = 0L,
+            isAMRAP = 0L,
+            supersetId = null,
+            orderInSuperset = 0L,
+            usePercentOfPR = 0L,
+            weightPercentOfPR = 80L,
+            prTypeForScaling = "MAX_WEIGHT",
+            setWeightsPercentOfPR = null,
+            cableCountOverride = 2L,
+            stallDetectionEnabled = 1L,
+            stopAtTop = 0L,
+            repCountTiming = "TOP",
+            setEchoLevels = "",
+            warmupSets = "",
+        )
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = routineId,
+                    name = "Portal Cable Routine",
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = routineExerciseId,
+                            name = "Cable Row",
+                            muscleGroup = "Back",
+                            exerciseEquipment = "HANDLES",
+                            sets = 3,
+                            reps = 10,
+                            weight = 35f,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+
+        val row = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine(routineId)
+            .executeAsOne()
+
+        assertEquals(2L, row.cableCountOverride)
+    }
 }

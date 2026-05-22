@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.sync
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
@@ -230,6 +231,40 @@ class SyncManagerTest {
         assertTrue(payload.sessions.isEmpty(), "Sessions should be empty")
         assertTrue(payload.routines.isEmpty(), "Routines should be empty")
         assertEquals(1, fakeApi.pushCallCount, "Push should still be called even with empty data")
+    }
+
+    @Test
+    fun syncRejectsDuplicatePushIdsBeforeCallingApi() = runTest {
+        setupAuthenticated()
+        val duplicateId = "11111111-1111-4111-8111-111111111111"
+        fakeSyncRepo.workoutSessionsToReturn = listOf(
+            WorkoutSession(
+                id = duplicateId,
+                timestamp = 1_700_000_000_000L,
+                exerciseName = "Bench Press",
+                totalReps = 10,
+            ),
+            WorkoutSession(
+                id = duplicateId,
+                timestamp = 1_700_000_060_000L,
+                exerciseName = "Bench Press",
+                totalReps = 8,
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isFailure)
+        val error = assertIs<PortalApiException>(result.exceptionOrNull())
+        assertEquals(400, error.statusCode)
+        assertTrue(
+            error.message?.contains("Duplicate IDs in push payload before send") == true,
+            "Failure should name duplicate payload IDs",
+        )
+        assertEquals(0, fakeApi.pushCallCount, "Invalid payload must fail before the API call")
+        val state = assertIs<SyncState.Error>(manager.syncState.value)
+        assertTrue(state.message.contains("workout_sessions"))
     }
 
     @Test

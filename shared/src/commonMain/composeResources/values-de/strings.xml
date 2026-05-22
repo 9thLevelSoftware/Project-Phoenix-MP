@@ -207,6 +207,10 @@
 
     <string name="exercise_name_label">Übungsname *</string>
     <string name="label_cables">Kabel</string>
+    <string name="label_cable_count">Kabelanzahl</string>
+    <string name="label_one_cable">1 Kabel</string>
+    <string name="label_two_cables">2 Kabel</string>
+    <string name="cable_count_helper">Gesamtlast ist Gewicht × Kabelanzahl</string>
     <string name="label_bodyweight">Körpergewicht</string>
     <string name="delete_exercise_title">Übung löschen?</string>
     <string name="delete_exercise_message">Bist du sicher, dass du \"%1$s\" löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.</string>

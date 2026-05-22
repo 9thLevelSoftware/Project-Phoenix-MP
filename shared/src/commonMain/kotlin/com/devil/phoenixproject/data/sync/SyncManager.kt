@@ -507,6 +507,100 @@ class SyncManager(
 
     // === Private Helpers ===
 
+    private data class PushDuplicateReport(val table: String, val keys: List<String>)
+
+    private fun duplicateKeys(keys: List<String>): List<String> {
+        val seen = mutableSetOf<String>()
+        val duplicates = mutableSetOf<String>()
+        keys.filter { it.isNotBlank() }.forEach { key ->
+            if (!seen.add(key)) {
+                duplicates.add(key)
+            }
+        }
+        return duplicates.sorted()
+    }
+
+    private fun MutableList<PushDuplicateReport>.addDuplicateReport(table: String, keys: List<String>) {
+        val duplicates = duplicateKeys(keys)
+        if (duplicates.isNotEmpty()) {
+            add(PushDuplicateReport(table, duplicates))
+        }
+    }
+
+    private fun validatePortalPushPayload(payload: PortalSyncPayload): PortalApiException? {
+        val duplicates = mutableListOf<PushDuplicateReport>()
+        duplicates.addDuplicateReport("workout_sessions", payload.sessions.map { it.id })
+        duplicates.addDuplicateReport(
+            "exercises",
+            payload.sessions.flatMap { session -> session.exercises.map { it.id } },
+        )
+        duplicates.addDuplicateReport(
+            "sets",
+            payload.sessions.flatMap { session ->
+                session.exercises.flatMap { exercise -> exercise.sets.map { it.id } }
+            },
+        )
+        duplicates.addDuplicateReport(
+            "rep_summaries",
+            payload.sessions.flatMap { session ->
+                session.exercises.flatMap { exercise ->
+                    exercise.sets.flatMap { set -> set.repSummaries.map { it.id } }
+                }
+            },
+        )
+        duplicates.addDuplicateReport("rep_telemetry", payload.telemetry.map { it.id })
+        duplicates.addDuplicateReport("routines", payload.routines.map { it.id })
+        duplicates.addDuplicateReport(
+            "routine_exercises",
+            payload.routines.flatMap { routine -> routine.exercises.map { it.id } },
+        )
+        duplicates.addDuplicateReport("training_cycles", payload.cycles.map { it.id })
+        duplicates.addDuplicateReport(
+            "cycle_days",
+            payload.cycles.flatMap { cycle ->
+                cycle.days.map { day -> "${day.cycleId}:${day.dayNumber}" }
+            },
+        )
+        duplicates.addDuplicateReport(
+            "session_phase_statistics",
+            payload.phaseStatistics.map { it.sessionId },
+        )
+        duplicates.addDuplicateReport("earned_badges", payload.badges.map { it.badgeId })
+        duplicates.addDuplicateReport(
+            "external_activities",
+            payload.externalActivities.map { "${it.provider}:${it.externalId}" },
+        )
+        duplicates.addDuplicateReport(
+            "local_profiles",
+            payload.allProfiles.orEmpty().map { it.id },
+        )
+
+        val firstDuplicate = duplicates.firstOrNull()
+        if (firstDuplicate != null) {
+            return PortalApiException(
+                "Duplicate IDs in push payload before send: ${firstDuplicate.table} contains duplicate key(s): " +
+                    firstDuplicate.keys.joinToString(", "),
+                null,
+                400,
+            )
+        }
+
+        val incompleteRoutineIds = payload.routines
+            .filter { it.exerciseCount > 0 && it.exercises.isEmpty() }
+            .map { it.id }
+            .sorted()
+        if (incompleteRoutineIds.isNotEmpty()) {
+            return PortalApiException(
+                "Incomplete routine payload before send: routine(s) with nonzero exerciseCount omitted exercises: " +
+                    incompleteRoutineIds.joinToString(", "),
+                null,
+                400,
+            )
+        }
+
+        return null
+    }
+
     private suspend fun pushLocalChanges(): Result<PortalSyncPushResponse> {
         val userId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
@@ -737,6 +831,31 @@ class SyncManager(
             PortalSyncAdapter.toPortalTrainingCycle(it, userId)
         }
         val profileDtos = allProfiles.map { LocalProfileDto(it.id, it.name, it.colorIndex) }
+        val allSessions = buildResult.sessions
+        val fullPayload = PortalSyncPayload(
+            deviceId = deviceId,
+            platform = platform,
+            lastSync = lastSync,
+            sessions = allSessions,
+            telemetry = effectiveTelemetry,
+            routines = routineDtos,
+            deletedRoutineIds = deletedRoutineIds,
+            cycles = cycleDtos,
+            deletedCycleIds = deletedCycleIds,
+            rpgAttributes = rpgDto,
+            badges = badgeDtos,
+            gamificationStats = gamStatsDto,
+            phaseStatistics = phaseStatsBySessionId.values.flatten(),
+            assessments = assessmentDtos,
+            profileId = activeProfile?.id,
+            profileName = activeProfile?.name,
+            allProfiles = profileDtos,
+            externalActivities = externalActivityDtos,
+        )
+        validatePortalPushPayload(fullPayload)?.let { error ->
+            Logger.e("SyncManager") { error.message ?: "Invalid portal push payload" }
+            return Result.failure(error)
+        }
 
         // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB)
         //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH).
@@ -745,7 +864,6 @@ class SyncManager(
         //    IMPORTANT: We do NOT update lastSync until ALL batches succeed. This prevents
         //    data consistency gaps where a partial batch sequence leaves the timestamp
         //    advanced but later batches uncommitted (audit 4.1 fix).
-        val allSessions = buildResult.sessions
         val telemetryCountBySessionId = allSessions.associate { session ->
             val count = (sessionSetIds[session.id] ?: emptySet()).sumOf { setId ->
                 telemetryBySetId[setId]?.size ?: 0
@@ -767,27 +885,7 @@ class SyncManager(
 
         if (batchPlan.size <= 1) {
             // --- Single-push fast path (most common case) ---
-            val payload = PortalSyncPayload(
-                deviceId = deviceId,
-                platform = platform,
-                lastSync = lastSync,
-                sessions = allSessions,
-                telemetry = effectiveTelemetry,
-                routines = routineDtos,
-                deletedRoutineIds = deletedRoutineIds,
-                cycles = cycleDtos,
-                deletedCycleIds = deletedCycleIds,
-                rpgAttributes = rpgDto,
-                badges = badgeDtos,
-                gamificationStats = gamStatsDto,
-                phaseStatistics = phaseStatsBySessionId.values.flatten(),
-                assessments = assessmentDtos,
-                profileId = activeProfile?.id,
-                profileName = activeProfile?.name,
-                allProfiles = profileDtos,
-                externalActivities = externalActivityDtos,
-            )
-            val result = apiClient.pushPortalPayload(payload)
+            val result = apiClient.pushPortalPayload(fullPayload)
             if (result.isFailure) return result
             lastResponse = result.getOrThrow()
             // Single-batch success - reset retry tracking

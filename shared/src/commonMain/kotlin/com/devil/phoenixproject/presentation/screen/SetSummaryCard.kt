@@ -132,7 +132,6 @@ fun SetSummaryCard(
     // heaviestLift and setWeight are per-cable values that must be multiplied by cableCount
     // before unit conversion to show total weight to the user.
     // totalVolume is already a total value (not per-cable), so it only needs unit conversion.
-    val isSingleCable = summary.cableCount == 1
     val cableCount = summary.cableCount
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)

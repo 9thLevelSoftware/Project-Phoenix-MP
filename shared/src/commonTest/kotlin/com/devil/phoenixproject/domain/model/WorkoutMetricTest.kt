@@ -150,6 +150,35 @@ class WorkoutSessionTest {
     }
 
     @Test
+    fun `displayLoadMultiplier preserves legacy display multiplier ahead of cable count`() {
+        val session = WorkoutSession(
+            weightPerCableKg = 50f,
+            totalReps = 8,
+            cableCount = 2,
+            displayMultiplier = 1,
+        )
+
+        assertEquals(1, session.displayLoadMultiplier())
+        assertEquals(400f, session.effectiveTotalVolumeKg())
+    }
+
+    @Test
+    fun `toSetSummary uses legacy display multiplier for saved-session display count`() {
+        val session = WorkoutSession(
+            weightPerCableKg = 50f,
+            totalReps = 8,
+            peakForceConcentricA = 50f,
+            cableCount = 2,
+            displayMultiplier = 1,
+        )
+
+        val summary = session.toSetSummary()
+
+        assertEquals(1, summary?.cableCount)
+        assertEquals(400f, summary?.totalVolumeKg)
+    }
+
+    @Test
     fun `toSetSummary detects Echo mode case insensitively`() {
         val session = WorkoutSession(
             mode = "ECHO",

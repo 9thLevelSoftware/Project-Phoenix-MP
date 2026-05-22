@@ -60,15 +60,19 @@ class BleConstantsTest {
     }
 
     @Test
-    fun `activation packet force config offsets match firmware layout`() {
-        // Firmware force config (overlaps eccentric phase tail)
-        assertEquals(0x48, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)
-        assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_INCREMENT)
-        // Protocol force config block
+    fun `activation packet offsets match official non-overlap layout`() {
+        assertEquals(0x48, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)
+        assertEquals(0x4A, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)
+        assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)
+        assertEquals(0x48, BleConstants.ActivationPacket.OFFSET_LEGACY_OVERLAP_SOFT_MAX)
+        assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_LEGACY_OVERLAP_INCREMENT)
+
         assertEquals(0x50, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)
         assertEquals(0x54, BleConstants.ActivationPacket.OFFSET_FORCE_MAX)
-        assertEquals(0x58, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)
-        assertEquals(0x5C, BleConstants.ActivationPacket.OFFSET_PROGRESSION)
+        assertEquals(0x58, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)
+        assertEquals(0x5C, BleConstants.ActivationPacket.OFFSET_INCREMENT)
+        assertEquals(BleConstants.ActivationPacket.OFFSET_SOFT_MAX, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)
+        assertEquals(BleConstants.ActivationPacket.OFFSET_INCREMENT, BleConstants.ActivationPacket.OFFSET_PROGRESSION)
     }
 
     // ========== Data Protocol Tests ==========

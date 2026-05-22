@@ -220,6 +220,10 @@
     <!-- ==================== Exercise Create/Edit ==================== -->
     <string name="exercise_name_label">Exercise Name *</string>
     <string name="label_cables">Cables</string>
+    <string name="label_cable_count">Cable Count</string>
+    <string name="label_one_cable">1 Cable</string>
+    <string name="label_two_cables">2 Cables</string>
+    <string name="cable_count_helper">Total load will be weight × cable count</string>
     <string name="label_bodyweight">Bodyweight</string>
     <string name="delete_exercise_title">Delete Exercise?</string>
     <string name="delete_exercise_message">Are you sure you want to delete \"%1$s\"? This action cannot be undone.</string>

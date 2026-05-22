@@ -475,8 +475,7 @@ sealed class HapticEvent {
  * @property timestamp Session start time as Unix epoch milliseconds
  * @property duration Session duration in MILLISECONDS (not seconds!)
  *                    Computed as `currentTimeMillis() - startTime`
- * @property weightPerCableKg Machine/storage weight per cable in kilograms. User-facing load
- *                            displays should prefer displayMultiplier over physical cableCount.
+ * @property weightPerCableKg Machine/storage weight per cable in kilograms.
  */
 data class WorkoutSession(
     val id: String = generateUUID(),
@@ -519,6 +518,8 @@ data class WorkoutSession(
     val heaviestLiftKg: Float? = null,
     val totalVolumeKg: Float? = null,
     val cableCount: Int? = null,
+    // Legacy display semantics persisted before cable-count overrides became explicit.
+    val displayMultiplier: Int? = null,
     val estimatedCalories: Float? = null,
     val warmupAvgWeightKg: Float? = null,
     val workingAvgWeightKg: Float? = null,
@@ -556,18 +557,21 @@ fun WorkoutSession.effectiveHeaviestKgPerCable(): Float = heaviestLiftKg ?: weig
 /**
  * Multiplier for user-facing saved-session load display.
  */
-fun WorkoutSession.displayLoadMultiplier(): Int = cableCount ?: 1
+fun WorkoutSession.displayLoadMultiplier(): Int =
+    displayMultiplier?.takeIf { it > 0 }
+        ?: cableCount?.takeIf { it > 0 }
+        ?: 1
 
 /**
  * Effective total volume (kg) for analytics/display.
  *
  * Uses measured summary volume when available (v0.2.1+), otherwise falls back to
- * configuredWeightPerCable * cableCount * reps.
+ * configuredWeightPerCable * display multiplier * reps.
  *
  * Legacy rows may not have cableCount metadata; in those cases we default to 1 cable
  * to avoid overcounting historical volume.
  */
-fun WorkoutSession.effectiveTotalVolumeKg(): Float = totalVolumeKg ?: (weightPerCableKg * ((if (cableCount == 2) 2 else 1).toFloat()) * totalReps)
+fun WorkoutSession.effectiveTotalVolumeKg(): Float = totalVolumeKg ?: (weightPerCableKg * displayLoadMultiplier().toFloat() * totalReps)
 
 /**
  * Convert WorkoutSession to SetSummary for display in history.
@@ -583,7 +587,7 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         repCount = totalReps,
         durationMs = duration,
         totalVolumeKg = effectiveTotalVolumeKg(),
-        cableCount = cableCount ?: 1,
+        cableCount = displayLoadMultiplier(),
         heaviestLiftKgPerCable = effectiveHeaviestKgPerCable(),
         configuredWeightKgPerCable = weightPerCableKg,
         peakForceConcentricA = peakForceConcentricA ?: 0f,
