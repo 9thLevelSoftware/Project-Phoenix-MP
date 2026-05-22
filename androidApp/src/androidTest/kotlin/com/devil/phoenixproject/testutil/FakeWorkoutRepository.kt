@@ -81,6 +81,16 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
+    override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {
+        sessions[sessionId]?.let { session ->
+            sessions[sessionId] = session.copy(
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+            )
+            updateSessionsFlow()
+        }
+    }
+
     override suspend fun deleteSession(sessionId: String) {
         sessions.remove(sessionId)
         metrics.remove(sessionId)

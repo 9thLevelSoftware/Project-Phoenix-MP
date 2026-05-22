@@ -3,6 +3,9 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
+import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +78,48 @@ class FakeCompletedSetRepository : CompletedSetRepository {
                 if (!contains(set.id)) add(set.id)
             }
         updateCompletedFlow(set.sessionId)
+    }
+
+    override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? {
+        val actualReps = (if (session.workingReps > 0) session.workingReps else session.totalReps)
+            .coerceAtLeast(0)
+        if (actualReps <= 0) return null
+
+        val setType = if (isAmrap) SetType.AMRAP else SetType.STANDARD
+        val completedAt = session.timestamp + session.duration
+
+        val existing = completedSetsBySession[session.id]
+            ?.mapNotNull { completedSets[it] }
+            ?.firstOrNull()
+
+        if (existing != null) {
+            val updated = existing.copy(
+                setType = setType,
+                actualReps = actualReps,
+                actualWeightKg = session.weightPerCableKg,
+                loggedRpe = session.rpe,
+                completedAt = completedAt,
+            )
+            completedSets[existing.id] = updated
+            updateCompletedFlow(session.id)
+            return updated
+        }
+
+        val completedSet = CompletedSet(
+            id = generateUUID(),
+            sessionId = session.id,
+            plannedSetId = null,
+            setNumber = 0,
+            setType = setType,
+            actualReps = actualReps,
+            actualWeightKg = session.weightPerCableKg,
+            loggedRpe = session.rpe,
+            isPr = false,
+            completedAt = completedAt,
+        )
+
+        saveCompletedSet(completedSet)
+        return completedSet
     }
 
     override suspend fun saveCompletedSets(sets: List<CompletedSet>) {
