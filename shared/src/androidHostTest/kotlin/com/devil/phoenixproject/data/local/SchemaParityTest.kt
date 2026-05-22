@@ -149,7 +149,7 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 31L
+        private const val CURRENT_VERSION = 32L
 
         /**
          * Transient tables are intermediate artifacts of table-rebuild migrations

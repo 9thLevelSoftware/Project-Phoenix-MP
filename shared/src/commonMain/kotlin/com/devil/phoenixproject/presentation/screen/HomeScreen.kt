@@ -56,13 +56,13 @@ import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.AnimatedActionButton
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.IconAnimation
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -550,7 +550,7 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
                         Column {
                             val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
                                 session.weightPerCableKg,
-                                session.displayMultiplier ?: session.cableCount,
+                                session.cableCount,
                                 weightUnit,
                             )
                             val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"

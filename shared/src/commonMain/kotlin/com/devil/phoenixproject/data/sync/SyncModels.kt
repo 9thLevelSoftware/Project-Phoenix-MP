@@ -71,7 +71,7 @@ data class WorkoutSessionSyncDto(
     val totalReps: Int = 0,
     val exerciseId: String? = null,
     val exerciseName: String? = null,
-    val displayMultiplier: Int? = null,
+    val cableCount: Int? = null,
     val deletedAt: Long? = null,
     val createdAt: Long,
     val updatedAt: Long,

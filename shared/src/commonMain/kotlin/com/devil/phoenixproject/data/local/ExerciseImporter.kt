@@ -2,11 +2,12 @@ package com.devil.phoenixproject.data.local
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
-import io.ktor.client.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.serialization.kotlinx.json.*
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
@@ -204,6 +205,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             aliases = aliasesStr,
                             defaultCableConfig = cableConfig,
                             one_rep_max_kg = null,
+                            userCableCount = null,
                         )
                         importedCount++
 
@@ -356,6 +358,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         aliases = exercise.aliases?.joinToString(","),
                         defaultCableConfig = mapSidednessToCableConfig(exercise.sidedness),
                         one_rep_max_kg = null,
+                        userCableCount = null,
                     )
 
                     // Insert videos

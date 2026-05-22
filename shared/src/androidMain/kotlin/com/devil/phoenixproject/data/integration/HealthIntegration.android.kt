@@ -110,8 +110,7 @@ actual class HealthIntegration(private val context: Context) {
                 "HEALTH_DEBUG_ANDROID_WRITE: sessionId=${session.id}, " +
                     "exercise=${session.exerciseName ?: "NULL"}, " +
                     "weightPerCableKg=${session.weightPerCableKg}, cableCount=${session.cableCount ?: -1}, " +
-                    "displayMultiplier=${session.displayMultiplier ?: -1}, " +
-                    "builtTitle=$title, estimatedCalories=${session.estimatedCalories ?: -1f}, " +
+                    "estimatedCalories=${session.estimatedCalories ?: -1f}, " +
                     "canWriteCalories=$canWriteCalories, " +
                     "durationMs=${session.duration}, durationSeconds=$durationSeconds"
             }
@@ -233,18 +232,14 @@ actual class HealthIntegration(private val context: Context) {
      * Builds a human-readable title for the exercise session.
      *
      * Weight display logic:
-     * - Prefer persisted displayMultiplier when present (established display semantics)
-     * - Fall back to raw physical cableCount only for legacy sessions without displayMultiplier
-     * - If both are null, default to 1 (per-cable weight shown as-is)
+     * - Cable count represents effective total weight multiplier (combines physical count and UI overrides)
+     * - Fall back to 1 if unspecified to preserve basic kg metrics.
      *
      * This keeps Health titles aligned with persisted WorkoutSession display semantics.
      */
     private fun buildExerciseTitle(session: WorkoutSession): String {
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        // Prefer displayMultiplier; raw physical cableCount is only the legacy fallback.
-        // This prevents incorrect bilateral handle inflation (Issue #358: 80kg showing as 160kg).
-        val totalWeightKg = session.weightPerCableKg *
-            (session.displayMultiplier ?: session.cableCount ?: 1).toFloat()
+        val totalWeightKg = session.weightPerCableKg * (session.cableCount ?: 1).toFloat()
         return if (totalWeightKg > 0f) {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {

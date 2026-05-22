@@ -30,6 +30,7 @@ data class Exercise(
     val timesPerformed: Int = 0, // Number of times this exercise has been performed
     val oneRepMaxKg: Float? = null, // User's 1RM for percentage-based programming
     val cableIntent: ExerciseCableIntent? = null, // Explicit single/dual cable metadata when known
+    val userCableCount: Int? = null, // User's explicit cable count preference
     val displayName: String = name, // Disambiguated name from catalog; defaults to base name
 ) {
     /**
@@ -47,39 +48,14 @@ data class Exercise(
         get() = !hasCableAccessory
 
     /**
-     * Preferred cable count for summary calculations when the exercise metadata is explicit.
-     * Null means the caller should fall back to telemetry heuristics.
+     * Preferred cable count for summary calculations.
+     * Uses the user's explicit preference if set, otherwise falls back to exercise metadata.
      */
     val preferredCableCount: Int?
-        get() = when (cableIntent) {
+        get() = userCableCount ?: when (cableIntent) {
             ExerciseCableIntent.SINGLE -> 1
             ExerciseCableIntent.DUAL -> 2
-            ExerciseCableIntent.EITHER, null -> null
-        }
-
-    /**
-     * Whether this exercise uses a unified attachment (long bar or belt) connecting both cables.
-     * Only BAR and BELT create a single combined load from both cables.
-     * HANDLES, ROPE, SHORT_BAR, STRAPS are individual per-cable attachments.
-     */
-    val usesUnifiedAttachment: Boolean
-        get() {
-            val equipmentParts = equipment.split(",").map { it.trim().uppercase() }
-            return equipmentParts.any { it == "BAR" || it == "BELT" }
-        }
-
-    /**
-     * Display multiplier for weight presentation.
-     * Returns 2 only when exercise uses dual cables with a unified attachment (BAR/BELT).
-     * Individual-handle dual exercises (e.g., bicep curls with HANDLES) return 1
-     * because each arm lifts per-cable weight independently.
-     * Null when cable intent is unknown (EITHER or null) -- let caller decide.
-     */
-    val displayMultiplier: Int?
-        get() = when (cableIntent) {
-            ExerciseCableIntent.SINGLE -> 1
-            ExerciseCableIntent.DUAL -> if (usesUnifiedAttachment) 2 else 1
-            ExerciseCableIntent.EITHER, null -> null
+            ExerciseCableIntent.EITHER, null -> 1 // Safe default
         }
 
     companion object {
@@ -88,24 +64,6 @@ data class Exercise(
     }
 }
 
-/**
- * Live HUD display multiplier for the narrow "two cables, one shared accessory" case.
- *
- * This intentionally fails closed to per-cable display unless the exercise metadata proves
- * both cables attach to a single unified accessory.
- */
-fun Exercise?.liveUnifiedAccessoryDisplayMultiplier(): Int {
-    val exercise = this ?: return 1
-    return if (
-        exercise.cableIntent == ExerciseCableIntent.DUAL &&
-        exercise.usesUnifiedAttachment &&
-        exercise.displayMultiplier == 2
-    ) {
-        2
-    } else {
-        1
-    }
-}
 
 /**
  * Exercise categories for organization

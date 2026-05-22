@@ -5,13 +5,13 @@ import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
-import org.junit.Before
-import org.junit.Test
 
 class SqlDelightExerciseRepositoryTest {
 
@@ -209,6 +209,7 @@ class SqlDelightExerciseRepositoryTest {
             aliases = null,
             defaultCableConfig = defaultCableConfig,
             one_rep_max_kg = oneRepMaxKg,
+            userCableCount = null,
         )
     }
 }

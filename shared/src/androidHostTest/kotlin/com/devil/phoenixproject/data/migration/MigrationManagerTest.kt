@@ -3,11 +3,11 @@ package com.devil.phoenixproject.data.migration
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import org.junit.Before
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import org.junit.Before
-import org.junit.Test
 
 class MigrationManagerTest {
 
@@ -523,6 +523,7 @@ class MigrationManagerTest {
             aliases = null,
             defaultCableConfig = "DOUBLE",
             one_rep_max_kg = oneRepMaxKg,
+            userCableCount = null,
         )
     }
 

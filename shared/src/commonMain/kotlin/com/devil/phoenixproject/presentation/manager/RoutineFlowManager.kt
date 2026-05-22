@@ -710,11 +710,15 @@ class RoutineFlowManager(
         return routine.copy(exercises = reindexed, supersets = normalizedSupersets)
     }
 
+    private fun normalizeExerciseBehaviorForRuntime(routine: Routine): Routine = routine.copy(
+        exercises = routine.exercises.map { it.normalizedForExerciseType() },
+    )
+
     /**
      * Internal function to load a routine after weights have been resolved.
      */
     private fun loadRoutineInternal(routine: Routine) {
-        val normalized = normalizeExerciseOrder(routine)
+        val normalized = normalizeExerciseBehaviorForRuntime(normalizeExerciseOrder(routine))
         coordinator._loadedRoutine.value = normalized
         coordinator._currentExerciseIndex.value = 0
         coordinator._currentSetIndex.value = 0

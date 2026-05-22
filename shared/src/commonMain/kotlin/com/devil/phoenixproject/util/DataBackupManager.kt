@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import com.devil.phoenixproject.domain.model.Exercise as DomainExercise
 
 /**
  * Platform-agnostic interface for backup/restore operations.
@@ -424,7 +425,7 @@ abstract class BaseDataBackupManager(
                                 heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
                                 totalVolumeKg = session.totalVolumeKg?.toDouble(),
                                 cableCount = session.cableCount?.toLong(),
-                                display_multiplier = session.displayMultiplier?.toLong(),
+                                display_multiplier = null,
                                 estimatedCalories = session.estimatedCalories?.toDouble(),
                                 warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
                                 workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
@@ -556,6 +557,7 @@ abstract class BaseDataBackupManager(
                             Logger.w { "Backup import: routine exercise ${exercise.exerciseName} eccentricLoad ${exercise.eccentricLoad}% clamped to $safeExerciseEccentricLoad% (hardware limit)" }
                         }
 
+                        val normalizedExercise = exercise.normalizedForExerciseType()
                         val inserted = tryImport("routineExercise", exercise.id) {
                             queries.insertRoutineExerciseIgnore(
                                 id = exercise.id,
@@ -585,9 +587,9 @@ abstract class BaseDataBackupManager(
                                 weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
                                 prTypeForScaling = exercise.prTypeForScaling,
                                 setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
-                                stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
-                                stopAtTop = if (exercise.stopAtTop) 1L else 0L,
-                                repCountTiming = exercise.repCountTiming,
+                                stallDetectionEnabled = if (normalizedExercise.stallDetectionEnabled) 1L else 0L,
+                                stopAtTop = if (normalizedExercise.stopAtTop) 1L else 0L,
+                                repCountTiming = normalizedExercise.repCountTiming,
                                 setEchoLevels = exercise.setEchoLevels,
                                 warmupSets = exercise.warmupSets,
                             )
@@ -1250,6 +1252,7 @@ abstract class BaseDataBackupManager(
                                                     Logger.w { "Streaming import: routine exercise ${exercise.exerciseName} eccentricLoad ${exercise.eccentricLoad}% clamped to $safeExerciseEccentricLoad% (hardware limit)" }
                                                 }
 
+                                                val normalizedExercise = exercise.normalizedForExerciseType()
                                                 val inserted = tryImport("routineExercise", exercise.id) {
                                                     queries.insertRoutineExerciseIgnore(
                                                         id = exercise.id,
@@ -1279,9 +1282,9 @@ abstract class BaseDataBackupManager(
                                                         weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
                                                         prTypeForScaling = exercise.prTypeForScaling,
                                                         setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
-                                                        stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
-                                                        stopAtTop = if (exercise.stopAtTop) 1L else 0L,
-                                                        repCountTiming = exercise.repCountTiming,
+                                                        stallDetectionEnabled = if (normalizedExercise.stallDetectionEnabled) 1L else 0L,
+                                                        stopAtTop = if (normalizedExercise.stopAtTop) 1L else 0L,
+                                                        repCountTiming = normalizedExercise.repCountTiming,
                                                         setEchoLevels = exercise.setEchoLevels,
                                                         warmupSets = exercise.warmupSets,
                                                     )
@@ -2196,7 +2199,6 @@ abstract class BaseDataBackupManager(
             heaviestLiftKg = session.heaviestLiftKg?.toFloat(),
             totalVolumeKg = session.totalVolumeKg?.toFloat(),
             cableCount = session.cableCount?.toInt(),
-            displayMultiplier = session.display_multiplier?.toInt(),
             estimatedCalories = session.estimatedCalories?.toFloat(),
             warmupAvgWeightKg = session.warmupAvgWeightKg?.toFloat(),
             workingAvgWeightKg = session.workingAvgWeightKg?.toFloat(),
@@ -2271,7 +2273,25 @@ abstract class BaseDataBackupManager(
         stopAtTop = exercise.stopAtTop != 0L,
         repCountTiming = exercise.repCountTiming,
         warmupSets = exercise.warmupSets,
-    )
+    ).normalizedForExerciseType()
+
+    private fun RoutineExerciseBackup.normalizedForExerciseType(): RoutineExerciseBackup {
+        val isBodyweight = DomainExercise(
+            id = exerciseId,
+            name = exerciseName,
+            muscleGroup = exerciseMuscleGroup,
+            muscleGroups = exerciseMuscleGroup,
+            equipment = exerciseEquipment,
+        ).isBodyweight
+        if (!isBodyweight) return this
+        if (!stallDetectionEnabled && repCountTiming == "TOP" && !stopAtTop) return this
+
+        return copy(
+            stallDetectionEnabled = false,
+            stopAtTop = false,
+            repCountTiming = "TOP",
+        )
+    }
 
     private fun mapSupersetToBackup(superset: Superset): SupersetBackup = SupersetBackup(
         id = superset.id,

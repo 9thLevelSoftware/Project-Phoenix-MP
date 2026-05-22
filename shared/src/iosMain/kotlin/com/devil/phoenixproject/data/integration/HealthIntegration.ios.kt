@@ -151,8 +151,8 @@ actual class HealthIntegration {
      * - Optional calorie data from session.estimatedCalories
      * - Metadata with external UUID (session.id) for deduplication
      *
-     * Weight display follows persisted display semantics: prefer displayMultiplier,
-     * fall back to raw physical cableCount only for legacy sessions, then default to 1.
+     * Weight display follows persisted display semantics: prefer cableCount,
+     * then default to 1.
      */
     actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
         if (!isAvailable()) {
@@ -348,15 +348,14 @@ actual class HealthIntegration {
 
     /**
      * Builds a human-readable title for the exercise session.
-     * Total weight shown is per-cable x persisted displayMultiplier when available.
+     * Total weight shown is per-cable x persisted cableCount when available.
      *
-     * Falls back to raw physical cableCount only for legacy sessions without displayMultiplier,
-     * then defaults to 1. This preserves Android/iOS Health title parity (Issue #358).
+     * Defaults to 1 if cableCount is null. This preserves Android/iOS Health title parity (Issue #358).
      */
     private fun buildExerciseTitle(session: WorkoutSession): String {
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
         val totalWeightKg = session.weightPerCableKg *
-            (session.displayMultiplier ?: session.cableCount ?: 1).toFloat()
+            (session.cableCount ?: 1).toFloat()
         return if (totalWeightKg > 0f) {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {

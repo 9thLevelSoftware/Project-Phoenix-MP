@@ -43,6 +43,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
         aliases: String?,
         defaultCableConfig: String,
         one_rep_max_kg: Double?,
+        userCableCount: Long?,
         // Sync fields (migration 6)
         updatedAt: Long?,
         serverId: String?,
@@ -58,6 +59,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
             isCustom = isCustom == 1L,
             timesPerformed = timesPerformed.toInt(),
             oneRepMaxKg = one_rep_max_kg?.toFloat(),
+            userCableCount = userCableCount?.toInt(),
             cableIntent = resolveCableIntent(
                 sidedness = sidedness,
                 defaultCableConfig = defaultCableConfig,
@@ -216,6 +218,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
                 aliases = null,
                 defaultCableConfig = "DOUBLE", // Legacy field - no longer used
                 one_rep_max_kg = exercise.oneRepMaxKg?.toDouble(),
+                userCableCount = exercise.userCableCount?.toLong(),
             )
 
             Logger.d { "Created custom exercise: ${exercise.name} with ID: $customId" }
@@ -264,6 +267,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
                     aliases = null,
                     defaultCableConfig = "DOUBLE", // Legacy field - no longer used
                     one_rep_max_kg = exercise.oneRepMaxKg?.toDouble(),
+                    userCableCount = exercise.userCableCount?.toLong(),
                     id = exerciseId,
                 )
 

@@ -164,6 +164,9 @@ fun ExerciseEditBottomSheet(
     val usePercentOfPR by viewModel.usePercentOfPR.collectAsState()
     val weightPercentOfPR by viewModel.weightPercentOfPR.collectAsState()
 
+    // Cable Count Override
+    val cableCountOverride by viewModel.cableCountOverride.collectAsState()
+
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
     // Issue #266/#410: Use configured increment if provided, otherwise default for unit
@@ -317,6 +320,49 @@ fun ExerciseEditBottomSheet(
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
                         onWeightPercentOfPRChange = viewModel::onWeightPercentOfPRChange,
                     )
+
+                    // Cable Count Selection
+                    val effectiveCableCount = cableCountOverride ?: exercise.exercise.preferredCableCount ?: 1
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                        shadowElevation = 2.dp,
+                    ) {
+                        Column(modifier = Modifier.padding(Spacing.small)) {
+                            Text(
+                                "Cable Count",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = Spacing.extraSmall),
+                            )
+                            SingleChoiceSegmentedButtonRow(
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                SegmentedButton(
+                                    selected = effectiveCableCount == 1,
+                                    onClick = { viewModel.onCableCountOverrideChange(1) },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                                ) {
+                                    Text("1 Cable")
+                                }
+                                SegmentedButton(
+                                    selected = effectiveCableCount == 2,
+                                    onClick = { viewModel.onCableCountOverrideChange(2) },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                                ) {
+                                    Text("2 Cables")
+                                }
+                            }
+                            Text(
+                                "Total load will be weight × cable count",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = Spacing.small),
+                            )
+                        }
+                    }
                 }
 
                 // Mode Selector
@@ -442,86 +488,90 @@ fun ExerciseEditBottomSheet(
                     }
                 }
 
-                // Stall Detection toggle - visible for all exercises
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                    shadowElevation = 2.dp,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.small),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                // Cable-only behavior controls must stay hidden for bodyweight exercises.
+                if (exerciseType == ExerciseType.STANDARD) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                        shadowElevation = 2.dp,
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Stall Detection",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (stallDetectionEnabled) FontWeight.Bold else FontWeight.Normal,
-                                color = if (stallDetectionEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = "Auto-stop set when movement pauses for 5 seconds",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = stallDetectionEnabled,
-                            onCheckedChange = viewModel::onStallDetectionEnabledChange,
-                        )
-                    }
-                }
-
-                // Rep Count Timing toggle
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                    shadowElevation = 2.dp,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.small),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Rep Count Timing",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (repCountTiming == RepCountTiming.TOP) FontWeight.Bold else FontWeight.Normal,
-                                color = if (repCountTiming == RepCountTiming.TOP) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = if (repCountTiming == RepCountTiming.TOP) {
-                                    "Count at top of lift (concentric peak)"
-                                } else {
-                                    "Count at bottom (eccentric valley)"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = repCountTiming == RepCountTiming.TOP,
-                            onCheckedChange = { isTop ->
-                                viewModel.onRepCountTimingChange(
-                                    if (isTop) RepCountTiming.TOP else RepCountTiming.BOTTOM,
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.small),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Stall Detection",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (stallDetectionEnabled) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (stallDetectionEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 )
-                            },
-                        )
+                                Text(
+                                    text = "Auto-stop set when movement pauses for 5 seconds",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = stallDetectionEnabled,
+                                onCheckedChange = viewModel::onStallDetectionEnabledChange,
+                            )
+                        }
                     }
                 }
 
-                // Stop at Top toggle — hidden for fully AMRAP exercises
-                if (!sets.all { it.reps == null }) {
+                // Cable-only behavior controls must stay hidden for bodyweight exercises.
+                if (exerciseType == ExerciseType.STANDARD) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                        shadowElevation = 2.dp,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.small),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Rep Count Timing",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (repCountTiming == RepCountTiming.TOP) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (repCountTiming == RepCountTiming.TOP) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = if (repCountTiming == RepCountTiming.TOP) {
+                                        "Count at top of lift (concentric peak)"
+                                    } else {
+                                        "Count at bottom (eccentric valley)"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = repCountTiming == RepCountTiming.TOP,
+                                onCheckedChange = { isTop ->
+                                    viewModel.onRepCountTimingChange(
+                                        if (isTop) RepCountTiming.TOP else RepCountTiming.BOTTOM,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // Cable-only behavior control; also hidden for fully AMRAP exercises.
+                if (exerciseType == ExerciseType.STANDARD && !sets.all { it.reps == null }) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),

@@ -1,0 +1,8 @@
+-- User-controlled cable count feature
+
+-- Add user override columns
+ALTER TABLE Exercise ADD COLUMN userCableCount INTEGER;
+ALTER TABLE RoutineExercise ADD COLUMN cableCountOverride INTEGER;
+
+-- Note: We do not drop `display_multiplier` from WorkoutSession to avoid SQLite DROP COLUMN complexities
+-- and preserve historical data. The application layer will ignore it going forward.

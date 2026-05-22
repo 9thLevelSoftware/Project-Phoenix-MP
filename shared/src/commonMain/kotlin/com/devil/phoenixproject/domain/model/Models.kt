@@ -519,7 +519,6 @@ data class WorkoutSession(
     val heaviestLiftKg: Float? = null,
     val totalVolumeKg: Float? = null,
     val cableCount: Int? = null,
-    val displayMultiplier: Int? = null,
     val estimatedCalories: Float? = null,
     val warmupAvgWeightKg: Float? = null,
     val workingAvgWeightKg: Float? = null,
@@ -556,11 +555,8 @@ fun WorkoutSession.effectiveHeaviestKgPerCable(): Float = heaviestLiftKg ?: weig
 
 /**
  * Multiplier for user-facing saved-session load display.
- *
- * Prefer persisted display semantics when present; fall back to physical cable count only for
- * legacy rows that predate displayMultiplier.
  */
-fun WorkoutSession.displayLoadMultiplier(): Int = displayMultiplier ?: cableCount ?: 1
+fun WorkoutSession.displayLoadMultiplier(): Int = cableCount ?: 1
 
 /**
  * Effective total volume (kg) for analytics/display.
@@ -588,7 +584,6 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         durationMs = duration,
         totalVolumeKg = effectiveTotalVolumeKg(),
         cableCount = cableCount ?: 1,
-        displayMultiplier = displayMultiplier ?: cableCount ?: 1,
         heaviestLiftKgPerCable = effectiveHeaviestKgPerCable(),
         configuredWeightKgPerCable = weightPerCableKg,
         peakForceConcentricA = peakForceConcentricA ?: 0f,

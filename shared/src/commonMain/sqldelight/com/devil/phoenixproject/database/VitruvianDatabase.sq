@@ -26,6 +26,7 @@ CREATE TABLE Exercise (
     aliases TEXT,
     defaultCableConfig TEXT NOT NULL,
     one_rep_max_kg REAL DEFAULT NULL,
+    userCableCount INTEGER,
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
@@ -234,6 +235,8 @@ CREATE TABLE RoutineExercise (
     weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
     prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
     setWeightsPercentOfPR TEXT,
+    -- User-controlled cable count
+    cableCountOverride INTEGER,
     -- Per-exercise behavior overrides (PR #245)
     stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
     stopAtTop INTEGER NOT NULL DEFAULT 0,
@@ -461,9 +464,9 @@ INSERT OR REPLACE INTO Exercise (
     id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
     equipment, movement, sidedness, grip, gripWidth, minRepRange,
     popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
-    aliases, defaultCableConfig, one_rep_max_kg
+    aliases, defaultCableConfig, one_rep_max_kg, userCableCount
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 countExercises:
 SELECT COUNT(*) FROM Exercise;
@@ -500,7 +503,7 @@ updateCustomExercise:
 UPDATE Exercise
 SET name = ?, description = ?, muscleGroup = ?, muscleGroups = ?, muscles = ?,
     equipment = ?, movement = ?, sidedness = ?, grip = ?, gripWidth = ?,
-    minRepRange = ?, aliases = ?, defaultCableConfig = ?, one_rep_max_kg = ?
+    minRepRange = ?, aliases = ?, defaultCableConfig = ?, one_rep_max_kg = ?, userCableCount = ?
 WHERE id = ? AND isCustom = 1;
 
 deleteCustomExercise:

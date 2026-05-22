@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -29,6 +30,7 @@ object TestFixtures {
         equipment = "BAR",
         id = "bench-press-001",
         isFavorite = true,
+        cableIntent = ExerciseCableIntent.DUAL,
     )
 
     val bicepCurl = Exercise(
@@ -37,6 +39,7 @@ object TestFixtures {
         muscleGroups = "Biceps",
         equipment = "SINGLE_HANDLE",
         id = "bicep-curl-001",
+        cableIntent = ExerciseCableIntent.SINGLE,
     )
 
     val squat = Exercise(
@@ -45,6 +48,7 @@ object TestFixtures {
         muscleGroups = "Legs,Glutes,Core",
         equipment = "BAR",
         id = "squat-001",
+        cableIntent = ExerciseCableIntent.DUAL,
     )
 
     val deadlift = Exercise(
@@ -53,6 +57,7 @@ object TestFixtures {
         muscleGroups = "Back,Legs,Glutes",
         equipment = "BAR",
         id = "deadlift-001",
+        cableIntent = ExerciseCableIntent.DUAL,
     )
 
     val singleArmRow = Exercise(
@@ -61,6 +66,7 @@ object TestFixtures {
         muscleGroups = "Back,Biceps",
         equipment = "SINGLE_HANDLE",
         id = "single-arm-row-001",
+        cableIntent = ExerciseCableIntent.SINGLE,
     )
 
     val customExercise = Exercise(
@@ -70,6 +76,7 @@ object TestFixtures {
         equipment = "",
         id = "custom-001",
         isCustom = true,
+        cableIntent = ExerciseCableIntent.EITHER,
     )
 
     val allExercises = listOf(benchPress, bicepCurl, squat, deadlift, singleArmRow, customExercise)

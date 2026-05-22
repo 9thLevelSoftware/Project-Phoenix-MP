@@ -89,7 +89,6 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         deletedAt: Long?,
         // Multi-profile support (migration 21)
         profileId: String,
-        // Equipment-aware weight display (migration 29)
         displayMultiplier: Long?,
     ): WorkoutSession = WorkoutSession(
         id = id,
@@ -143,8 +142,6 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         formScore = formScore?.toInt(),
         // Multi-profile support
         profileId = profileId,
-        // Equipment-aware weight display
-        displayMultiplier = displayMultiplier?.toInt(),
     )
 
     private fun mapToRoutineBasic(
@@ -373,7 +370,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     prTypeForScaling = prTypeForScaling,
                     setWeightsPercentOfPR = setWeightsPercentOfPR,
                     warmupSets = warmupSets,
-                )
+                    cableCountOverride = row.cableCountOverride?.toInt(),
+                ).normalizedForExerciseType()
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
                 null
@@ -528,8 +526,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 formScore = session.formScore?.toLong(),
                 // Multi-profile support
                 profile_id = session.profileId,
-                // Equipment-aware weight display
-                display_multiplier = session.displayMultiplier?.toLong(),
+                display_multiplier = null,
             )
         }
     }
@@ -610,7 +607,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
                 // Insert all exercises
                 routine.exercises.forEachIndexed { index, exercise ->
-                    insertRoutineExercise(routineId, exercise, index)
+                    insertRoutineExercise(routineId, exercise.normalizedForExerciseType(), index)
                 }
             }
 
@@ -711,7 +708,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
                 // Insert all exercises
                 routine.exercises.forEachIndexed { index, exercise ->
-                    insertRoutineExercise(routineId, exercise, index)
+                    insertRoutineExercise(routineId, exercise.normalizedForExerciseType(), index)
                 }
             }
 
@@ -860,7 +857,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             val newVolume = weightKg * reps
             val exercise = exerciseRepository.getExerciseById(exerciseId)
             val exerciseName = exercise?.name ?: ""
-            val cableCount = exercise?.displayMultiplier
+            val cableCount = exercise?.userCableCount ?: exercise?.preferredCableCount
 
             val combinedPhase = "COMBINED"
 

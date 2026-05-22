@@ -942,6 +942,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("Exercise", "deletedAt", "ALTER TABLE Exercise ADD COLUMN deletedAt INTEGER"),
     // Migration 30: display name for formatted exercise names
     SchemaHealOperation("Exercise", "displayName", "ALTER TABLE Exercise ADD COLUMN displayName TEXT"),
+    // Migration 32: user overriding preferred cable count
+    SchemaHealOperation("Exercise", "userCableCount", "ALTER TABLE Exercise ADD COLUMN userCableCount INTEGER DEFAULT NULL"),
 
     // ── WorkoutSession (31 columns) ─────────────────────────────────────
 
@@ -1025,6 +1027,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("RoutineExercise", "stallDetectionEnabled", "ALTER TABLE RoutineExercise ADD COLUMN stallDetectionEnabled INTEGER NOT NULL DEFAULT 1"),
     SchemaHealOperation("RoutineExercise", "stopAtTop", "ALTER TABLE RoutineExercise ADD COLUMN stopAtTop INTEGER NOT NULL DEFAULT 0"),
     SchemaHealOperation("RoutineExercise", "repCountTiming", "ALTER TABLE RoutineExercise ADD COLUMN repCountTiming TEXT NOT NULL DEFAULT 'TOP'"),
+    // Migration 32: user overriding preferred cable count
+    SchemaHealOperation("RoutineExercise", "cableCountOverride", "ALTER TABLE RoutineExercise ADD COLUMN cableCountOverride INTEGER DEFAULT NULL"),
 
     // ── UserProfile (4 columns) ─────────────────────────────────────────
 

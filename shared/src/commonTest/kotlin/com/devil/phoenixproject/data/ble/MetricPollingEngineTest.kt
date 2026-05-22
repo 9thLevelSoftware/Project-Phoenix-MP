@@ -1,12 +1,12 @@
 package com.devil.phoenixproject.data.ble
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.test.runTest
 
 /**
  * Tests for MetricPollingEngine job lifecycle and partial-stop behavior.
@@ -38,6 +38,25 @@ class MetricPollingEngineTest {
     // Job Lifecycle Tests (4 tests)
     // =========================================================================
 
+    private fun assertNoPollingJobs(engine: MetricPollingEngine) {
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
+            "Monitor job should be inactive",
+        )
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic job should be inactive",
+        )
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC),
+            "Heuristic job should be inactive",
+        )
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat job should be inactive",
+        )
+    }
+
     @Test
     fun `startFakeJobs starts all 4 polling jobs`() = runTest {
         val engine = createTestEngine()
@@ -62,6 +81,28 @@ class MetricPollingEngineTest {
         )
 
         engine.stopAll()
+    }
+
+    @Test
+    fun `startIdleConnection keeps new idle connection notification only`() = runTest {
+        val engine = createTestEngine()
+
+        engine.startIdleConnection()
+        delay(50)
+
+        assertNoPollingJobs(engine)
+    }
+
+    @Test
+    fun `startIdleConnection cancels stale polling jobs`() = runTest {
+        val engine = createTestEngine()
+        engine.startFakeJobs()
+        delay(50)
+
+        engine.startIdleConnection()
+        delay(50)
+
+        assertNoPollingJobs(engine)
     }
 
     @Test

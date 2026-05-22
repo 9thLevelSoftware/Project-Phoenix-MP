@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
+import com.devil.phoenixproject.data.sync.PullRoutineDto
+import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PRType
@@ -110,5 +112,84 @@ class SqlDelightSyncRepositoryTest {
 
         assertNotNull(routine)
         assertEquals("active-profile", routine.profile_id)
+    }
+
+    @Test
+    fun `mergePortalRoutines neutralizes bodyweight hidden cable behavior before writing`() = runTest {
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "portal-bodyweight-routine",
+                    name = "Bodyweight Routine",
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "portal-bodyweight-exercise",
+                            name = "Plank",
+                            muscleGroup = "Core",
+                            isBodyweight = true,
+                            stallDetection = true,
+                            repCountTiming = "BOTTOM",
+                            stopAtPosition = "TOP",
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+
+        val row = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("portal-bodyweight-routine")
+            .executeAsOne()
+
+        assertEquals(0L, row.stallDetectionEnabled)
+        assertEquals("TOP", row.repCountTiming)
+        assertEquals(0L, row.stopAtTop)
+    }
+
+    @Test
+    fun `mergePortalRoutines accepts only TOP or BOTTOM rep count timing for cable exercises`() = runTest {
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "portal-cable-routine",
+                    name = "Cable Routine",
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "portal-cable-bottom",
+                            name = "Cable Curl",
+                            muscleGroup = "Biceps",
+                            isBodyweight = false,
+                            repCountTiming = "BOTTOM",
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "portal-cable-invalid",
+                            name = "Cable Row",
+                            muscleGroup = "Back",
+                            isBodyweight = false,
+                            repCountTiming = "MIDDLE",
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "portal-cable-null",
+                            name = "Cable Press",
+                            muscleGroup = "Chest",
+                            isBodyweight = false,
+                            repCountTiming = null,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+
+        val rows = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("portal-cable-routine")
+            .executeAsList()
+            .associateBy { it.id }
+
+        assertEquals("BOTTOM", rows.getValue("portal-cable-bottom").repCountTiming)
+        assertEquals("TOP", rows.getValue("portal-cable-invalid").repCountTiming)
+        assertEquals("TOP", rows.getValue("portal-cable-null").repCountTiming)
     }
 }

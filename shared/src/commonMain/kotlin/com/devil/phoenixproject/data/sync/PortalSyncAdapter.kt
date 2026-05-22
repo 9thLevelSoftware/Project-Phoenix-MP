@@ -450,58 +450,60 @@ object PortalSyncAdapter {
         )
 
         val exercises = routine.exercises.map { ex ->
+            val normalizedEx = ex.normalizedForExerciseType()
+            val isBodyweight = normalizedEx.exercise.isBodyweight
             PortalRoutineExerciseSyncDto(
-                id = ex.id,
+                id = normalizedEx.id,
                 routineId = routine.id,
-                exerciseId = ex.exercise.id,               // Catalog exercise ID (#404)
-                name = ex.exercise.name,
-                displayName = ex.exercise.displayName,     // Disambiguated name (#404)
-                muscleGroup = ex.exercise.muscleGroup,
-                exerciseEquipment = ex.exercise.equipment, // Equipment snapshot (#404)
-                sets = ex.sets,
-                reps = ex.reps,
-                weight = ex.weightPerCableKg,
-                restSeconds = ex.setRestSeconds.firstOrNull() ?: 60,
-                mode = ex.programMode.toSyncString(),
-                orderIndex = ex.orderIndex,
+                exerciseId = normalizedEx.exercise.id,               // Catalog exercise ID (#404)
+                name = normalizedEx.exercise.name,
+                displayName = normalizedEx.exercise.displayName,     // Disambiguated name (#404)
+                muscleGroup = normalizedEx.exercise.muscleGroup,
+                exerciseEquipment = normalizedEx.exercise.equipment, // Equipment snapshot (#404)
+                sets = normalizedEx.sets,
+                reps = normalizedEx.reps,
+                weight = normalizedEx.weightPerCableKg,
+                restSeconds = normalizedEx.setRestSeconds.firstOrNull() ?: 60,
+                mode = normalizedEx.programMode.toSyncString(),
+                orderIndex = normalizedEx.orderIndex,
                 // Superset
-                supersetId = ex.supersetId,
-                supersetColor = ex.supersetId?.let { ssId ->
+                supersetId = normalizedEx.supersetId,
+                supersetColor = normalizedEx.supersetId?.let { ssId ->
                     routine.supersets.find { it.id == ssId }
                         ?.let { colorNames[it.colorIndex] ?: "indigo" }
                 },
-                supersetOrder = if (ex.supersetId != null) ex.orderInSuperset else null,
+                supersetOrder = if (normalizedEx.supersetId != null) normalizedEx.orderInSuperset else null,
                 // Per-set config
-                perSetWeights = ex.setWeightsPerCableKg.takeIf { it.isNotEmpty() }
+                perSetWeights = normalizedEx.setWeightsPerCableKg.takeIf { it.isNotEmpty() }
                     ?.let { Json.encodeToString(ListSerializer(Float.serializer()), it) },
-                perSetRest = ex.setRestSeconds.takeIf { it.isNotEmpty() }
+                perSetRest = normalizedEx.setRestSeconds.takeIf { it.isNotEmpty() }
                     ?.let { Json.encodeToString(ListSerializer(Int.serializer()), it) },
-                perSetReps = ex.setReps.takeIf { it.size > 1 || it.any { r -> r == null } }
+                perSetReps = normalizedEx.setReps.takeIf { it.size > 1 || it.any { r -> r == null } }
                     ?.let { Json.encodeToString(ListSerializer(Int.serializer().nullable), it) },
-                isAmrap = ex.isAMRAP,
-                isBodyweight = !ex.exercise.hasCableAccessory,
-                prPercentage = if (ex.usePercentOfPR) ex.weightPercentOfPR.toFloat() else null,
-                repCountTiming = ex.repCountTiming.name,
-                stopAtPosition = if (ex.stopAtTop) "TOP" else null,
-                stallDetection = ex.stallDetectionEnabled,
-                eccentricLoad = if (ex.programMode == ProgramMode.Echo) {
-                    ex.eccentricLoad.name
+                isAmrap = normalizedEx.isAMRAP,
+                isBodyweight = isBodyweight,
+                prPercentage = if (normalizedEx.usePercentOfPR) normalizedEx.weightPercentOfPR.toFloat() else null,
+                repCountTiming = if (isBodyweight) null else normalizedEx.repCountTiming.name,
+                stopAtPosition = if (isBodyweight) null else if (normalizedEx.stopAtTop) "TOP" else null,
+                stallDetection = if (isBodyweight) false else normalizedEx.stallDetectionEnabled,
+                eccentricLoad = if (normalizedEx.programMode == ProgramMode.Echo) {
+                    normalizedEx.eccentricLoad.name
                 } else {
                     null
                 },
-                echoLevel = if (ex.programMode == ProgramMode.Echo) {
-                    ex.echoLevel.name
+                echoLevel = if (normalizedEx.programMode == ProgramMode.Echo) {
+                    normalizedEx.echoLevel.name
                 } else {
                     null
                 },
-                perSetEchoLevels = ex.setEchoLevels.takeIf { it.isNotEmpty() }
+                perSetEchoLevels = normalizedEx.setEchoLevels.takeIf { it.isNotEmpty() }
                     ?.let { levels ->
                         Json.encodeToString(
                             ListSerializer(String.serializer().nullable),
                             levels.map { it?.name },
                         )
                     },
-                warmupSets = ex.warmupSets.takeIf { it.isNotEmpty() }
+                warmupSets = normalizedEx.warmupSets.takeIf { it.isNotEmpty() }
                     ?.let { Json.encodeToString(it) },
             )
         }

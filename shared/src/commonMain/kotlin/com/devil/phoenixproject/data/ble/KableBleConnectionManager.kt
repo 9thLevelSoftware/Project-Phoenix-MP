@@ -13,10 +13,6 @@ import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
 import com.juul.kable.WriteType
-import kotlin.concurrent.Volatile
-import kotlin.time.Clock
-import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -34,6 +30,10 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.Volatile
+import kotlin.time.Clock
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Manages the BLE connection lifecycle for Vitruvian machines.
@@ -780,7 +780,7 @@ class KableBleConnectionManager(
 
         logRepo.info(
             LogEventType.NOTIFICATION,
-            "Enabling BLE notifications and starting polling (matching parent repo)",
+            "Enabling BLE notifications; polling starts on workout or auto-start",
             connectedDeviceName,
             connectedDeviceAddress,
         )
@@ -860,9 +860,9 @@ class KableBleConnectionManager(
             }
         }
 
-        // ===== POLLING (delegated to MetricPollingEngine) =====
+        // ===== IDLE CONNECTION MODE (delegated to MetricPollingEngine) =====
         discoMode.stop()
-        pollingEngine.startAll(p)
+        pollingEngine.startIdleConnection()
     }
 
     // -------------------------------------------------------------------------

@@ -58,7 +58,6 @@ data class WorkoutSessionBackup(
     val heaviestLiftKg: Float? = null,
     val totalVolumeKg: Float? = null,
     val cableCount: Int? = null,
-    val displayMultiplier: Int? = null,
     val estimatedCalories: Float? = null,
     val warmupAvgWeightKg: Float? = null,
     val workingAvgWeightKg: Float? = null,

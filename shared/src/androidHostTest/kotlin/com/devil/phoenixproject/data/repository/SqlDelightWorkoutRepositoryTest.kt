@@ -2,18 +2,19 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
-import org.junit.Before
-import org.junit.Test
 
 class SqlDelightWorkoutRepositoryTest {
 
@@ -259,6 +260,47 @@ class SqlDelightWorkoutRepositoryTest {
         val reloaded = repository.getRoutineById("routine-null-ex")
         assertNotNull(reloaded)
         assertEquals(exercise.id, reloaded!!.exercises.first().exercise.id)
+    }
+
+    @Test
+    fun `save and reload bodyweight routine exercise returns neutral hidden cable behavior`() = runTest {
+        val routine = Routine(
+            id = "routine-bodyweight-hidden-fields",
+            name = "Bodyweight Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-bodyweight",
+                    exercise = Exercise(
+                        id = "plank",
+                        name = "Plank",
+                        muscleGroup = "Core",
+                        equipment = "",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 0f,
+                    stallDetectionEnabled = true,
+                    repCountTiming = RepCountTiming.BOTTOM,
+                    stopAtTop = true,
+                ),
+            ),
+        )
+
+        repository.saveRoutine(routine)
+
+        val rawRow = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("routine-bodyweight-hidden-fields")
+            .executeAsOne()
+        assertEquals(0L, rawRow.stallDetectionEnabled)
+        assertEquals("TOP", rawRow.repCountTiming)
+        assertEquals(0L, rawRow.stopAtTop)
+
+        val loaded = repository.getRoutineById("routine-bodyweight-hidden-fields")
+        assertNotNull(loaded)
+        val loadedExercise = loaded.exercises.first()
+        assertEquals(false, loadedExercise.stallDetectionEnabled)
+        assertEquals(RepCountTiming.TOP, loadedExercise.repCountTiming)
+        assertEquals(false, loadedExercise.stopAtTop)
     }
 
     // ========== Profile ID Preservation Tests ==========

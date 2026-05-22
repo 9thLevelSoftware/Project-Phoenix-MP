@@ -6,15 +6,16 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
-import org.junit.Test
 
 class ExerciseConfigViewModelTest {
 
@@ -44,6 +45,80 @@ class ExerciseConfigViewModelTest {
 
         assertEquals(ExerciseType.BODYWEIGHT, viewModel.exerciseType.value)
         assertEquals(SetMode.DURATION, viewModel.setMode.value)
+    }
+
+    @Test
+    fun `initialize neutralizes hidden cable behavior for bodyweight exercise`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = bodyweightRoutineExercise(
+            stallDetectionEnabled = true,
+            repCountTiming = RepCountTiming.BOTTOM,
+            stopAtTop = true,
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        assertEquals(false, viewModel.stallDetectionEnabled.value)
+        assertEquals(RepCountTiming.TOP, viewModel.repCountTiming.value)
+        assertEquals(false, viewModel.stopAtTop.value)
+    }
+
+    @Test
+    fun `bodyweight save neutralizes hidden cable behavior despite change attempts`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = bodyweightRoutineExercise(
+            stallDetectionEnabled = true,
+            repCountTiming = RepCountTiming.BOTTOM,
+            stopAtTop = true,
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+        viewModel.onStallDetectionEnabledChange(true)
+        viewModel.onRepCountTimingChange(RepCountTiming.BOTTOM)
+        viewModel.onStopAtTopChange(true)
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertEquals(false, saved.stallDetectionEnabled)
+        assertEquals(RepCountTiming.TOP, saved.repCountTiming)
+        assertEquals(false, saved.stopAtTop)
+    }
+
+    @Test
+    fun `cable save preserves hidden cable behavior values`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = cableRoutineExercise(
+            stallDetectionEnabled = true,
+            repCountTiming = RepCountTiming.BOTTOM,
+            stopAtTop = true,
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertEquals(true, saved.stallDetectionEnabled)
+        assertEquals(RepCountTiming.BOTTOM, saved.repCountTiming)
+        assertEquals(true, saved.stopAtTop)
     }
 
     @Test
@@ -195,8 +270,55 @@ class ExerciseConfigViewModelTest {
             aliases = null,
             defaultCableConfig = "DOUBLE",
             one_rep_max_kg = null,
+            userCableCount = null,
         )
     }
+
+    private fun bodyweightRoutineExercise(
+        stallDetectionEnabled: Boolean = true,
+        repCountTiming: RepCountTiming = RepCountTiming.TOP,
+        stopAtTop: Boolean = false,
+    ): RoutineExercise = RoutineExercise(
+        id = "rex-bw",
+        exercise = Exercise(
+            id = "bw-1",
+            name = "Plank",
+            muscleGroup = "Core",
+            muscleGroups = "Core",
+            equipment = "",
+        ),
+        orderIndex = 0,
+        setReps = listOf(10),
+        weightPerCableKg = 0f,
+        stallDetectionEnabled = stallDetectionEnabled,
+        repCountTiming = repCountTiming,
+        stopAtTop = stopAtTop,
+    )
+
+    private fun cableRoutineExercise(
+        stallDetectionEnabled: Boolean = true,
+        repCountTiming: RepCountTiming = RepCountTiming.TOP,
+        stopAtTop: Boolean = false,
+    ): RoutineExercise = RoutineExercise(
+        id = "rex-cable",
+        exercise = Exercise(
+            id = "bench-1",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            muscleGroups = "Chest",
+            equipment = "BAR",
+        ),
+        orderIndex = 0,
+        setReps = listOf(10),
+        weightPerCableKg = 20f,
+        setWeightsPerCableKg = listOf(20f),
+        programMode = ProgramMode.OldSchool,
+        eccentricLoad = EccentricLoad.LOAD_100,
+        echoLevel = EchoLevel.HARDER,
+        stallDetectionEnabled = stallDetectionEnabled,
+        repCountTiming = repCountTiming,
+        stopAtTop = stopAtTop,
+    )
 
     private fun waitForCondition(timeoutMs: Long = 1_000L, pollMs: Long = 25L, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + timeoutMs

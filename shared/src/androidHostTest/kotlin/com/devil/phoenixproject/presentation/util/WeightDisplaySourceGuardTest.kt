@@ -172,7 +172,6 @@ class WeightDisplaySourceGuardTest {
             )
         }
     }
-
     // ===== Guard: WeightDisplayFormatter must stay in presentation layer =====
 
     @Test
@@ -184,47 +183,6 @@ class WeightDisplaySourceGuardTest {
                 "Current: '$formatterPackage'. " +
                 "Cable multiplication for display is a presentation concern only.",
         )
-    }
-
-    @Test
-    fun workoutHud_liveForceDisplayUsesOnlyUnifiedAccessoryGate() {
-        val path = "com/devil/phoenixproject/presentation/screen/WorkoutHud.kt"
-        val source = readSourceFile(path)
-        if (source != null) {
-            assertFalse(
-                source.contains("WeightDisplayFormatter"),
-                "GUARD VIOLATION: WorkoutHud.kt must not use WeightDisplayFormatter. " +
-                    "Live HUD display is allowed to multiply only after the unified-accessory gate.",
-            )
-            assertFalse(
-                source.contains("preferredCableCount"),
-                "GUARD VIOLATION: WorkoutHud.kt must not gate live total display on physical cable count. " +
-                    "Use liveUnifiedAccessoryDisplayMultiplier() instead.",
-            )
-            assertFalse(
-                Regex("""\bcableCount\b""").containsMatchIn(source),
-                "GUARD VIOLATION: WorkoutHud.kt must not pass generic cableCount into live weight display. " +
-                    "Dual handles and other individual attachments must remain per-cable.",
-            )
-            assertTrue(
-                source.contains("liveUnifiedAccessoryDisplayMultiplier()"),
-                "WorkoutHud.kt should derive live display multiplier from the unified-accessory helper.",
-            )
-            assertTrue(
-                source.contains("workoutParameters.weightPerCableKg * liveDisplayMultiplier"),
-                "WorkoutHud.kt should multiply selected display weight only by the narrow live display multiplier.",
-            )
-            assertTrue(
-                source.contains("perCableKg * liveDisplayMultiplier"),
-                "WorkoutHud.kt should multiply measured live force only by the narrow live display multiplier.",
-            )
-            assertTrue(
-                source.contains("""subLabel = if (liveDisplayMultiplier == 2) "TOTAL" else "PER CABLE""""),
-                "WorkoutHud.kt should label total force only when the unified-accessory multiplier is active.",
-            )
-        } else {
-            assertTrue(true, "WorkoutHud.kt not found; guard passes")
-        }
     }
 
     // ===== Guard: CSV export has its own multiplication =====

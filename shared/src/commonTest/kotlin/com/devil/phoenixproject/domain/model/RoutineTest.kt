@@ -208,6 +208,38 @@ class RoutineTest {
         assertEquals(80f, weights[2]) // Falls back to base 80%
     }
 
+    @Test
+    fun normalizedForExerciseType_bodyweightNeutralizesHiddenCableBehavior() {
+        val exercise = createTestRoutineExercise(
+            equipment = "",
+            stallDetectionEnabled = true,
+            repCountTiming = RepCountTiming.BOTTOM,
+            stopAtTop = true,
+        )
+
+        val normalized = exercise.normalizedForExerciseType()
+
+        assertEquals(false, normalized.stallDetectionEnabled)
+        assertEquals(RepCountTiming.TOP, normalized.repCountTiming)
+        assertEquals(false, normalized.stopAtTop)
+    }
+
+    @Test
+    fun normalizedForExerciseType_cablePreservesNonDefaultBehavior() {
+        val exercise = createTestRoutineExercise(
+            equipment = "BAR",
+            stallDetectionEnabled = true,
+            repCountTiming = RepCountTiming.BOTTOM,
+            stopAtTop = true,
+        )
+
+        val normalized = exercise.normalizedForExerciseType()
+
+        assertEquals(true, normalized.stallDetectionEnabled)
+        assertEquals(RepCountTiming.BOTTOM, normalized.repCountTiming)
+        assertEquals(true, normalized.stopAtTop)
+    }
+
     // ===== Helper =====
 
     private fun createTestRoutineExercise(
@@ -222,12 +254,16 @@ class RoutineTest {
         setWeightsPercentOfPR: List<Int> = emptyList(),
         weightPerCableKg: Float = 20f,
         warmupSets: List<WarmupSet> = emptyList(),
+        equipment: String = "BAR",
+        stallDetectionEnabled: Boolean = true,
+        repCountTiming: RepCountTiming = RepCountTiming.TOP,
+        stopAtTop: Boolean = false,
     ): RoutineExercise = RoutineExercise(
         id = id,
         exercise = Exercise(
             name = "Test Exercise",
             muscleGroup = "Chest",
-            equipment = "Double Cable",
+            equipment = equipment,
             id = "ex1",
         ),
         orderIndex = orderIndex,
@@ -240,5 +276,8 @@ class RoutineTest {
         weightPercentOfPR = weightPercentOfPR,
         setWeightsPercentOfPR = setWeightsPercentOfPR,
         warmupSets = warmupSets,
+        stallDetectionEnabled = stallDetectionEnabled,
+        repCountTiming = repCountTiming,
+        stopAtTop = stopAtTop,
     )
 }

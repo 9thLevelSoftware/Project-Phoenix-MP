@@ -2,7 +2,22 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -10,9 +25,34 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,8 +63,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
-import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.AnimatedRepCounter
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
@@ -38,10 +84,13 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.cd_next_exercise
+import vitruvianprojectphoenix.shared.generated.resources.stop_label
+import vitruvianprojectphoenix.shared.generated.resources.waiting_for_data
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Workout Heads-Up Display (HUD)
@@ -89,7 +138,7 @@ fun WorkoutHud(
     val pagerState = rememberPagerState(pageCount = { 3 })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
     val currentRoutineExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
-    val liveDisplayMultiplier = currentRoutineExercise?.exercise.liveUnifiedAccessoryDisplayMultiplier()
+    val liveDisplayMultiplier = currentRoutineExercise?.exercise?.preferredCableCount ?: 1
 
     // Track consecutive high-asymmetry reps for alert (ASYM-05)
     var consecutiveHighAsymmetryCount by remember { mutableStateOf(0) }

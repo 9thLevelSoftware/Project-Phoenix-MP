@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalPullAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
+import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
@@ -409,6 +410,7 @@ class SqlDelightSyncRepository(
                         aliases = null,
                         defaultCableConfig = dto.defaultCableConfig,
                         one_rep_max_kg = null,
+                        userCableCount = null,
                     )
 
                     if (dto.serverId != null) {
@@ -630,8 +632,11 @@ class SqlDelightSyncRepository(
                             val resolvedEquipment = when {
                                 exercise.isBodyweight -> "Bodyweight"
                                 catalogExercise != null -> catalogExercise.equipment
-                                else -> "Cable"
+                                else -> exercise.exerciseEquipment?.takeIf { equipment ->
+                                    Exercise(name = exercise.name, muscleGroup = exercise.muscleGroup, equipment = equipment).hasCableAccessory
+                                } ?: "HANDLES"
                             }
+                            val behaviorFields = exercise.sanitizedBehaviorFields(resolvedEquipment)
 
                             queries.insertRoutineExercise(
                                 id = exercise.id,
@@ -661,9 +666,9 @@ class SqlDelightSyncRepository(
                                 weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
                                 prTypeForScaling = "MAX_WEIGHT",
                                 setWeightsPercentOfPR = null,
-                                stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
-                                stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
-                                repCountTiming = exercise.repCountTiming ?: "TOP",
+                                stallDetectionEnabled = if (behaviorFields.stallDetectionEnabled) 1L else 0L,
+                                stopAtTop = if (behaviorFields.stopAtTop) 1L else 0L,
+                                repCountTiming = behaviorFields.repCountTiming,
                                 setEchoLevels = setEchoLevels,
                                 warmupSets = exercise.warmupSets ?: "",
                             )
@@ -870,7 +875,7 @@ class SqlDelightSyncRepository(
                         formScore = session.formScore?.toLong(),
                         updatedAt = session.timestamp, // Mark as already-synced to prevent re-push
                         profile_id = session.profileId,
-                        display_multiplier = session.displayMultiplier?.toLong(),
+                        display_multiplier = null,
                     )
                 }
             }
@@ -1063,7 +1068,7 @@ class SqlDelightSyncRepository(
                         prTypeForScaling = prTypeForScaling,
                         setWeightsPercentOfPR = setWeightsPercentOfPR,
                         warmupSets = warmupSets,
-                    )
+                    ).normalizedForExerciseType()
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to map routine exercise: ${exRow.exerciseId}" }
                     null
@@ -1244,7 +1249,6 @@ class SqlDelightSyncRepository(
         heaviestLiftKg = heaviestLiftKg?.toFloat(),
         totalVolumeKg = totalVolumeKg?.toFloat(),
         cableCount = cableCount?.toInt(),
-        displayMultiplier = displayMultiplier?.toInt(),
         estimatedCalories = estimatedCalories?.toFloat(),
         warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
         workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
@@ -1484,7 +1488,7 @@ class SqlDelightSyncRepository(
                         formScore = session.formScore?.toLong(),
                         updatedAt = session.timestamp, // Mark as already-synced
                         profile_id = profileId,
-                        display_multiplier = session.displayMultiplier?.toLong(),
+                        display_multiplier = null,
                     )
                 }
 
@@ -1591,8 +1595,11 @@ class SqlDelightSyncRepository(
                             val resolvedEquipmentBulk = when {
                                 exercise.isBodyweight -> "Bodyweight"
                                 catalogExercise != null -> catalogExercise.equipment
-                                else -> "Cable"
+                                else -> exercise.exerciseEquipment?.takeIf { equipment ->
+                                    Exercise(name = exercise.name, muscleGroup = exercise.muscleGroup, equipment = equipment).hasCableAccessory
+                                } ?: "HANDLES"
                             }
+                            val behaviorFields = exercise.sanitizedBehaviorFields(resolvedEquipmentBulk)
 
                             queries.insertRoutineExercise(
                                 id = exercise.id,
@@ -1622,9 +1629,9 @@ class SqlDelightSyncRepository(
                                 weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
                                 prTypeForScaling = "MAX_WEIGHT",
                                 setWeightsPercentOfPR = null,
-                                stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
-                                stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
-                                repCountTiming = exercise.repCountTiming ?: "TOP",
+                                stallDetectionEnabled = if (behaviorFields.stallDetectionEnabled) 1L else 0L,
+                                stopAtTop = if (behaviorFields.stopAtTop) 1L else 0L,
+                                repCountTiming = behaviorFields.repCountTiming,
                                 setEchoLevels = setEchoLevels,
                                 warmupSets = exercise.warmupSets ?: "",
                             )
@@ -1908,7 +1915,7 @@ class SqlDelightSyncRepository(
                     formScore = session.formScore?.toLong(),
                     updatedAt = incomingTs,
                     profile_id = session.profileId,
-                    display_multiplier = session.displayMultiplier?.toLong(),
+                    display_multiplier = null,
                 )
             }
         }
@@ -1936,5 +1943,39 @@ class SqlDelightSyncRepository(
                 }
             }
         }
+    }
+
+    private data class RoutineExerciseBehaviorFields(
+        val stallDetectionEnabled: Boolean,
+        val stopAtTop: Boolean,
+        val repCountTiming: String,
+    )
+
+    private fun PullRoutineExerciseDto.sanitizedBehaviorFields(resolvedEquipment: String): RoutineExerciseBehaviorFields {
+        val isBodyweightExercise = Exercise(
+            id = exerciseId,
+            name = name,
+            muscleGroup = muscleGroup,
+            muscleGroups = muscleGroup,
+            equipment = resolvedEquipment,
+        ).isBodyweight
+
+        if (isBodyweightExercise) {
+            return RoutineExerciseBehaviorFields(
+                stallDetectionEnabled = false,
+                stopAtTop = false,
+                repCountTiming = RepCountTiming.TOP.name,
+            )
+        }
+
+        return RoutineExerciseBehaviorFields(
+            stallDetectionEnabled = stallDetection,
+            stopAtTop = stopAtPosition == "TOP",
+            repCountTiming = when (repCountTiming?.uppercase()) {
+                RepCountTiming.BOTTOM.name -> RepCountTiming.BOTTOM.name
+                RepCountTiming.TOP.name -> RepCountTiming.TOP.name
+                else -> RepCountTiming.TOP.name
+            },
+        )
     }
 }

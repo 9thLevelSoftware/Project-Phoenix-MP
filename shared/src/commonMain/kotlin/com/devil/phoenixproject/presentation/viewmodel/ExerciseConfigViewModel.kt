@@ -113,6 +113,10 @@ class ExerciseConfigViewModel constructor(
     private val _warmupSets = MutableStateFlow<List<WarmupSet>>(emptyList())
     val warmupSets: StateFlow<List<WarmupSet>> = _warmupSets.asStateFlow()
 
+    // Cable Count Override
+    private val _cableCountOverride = MutableStateFlow<Int?>(null)
+    val cableCountOverride: StateFlow<Int?> = _cableCountOverride.asStateFlow()
+
     init {
     }
 
@@ -128,13 +132,13 @@ class ExerciseConfigViewModel constructor(
             return
         }
 
-        originalExercise = exercise
+        originalExercise = exercise.normalizedForExerciseType()
         weightUnit = unit
         kgToDisplay = toDisplay
         displayToKg = toKg
         activeProfileId = profileId
 
-        _exerciseType.value = if (!exercise.exercise.hasCableAccessory) {
+        _exerciseType.value = if (originalExercise.exercise.isBodyweight) {
             ExerciseType.BODYWEIGHT
         } else {
             ExerciseType.STANDARD
@@ -143,7 +147,7 @@ class ExerciseConfigViewModel constructor(
         // Force DURATION mode for bodyweight exercises, otherwise use existing duration setting
         _setMode.value = if (_exerciseType.value == ExerciseType.BODYWEIGHT) {
             SetMode.DURATION
-        } else if (exercise.duration != null) {
+        } else if (originalExercise.duration != null) {
             SetMode.DURATION
         } else {
             SetMode.REPS
@@ -153,18 +157,16 @@ class ExerciseConfigViewModel constructor(
         val defaultWeightKg = prWeightKg ?: 15f
 
         // Determine default duration and log if defaulting for bodyweight exercises
-        val defaultDuration = if (exercise.duration != null) {
-            exercise.duration
-        } else {
+        val defaultDuration = originalExercise.duration ?: run {
             if (_exerciseType.value == ExerciseType.BODYWEIGHT) {
-                logWarning("Bodyweight exercise '${exercise.exercise.name}' missing duration - defaulting to 30s")
+                logWarning("Bodyweight exercise '${originalExercise.exercise.name}' missing duration - defaulting to 30s")
             }
             30
         }
 
-        val initialSets = exercise.setReps.mapIndexed { index, reps ->
-            val perSetWeightKg = exercise.setWeightsPerCableKg.getOrNull(index) ?: exercise.weightPerCableKg
-            val perSetRest = exercise.setRestSeconds.getOrNull(index) ?: 60
+        val initialSets = originalExercise.setReps.mapIndexed { index, reps ->
+            val perSetWeightKg = originalExercise.setWeightsPerCableKg.getOrNull(index) ?: originalExercise.weightPerCableKg
+            val perSetRest = originalExercise.setRestSeconds.getOrNull(index) ?: 60
             SetConfiguration(
                 id = generateUUID(),
                 setNumber = index + 1,
@@ -183,13 +185,13 @@ class ExerciseConfigViewModel constructor(
 
         // Debug logging for AMRAP exercise data loading
         logDebug("━━━━━ ExerciseConfigViewModel.initialize() ━━━━━")
-        logDebug("Exercise: ${exercise.exercise.name}")
-        logDebug("isAMRAP flag: ${exercise.isAMRAP}")
-        logDebug("perSetRestTime flag: ${exercise.perSetRestTime}")
-        logDebug("setReps: ${exercise.setReps}")
-        logDebug("setWeightsPerCableKg: ${exercise.setWeightsPerCableKg}")
-        logDebug("weightPerCableKg: ${exercise.weightPerCableKg}")
-        logDebug("setRestSeconds: ${exercise.setRestSeconds}")
+        logDebug("Exercise: ${originalExercise.exercise.name}")
+        logDebug("isAMRAP flag: ${originalExercise.isAMRAP}")
+        logDebug("perSetRestTime flag: ${originalExercise.perSetRestTime}")
+        logDebug("setReps: ${originalExercise.setReps}")
+        logDebug("setWeightsPerCableKg: ${originalExercise.setWeightsPerCableKg}")
+        logDebug("weightPerCableKg: ${originalExercise.weightPerCableKg}")
+        logDebug("setRestSeconds: ${originalExercise.setRestSeconds}")
         logDebug("Loaded sets:")
         initialSets.forEach { set ->
             logDebug("  Set ${set.setNumber}: reps=${set.reps}, weight=${set.weightPerCable}, rest=${set.restSeconds}")
@@ -198,27 +200,30 @@ class ExerciseConfigViewModel constructor(
 
         _sets.value = initialSets
 
-        _selectedMode.value = exercise.programMode.toWorkoutMode(exercise.echoLevel)
-        _weightChange.value = kgToDisplay(exercise.progressionKg, weightUnit).toInt()
-        logDebug("Issue #164: Loaded progressionKg=${exercise.progressionKg}kg → display=${_weightChange.value}")
-        _rest.value = exercise.setRestSeconds.firstOrNull()?.coerceIn(0, 300) ?: 60 // Use first rest time or default
-        _perSetRestTime.value = exercise.perSetRestTime
-        _eccentricLoad.value = exercise.eccentricLoad
-        _echoLevel.value = exercise.echoLevel
-        _stallDetectionEnabled.value = exercise.stallDetectionEnabled
-        _repCountTiming.value = exercise.repCountTiming
-        _stopAtTop.value = exercise.stopAtTop
+        _selectedMode.value = originalExercise.programMode.toWorkoutMode(originalExercise.echoLevel)
+        _weightChange.value = kgToDisplay(originalExercise.progressionKg, weightUnit).toInt()
+        logDebug("Issue #164: Loaded progressionKg=${originalExercise.progressionKg}kg → display=${_weightChange.value}")
+        _rest.value = originalExercise.setRestSeconds.firstOrNull()?.coerceIn(0, 300) ?: 60 // Use first rest time or default
+        _perSetRestTime.value = originalExercise.perSetRestTime
+        _eccentricLoad.value = originalExercise.eccentricLoad
+        _echoLevel.value = originalExercise.echoLevel
+        _stallDetectionEnabled.value = originalExercise.stallDetectionEnabled
+        _repCountTiming.value = originalExercise.repCountTiming
+        _stopAtTop.value = originalExercise.stopAtTop
 
         // PR percentage scaling fields (Issue #57)
-        _usePercentOfPR.value = exercise.usePercentOfPR
-        _weightPercentOfPR.value = exercise.weightPercentOfPR
-        _prTypeForScaling.value = exercise.prTypeForScaling
+        _usePercentOfPR.value = originalExercise.usePercentOfPR
+        _weightPercentOfPR.value = originalExercise.weightPercentOfPR
+        _prTypeForScaling.value = originalExercise.prTypeForScaling
 
         // Warm-up sets (Issue #30)
-        _warmupSets.value = exercise.warmupSets
+        _warmupSets.value = originalExercise.warmupSets
+
+        // Cable Count Override
+        _cableCountOverride.value = originalExercise.cableCountOverride
 
         // Load PR for the current exercise and mode
-        exercise.exercise.id?.let { exerciseId ->
+        originalExercise.exercise.id?.let { exerciseId ->
             loadPRForExercise(exerciseId, _selectedMode.value.displayName)
         }
 
@@ -296,14 +301,26 @@ class ExerciseConfigViewModel constructor(
     }
 
     fun onStallDetectionEnabledChange(enabled: Boolean) {
+        if (_exerciseType.value == ExerciseType.BODYWEIGHT) {
+            _stallDetectionEnabled.value = false
+            return
+        }
         _stallDetectionEnabled.value = enabled
     }
 
     fun onRepCountTimingChange(timing: RepCountTiming) {
+        if (_exerciseType.value == ExerciseType.BODYWEIGHT) {
+            _repCountTiming.value = RepCountTiming.TOP
+            return
+        }
         _repCountTiming.value = timing
     }
 
     fun onStopAtTopChange(enabled: Boolean) {
+        if (_exerciseType.value == ExerciseType.BODYWEIGHT) {
+            _stopAtTop.value = false
+            return
+        }
         _stopAtTop.value = enabled
     }
 
@@ -386,6 +403,10 @@ class ExerciseConfigViewModel constructor(
             WarmupSet(reps = 8, percentOfWorking = 70),
             WarmupSet(reps = 4, percentOfWorking = 85),
         )
+    }
+
+    fun onCableCountOverrideChange(count: Int?) {
+        _cableCountOverride.value = count
     }
 
     /**
@@ -512,6 +533,8 @@ class ExerciseConfigViewModel constructor(
             setWeightsPercentOfPR = resolvedSetWeightsPercentOfPR,
             // Warm-up sets (Issue #30)
             warmupSets = _warmupSets.value,
+            // Cable Count Override
+            cableCountOverride = _cableCountOverride.value,
         )
 
         logDebug("Updated exercise to save:")
@@ -524,7 +547,7 @@ class ExerciseConfigViewModel constructor(
         logDebug("  Issue #164: progressionKg: ${updatedExercise.progressionKg}kg (from display: ${_weightChange.value})")
         logDebug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-        onSaveCallback(updatedExercise)
+        onSaveCallback(updatedExercise.normalizedForExerciseType())
         _initialized.value = false // Reset for next use
     }
 

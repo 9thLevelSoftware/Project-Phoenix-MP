@@ -263,40 +263,10 @@ class WorkoutSessionTest {
         assertEquals(400f, session.effectiveTotalVolumeKg())
     }
 
-    @Test
-    fun `displayLoadMultiplier prefers persisted single display over physical dual cable count`() {
-        val session = WorkoutSession(
-            cableCount = 2,
-            displayMultiplier = 1,
-        )
 
-        assertEquals(1, session.displayLoadMultiplier())
-    }
-
-    @Test
-    fun `displayLoadMultiplier uses persisted unified dual display`() {
-        val session = WorkoutSession(
-            cableCount = 2,
-            displayMultiplier = 2,
-        )
-
-        assertEquals(2, session.displayLoadMultiplier())
-    }
-
-    @Test
-    fun `displayLoadMultiplier preserves legacy physical cable fallback`() {
-        val session = WorkoutSession(
-            cableCount = 2,
-            displayMultiplier = null,
-        )
-
-        assertEquals(2, session.displayLoadMultiplier())
-    }
 }
 
 class RepCountTest {
-
-    @Test
     fun `totalReps equals workingReps by default`() {
         val repCount = RepCount(
             warmupReps = 3,

@@ -5,13 +5,13 @@ import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
-import org.junit.Before
-import org.junit.Test
 
 class SqlDelightPersonalRecordRepositoryTest {
 
@@ -165,7 +165,7 @@ class SqlDelightPersonalRecordRepositoryTest {
             minRepRange = null, popularity = 0.0, archived = 0L,
             isFavorite = 0L, isCustom = 0L, timesPerformed = 0L,
             lastPerformed = null, aliases = null, defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = null,
+            one_rep_max_kg = null, userCableCount = null,
         )
 
         // Trigger fires on the 1RM sync (third write in the transaction),
@@ -250,6 +250,7 @@ class SqlDelightPersonalRecordRepositoryTest {
             aliases = null,
             defaultCableConfig = "DOUBLE",
             one_rep_max_kg = null,
+            userCableCount = null,
         )
     }
 }

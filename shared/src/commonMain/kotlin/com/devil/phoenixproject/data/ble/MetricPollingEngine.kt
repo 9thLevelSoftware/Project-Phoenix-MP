@@ -177,7 +177,27 @@ class MetricPollingEngine(
 
     // ===== Public API =====
 
-    /** Start all 4 polling loops. Called from startObservingNotifications(). */
+    /**
+     * Keep a newly connected, idle device in notification-only mode.
+     *
+     * Issue #232: field logs show a V-Form can reset while Phoenix is merely connected
+     * and idle. Do not start high-rate polling or heartbeat writes until a workout or
+     * Just Lift auto-start explicitly needs telemetry.
+     */
+    fun startIdleConnection() {
+        val hasActiveJobs = monitorPollingJob?.isActive == true ||
+            diagnosticPollingJob?.isActive == true ||
+            heuristicPollingJob?.isActive == true ||
+            heartbeatJob?.isActive == true
+
+        log.i { "Starting idle BLE mode: notifications only; polling waits for workout or auto-start" }
+        if (hasActiveJobs) {
+            log.d { "Idle mode requested with active polling jobs; stopping stale polling first" }
+            stopAll()
+        }
+    }
+
+    /** Start all 4 polling loops. Called when a workout becomes active. */
     fun startAll(peripheral: Peripheral) {
         log.i { "Starting all polling loops" }
         startMonitorPolling(peripheral)

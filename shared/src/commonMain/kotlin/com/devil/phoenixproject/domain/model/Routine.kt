@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.domain.model
 
-import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
+import kotlin.math.roundToInt
 
 /**
  * Named group for organizing routines.
@@ -116,6 +116,8 @@ data class RoutineExercise(
     // Each WarmupSet defines reps and a percentage of working weight.
     // Executed before working sets as separate BLE stop/start cycles.
     val warmupSets: List<WarmupSet> = emptyList(),
+    // User-controlled cable count override for this specific routine
+    val cableCountOverride: Int? = null,
 ) {
     /** Returns true if this exercise is part of a superset */
     val isInSuperset: Boolean get() = supersetId != null
@@ -123,6 +125,28 @@ data class RoutineExercise(
     // Computed property for backwards compatibility
     val sets: Int get() = setReps.size
     val reps: Int get() = setReps.firstOrNull() ?: 10
+
+    /**
+     * The effective cable count to use for volume calculations and weight display formatting.
+     * Uses the routine-specific override if present, otherwise falls back to the exercise's preferred count.
+     */
+    val effectiveCableCount: Int
+        get() = cableCountOverride ?: exercise.preferredCableCount ?: 1
+
+    /**
+     * Returns this routine exercise with cable-only behavior fields neutralized when
+     * the underlying exercise is bodyweight.
+     */
+    fun normalizedForExerciseType(): RoutineExercise {
+        if (!exercise.isBodyweight) return this
+        if (!stallDetectionEnabled && repCountTiming == RepCountTiming.TOP && !stopAtTop) return this
+
+        return copy(
+            stallDetectionEnabled = false,
+            repCountTiming = RepCountTiming.TOP,
+            stopAtTop = false,
+        )
+    }
 
     // Helper to get rest time for specific set (with fallback to 60s default)
     fun getRestForSet(setIndex: Int): Int = setRestSeconds.getOrNull(setIndex) ?: 60

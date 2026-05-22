@@ -756,6 +756,28 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `toPortalRoutine sanitizes bodyweight hidden cable behavior fields`() {
+        val routine = makeRoutine(
+            exercises = listOf(
+                makeRoutineExercise(
+                    equipment = "",
+                    stallDetectionEnabled = true,
+                    repCountTiming = RepCountTiming.BOTTOM,
+                    stopAtTop = true,
+                ),
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+        val exercise = result.exercises.first()
+
+        assertEquals(true, exercise.isBodyweight)
+        assertNull(exercise.repCountTiming)
+        assertNull(exercise.stopAtPosition)
+        assertEquals(false, exercise.stallDetection)
+    }
+
+    @Test
     fun `toPortalRoutine estimates duration based on sets and rest`() {
         val exercises = listOf(
             makeRoutineExercise(
@@ -1070,6 +1092,7 @@ class PortalSyncAdapterTest {
         mode: ProgramMode = ProgramMode.OldSchool,
         setRestSeconds: List<Int> = listOf(60, 60, 60),
         setWeightsPerCableKg: List<Float> = emptyList(),
+        equipment: String = "BAR",
         isAMRAP: Boolean = false,
         stopAtTop: Boolean = false,
         stallDetectionEnabled: Boolean = true,
@@ -1082,7 +1105,7 @@ class PortalSyncAdapterTest {
         echoLevel: EchoLevel = EchoLevel.HARDER,
     ): RoutineExercise = RoutineExercise(
         id = id,
-        exercise = Exercise(name = name, muscleGroup = muscleGroup),
+        exercise = Exercise(name = name, muscleGroup = muscleGroup, equipment = equipment),
         orderIndex = orderIndex,
         setReps = setRepsOverride ?: List(sets) { reps },
         weightPerCableKg = weightPerCableKg,

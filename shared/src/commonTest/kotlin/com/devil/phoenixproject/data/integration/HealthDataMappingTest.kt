@@ -51,7 +51,6 @@ class HealthDataMappingTest {
             exerciseName = "Squat",
             weightPerCableKg = 110f,
             cableCount = 2,
-            displayMultiplier = 2,
         )
         assertEquals("Squat \u2014 220.0kg", title)
     }
@@ -62,8 +61,7 @@ class HealthDataMappingTest {
         val title = buildTitle(
             exerciseName = "Bench Press",
             weightPerCableKg = 50f,
-            cableCount = 2,
-            displayMultiplier = 1,
+            cableCount = 1,
         )
         assertEquals("Bench Press \u2014 50.0kg", title)
     }
@@ -169,11 +167,10 @@ class HealthDataMappingTest {
         exerciseName: String?,
         weightPerCableKg: Float,
         cableCount: Int? = null,
-        displayMultiplier: Int? = null,
     ): String {
         val name = exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        // Prefer persisted displayMultiplier; cableCount is only the legacy fallback.
-        val totalWeightKg = weightPerCableKg * (displayMultiplier ?: cableCount ?: 1).toFloat()
+        // Prefer persisted cableCount.
+        val totalWeightKg = weightPerCableKg * (cableCount ?: 1).toFloat()
         return if (totalWeightKg > 0f) {
             val rounded = (totalWeightKg * 10).toInt() / 10.0
             "$name \u2014 ${rounded}kg"
