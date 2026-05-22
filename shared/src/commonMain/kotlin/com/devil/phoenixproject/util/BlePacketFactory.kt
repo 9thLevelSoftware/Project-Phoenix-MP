@@ -200,9 +200,9 @@ object BlePacketFactory {
 
         // Official activation force config keeps the selected force separate
         // from per-rep progression. The increment field controls progression;
-        // targetWeight and forceMax stay anchored to the selected force.
-        val targetWeightPerCable = params.weightPerCableKg
-        val effectiveKg = targetWeightPerCable + 10.0f
+        // softMax and forceMax stay anchored to the selected force.
+        val selectedForcePerCable = params.weightPerCableKg
+        val effectiveKg = selectedForcePerCable + 10.0f
 
         // Official normal force modes keep softMax tied to the selected force
         // per cable. Unlimited-rep behavior is controlled by the reps field
@@ -220,10 +220,8 @@ object BlePacketFactory {
         }
 
         if (variant == ForceConfigVariant.OVERLAP) {
-            // Issue #262: Firmware reads softMax at 0x48 and increment at 0x4C.
-            // These overlap the last 8 bytes of the mode profile, but the firmware
-            // interprets them as force config, not mode data. Write them AFTER the
-            // profile copy so they take priority.
+            // Legacy diagnostic layout: these writes overwrite the official
+            // eccentric-up profile tail and are not used by production defaults.
             putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_LEGACY_OVERLAP_SOFT_MAX, softMax)
             putFloatLE(
                 frame,
@@ -238,7 +236,7 @@ object BlePacketFactory {
         putFloatLE(
             frame,
             BleConstants.ActivationPacket.OFFSET_SOFT_MAX,
-            targetWeightPerCable,
+            selectedForcePerCable,
         )
         putFloatLE(
             frame,
@@ -251,7 +249,7 @@ object BlePacketFactory {
             "=== MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ==="
         }
         Logger.d("BlePacket") {
-            "targetWeight=${targetWeightPerCable}kg, effectiveKg=$effectiveKg"
+            "selectedForce=${selectedForcePerCable}kg, effectiveKg=$effectiveKg"
         }
         if (variant == ForceConfigVariant.OVERLAP) {
             Logger.d("BlePacket") {
