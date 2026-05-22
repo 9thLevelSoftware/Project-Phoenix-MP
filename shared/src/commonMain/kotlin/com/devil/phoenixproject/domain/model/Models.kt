@@ -31,7 +31,7 @@ enum class WorkoutPhase {
  * Personal record for an exercise.
  *
  * [cableCount] enables cable-aware weight display for PRs. Populated from
- * exercise `preferredCableCount` when a PR is recorded. Legacy PRs have
+ * the completed set's actual/effective cable count when available. Legacy PRs have
  * `cableCount = null`, which causes WeightDisplayFormatter to default to 1
  * (showing per-cable weight — safe backward-compatible behavior).
  */

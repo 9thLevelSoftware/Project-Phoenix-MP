@@ -322,7 +322,7 @@ fun ExerciseEditBottomSheet(
                     )
 
                     // Cable Count Selection
-                    val effectiveCableCount = cableCountOverride ?: exercise.exercise.preferredCableCount ?: 1
+                    val effectiveCableCount = cableCountOverride ?: exercise.exercise.displayCableCount
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),

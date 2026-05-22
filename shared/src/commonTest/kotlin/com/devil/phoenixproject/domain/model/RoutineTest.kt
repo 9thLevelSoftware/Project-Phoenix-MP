@@ -240,6 +240,36 @@ class RoutineTest {
         assertEquals(true, normalized.stopAtTop)
     }
 
+    @Test
+    fun effectiveCableCount_isNullableWhenNeitherRoutineNorExerciseIsExplicit() {
+        val exercise = createTestRoutineExercise(
+            equipment = "HANDLES",
+        )
+
+        assertEquals(null, exercise.effectiveCableCount)
+        assertEquals(1, exercise.displayCableCount)
+    }
+
+    @Test
+    fun effectiveCableCount_prefersRoutineOverrideOverExerciseMetadata() {
+        val exercise = RoutineExercise(
+            id = "dual-override",
+            exercise = Exercise(
+                name = "Dual Override",
+                muscleGroup = "Chest",
+                equipment = "BAR",
+                id = "dual",
+                cableIntent = ExerciseCableIntent.DUAL,
+            ),
+            orderIndex = 0,
+            weightPerCableKg = 20f,
+            cableCountOverride = 1,
+        )
+
+        assertEquals(1, exercise.effectiveCableCount)
+        assertEquals(1, exercise.displayCableCount)
+    }
+
     // ===== Helper =====
 
     private fun createTestRoutineExercise(

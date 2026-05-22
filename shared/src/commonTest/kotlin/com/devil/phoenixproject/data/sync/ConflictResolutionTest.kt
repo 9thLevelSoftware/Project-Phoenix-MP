@@ -230,6 +230,7 @@ class ConflictResolutionTest {
             weightPercentOfPR = 80L,
             prTypeForScaling = "MAX_WEIGHT",
             setWeightsPercentOfPR = null,
+            cableCountOverride = null,
             stallDetectionEnabled = 1L,
             stopAtTop = 0L,
             repCountTiming = "TOP",

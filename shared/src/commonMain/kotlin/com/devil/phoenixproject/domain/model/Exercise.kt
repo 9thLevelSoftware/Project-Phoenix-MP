@@ -48,15 +48,23 @@ data class Exercise(
         get() = !hasCableAccessory
 
     /**
-     * Preferred cable count for summary calculations.
-     * Uses the user's explicit preference if set, otherwise falls back to exercise metadata.
+     * Authoritative cable count for summary calculations when metadata or user
+     * preference is explicit. Null means callers should fall back to telemetry
+     * heuristics instead of forcing a display default into volume calculations.
      */
     val preferredCableCount: Int?
         get() = userCableCount ?: when (cableIntent) {
             ExerciseCableIntent.SINGLE -> 1
             ExerciseCableIntent.DUAL -> 2
-            ExerciseCableIntent.EITHER, null -> 1 // Safe default
+            ExerciseCableIntent.EITHER, null -> null
         }
+
+    /**
+     * Cable count for UI surfaces that need a deterministic label or selected
+     * control state even when calculation semantics remain heuristic-driven.
+     */
+    val displayCableCount: Int
+        get() = preferredCableCount ?: 1
 
     companion object {
         /** Equipment that physically attaches to the machine's cables */

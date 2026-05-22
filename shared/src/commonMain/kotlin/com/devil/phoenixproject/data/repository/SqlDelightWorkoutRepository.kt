@@ -654,6 +654,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     exercise.setWeightsPercentOfPR,
                 )
             },
+            cableCountOverride = exercise.cableCountOverride?.toLong(),
             // Per-exercise behavior overrides
             stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
             stopAtTop = if (exercise.stopAtTop) 1L else 0L,
@@ -857,7 +858,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             val newVolume = weightKg * reps
             val exercise = exerciseRepository.getExerciseById(exerciseId)
             val exerciseName = exercise?.name ?: ""
-            val cableCount = exercise?.userCableCount ?: exercise?.preferredCableCount
+            val cableCount = exercise?.preferredCableCount
 
             val combinedPhase = "COMBINED"
 

@@ -2,6 +2,7 @@ package com.devil.phoenixproject.domain.model
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class ExerciseTest {
 
@@ -51,5 +52,47 @@ class ExerciseTest {
         assertEquals(null, exercise.oneRepMaxKg)
     }
 
+    @Test
+    fun `preferredCableCount is nullable for unresolved cable metadata`() {
+        val unknown = Exercise(
+            name = "Unknown Cable Exercise",
+            muscleGroup = "Back",
+            cableIntent = null,
+        )
+        val either = Exercise(
+            name = "Either Cable Exercise",
+            muscleGroup = "Back",
+            cableIntent = ExerciseCableIntent.EITHER,
+        )
+
+        assertNull(unknown.preferredCableCount)
+        assertNull(either.preferredCableCount)
+        assertEquals(1, unknown.displayCableCount)
+        assertEquals(1, either.displayCableCount)
+    }
+
+    @Test
+    fun `preferredCableCount uses explicit metadata or user override`() {
+        val single = Exercise(
+            name = "Single Cable Exercise",
+            muscleGroup = "Back",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+        val dual = Exercise(
+            name = "Dual Cable Exercise",
+            muscleGroup = "Back",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+        val userOverride = Exercise(
+            name = "User Override Exercise",
+            muscleGroup = "Back",
+            cableIntent = ExerciseCableIntent.SINGLE,
+            userCableCount = 2,
+        )
+
+        assertEquals(1, single.preferredCableCount)
+        assertEquals(2, dual.preferredCableCount)
+        assertEquals(2, userOverride.preferredCableCount)
+    }
 
 }

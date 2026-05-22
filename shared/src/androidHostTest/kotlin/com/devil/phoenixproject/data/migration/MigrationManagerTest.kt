@@ -556,6 +556,7 @@ class MigrationManagerTest {
             weightPercentOfPR = 100,
             prTypeForScaling = "MAX_WEIGHT",
             setWeightsPercentOfPR = null,
+            cableCountOverride = null,
             stallDetectionEnabled = 1,
             stopAtTop = 0,
             repCountTiming = "TOP",

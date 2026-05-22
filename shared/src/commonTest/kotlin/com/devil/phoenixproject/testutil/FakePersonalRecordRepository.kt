@@ -28,6 +28,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         val reps: Int,
         val workoutMode: String,
         val timestamp: Long,
+        val cableCount: Int? = null,
     )
 
     // Test control methods
@@ -85,7 +86,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         profileId: String,
         cableCount: Int?,
     ): Result<Boolean> {
-        updateCalls.add(UpdateCall(exerciseId, weightPerCableKg, weightPerCableKg, reps, workoutMode, timestamp))
+        updateCalls.add(UpdateCall(exerciseId, weightPerCableKg, weightPerCableKg, reps, workoutMode, timestamp, cableCount))
 
         val normalizedMode = normalizeWorkoutModeKey(workoutMode)
         val key = "$exerciseId-$normalizedMode-${PRType.MAX_VOLUME}"
@@ -174,6 +175,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                 reps = reps,
                 workoutMode = workoutMode,
                 timestamp = timestamp,
+                cableCount = cableCount,
             ),
         )
 
@@ -198,6 +200,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                 workoutMode = workoutMode,
                 prType = PRType.MAX_WEIGHT,
                 volume = weightPRVolume,
+                cableCount = cableCount,
             )
             brokenPRs.add(PRType.MAX_WEIGHT)
         }
@@ -217,6 +220,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                 workoutMode = workoutMode,
                 prType = PRType.MAX_VOLUME,
                 volume = newVolumePRVolume,
+                cableCount = cableCount,
             )
             brokenPRs.add(PRType.MAX_VOLUME)
         }
@@ -253,6 +257,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                     prType = PRType.MAX_WEIGHT,
                     volume = peakConcentricForceKg * reps,
                     phase = WorkoutPhase.CONCENTRIC,
+                    cableCount = cableCount,
                 )
                 brokenPhases.add(WorkoutPhase.CONCENTRIC)
             }
@@ -274,6 +279,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                     prType = PRType.MAX_WEIGHT,
                     volume = peakEccentricForceKg * reps,
                     phase = WorkoutPhase.ECCENTRIC,
+                    cableCount = cableCount,
                 )
                 brokenPhases.add(WorkoutPhase.ECCENTRIC)
             }

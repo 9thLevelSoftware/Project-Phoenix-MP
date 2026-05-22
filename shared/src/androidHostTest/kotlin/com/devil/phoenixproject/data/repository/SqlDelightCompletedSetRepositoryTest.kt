@@ -5,11 +5,11 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class SqlDelightCompletedSetRepositoryTest {
 
@@ -144,6 +144,7 @@ class SqlDelightCompletedSetRepositoryTest {
             weightPercentOfPR = 80L,
             prTypeForScaling = "MAX_WEIGHT",
             setWeightsPercentOfPR = null,
+            cableCountOverride = null,
             stallDetectionEnabled = 1L,
             stopAtTop = 0L,
             repCountTiming = "TOP",

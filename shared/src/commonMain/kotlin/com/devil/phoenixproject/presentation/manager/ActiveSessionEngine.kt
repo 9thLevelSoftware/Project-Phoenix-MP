@@ -2717,6 +2717,7 @@ class ActiveSessionEngine(
                 peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
                 peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
                 profileId = userProfileRepository.activeProfile.value?.id ?: "default",
+                cableCount = summary.cableCount,
             )
 
             if (hasPR && completedSetId != null) {
@@ -3227,6 +3228,7 @@ class ActiveSessionEngine(
             peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
             peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
             profileId = userProfileRepository.activeProfile.value?.id ?: "default",
+            cableCount = summary.cableCount,
         )
 
         if (hasPR && completedSetId != null) {

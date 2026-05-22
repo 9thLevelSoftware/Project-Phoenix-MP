@@ -666,6 +666,7 @@ class SqlDelightSyncRepository(
                                 weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
                                 prTypeForScaling = "MAX_WEIGHT",
                                 setWeightsPercentOfPR = null,
+                                cableCountOverride = null,
                                 stallDetectionEnabled = if (behaviorFields.stallDetectionEnabled) 1L else 0L,
                                 stopAtTop = if (behaviorFields.stopAtTop) 1L else 0L,
                                 repCountTiming = behaviorFields.repCountTiming,
@@ -1068,6 +1069,7 @@ class SqlDelightSyncRepository(
                         prTypeForScaling = prTypeForScaling,
                         setWeightsPercentOfPR = setWeightsPercentOfPR,
                         warmupSets = warmupSets,
+                        cableCountOverride = exRow.cableCountOverride?.toInt(),
                     ).normalizedForExerciseType()
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to map routine exercise: ${exRow.exerciseId}" }
@@ -1629,6 +1631,7 @@ class SqlDelightSyncRepository(
                                 weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
                                 prTypeForScaling = "MAX_WEIGHT",
                                 setWeightsPercentOfPR = null,
+                                cableCountOverride = null,
                                 stallDetectionEnabled = if (behaviorFields.stallDetectionEnabled) 1L else 0L,
                                 stopAtTop = if (behaviorFields.stopAtTop) 1L else 0L,
                                 repCountTiming = behaviorFields.repCountTiming,

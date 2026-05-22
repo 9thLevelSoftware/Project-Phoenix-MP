@@ -67,6 +67,7 @@ class GamificationManager(
         peakConcentricForceKg: Float = 0f,
         peakEccentricForceKg: Float = 0f,
         profileId: String = "default",
+        cableCount: Int? = null,
     ): Boolean {
         var hasCelebrationSound = false
 
@@ -114,7 +115,7 @@ class GamificationManager(
                     val timestamp = currentTimeMillis()
                     // Resolve exercise once for both PR storage and celebration display
                     val exercise = exerciseRepository.getExerciseById(exId)
-                    val cableCount = exercise?.preferredCableCount
+                    val prCableCount = cableCount ?: exercise?.preferredCableCount
 
                     // Check COMBINED (traditional) PRs
                     val result = personalRecordRepository.updatePRsIfBetter(
@@ -125,7 +126,7 @@ class GamificationManager(
                         workoutMode = workoutMode,
                         timestamp = timestamp,
                         profileId = effectiveProfileId,
-                        cableCount = cableCount,
+                        cableCount = prCableCount,
                     )
 
                     // Issue #319: Always log PR result at INFO level for visibility
@@ -152,7 +153,7 @@ class GamificationManager(
                             peakConcentricForceKg = peakConcentricForceKg,
                             peakEccentricForceKg = peakEccentricForceKg,
                             profileId = effectiveProfileId,
-                            cableCount = cableCount,
+                            cableCount = prCableCount,
                         ).onFailure { e ->
                             Logger.e { "PR_TRACK: Error updating phase-specific PRs: ${e.message}" }
                         }

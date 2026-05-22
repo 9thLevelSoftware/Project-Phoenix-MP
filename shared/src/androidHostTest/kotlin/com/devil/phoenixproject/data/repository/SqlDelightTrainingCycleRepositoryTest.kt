@@ -7,12 +7,12 @@ import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class SqlDelightTrainingCycleRepositoryTest {
 
@@ -232,6 +232,7 @@ class SqlDelightTrainingCycleRepositoryTest {
             weightPercentOfPR = 80L,
             prTypeForScaling = "MAX_WEIGHT",
             setWeightsPercentOfPR = null,
+            cableCountOverride = null,
             stallDetectionEnabled = 1L,
             stopAtTop = 0L,
             repCountTiming = "TOP",

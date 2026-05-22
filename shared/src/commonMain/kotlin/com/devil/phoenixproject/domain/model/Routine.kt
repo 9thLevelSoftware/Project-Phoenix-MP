@@ -127,11 +127,17 @@ data class RoutineExercise(
     val reps: Int get() = setReps.firstOrNull() ?: 10
 
     /**
-     * The effective cable count to use for volume calculations and weight display formatting.
-     * Uses the routine-specific override if present, otherwise falls back to the exercise's preferred count.
+     * Authoritative cable count for calculations. Null means callers should keep
+     * using telemetry heuristics rather than a UI-only display default.
      */
-    val effectiveCableCount: Int
-        get() = cableCountOverride ?: exercise.preferredCableCount ?: 1
+    val effectiveCableCount: Int?
+        get() = cableCountOverride ?: exercise.preferredCableCount
+
+    /**
+     * Deterministic cable count for display controls and labels.
+     */
+    val displayCableCount: Int
+        get() = effectiveCableCount ?: 1
 
     /**
      * Returns this routine exercise with cable-only behavior fields neutralized when

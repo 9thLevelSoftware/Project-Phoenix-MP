@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -190,6 +191,47 @@ class GamificationManagerTest {
             assertEquals(0, fakePersonalRecordRepository.updateCalls.size)
             assertEquals(1, fakeGamificationRepository.updateStatsCallCount)
             assertEquals(1, fakeGamificationRepository.checkAndAwardBadgesCallCount)
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `processPostSaveEvents stores actual set cable count ahead of catalog preference`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = GamificationManager(
+                gamificationRepository = fakeGamificationRepository,
+                personalRecordRepository = fakePersonalRecordRepository,
+                exerciseRepository = fakeExerciseRepository,
+                hapticEvents = hapticEvents,
+                scope = managerScope,
+                gamificationEnabled = MutableStateFlow(false),
+            )
+            fakeExerciseRepository.addExercise(
+                Exercise(
+                    id = "row-1",
+                    name = "Cable Row",
+                    muscleGroup = "Back",
+                    equipment = "HANDLES",
+                    cableIntent = ExerciseCableIntent.SINGLE,
+                ),
+            )
+
+            manager.processPostSaveEvents(
+                exerciseId = "row-1",
+                workingReps = 10,
+                achievedWeightKg = 30f,
+                volumeWeightKg = 30f,
+                programMode = ProgramMode.OldSchool,
+                isJustLift = false,
+                isEchoMode = false,
+                cableCount = 2,
+            )
+            advanceUntilIdle()
+
+            assertEquals(1, fakePersonalRecordRepository.updateCalls.size)
+            assertEquals(2, fakePersonalRecordRepository.updateCalls.single().cableCount)
         } finally {
             managerScope.cancel()
         }

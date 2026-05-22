@@ -303,6 +303,49 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals(false, loadedExercise.stopAtTop)
     }
 
+    @Test
+    fun `save and reload routine exercise preserves cable count override`() = runTest {
+        exerciseRepository.addExercise(
+            Exercise(
+                id = "bench",
+                name = "Bench Press",
+                muscleGroup = "Chest",
+                equipment = "BAR",
+            ),
+        )
+        val routine = Routine(
+            id = "routine-cable-override",
+            name = "Cable Override Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-cable-override",
+                    exercise = Exercise(
+                        id = "bench",
+                        name = "Bench Press",
+                        muscleGroup = "Chest",
+                        equipment = "BAR",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 25f,
+                    cableCountOverride = 2,
+                ),
+            ),
+        )
+
+        repository.saveRoutine(routine)
+
+        val rawRow = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("routine-cable-override")
+            .executeAsOne()
+        assertEquals(2L, rawRow.cableCountOverride)
+
+        val loaded = repository.getRoutineById("routine-cable-override")
+        assertNotNull(loaded)
+        assertEquals(2, loaded.exercises.first().cableCountOverride)
+        assertEquals(2, loaded.exercises.first().effectiveCableCount)
+    }
+
     // ========== Profile ID Preservation Tests ==========
 
     @Test
