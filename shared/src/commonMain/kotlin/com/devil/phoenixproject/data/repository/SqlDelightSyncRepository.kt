@@ -541,9 +541,12 @@ class SqlDelightSyncRepository(
                     // partial response, or deserialization issue). Deleting local exercises
                     // when we have nothing to replace them with causes permanent data loss.
                     if (portalRoutine.exercises.isNotEmpty()) {
-                        val existingCableOverridesByExerciseId = queries.selectExercisesByRoutine(portalRoutine.id)
+                        val existingRoutineExercises = queries.selectExercisesByRoutine(portalRoutine.id)
                             .executeAsList()
+                        val existingCableOverridesByExerciseId = existingRoutineExercises
                             .associate { it.id to it.cableCountOverride }
+                        val existingCableOverridesByExerciseName = existingRoutineExercises
+                            .associate { it.exerciseName to it.cableCountOverride }
 
                         // Replace routine exercises and supersets: delete existing then insert portal versions
                         queries.deleteRoutineExercises(portalRoutine.id)
@@ -666,6 +669,7 @@ class SqlDelightSyncRepository(
                                 setWeightsPercentOfPR = null,
                                 cableCountOverride = exercise.resolvedCableCountOverride(
                                     existingCableOverridesByExerciseId[exercise.id],
+                                    existingCableOverridesByExerciseName[exercise.name],
                                 ),
                                 stallDetectionEnabled = if (behaviorFields.stallDetectionEnabled) 1L else 0L,
                                 stopAtTop = if (behaviorFields.stopAtTop) 1L else 0L,
@@ -1521,9 +1525,12 @@ class SqlDelightSyncRepository(
 
                     // Replace exercises if portal provided them (non-empty list)
                     if (portalRoutine.exercises.isNotEmpty()) {
-                        val existingCableOverridesByExerciseId = queries.selectExercisesByRoutine(portalRoutine.id)
+                        val existingRoutineExercises = queries.selectExercisesByRoutine(portalRoutine.id)
                             .executeAsList()
+                        val existingCableOverridesByExerciseId = existingRoutineExercises
                             .associate { it.id to it.cableCountOverride }
+                        val existingCableOverridesByExerciseName = existingRoutineExercises
+                            .associate { it.exerciseName to it.cableCountOverride }
 
                         queries.deleteRoutineExercises(portalRoutine.id)
                         queries.deleteSupersetsByRoutine(portalRoutine.id)
@@ -1632,6 +1639,7 @@ class SqlDelightSyncRepository(
                                 setWeightsPercentOfPR = null,
                                 cableCountOverride = exercise.resolvedCableCountOverride(
                                     existingCableOverridesByExerciseId[exercise.id],
+                                    existingCableOverridesByExerciseName[exercise.name],
                                 ),
                                 stallDetectionEnabled = if (behaviorFields.stallDetectionEnabled) 1L else 0L,
                                 stopAtTop = if (behaviorFields.stopAtTop) 1L else 0L,
@@ -1963,11 +1971,15 @@ class SqlDelightSyncRepository(
         } ?: "HANDLES"
     }
 
-    private fun PullRoutineExerciseDto.resolvedCableCountOverride(existingOverride: Long?): Long? =
+    private fun PullRoutineExerciseDto.resolvedCableCountOverride(
+        existingOverrideById: Long?,
+        existingOverrideByName: Long?,
+    ): Long? =
         cableCountOverride
             ?.takeIf { it in 1..2 }
             ?.toLong()
-            ?: existingOverride?.takeIf { it in 1L..2L }
+            ?: existingOverrideById?.takeIf { it in 1L..2L }
+            ?: existingOverrideByName?.takeIf { it in 1L..2L }
 
     private fun PullRoutineExerciseDto.sanitizedBehaviorFields(resolvedEquipment: String): RoutineExerciseBehaviorFields {
         val isBodyweightExercise = Exercise(
