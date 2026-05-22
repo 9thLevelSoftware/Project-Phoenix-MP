@@ -14,9 +14,9 @@ import kotlin.test.fail
  * identical result:
  *
  * 1. A fresh install (Schema.create) must match an upgrade-from-v1 path
- *    (manual v1 + migrate 1->31 + reconcileFullSchema).
+ *    (manual v1 + migrate 1->33 + reconcileFullSchema).
  *
- * 2. Every intermediate version (1..30) must upgrade cleanly to 31 with all
+ * 2. Every intermediate version (1..32) must upgrade cleanly to 33 with all
  *    manifest columns and indexes present after reconciliation.
  */
 class SchemaParityTest {
@@ -149,7 +149,7 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 32L
+        private const val CURRENT_VERSION = 33L
 
         /**
          * Transient tables are intermediate artifacts of table-rebuild migrations

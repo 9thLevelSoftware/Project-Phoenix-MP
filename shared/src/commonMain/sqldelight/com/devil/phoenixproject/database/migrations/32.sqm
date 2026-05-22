@@ -1,0 +1,4 @@
+-- No-op version fence.
+-- The user-controlled cable count DDL lives in 31.sqm. This file preserves
+-- the 32 -> 33 migration step for installs that already advanced vitruvian.db
+-- to user_version 33.

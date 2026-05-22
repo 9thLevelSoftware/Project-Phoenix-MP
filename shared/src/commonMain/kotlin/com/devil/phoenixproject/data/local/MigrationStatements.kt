@@ -49,8 +49,8 @@ internal fun applyMigrationResilient(
  * Get the SQL statements for a specific migration version.
  *
  * These mirror the .sqm files exactly, split into individual statements so
- * the resilient executor can apply them one-by-one. Every version from 1-30
- * is covered. Version 18 is intentionally empty (NOOP).
+ * the resilient executor can apply them one-by-one. Every version from 1-32
+ * is covered. Versions 18 and 32 are intentionally empty (NOOP).
  */
 internal fun getMigrationStatements(version: Int): List<String> = when (version) {
     // Migration 1: Add 1RM column to Exercise
@@ -688,6 +688,15 @@ WHERE gs.rowid = (
     30 -> listOf(
         "ALTER TABLE Exercise ADD COLUMN displayName TEXT",
     )
+
+    // Migration 31: User-controlled cable count feature
+    31 -> listOf(
+        "ALTER TABLE Exercise ADD COLUMN userCableCount INTEGER",
+        "ALTER TABLE RoutineExercise ADD COLUMN cableCountOverride INTEGER",
+    )
+
+    // Migration 32: NOOP version fence for databases already at user_version 33
+    32 -> emptyList()
 
     else -> emptyList()
 }
