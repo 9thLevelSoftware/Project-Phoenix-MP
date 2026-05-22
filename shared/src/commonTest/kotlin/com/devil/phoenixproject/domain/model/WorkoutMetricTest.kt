@@ -163,6 +163,19 @@ class WorkoutSessionTest {
     }
 
     @Test
+    fun `displayLoadMultiplier uses legacy multiplier when cable metadata is missing`() {
+        val session = WorkoutSession(
+            weightPerCableKg = 30f,
+            totalReps = 12,
+            cableCount = null,
+            displayMultiplier = 2,
+        )
+
+        assertEquals(2, session.displayLoadMultiplier())
+        assertEquals(720f, session.effectiveTotalVolumeKg())
+    }
+
+    @Test
     fun `toSetSummary uses legacy display multiplier for saved-session display count`() {
         val session = WorkoutSession(
             weightPerCableKg = 50f,
