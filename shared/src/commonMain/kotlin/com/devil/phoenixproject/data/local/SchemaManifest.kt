@@ -497,7 +497,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // because applyColumnHeal handles "duplicate column" errors gracefully.
 
     // Exercise -- initial schema, full current shape
-    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11), displayName (m30)
+    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11),
+    // displayName (m30), userCableCount (m31)
     SchemaTableOperation(
         table = "Exercise",
         createSql = """
@@ -525,6 +526,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 aliases TEXT,
                 defaultCableConfig TEXT NOT NULL,
                 one_rep_max_kg REAL DEFAULT NULL,
+                userCableCount INTEGER,
                 updatedAt INTEGER,
                 serverId TEXT,
                 deletedAt INTEGER
@@ -681,7 +683,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // RoutineExercise -- initial schema, full current shape
     // Columns added by later migrations: superset fields (m4), PR scaling (m7),
-    // routine programming (m18), behavior overrides (m20)
+    // routine programming (m18), behavior overrides (m20), cableCountOverride (m31)
     SchemaTableOperation(
         table = "RoutineExercise",
         createSql = """
@@ -713,6 +715,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
                 prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
                 setWeightsPercentOfPR TEXT,
+                cableCountOverride INTEGER,
                 stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
                 stopAtTop INTEGER NOT NULL DEFAULT 0,
                 repCountTiming TEXT NOT NULL DEFAULT 'TOP',
@@ -932,7 +935,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 // ============================================================
 
 internal val manifestColumns: List<SchemaHealOperation> = listOf(
-    // ── Exercise (5 columns) ────────────────────────────────────────────
+    // ── Exercise (6 columns) ────────────────────────────────────────────
 
     // Migration 1: one_rep_max_kg
     SchemaHealOperation("Exercise", "one_rep_max_kg", "ALTER TABLE Exercise ADD COLUMN one_rep_max_kg REAL DEFAULT NULL"),
@@ -1010,7 +1013,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 21: multi-profile support
     SchemaHealOperation("Routine", "profile_id", "ALTER TABLE Routine ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
 
-    // ── RoutineExercise (11 columns) ────────────────────────────────────
+    // ── RoutineExercise (12 columns) ────────────────────────────────────
 
     // Migration 4: superset container model
     SchemaHealOperation("RoutineExercise", "supersetId", "ALTER TABLE RoutineExercise ADD COLUMN supersetId TEXT"),
