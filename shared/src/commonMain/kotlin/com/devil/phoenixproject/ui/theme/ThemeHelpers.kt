@@ -26,13 +26,13 @@ fun screenBackgroundBrush(): Brush {
     return if (isDark) {
         Brush.verticalGradient(
             0.0f to Slate950,
-            0.5f to HomeButtonColors.AccentPlum.copy(alpha = 0.15f),
+            0.5f to MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
             1.0f to Slate950,
         )
     } else {
         Brush.verticalGradient(
             0.0f to Slate50,
-            0.5f to HomeButtonColors.SecondaryMint.copy(alpha = 0.1f),
+            0.5f to MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
             1.0f to Color.White,
         )
     }
