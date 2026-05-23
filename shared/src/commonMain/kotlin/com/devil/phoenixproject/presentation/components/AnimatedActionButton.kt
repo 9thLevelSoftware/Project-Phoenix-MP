@@ -82,6 +82,13 @@ private data class FlameParticle(
     var driftOffset: Float = Random.nextFloat() * 100f,
 )
 
+private fun createFlameParticle(): FlameParticle = FlameParticle(
+    x = Random.nextFloat(),
+    y = 1f + Random.nextFloat() * 0.1f,
+    radius = Random.nextFloat() * 8f + 4f,
+    speedY = Random.nextFloat() * 0.015f + 0.006f,
+)
+
 private fun Modifier.onFire(): Modifier = composed {
     val particles = remember { mutableStateListOf<FlameParticle>() }
     var time by remember { mutableLongStateOf(0L) }
@@ -106,14 +113,7 @@ private fun Modifier.onFire(): Modifier = composed {
 
                 if (particles.size < 80) {
                     repeat(2) {
-                        particles.add(
-                            FlameParticle(
-                                x = -1f,
-                                y = -1f,
-                                radius = Random.nextFloat() * 8f + 4f,
-                                speedY = Random.nextFloat() * 2f + 1f,
-                            ),
-                        )
+                        particles.add(createFlameParticle())
                     }
                 }
             }
@@ -125,11 +125,6 @@ private fun Modifier.onFire(): Modifier = composed {
             drawRect(Color(0xFF1A0800))
 
             particles.forEach { particle ->
-                if (particle.y < 0) {
-                    particle.x = Random.nextFloat() * size.width
-                    particle.y = size.height + Random.nextFloat() * 10f
-                }
-
                 val drift = sin((time / 800_000_000f) + particle.driftOffset) * 4f
                 val color = when {
                     particle.life > 0.7f -> Color(0xFFFFD700)
@@ -140,7 +135,7 @@ private fun Modifier.onFire(): Modifier = composed {
                 drawCircle(
                     color = color,
                     radius = particle.radius,
-                    center = Offset(particle.x + drift, particle.y),
+                    center = Offset((particle.x * size.width) + drift, particle.y * size.height),
                     blendMode = BlendMode.Plus,
                 )
 
@@ -148,7 +143,7 @@ private fun Modifier.onFire(): Modifier = composed {
                     drawCircle(
                         color = Color.White.copy(alpha = (particle.life - 0.5f) * 0.6f),
                         radius = particle.radius * 0.4f,
-                        center = Offset(particle.x + drift, particle.y),
+                        center = Offset((particle.x * size.width) + drift, particle.y * size.height),
                         blendMode = BlendMode.Plus,
                     )
                 }
@@ -180,17 +175,25 @@ fun AnimatedActionButton(
     val windowSizeClass = LocalWindowSizeClass.current
     val useCompactAccessibility = isCompactAccessibilityLayout()
 
-    val defaultHeight = if (useCompactAccessibility) {
-        72.dp
-    } else {
-        when (windowSizeClass.widthSizeClass) {
-            WindowWidthSizeClass.Expanded -> if (isPrimary) 80.dp else 64.dp
-            WindowWidthSizeClass.Medium -> if (isPrimary) 76.dp else 60.dp
-            WindowWidthSizeClass.Compact -> if (isPrimary) 72.dp else 56.dp
+    val defaultHeight = remember(useCompactAccessibility, windowSizeClass.widthSizeClass, isPrimary) {
+        if (useCompactAccessibility) {
+            72.dp
+        } else {
+            when (windowSizeClass.widthSizeClass) {
+                WindowWidthSizeClass.Expanded -> if (isPrimary) 80.dp else 64.dp
+                WindowWidthSizeClass.Medium -> if (isPrimary) 76.dp else 60.dp
+                WindowWidthSizeClass.Compact -> if (isPrimary) 72.dp else 56.dp
+            }
         }
     }
     val buttonHeight = heightOverride ?: defaultHeight
     val shape = RoundedCornerShape(if (isPrimary || isFireButton) 24.dp else 18.dp)
+    val semanticContentDescription = remember(contentDescription, supportingText) {
+        listOfNotNull(
+            contentDescription,
+            supportingText?.takeIf { it.isNotBlank() },
+        ).joinToString(", ")
+    }
 
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.97f else 1f,
@@ -247,9 +250,9 @@ fun AnimatedActionButton(
                 onClick = onClick,
             )
             .clearAndSetSemantics {
-                this.contentDescription = contentDescription
+                this.contentDescription = semanticContentDescription
                 role = Role.Button
-                this.onClick(label = contentDescription) {
+                this.onClick(label = semanticContentDescription) {
                     onClick()
                     true
                 }

@@ -8,7 +8,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -67,6 +66,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -105,6 +105,7 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_settings
 import vitruvianprojectphoenix.shared.generated.resources.cd_workouts
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
+import vitruvianprojectphoenix.shared.generated.resources.insights_title
 
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.
@@ -159,13 +160,6 @@ fun EnhancedMainScreen(
     val syncState by syncManager.syncState.collectAsState()
     val isAuthenticated by syncManager.isAuthenticated.collectAsState()
     val lastSyncTime by syncManager.lastSyncTime.collectAsState()
-
-    // Determine if we're in dark mode for TopAppBar color
-    val isDarkMode = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
 
     var currentRoute by remember(navController) {
         mutableStateOf(navController.currentBackStackEntry?.destination?.route ?: NavigationRoutes.Home.route)
@@ -377,10 +371,10 @@ fun EnhancedMainScreen(
                         PhoenixBottomNavigationBar(
                             currentRoute = currentRoute,
                             isWorkoutsRoute = isWorkoutsRoute,
-                            isDarkMode = isDarkMode,
                             isCompactHeight = useCompactTopBar,
                             analyticsContentDescription = stringResource(Res.string.cd_analytics),
                             workoutsContentDescription = stringResource(Res.string.cd_workouts),
+                            insightsContentDescription = stringResource(Res.string.insights_title),
                             settingsContentDescription = stringResource(Res.string.cd_settings),
                             onAnalyticsClick = {
                                 if (currentRoute != NavigationRoutes.Analytics.route) {
@@ -498,18 +492,18 @@ fun EnhancedMainScreen(
 private fun PhoenixBottomNavigationBar(
     currentRoute: String,
     isWorkoutsRoute: Boolean,
-    isDarkMode: Boolean,
     isCompactHeight: Boolean,
     analyticsContentDescription: String,
     workoutsContentDescription: String,
+    insightsContentDescription: String,
     settingsContentDescription: String,
     onAnalyticsClick: () -> Unit,
     onWorkoutsClick: () -> Unit,
     onInsightsClick: () -> Unit,
     onSettingsClick: () -> Unit,
 ) {
-    val containerColor = if (isDarkMode) Color(0xFF1C1B1F) else Color(0xFFF3F3F3)
-    val barHeight = if (isCompactHeight) 56.dp else 60.dp
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val barHeight = remember(isCompactHeight) { if (isCompactHeight) 56.dp else 60.dp }
 
     Box(
         modifier = Modifier
@@ -541,7 +535,7 @@ private fun PhoenixBottomNavigationBar(
             )
             PhoenixBottomNavigationItem(
                 icon = Icons.Default.AutoAwesome,
-                contentDescription = "Insights",
+                contentDescription = insightsContentDescription,
                 selected = currentRoute == NavigationRoutes.SmartInsights.route,
                 onClick = onInsightsClick,
                 modifier = Modifier.weight(1f),
@@ -586,10 +580,11 @@ private fun PhoenixBottomNavigationItem(
                 .widthIn(min = 64.dp, max = 112.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(selectedContainerColor)
-                .clickable(role = Role.Button, onClick = onClick)
+                .clickable(role = Role.Tab, onClick = onClick)
                 .clearAndSetSemantics {
                     this.contentDescription = contentDescription
-                    role = Role.Button
+                    role = Role.Tab
+                    this.selected = selected
                     this.onClick(label = contentDescription) {
                         onClick()
                         true

@@ -59,7 +59,6 @@ fun NavGraph(
                 HomeScreen(
                     navController = navController,
                     viewModel = viewModel,
-                    themeMode = themeMode,
                 )
             }
 

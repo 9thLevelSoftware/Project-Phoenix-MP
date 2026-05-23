@@ -62,7 +62,6 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -70,14 +69,15 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.cd_streak
+import vitruvianprojectphoenix.shared.generated.resources.cd_start_workout
+import vitruvianprojectphoenix.shared.generated.resources.start_workout
 import kotlin.time.Clock
 import kotlin.time.Instant
 
 private const val HOME_CONTENT_MAX_WIDTH = 720
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
-fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode: ThemeMode, isLandscape: Boolean = false) {
+fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     val connectionError by viewModel.connectionError.collectAsState()
     val routines by viewModel.routines.collectAsState()
     val workoutStreak by viewModel.workoutStreak.collectAsState()
@@ -102,24 +102,29 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode
     }
 
     val currentCycleDayNumber = cycleProgress?.currentDayNumber ?: 1
-    val currentCycleDay = activeCycle?.days?.find { it.dayNumber == currentCycleDayNumber }
-    val currentCycleRoutine = currentCycleDay?.routineId?.let { routineId ->
-        routines.find { it.id == routineId }
+    val currentCycleDay = remember(activeCycle, currentCycleDayNumber) {
+        activeCycle?.days?.find { it.dayNumber == currentCycleDayNumber }
+    }
+    val currentCycleRoutine = remember(currentCycleDay?.routineId, routines) {
+        currentCycleDay?.routineId?.let { routineId ->
+            routines.find { it.id == routineId }
+        }
     }
     val fontScale = LocalDensity.current.fontScale
     val platformAccessibilitySettings = LocalPlatformAccessibilitySettings.current
     val windowSizeClass = LocalWindowSizeClass.current
     val stackedShortcuts = fontScale >= 1.15f || platformAccessibilitySettings.boldTextEnabled
     val compactVerticalSpace = windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact && !stackedShortcuts
+    val cycle = activeCycle
     val runnableCycleStart = if (
-        activeCycle != null &&
+        cycle != null &&
         currentCycleDay?.isRestDay != true &&
         currentCycleDay?.routineId != null &&
         currentCycleRoutine != null
     ) {
         CycleStartRequest(
             routineId = currentCycleRoutine.id,
-            cycleId = activeCycle!!.id,
+            cycleId = cycle.id,
             dayNumber = currentCycleDayNumber,
         )
     } else {
@@ -269,26 +274,28 @@ private fun HomeLaunchPad(
             else -> "Day $currentDayNumber in ${cycle.name}"
         }
     }
-    val primaryStartsCycle = runnableCycleStart != null
     val primaryHeight = if (compactVerticalSpace) 56.dp else 72.dp
     val shortcutHeight = if (compactVerticalSpace) 48.dp else 60.dp
     val launchSpacing = if (compactVerticalSpace) 6.dp else 10.dp
+    val startWorkoutLabel = stringResource(Res.string.start_workout)
+    val startWorkoutContentDescription = stringResource(Res.string.cd_start_workout)
 
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(launchSpacing),
     ) {
-        if (primaryStartsCycle && currentRoutine != null) {
+        val cycleStart = runnableCycleStart
+        if (cycleStart != null && currentRoutine != null) {
             AnimatedActionButton(
-                label = "Start Workout",
+                label = startWorkoutLabel,
                 supportingText = cycleStatus,
                 icon = Icons.Default.PlayArrow,
                 onClick = {
-                    onStartCycleWorkout(runnableCycleStart)
+                    onStartCycleWorkout(cycleStart)
                 },
                 isPrimary = true,
                 iconAnimation = IconAnimation.PULSE,
-                contentDescription = "Start workout ${currentRoutine.name}",
+                contentDescription = startWorkoutContentDescription,
                 heightOverride = primaryHeight,
                 allowTwoLineLabel = true,
             )
