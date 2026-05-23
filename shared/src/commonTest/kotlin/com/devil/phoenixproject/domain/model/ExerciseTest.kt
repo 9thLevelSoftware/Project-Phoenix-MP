@@ -95,4 +95,31 @@ class ExerciseTest {
         assertEquals(2, userOverride.preferredCableCount)
     }
 
+    @Test
+    fun `displayCableCount preserves per-cable display for dual handles unless unified or overridden`() {
+        val dualHandles = Exercise(
+            name = "Dual Handle Curl",
+            muscleGroup = "Biceps",
+            cableIntent = ExerciseCableIntent.DUAL,
+            equipment = "HANDLES",
+        )
+        val dualBar = Exercise(
+            name = "Dual Bar Row",
+            muscleGroup = "Back",
+            cableIntent = ExerciseCableIntent.DUAL,
+            equipment = "BAR",
+        )
+        val dualHandleOverride = Exercise(
+            name = "Dual Handle Override",
+            muscleGroup = "Back",
+            cableIntent = ExerciseCableIntent.DUAL,
+            equipment = "HANDLES",
+            userCableCount = 2,
+        )
+
+        assertEquals(1, dualHandles.displayCableCount)
+        assertEquals(2, dualBar.displayCableCount)
+        assertEquals(2, dualHandleOverride.displayCableCount)
+    }
+
 }
