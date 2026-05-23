@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.integration
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.displayLoadMultiplier
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
@@ -348,14 +349,14 @@ actual class HealthIntegration {
 
     /**
      * Builds a human-readable title for the exercise session.
-     * Total weight shown is per-cable x persisted cableCount when available.
+     * Total weight shown is per-cable x persisted display load multiplier.
      *
-     * Defaults to 1 if cableCount is null. This preserves Android/iOS Health title parity (Issue #358).
+     * Uses legacy-safe multiplier fallback: displayMultiplier -> cableCount -> 1.
      */
     private fun buildExerciseTitle(session: WorkoutSession): String {
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
         val totalWeightKg = session.weightPerCableKg *
-            (session.cableCount ?: 1).toFloat()
+            session.displayLoadMultiplier().toFloat()
         return if (totalWeightKg > 0f) {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {
