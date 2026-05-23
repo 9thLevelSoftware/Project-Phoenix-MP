@@ -122,35 +122,44 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
     if (routine == null) {
         return
     }
-
     // Issue #190: Auto-start routine — skip overview and enter SetReady for exercise 0
     // Uses a one-shot flag to prevent re-triggering on recomposition or back-navigation.
     // Guard conditions: pref enabled, routine non-empty, BLE connected, no resumable progress.
     var autoStartFired by remember { mutableStateOf(false) }
+
+    // 1. Attempt auto-connection once when entering the screen if auto-start is enabled.
+    // We exclude connectionState from the keys to avoid infinite loops on connection failure/cancellation.
+    LaunchedEffect(routine.id, userPreferences.autoStartRoutine) {
+        if (
+            userPreferences.autoStartRoutine &&
+            routine.exercises.isNotEmpty() &&
+            !viewModel.hasResumableProgress(routine.id) &&
+            connectionState is ConnectionState.Disconnected
+        ) {
+            Logger.d("AutoStart") { "AutoStart: routine auto-start active but disconnected, initiating connection" }
+            viewModel.ensureConnection(
+                onConnected = { /* Handled by the navigation LaunchedEffect */ },
+                onFailed = {}
+            )
+        }
+    }
+
+    // 2. Handle the actual auto-start navigation when connected.
     LaunchedEffect(routine.id, userPreferences.autoStartRoutine, connectionState) {
         if (
             !autoStartFired &&
             userPreferences.autoStartRoutine &&
             routine.exercises.isNotEmpty() &&
-            !viewModel.hasResumableProgress(routine.id)
+            !viewModel.hasResumableProgress(routine.id) &&
+            connectionState is ConnectionState.Connected
         ) {
-            if (connectionState is ConnectionState.Connected) {
-                autoStartFired = true
-                Logger.d("AutoStart") { "AutoStart: skipping overview, entering SetReady for exercise 0" }
-                val firstExercise = routine.exercises[0]
-                val initialWeight = firstExercise.setWeightsPerCableKg.firstOrNull() ?: firstExercise.weightPerCableKg
-                val initialReps = firstExercise.setReps.firstOrNull() ?: 10
-                viewModel.enterSetReadyWithAdjustments(0, 0, initialWeight, initialReps)
-                navController.navigate(NavigationRoutes.SetReady.route)
-            } else if (connectionState is ConnectionState.Disconnected) {
-                Logger.d("AutoStart") { "AutoStart: routine auto-start active but disconnected, initiating connection" }
-                viewModel.ensureConnection(
-                    onConnected = {
-                        // Connection success will transition connectionState to Connected, triggering this LaunchedEffect again
-                    },
-                    onFailed = {}
-                )
-            }
+            autoStartFired = true
+            Logger.d("AutoStart") { "AutoStart: skipping overview, entering SetReady for exercise 0" }
+            val firstExercise = routine.exercises[0]
+            val initialWeight = firstExercise.setWeightsPerCableKg.firstOrNull() ?: firstExercise.weightPerCableKg
+            val initialReps = firstExercise.setReps.firstOrNull() ?: 10
+            viewModel.enterSetReadyWithAdjustments(0, 0, initialWeight, initialReps)
+            navController.navigate(NavigationRoutes.SetReady.route)
         }
     }
 
