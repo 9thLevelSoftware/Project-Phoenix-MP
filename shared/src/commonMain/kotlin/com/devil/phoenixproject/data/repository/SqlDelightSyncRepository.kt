@@ -276,7 +276,7 @@ class SqlDelightSyncRepository(
                         serverId = dto.serverId,
                         deletedAt = dto.deletedAt,
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
-                        display_multiplier = null,
+                        display_multiplier = session.displayMultiplier?.toLong(),
                     )
                 }
             }
@@ -880,7 +880,7 @@ class SqlDelightSyncRepository(
                         formScore = session.formScore?.toLong(),
                         updatedAt = session.timestamp, // Mark as already-synced to prevent re-push
                         profile_id = session.profileId,
-                        display_multiplier = null,
+                        display_multiplier = session.displayMultiplier?.toLong(),
                     )
                 }
             }
@@ -1495,7 +1495,7 @@ class SqlDelightSyncRepository(
                         formScore = session.formScore?.toLong(),
                         updatedAt = session.timestamp, // Mark as already-synced
                         profile_id = profileId,
-                        display_multiplier = null,
+                        display_multiplier = session.displayMultiplier?.toLong(),
                     )
                 }
 
