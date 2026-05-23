@@ -276,11 +276,24 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `createProgramParams rejects official ActivationForceConfig softMax above 100`() {
+    fun `createProgramParams accepts Trainer Plus activation softMax at 110kg per cable`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
-            weightPerCableKg = 100.5f,
+            weightPerCableKg = 110f,
+        )
+
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        assertEquals(110f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
+    }
+
+    @Test
+    fun `createProgramParams rejects official ActivationForceConfig softMax above 110`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 110.5f,
         )
 
         assertFailsWith<IllegalArgumentException> {

@@ -1,5 +1,9 @@
 package com.devil.phoenixproject.presentation.util
 
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.displayLoadMultiplier
+import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.util.UnitConverter
 import kotlin.math.abs
@@ -85,6 +89,24 @@ class WeightDisplayIntegrationTest {
 
         val formatted = UnitConverter.formatWeight(totalKg, useLb = false)
         assertEquals("110 kg", formatted, "50kg + 10% = 55kg per cable, total 110kg")
+    }
+
+    @Test
+    fun savedHistoryDisplayPreservesLegacyDisplayMultiplierBeforeCableCount() {
+        val session = WorkoutSession(
+            weightPerCableKg = 80f,
+            heaviestLiftKg = 80f,
+            cableCount = 2,
+            displayMultiplier = 1,
+        )
+
+        val formattedPeak = WeightDisplayFormatter.formatDisplayWeight(
+            session.effectiveHeaviestKgPerCable(),
+            session.displayLoadMultiplier(),
+            WeightUnit.KG,
+        )
+
+        assertEquals("80", formattedPeak, "History display must prefer displayMultiplier=1 over cableCount=2")
     }
 
     @Test

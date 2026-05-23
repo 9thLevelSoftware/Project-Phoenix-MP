@@ -461,6 +461,21 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `toPortalRoutine preserves routine exercise cable count override`() {
+        val exercises = listOf(
+            makeRoutineExercise(
+                id = "ex-cable-override",
+                cableCountOverride = 1,
+            ),
+        )
+        val routine = makeRoutine(id = "r-cable-override", exercises = exercises)
+
+        val result = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+
+        assertEquals(1, result.exercises.single().cableCountOverride)
+    }
+
+    @Test
     fun `toPortalRoutine maps superset colors`() {
         val superset = Superset(
             id = "ss-1",
@@ -1172,6 +1187,7 @@ class PortalSyncAdapterTest {
         orderInSuperset: Int = 0,
         eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
         echoLevel: EchoLevel = EchoLevel.HARDER,
+        cableCountOverride: Int? = null,
     ): RoutineExercise = RoutineExercise(
         id = id,
         exercise = Exercise(name = name, muscleGroup = muscleGroup, equipment = equipment),
@@ -1191,6 +1207,7 @@ class PortalSyncAdapterTest {
         weightPercentOfPR = weightPercentOfPR,
         supersetId = supersetId,
         orderInSuperset = orderInSuperset,
+        cableCountOverride = cableCountOverride,
     )
 
     private fun makeRoutine(

@@ -60,6 +60,7 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.displayLoadMultiplier
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
@@ -351,7 +352,7 @@ fun WorkoutHistoryCard(
                     } else {
                         WeightDisplayFormatter.formatDisplayWeight(
                             session.effectiveHeaviestKgPerCable(),
-                            session.cableCount,
+                            session.displayLoadMultiplier(),
                             weightUnit,
                         ) + " ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}"
                     },
@@ -440,7 +441,7 @@ fun WorkoutHistoryCard(
                     // CompletedSet breakdown (set-level tracking)
                     CompletedSetsSection(
                         sessionId = session.id,
-                        cableCount = session.cableCount,
+                        cableCount = session.displayLoadMultiplier(),
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                     )
@@ -872,10 +873,10 @@ fun GroupedRoutineCard(
 
                 // Measured Peak (Total) | Workout Mode
                 // Issue #5: Show total weight via WeightDisplayFormatter
-                // Use max cableCount from sessions in this group for display
-                val groupCableCount = groupedItem.sessions
+                // Use max saved-session display multiplier from sessions in this group.
+                val groupDisplayMultiplier = groupedItem.sessions
                     .filter { it.exerciseId == exerciseGroup.exerciseId }
-                    .mapNotNull { it.cableCount }
+                    .map { it.displayLoadMultiplier() }
                     .maxOrNull()
 
                 Row(
@@ -893,7 +894,7 @@ fun GroupedRoutineCard(
                         } else {
                             WeightDisplayFormatter.formatDisplayWeight(
                                 exerciseGroup.highestWeightPerCableKg,
-                                groupCableCount,
+                                groupDisplayMultiplier,
                                 weightUnit,
                             ) + " ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}"
                         },
@@ -997,7 +998,7 @@ fun GroupedRoutineCard(
                         // CompletedSet breakdown per session
                         CompletedSetsSection(
                             sessionId = session.id,
-                            cableCount = session.cableCount,
+                            cableCount = session.displayLoadMultiplier(),
                             weightUnit = weightUnit,
                             formatWeight = formatWeight,
                         )
@@ -1155,7 +1156,7 @@ fun WorkoutSessionCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    "${WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, session.cableCount, weightUnit)} ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"} • ${session.totalReps} reps • ${session.mode}",
+                    "${WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, session.displayLoadMultiplier(), weightUnit)} ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"} • ${session.totalReps} reps • ${session.mode}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

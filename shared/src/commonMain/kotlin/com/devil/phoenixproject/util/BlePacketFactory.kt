@@ -27,7 +27,7 @@ object BlePacketFactory {
     @Volatile
     var defaultForceConfigVariant: ForceConfigVariant = ForceConfigVariant.NON_OVERLAP
 
-    private const val OFFICIAL_MAX_SOFT_MAX = 100.0f
+    private val MAX_ACTIVATION_SOFT_MAX = Constants.MAX_WEIGHT_PER_CABLE_KG
     private const val OFFICIAL_MAX_INCREMENT = 10.0f
 
     // ========== Little-Endian Byte Helpers ==========
@@ -402,8 +402,8 @@ object BlePacketFactory {
     }
 
     private fun validateActivationForceConfig(softMax: Float, increment: Float) {
-        require(!softMax.isNaN() && softMax >= 0.0f && softMax <= OFFICIAL_MAX_SOFT_MAX) {
-            "ActivationForceConfig softMax must be between 0.0 and $OFFICIAL_MAX_SOFT_MAX kg; was $softMax"
+        require(!softMax.isNaN() && softMax >= 0.0f && softMax <= MAX_ACTIVATION_SOFT_MAX) {
+            "ActivationForceConfig softMax must be between 0.0 and $MAX_ACTIVATION_SOFT_MAX kg; was $softMax"
         }
         require(
             !increment.isNaN() &&

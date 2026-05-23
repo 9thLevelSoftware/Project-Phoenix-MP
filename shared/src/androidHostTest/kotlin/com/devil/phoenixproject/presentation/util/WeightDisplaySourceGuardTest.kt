@@ -185,6 +185,34 @@ class WeightDisplaySourceGuardTest {
         )
     }
 
+    @Test
+    fun historyTab_savedSessionWeightDisplaysUseDisplayLoadMultiplier() {
+        val path = "com/devil/phoenixproject/presentation/screen/HistoryTab.kt"
+        val source = readSourceFile(path) ?: error("HistoryTab.kt not found")
+        val compact = source.replace(Regex("\\s+"), "")
+
+        assertTrue(
+            compact.contains("session.effectiveHeaviestKgPerCable(),session.displayLoadMultiplier(),weightUnit"),
+            "HistoryTab measured peak must format saved-session weight with displayLoadMultiplier().",
+        )
+        assertTrue(
+            compact.contains("session.weightPerCableKg,session.displayLoadMultiplier(),weightUnit"),
+            "HistoryTab session card must format saved-session weight with displayLoadMultiplier().",
+        )
+        assertFalse(
+            compact.contains("session.effectiveHeaviestKgPerCable(),session.cableCount,weightUnit"),
+            "HistoryTab measured peak must not bypass legacy displayMultiplier with raw cableCount.",
+        )
+        assertFalse(
+            compact.contains("session.weightPerCableKg,session.cableCount,weightUnit"),
+            "HistoryTab session card must not bypass legacy displayMultiplier with raw cableCount.",
+        )
+        assertFalse(
+            compact.contains("cableCount=session.cableCount"),
+            "HistoryTab completed-set display must not bypass legacy displayMultiplier with raw cableCount.",
+        )
+    }
+
     // ===== Guard: CSV export has its own multiplication =====
 
     @Test

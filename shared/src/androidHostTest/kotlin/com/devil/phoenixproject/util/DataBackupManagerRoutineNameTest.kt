@@ -7,16 +7,15 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import org.junit.Before
+import org.junit.Test
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import org.junit.Before
-import org.junit.Test
 
 class DataBackupManagerRoutineNameTest {
 
@@ -311,6 +310,67 @@ class DataBackupManagerRoutineNameTest {
         val exportedSession = backup.data.workoutSessions.first { it.id == "session-fabricated-1" }
         assertNull(exportedSession.routineSessionId, "Fabricated legacy_session_* ID should be stripped on export")
         assertEquals("Upper Day", exportedSession.routineName, "Routine name should be preserved")
+    }
+
+    @Test
+    fun `exportAllData preserves workout session display multiplier`() = runTest {
+        insertSessionRow(
+            id = "session-display-multiplier-export",
+            cableCount = 2,
+            displayMultiplier = 1,
+        )
+
+        val backup = backupManager.exportAllData()
+        val exportedSession = backup.data.workoutSessions.first { it.id == "session-display-multiplier-export" }
+        val jsonString = testJson.encodeToString(backup)
+
+        assertEquals(2, exportedSession.cableCount)
+        assertEquals(1, exportedSession.displayMultiplier)
+        assertTrue(
+            jsonString.contains("\"displayMultiplier\":1"),
+            "Exported backup JSON must include displayMultiplier when present",
+        )
+    }
+
+    @Test
+    fun `importFromJson restores workout session display multiplier`() = runTest {
+        val legacyJson = """
+            {
+              "version": 1,
+              "exportedAt": "2026-05-21T12:00:00Z",
+              "appVersion": "test",
+              "data": {
+                "workoutSessions": [
+                  {
+                    "id": "session-display-multiplier-import",
+                    "timestamp": 1700000000000,
+                    "mode": "Old School",
+                    "targetReps": 10,
+                    "weightPerCableKg": 80.0,
+                    "progressionKg": 0.0,
+                    "duration": 60000,
+                    "totalReps": 10,
+                    "warmupReps": 0,
+                    "workingReps": 10,
+                    "isJustLift": false,
+                    "stopAtTop": false,
+                    "cableCount": 2,
+                    "displayMultiplier": 1
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+
+        val importResult = backupManager.importFromJson(legacyJson)
+        assertTrue(importResult.isSuccess, "Import must succeed: ${importResult.exceptionOrNull()?.message}")
+
+        val imported = database.vitruvianDatabaseQueries
+            .selectSessionById("session-display-multiplier-import")
+            .executeAsOneOrNull()
+        assertNotNull(imported)
+        assertEquals(2L, imported.cableCount)
+        assertEquals(1L, imported.display_multiplier)
     }
 
     @Test
@@ -674,6 +734,63 @@ class DataBackupManagerRoutineNameTest {
         val routine = queries.selectRoutineById("routine-b").executeAsOneOrNull()
         assertNotNull(routine)
         assertEquals("userB", routine.profile_id, "Routine with explicit foreign profileId must not be adopted")
+    }
+
+    private fun insertSessionRow(
+        id: String,
+        cableCount: Long? = null,
+        displayMultiplier: Long? = null,
+    ) {
+        database.vitruvianDatabaseQueries.insertSession(
+            id = id,
+            timestamp = 1_700_000_000_000,
+            mode = "Old School",
+            targetReps = 10,
+            weightPerCableKg = 80.0,
+            progressionKg = 0.0,
+            duration = 60_000L,
+            totalReps = 10,
+            warmupReps = 0,
+            workingReps = 10,
+            isJustLift = 0,
+            stopAtTop = 0,
+            eccentricLoad = 100,
+            echoLevel = 0,
+            exerciseId = "exercise-display",
+            exerciseName = "Display Exercise",
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+            safetyFlags = 0,
+            deloadWarningCount = 0,
+            romViolationCount = 0,
+            spotterActivations = 0,
+            peakForceConcentricA = null,
+            peakForceConcentricB = null,
+            peakForceEccentricA = null,
+            peakForceEccentricB = null,
+            avgForceConcentricA = null,
+            avgForceConcentricB = null,
+            avgForceEccentricA = null,
+            avgForceEccentricB = null,
+            heaviestLiftKg = null,
+            totalVolumeKg = null,
+            cableCount = cableCount,
+            estimatedCalories = null,
+            warmupAvgWeightKg = null,
+            workingAvgWeightKg = null,
+            burnoutAvgWeightKg = null,
+            peakWeightKg = null,
+            rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "default",
+            display_multiplier = displayMultiplier,
+        )
     }
 
     private fun buildRoutine(routineId: String, routineName: String, exerciseId: String, exerciseName: String): Routine {
