@@ -2,7 +2,6 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,10 +11,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,15 +24,10 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Loop
-import androidx.compose.material.icons.filled.SelfImprovement
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FitnessCenter
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,15 +51,16 @@ import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.AnimatedActionButton
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.IconAnimation
+import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
-import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
-import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
+import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.datetime.LocalDate
@@ -77,258 +73,383 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_streak
 import kotlin.time.Clock
 import kotlin.time.Instant
 
-/**
- * Home Screen Redesign - "The Command Deck"
- *
- * Material 3 Expressive design principles:
- * - Zero Redundancy: "Start Workout" in ONE place (the FAB)
- * - No Partial Text: Full labels on all buttons
- * - Native Feel: Scaffold handles insets and layout
- * - Context-Aware: FAB adapts to active cycle state
- */
+private const val HOME_CONTENT_MAX_WIDTH = 720
+
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode: ThemeMode, isLandscape: Boolean = false) {
-    // State collection
     val connectionError by viewModel.connectionError.collectAsState()
     val routines by viewModel.routines.collectAsState()
     val workoutStreak by viewModel.workoutStreak.collectAsState()
     val recentSessions by viewModel.allWorkoutSessions.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
 
-    // Training Cycles state
     val cycleRepository: TrainingCycleRepository = koinInject()
     val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val profileId = activeProfile?.id ?: "default"
     val activeCycle by cycleRepository.getActiveCycle(profileId).collectAsState(initial = null)
     var cycleProgress by remember { mutableStateOf<CycleProgress?>(null) }
+    var showResumeDialog by remember { mutableStateOf(false) }
+    var pendingCycleStart by remember { mutableStateOf<CycleStartRequest?>(null) }
 
     LaunchedEffect(activeCycle) {
-        activeCycle?.let { cycle ->
-            cycleProgress = cycleRepository.getCycleProgress(cycle.id)
-        }
+        cycleProgress = activeCycle?.let { cycle -> cycleRepository.getCycleProgress(cycle.id) }
     }
 
-    // Determine actual theme for custom coloring
-    val isDark = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
-
-    // Responsive dimensions based on window size
-    val windowSizeClass = LocalWindowSizeClass.current
-    val useCompactAccessibility = isCompactAccessibilityLayout()
-    val fabSpacerHeight = if (useCompactAccessibility) {
-        200.dp
-    } else {
-        when (windowSizeClass.widthSizeClass) {
-            WindowWidthSizeClass.Expanded -> 240.dp
-            WindowWidthSizeClass.Medium -> 210.dp
-            WindowWidthSizeClass.Compact -> 180.dp
-        }
-    }
-
-    // Clear global title so our custom header shines
     LaunchedEffect(Unit) {
         viewModel.updateTopBarTitle("")
     }
 
-    Scaffold(
-        containerColor = Color.Transparent,
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(paddingValues),
+    val currentCycleDayNumber = cycleProgress?.currentDayNumber ?: 1
+    val currentCycleDay = activeCycle?.days?.find { it.dayNumber == currentCycleDayNumber }
+    val currentCycleRoutine = currentCycleDay?.routineId?.let { routineId ->
+        routines.find { it.id == routineId }
+    }
+    val fontScale = LocalDensity.current.fontScale
+    val platformAccessibilitySettings = LocalPlatformAccessibilitySettings.current
+    val windowSizeClass = LocalWindowSizeClass.current
+    val stackedShortcuts = fontScale >= 1.15f || platformAccessibilitySettings.boldTextEnabled
+    val compactVerticalSpace = windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact && !stackedShortcuts
+    val runnableCycleStart = if (
+        activeCycle != null &&
+        currentCycleDay?.isRestDay != true &&
+        currentCycleDay?.routineId != null &&
+        currentCycleRoutine != null
+    ) {
+        CycleStartRequest(
+            routineId = currentCycleRoutine.id,
+            cycleId = activeCycle!!.id,
+            dayNumber = currentCycleDayNumber,
+        )
+    } else {
+        null
+    }
+
+    fun startCycleWorkout(request: CycleStartRequest) {
+        if (viewModel.hasResumableProgress(request.routineId)) {
+            pendingCycleStart = request
+            showResumeDialog = true
+        } else {
+            viewModel.ensureConnection(
+                onConnected = {
+                    viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
+                    viewModel.startWorkout()
+                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                },
+                onFailed = { /* Error shown via StateFlow */ },
+            )
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compactVerticalSpace) 10.dp else 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
-                // 1. Weekly Compliance Strip (Top of screen)
-                item(key = "weekly-compliance") {
-                    WeeklyComplianceStrip(
-                        history = recentSessions,
-                        isDark = isDark,
-                        workoutStreak = workoutStreak,
-                    )
-                }
+            item(key = "launch-pad") {
+                HomeLaunchPad(
+                    activeCycle = activeCycle,
+                    currentDayNumber = currentCycleDayNumber,
+                    currentDayName = currentCycleDay?.name,
+                    currentRoutine = currentCycleRoutine,
+                    runnableCycleStart = runnableCycleStart,
+                    stackedShortcuts = stackedShortcuts,
+                    compactVerticalSpace = compactVerticalSpace,
+                    onStartCycleWorkout = ::startCycleWorkout,
+                    onJustLift = { navController.navigate(NavigationRoutes.JustLift.route) },
+                    onSingleExercise = { navController.navigate(NavigationRoutes.SingleExercise.route) },
+                    onRoutines = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
+                    onCycles = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
+                    onAssessOneRepMax = { navController.navigate(NavigationRoutes.StrengthAssessmentPicker.route) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = HOME_CONTENT_MAX_WIDTH.dp),
+                )
+            }
 
-                // 2. The Hero Section (only when cycle active)
-                if (activeCycle != null) {
-                    item(key = "hero-card") {
-                        ActiveCycleHero(
-                            cycle = activeCycle!!,
-                            progress = cycleProgress,
-                            routines = routines,
-                            onViewSchedule = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
-                        )
-                    }
-                }
+            item(key = "weekly-compliance") {
+                WeeklyComplianceStrip(
+                    history = recentSessions,
+                    workoutStreak = workoutStreak,
+                    compact = compactVerticalSpace,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = HOME_CONTENT_MAX_WIDTH.dp),
+                )
+            }
 
-                // 3. Strength Assessment Card
-                item(key = "strength-assessment") {
-                    OutlinedCard(
-                        onClick = { navController.navigate(NavigationRoutes.StrengthAssessmentPicker.route) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                Icons.Outlined.FitnessCenter,
-                                contentDescription = "Strength Assessment",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp),
-                            )
-                            Spacer(Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "Strength Assessment",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    "Find your 1RM",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            Icon(
-                                Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-
-                // 4. Recent Activity Summary
-                item(key = "recent-activity") {
+            item(key = "recent-activity") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = HOME_CONTENT_MAX_WIDTH.dp),
+                ) {
                     Text(
                         "Recent Activity",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                     RecentActivitySummary(recentSessions, weightUnit)
                 }
+            }
+        }
 
-                if (useCompactAccessibility) {
-                    item(key = "action-grid") {
-                        HomeActionGrid(navController = navController)
+        connectionError?.let { error ->
+            ConnectionErrorDialog(
+                message = error,
+                onDismiss = { viewModel.clearConnectionError() },
+            )
+        }
+
+        if (showResumeDialog) {
+            viewModel.getResumableProgressInfo()?.let { info ->
+                ResumeRoutineDialog(
+                    progressInfo = info,
+                    onResume = {
+                        showResumeDialog = false
+                        viewModel.ensureConnection(
+                            onConnected = {
+                                viewModel.startWorkout()
+                                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                            },
+                            onFailed = { /* Error shown via StateFlow */ },
+                        )
+                    },
+                    onRestart = {
+                        val request = pendingCycleStart
+                        showResumeDialog = false
+                        if (request != null) {
+                            viewModel.ensureConnection(
+                                onConnected = {
+                                    viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
+                                    viewModel.startWorkout()
+                                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                },
+                                onFailed = { /* Error shown via StateFlow */ },
+                            )
+                        }
+                    },
+                    onDismiss = { showResumeDialog = false },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeLaunchPad(
+    activeCycle: TrainingCycle?,
+    currentDayNumber: Int,
+    currentDayName: String?,
+    currentRoutine: Routine?,
+    runnableCycleStart: CycleStartRequest?,
+    stackedShortcuts: Boolean,
+    compactVerticalSpace: Boolean,
+    onStartCycleWorkout: (CycleStartRequest) -> Unit,
+    onJustLift: () -> Unit,
+    onSingleExercise: () -> Unit,
+    onRoutines: () -> Unit,
+    onCycles: () -> Unit,
+    onAssessOneRepMax: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cycleStatus = activeCycle?.let { cycle ->
+        when {
+            runnableCycleStart != null && currentRoutine != null -> currentRoutine.name
+            currentDayName != null -> "$currentDayName in ${cycle.name}"
+            else -> "Day $currentDayNumber in ${cycle.name}"
+        }
+    }
+    val primaryStartsCycle = runnableCycleStart != null
+    val primaryHeight = if (compactVerticalSpace) 56.dp else 72.dp
+    val shortcutHeight = if (compactVerticalSpace) 48.dp else 60.dp
+    val launchSpacing = if (compactVerticalSpace) 6.dp else 10.dp
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(launchSpacing),
+    ) {
+        if (primaryStartsCycle && currentRoutine != null) {
+            AnimatedActionButton(
+                label = "Start Workout",
+                supportingText = cycleStatus,
+                icon = Icons.Default.PlayArrow,
+                onClick = {
+                    onStartCycleWorkout(runnableCycleStart)
+                },
+                isPrimary = true,
+                iconAnimation = IconAnimation.PULSE,
+                contentDescription = "Start workout ${currentRoutine.name}",
+                heightOverride = primaryHeight,
+                allowTwoLineLabel = true,
+            )
+        }
+
+        ShortcutActions(
+            actions = listOf(
+                HomeActionSpec(
+                    label = "Single Exercise",
+                    contentDescription = "Open Single Exercise workout",
+                    icon = Icons.Outlined.FitnessCenter,
+                    onClick = onSingleExercise,
+                ),
+                HomeActionSpec(
+                    label = "Routines",
+                    contentDescription = "Open Routines",
+                    icon = Icons.AutoMirrored.Filled.FormatListBulleted,
+                    onClick = onRoutines,
+                ),
+                HomeActionSpec(
+                    label = "Cycles",
+                    contentDescription = "Open Training Cycles",
+                    icon = Icons.Default.Loop,
+                    onClick = onCycles,
+                    iconAnimation = IconAnimation.ROTATE,
+                ),
+                HomeActionSpec(
+                    label = "Assess 1RM",
+                    contentDescription = "Open one rep max assessment",
+                    icon = Icons.Default.FitnessCenter,
+                    onClick = onAssessOneRepMax,
+                ),
+            ),
+            stacked = stackedShortcuts,
+            buttonHeight = shortcutHeight,
+        )
+
+        AnimatedActionButton(
+            label = "Just Lift",
+            icon = Icons.Default.LocalFireDepartment,
+            onClick = onJustLift,
+            isPrimary = true,
+            isFireButton = true,
+            iconAnimation = IconAnimation.FIRE,
+            contentDescription = "Open Just Lift",
+            heightOverride = primaryHeight,
+            allowTwoLineLabel = true,
+        )
+
+        if (activeCycle != null) {
+            CycleContextRow(
+                cycle = activeCycle,
+                dayNumber = currentDayNumber,
+                dayName = currentDayName,
+                routineName = currentRoutine?.name,
+                onClick = onCycles,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShortcutActions(actions: List<HomeActionSpec>, stacked: Boolean, buttonHeight: androidx.compose.ui.unit.Dp) {
+    if (stacked) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            actions.forEach { action ->
+                AnimatedActionButton(
+                    label = action.label,
+                    icon = action.icon,
+                    onClick = action.onClick,
+                    isPrimary = false,
+                    iconAnimation = action.iconAnimation,
+                    contentDescription = action.contentDescription,
+                    heightOverride = buttonHeight,
+                    allowTwoLineLabel = true,
+                )
+            }
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            actions.chunked(2).forEach { rowActions ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowActions.forEach { action ->
+                        AnimatedActionButton(
+                            label = action.label,
+                            icon = action.icon,
+                            onClick = action.onClick,
+                            isPrimary = false,
+                            iconAnimation = action.iconAnimation,
+                            contentDescription = action.contentDescription,
+                            heightOverride = buttonHeight,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
-                } else {
-                    // Spacer for FABs clearance
-                    item(key = "fab-spacer") {
-                        Spacer(modifier = Modifier.height(fabSpacerHeight))
+                    if (rowActions.size == 1) {
+                        Spacer(Modifier.weight(1f))
                     }
                 }
             }
-
-            if (!useCompactAccessibility) {
-                // Bottom FAB Grid: 2 columns, equal width - positioned directly above the navbar
-                HomeActionGrid(
-                    navController = navController,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                )
-            }
-
-            // Connection Error Handling
-            connectionError?.let { error ->
-                ConnectionErrorDialog(
-                    message = error,
-                    onDismiss = { viewModel.clearConnectionError() },
-                )
-            }
         }
     }
 }
 
 @Composable
-private fun HomeActionGrid(navController: NavController, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+private fun CycleContextRow(cycle: TrainingCycle, dayNumber: Int, dayName: String?, routineName: String?, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            AnimatedActionButton(
-                label = "Cycles",
-                icon = Icons.Default.Loop,
-                onClick = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
-                isPrimary = false,
-                iconAnimation = IconAnimation.ROTATE,
-            )
-            AnimatedActionButton(
-                label = "Routines",
-                icon = Icons.AutoMirrored.Filled.FormatListBulleted,
-                onClick = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
-                isPrimary = false,
-                iconAnimation = IconAnimation.NONE,
-            )
-        }
-
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AnimatedActionButton(
-                label = "Single Exercise",
-                icon = Icons.Outlined.FitnessCenter,
-                onClick = { navController.navigate(NavigationRoutes.SingleExercise.route) },
-                isPrimary = false,
-                iconAnimation = IconAnimation.TILT,
-            )
-            AnimatedActionButton(
-                label = "Just Lift",
-                icon = null,
-                onClick = {
-                    navController.navigate(NavigationRoutes.JustLift.route)
-                },
-                isPrimary = true,
-                isFireButton = true,
-                iconAnimation = IconAnimation.NONE,
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = cycle.name,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = listOfNotNull("Day $dayNumber", dayName, routineName ?: "No routine assigned").joinToString(" • "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
             )
         }
     }
 }
 
-// ============================================================================
-// WEEKLY COMPLIANCE STRIP (Top of screen)
-// ============================================================================
-
 @Composable
-private fun WeeklyComplianceStrip(history: List<WorkoutSession>, isDark: Boolean, workoutStreak: Int?) {
-    // Get current week's Monday
+private fun WeeklyComplianceStrip(
+    history: List<WorkoutSession>,
+    workoutStreak: Int?,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     val mondayOffset = today.dayOfWeek.ordinal
     val mondayEpochDays = today.toEpochDays() - mondayOffset
     val weekDays = (0..6).map { LocalDate.fromEpochDays(mondayEpochDays + it) }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Week days row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -339,32 +460,30 @@ private fun WeeklyComplianceStrip(history: List<WorkoutSession>, isDark: Boolean
                         .toLocalDateTime(TimeZone.currentSystemDefault()).date
                     sessionDate == date
                 }
-                val isToday = date == today
 
                 ComplianceDot(
                     letter = date.dayOfWeek.name.take(1),
                     isActive = hasWorkout,
-                    isToday = isToday,
+                    isToday = date == today,
                 )
             }
         }
 
-        // Streak badge (centered beneath days of the week)
-        if (workoutStreak != null && workoutStreak > 0) {
+        if (!compact && workoutStreak != null && workoutStreak > 0) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(top = 6.dp),
             ) {
                 Icon(
                     Icons.Default.LocalFireDepartment,
                     contentDescription = stringResource(Res.string.cd_streak),
-                    tint = Color(0xFFFF6B00),
-                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
                     "$workoutStreak",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -394,12 +513,8 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
                 .background(
                     when {
                         isActive -> MaterialTheme.colorScheme.primary
-
-                        // Workout done
                         isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-
-                        // Today empty
-                        else -> MaterialTheme.colorScheme.surfaceVariant // Past/Future empty
+                        else -> MaterialTheme.colorScheme.surfaceVariant
                     },
                 )
                 .then(
@@ -413,124 +528,17 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
     }
 }
 
-// ============================================================================
-// HERO CARDS (Refined)
-// ============================================================================
-
-@Composable
-private fun ActiveCycleHero(cycle: TrainingCycle, progress: CycleProgress?, routines: List<Routine>, onViewSchedule: () -> Unit) {
-    val currentDayNum = progress?.currentDayNumber ?: 1
-    val cycleDay = cycle.days.find { it.dayNumber == currentDayNum }
-    val routine = cycleDay?.routineId?.let { id -> routines.find { it.id == id } }
-    val isRest = cycleDay?.isRestDay == true || cycleDay?.routineId == null
-
-    // Responsive dimensions based on window size
-    val windowSizeClass = LocalWindowSizeClass.current
-    val heroCardHeight = when (windowSizeClass.widthSizeClass) {
-        WindowWidthSizeClass.Expanded -> 240.dp
-        WindowWidthSizeClass.Medium -> 210.dp
-        WindowWidthSizeClass.Compact -> 180.dp
-    }
-    val heroImageSize = when (windowSizeClass.widthSizeClass) {
-        WindowWidthSizeClass.Expanded -> 280.dp
-        WindowWidthSizeClass.Medium -> 240.dp
-        WindowWidthSizeClass.Compact -> 200.dp
-    }
-
-    Card(
-        onClick = onViewSchedule,
-        modifier = Modifier.fillMaxWidth().height(heroCardHeight),
-        shape = RoundedCornerShape(28.dp), // Expressive shape
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Background Image/Icon Placeholder (Right aligned, subtle)
-            Icon(
-                imageVector = if (isRest) Icons.Default.SelfImprovement else Icons.Default.FitnessCenter,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.05f),
-                modifier = Modifier
-                    .size(heroImageSize)
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 40.dp, y = 40.dp),
-            )
-
-            Column(
-                modifier = Modifier
-                    .padding(24.dp)
-                    .align(Alignment.TopStart),
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(8.dp),
-                ) {
-                    Text(
-                        text = if (isRest) "REST DAY" else "UP NEXT",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                Text(
-                    text = cycleDay?.name ?: "Day $currentDayNum",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-
-                if (routine != null) {
-                    Text(
-                        text = routine.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                    )
-                } else if (isRest) {
-                    Text(
-                        text = "Take it easy today.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                    )
-                }
-            }
-
-            // Progress Bar at bottom (replaces dot indicators)
-            if (cycle.days.isNotEmpty()) {
-                val progressValue = currentDayNum.toFloat() / cycle.days.size.toFloat()
-                LinearProgressIndicator(
-                    progress = { progressValue },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .align(Alignment.BottomCenter),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f),
-                    drawStopIndicator = {},
-                )
-            }
-        }
-    }
-}
-
-// ============================================================================
-// RECENT ACTIVITY SUMMARY
-// ============================================================================
-
 @Composable
 private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: WeightUnit = WeightUnit.KG) {
     if (history.isEmpty()) {
         Text(
-            "No recent workouts recorded.",
-            style = MaterialTheme.typography.bodyMedium,
+            "No recent workouts yet.",
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     } else {
-        // Simple list of last 3 workouts
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            history.take(3).forEach { session ->
+            history.take(2).forEach { session ->
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     shape = RoundedCornerShape(12.dp),
@@ -547,7 +555,7 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
                                 .background(MaterialTheme.colorScheme.primary),
                         )
                         Spacer(Modifier.width(12.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
                                 session.weightPerCableKg,
                                 session.displayMultiplier ?: session.cableCount,
@@ -558,11 +566,15 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
                                 session.exerciseName ?: "Workout Session",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 "${session.workingReps} reps • $displayWeight $unitLabel",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -571,3 +583,17 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
         }
     }
 }
+
+private data class CycleStartRequest(
+    val routineId: String,
+    val cycleId: String,
+    val dayNumber: Int,
+)
+
+private data class HomeActionSpec(
+    val label: String,
+    val contentDescription: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit,
+    val iconAnimation: IconAnimation = IconAnimation.NONE,
+)

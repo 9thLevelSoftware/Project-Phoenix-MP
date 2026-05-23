@@ -1,25 +1,25 @@
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.animation.core.EaseInOutSine
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -43,31 +43,36 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
-import com.devil.phoenixproject.ui.theme.HomeButtonColors
 import kotlinx.coroutines.isActive
 import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * Icon animation types for AnimatedActionButton
+ * Icon animation types for AnimatedActionButton.
+ *
+ * Home actions intentionally use press-only feedback so labels remain readable.
  */
 enum class IconAnimation {
     NONE,
-    PULSE, // Scale pulse (for Play icon)
-    ROTATE, // Continuous rotation (for Loop icon)
-    TILT, // Oscillating tilt (for Dumbbell icon)
-    FIRE, // Flickering flame effect
+    PULSE,
+    ROTATE,
+    TILT,
+    FIRE,
 }
 
-/**
- * Data class for a single flame particle
- */
 private data class FlameParticle(
     var x: Float,
     var y: Float,
@@ -77,10 +82,6 @@ private data class FlameParticle(
     var driftOffset: Float = Random.nextFloat() * 100f,
 )
 
-/**
- * Modifier that adds a flame particle effect behind content.
- * Uses frame-synced animation for smooth 60fps performance.
- */
 private fun Modifier.onFire(): Modifier = composed {
     val particles = remember { mutableStateListOf<FlameParticle>() }
     var time by remember { mutableLongStateOf(0L) }
@@ -91,20 +92,18 @@ private fun Modifier.onFire(): Modifier = composed {
             withFrameNanos { now ->
                 time = now - startTime
 
-                // Update existing particles
                 val iterator = particles.listIterator()
                 while (iterator.hasNext()) {
-                    val p = iterator.next()
-                    p.y -= p.speedY
-                    p.life -= 0.02f
-                    p.radius *= 0.97f
+                    val particle = iterator.next()
+                    particle.y -= particle.speedY
+                    particle.life -= 0.02f
+                    particle.radius *= 0.97f
 
-                    if (p.life <= 0f || p.radius < 1f) {
+                    if (particle.life <= 0f || particle.radius < 1f) {
                         iterator.remove()
                     }
                 }
 
-                // Spawn new particles (2 per frame for dense fire)
                 if (particles.size < 80) {
                     repeat(2) {
                         particles.add(
@@ -123,44 +122,33 @@ private fun Modifier.onFire(): Modifier = composed {
 
     drawWithCache {
         onDrawBehind {
-            // Dark base
             drawRect(Color(0xFF1A0800))
 
-            particles.forEach { p ->
-                // Initialize position if new
-                if (p.y < 0) {
-                    p.x = Random.nextFloat() * size.width
-                    p.y = size.height + Random.nextFloat() * 10f
+            particles.forEach { particle ->
+                if (particle.y < 0) {
+                    particle.x = Random.nextFloat() * size.width
+                    particle.y = size.height + Random.nextFloat() * 10f
                 }
 
-                // Horizontal sine wave drift
-                val drift = sin((time / 800_000_000f) + p.driftOffset) * 4f
-
-                // Color based on life: Yellow → Orange → Red → Fade
+                val drift = sin((time / 800_000_000f) + particle.driftOffset) * 4f
                 val color = when {
-                    p.life > 0.7f -> Color(0xFFFFD700)
-
-                    // Gold/Yellow (hot center)
-                    p.life > 0.4f -> Color(0xFFFF6B00)
-
-                    // Orange
-                    else -> Color(0xFFFF4500).copy(alpha = (p.life * 2f).coerceIn(0f, 1f)) // Red, fading
+                    particle.life > 0.7f -> Color(0xFFFFD700)
+                    particle.life > 0.4f -> Color(0xFFFF6B00)
+                    else -> Color(0xFFFF4500).copy(alpha = (particle.life * 2f).coerceIn(0f, 1f))
                 }
 
-                // Draw with additive blending for glow effect
                 drawCircle(
                     color = color,
-                    radius = p.radius,
-                    center = Offset(p.x + drift, p.y),
+                    radius = particle.radius,
+                    center = Offset(particle.x + drift, particle.y),
                     blendMode = BlendMode.Plus,
                 )
 
-                // Inner brighter core
-                if (p.life > 0.5f) {
+                if (particle.life > 0.5f) {
                     drawCircle(
-                        color = Color.White.copy(alpha = (p.life - 0.5f) * 0.6f),
-                        radius = p.radius * 0.4f,
-                        center = Offset(p.x + drift, p.y),
+                        color = Color.White.copy(alpha = (particle.life - 0.5f) * 0.6f),
+                        radius = particle.radius * 0.4f,
+                        center = Offset(particle.x + drift, particle.y),
                         blendMode = BlendMode.Plus,
                     )
                 }
@@ -170,15 +158,7 @@ private fun Modifier.onFire(): Modifier = composed {
 }
 
 /**
- * Animated FAB with press feedback and idle animations.
- *
- * @param label Button text
- * @param icon Button icon
- * @param onClick Click handler
- * @param isPrimary If true, uses solid Royal Blue. If false, uses solid Muted Purple.
- * @param isFireButton If true, uses fire particle animation (for Just Lift)
- * @param iconAnimation Type of icon animation to apply
- * @param modifier Modifier for the button
+ * Theme-aware home action button with merged accessibility semantics.
  */
 @Composable
 fun AnimatedActionButton(
@@ -189,218 +169,146 @@ fun AnimatedActionButton(
     isFireButton: Boolean = false,
     iconAnimation: IconAnimation = IconAnimation.NONE,
     modifier: Modifier = Modifier,
+    contentDescription: String = label,
+    supportingText: String? = null,
+    heightOverride: Dp? = null,
+    allowTwoLineLabel: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-
-    // Responsive button height based on device size
+    val indication = LocalIndication.current
     val windowSizeClass = LocalWindowSizeClass.current
     val useCompactAccessibility = isCompactAccessibilityLayout()
-    val buttonHeight = if (useCompactAccessibility) {
-        88.dp
+
+    val defaultHeight = if (useCompactAccessibility) {
+        72.dp
     } else {
         when (windowSizeClass.widthSizeClass) {
-            WindowWidthSizeClass.Expanded -> 80.dp
-            WindowWidthSizeClass.Medium -> 72.dp
-            WindowWidthSizeClass.Compact -> 64.dp
+            WindowWidthSizeClass.Expanded -> if (isPrimary) 80.dp else 64.dp
+            WindowWidthSizeClass.Medium -> if (isPrimary) 76.dp else 60.dp
+            WindowWidthSizeClass.Compact -> if (isPrimary) 72.dp else 56.dp
         }
     }
-    val labelStyle = if (useCompactAccessibility) {
-        MaterialTheme.typography.titleMedium
-    } else {
-        MaterialTheme.typography.titleLarge
-    }
-    val standardLabelStyle = if (useCompactAccessibility) {
-        MaterialTheme.typography.labelLarge
-    } else {
-        MaterialTheme.typography.titleMedium
-    }
+    val buttonHeight = heightOverride ?: defaultHeight
+    val shape = RoundedCornerShape(if (isPrimary || isFireButton) 24.dp else 18.dp)
 
-    // Press feedback animation
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
+        targetValue = if (isPressed) 0.97f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow,
+            stiffness = Spring.StiffnessMediumLow,
         ),
-        label = "pressScale",
+        label = "homeActionPressScale",
+    )
+    val iconRotation by animateFloatAsState(
+        targetValue = when {
+            !isPressed -> 0f
+            iconAnimation == IconAnimation.ROTATE -> 18f
+            iconAnimation == IconAnimation.TILT -> -8f
+            else -> 0f
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "homeActionIconRotation",
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (isPressed && (iconAnimation == IconAnimation.PULSE || iconAnimation == IconAnimation.FIRE || isFireButton)) {
+            0.94f
+        } else {
+            1f
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "homeActionIconScale",
     )
 
-    // Idle animations
-    val infiniteTransition = rememberInfiniteTransition(label = "idleTransition")
-
-    // Primary button pulse
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isPrimary || isFireButton) 1.02f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulseScale",
-    )
-
-    // Icon animations
-    val iconRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (iconAnimation == IconAnimation.ROTATE) 360f else 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(8000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "iconRotation",
-    )
-
-    val iconTilt by infiniteTransition.animateFloat(
-        initialValue = -5f,
-        targetValue = 5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "iconTilt",
-    )
-
-    val iconPulse by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "iconPulse",
-    )
-
-    // Fire icon flicker
-    val fireIconScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(500, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "fireIconScale",
-    )
-
-    // Determine icon transform
-    val iconModifier = when {
-        iconAnimation == IconAnimation.FIRE || isFireButton -> Modifier.scale(fireIconScale)
-        iconAnimation == IconAnimation.PULSE -> Modifier.scale(iconPulse)
-        iconAnimation == IconAnimation.ROTATE -> Modifier.graphicsLayer { rotationZ = iconRotation }
-        iconAnimation == IconAnimation.TILT -> Modifier.graphicsLayer { rotationZ = iconTilt }
-        else -> Modifier
-    }
-
-    // Colors based on button type
     val containerColor = when {
         isFireButton -> Color.Transparent
-        isPrimary -> HomeButtonColors.PrimaryBlue
-        else -> HomeButtonColors.AccentPurple
+        isPrimary -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
-
-    val contentColor = Color.White
-
-    // Fire button with particle system
-    if (isFireButton) {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .height(buttonHeight)
-                .scale(scale * pulseScale)
-                .clip(RoundedCornerShape(28.dp))
-                .onFire(),
-        ) {
-            // Button content
-            Surface(
-                onClick = onClick,
-                modifier = Modifier.fillMaxSize(),
-                color = Color.Transparent,
-                contentColor = contentColor,
+    val contentColor = when {
+        isFireButton -> Color.White
+        isPrimary -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val border = if (!isPrimary && !isFireButton) {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+    } else {
+        null
+    }
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(buttonHeight)
+            .scale(scale)
+            .clickable(
                 interactionSource = interactionSource,
+                indication = indication,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .clearAndSetSemantics {
+                this.contentDescription = contentDescription
+                role = Role.Button
+                this.onClick(label = contentDescription) {
+                    onClick()
+                    true
+                }
+            },
+        shape = shape,
+        color = containerColor,
+        contentColor = contentColor,
+        tonalElevation = if (isPrimary || isFireButton) 0.dp else 2.dp,
+        shadowElevation = if (isPrimary || isFireButton) 3.dp else 0.dp,
+        border = border,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (isFireButton) Modifier.clip(shape).onFire() else Modifier)
+                .padding(horizontal = if (isPrimary) 18.dp else 12.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(if (isPrimary) 28.dp else 22.dp)
+                            .graphicsLayer { rotationZ = iconRotation }
+                            .scale(iconScale),
+                        tint = contentColor,
+                    )
+                    Spacer(Modifier.width(if (isPrimary) 10.dp else 8.dp))
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
-                    androidx.compose.foundation.layout.Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-                    ) {
-                        if (icon != null) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                modifier = iconModifier.then(Modifier.size(if (useCompactAccessibility) 26.dp else 32.dp)),
-                                tint = Color.White,
-                            )
-                            androidx.compose.foundation.layout.Spacer(
-                                modifier = Modifier.padding(horizontal = 8.dp),
-                            )
-                        }
+                    Text(
+                        text = label,
+                        style = if (isPrimary) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.SemiBold,
+                        maxLines = if (allowTwoLineLabel) 2 else 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                    if (supportingText != null) {
                         Text(
-                            text = label,
-                            color = Color.White,
-                            style = labelStyle,
-                            maxLines = if (useCompactAccessibility) 2 else 1,
+                            text = supportingText,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = contentColor.copy(alpha = 0.78f),
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 8.dp),
                         )
                     }
                 }
             }
-        }
-    } else {
-        // Standard button
-        if (icon != null) {
-            ExtendedFloatingActionButton(
-                onClick = onClick,
-                containerColor = containerColor,
-                contentColor = contentColor,
-                interactionSource = interactionSource,
-                modifier = modifier
-                    .fillMaxWidth()
-                    .height(buttonHeight)
-                    .scale(scale * pulseScale),
-                icon = {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = iconModifier.then(Modifier.size(if (useCompactAccessibility) 24.dp else 28.dp)),
-                    )
-                },
-                text = {
-                    Text(
-                        text = label,
-                        style = standardLabelStyle,
-                        maxLines = if (useCompactAccessibility) 2 else 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                    )
-                },
-            )
-        } else {
-            ExtendedFloatingActionButton(
-                onClick = onClick,
-                containerColor = containerColor,
-                contentColor = contentColor,
-                interactionSource = interactionSource,
-                modifier = modifier
-                    .fillMaxWidth()
-                    .height(buttonHeight)
-                    .scale(scale * pulseScale),
-                content = {
-                    Text(
-                        text = label,
-                        style = standardLabelStyle,
-                        maxLines = if (useCompactAccessibility) 2 else 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                    )
-                },
-            )
         }
     }
 }
