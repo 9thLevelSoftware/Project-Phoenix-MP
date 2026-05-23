@@ -127,21 +127,30 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
     // Uses a one-shot flag to prevent re-triggering on recomposition or back-navigation.
     // Guard conditions: pref enabled, routine non-empty, BLE connected, no resumable progress.
     var autoStartFired by remember { mutableStateOf(false) }
-    LaunchedEffect(routine.id, userPreferences.autoStartRoutine) {
+    LaunchedEffect(routine.id, userPreferences.autoStartRoutine, connectionState) {
         if (
             !autoStartFired &&
             userPreferences.autoStartRoutine &&
             routine.exercises.isNotEmpty() &&
-            connectionState is ConnectionState.Connected &&
             !viewModel.hasResumableProgress(routine.id)
         ) {
-            autoStartFired = true
-            Logger.d("AutoStart") { "AutoStart: skipping overview, entering SetReady for exercise 0" }
-            val firstExercise = routine.exercises[0]
-            val initialWeight = firstExercise.setWeightsPerCableKg.firstOrNull() ?: firstExercise.weightPerCableKg
-            val initialReps = firstExercise.setReps.firstOrNull() ?: 10
-            viewModel.enterSetReadyWithAdjustments(0, 0, initialWeight, initialReps)
-            navController.navigate(NavigationRoutes.SetReady.route)
+            if (connectionState is ConnectionState.Connected) {
+                autoStartFired = true
+                Logger.d("AutoStart") { "AutoStart: skipping overview, entering SetReady for exercise 0" }
+                val firstExercise = routine.exercises[0]
+                val initialWeight = firstExercise.setWeightsPerCableKg.firstOrNull() ?: firstExercise.weightPerCableKg
+                val initialReps = firstExercise.setReps.firstOrNull() ?: 10
+                viewModel.enterSetReadyWithAdjustments(0, 0, initialWeight, initialReps)
+                navController.navigate(NavigationRoutes.SetReady.route)
+            } else if (connectionState is ConnectionState.Disconnected) {
+                Logger.d("AutoStart") { "AutoStart: routine auto-start active but disconnected, initiating connection" }
+                viewModel.ensureConnection(
+                    onConnected = {
+                        // Connection success will transition connectionState to Connected, triggering this LaunchedEffect again
+                    },
+                    onFailed = {}
+                )
+            }
         }
     }
 
