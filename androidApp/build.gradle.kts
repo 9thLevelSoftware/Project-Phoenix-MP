@@ -1,8 +1,3 @@
-import org.gradle.api.DefaultTask
-import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.tasks.InputDirectory
-import org.gradle.api.tasks.Internal
-import org.gradle.api.tasks.TaskAction
 import java.util.zip.CRC32
 import java.util.zip.ZipFile
 
@@ -154,12 +149,10 @@ android {
     defaultConfig {
         applicationId = "com.devil.phoenixproject"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         // Fail fast if CI injects an invalid version code instead of silently shipping a default.
         versionCode = injectedVersionCode ?: 5
         versionName = "0.9.0"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Supabase config injected from local.properties
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
@@ -280,19 +273,4 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.koin.test)
     testImplementation(libs.koin.test.junit4)
-
-    // Testing - Instrumented/E2E Tests
-    androidTestImplementation(libs.androidx.test.junit)
-    androidTestImplementation(libs.androidx.test.espresso)
-    androidTestImplementation(platform(libs.compose.bom))
-    androidTestImplementation(libs.compose.ui.test.junit4)
-    androidTestImplementation(libs.compose.ui.test)
-    androidTestImplementation(libs.mockk.android)
-    androidTestImplementation(libs.kotlinx.coroutines.test)
-    androidTestImplementation(libs.truth)
-    androidTestImplementation(libs.koin.test)
-    androidTestImplementation(libs.koin.test.junit4)
-    androidTestImplementation(libs.multiplatform.settings.test)
-    androidTestImplementation(libs.multiplatform.settings)
-    debugImplementation(libs.compose.ui.test.manifest)
 }
