@@ -60,11 +60,25 @@ data class Exercise(
         }
 
     /**
+     * Whether this exercise uses a unified attachment (bar/belt) that combines
+     * both cables into one effective load for user-facing display.
+     */
+    private val usesUnifiedAttachment: Boolean
+        get() {
+            val equipmentParts = equipment.split(",").map { it.trim().uppercase() }
+            return equipmentParts.any { it == "BAR" || it == "BELT" }
+        }
+
+    /**
      * Cable count for UI surfaces that need a deterministic label or selected
      * control state even when calculation semantics remain heuristic-driven.
      */
     val displayCableCount: Int
-        get() = preferredCableCount ?: 1
+        get() = userCableCount ?: when (cableIntent) {
+            ExerciseCableIntent.SINGLE -> 1
+            ExerciseCableIntent.DUAL -> if (usesUnifiedAttachment) 2 else 1
+            ExerciseCableIntent.EITHER, null -> 1
+        }
 
     companion object {
         /** Equipment that physically attaches to the machine's cables */
