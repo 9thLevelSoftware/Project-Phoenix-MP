@@ -505,6 +505,7 @@ object PortalSyncAdapter {
                     },
                 warmupSets = normalizedEx.warmupSets.takeIf { it.isNotEmpty() }
                     ?.let { Json.encodeToString(it) },
+                cableCountOverride = normalizedEx.cableCountOverride,
             )
         }
 
