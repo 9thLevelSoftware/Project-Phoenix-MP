@@ -2005,7 +2005,7 @@ class ActiveSessionEngine(
         return baseParams.copy(
             weightPerCableKg = warmupWeight,
             reps = reps,
-            warmupReps = 0,
+            warmupReps = Constants.DEFAULT_WARMUP_REPS,
             isAMRAP = false,
         )
     }
@@ -2241,7 +2241,7 @@ class ActiveSessionEngine(
                         effectiveParams.copy(
                             weightPerCableKg = warmupWeight,
                             reps = warmupSet.reps,
-                            warmupReps = 0, // No firmware warmup for variable warm-up sets
+                            warmupReps = Constants.DEFAULT_WARMUP_REPS, // Preserving 3-rep firmware warmup buffer for calibration
                             isAMRAP = false, // Warm-up sets are always fixed reps
                         )
                     } else {
@@ -2327,18 +2327,16 @@ class ActiveSessionEngine(
                 } else {
                     repCounter.reset()
                 }
-                // Issue #357: Use warmupOverrideParams (the actual BLE params) for rep counter
-                // configuration. During variable warm-up sets, effectiveParams still has
-                // warmupReps=3 (firmware ramp), but warmupOverrideParams correctly has
-                // warmupReps=0 since variable warm-up sets handle their own weight scaling.
-                // Using effectiveParams caused the rep counter to misclassify the first 3
-                // reps of each warm-up set as firmware warmup reps, making sets appear to
-                // end 3 reps early and corrupting weight tracking.
+                // Issue #411: Keep the 3-rep firmware warmup buffer (warmupReps = 3) for variable
+                // warm-up sets. Because the machine firmware always consumes the first 3 reps
+                // for ROM/cable calibration before incrementing repsSetCount, setting warmupReps = 0
+                // in the BLE command reduced the machine's total capacity, causing the machine to
+                // dump the load 3 reps early. By setting warmupReps = 3, the machine allows the full
+                // count of working reps, and the rep counter correctly counts the first 3 calibration
+                // reps as warmup and the remaining as working.
                 val repCounterWarmupTarget = if (hasVariableWarmupOverrideApplied) {
-                    // Variable warm-up set active: firmware warmup is intentionally disabled (0)
                     warmupOverrideParams.warmupReps
                 } else {
-                    // Normal cable sets: mirror machine firmware warmup target (typically 3)
                     effectiveParams.warmupReps
                 }
                 repCounter.configure(
