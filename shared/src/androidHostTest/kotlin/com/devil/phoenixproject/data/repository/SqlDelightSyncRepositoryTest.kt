@@ -58,6 +58,44 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `mergeSessions preserves existing display multiplier when replacing synced session`() = runTest {
+        insertWorkoutSession(
+            id = "session-display-existing",
+            displayMultiplier = 1L,
+        )
+        database.vitruvianDatabaseQueries.updateSessionServerId(
+            serverId = "server-session-display-existing",
+            id = "session-display-existing",
+        )
+
+        repository.mergeSessions(
+            sessions = listOf(
+                WorkoutSessionSyncDto(
+                    clientId = "different-client-id",
+                    serverId = "server-session-display-existing",
+                    timestamp = 1_700_000_000_100,
+                    mode = "Old School",
+                    targetReps = 8,
+                    weightPerCableKg = 42.5f,
+                    duration = 120,
+                    totalReps = 24,
+                    exerciseId = "bench",
+                    exerciseName = "Bench Press",
+                    createdAt = 1_700_000_000_100,
+                    updatedAt = 1_700_000_000_200,
+                ),
+            ),
+        )
+
+        val session = database.vitruvianDatabaseQueries
+            .selectSessionById("session-display-existing")
+            .executeAsOneOrNull()
+
+        assertNotNull(session)
+        assertEquals(1L, session.display_multiplier)
+    }
+
+    @Test
     fun `mergePRs uses active profile id`() = runTest {
         repository.mergePRs(
             records = listOf(
@@ -431,5 +469,61 @@ class SqlDelightSyncRepositoryTest {
             .executeAsOne()
 
         assertEquals(1L, row.cableCountOverride)
+    }
+
+    private fun insertWorkoutSession(
+        id: String,
+        displayMultiplier: Long? = null,
+    ) {
+        database.vitruvianDatabaseQueries.insertSession(
+            id = id,
+            timestamp = 1_700_000_000_000,
+            mode = "Old School",
+            targetReps = 10,
+            weightPerCableKg = 80.0,
+            progressionKg = 0.0,
+            duration = 60_000L,
+            totalReps = 10,
+            warmupReps = 0,
+            workingReps = 10,
+            isJustLift = 0,
+            stopAtTop = 0,
+            eccentricLoad = 100,
+            echoLevel = 0,
+            exerciseId = "exercise-display",
+            exerciseName = "Display Exercise",
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+            safetyFlags = 0,
+            deloadWarningCount = 0,
+            romViolationCount = 0,
+            spotterActivations = 0,
+            peakForceConcentricA = null,
+            peakForceConcentricB = null,
+            peakForceEccentricA = null,
+            peakForceEccentricB = null,
+            avgForceConcentricA = null,
+            avgForceConcentricB = null,
+            avgForceEccentricA = null,
+            avgForceEccentricB = null,
+            heaviestLiftKg = null,
+            totalVolumeKg = null,
+            cableCount = 2L,
+            estimatedCalories = null,
+            warmupAvgWeightKg = null,
+            workingAvgWeightKg = null,
+            burnoutAvgWeightKg = null,
+            peakWeightKg = null,
+            rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "active-profile",
+            display_multiplier = displayMultiplier,
+        )
     }
 }

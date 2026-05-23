@@ -221,8 +221,14 @@ class SqlDelightSyncRepository(
                     val existingByServer = dto.serverId?.let {
                         queries.selectSessionByServerId(it).executeAsOneOrNull()
                     }
+                    val existingByClient = if (existingByServer == null) {
+                        queries.selectSessionById(dto.clientId).executeAsOneOrNull()
+                    } else {
+                        null
+                    }
+                    val existingSession = existingByServer ?: existingByClient
 
-                    val localId = existingByServer?.id ?: dto.clientId
+                    val localId = existingSession?.id ?: dto.clientId
 
                     // Server wins for initial population (upsert pattern)
                     queries.upsertSyncSession(
@@ -276,7 +282,7 @@ class SqlDelightSyncRepository(
                         serverId = dto.serverId,
                         deletedAt = dto.deletedAt,
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
-                        display_multiplier = session.displayMultiplier?.toLong(),
+                        display_multiplier = existingSession?.display_multiplier,
                     )
                 }
             }
