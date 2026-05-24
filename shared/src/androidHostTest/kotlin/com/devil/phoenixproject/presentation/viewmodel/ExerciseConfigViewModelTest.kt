@@ -92,6 +92,79 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `percent of PR syncs visible set weights and saves resolved snapshots`() = runTest {
+        val database = createTestDatabase()
+        val queries = database.vitruvianDatabaseQueries
+        val repository = SqlDelightPersonalRecordRepository(database)
+        val viewModel = ExerciseConfigViewModel(repository)
+        val exercise = benchRoutineExercise(
+            id = "rex-pr-sync",
+            setReps = listOf(10, 10, 10),
+            weightPerCableKg = 5f,
+            setWeightsPerCableKg = listOf(5f, 5f, 5f),
+        )
+
+        insertExercise(queries, id = "bench-1", name = "Bench Press")
+        insertWeightPR(queries, weight = 50.0)
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+        assertEquals(5f, viewModel.sets.value.first().weightPerCable)
+
+        waitForCondition { viewModel.currentExercisePR.value?.weightPerCableKg == 50f }
+        viewModel.onUsePercentOfPRChange(true)
+
+        assertEquals(listOf(40f, 40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+        viewModel.addSet()
+        assertEquals(listOf(40f, 40f, 40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+        viewModel.deleteSet(3)
+        assertEquals(listOf(40f, 40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertTrue(saved.usePercentOfPR)
+        assertEquals(40f, saved.weightPerCableKg)
+        assertEquals(listOf(40f, 40f, 40f), saved.setWeightsPerCableKg)
+        assertEquals(listOf(80, 80, 80), saved.setWeightsPercentOfPR)
+    }
+
+    @Test
+    fun `percent of PR uses nearest half kg rounding when syncing set weights`() = runTest {
+        val database = createTestDatabase()
+        val queries = database.vitruvianDatabaseQueries
+        val repository = SqlDelightPersonalRecordRepository(database)
+        val viewModel = ExerciseConfigViewModel(repository)
+        val exercise = benchRoutineExercise(
+            id = "rex-pr-rounding",
+            setReps = listOf(10),
+            weightPerCableKg = 5f,
+            setWeightsPerCableKg = listOf(5f),
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+        )
+
+        insertExercise(queries, id = "bench-1", name = "Bench Press")
+        insertWeightPR(queries, weight = 47.0)
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        waitForCondition { viewModel.sets.value.first().weightPerCable == 37.5f }
+        assertEquals(37.5f, viewModel.calculateResolvedWeight())
+        assertEquals(37.5f, viewModel.sets.value.first().weightPerCable)
+    }
+
+    @Test
     fun `initialize reloads PR lookup when active profile changes`() = runTest {
         val database = createTestDatabase()
         val queries = database.vitruvianDatabaseQueries
@@ -170,6 +243,33 @@ class ExerciseConfigViewModelTest {
         assertNull(viewModel.currentExercisePR.value)
     }
 
+    private fun benchRoutineExercise(
+        id: String,
+        setReps: List<Int?>,
+        weightPerCableKg: Float,
+        setWeightsPerCableKg: List<Float> = emptyList(),
+        usePercentOfPR: Boolean = false,
+        weightPercentOfPR: Int = 80,
+    ) = RoutineExercise(
+        id = id,
+        exercise = Exercise(
+            id = "bench-1",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            muscleGroups = "Chest",
+            equipment = "BAR",
+        ),
+        orderIndex = 0,
+        setReps = setReps,
+        weightPerCableKg = weightPerCableKg,
+        setWeightsPerCableKg = setWeightsPerCableKg,
+        programMode = ProgramMode.OldSchool,
+        eccentricLoad = EccentricLoad.LOAD_100,
+        echoLevel = EchoLevel.HARDER,
+        usePercentOfPR = usePercentOfPR,
+        weightPercentOfPR = weightPercentOfPR,
+    )
+
     private fun insertExercise(queries: com.devil.phoenixproject.database.VitruvianDatabaseQueries, id: String, name: String) {
         queries.insertExercise(
             id = id,
@@ -195,6 +295,23 @@ class ExerciseConfigViewModelTest {
             aliases = null,
             defaultCableConfig = "DOUBLE",
             one_rep_max_kg = null,
+        )
+    }
+
+    private fun insertWeightPR(queries: com.devil.phoenixproject.database.VitruvianDatabaseQueries, weight: Double) {
+        queries.insertRecord(
+            exerciseId = "bench-1",
+            exerciseName = "Bench Press",
+            weight = weight,
+            reps = 6,
+            oneRepMax = weight * 1.2,
+            achievedAt = 1_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = weight * 6,
+            phase = "COMBINED",
+            profile_id = "default",
+            cable_count = null,
         )
     }
 

@@ -1,5 +1,10 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
@@ -62,6 +67,61 @@ class DWSMRoutineFlowTest {
             params.selectedExerciseId,
             "Selected exercise ID should match first exercise",
         )
+        harness.cleanup()
+    }
+
+    @Test
+    fun loadRoutine_percentOfPRResolvesStaleSnapshotWeights() = runTest {
+        val harness = DWSMTestHarness(this)
+        val exercise = TestFixtures.benchPress
+        val routine = Routine(
+            id = "routine-pr-stale",
+            name = "PR Stale Snapshot Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-pr-stale",
+                    exercise = exercise,
+                    orderIndex = 0,
+                    setReps = listOf(10, 10),
+                    weightPerCableKg = 5f,
+                    setWeightsPerCableKg = listOf(5f, 5f),
+                    programMode = ProgramMode.OldSchool,
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 80,
+                    setWeightsPercentOfPR = listOf(80, 90),
+                ),
+            ),
+        )
+        harness.fakeExerciseRepo.addExercise(exercise)
+        harness.fakePRRepo.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = exercise.id!!,
+                exerciseName = exercise.name,
+                weightPerCableKg = 50f,
+                reps = 6,
+                oneRepMax = 60f,
+                timestamp = 1_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 300f,
+            ),
+        )
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        val params = harness.dwsm.coordinator.workoutParameters.value
+        assertEquals(
+            40f,
+            params.weightPerCableKg,
+            "First set should resolve from 80% of the current PR, not stale 5kg snapshot",
+        )
+
+        val loadedExercise = harness.dwsm.coordinator.loadedRoutine.value?.exercises?.single()
+        assertNotNull(loadedExercise)
+        assertEquals(listOf(40f, 45f), loadedExercise.setWeightsPerCableKg)
         harness.cleanup()
     }
 
