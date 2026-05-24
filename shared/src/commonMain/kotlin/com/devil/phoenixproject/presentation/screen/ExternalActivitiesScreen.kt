@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
-import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
+import com.devil.phoenixproject.presentation.viewmodel.ExternalActivitiesViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import org.koin.compose.viewmodel.koinViewModel
@@ -26,7 +26,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExternalActivitiesScreen(onSetTitle: (String) -> Unit = {}, modifier: Modifier = Modifier) {
-    val viewModel: IntegrationsViewModel = koinViewModel()
+    val viewModel: ExternalActivitiesViewModel = koinViewModel()
     val uiState by viewModel.uiState.collectAsState()
 
     LaunchedEffect(Unit) {
@@ -36,7 +36,7 @@ fun ExternalActivitiesScreen(onSetTitle: (String) -> Unit = {}, modifier: Modifi
     // ── Provider filter state ─────────────────────────────────────────────────
     var selectedProvider by remember { mutableStateOf<IntegrationProvider?>(null) }
 
-    val allActivities = uiState.externalActivities
+    val allActivities = uiState.activities
     val filteredActivities = remember(allActivities, selectedProvider) {
         if (selectedProvider == null) {
             allActivities
@@ -124,8 +124,10 @@ fun ExternalActivitiesScreen(onSetTitle: (String) -> Unit = {}, modifier: Modifi
 
 @Composable
 private fun ExternalActivityItem(activity: ExternalActivity) {
+    var expanded by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
+        onClick = { expanded = !expanded },
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
@@ -196,6 +198,38 @@ private fun ExternalActivityItem(activity: ExternalActivity) {
                     Text(
                         activity.activityType.replaceFirstChar { it.uppercase() },
                         style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        if (expanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = Spacing.medium, end = Spacing.medium, bottom = Spacing.medium),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    "Provider ID: ${activity.externalId}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (activity.calories != null || activity.distanceMeters != null || activity.avgHeartRate != null) {
+                    Text(
+                        listOfNotNull(
+                            activity.calories?.let { "$it kcal" },
+                            activity.distanceMeters?.let { "${it.toInt()} m" },
+                            activity.avgHeartRate?.let { "$it avg bpm" },
+                            activity.maxHeartRate?.let { "$it max bpm" },
+                        ).joinToString(" / "),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                activity.rawData?.let {
+                    Text(
+                        it.take(320),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

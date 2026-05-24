@@ -49,7 +49,7 @@ internal fun applyMigrationResilient(
  * Get the SQL statements for a specific migration version.
  *
  * These mirror the .sqm files exactly, split into individual statements so
- * the resilient executor can apply them one-by-one. Every version from 1-30
+ * the resilient executor can apply them one-by-one. Every version from 1-31
  * is covered. Version 18 is intentionally empty (NOOP).
  */
 internal fun getMigrationStatements(version: Int): List<String> = when (version) {
@@ -687,6 +687,156 @@ WHERE gs.rowid = (
     // Migration 30: Exercise display name
     30 -> listOf(
         "ALTER TABLE Exercise ADD COLUMN displayName TEXT",
+    )
+
+    // Migration 31: Expanded mobile integration entities
+    31 -> listOf(
+        "ALTER TABLE ExternalActivity ADD COLUMN deletedAt INTEGER",
+        "DROP INDEX IF EXISTS idx_external_activity_dedup",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(provider, externalId, profileId)",
+        """CREATE TABLE IF NOT EXISTS ExternalRoutine (
+            id TEXT NOT NULL PRIMARY KEY,
+            externalId TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            title TEXT NOT NULL,
+            folderExternalId TEXT,
+            folderName TEXT,
+            updatedAt INTEGER,
+            syncedAt INTEGER NOT NULL,
+            rawData TEXT,
+            profileId TEXT NOT NULL DEFAULT 'default',
+            needsSync INTEGER NOT NULL DEFAULT 0,
+            deletedAt INTEGER
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_routine_dedup ON ExternalRoutine(provider, externalId, profileId)",
+        "CREATE INDEX IF NOT EXISTS idx_external_routine_profile_provider ON ExternalRoutine(profileId, provider)",
+        "CREATE INDEX IF NOT EXISTS idx_external_routine_folder ON ExternalRoutine(profileId, provider, folderExternalId)",
+        "CREATE INDEX IF NOT EXISTS idx_external_routine_updated ON ExternalRoutine(updatedAt DESC)",
+        """CREATE TABLE IF NOT EXISTS ExternalRoutineExercise (
+            id TEXT NOT NULL PRIMARY KEY,
+            externalRoutineId TEXT NOT NULL,
+            externalExerciseTemplateId TEXT,
+            title TEXT NOT NULL,
+            exerciseType TEXT,
+            primaryMuscleGroups TEXT NOT NULL DEFAULT '',
+            secondaryMuscleGroups TEXT NOT NULL DEFAULT '',
+            orderIndex INTEGER NOT NULL DEFAULT 0,
+            rawData TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_external_routine_exercise_routine ON ExternalRoutineExercise(externalRoutineId)",
+        "CREATE INDEX IF NOT EXISTS idx_external_routine_exercise_template ON ExternalRoutineExercise(externalExerciseTemplateId)",
+        """CREATE TABLE IF NOT EXISTS ExternalRoutineSet (
+            id TEXT NOT NULL PRIMARY KEY,
+            externalRoutineExerciseId TEXT NOT NULL,
+            setIndex INTEGER NOT NULL DEFAULT 0,
+            setType TEXT,
+            weightKg REAL,
+            reps INTEGER,
+            minReps INTEGER,
+            maxReps INTEGER,
+            restSeconds INTEGER,
+            rpe REAL,
+            durationSeconds INTEGER,
+            distanceMeters REAL,
+            rawData TEXT
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_routine_set_dedup ON ExternalRoutineSet(externalRoutineExerciseId, setIndex)",
+        "CREATE INDEX IF NOT EXISTS idx_external_routine_set_exercise ON ExternalRoutineSet(externalRoutineExerciseId)",
+        """CREATE TABLE IF NOT EXISTS ExternalRoutineFolder (
+            id TEXT NOT NULL PRIMARY KEY,
+            externalId TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            title TEXT NOT NULL,
+            folderIndex INTEGER,
+            createdAt INTEGER,
+            updatedAt INTEGER,
+            profileId TEXT NOT NULL DEFAULT 'default',
+            rawData TEXT
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_routine_folder_dedup ON ExternalRoutineFolder(provider, externalId, profileId)",
+        "CREATE INDEX IF NOT EXISTS idx_external_routine_folder_profile_provider ON ExternalRoutineFolder(profileId, provider)",
+        """CREATE TABLE IF NOT EXISTS ExternalProgram (
+            id TEXT NOT NULL PRIMARY KEY,
+            externalId TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            name TEXT NOT NULL,
+            isCurrent INTEGER NOT NULL DEFAULT 0,
+            scriptText TEXT,
+            rawData TEXT,
+            updatedAt INTEGER,
+            syncedAt INTEGER NOT NULL,
+            profileId TEXT NOT NULL DEFAULT 'default',
+            needsSync INTEGER NOT NULL DEFAULT 0,
+            deletedAt INTEGER
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_program_dedup ON ExternalProgram(provider, externalId, profileId)",
+        "CREATE INDEX IF NOT EXISTS idx_external_program_profile_provider ON ExternalProgram(profileId, provider)",
+        "CREATE INDEX IF NOT EXISTS idx_external_program_current ON ExternalProgram(profileId, provider, isCurrent)",
+        "CREATE INDEX IF NOT EXISTS idx_external_program_updated ON ExternalProgram(updatedAt DESC)",
+        """CREATE TABLE IF NOT EXISTS ExternalProgramStats (
+            id TEXT NOT NULL PRIMARY KEY,
+            externalProgramId TEXT NOT NULL,
+            days INTEGER,
+            approximateMinutes INTEGER,
+            setCount INTEGER,
+            muscleGroupBreakdownJson TEXT,
+            rawData TEXT,
+            computedAt INTEGER
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_program_stats_program ON ExternalProgramStats(externalProgramId)",
+        "CREATE INDEX IF NOT EXISTS idx_external_program_stats_computed ON ExternalProgramStats(computedAt DESC)",
+        """CREATE TABLE IF NOT EXISTS ExternalExerciseTemplate (
+            id TEXT NOT NULL PRIMARY KEY,
+            externalId TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            title TEXT NOT NULL,
+            exerciseType TEXT,
+            primaryMuscleGroups TEXT NOT NULL DEFAULT '',
+            secondaryMuscleGroups TEXT NOT NULL DEFAULT '',
+            isCustom INTEGER NOT NULL DEFAULT 0,
+            rawData TEXT,
+            updatedAt INTEGER,
+            profileId TEXT NOT NULL DEFAULT 'default'
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_exercise_template_dedup ON ExternalExerciseTemplate(provider, externalId, profileId)",
+        "CREATE INDEX IF NOT EXISTS idx_external_exercise_template_profile_provider ON ExternalExerciseTemplate(profileId, provider)",
+        "CREATE INDEX IF NOT EXISTS idx_external_exercise_template_title ON ExternalExerciseTemplate(title)",
+        """CREATE TABLE IF NOT EXISTS ExternalExerciseTemplateMapping (
+            id TEXT NOT NULL PRIMARY KEY,
+            provider TEXT NOT NULL,
+            externalTemplateId TEXT NOT NULL,
+            localExerciseId TEXT NOT NULL,
+            profileId TEXT NOT NULL DEFAULT 'default',
+            createdAt INTEGER NOT NULL,
+            updatedAt INTEGER NOT NULL,
+            rawData TEXT
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_template_mapping_dedup ON ExternalExerciseTemplateMapping(provider, externalTemplateId, profileId)",
+        "CREATE INDEX IF NOT EXISTS idx_external_template_mapping_local ON ExternalExerciseTemplateMapping(localExerciseId)",
+        """CREATE TABLE IF NOT EXISTS ExternalBodyMeasurement (
+            id TEXT NOT NULL PRIMARY KEY,
+            externalId TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            measurementType TEXT NOT NULL,
+            value REAL NOT NULL,
+            unit TEXT NOT NULL,
+            measuredAt INTEGER NOT NULL,
+            syncedAt INTEGER NOT NULL,
+            rawData TEXT,
+            profileId TEXT NOT NULL DEFAULT 'default'
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_body_measurement_dedup ON ExternalBodyMeasurement(provider, externalId, profileId)",
+        "CREATE INDEX IF NOT EXISTS idx_external_body_measurement_profile_provider ON ExternalBodyMeasurement(profileId, provider)",
+        "CREATE INDEX IF NOT EXISTS idx_external_body_measurement_type_date ON ExternalBodyMeasurement(profileId, measurementType, measuredAt DESC)",
+        """CREATE TABLE IF NOT EXISTS IntegrationSyncCursor (
+            provider TEXT NOT NULL,
+            profileId TEXT NOT NULL DEFAULT 'default',
+            cursorType TEXT NOT NULL,
+            cursorValue TEXT,
+            updatedAt INTEGER NOT NULL,
+            PRIMARY KEY(provider, profileId, cursorType)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_integration_sync_cursor_profile_provider ON IntegrationSyncCursor(profileId, provider)",
     )
 
     else -> emptyList()

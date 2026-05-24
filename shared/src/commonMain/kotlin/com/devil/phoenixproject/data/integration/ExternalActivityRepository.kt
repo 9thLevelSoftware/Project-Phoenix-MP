@@ -46,6 +46,18 @@ interface ExternalActivityRepository {
     suspend fun markSyncedBySyncKeys(syncKeys: List<ExternalActivitySyncKey>, profileId: String)
 
     /**
+     * Mark provider-deleted activities as tombstoned while preserving the local row for
+     * sync/conflict history.
+     */
+    suspend fun markDeletedByExternalIds(
+        provider: IntegrationProvider,
+        profileId: String,
+        externalIds: List<String>,
+        deletedAt: Long,
+        needsSync: Boolean,
+    )
+
+    /**
      * Delete all activities from a specific provider for a given profile.
      * Used when disconnecting an integration.
      */

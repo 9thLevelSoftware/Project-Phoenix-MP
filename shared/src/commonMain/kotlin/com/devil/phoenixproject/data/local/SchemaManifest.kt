@@ -470,7 +470,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 rawData TEXT,
                 syncedAt INTEGER NOT NULL,
                 profileId TEXT NOT NULL DEFAULT 'default',
-                needsSync INTEGER NOT NULL DEFAULT 1
+                needsSync INTEGER NOT NULL DEFAULT 1,
+                deletedAt INTEGER
             )
         """.trimIndent(),
     ),
@@ -487,6 +488,185 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 errorMessage TEXT,
                 profileId TEXT NOT NULL DEFAULT 'default',
                 PRIMARY KEY(provider, profileId)
+            )
+        """.trimIndent(),
+    ),
+
+    // ExternalRoutine -- migration 31 (expanded third-party integration routines)
+    SchemaTableOperation(
+        table = "ExternalRoutine",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalRoutine (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalId TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                title TEXT NOT NULL,
+                folderExternalId TEXT,
+                folderName TEXT,
+                updatedAt INTEGER,
+                syncedAt INTEGER NOT NULL,
+                rawData TEXT,
+                profileId TEXT NOT NULL DEFAULT 'default',
+                needsSync INTEGER NOT NULL DEFAULT 0,
+                deletedAt INTEGER
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "ExternalRoutineExercise",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalRoutineExercise (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalRoutineId TEXT NOT NULL,
+                externalExerciseTemplateId TEXT,
+                title TEXT NOT NULL,
+                exerciseType TEXT,
+                primaryMuscleGroups TEXT NOT NULL DEFAULT '',
+                secondaryMuscleGroups TEXT NOT NULL DEFAULT '',
+                orderIndex INTEGER NOT NULL DEFAULT 0,
+                rawData TEXT
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "ExternalRoutineSet",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalRoutineSet (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalRoutineExerciseId TEXT NOT NULL,
+                setIndex INTEGER NOT NULL DEFAULT 0,
+                setType TEXT,
+                weightKg REAL,
+                reps INTEGER,
+                minReps INTEGER,
+                maxReps INTEGER,
+                restSeconds INTEGER,
+                rpe REAL,
+                durationSeconds INTEGER,
+                distanceMeters REAL,
+                rawData TEXT
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "ExternalRoutineFolder",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalRoutineFolder (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalId TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                title TEXT NOT NULL,
+                folderIndex INTEGER,
+                createdAt INTEGER,
+                updatedAt INTEGER,
+                profileId TEXT NOT NULL DEFAULT 'default',
+                rawData TEXT
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "ExternalProgram",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalProgram (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalId TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                name TEXT NOT NULL,
+                isCurrent INTEGER NOT NULL DEFAULT 0,
+                scriptText TEXT,
+                rawData TEXT,
+                updatedAt INTEGER,
+                syncedAt INTEGER NOT NULL,
+                profileId TEXT NOT NULL DEFAULT 'default',
+                needsSync INTEGER NOT NULL DEFAULT 0,
+                deletedAt INTEGER
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "ExternalProgramStats",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalProgramStats (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalProgramId TEXT NOT NULL,
+                days INTEGER,
+                approximateMinutes INTEGER,
+                setCount INTEGER,
+                muscleGroupBreakdownJson TEXT,
+                rawData TEXT,
+                computedAt INTEGER
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "ExternalExerciseTemplate",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalExerciseTemplate (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalId TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                title TEXT NOT NULL,
+                exerciseType TEXT,
+                primaryMuscleGroups TEXT NOT NULL DEFAULT '',
+                secondaryMuscleGroups TEXT NOT NULL DEFAULT '',
+                isCustom INTEGER NOT NULL DEFAULT 0,
+                rawData TEXT,
+                updatedAt INTEGER,
+                profileId TEXT NOT NULL DEFAULT 'default'
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "ExternalExerciseTemplateMapping",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalExerciseTemplateMapping (
+                id TEXT NOT NULL PRIMARY KEY,
+                provider TEXT NOT NULL,
+                externalTemplateId TEXT NOT NULL,
+                localExerciseId TEXT NOT NULL,
+                profileId TEXT NOT NULL DEFAULT 'default',
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL,
+                rawData TEXT
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "ExternalBodyMeasurement",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalBodyMeasurement (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalId TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                measurementType TEXT NOT NULL,
+                value REAL NOT NULL,
+                unit TEXT NOT NULL,
+                measuredAt INTEGER NOT NULL,
+                syncedAt INTEGER NOT NULL,
+                rawData TEXT,
+                profileId TEXT NOT NULL DEFAULT 'default'
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "IntegrationSyncCursor",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS IntegrationSyncCursor (
+                provider TEXT NOT NULL,
+                profileId TEXT NOT NULL DEFAULT 'default',
+                cursorType TEXT NOT NULL,
+                cursorValue TEXT,
+                updatedAt INTEGER NOT NULL,
+                PRIMARY KEY(provider, profileId, cursorType)
             )
         """.trimIndent(),
     ),
@@ -1081,6 +1261,10 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // ── Routine (1 column, migration 27) ───────────────────────────────
     // Migration 27: routine grouping
     SchemaHealOperation("Routine", "groupId", "ALTER TABLE Routine ADD COLUMN groupId TEXT REFERENCES RoutineGroup(id) ON DELETE SET NULL"),
+
+    // ── ExternalActivity (1 column, migration 31) ──────────────────────
+    // Migration 31: provider tombstone handling
+    SchemaHealOperation("ExternalActivity", "deletedAt", "ALTER TABLE ExternalActivity ADD COLUMN deletedAt INTEGER"),
 )
 
 // ============================================================
@@ -1184,10 +1368,41 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     SchemaIndexOperation("idx_progression_profile", "CREATE INDEX IF NOT EXISTS idx_progression_profile ON ProgressionEvent(profile_id)"),
 
     // ── ExternalActivity ────────────────────────────────────────────────
-    SchemaIndexOperation("idx_external_activity_dedup", "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(externalId, provider)"),
+    SchemaIndexOperation(
+        name = "idx_external_activity_dedup",
+        createSql = "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(provider, externalId, profileId)",
+        preDropSql = "DROP INDEX IF EXISTS idx_external_activity_dedup",
+    ),
     SchemaIndexOperation("idx_external_activity_profile", "CREATE INDEX IF NOT EXISTS idx_external_activity_profile ON ExternalActivity(profileId)"),
     SchemaIndexOperation("idx_external_activity_provider", "CREATE INDEX IF NOT EXISTS idx_external_activity_provider ON ExternalActivity(provider)"),
     SchemaIndexOperation("idx_external_activity_started", "CREATE INDEX IF NOT EXISTS idx_external_activity_started ON ExternalActivity(startedAt DESC)"),
+
+    // ── Expanded External Integration Entities ─────────────────────────
+    SchemaIndexOperation("idx_external_routine_dedup", "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_routine_dedup ON ExternalRoutine(provider, externalId, profileId)"),
+    SchemaIndexOperation("idx_external_routine_profile_provider", "CREATE INDEX IF NOT EXISTS idx_external_routine_profile_provider ON ExternalRoutine(profileId, provider)"),
+    SchemaIndexOperation("idx_external_routine_folder", "CREATE INDEX IF NOT EXISTS idx_external_routine_folder ON ExternalRoutine(profileId, provider, folderExternalId)"),
+    SchemaIndexOperation("idx_external_routine_updated", "CREATE INDEX IF NOT EXISTS idx_external_routine_updated ON ExternalRoutine(updatedAt DESC)"),
+    SchemaIndexOperation("idx_external_routine_exercise_routine", "CREATE INDEX IF NOT EXISTS idx_external_routine_exercise_routine ON ExternalRoutineExercise(externalRoutineId)"),
+    SchemaIndexOperation("idx_external_routine_exercise_template", "CREATE INDEX IF NOT EXISTS idx_external_routine_exercise_template ON ExternalRoutineExercise(externalExerciseTemplateId)"),
+    SchemaIndexOperation("idx_external_routine_set_dedup", "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_routine_set_dedup ON ExternalRoutineSet(externalRoutineExerciseId, setIndex)"),
+    SchemaIndexOperation("idx_external_routine_set_exercise", "CREATE INDEX IF NOT EXISTS idx_external_routine_set_exercise ON ExternalRoutineSet(externalRoutineExerciseId)"),
+    SchemaIndexOperation("idx_external_routine_folder_dedup", "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_routine_folder_dedup ON ExternalRoutineFolder(provider, externalId, profileId)"),
+    SchemaIndexOperation("idx_external_routine_folder_profile_provider", "CREATE INDEX IF NOT EXISTS idx_external_routine_folder_profile_provider ON ExternalRoutineFolder(profileId, provider)"),
+    SchemaIndexOperation("idx_external_program_dedup", "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_program_dedup ON ExternalProgram(provider, externalId, profileId)"),
+    SchemaIndexOperation("idx_external_program_profile_provider", "CREATE INDEX IF NOT EXISTS idx_external_program_profile_provider ON ExternalProgram(profileId, provider)"),
+    SchemaIndexOperation("idx_external_program_current", "CREATE INDEX IF NOT EXISTS idx_external_program_current ON ExternalProgram(profileId, provider, isCurrent)"),
+    SchemaIndexOperation("idx_external_program_updated", "CREATE INDEX IF NOT EXISTS idx_external_program_updated ON ExternalProgram(updatedAt DESC)"),
+    SchemaIndexOperation("idx_external_program_stats_program", "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_program_stats_program ON ExternalProgramStats(externalProgramId)"),
+    SchemaIndexOperation("idx_external_program_stats_computed", "CREATE INDEX IF NOT EXISTS idx_external_program_stats_computed ON ExternalProgramStats(computedAt DESC)"),
+    SchemaIndexOperation("idx_external_exercise_template_dedup", "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_exercise_template_dedup ON ExternalExerciseTemplate(provider, externalId, profileId)"),
+    SchemaIndexOperation("idx_external_exercise_template_profile_provider", "CREATE INDEX IF NOT EXISTS idx_external_exercise_template_profile_provider ON ExternalExerciseTemplate(profileId, provider)"),
+    SchemaIndexOperation("idx_external_exercise_template_title", "CREATE INDEX IF NOT EXISTS idx_external_exercise_template_title ON ExternalExerciseTemplate(title)"),
+    SchemaIndexOperation("idx_external_template_mapping_dedup", "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_template_mapping_dedup ON ExternalExerciseTemplateMapping(provider, externalTemplateId, profileId)"),
+    SchemaIndexOperation("idx_external_template_mapping_local", "CREATE INDEX IF NOT EXISTS idx_external_template_mapping_local ON ExternalExerciseTemplateMapping(localExerciseId)"),
+    SchemaIndexOperation("idx_external_body_measurement_dedup", "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_body_measurement_dedup ON ExternalBodyMeasurement(provider, externalId, profileId)"),
+    SchemaIndexOperation("idx_external_body_measurement_profile_provider", "CREATE INDEX IF NOT EXISTS idx_external_body_measurement_profile_provider ON ExternalBodyMeasurement(profileId, provider)"),
+    SchemaIndexOperation("idx_external_body_measurement_type_date", "CREATE INDEX IF NOT EXISTS idx_external_body_measurement_type_date ON ExternalBodyMeasurement(profileId, measurementType, measuredAt DESC)"),
+    SchemaIndexOperation("idx_integration_sync_cursor_profile_provider", "CREATE INDEX IF NOT EXISTS idx_integration_sync_cursor_profile_provider ON IntegrationSyncCursor(profileId, provider)"),
 
     // ── SessionNotes (Phase 3.5, migration 26.sqm) ──────────────────────
     SchemaIndexOperation("idx_session_notes_updated_at", "CREATE INDEX IF NOT EXISTS idx_session_notes_updated_at ON SessionNotes(updatedAt)"),

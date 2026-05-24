@@ -31,7 +31,7 @@ val syncModule = module {
         )
     }
     single { SyncTriggerManager(get(), get()) }
-    single { IntegrationManager(get(), get()) }
+    single { IntegrationManager(get(), get(), get(), get(), get(), get(), get()) }
 
     // Auth (using Supabase GoTrue)
     single<AuthRepository> { PortalAuthRepository(get(), get(), get(), get(), get()) }

@@ -2,188 +2,111 @@ package com.devil.phoenixproject.data.integration
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.sync.IntegrationActivityDto
+import com.devil.phoenixproject.data.sync.IntegrationBodyMeasurementDto
+import com.devil.phoenixproject.data.sync.IntegrationEntityErrorDto
+import com.devil.phoenixproject.data.sync.IntegrationExerciseTemplateDto
+import com.devil.phoenixproject.data.sync.IntegrationPlaygroundPreviewDto
+import com.devil.phoenixproject.data.sync.IntegrationPlaygroundSimulationRequest
+import com.devil.phoenixproject.data.sync.IntegrationProgramDto
+import com.devil.phoenixproject.data.sync.IntegrationProgramStatsDto
+import com.devil.phoenixproject.data.sync.IntegrationRoutineDto
+import com.devil.phoenixproject.data.sync.IntegrationRoutineExerciseDto
+import com.devil.phoenixproject.data.sync.IntegrationRoutineFolderDto
+import com.devil.phoenixproject.data.sync.IntegrationRoutineSetDto
 import com.devil.phoenixproject.data.sync.IntegrationSyncRequest
+import com.devil.phoenixproject.data.sync.IntegrationSyncResponse
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.ExternalActivity
+import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
+import com.devil.phoenixproject.domain.model.ExternalExerciseTemplate
+import com.devil.phoenixproject.domain.model.ExternalPlaygroundPreview
+import com.devil.phoenixproject.domain.model.ExternalProgram
+import com.devil.phoenixproject.domain.model.ExternalProgramStats
+import com.devil.phoenixproject.domain.model.ExternalRoutine
+import com.devil.phoenixproject.domain.model.ExternalRoutineExercise
+import com.devil.phoenixproject.domain.model.ExternalRoutineFolder
+import com.devil.phoenixproject.domain.model.ExternalRoutineSet
+import com.devil.phoenixproject.domain.model.IntegrationEntitlementState
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.IntegrationSyncProgress
+import com.devil.phoenixproject.domain.model.IntegrationSyncResult
+import com.devil.phoenixproject.domain.model.IntegrationSyncWarning
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.datetime.Instant
 
-/**
- * Manages third-party integration lifecycle: connect, sync, and disconnect.
- *
- * Delegates network calls to [PortalApiClient] and persists results via
- * [ExternalActivityRepository]. Status updates are written transactionally
- * so local state always reflects the last known portal outcome.
- */
-class IntegrationManager(private val apiClient: PortalApiClient, private val repository: ExternalActivityRepository) {
+private const val MAX_SYNC_PAGES_PER_ENTITY = 50
 
-    /**
-     * Connect a provider by submitting an API key to the portal Edge Function.
-     * On success, the returned activities are upserted locally and the
-     * integration status is set to CONNECTED.
-     *
-     * @param provider  The integration provider to connect.
-     * @param apiKey    The user-supplied API key for the provider.
-     * @param profileId The local profile ID scoping the data.
-     * @param isPaidUser Whether the user has an active paid subscription.
-     *                   Activities get [ExternalActivity.needsSync] = true only for paid users.
-     */
+/**
+ * Multi-entity coordinator for third-party integrations.
+ *
+ * Mobile still talks only to the portal integration endpoint. The manager maps
+ * the expanded payload into focused local repositories and keeps the previous
+ * activity-only response shape backward compatible.
+ */
+class IntegrationManager(
+    private val apiClient: PortalApiClient,
+    private val activityRepository: ExternalActivityRepository,
+    private val routineRepository: ExternalRoutineRepository,
+    private val programRepository: ExternalProgramRepository,
+    private val measurementRepository: ExternalMeasurementRepository,
+    private val templateRepository: ExternalExerciseTemplateRepository,
+    private val cursorRepository: IntegrationSyncCursorRepository,
+) {
     suspend fun connectProvider(
         provider: IntegrationProvider,
         apiKey: String,
         profileId: String,
         isPaidUser: Boolean,
-    ): Result<List<ExternalActivity>> {
+    ): Result<IntegrationSyncResult> {
         Logger.d("IntegrationManager") { "Connecting provider ${provider.key}" }
-
-        val request = IntegrationSyncRequest(
-            provider = provider.key,
+        return syncProviderInternal(
+            provider = provider,
             action = "connect",
             apiKey = apiKey,
-        )
-
-        return apiClient.callIntegrationSync(request).fold(
-            onSuccess = { response ->
-                if (response.status == "error") {
-                    Logger.w("IntegrationManager") {
-                        "Connect responded with error for ${provider.key}: ${response.error}"
-                    }
-                    repository.updateIntegrationStatus(
-                        provider = provider,
-                        status = ConnectionStatus.ERROR,
-                        profileId = profileId,
-                        errorMessage = response.error,
-                    )
-                    Result.failure(Exception(response.error ?: "Unknown error from portal"))
-                } else {
-                    val activities = response.activities.map { dto ->
-                        dto.toDomain(provider, profileId, isPaidUser)
-                    }
-                    if (activities.isNotEmpty()) {
-                        repository.upsertActivities(activities)
-                    }
-                    repository.updateIntegrationStatus(
-                        provider = provider,
-                        status = ConnectionStatus.CONNECTED,
-                        profileId = profileId,
-                        lastSyncAt = currentTimeMillis(),
-                    )
-                    Logger.i("IntegrationManager") {
-                        "Connected ${provider.key}: ${activities.size} activities"
-                    }
-                    Result.success(activities)
-                }
-            },
-            onFailure = { error ->
-                Logger.e("IntegrationManager") {
-                    "Connect failed for ${provider.key}: ${error.message}"
-                }
-                repository.updateIntegrationStatus(
-                    provider = provider,
-                    status = ConnectionStatus.ERROR,
-                    profileId = profileId,
-                    errorMessage = error.message,
-                )
-                Result.failure(error)
-            },
+            profileId = profileId,
+            isPaidUser = isPaidUser,
+            startCursor = null,
         )
     }
 
-    /**
-     * Sync a previously connected provider. No API key is needed — the portal
-     * uses the stored token for the provider.
-     *
-     * @param provider  The integration provider to sync.
-     * @param profileId The local profile ID scoping the data.
-     * @param isPaidUser Whether the user has an active paid subscription.
-     */
-    suspend fun syncProvider(provider: IntegrationProvider, profileId: String, isPaidUser: Boolean): Result<List<ExternalActivity>> {
+    suspend fun syncProvider(
+        provider: IntegrationProvider,
+        profileId: String,
+        isPaidUser: Boolean,
+    ): Result<IntegrationSyncResult> {
         Logger.d("IntegrationManager") { "Syncing provider ${provider.key}" }
-
-        val request = IntegrationSyncRequest(
-            provider = provider.key,
+        val startCursor = cursorRepository.getCursor(provider, profileId, "integration_sync")?.cursorValue
+        return syncProviderInternal(
+            provider = provider,
             action = "sync",
-        )
-
-        return apiClient.callIntegrationSync(request).fold(
-            onSuccess = { response ->
-                if (response.status == "error") {
-                    Logger.w("IntegrationManager") {
-                        "Sync responded with error for ${provider.key}: ${response.error}"
-                    }
-                    repository.updateIntegrationStatus(
-                        provider = provider,
-                        status = ConnectionStatus.ERROR,
-                        profileId = profileId,
-                        errorMessage = response.error,
-                    )
-                    Result.failure(Exception(response.error ?: "Unknown error from portal"))
-                } else {
-                    val activities = response.activities.map { dto ->
-                        dto.toDomain(provider, profileId, isPaidUser)
-                    }
-                    if (activities.isNotEmpty()) {
-                        repository.upsertActivities(activities)
-                    }
-                    repository.updateIntegrationStatus(
-                        provider = provider,
-                        status = ConnectionStatus.CONNECTED,
-                        profileId = profileId,
-                        lastSyncAt = currentTimeMillis(),
-                    )
-                    Logger.i("IntegrationManager") {
-                        "Synced ${provider.key}: ${activities.size} activities"
-                    }
-                    Result.success(activities)
-                }
-            },
-            onFailure = { error ->
-                Logger.e("IntegrationManager") {
-                    "Sync failed for ${provider.key}: ${error.message}"
-                }
-                repository.updateIntegrationStatus(
-                    provider = provider,
-                    status = ConnectionStatus.ERROR,
-                    profileId = profileId,
-                    errorMessage = error.message,
-                )
-                Result.failure(error)
-            },
+            apiKey = null,
+            profileId = profileId,
+            isPaidUser = isPaidUser,
+            startCursor = startCursor,
         )
     }
 
-    /**
-     * Disconnect a provider: notifies the portal, deletes local activities,
-     * and updates status to DISCONNECTED.
-     *
-     * Portal-side disconnection failure is treated as non-critical — local
-     * data is still cleared regardless (mirrors the sign-out pattern).
-     *
-     * @param provider  The integration provider to disconnect.
-     * @param profileId The local profile ID scoping the data.
-     */
     suspend fun disconnectProvider(provider: IntegrationProvider, profileId: String): Result<Unit> {
         Logger.d("IntegrationManager") { "Disconnecting provider ${provider.key}" }
 
-        val request = IntegrationSyncRequest(
-            provider = provider.key,
-            action = "disconnect",
+        val portalResult = apiClient.callIntegrationSync(
+            IntegrationSyncRequest(provider = provider.key, action = "disconnect"),
         )
-
-        // Notify portal (best-effort; we proceed regardless of outcome)
-        val portalResult = apiClient.callIntegrationSync(request)
         portalResult.onFailure { error ->
             Logger.w("IntegrationManager") {
                 "Portal disconnect call failed for ${provider.key} (non-fatal): ${error.message}"
             }
         }
 
-        // Always clean up local state
-        repository.deleteActivities(provider, profileId)
-        repository.updateIntegrationStatus(
+        activityRepository.deleteActivities(provider, profileId)
+        routineRepository.deleteProviderRoutines(provider, profileId)
+        programRepository.deleteProviderPrograms(provider, profileId)
+        measurementRepository.deleteProviderMeasurements(provider, profileId)
+        templateRepository.deleteProviderTemplates(provider, profileId)
+        cursorRepository.deleteProviderCursors(provider, profileId)
+        activityRepository.updateIntegrationStatus(
             provider = provider,
             status = ConnectionStatus.DISCONNECTED,
             profileId = profileId,
@@ -193,25 +116,203 @@ class IntegrationManager(private val apiClient: PortalApiClient, private val rep
         return Result.success(Unit)
     }
 
-    // ─── Mapping ─────────────────────────────────────────────────────────────
+    suspend fun simulatePlayground(
+        provider: IntegrationProvider,
+        externalProgramId: String,
+        scriptText: String,
+        commands: List<String>,
+        profileId: String,
+    ): Result<ExternalPlaygroundPreview> = apiClient.callIntegrationPlaygroundSimulation(
+        IntegrationPlaygroundSimulationRequest(
+            provider = provider.key,
+            externalProgramId = externalProgramId,
+            scriptText = scriptText,
+            commands = commands,
+            profileId = profileId,
+        ),
+    ).mapCatching { response ->
+        if (response.status == "error") {
+            throw IllegalStateException(response.error ?: "Playground simulation failed")
+        }
+        val preview = response.preview ?: IntegrationPlaygroundPreviewDto(
+            programExternalId = externalProgramId,
+            updatedProgramText = response.updatedProgramText,
+        )
+        preview.toDomain()
+    }
 
-    private fun IntegrationActivityDto.toDomain(provider: IntegrationProvider, profileId: String, isPaidUser: Boolean): ExternalActivity {
-        val startEpochMillis = try {
-            Instant.parse(startedAt).toEpochMilliseconds()
-        } catch (_: Exception) {
-            Logger.w("IntegrationManager") {
-                "Could not parse startedAt '$startedAt' for $externalId — using current time"
+    suspend fun commitProgramText(programId: String, updatedProgramText: String, markNeedsSync: Boolean = true) {
+        programRepository.updateProgramText(programId, updatedProgramText, markNeedsSync)
+    }
+
+    private suspend fun syncProviderInternal(
+        provider: IntegrationProvider,
+        action: String,
+        apiKey: String?,
+        profileId: String,
+        isPaidUser: Boolean,
+        startCursor: String?,
+    ): Result<IntegrationSyncResult> {
+        var page = 0
+        var cursor = startCursor
+        var aggregate = IntegrationSyncResult(provider = provider)
+
+        while (page < MAX_SYNC_PAGES_PER_ENTITY) {
+            val request = IntegrationSyncRequest(
+                provider = provider.key,
+                action = action,
+                apiKey = if (page == 0) apiKey else null,
+                entityTypes = ALL_ENTITY_TYPES,
+                cursor = cursor,
+                includeRawData = true,
+            )
+
+            val response = apiClient.callIntegrationSync(request).getOrElse { error ->
+                Logger.e("IntegrationManager") { "$action failed for ${provider.key}: ${error.message}" }
+                activityRepository.updateIntegrationStatus(
+                    provider = provider,
+                    status = ConnectionStatus.ERROR,
+                    profileId = profileId,
+                    errorMessage = error.message,
+                )
+                return Result.failure(error)
             }
-            currentTimeMillis()
+
+            if (response.status == "error" && !response.requiresUpgrade) {
+                val message = response.error ?: "Unknown error from portal"
+                Logger.w("IntegrationManager") { "$action responded with error for ${provider.key}: $message" }
+                activityRepository.updateIntegrationStatus(
+                    provider = provider,
+                    status = ConnectionStatus.ERROR,
+                    profileId = profileId,
+                    errorMessage = message,
+                )
+                return Result.failure(Exception(message))
+            }
+
+            val pageResult = persistResponse(provider, profileId, isPaidUser, response)
+            aggregate = aggregate.merge(pageResult)
+
+            val cursorValue = response.providerSyncCursor ?: response.nextCursor
+            if (cursorValue != null) {
+                cursorRepository.upsertCursor(
+                    IntegrationSyncCursor(
+                        provider = provider,
+                        profileId = profileId,
+                        cursorType = "integration_sync",
+                        cursorValue = cursorValue,
+                        updatedAt = currentTimeMillis(),
+                    ),
+                )
+            }
+
+            if (!response.hasMore || response.nextCursor == null) break
+            cursor = response.nextCursor
+            page++
         }
 
+        if (page >= MAX_SYNC_PAGES_PER_ENTITY) {
+            aggregate = aggregate.copy(
+                partial = true,
+                warnings = aggregate.warnings + IntegrationSyncWarning(
+                    entityType = "sync",
+                    code = "page_cap_reached",
+                    message = "Stopped after $MAX_SYNC_PAGES_PER_ENTITY pages to avoid an infinite sync loop.",
+                ),
+            )
+        }
+
+        activityRepository.updateIntegrationStatus(
+            provider = provider,
+            status = ConnectionStatus.CONNECTED,
+            profileId = profileId,
+            lastSyncAt = currentTimeMillis(),
+            errorMessage = aggregate.warnings.firstOrNull()?.message,
+        )
+
+        Logger.i("IntegrationManager") {
+            "${action.replaceFirstChar { it.uppercase() }} ${provider.key}: ${aggregate.progress}"
+        }
+        return Result.success(aggregate)
+    }
+
+    private suspend fun persistResponse(
+        provider: IntegrationProvider,
+        profileId: String,
+        isPaidUser: Boolean,
+        response: IntegrationSyncResponse,
+    ): IntegrationSyncResult {
+        val activities = response.activities.map { it.toDomain(provider, profileId, isPaidUser) }
+        val folders = response.routineFolders.map { it.toDomain(provider, profileId) }
+        val routines = response.routines.map { it.toDomain(provider, profileId) }
+        val templates = response.exerciseTemplates.map { it.toDomain(provider, profileId) }
+        val measurements = response.bodyMeasurements.map { it.toDomain(provider, profileId) }
+        val programs = response.programs.map { it.toDomain(provider, profileId) }
+
+        if (activities.isNotEmpty()) activityRepository.upsertActivities(activities)
+        if (response.deletedExternalIds.isNotEmpty()) {
+            activityRepository.markDeletedByExternalIds(
+                provider = provider,
+                profileId = profileId,
+                externalIds = response.deletedExternalIds,
+                deletedAt = currentTimeMillis(),
+                needsSync = isPaidUser,
+            )
+        }
+        if (folders.isNotEmpty()) routineRepository.upsertFolders(folders)
+        if (routines.isNotEmpty()) routineRepository.upsertRoutines(routines)
+        if (templates.isNotEmpty()) templateRepository.upsertTemplates(templates)
+        if (measurements.isNotEmpty()) measurementRepository.upsertMeasurements(measurements)
+        if (programs.isNotEmpty()) programRepository.upsertPrograms(programs)
+
+        val stats = response.programStats.mapNotNull { dto ->
+            val localProgram = programRepository.findProgram(provider, dto.externalProgramId, profileId)
+            if (localProgram == null) {
+                Logger.w("IntegrationManager") {
+                    "Skipping stats for missing ${provider.key} program ${dto.externalProgramId}"
+                }
+                null
+            } else {
+                dto.toDomain(localProgram.id)
+            }
+        }
+        if (stats.isNotEmpty()) programRepository.upsertStats(stats)
+
+        val warnings = response.errors.map { it.toWarning() }
+        val entitlementState = response.toEntitlementState(provider)
+
+        return IntegrationSyncResult(
+            provider = provider,
+            progress = IntegrationSyncProgress(
+                activitiesImported = activities.size,
+                routinesImported = routines.size,
+                routineFoldersImported = folders.size,
+                exerciseTemplatesImported = templates.size,
+                measurementsImported = measurements.size,
+                programsImported = programs.size,
+                programStatsImported = stats.size,
+            ),
+            entitlementState = entitlementState,
+            partial = response.partial || response.errors.isNotEmpty(),
+            warnings = warnings,
+            nextCursor = response.nextCursor,
+            hasMore = response.hasMore,
+        )
+    }
+
+    private fun IntegrationActivityDto.toDomain(
+        fallbackProvider: IntegrationProvider,
+        profileId: String,
+        isPaidUser: Boolean,
+    ): ExternalActivity {
+        val parsedProvider = IntegrationProvider.fromKey(provider) ?: fallbackProvider
         return ExternalActivity(
             id = generateUUID(),
             externalId = externalId,
-            provider = provider,
+            provider = parsedProvider,
             name = name,
             activityType = activityType,
-            startedAt = startEpochMillis,
+            startedAt = startedAt.parseEpochMillisOrNow("startedAt", externalId),
             durationSeconds = durationSeconds,
             distanceMeters = distanceMeters,
             calories = calories,
@@ -222,6 +323,199 @@ class IntegrationManager(private val apiClient: PortalApiClient, private val rep
             syncedAt = currentTimeMillis(),
             profileId = profileId,
             needsSync = isPaidUser,
+        )
+    }
+
+    private fun IntegrationRoutineDto.toDomain(fallbackProvider: IntegrationProvider, profileId: String): ExternalRoutine {
+        val routineId = generateUUID()
+        return ExternalRoutine(
+            id = routineId,
+            externalId = externalId,
+            provider = IntegrationProvider.fromKey(provider) ?: fallbackProvider,
+            title = title,
+            folderExternalId = folderExternalId,
+            folderName = folderName,
+            updatedAt = updatedAt?.parseEpochMillisOrNull("routine.updatedAt", externalId),
+            exercises = exercises.map { it.toDomain(routineId) },
+            rawData = rawData,
+            profileId = profileId,
+            syncedAt = currentTimeMillis(),
+        )
+    }
+
+    private fun IntegrationRoutineExerciseDto.toDomain(routineId: String): ExternalRoutineExercise {
+        val exerciseId = generateUUID()
+        return ExternalRoutineExercise(
+            id = exerciseId,
+            externalRoutineId = routineId,
+            externalExerciseTemplateId = externalExerciseTemplateId,
+            title = title,
+            exerciseType = exerciseType,
+            primaryMuscleGroups = primaryMuscleGroups,
+            secondaryMuscleGroups = secondaryMuscleGroups,
+            orderIndex = orderIndex,
+            sets = sets.map { it.toDomain(exerciseId) },
+            rawData = rawData,
+        )
+    }
+
+    private fun IntegrationRoutineSetDto.toDomain(exerciseId: String): ExternalRoutineSet = ExternalRoutineSet(
+        id = generateUUID(),
+        externalRoutineExerciseId = exerciseId,
+        index = index,
+        setType = setType,
+        weightKg = weightKg,
+        reps = reps,
+        minReps = minReps,
+        maxReps = maxReps,
+        restSeconds = restSeconds,
+        rpe = rpe,
+        durationSeconds = durationSeconds,
+        distanceMeters = distanceMeters,
+        rawData = rawData,
+    )
+
+    private fun IntegrationRoutineFolderDto.toDomain(
+        fallbackProvider: IntegrationProvider,
+        profileId: String,
+    ): ExternalRoutineFolder = ExternalRoutineFolder(
+        id = generateUUID(),
+        externalId = externalId,
+        provider = IntegrationProvider.fromKey(provider) ?: fallbackProvider,
+        title = title,
+        index = index,
+        createdAt = createdAt?.parseEpochMillisOrNull("folder.createdAt", externalId),
+        updatedAt = updatedAt?.parseEpochMillisOrNull("folder.updatedAt", externalId),
+        profileId = profileId,
+        rawData = rawData,
+    )
+
+    private fun IntegrationExerciseTemplateDto.toDomain(
+        fallbackProvider: IntegrationProvider,
+        profileId: String,
+    ): ExternalExerciseTemplate = ExternalExerciseTemplate(
+        id = generateUUID(),
+        externalId = externalId,
+        provider = IntegrationProvider.fromKey(provider) ?: fallbackProvider,
+        title = title,
+        exerciseType = exerciseType,
+        primaryMuscleGroups = primaryMuscleGroups,
+        secondaryMuscleGroups = secondaryMuscleGroups,
+        isCustom = isCustom,
+        rawData = rawData,
+        updatedAt = updatedAt?.parseEpochMillisOrNull("template.updatedAt", externalId),
+        profileId = profileId,
+    )
+
+    private fun IntegrationBodyMeasurementDto.toDomain(
+        fallbackProvider: IntegrationProvider,
+        profileId: String,
+    ): ExternalBodyMeasurement = ExternalBodyMeasurement(
+        id = generateUUID(),
+        externalId = externalId,
+        provider = IntegrationProvider.fromKey(provider) ?: fallbackProvider,
+        measurementType = measurementType,
+        value = value,
+        unit = unit,
+        measuredAt = measuredAt.parseEpochMillisOrNow("measurement.measuredAt", externalId),
+        rawData = rawData,
+        profileId = profileId,
+        syncedAt = currentTimeMillis(),
+    )
+
+    private fun IntegrationProgramDto.toDomain(
+        fallbackProvider: IntegrationProvider,
+        profileId: String,
+    ): ExternalProgram = ExternalProgram(
+        id = generateUUID(),
+        externalId = externalId,
+        provider = IntegrationProvider.fromKey(provider) ?: fallbackProvider,
+        name = name,
+        isCurrent = isCurrent,
+        scriptText = scriptText,
+        rawData = rawData,
+        updatedAt = updatedAt?.parseEpochMillisOrNull("program.updatedAt", externalId),
+        syncedAt = currentTimeMillis(),
+        profileId = profileId,
+    )
+
+    private fun IntegrationProgramStatsDto.toDomain(localProgramId: String): ExternalProgramStats = ExternalProgramStats(
+        id = generateUUID(),
+        externalProgramId = localProgramId,
+        days = days,
+        approximateMinutes = approximateMinutes,
+        setCount = setCount,
+        muscleGroupBreakdownJson = muscleGroupBreakdownJson,
+        rawData = rawData,
+        computedAt = computedAt?.parseEpochMillisOrNull("programStats.computedAt", externalProgramId),
+    )
+
+    private fun IntegrationPlaygroundPreviewDto.toDomain(): ExternalPlaygroundPreview = ExternalPlaygroundPreview(
+        programExternalId = programExternalId,
+        currentWorkoutText = currentWorkoutText,
+        nextWorkoutText = nextWorkoutText,
+        updatedProgramText = updatedProgramText,
+        commandsApplied = commandsApplied,
+        rawData = rawData,
+        generatedAt = generatedAt?.parseEpochMillisOrNull("playground.generatedAt", programExternalId) ?: currentTimeMillis(),
+    )
+
+    private fun IntegrationEntityErrorDto.toWarning(): IntegrationSyncWarning = IntegrationSyncWarning(
+        entityType = entityType,
+        code = code,
+        message = message,
+        retryAfterSeconds = retryAfterSeconds,
+    )
+
+    private fun IntegrationSyncResponse.toEntitlementState(provider: IntegrationProvider): IntegrationEntitlementState? {
+        if (!requiresUpgrade && entitlementStatus == null && upgradeReason == null && providerPlanName == null) return null
+        return IntegrationEntitlementState(
+            provider = provider,
+            status = entitlementStatus,
+            requiresUpgrade = requiresUpgrade,
+            upgradeReason = upgradeReason,
+            providerPlanName = providerPlanName,
+        )
+    }
+
+    private fun IntegrationSyncResult.merge(other: IntegrationSyncResult): IntegrationSyncResult = copy(
+        progress = IntegrationSyncProgress(
+            activitiesImported = progress.activitiesImported + other.progress.activitiesImported,
+            routinesImported = progress.routinesImported + other.progress.routinesImported,
+            routineFoldersImported = progress.routineFoldersImported + other.progress.routineFoldersImported,
+            exerciseTemplatesImported = progress.exerciseTemplatesImported + other.progress.exerciseTemplatesImported,
+            measurementsImported = progress.measurementsImported + other.progress.measurementsImported,
+            programsImported = progress.programsImported + other.progress.programsImported,
+            programStatsImported = progress.programStatsImported + other.progress.programStatsImported,
+        ),
+        entitlementState = other.entitlementState ?: entitlementState,
+        partial = partial || other.partial,
+        warnings = warnings + other.warnings,
+        nextCursor = other.nextCursor ?: nextCursor,
+        hasMore = other.hasMore,
+    )
+
+    private fun String.parseEpochMillisOrNow(field: String, externalId: String): Long =
+        parseEpochMillisOrNull(field, externalId) ?: currentTimeMillis()
+
+    private fun String.parseEpochMillisOrNull(field: String, externalId: String): Long? = try {
+        Instant.parse(this).toEpochMilliseconds()
+    } catch (_: Exception) {
+        Logger.w("IntegrationManager") {
+            "Could not parse $field '$this' for $externalId"
+        }
+        null
+    }
+
+    private companion object {
+        val ALL_ENTITY_TYPES = listOf(
+            "activities",
+            "routines",
+            "routineFolders",
+            "templates",
+            "measurements",
+            "programs",
+            "programStats",
         )
     }
 }

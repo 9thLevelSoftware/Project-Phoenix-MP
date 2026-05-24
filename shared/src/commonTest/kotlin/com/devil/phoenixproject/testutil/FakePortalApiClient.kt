@@ -3,6 +3,8 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.sync.GoTrueAuthResponse
 import com.devil.phoenixproject.data.sync.IntegrationSyncRequest
 import com.devil.phoenixproject.data.sync.IntegrationSyncResponse
+import com.devil.phoenixproject.data.sync.IntegrationPlaygroundSimulationRequest
+import com.devil.phoenixproject.data.sync.IntegrationPlaygroundSimulationResponse
 import com.devil.phoenixproject.data.sync.KnownEntityIds
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalApiException
@@ -55,6 +57,9 @@ open class FakePortalApiClient :
     var integrationSyncResult: Result<IntegrationSyncResponse> = Result.success(
         IntegrationSyncResponse(status = "ok"),
     )
+    var playgroundSimulationResult: Result<IntegrationPlaygroundSimulationResponse> = Result.success(
+        IntegrationPlaygroundSimulationResponse(status = "ok"),
+    )
 
     // Call counters and captures
     var pushCallCount = 0
@@ -62,16 +67,19 @@ open class FakePortalApiClient :
     var signInCallCount = 0
     var signUpCallCount = 0
     var integrationSyncCallCount = 0
+    var playgroundSimulationCallCount = 0
     var lastPushPayload: PortalSyncPayload? = null
     var lastPullKnownEntityIds: KnownEntityIds? = null
     var lastPullDeviceId: String? = null
     var lastPullCursor: String? = null
     var lastPullPageSize: Int? = null
     var lastIntegrationSyncRequest: IntegrationSyncRequest? = null
+    var lastPlaygroundSimulationRequest: IntegrationPlaygroundSimulationRequest? = null
 
     // Pagination support: list of results to return for successive pull calls
     // If set, returns results from this list in order; when exhausted, falls back to pullResult
     var pullResultsQueue: MutableList<Result<PortalSyncPullResponse>>? = null
+    var integrationSyncResultsQueue: MutableList<Result<IntegrationSyncResponse>>? = null
 
     override suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> {
         signInCallCount++
@@ -110,6 +118,14 @@ open class FakePortalApiClient :
     override suspend fun callIntegrationSync(request: IntegrationSyncRequest): Result<IntegrationSyncResponse> {
         integrationSyncCallCount++
         lastIntegrationSyncRequest = request
-        return integrationSyncResult
+        return integrationSyncResultsQueue?.removeFirstOrNull() ?: integrationSyncResult
+    }
+
+    override suspend fun callIntegrationPlaygroundSimulation(
+        request: IntegrationPlaygroundSimulationRequest,
+    ): Result<IntegrationPlaygroundSimulationResponse> {
+        playgroundSimulationCallCount++
+        lastPlaygroundSimulationRequest = request
+        return playgroundSimulationResult
     }
 }

@@ -4,6 +4,10 @@ import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
+import com.devil.phoenixproject.presentation.viewmodel.ExternalActivitiesViewModel
+import com.devil.phoenixproject.presentation.viewmodel.ExternalMeasurementsViewModel
+import com.devil.phoenixproject.presentation.viewmodel.ExternalProgramsViewModel
+import com.devil.phoenixproject.presentation.viewmodel.ExternalRoutinesViewModel
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
@@ -15,7 +19,11 @@ val presentationModule = module {
     factory { ConnectionLogsViewModel() }
     factory { CycleEditorViewModel(get(), get()) }
     factory { GamificationViewModel(get(), get()) }
-    factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get()) }
+    factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    factory { ExternalActivitiesViewModel(get(), get()) }
+    factory { ExternalRoutinesViewModel(get(), get()) }
+    factory { ExternalProgramsViewModel(get(), get(), get()) }
+    factory { ExternalMeasurementsViewModel(get(), get()) }
     factory { AssessmentViewModel(get(), get(), get()) }
     // ThemeViewModel as singleton - app-wide theme state that must persist
     single { ThemeViewModel(get()) }

@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,7 @@ import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
+import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -36,7 +38,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @Composable
 fun IntegrationsScreen(
     weightUnit: WeightUnit = WeightUnit.KG,
-    onNavigateToExternalActivities: () -> Unit = {},
+    onNavigateToExternalData: () -> Unit = {},
     onSetTitle: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -63,6 +65,13 @@ fun IntegrationsScreen(
         uiState.successMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearMessages()
+        }
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.uiEvents.collect { event ->
+            when (event) {
+                is IntegrationUiEvent.Snackbar -> snackbarHostState.showSnackbar(event.message)
+            }
         }
     }
     LaunchedEffect(viewModel) {
@@ -271,10 +280,21 @@ fun IntegrationsScreen(
             // Hevy card
             val hevyStatus = uiState.integrationStatuses[IntegrationProvider.HEVY]
             val hevyConnected = hevyStatus?.status == ConnectionStatus.CONNECTED
+            val hevyEntitlement = uiState.entitlementStateByProvider[IntegrationProvider.HEVY]
+            val hevyBusy = uiState.operationLoading.any { it.startsWith("${IntegrationProvider.HEVY.key}:") }
             IntegrationCard(
                 title = "Hevy",
-                subtitle = "Requires Hevy PRO for API sync",
+                subtitle = hevyEntitlement?.upgradeReason
+                    ?: hevyEntitlement?.providerPlanName?.let { "Plan: $it" }
+                    ?: "Workout history, routines, templates, and measurements",
                 statusConnected = hevyConnected,
+                badges = listOf(
+                    "${uiState.externalActivities.count { it.provider == IntegrationProvider.HEVY }} workouts",
+                    "${uiState.externalRoutines.count { it.provider == IntegrationProvider.HEVY }} routines",
+                    "${uiState.externalRoutineFolders.count { it.provider == IntegrationProvider.HEVY }} folders",
+                    "${uiState.externalExerciseTemplateCountByProvider[IntegrationProvider.HEVY] ?: 0} templates",
+                    "${uiState.externalMeasurements.count { it.provider == IntegrationProvider.HEVY }} measurements",
+                ),
                 trailingContent = {
                     Column(
                         horizontalAlignment = Alignment.End,
@@ -286,11 +306,11 @@ fun IntegrationsScreen(
                                     onClick = {
                                         viewModel.syncProvider(IntegrationProvider.HEVY)
                                     },
-                                    enabled = !uiState.isSyncing,
+                                    enabled = !hevyBusy,
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.height(36.dp),
                                 ) {
-                                    if (uiState.isSyncing) {
+                                    if (hevyBusy) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                                     } else {
                                         Text("Sync", style = MaterialTheme.typography.labelMedium)
@@ -328,10 +348,20 @@ fun IntegrationsScreen(
             // Liftosaur card
             val liftosaurStatus = uiState.integrationStatuses[IntegrationProvider.LIFTOSAUR]
             val liftosaurConnected = liftosaurStatus?.status == ConnectionStatus.CONNECTED
+            val liftosaurEntitlement = uiState.entitlementStateByProvider[IntegrationProvider.LIFTOSAUR]
+            val liftosaurBusy = uiState.operationLoading.any { it.startsWith("${IntegrationProvider.LIFTOSAUR.key}:") }
             IntegrationCard(
                 title = "Liftosaur",
-                subtitle = "Requires Liftosaur Premium",
+                subtitle = liftosaurEntitlement?.upgradeReason
+                    ?: liftosaurEntitlement?.providerPlanName?.let { "Plan: $it" }
+                    ?: "History, programs, stats, and playground previews",
                 statusConnected = liftosaurConnected,
+                badges = listOf(
+                    "${uiState.externalActivities.count { it.provider == IntegrationProvider.LIFTOSAUR }} workouts",
+                    "${uiState.externalPrograms.count { it.provider == IntegrationProvider.LIFTOSAUR }} programs",
+                    if (uiState.activeProgram != null) "1 current" else "0 current",
+                    "${uiState.externalProgramStatsByProgramId.size} stats",
+                ),
                 trailingContent = {
                     Column(
                         horizontalAlignment = Alignment.End,
@@ -343,11 +373,11 @@ fun IntegrationsScreen(
                                     onClick = {
                                         viewModel.syncProvider(IntegrationProvider.LIFTOSAUR)
                                     },
-                                    enabled = !uiState.isSyncing,
+                                    enabled = !liftosaurBusy,
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.height(36.dp),
                                 ) {
-                                    if (uiState.isSyncing) {
+                                    if (liftosaurBusy) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                                     } else {
                                         Text("Sync", style = MaterialTheme.typography.labelMedium)
@@ -505,7 +535,7 @@ fun IntegrationsScreen(
                 shape = RoundedCornerShape(20.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                onClick = onNavigateToExternalActivities,
+                onClick = onNavigateToExternalData,
             ) {
                 Row(
                     modifier = Modifier
@@ -538,13 +568,13 @@ fun IntegrationsScreen(
                         }
                         Column {
                             Text(
-                                "External Activities",
+                                "Integration Data",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                             )
                             val count = uiState.externalActivities.size
                             Text(
-                                if (count == 0) "No activities imported" else "$count imported",
+                                if (count == 0) "Browse imported provider data" else "$count workouts plus provider records",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -552,7 +582,7 @@ fun IntegrationsScreen(
                     }
                     Icon(
                         Icons.Default.ChevronRight,
-                        contentDescription = "View external activities",
+                        contentDescription = "View integration data",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -597,7 +627,13 @@ private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector,
 }
 
 @Composable
-private fun IntegrationCard(title: String, subtitle: String, statusConnected: Boolean, trailingContent: @Composable () -> Unit) {
+private fun IntegrationCard(
+    title: String,
+    subtitle: String,
+    statusConnected: Boolean,
+    badges: List<String> = emptyList(),
+    trailingContent: @Composable () -> Unit,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -652,6 +688,28 @@ private fun IntegrationCard(title: String, subtitle: String, statusConnected: Bo
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (badges.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        badges.forEach { badge ->
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                            ) {
+                                Text(
+                                    badge,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                }
             }
             Spacer(Modifier.width(Spacing.small))
             trailingContent()

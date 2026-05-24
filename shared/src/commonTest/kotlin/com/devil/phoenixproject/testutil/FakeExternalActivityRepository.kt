@@ -39,11 +39,13 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
 
     override suspend fun upsertActivities(activities: List<ExternalActivity>) {
         upsertCallCount++
-        // Deduplicate on (externalId, provider) to match real INSERT OR IGNORE + UPDATE behavior.
+        // Deduplicate on (provider, externalId, profileId) to match real INSERT OR IGNORE + UPDATE behavior.
         // Existing rows are updated in-place (preserving id and needsSync); new rows are appended.
         for (activity in activities) {
             val existingIndex = this.activities.indexOfFirst {
-                it.externalId == activity.externalId && it.provider == activity.provider
+                it.externalId == activity.externalId &&
+                    it.provider == activity.provider &&
+                    it.profileId == activity.profileId
             }
             if (existingIndex >= 0) {
                 // Update data fields but preserve id and needsSync from existing row
@@ -64,6 +66,25 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
 
     override suspend fun markSyncedBySyncKeys(syncKeys: List<ExternalActivitySyncKey>, profileId: String) {
         markedSyncedKeys.addAll(syncKeys)
+    }
+
+    override suspend fun markDeletedByExternalIds(
+        provider: IntegrationProvider,
+        profileId: String,
+        externalIds: List<String>,
+        deletedAt: Long,
+        needsSync: Boolean,
+    ) {
+        for (externalId in externalIds) {
+            val index = activities.indexOfFirst {
+                it.provider == provider &&
+                    it.profileId == profileId &&
+                    it.externalId == externalId
+            }
+            if (index >= 0) {
+                activities[index] = activities[index].copy(deletedAt = deletedAt, needsSync = needsSync)
+            }
+        }
     }
 
     override suspend fun deleteActivities(provider: IntegrationProvider, profileId: String) {

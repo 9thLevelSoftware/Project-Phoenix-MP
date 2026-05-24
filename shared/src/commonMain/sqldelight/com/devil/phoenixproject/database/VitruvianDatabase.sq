@@ -2063,10 +2063,11 @@ CREATE TABLE IF NOT EXISTS ExternalActivity (
     rawData TEXT,
     syncedAt INTEGER NOT NULL,
     profileId TEXT NOT NULL DEFAULT 'default',
-    needsSync INTEGER NOT NULL DEFAULT 1
+    needsSync INTEGER NOT NULL DEFAULT 1,
+    deletedAt INTEGER
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(externalId, provider);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(provider, externalId, profileId);
 CREATE INDEX IF NOT EXISTS idx_external_activity_profile ON ExternalActivity(profileId);
 CREATE INDEX IF NOT EXISTS idx_external_activity_provider ON ExternalActivity(provider);
 CREATE INDEX IF NOT EXISTS idx_external_activity_started ON ExternalActivity(startedAt DESC);
@@ -2080,27 +2081,190 @@ CREATE TABLE IF NOT EXISTS IntegrationStatus (
     PRIMARY KEY(provider, profileId)
 );
 
+CREATE TABLE IF NOT EXISTS ExternalRoutine (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalId TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    title TEXT NOT NULL,
+    folderExternalId TEXT,
+    folderName TEXT,
+    updatedAt INTEGER,
+    syncedAt INTEGER NOT NULL,
+    rawData TEXT,
+    profileId TEXT NOT NULL DEFAULT 'default',
+    needsSync INTEGER NOT NULL DEFAULT 0,
+    deletedAt INTEGER
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_routine_dedup ON ExternalRoutine(provider, externalId, profileId);
+CREATE INDEX IF NOT EXISTS idx_external_routine_profile_provider ON ExternalRoutine(profileId, provider);
+CREATE INDEX IF NOT EXISTS idx_external_routine_folder ON ExternalRoutine(profileId, provider, folderExternalId);
+CREATE INDEX IF NOT EXISTS idx_external_routine_updated ON ExternalRoutine(updatedAt DESC);
+
+CREATE TABLE IF NOT EXISTS ExternalRoutineExercise (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalRoutineId TEXT NOT NULL,
+    externalExerciseTemplateId TEXT,
+    title TEXT NOT NULL,
+    exerciseType TEXT,
+    primaryMuscleGroups TEXT NOT NULL DEFAULT '',
+    secondaryMuscleGroups TEXT NOT NULL DEFAULT '',
+    orderIndex INTEGER NOT NULL DEFAULT 0,
+    rawData TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_external_routine_exercise_routine ON ExternalRoutineExercise(externalRoutineId);
+CREATE INDEX IF NOT EXISTS idx_external_routine_exercise_template ON ExternalRoutineExercise(externalExerciseTemplateId);
+
+CREATE TABLE IF NOT EXISTS ExternalRoutineSet (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalRoutineExerciseId TEXT NOT NULL,
+    setIndex INTEGER NOT NULL DEFAULT 0,
+    setType TEXT,
+    weightKg REAL,
+    reps INTEGER,
+    minReps INTEGER,
+    maxReps INTEGER,
+    restSeconds INTEGER,
+    rpe REAL,
+    durationSeconds INTEGER,
+    distanceMeters REAL,
+    rawData TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_routine_set_dedup ON ExternalRoutineSet(externalRoutineExerciseId, setIndex);
+CREATE INDEX IF NOT EXISTS idx_external_routine_set_exercise ON ExternalRoutineSet(externalRoutineExerciseId);
+
+CREATE TABLE IF NOT EXISTS ExternalRoutineFolder (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalId TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    title TEXT NOT NULL,
+    folderIndex INTEGER,
+    createdAt INTEGER,
+    updatedAt INTEGER,
+    profileId TEXT NOT NULL DEFAULT 'default',
+    rawData TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_routine_folder_dedup ON ExternalRoutineFolder(provider, externalId, profileId);
+CREATE INDEX IF NOT EXISTS idx_external_routine_folder_profile_provider ON ExternalRoutineFolder(profileId, provider);
+
+CREATE TABLE IF NOT EXISTS ExternalProgram (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalId TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    name TEXT NOT NULL,
+    isCurrent INTEGER NOT NULL DEFAULT 0,
+    scriptText TEXT,
+    rawData TEXT,
+    updatedAt INTEGER,
+    syncedAt INTEGER NOT NULL,
+    profileId TEXT NOT NULL DEFAULT 'default',
+    needsSync INTEGER NOT NULL DEFAULT 0,
+    deletedAt INTEGER
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_program_dedup ON ExternalProgram(provider, externalId, profileId);
+CREATE INDEX IF NOT EXISTS idx_external_program_profile_provider ON ExternalProgram(profileId, provider);
+CREATE INDEX IF NOT EXISTS idx_external_program_current ON ExternalProgram(profileId, provider, isCurrent);
+CREATE INDEX IF NOT EXISTS idx_external_program_updated ON ExternalProgram(updatedAt DESC);
+
+CREATE TABLE IF NOT EXISTS ExternalProgramStats (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalProgramId TEXT NOT NULL,
+    days INTEGER,
+    approximateMinutes INTEGER,
+    setCount INTEGER,
+    muscleGroupBreakdownJson TEXT,
+    rawData TEXT,
+    computedAt INTEGER
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_program_stats_program ON ExternalProgramStats(externalProgramId);
+CREATE INDEX IF NOT EXISTS idx_external_program_stats_computed ON ExternalProgramStats(computedAt DESC);
+
+CREATE TABLE IF NOT EXISTS ExternalExerciseTemplate (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalId TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    title TEXT NOT NULL,
+    exerciseType TEXT,
+    primaryMuscleGroups TEXT NOT NULL DEFAULT '',
+    secondaryMuscleGroups TEXT NOT NULL DEFAULT '',
+    isCustom INTEGER NOT NULL DEFAULT 0,
+    rawData TEXT,
+    updatedAt INTEGER,
+    profileId TEXT NOT NULL DEFAULT 'default'
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_exercise_template_dedup ON ExternalExerciseTemplate(provider, externalId, profileId);
+CREATE INDEX IF NOT EXISTS idx_external_exercise_template_profile_provider ON ExternalExerciseTemplate(profileId, provider);
+CREATE INDEX IF NOT EXISTS idx_external_exercise_template_title ON ExternalExerciseTemplate(title);
+
+CREATE TABLE IF NOT EXISTS ExternalExerciseTemplateMapping (
+    id TEXT NOT NULL PRIMARY KEY,
+    provider TEXT NOT NULL,
+    externalTemplateId TEXT NOT NULL,
+    localExerciseId TEXT NOT NULL,
+    profileId TEXT NOT NULL DEFAULT 'default',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    rawData TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_template_mapping_dedup ON ExternalExerciseTemplateMapping(provider, externalTemplateId, profileId);
+CREATE INDEX IF NOT EXISTS idx_external_template_mapping_local ON ExternalExerciseTemplateMapping(localExerciseId);
+
+CREATE TABLE IF NOT EXISTS ExternalBodyMeasurement (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalId TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    measurementType TEXT NOT NULL,
+    value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    measuredAt INTEGER NOT NULL,
+    syncedAt INTEGER NOT NULL,
+    rawData TEXT,
+    profileId TEXT NOT NULL DEFAULT 'default'
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_body_measurement_dedup ON ExternalBodyMeasurement(provider, externalId, profileId);
+CREATE INDEX IF NOT EXISTS idx_external_body_measurement_profile_provider ON ExternalBodyMeasurement(profileId, provider);
+CREATE INDEX IF NOT EXISTS idx_external_body_measurement_type_date ON ExternalBodyMeasurement(profileId, measurementType, measuredAt DESC);
+
+CREATE TABLE IF NOT EXISTS IntegrationSyncCursor (
+    provider TEXT NOT NULL,
+    profileId TEXT NOT NULL DEFAULT 'default',
+    cursorType TEXT NOT NULL,
+    cursorValue TEXT,
+    updatedAt INTEGER NOT NULL,
+    PRIMARY KEY(provider, profileId, cursorType)
+);
+
+CREATE INDEX IF NOT EXISTS idx_integration_sync_cursor_profile_provider ON IntegrationSyncCursor(profileId, provider);
+
 -- ExternalActivity queries
 getAllExternalActivities:
 SELECT * FROM ExternalActivity
-WHERE profileId = ?
+WHERE profileId = ? AND deletedAt IS NULL
 ORDER BY startedAt DESC;
 
 getExternalActivitiesByProvider:
 SELECT * FROM ExternalActivity
-WHERE profileId = ? AND provider = ?
+WHERE profileId = ? AND provider = ? AND deletedAt IS NULL
 ORDER BY startedAt DESC;
 
 getUnsyncedExternalActivities:
 SELECT * FROM ExternalActivity
-WHERE profileId = ? AND needsSync = 1;
+WHERE profileId = ? AND needsSync = 1 AND deletedAt IS NULL;
 
 insertExternalActivityIfNew:
 INSERT OR IGNORE INTO ExternalActivity(
     id, externalId, provider, name, activityType, startedAt,
     durationSeconds, distanceMeters, calories, avgHeartRate,
-    maxHeartRate, elevationGainMeters, rawData, syncedAt, profileId, needsSync
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    maxHeartRate, elevationGainMeters, rawData, syncedAt, profileId, needsSync, deletedAt
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateExternalActivityOnConflict:
 UPDATE ExternalActivity SET
@@ -2115,8 +2279,8 @@ UPDATE ExternalActivity SET
     elevationGainMeters = ?,
     rawData = ?,
     syncedAt = ?,
-    profileId = ?
-WHERE externalId = ? AND provider = ?;
+    deletedAt = ?
+WHERE externalId = ? AND provider = ? AND profileId = ?;
 
 markExternalActivitySynced:
 UPDATE ExternalActivity SET needsSync = 0 WHERE id = ?;
@@ -2126,8 +2290,276 @@ UPDATE ExternalActivity
 SET needsSync = 0
 WHERE externalId = ? AND provider = ? AND profileId = ?;
 
+markExternalActivityDeletedBySyncKey:
+UPDATE ExternalActivity
+SET deletedAt = ?, needsSync = ?
+WHERE externalId = ? AND provider = ? AND profileId = ?;
+
 deleteExternalActivitiesByProvider:
 DELETE FROM ExternalActivity WHERE provider = ? AND profileId = ?;
+
+-- ExternalRoutine queries
+getExternalRoutines:
+SELECT * FROM ExternalRoutine
+WHERE profileId = ? AND deletedAt IS NULL
+ORDER BY COALESCE(folderName, ''), title COLLATE NOCASE;
+
+getExternalRoutinesByProvider:
+SELECT * FROM ExternalRoutine
+WHERE profileId = ? AND provider = ? AND deletedAt IS NULL
+ORDER BY COALESCE(folderName, ''), title COLLATE NOCASE;
+
+getExternalRoutineBySyncKey:
+SELECT * FROM ExternalRoutine
+WHERE provider = ? AND externalId = ? AND profileId = ?;
+
+insertExternalRoutineIfNew:
+INSERT OR IGNORE INTO ExternalRoutine(
+    id, externalId, provider, title, folderExternalId, folderName,
+    updatedAt, syncedAt, rawData, profileId, needsSync, deletedAt
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateExternalRoutineOnConflict:
+UPDATE ExternalRoutine SET
+    title = ?,
+    folderExternalId = ?,
+    folderName = ?,
+    updatedAt = ?,
+    syncedAt = ?,
+    rawData = ?,
+    deletedAt = ?
+WHERE provider = ? AND externalId = ? AND profileId = ?;
+
+insertExternalRoutineExercise:
+INSERT OR REPLACE INTO ExternalRoutineExercise(
+    id, externalRoutineId, externalExerciseTemplateId, title, exerciseType,
+    primaryMuscleGroups, secondaryMuscleGroups, orderIndex, rawData
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertExternalRoutineSet:
+INSERT OR REPLACE INTO ExternalRoutineSet(
+    id, externalRoutineExerciseId, setIndex, setType, weightKg, reps,
+    minReps, maxReps, restSeconds, rpe, durationSeconds, distanceMeters, rawData
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+getExternalRoutineExercises:
+SELECT * FROM ExternalRoutineExercise
+WHERE externalRoutineId = ?
+ORDER BY orderIndex ASC;
+
+getExternalRoutineSets:
+SELECT * FROM ExternalRoutineSet
+WHERE externalRoutineExerciseId = ?
+ORDER BY setIndex ASC;
+
+deleteExternalRoutineSetsByRoutine:
+DELETE FROM ExternalRoutineSet
+WHERE externalRoutineExerciseId IN (
+    SELECT id FROM ExternalRoutineExercise WHERE externalRoutineId = ?
+);
+
+deleteExternalRoutineExercisesByRoutine:
+DELETE FROM ExternalRoutineExercise WHERE externalRoutineId = ?;
+
+deleteExternalRoutineSetsByProvider:
+DELETE FROM ExternalRoutineSet
+WHERE externalRoutineExerciseId IN (
+    SELECT e.id
+    FROM ExternalRoutineExercise e
+    JOIN ExternalRoutine r ON r.id = e.externalRoutineId
+    WHERE r.provider = ? AND r.profileId = ?
+);
+
+deleteExternalRoutineExercisesByProvider:
+DELETE FROM ExternalRoutineExercise
+WHERE externalRoutineId IN (
+    SELECT id FROM ExternalRoutine WHERE provider = ? AND profileId = ?
+);
+
+deleteExternalRoutinesByProvider:
+DELETE FROM ExternalRoutine WHERE provider = ? AND profileId = ?;
+
+-- ExternalRoutineFolder queries
+getExternalRoutineFolders:
+SELECT * FROM ExternalRoutineFolder
+WHERE profileId = ?
+ORDER BY COALESCE(folderIndex, 2147483647), title COLLATE NOCASE;
+
+getExternalRoutineFoldersByProvider:
+SELECT * FROM ExternalRoutineFolder
+WHERE profileId = ? AND provider = ?
+ORDER BY COALESCE(folderIndex, 2147483647), title COLLATE NOCASE;
+
+upsertExternalRoutineFolder:
+INSERT OR REPLACE INTO ExternalRoutineFolder(
+    id, externalId, provider, title, folderIndex, createdAt, updatedAt, profileId, rawData
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteExternalRoutineFoldersByProvider:
+DELETE FROM ExternalRoutineFolder WHERE provider = ? AND profileId = ?;
+
+-- ExternalProgram queries
+getExternalPrograms:
+SELECT * FROM ExternalProgram
+WHERE profileId = ? AND deletedAt IS NULL
+ORDER BY isCurrent DESC, name COLLATE NOCASE;
+
+getExternalProgramsByProvider:
+SELECT * FROM ExternalProgram
+WHERE profileId = ? AND provider = ? AND deletedAt IS NULL
+ORDER BY isCurrent DESC, name COLLATE NOCASE;
+
+getCurrentExternalProgram:
+SELECT * FROM ExternalProgram
+WHERE profileId = ? AND provider = ? AND isCurrent = 1 AND deletedAt IS NULL
+ORDER BY updatedAt DESC
+LIMIT 1;
+
+getExternalProgramBySyncKey:
+SELECT * FROM ExternalProgram
+WHERE provider = ? AND externalId = ? AND profileId = ?;
+
+insertExternalProgramIfNew:
+INSERT OR IGNORE INTO ExternalProgram(
+    id, externalId, provider, name, isCurrent, scriptText, rawData,
+    updatedAt, syncedAt, profileId, needsSync, deletedAt
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateExternalProgramOnConflict:
+UPDATE ExternalProgram SET
+    name = ?,
+    isCurrent = ?,
+    scriptText = ?,
+    rawData = ?,
+    updatedAt = ?,
+    syncedAt = ?,
+    deletedAt = ?
+WHERE provider = ? AND externalId = ? AND profileId = ?;
+
+updateExternalProgramText:
+UPDATE ExternalProgram SET
+    scriptText = ?,
+    updatedAt = ?,
+    syncedAt = ?,
+    needsSync = ?
+WHERE id = ?;
+
+deleteExternalProgramsByProvider:
+DELETE FROM ExternalProgram WHERE provider = ? AND profileId = ?;
+
+-- ExternalProgramStats queries
+getExternalProgramStats:
+SELECT * FROM ExternalProgramStats WHERE externalProgramId = ?;
+
+getExternalProgramStatsByProfile:
+SELECT s.*
+FROM ExternalProgramStats s
+JOIN ExternalProgram p ON p.id = s.externalProgramId
+WHERE p.profileId = ? AND p.deletedAt IS NULL;
+
+getExternalProgramStatsByProvider:
+SELECT s.*
+FROM ExternalProgramStats s
+JOIN ExternalProgram p ON p.id = s.externalProgramId
+WHERE p.profileId = ? AND p.provider = ? AND p.deletedAt IS NULL;
+
+insertExternalProgramStats:
+INSERT OR REPLACE INTO ExternalProgramStats(
+    id, externalProgramId, days, approximateMinutes, setCount,
+    muscleGroupBreakdownJson, rawData, computedAt
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteExternalProgramStatsByProgram:
+DELETE FROM ExternalProgramStats WHERE externalProgramId = ?;
+
+deleteExternalProgramStatsByProvider:
+DELETE FROM ExternalProgramStats
+WHERE externalProgramId IN (
+    SELECT id FROM ExternalProgram WHERE provider = ? AND profileId = ?
+);
+
+-- ExternalExerciseTemplate queries
+getExternalExerciseTemplates:
+SELECT * FROM ExternalExerciseTemplate
+WHERE profileId = ?
+ORDER BY title COLLATE NOCASE;
+
+getExternalExerciseTemplatesByProvider:
+SELECT * FROM ExternalExerciseTemplate
+WHERE profileId = ? AND provider = ?
+ORDER BY title COLLATE NOCASE;
+
+getExternalExerciseTemplateBySyncKey:
+SELECT * FROM ExternalExerciseTemplate
+WHERE provider = ? AND externalId = ? AND profileId = ?;
+
+upsertExternalExerciseTemplate:
+INSERT OR REPLACE INTO ExternalExerciseTemplate(
+    id, externalId, provider, title, exerciseType, primaryMuscleGroups,
+    secondaryMuscleGroups, isCustom, rawData, updatedAt, profileId
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+countExternalExerciseTemplatesByProvider:
+SELECT provider, COUNT(*) AS templateCount
+FROM ExternalExerciseTemplate
+WHERE profileId = ?
+GROUP BY provider;
+
+deleteExternalExerciseTemplatesByProvider:
+DELETE FROM ExternalExerciseTemplate WHERE provider = ? AND profileId = ?;
+
+-- ExternalExerciseTemplateMapping queries
+getExternalExerciseTemplateMapping:
+SELECT * FROM ExternalExerciseTemplateMapping
+WHERE provider = ? AND externalTemplateId = ? AND profileId = ?;
+
+upsertExternalExerciseTemplateMapping:
+INSERT OR REPLACE INTO ExternalExerciseTemplateMapping(
+    id, provider, externalTemplateId, localExerciseId, profileId, createdAt, updatedAt, rawData
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteExternalExerciseTemplateMappingsByProvider:
+DELETE FROM ExternalExerciseTemplateMapping WHERE provider = ? AND profileId = ?;
+
+-- ExternalBodyMeasurement queries
+getExternalBodyMeasurements:
+SELECT * FROM ExternalBodyMeasurement
+WHERE profileId = ?
+ORDER BY measuredAt DESC;
+
+getExternalBodyMeasurementsByProvider:
+SELECT * FROM ExternalBodyMeasurement
+WHERE profileId = ? AND provider = ?
+ORDER BY measuredAt DESC;
+
+getExternalBodyMeasurementsByType:
+SELECT * FROM ExternalBodyMeasurement
+WHERE profileId = ? AND measurementType = ?
+ORDER BY measuredAt DESC;
+
+upsertExternalBodyMeasurement:
+INSERT OR REPLACE INTO ExternalBodyMeasurement(
+    id, externalId, provider, measurementType, value, unit, measuredAt, syncedAt, rawData, profileId
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteExternalBodyMeasurementsByProvider:
+DELETE FROM ExternalBodyMeasurement WHERE provider = ? AND profileId = ?;
+
+-- IntegrationSyncCursor queries
+getIntegrationSyncCursor:
+SELECT * FROM IntegrationSyncCursor
+WHERE provider = ? AND profileId = ? AND cursorType = ?;
+
+getIntegrationSyncCursorsByProvider:
+SELECT * FROM IntegrationSyncCursor
+WHERE provider = ? AND profileId = ?;
+
+upsertIntegrationSyncCursor:
+INSERT OR REPLACE INTO IntegrationSyncCursor(provider, profileId, cursorType, cursorValue, updatedAt)
+VALUES (?, ?, ?, ?, ?);
+
+deleteIntegrationSyncCursorsByProvider:
+DELETE FROM IntegrationSyncCursor WHERE provider = ? AND profileId = ?;
 
 -- IntegrationStatus queries
 getIntegrationStatus:

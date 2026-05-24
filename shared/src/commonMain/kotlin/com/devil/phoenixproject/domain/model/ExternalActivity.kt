@@ -60,4 +60,5 @@ data class ExternalActivity(
     val syncedAt: Long = currentTimeMillis(),
     val profileId: String = "default",
     val needsSync: Boolean = false,
+    val deletedAt: Long? = null,
 )

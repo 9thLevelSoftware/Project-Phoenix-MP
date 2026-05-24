@@ -47,7 +47,38 @@ sealed class NavigationRoutes(val route: String) {
 
     // Integration routes
     object Integrations : NavigationRoutes("integrations")
+    object ExternalIntegrationHub : NavigationRoutes("external_integration_hub")
     object ExternalActivities : NavigationRoutes("external_activities")
+    object ExternalRoutines : NavigationRoutes("external_routines")
+    object ExternalRoutineDetail : NavigationRoutes("external_routine/{provider}/{externalRoutineId}") {
+        fun createRoute(provider: String, externalRoutineId: String) =
+            "external_routine/${provider.encodeRouteSegment()}/${externalRoutineId.encodeRouteSegment()}"
+    }
+    object ExternalPrograms : NavigationRoutes("external_programs")
+    object ExternalProgramDetail : NavigationRoutes("external_program/{provider}/{externalProgramId}") {
+        fun createRoute(provider: String, externalProgramId: String) =
+            "external_program/${provider.encodeRouteSegment()}/${externalProgramId.encodeRouteSegment()}"
+    }
+    object ExternalProgramPlayground : NavigationRoutes("external_program_playground/{provider}/{externalProgramId}") {
+        fun createRoute(provider: String, externalProgramId: String) =
+            "external_program_playground/${provider.encodeRouteSegment()}/${externalProgramId.encodeRouteSegment()}"
+    }
+    object ExternalMeasurementTrends : NavigationRoutes("external_measurements")
+}
+
+private fun String.encodeRouteSegment(): String = buildString {
+    for (c in this@encodeRouteSegment) {
+        when {
+            c.isLetterOrDigit() || c == '-' || c == '_' || c == '.' || c == '~' -> append(c)
+            else -> {
+                for (b in c.toString().encodeToByteArray()) {
+                    append('%')
+                    append(((b.toInt() shr 4) and 0xF).toString(16).uppercase())
+                    append((b.toInt() and 0xF).toString(16).uppercase())
+                }
+            }
+        }
+    }
 }
 
 /**

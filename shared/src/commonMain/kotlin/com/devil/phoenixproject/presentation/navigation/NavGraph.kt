@@ -631,9 +631,36 @@ fun NavGraph(
                 val weightUnit by viewModel.weightUnit.collectAsState()
                 IntegrationsScreen(
                     weightUnit = weightUnit,
-                    onNavigateToExternalActivities = {
-                        navController.navigate(NavigationRoutes.ExternalActivities.route)
+                    onNavigateToExternalData = {
+                        navController.navigate(NavigationRoutes.ExternalIntegrationHub.route)
                     },
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            }
+
+            // External integration data hub
+            composable(
+                route = NavigationRoutes.ExternalIntegrationHub.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                ExternalIntegrationHubScreen(
+                    onNavigateToActivities = { navController.navigate(NavigationRoutes.ExternalActivities.route) },
+                    onNavigateToRoutines = { navController.navigate(NavigationRoutes.ExternalRoutines.route) },
+                    onNavigateToPrograms = { navController.navigate(NavigationRoutes.ExternalPrograms.route) },
+                    onNavigateToMeasurements = { navController.navigate(NavigationRoutes.ExternalMeasurementTrends.route) },
                     onSetTitle = { viewModel.updateTopBarTitle(it) },
                 )
             }
@@ -657,6 +684,165 @@ fun NavGraph(
                 },
             ) {
                 ExternalActivitiesScreen(
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            }
+
+            composable(
+                route = NavigationRoutes.ExternalRoutines.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                ExternalRoutinesScreen(
+                    onRoutineClick = { provider, externalId ->
+                        navController.navigate(NavigationRoutes.ExternalRoutineDetail.createRoute(provider.key, externalId))
+                    },
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            }
+
+            composable(
+                route = NavigationRoutes.ExternalRoutineDetail.route,
+                arguments = listOf(
+                    navArgument("provider") { type = NavType.StringType },
+                    navArgument("externalRoutineId") { type = NavType.StringType },
+                ),
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) { backStackEntry ->
+                ExternalRoutineDetailScreen(
+                    providerKey = backStackEntry.arguments?.read { getStringOrNull("provider") } ?: "",
+                    externalRoutineId = backStackEntry.arguments?.read { getStringOrNull("externalRoutineId") } ?: "",
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            }
+
+            composable(
+                route = NavigationRoutes.ExternalPrograms.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                ExternalProgramsScreen(
+                    onProgramClick = { provider, externalId ->
+                        navController.navigate(NavigationRoutes.ExternalProgramDetail.createRoute(provider.key, externalId))
+                    },
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            }
+
+            composable(
+                route = NavigationRoutes.ExternalProgramDetail.route,
+                arguments = listOf(
+                    navArgument("provider") { type = NavType.StringType },
+                    navArgument("externalProgramId") { type = NavType.StringType },
+                ),
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) { backStackEntry ->
+                ExternalProgramDetailScreen(
+                    providerKey = backStackEntry.arguments?.read { getStringOrNull("provider") } ?: "",
+                    externalProgramId = backStackEntry.arguments?.read { getStringOrNull("externalProgramId") } ?: "",
+                    onNavigateToPlayground = { provider, externalId ->
+                        navController.navigate(NavigationRoutes.ExternalProgramPlayground.createRoute(provider.key, externalId))
+                    },
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            }
+
+            composable(
+                route = NavigationRoutes.ExternalProgramPlayground.route,
+                arguments = listOf(
+                    navArgument("provider") { type = NavType.StringType },
+                    navArgument("externalProgramId") { type = NavType.StringType },
+                ),
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) { backStackEntry ->
+                ExternalProgramPlaygroundScreen(
+                    providerKey = backStackEntry.arguments?.read { getStringOrNull("provider") } ?: "",
+                    externalProgramId = backStackEntry.arguments?.read { getStringOrNull("externalProgramId") } ?: "",
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            }
+
+            composable(
+                route = NavigationRoutes.ExternalMeasurementTrends.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                ExternalMeasurementTrendsScreen(
                     onSetTitle = { viewModel.updateTopBarTitle(it) },
                 )
             }

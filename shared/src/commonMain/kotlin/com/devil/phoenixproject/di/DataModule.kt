@@ -1,7 +1,17 @@
 package com.devil.phoenixproject.di
 
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateRepository
+import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
+import com.devil.phoenixproject.data.integration.ExternalProgramRepository
+import com.devil.phoenixproject.data.integration.ExternalRoutineRepository
+import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.integration.SqlDelightExternalActivityRepository
+import com.devil.phoenixproject.data.integration.SqlDelightExternalExerciseTemplateRepository
+import com.devil.phoenixproject.data.integration.SqlDelightExternalMeasurementRepository
+import com.devil.phoenixproject.data.integration.SqlDelightExternalProgramRepository
+import com.devil.phoenixproject.data.integration.SqlDelightExternalRoutineRepository
+import com.devil.phoenixproject.data.integration.SqlDelightIntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.local.DatabaseFactory
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.repository.*
@@ -43,4 +53,9 @@ val dataModule = module {
 
     // External Activity Repository (Task 3 - third-party integrations)
     single<ExternalActivityRepository> { SqlDelightExternalActivityRepository(get()) }
+    single<ExternalRoutineRepository> { SqlDelightExternalRoutineRepository(get()) }
+    single<ExternalProgramRepository> { SqlDelightExternalProgramRepository(get()) }
+    single<ExternalMeasurementRepository> { SqlDelightExternalMeasurementRepository(get()) }
+    single<ExternalExerciseTemplateRepository> { SqlDelightExternalExerciseTemplateRepository(get()) }
+    single<IntegrationSyncCursorRepository> { SqlDelightIntegrationSyncCursorRepository(get()) }
 }

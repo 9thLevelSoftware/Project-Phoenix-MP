@@ -6,6 +6,10 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.CsvImportPreview
 import com.devil.phoenixproject.data.integration.CsvImporter
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateRepository
+import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
+import com.devil.phoenixproject.data.integration.ExternalProgramRepository
+import com.devil.phoenixproject.data.integration.ExternalRoutineRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationManager
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
@@ -13,7 +17,15 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.domain.model.ExternalActivity
+import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
+import com.devil.phoenixproject.domain.model.ExternalProgram
+import com.devil.phoenixproject.domain.model.ExternalProgramStats
+import com.devil.phoenixproject.domain.model.ExternalRoutine
+import com.devil.phoenixproject.domain.model.ExternalRoutineFolder
+import com.devil.phoenixproject.domain.model.IntegrationEntitlementState
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.IntegrationSyncProgress
+import com.devil.phoenixproject.domain.model.IntegrationSyncResult
 import com.devil.phoenixproject.domain.model.IntegrationStatus
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
@@ -33,9 +45,23 @@ import kotlinx.coroutines.launch
 
 private val log = Logger.withTag("IntegrationsViewModel")
 
+sealed class IntegrationUiEvent {
+    data class Snackbar(val message: String) : IntegrationUiEvent()
+}
+
 data class IntegrationsUiState(
     val integrationStatuses: Map<IntegrationProvider, IntegrationStatus> = emptyMap(),
     val externalActivities: List<ExternalActivity> = emptyList(),
+    val externalRoutines: List<ExternalRoutine> = emptyList(),
+    val externalRoutineFolders: List<ExternalRoutineFolder> = emptyList(),
+    val externalPrograms: List<ExternalProgram> = emptyList(),
+    val externalMeasurements: List<ExternalBodyMeasurement> = emptyList(),
+    val externalProgramStatsByProgramId: Map<String, ExternalProgramStats> = emptyMap(),
+    val externalExerciseTemplateCountByProvider: Map<IntegrationProvider, Int> = emptyMap(),
+    val activeProgram: ExternalProgram? = null,
+    val entitlementStateByProvider: Map<IntegrationProvider, IntegrationEntitlementState> = emptyMap(),
+    val syncProgressByProvider: Map<IntegrationProvider, IntegrationSyncProgress> = emptyMap(),
+    val operationLoading: Set<String> = emptySet(),
     val isExporting: Boolean = false,
     val isImporting: Boolean = false,
     val isSyncing: Boolean = false,
@@ -47,6 +73,10 @@ data class IntegrationsUiState(
 
 class IntegrationsViewModel(
     private val externalActivityRepo: ExternalActivityRepository,
+    private val externalRoutineRepo: ExternalRoutineRepository,
+    private val externalProgramRepo: ExternalProgramRepository,
+    private val externalMeasurementRepo: ExternalMeasurementRepository,
+    private val externalTemplateRepo: ExternalExerciseTemplateRepository,
     private val integrationManager: IntegrationManager,
     private val workoutRepository: WorkoutRepository,
     private val healthIntegration: HealthIntegration,
@@ -79,6 +109,9 @@ class IntegrationsViewModel(
     private val _healthPermissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val healthPermissionRequests: SharedFlow<Unit> = _healthPermissionRequests.asSharedFlow()
 
+    private val _uiEvents = MutableSharedFlow<IntegrationUiEvent>(extraBufferCapacity = 8)
+    val uiEvents: SharedFlow<IntegrationUiEvent> = _uiEvents.asSharedFlow()
+
     init {
         viewModelScope.launch {
             // Observe external activities reactively, switching when profile changes
@@ -96,6 +129,62 @@ class IntegrationsViewModel(
             }.collect { statuses ->
                 val statusMap = statuses.associateBy { it.provider }
                 _uiState.value = _uiState.value.copy(integrationStatuses = statusMap)
+            }
+        }
+
+        viewModelScope.launch {
+            activeProfileId.flatMapLatest { profileId ->
+                externalRoutineRepo.observeRoutines(profileId = profileId)
+            }.collect { routines ->
+                _uiState.value = _uiState.value.copy(externalRoutines = routines)
+            }
+        }
+
+        viewModelScope.launch {
+            activeProfileId.flatMapLatest { profileId ->
+                externalRoutineRepo.observeFolders(profileId = profileId)
+            }.collect { folders ->
+                _uiState.value = _uiState.value.copy(externalRoutineFolders = folders)
+            }
+        }
+
+        viewModelScope.launch {
+            activeProfileId.flatMapLatest { profileId ->
+                externalProgramRepo.observePrograms(profileId = profileId)
+            }.collect { programs ->
+                _uiState.value = _uiState.value.copy(externalPrograms = programs)
+            }
+        }
+
+        viewModelScope.launch {
+            activeProfileId.flatMapLatest { profileId ->
+                externalProgramRepo.observeCurrentProgram(profileId = profileId, provider = IntegrationProvider.LIFTOSAUR)
+            }.collect { program ->
+                _uiState.value = _uiState.value.copy(activeProgram = program)
+            }
+        }
+
+        viewModelScope.launch {
+            activeProfileId.flatMapLatest { profileId ->
+                externalProgramRepo.observeProgramStats(profileId = profileId)
+            }.collect { stats ->
+                _uiState.value = _uiState.value.copy(externalProgramStatsByProgramId = stats)
+            }
+        }
+
+        viewModelScope.launch {
+            activeProfileId.flatMapLatest { profileId ->
+                externalMeasurementRepo.observeMeasurements(profileId = profileId)
+            }.collect { measurements ->
+                _uiState.value = _uiState.value.copy(externalMeasurements = measurements)
+            }
+        }
+
+        viewModelScope.launch {
+            activeProfileId.flatMapLatest { profileId ->
+                externalTemplateRepo.observeTemplateCounts(profileId = profileId)
+            }.collect { counts ->
+                _uiState.value = _uiState.value.copy(externalExerciseTemplateCountByProvider = counts)
             }
         }
     }
@@ -198,26 +287,23 @@ class IntegrationsViewModel(
         apiKey: String,
     ) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null)
+            setOperationLoading(provider, "connect", true)
             try {
                 integrationManager.connectProvider(provider, apiKey, activeProfileId.value, isPaidUser.value)
-                    .onSuccess { activities ->
-                        _uiState.value = _uiState.value.copy(
-                            successMessage = "Connected to ${provider.displayName}: ${activities.size} activities imported",
-                        )
-                        log.i { "Connected ${provider.key}: ${activities.size} activities" }
+                    .onSuccess { result ->
+                        applySyncResult(result)
+                        emitSnackbar("Connected to ${provider.displayName}: ${result.progress.summaryLabel()}")
+                        log.i { "Connected ${provider.key}: ${result.progress}" }
                     }
                     .onFailure { error ->
-                        _uiState.value = _uiState.value.copy(
-                            errorMessage = "Connect failed: ${error.message}",
-                        )
+                        emitSnackbar("Connect failed: ${error.message}")
                         log.w { "Connect to ${provider.key} failed: ${error.message}" }
                     }
             } catch (e: Exception) {
                 log.e(e) { "Unexpected error connecting ${provider.key}" }
-                _uiState.value = _uiState.value.copy(errorMessage = "Connect failed: ${e.message}")
+                emitSnackbar("Connect failed: ${e.message}")
             } finally {
-                _uiState.value = _uiState.value.copy(isSyncing = false)
+                setOperationLoading(provider, "connect", false)
             }
         }
     }
@@ -227,26 +313,24 @@ class IntegrationsViewModel(
      */
     fun syncProvider(provider: IntegrationProvider) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null)
+            setOperationLoading(provider, "sync", true)
             try {
                 integrationManager.syncProvider(provider, activeProfileId.value, isPaidUser.value)
-                    .onSuccess { activities ->
-                        _uiState.value = _uiState.value.copy(
-                            successMessage = "Synced ${provider.displayName}: ${activities.size} new activities",
-                        )
-                        log.i { "Synced ${provider.key}: ${activities.size} activities" }
+                    .onSuccess { result ->
+                        applySyncResult(result)
+                        val prefix = if (result.partial) "Partially synced" else "Synced"
+                        emitSnackbar("$prefix ${provider.displayName}: ${result.progress.summaryLabel()}")
+                        log.i { "Synced ${provider.key}: ${result.progress}" }
                     }
                     .onFailure { error ->
-                        _uiState.value = _uiState.value.copy(
-                            errorMessage = "Sync failed: ${error.message}",
-                        )
+                        emitSnackbar("Sync failed: ${error.message}")
                         log.w { "Sync ${provider.key} failed: ${error.message}" }
                     }
             } catch (e: Exception) {
                 log.e(e) { "Unexpected error syncing ${provider.key}" }
-                _uiState.value = _uiState.value.copy(errorMessage = "Sync failed: ${e.message}")
+                emitSnackbar("Sync failed: ${e.message}")
             } finally {
-                _uiState.value = _uiState.value.copy(isSyncing = false)
+                setOperationLoading(provider, "sync", false)
             }
         }
     }
@@ -256,26 +340,22 @@ class IntegrationsViewModel(
      */
     fun disconnectProvider(provider: IntegrationProvider) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null)
+            setOperationLoading(provider, "disconnect", true)
             try {
                 integrationManager.disconnectProvider(provider, activeProfileId.value)
                     .onSuccess {
-                        _uiState.value = _uiState.value.copy(
-                            successMessage = "Disconnected from ${provider.displayName}",
-                        )
+                        emitSnackbar("Disconnected from ${provider.displayName}")
                         log.i { "Disconnected ${provider.key}" }
                     }
                     .onFailure { error ->
-                        _uiState.value = _uiState.value.copy(
-                            errorMessage = "Disconnect failed: ${error.message}",
-                        )
+                        emitSnackbar("Disconnect failed: ${error.message}")
                         log.w { "Disconnect ${provider.key} failed: ${error.message}" }
                     }
             } catch (e: Exception) {
                 log.e(e) { "Unexpected error disconnecting ${provider.key}" }
-                _uiState.value = _uiState.value.copy(errorMessage = "Disconnect failed: ${e.message}")
+                emitSnackbar("Disconnect failed: ${e.message}")
             } finally {
-                _uiState.value = _uiState.value.copy(isSyncing = false)
+                setOperationLoading(provider, "disconnect", false)
             }
         }
     }
@@ -352,6 +432,44 @@ class IntegrationsViewModel(
     /** Clear both error and success messages. */
     fun clearMessages() {
         _uiState.value = _uiState.value.copy(errorMessage = null, successMessage = null)
+    }
+
+    private suspend fun emitSnackbar(message: String) {
+        _uiEvents.emit(IntegrationUiEvent.Snackbar(message))
+        _uiState.value = _uiState.value.copy(errorMessage = null, successMessage = null)
+    }
+
+    private fun setOperationLoading(provider: IntegrationProvider, operation: String, loading: Boolean) {
+        val key = "${provider.key}:$operation"
+        val current = _uiState.value.operationLoading
+        val next = if (loading) current + key else current - key
+        _uiState.value = _uiState.value.copy(
+            operationLoading = next,
+            isSyncing = next.isNotEmpty(),
+            errorMessage = null,
+        )
+    }
+
+    private fun applySyncResult(result: IntegrationSyncResult) {
+        val currentEntitlements = _uiState.value.entitlementStateByProvider.toMutableMap()
+        result.entitlementState?.let { currentEntitlements[result.provider] = it }
+        _uiState.value = _uiState.value.copy(
+            entitlementStateByProvider = currentEntitlements,
+            syncProgressByProvider = _uiState.value.syncProgressByProvider + (result.provider to result.progress),
+        )
+    }
+
+    private fun IntegrationSyncProgress.summaryLabel(): String {
+        val parts = buildList {
+            if (activitiesImported > 0) add("$activitiesImported workouts")
+            if (routinesImported > 0) add("$routinesImported routines")
+            if (routineFoldersImported > 0) add("$routineFoldersImported folders")
+            if (exerciseTemplatesImported > 0) add("$exerciseTemplatesImported templates")
+            if (measurementsImported > 0) add("$measurementsImported measurements")
+            if (programsImported > 0) add("$programsImported programs")
+            if (programStatsImported > 0) add("$programStatsImported stats")
+        }
+        return parts.ifEmpty { listOf("no new data") }.joinToString(", ")
     }
 
     private suspend fun applyHealthPermissionResult(

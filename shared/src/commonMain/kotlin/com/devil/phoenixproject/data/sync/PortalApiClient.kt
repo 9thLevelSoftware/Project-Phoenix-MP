@@ -528,6 +528,16 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
     }
 
+    open suspend fun callIntegrationPlaygroundSimulation(
+        request: IntegrationPlaygroundSimulationRequest,
+    ): Result<IntegrationPlaygroundSimulationResponse> = authenticatedRequest { token ->
+        httpClient.post("${supabaseConfig.url}/functions/v1/mobile-integration-playground") {
+            bearerAuth(token)
+            header("apikey", supabaseConfig.anonKey)
+            setBody(request)
+        }
+    }
+
     // === Private Helpers ===
 
     /**
