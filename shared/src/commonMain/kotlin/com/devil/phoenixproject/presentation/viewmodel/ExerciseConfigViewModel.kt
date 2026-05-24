@@ -565,8 +565,8 @@ class ExerciseConfigViewModel constructor(
         }
         val remainingSetIds = newSets.map { it.id }.toSet()
         pendingPercentOfPREditWeights.keys.retainAll(remainingSetIds)
+        setWeightsPercentOfPR = setWeightsPercentOfPR.filterIndexed { i, _ -> i != index }
         if (_usePercentOfPR.value) {
-            setWeightsPercentOfPR = setWeightsPercentOfPR.filterIndexed { i, _ -> i != index }
             syncSetWeightsToPercentOfPR()
         }
     }

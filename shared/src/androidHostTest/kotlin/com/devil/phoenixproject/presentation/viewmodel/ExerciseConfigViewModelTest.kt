@@ -250,6 +250,45 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `delete set while PR percent disabled keeps percentages aligned when re-enabled`() = runTest {
+        val repository = FakePersonalRecordRepository()
+        repository.addRecord(weightPR(weight = 50f))
+        val viewModel = ExerciseConfigViewModel(repository)
+        val exercise = benchRoutineExercise(
+            id = "rex-pr-delete-disabled",
+            setReps = listOf(10, 10, 10),
+            weightPerCableKg = 5f,
+            setWeightsPerCableKg = listOf(5f, 5f, 5f),
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            setWeightsPercentOfPR = listOf(80, 90, 100),
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+        advanceUntilIdle()
+        waitForCondition { viewModel.sets.value.map { it.weightPerCable } == listOf(40f, 45f, 50f) }
+
+        viewModel.onUsePercentOfPRChange(false)
+        viewModel.deleteSet(0)
+        assertEquals(listOf(45f, 50f), viewModel.sets.value.map { it.weightPerCable })
+
+        viewModel.onUsePercentOfPRChange(true)
+        assertEquals(listOf(45f, 50f), viewModel.sets.value.map { it.weightPerCable })
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertEquals(listOf(90, 100), saved.setWeightsPercentOfPR)
+        assertEquals(listOf(45f, 50f), saved.setWeightsPerCableKg)
+    }
+
+    @Test
     fun `initialize reloads PR lookup when active profile changes`() = runTest {
         val database = createTestDatabase()
         val queries = database.vitruvianDatabaseQueries
