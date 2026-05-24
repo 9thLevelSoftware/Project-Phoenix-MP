@@ -37,6 +37,11 @@ object SmartSuggestionsEngine {
     private const val MIN_SESSIONS_FOR_OPTIMAL = 3
     private const val MIN_DISTINCT_DAYS_FOR_OPTIMAL = 2
 
+    private fun normalizedExerciseKey(session: SessionSummary): String {
+        val normalizedName = session.exerciseName.trim().lowercase()
+        return if (normalizedName.isNotEmpty()) normalizedName else session.exerciseId
+    }
+
     /**
      * SUGG-01: Compute weekly volume per muscle group.
      * Filters sessions from current 7-day window (nowMs - 7 days to nowMs).
@@ -156,7 +161,7 @@ object SmartSuggestionsEngine {
     fun findNeglectedExercises(sessions: List<SessionSummary>, nowMs: Long): List<NeglectedExercise> {
         // For each exercise, find the most recent session
         val latestByExercise = sessions
-            .groupBy { it.exerciseId }
+            .groupBy { normalizedExerciseKey(it) }
             .mapValues { (_, exerciseSessions) -> exerciseSessions.maxBy { it.timestamp } }
 
         return latestByExercise.values

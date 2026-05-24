@@ -184,6 +184,21 @@ class SmartSuggestionsEngineTest {
         assertTrue(neglected.isEmpty()) // 5 days < 14 day threshold
     }
 
+    @Test
+    fun neglectedUsesLatestSessionAcrossExerciseIdVariantsWithSameName() {
+        val sessions = listOf(
+            session(exerciseId = "legacy-shoulder-press", exerciseName = "Shoulder Press", timestamp = NOW - ONE_DAY_MS * 59),
+            session(exerciseId = "new-shoulder-press", exerciseName = "Shoulder Press ", timestamp = NOW - ONE_DAY_MS * 7),
+        )
+
+        val neglected = SmartSuggestionsEngine.findNeglectedExercises(sessions, NOW)
+
+        assertTrue(
+            neglected.none { it.exerciseName.trim().equals("Shoulder Press", ignoreCase = true) },
+            "Exercise variants with same display name should use the most recent performed date",
+        )
+    }
+
     // ==========================================================
     // SUGG-04: Plateau Detection
     // ==========================================================
