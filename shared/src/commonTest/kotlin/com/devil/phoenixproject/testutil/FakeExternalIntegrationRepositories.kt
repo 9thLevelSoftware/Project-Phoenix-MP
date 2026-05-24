@@ -16,18 +16,30 @@ import com.devil.phoenixproject.domain.model.ExternalRoutineFolder
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 
 class FakeExternalRoutineRepository : ExternalRoutineRepository {
     val routines = mutableListOf<ExternalRoutine>()
     val folders = mutableListOf<ExternalRoutineFolder>()
+    private val routinesFlow = MutableStateFlow<List<ExternalRoutine>>(emptyList())
+    private val foldersFlow = MutableStateFlow<List<ExternalRoutineFolder>>(emptyList())
 
-    override fun observeRoutines(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalRoutine>> = MutableStateFlow(
-        routines.filter { it.profileId == profileId && (provider == null || it.provider == provider) },
-    )
+    private fun publishRoutines() {
+        routinesFlow.value = routines.toList()
+    }
 
-    override fun observeFolders(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalRoutineFolder>> = MutableStateFlow(
-        folders.filter { it.profileId == profileId && (provider == null || it.provider == provider) },
-    )
+    private fun publishFolders() {
+        foldersFlow.value = folders.toList()
+    }
+
+    override fun observeRoutines(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalRoutine>> = routinesFlow.map { rows ->
+        rows.filter { it.profileId == profileId && (provider == null || it.provider == provider) }
+    }
+
+    override fun observeFolders(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalRoutineFolder>> = foldersFlow.map { rows ->
+        rows.filter { it.profileId == profileId && (provider == null || it.provider == provider) }
+    }
 
     override suspend fun upsertRoutines(routines: List<ExternalRoutine>) {
         for (routine in routines) {
@@ -42,6 +54,7 @@ class FakeExternalRoutineRepository : ExternalRoutineRepository {
                 this.routines += routine
             }
         }
+        publishRoutines()
     }
 
     override suspend fun upsertFolders(folders: List<ExternalRoutineFolder>) {
@@ -57,32 +70,61 @@ class FakeExternalRoutineRepository : ExternalRoutineRepository {
                 this.folders += folder
             }
         }
+        publishFolders()
     }
 
     override suspend fun deleteProviderRoutines(provider: IntegrationProvider, profileId: String) {
         routines.removeAll { it.provider == provider && it.profileId == profileId }
         folders.removeAll { it.provider == provider && it.profileId == profileId }
+        publishRoutines()
+        publishFolders()
     }
 }
 
 class FakeExternalProgramRepository : ExternalProgramRepository {
     val programs = mutableListOf<ExternalProgram>()
     val stats = mutableListOf<ExternalProgramStats>()
+    private val programsFlow = MutableStateFlow<List<ExternalProgram>>(emptyList())
+    private val statsFlow = MutableStateFlow<List<ExternalProgramStats>>(emptyList())
 
-    override fun observePrograms(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalProgram>> = MutableStateFlow(
-        programs.filter { it.profileId == profileId && (provider == null || it.provider == provider) },
-    )
+    private fun publishPrograms() {
+        programsFlow.value = programs.toList()
+    }
 
-    override fun observeCurrentProgram(profileId: String, provider: IntegrationProvider): Flow<ExternalProgram?> = MutableStateFlow(
-        programs.firstOrNull { it.profileId == profileId && it.provider == provider && it.isCurrent },
-    )
+    private fun publishStats() {
+        statsFlow.value = stats.toList()
+    }
 
-    override fun observeProgramStats(profileId: String, provider: IntegrationProvider?): Flow<Map<String, ExternalProgramStats>> = MutableStateFlow(
-        stats.associateBy { it.externalProgramId },
-    )
+    override fun observePrograms(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalProgram>> = programsFlow.map { rows ->
+        rows.filter { it.profileId == profileId && (provider == null || it.provider == provider) }
+    }
+
+    override fun observeCurrentProgram(profileId: String, provider: IntegrationProvider): Flow<ExternalProgram?> = programsFlow.map { rows ->
+        rows.firstOrNull { it.profileId == profileId && it.provider == provider && it.isCurrent }
+    }
+
+    override fun observeProgramStats(profileId: String, provider: IntegrationProvider?): Flow<Map<String, ExternalProgramStats>> =
+        combine(programsFlow, statsFlow) { programs, stats ->
+            val visibleProgramIds = programs
+                .filter { it.profileId == profileId && (provider == null || it.provider == provider) }
+                .map { it.id }
+                .toSet()
+            stats
+                .filter { it.externalProgramId in visibleProgramIds }
+                .associateBy { it.externalProgramId }
+        }
 
     override suspend fun findProgram(provider: IntegrationProvider, externalId: String, profileId: String): ExternalProgram? =
         programs.firstOrNull { it.provider == provider && it.externalId == externalId && it.profileId == profileId }
+
+    override suspend fun findPrograms(provider: IntegrationProvider, externalIds: List<String>, profileId: String): List<ExternalProgram> {
+        val externalIdSet = externalIds.toSet()
+        return programs.filter {
+            it.provider == provider &&
+                it.externalId in externalIdSet &&
+                it.profileId == profileId
+        }
+    }
 
     override suspend fun upsertPrograms(programs: List<ExternalProgram>) {
         for (program in programs) {
@@ -97,6 +139,7 @@ class FakeExternalProgramRepository : ExternalProgramRepository {
                 this.programs += program
             }
         }
+        publishPrograms()
     }
 
     override suspend fun upsertStats(stats: List<ExternalProgramStats>) {
@@ -104,12 +147,14 @@ class FakeExternalProgramRepository : ExternalProgramRepository {
             this.stats.removeAll { it.externalProgramId == stat.externalProgramId }
             this.stats += stat
         }
+        publishStats()
     }
 
     override suspend fun updateProgramText(programId: String, scriptText: String, markNeedsSync: Boolean) {
         val index = programs.indexOfFirst { it.id == programId }
         if (index >= 0) {
             programs[index] = programs[index].copy(scriptText = scriptText, needsSync = markNeedsSync)
+            publishPrograms()
         }
     }
 
@@ -117,19 +162,26 @@ class FakeExternalProgramRepository : ExternalProgramRepository {
         val removedIds = programs.filter { it.provider == provider && it.profileId == profileId }.map { it.id }.toSet()
         programs.removeAll { it.id in removedIds }
         stats.removeAll { it.externalProgramId in removedIds }
+        publishPrograms()
+        publishStats()
     }
 }
 
 class FakeExternalMeasurementRepository : ExternalMeasurementRepository {
     val measurements = mutableListOf<ExternalBodyMeasurement>()
+    private val measurementsFlow = MutableStateFlow<List<ExternalBodyMeasurement>>(emptyList())
 
-    override fun observeMeasurements(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalBodyMeasurement>> = MutableStateFlow(
-        measurements.filter { it.profileId == profileId && (provider == null || it.provider == provider) },
-    )
+    private fun publishMeasurements() {
+        measurementsFlow.value = measurements.toList()
+    }
 
-    override fun observeMeasurementsByType(profileId: String, measurementType: String): Flow<List<ExternalBodyMeasurement>> = MutableStateFlow(
-        measurements.filter { it.profileId == profileId && it.measurementType == measurementType },
-    )
+    override fun observeMeasurements(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalBodyMeasurement>> = measurementsFlow.map { rows ->
+        rows.filter { it.profileId == profileId && (provider == null || it.provider == provider) }
+    }
+
+    override fun observeMeasurementsByType(profileId: String, measurementType: String): Flow<List<ExternalBodyMeasurement>> = measurementsFlow.map { rows ->
+        rows.filter { it.profileId == profileId && it.measurementType == measurementType }
+    }
 
     override suspend fun upsertMeasurements(measurements: List<ExternalBodyMeasurement>) {
         for (measurement in measurements) {
@@ -140,24 +192,31 @@ class FakeExternalMeasurementRepository : ExternalMeasurementRepository {
             }
             this.measurements += measurement
         }
+        publishMeasurements()
     }
 
     override suspend fun deleteProviderMeasurements(provider: IntegrationProvider, profileId: String) {
         measurements.removeAll { it.provider == provider && it.profileId == profileId }
+        publishMeasurements()
     }
 }
 
 class FakeExternalExerciseTemplateRepository : ExternalExerciseTemplateRepository {
     val templates = mutableListOf<ExternalExerciseTemplate>()
     val mappings = mutableListOf<ExternalExerciseTemplateMapping>()
+    private val templatesFlow = MutableStateFlow<List<ExternalExerciseTemplate>>(emptyList())
 
-    override fun observeTemplates(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalExerciseTemplate>> = MutableStateFlow(
-        templates.filter { it.profileId == profileId && (provider == null || it.provider == provider) },
-    )
+    private fun publishTemplates() {
+        templatesFlow.value = templates.toList()
+    }
 
-    override fun observeTemplateCounts(profileId: String): Flow<Map<IntegrationProvider, Int>> = MutableStateFlow(
-        templates.filter { it.profileId == profileId }.groupingBy { it.provider }.eachCount(),
-    )
+    override fun observeTemplates(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalExerciseTemplate>> = templatesFlow.map { rows ->
+        rows.filter { it.profileId == profileId && (provider == null || it.provider == provider) }
+    }
+
+    override fun observeTemplateCounts(profileId: String): Flow<Map<IntegrationProvider, Int>> = templatesFlow.map { rows ->
+        rows.filter { it.profileId == profileId }.groupingBy { it.provider }.eachCount()
+    }
 
     override suspend fun upsertTemplates(templates: List<ExternalExerciseTemplate>) {
         for (template in templates) {
@@ -168,6 +227,7 @@ class FakeExternalExerciseTemplateRepository : ExternalExerciseTemplateRepositor
             }
             this.templates += template
         }
+        publishTemplates()
     }
 
     override suspend fun findTemplate(provider: IntegrationProvider, externalId: String, profileId: String): ExternalExerciseTemplate? =
@@ -195,6 +255,7 @@ class FakeExternalExerciseTemplateRepository : ExternalExerciseTemplateRepositor
     override suspend fun deleteProviderTemplates(provider: IntegrationProvider, profileId: String) {
         templates.removeAll { it.provider == provider && it.profileId == profileId }
         mappings.removeAll { it.provider == provider && it.profileId == profileId }
+        publishTemplates()
     }
 }
 

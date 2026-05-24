@@ -133,7 +133,12 @@ class ExternalProgramsViewModel(
     }
 
     fun commitPreview(program: ExternalProgram) {
-        val text = _uiState.value.playgroundPreview?.updatedProgramText ?: return
+        val preview = _uiState.value.playgroundPreview ?: return
+        if (preview.programExternalId != program.externalId) {
+            _uiState.value = _uiState.value.copy(playgroundPreview = null)
+            return
+        }
+        val text = preview.updatedProgramText ?: return
         viewModelScope.launch {
             integrationManager.commitProgramText(program.id, text)
             _uiState.value = _uiState.value.copy(playgroundPreview = null)

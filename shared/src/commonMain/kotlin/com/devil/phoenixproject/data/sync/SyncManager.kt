@@ -1379,7 +1379,7 @@ class SyncManager(
                     externalId = dto.externalId,
                     provider = IntegrationProvider.fromKey(
                         dto.provider,
-                    ) ?: IntegrationProvider.HEVY,
+                    ) ?: IntegrationProvider.UNKNOWN,
                     name = dto.name,
                     activityType = dto.activityType,
                     startedAt = try {

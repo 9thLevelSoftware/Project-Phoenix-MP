@@ -25,45 +25,43 @@ private const val LIST_SEPARATOR = "|"
 
 private fun List<String>.encodeList(): String = joinToString(LIST_SEPARATOR)
 private fun String.decodeList(): List<String> = split(LIST_SEPARATOR).filter { it.isNotBlank() }
-private fun providerFromKey(key: String): IntegrationProvider = IntegrationProvider.fromKey(key) ?: IntegrationProvider.HEVY
+private fun providerFromKey(key: String): IntegrationProvider = IntegrationProvider.fromKey(key) ?: IntegrationProvider.UNKNOWN
 
 class SqlDelightExternalRoutineRepository(db: VitruvianDatabase) : ExternalRoutineRepository {
     private val queries = db.vitruvianDatabaseQueries
 
-    private fun com.devil.phoenixproject.database.ExternalRoutine.toDomain(): ExternalRoutine {
-        val exercises = queries.getExternalRoutineExercises(id).executeAsList().map { it.toDomain() }
-        return ExternalRoutine(
-            id = id,
-            externalId = externalId,
-            provider = providerFromKey(provider),
-            title = title,
-            folderExternalId = folderExternalId,
-            folderName = folderName,
-            updatedAt = updatedAt,
-            exercises = exercises,
-            rawData = rawData,
-            profileId = profileId,
-            syncedAt = syncedAt,
-            needsSync = needsSync != 0L,
-            deletedAt = deletedAt,
-        )
-    }
+    private fun com.devil.phoenixproject.database.ExternalRoutine.toDomain(
+        exercises: List<ExternalRoutineExercise>,
+    ): ExternalRoutine = ExternalRoutine(
+        id = id,
+        externalId = externalId,
+        provider = providerFromKey(provider),
+        title = title,
+        folderExternalId = folderExternalId,
+        folderName = folderName,
+        updatedAt = updatedAt,
+        exercises = exercises,
+        rawData = rawData,
+        profileId = profileId,
+        syncedAt = syncedAt,
+        needsSync = needsSync != 0L,
+        deletedAt = deletedAt,
+    )
 
-    private fun com.devil.phoenixproject.database.ExternalRoutineExercise.toDomain(): ExternalRoutineExercise {
-        val sets = queries.getExternalRoutineSets(id).executeAsList().map { it.toDomain() }
-        return ExternalRoutineExercise(
-            id = id,
-            externalRoutineId = externalRoutineId,
-            externalExerciseTemplateId = externalExerciseTemplateId,
-            title = title,
-            exerciseType = exerciseType,
-            primaryMuscleGroups = primaryMuscleGroups.decodeList(),
-            secondaryMuscleGroups = secondaryMuscleGroups.decodeList(),
-            orderIndex = orderIndex.toInt(),
-            sets = sets,
-            rawData = rawData,
-        )
-    }
+    private fun com.devil.phoenixproject.database.ExternalRoutineExercise.toDomain(
+        sets: List<ExternalRoutineSet>,
+    ): ExternalRoutineExercise = ExternalRoutineExercise(
+        id = id,
+        externalRoutineId = externalRoutineId,
+        externalExerciseTemplateId = externalExerciseTemplateId,
+        title = title,
+        exerciseType = exerciseType,
+        primaryMuscleGroups = primaryMuscleGroups.decodeList(),
+        secondaryMuscleGroups = secondaryMuscleGroups.decodeList(),
+        orderIndex = orderIndex.toInt(),
+        sets = sets,
+        rawData = rawData,
+    )
 
     private fun com.devil.phoenixproject.database.ExternalRoutineSet.toDomain(): ExternalRoutineSet = ExternalRoutineSet(
         id = id,
@@ -99,7 +97,25 @@ class SqlDelightExternalRoutineRepository(db: VitruvianDatabase) : ExternalRouti
         } else {
             queries.getExternalRoutinesByProvider(profileId, provider.key)
         }
-        return query.asFlow().mapToList(Dispatchers.IO).map { rows -> rows.map { it.toDomain() } }
+        return query.asFlow().mapToList(Dispatchers.IO).map { rows ->
+            if (rows.isEmpty()) {
+                emptyList()
+            } else {
+                val exerciseRows = queries.getExternalRoutineExercisesForRoutines(rows.map { it.id }).executeAsList()
+                val setRows = if (exerciseRows.isEmpty()) {
+                    emptyList()
+                } else {
+                    queries.getExternalRoutineSetsForExercises(exerciseRows.map { it.id }).executeAsList()
+                }
+                val setsByExerciseId = setRows
+                    .groupBy { it.externalRoutineExerciseId }
+                    .mapValues { (_, sets) -> sets.map { it.toDomain() } }
+                val exercisesByRoutineId = exerciseRows
+                    .map { exercise -> exercise.toDomain(setsByExerciseId[exercise.id].orEmpty()) }
+                    .groupBy { it.externalRoutineId }
+                rows.map { routine -> routine.toDomain(exercisesByRoutineId[routine.id].orEmpty()) }
+            }
+        }
     }
 
     override fun observeFolders(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalRoutineFolder>> {
@@ -146,38 +162,40 @@ class SqlDelightExternalRoutineRepository(db: VitruvianDatabase) : ExternalRouti
                         provider = routine.provider.key,
                         externalId = routine.externalId,
                         profileId = routine.profileId,
-                    ).executeAsOne()
+                    ).executeAsOneOrNull()
 
-                    queries.deleteExternalRoutineSetsByRoutine(localRoutine.id)
-                    queries.deleteExternalRoutineExercisesByRoutine(localRoutine.id)
-                    for (exercise in routine.exercises.sortedBy { it.orderIndex }) {
-                        queries.insertExternalRoutineExercise(
-                            id = exercise.id,
-                            externalRoutineId = localRoutine.id,
-                            externalExerciseTemplateId = exercise.externalExerciseTemplateId,
-                            title = exercise.title,
-                            exerciseType = exercise.exerciseType,
-                            primaryMuscleGroups = exercise.primaryMuscleGroups.encodeList(),
-                            secondaryMuscleGroups = exercise.secondaryMuscleGroups.encodeList(),
-                            orderIndex = exercise.orderIndex.toLong(),
-                            rawData = exercise.rawData,
-                        )
-                        for (set in exercise.sets.sortedBy { it.index }) {
-                            queries.insertExternalRoutineSet(
-                                id = set.id,
-                                externalRoutineExerciseId = exercise.id,
-                                setIndex = set.index.toLong(),
-                                setType = set.setType,
-                                weightKg = set.weightKg,
-                                reps = set.reps?.toLong(),
-                                minReps = set.minReps?.toLong(),
-                                maxReps = set.maxReps?.toLong(),
-                                restSeconds = set.restSeconds?.toLong(),
-                                rpe = set.rpe,
-                                durationSeconds = set.durationSeconds?.toLong(),
-                                distanceMeters = set.distanceMeters,
-                                rawData = set.rawData,
+                    if (localRoutine != null) {
+                        queries.deleteExternalRoutineSetsByRoutine(localRoutine.id)
+                        queries.deleteExternalRoutineExercisesByRoutine(localRoutine.id)
+                        for (exercise in routine.exercises.sortedBy { it.orderIndex }) {
+                            queries.insertExternalRoutineExercise(
+                                id = exercise.id,
+                                externalRoutineId = localRoutine.id,
+                                externalExerciseTemplateId = exercise.externalExerciseTemplateId,
+                                title = exercise.title,
+                                exerciseType = exercise.exerciseType,
+                                primaryMuscleGroups = exercise.primaryMuscleGroups.encodeList(),
+                                secondaryMuscleGroups = exercise.secondaryMuscleGroups.encodeList(),
+                                orderIndex = exercise.orderIndex.toLong(),
+                                rawData = exercise.rawData,
                             )
+                            for (set in exercise.sets.sortedBy { it.index }) {
+                                queries.insertExternalRoutineSet(
+                                    id = set.id,
+                                    externalRoutineExerciseId = exercise.id,
+                                    setIndex = set.index.toLong(),
+                                    setType = set.setType,
+                                    weightKg = set.weightKg,
+                                    reps = set.reps?.toLong(),
+                                    minReps = set.minReps?.toLong(),
+                                    maxReps = set.maxReps?.toLong(),
+                                    restSeconds = set.restSeconds?.toLong(),
+                                    rpe = set.rpe,
+                                    durationSeconds = set.durationSeconds?.toLong(),
+                                    distanceMeters = set.distanceMeters,
+                                    rawData = set.rawData,
+                                )
+                            }
                         }
                     }
                 }
@@ -273,6 +291,14 @@ class SqlDelightExternalProgramRepository(db: VitruvianDatabase) : ExternalProgr
 
     override suspend fun findProgram(provider: IntegrationProvider, externalId: String, profileId: String): ExternalProgram? = withContext(Dispatchers.IO) {
         queries.getExternalProgramBySyncKey(provider.key, externalId, profileId).executeAsOneOrNull()?.toDomain()
+    }
+
+    override suspend fun findPrograms(provider: IntegrationProvider, externalIds: List<String>, profileId: String): List<ExternalProgram> = withContext(Dispatchers.IO) {
+        if (externalIds.isEmpty()) {
+            emptyList()
+        } else {
+            queries.getExternalProgramsBySyncKeys(provider.key, profileId, externalIds).executeAsList().map { it.toDomain() }
+        }
     }
 
     override suspend fun upsertPrograms(programs: List<ExternalProgram>) {

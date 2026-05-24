@@ -156,6 +156,7 @@ class IntegrationManager(
         var page = 0
         var cursor = startCursor
         var aggregate = IntegrationSyncResult(provider = provider)
+        var latestProviderSyncCursor: String? = null
 
         while (page < MAX_SYNC_PAGES_PER_ENTITY) {
             val request = IntegrationSyncRequest(
@@ -192,19 +193,7 @@ class IntegrationManager(
 
             val pageResult = persistResponse(provider, profileId, isPaidUser, response)
             aggregate = aggregate.merge(pageResult)
-
-            val cursorValue = response.providerSyncCursor ?: response.nextCursor
-            if (cursorValue != null) {
-                cursorRepository.upsertCursor(
-                    IntegrationSyncCursor(
-                        provider = provider,
-                        profileId = profileId,
-                        cursorType = "integration_sync",
-                        cursorValue = cursorValue,
-                        updatedAt = currentTimeMillis(),
-                    ),
-                )
-            }
+            response.providerSyncCursor?.let { latestProviderSyncCursor = it }
 
             if (!response.hasMore || response.nextCursor == null) break
             cursor = response.nextCursor
@@ -218,6 +207,18 @@ class IntegrationManager(
                     entityType = "sync",
                     code = "page_cap_reached",
                     message = "Stopped after $MAX_SYNC_PAGES_PER_ENTITY pages to avoid an infinite sync loop.",
+                ),
+            )
+        }
+
+        if (latestProviderSyncCursor != null) {
+            cursorRepository.upsertCursor(
+                IntegrationSyncCursor(
+                    provider = provider,
+                    profileId = profileId,
+                    cursorType = "integration_sync",
+                    cursorValue = latestProviderSyncCursor,
+                    updatedAt = currentTimeMillis(),
                 ),
             )
         }
@@ -265,8 +266,13 @@ class IntegrationManager(
         if (measurements.isNotEmpty()) measurementRepository.upsertMeasurements(measurements)
         if (programs.isNotEmpty()) programRepository.upsertPrograms(programs)
 
+        val programsByExternalId = programRepository.findPrograms(
+            provider = provider,
+            externalIds = response.programStats.map { it.externalProgramId }.distinct(),
+            profileId = profileId,
+        ).associateBy { it.externalId }
         val stats = response.programStats.mapNotNull { dto ->
-            val localProgram = programRepository.findProgram(provider, dto.externalProgramId, profileId)
+            val localProgram = programsByExternalId[dto.externalProgramId]
             if (localProgram == null) {
                 Logger.w("IntegrationManager") {
                     "Skipping stats for missing ${provider.key} program ${dto.externalProgramId}"

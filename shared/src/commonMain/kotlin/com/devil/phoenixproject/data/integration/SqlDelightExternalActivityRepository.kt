@@ -28,7 +28,7 @@ class SqlDelightExternalActivityRepository(db: VitruvianDatabase) : ExternalActi
     private fun com.devil.phoenixproject.database.ExternalActivity.toDomain(): ExternalActivity = ExternalActivity(
         id = id,
         externalId = externalId,
-        provider = IntegrationProvider.fromKey(provider) ?: IntegrationProvider.HEVY,
+        provider = IntegrationProvider.fromKey(provider) ?: IntegrationProvider.UNKNOWN,
         name = name,
         activityType = activityType,
         startedAt = startedAt,
@@ -46,7 +46,7 @@ class SqlDelightExternalActivityRepository(db: VitruvianDatabase) : ExternalActi
     )
 
     private fun com.devil.phoenixproject.database.IntegrationStatus.toDomain(): IntegrationStatus = IntegrationStatus(
-        provider = IntegrationProvider.fromKey(provider) ?: IntegrationProvider.HEVY,
+        provider = IntegrationProvider.fromKey(provider) ?: IntegrationProvider.UNKNOWN,
         status = runCatching { ConnectionStatus.valueOf(status.uppercase()) }
             .getOrDefault(ConnectionStatus.DISCONNECTED),
         lastSyncAt = lastSyncAt,

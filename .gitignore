@@ -73,6 +73,7 @@ LAST_SESSION.md
 CHANGELOG.md
 .aider*
 /.devilmcp/
+/.cursor/hooks/state/
 
 # Reference/decompiled code (not for distribution)
 /reference/

@@ -643,6 +643,40 @@ class IntegrationManagerTest {
         assertEquals(2, fakeApi.integrationSyncCallCount)
         assertEquals(2, result.progress.activitiesImported)
         assertEquals(2, fakeRepo.activities.size)
-        assertEquals("page-2", fakeCursorRepo.cursors.single().cursorValue)
+        assertEquals(emptyList(), fakeCursorRepo.cursors, "Transient page cursors must not be stored as durable sync cursors")
+    }
+
+    @Test
+    fun syncPersistsProviderSyncCursorWithoutPersistingPageCursor() = runTest {
+        fakeApi.integrationSyncResultsQueue = mutableListOf(
+            Result.success(
+                IntegrationSyncResponse(
+                    status = "ok",
+                    activities = listOf(
+                        IntegrationActivityDto("a1", "hevy", "First", startedAt = "2026-03-20T10:00:00Z"),
+                    ),
+                    hasMore = true,
+                    nextCursor = "page-2",
+                    providerSyncCursor = "provider-checkpoint-1",
+                ),
+            ),
+            Result.success(
+                IntegrationSyncResponse(
+                    status = "ok",
+                    activities = listOf(
+                        IntegrationActivityDto("a2", "hevy", "Second", startedAt = "2026-03-21T10:00:00Z"),
+                    ),
+                    hasMore = false,
+                    providerSyncCursor = "provider-checkpoint-2",
+                ),
+            ),
+        )
+        val manager = createManager()
+
+        manager.syncProvider(IntegrationProvider.HEVY, "profile-1", true).getOrThrow()
+
+        assertEquals(2, fakeApi.integrationSyncCallCount)
+        assertEquals("page-2", fakeApi.lastIntegrationSyncRequest?.cursor, "Pagination should still use nextCursor within the loop")
+        assertEquals("provider-checkpoint-2", fakeCursorRepo.cursors.single().cursorValue)
     }
 }

@@ -34,6 +34,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,6 +58,7 @@ import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.presentation.viewmodel.ExternalMeasurementsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExternalProgramsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExternalRoutinesViewModel
+import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -134,12 +138,13 @@ fun ExternalRoutinesScreen(
         return
     }
 
+    val grouped = remember(state.routines) { state.routines.groupBy { it.folderName ?: "Unfiled" } }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(Spacing.medium),
         verticalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
-        val grouped = state.routines.groupBy { it.folderName ?: "Unfiled" }
         grouped.forEach { (folder, routines) ->
             item {
                 Row(
@@ -167,7 +172,9 @@ fun ExternalRoutineDetailScreen(
 ) {
     val viewModel: ExternalRoutinesViewModel = koinViewModel()
     val state by viewModel.uiState.collectAsState()
-    val routine = state.routines.firstOrNull { it.provider.key == providerKey && it.externalId == externalRoutineId }
+    val routine = remember(state.routines, providerKey, externalRoutineId) {
+        state.routines.firstOrNull { it.provider.key == providerKey && it.externalId == externalRoutineId }
+    }
 
     LaunchedEffect(routine?.title) {
         onSetTitle(routine?.title ?: "Routine")
@@ -261,7 +268,9 @@ fun ExternalProgramDetailScreen(
 ) {
     val viewModel: ExternalProgramsViewModel = koinViewModel()
     val state by viewModel.uiState.collectAsState()
-    val program = state.programs.firstOrNull { it.provider.key == providerKey && it.externalId == externalProgramId }
+    val program = remember(state.programs, providerKey, externalProgramId) {
+        state.programs.firstOrNull { it.provider.key == providerKey && it.externalId == externalProgramId }
+    }
 
     LaunchedEffect(program?.name) {
         onSetTitle(program?.name ?: "Program")
@@ -324,11 +333,26 @@ fun ExternalProgramPlaygroundScreen(
 ) {
     val viewModel: ExternalProgramsViewModel = koinViewModel()
     val state by viewModel.uiState.collectAsState()
-    val program = state.programs.firstOrNull { it.provider.key == providerKey && it.externalId == externalProgramId }
-    val preview = state.playgroundPreview
+    val snackbarHostState = remember { SnackbarHostState() }
+    val program = remember(state.programs, providerKey, externalProgramId) {
+        state.programs.firstOrNull { it.provider.key == providerKey && it.externalId == externalProgramId }
+    }
+    val preview = state.playgroundPreview?.takeIf { it.programExternalId == externalProgramId }
 
     LaunchedEffect(Unit) {
         onSetTitle("Program Playground")
+    }
+
+    LaunchedEffect(providerKey, externalProgramId) {
+        viewModel.clearPreview()
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is IntegrationUiEvent.Snackbar -> snackbarHostState.showSnackbar(event.message)
+            }
+        }
     }
 
     if (program == null) {
@@ -336,47 +360,55 @@ fun ExternalProgramPlaygroundScreen(
         return
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(Spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.small),
-    ) {
-        item {
-            Text(program.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Button(
-                onClick = { viewModel.simulateProgram(program) },
-                enabled = !state.isSimulating,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (state.isSimulating) "Simulating..." else "Run Preview")
-            }
-        }
-        item {
-            EntityCard {
-                Text("Current workout", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(preview?.currentWorkoutText ?: "Run a preview to see the current workout.")
-            }
-        }
-        item {
-            EntityCard {
-                Text("Next workout", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(preview?.nextWorkoutText ?: "Run a preview to see the next workout.")
-            }
-        }
-        item {
-            EntityCard {
-                Text("Updated program", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(preview?.updatedProgramText ?: "No updated program text yet.")
-            }
-        }
-        if (preview?.updatedProgramText != null) {
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background,
+        modifier = modifier,
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(Spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), modifier = Modifier.fillMaxWidth()) {
-                    Button(onClick = { viewModel.commitPreview(program) }, modifier = Modifier.weight(1f)) {
-                        Text("Commit")
-                    }
-                    TextButton(onClick = { viewModel.clearPreview() }, modifier = Modifier.weight(1f)) {
-                        Text("Discard")
+                Text(program.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Button(
+                    onClick = { viewModel.simulateProgram(program) },
+                    enabled = !state.isSimulating,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (state.isSimulating) "Simulating..." else "Run Preview")
+                }
+            }
+            item {
+                EntityCard {
+                    Text("Current workout", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(preview?.currentWorkoutText ?: "Run a preview to see the current workout.")
+                }
+            }
+            item {
+                EntityCard {
+                    Text("Next workout", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(preview?.nextWorkoutText ?: "Run a preview to see the next workout.")
+                }
+            }
+            item {
+                EntityCard {
+                    Text("Updated program", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(preview?.updatedProgramText ?: "No updated program text yet.")
+                }
+            }
+            if (preview?.updatedProgramText != null) {
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), modifier = Modifier.fillMaxWidth()) {
+                        Button(onClick = { viewModel.commitPreview(program) }, modifier = Modifier.weight(1f)) {
+                            Text("Commit")
+                        }
+                        TextButton(onClick = { viewModel.clearPreview() }, modifier = Modifier.weight(1f)) {
+                            Text("Discard")
+                        }
                     }
                 }
             }

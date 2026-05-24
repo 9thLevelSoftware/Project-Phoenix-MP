@@ -518,7 +518,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         createSql = """
             CREATE TABLE IF NOT EXISTS ExternalRoutineExercise (
                 id TEXT NOT NULL PRIMARY KEY,
-                externalRoutineId TEXT NOT NULL,
+                externalRoutineId TEXT NOT NULL REFERENCES ExternalRoutine(id) ON DELETE CASCADE,
                 externalExerciseTemplateId TEXT,
                 title TEXT NOT NULL,
                 exerciseType TEXT,
@@ -535,7 +535,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         createSql = """
             CREATE TABLE IF NOT EXISTS ExternalRoutineSet (
                 id TEXT NOT NULL PRIMARY KEY,
-                externalRoutineExerciseId TEXT NOT NULL,
+                externalRoutineExerciseId TEXT NOT NULL REFERENCES ExternalRoutineExercise(id) ON DELETE CASCADE,
                 setIndex INTEGER NOT NULL DEFAULT 0,
                 setType TEXT,
                 weightKg REAL,
@@ -593,7 +593,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         createSql = """
             CREATE TABLE IF NOT EXISTS ExternalProgramStats (
                 id TEXT NOT NULL PRIMARY KEY,
-                externalProgramId TEXT NOT NULL,
+                externalProgramId TEXT NOT NULL REFERENCES ExternalProgram(id) ON DELETE CASCADE,
                 days INTEGER,
                 approximateMinutes INTEGER,
                 setCount INTEGER,
