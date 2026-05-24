@@ -5,14 +5,17 @@ import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -165,6 +168,88 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `global PR percent preserves custom per-set percentages`() = runTest {
+        val repository = FakePersonalRecordRepository()
+        repository.addRecord(weightPR(weight = 50f))
+        val viewModel = ExerciseConfigViewModel(repository)
+        val exercise = benchRoutineExercise(
+            id = "rex-pr-custom",
+            setReps = listOf(10, 10, 10),
+            weightPerCableKg = 5f,
+            setWeightsPerCableKg = listOf(5f, 5f, 5f),
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            setWeightsPercentOfPR = listOf(80, 80, 80),
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+        advanceUntilIdle()
+        waitForCondition { viewModel.sets.value.map { it.weightPerCable } == listOf(40f, 40f, 40f) }
+
+        viewModel.updateWeight(viewModel.sets.value.first().id, 45f)
+        assertEquals(listOf(45f, 40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+
+        viewModel.onWeightPercentOfPRChange(85)
+        assertEquals(listOf(45f, 40f, 40f), viewModel.sets.value.map { it.weightPerCable })
+
+        viewModel.addSet()
+        assertEquals(listOf(45f, 40f, 40f, 42.5f), viewModel.sets.value.map { it.weightPerCable })
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertEquals(85, saved.weightPercentOfPR)
+        assertEquals(listOf(90, 80, 80, 85), saved.setWeightsPercentOfPR)
+        assertEquals(listOf(45f, 40f, 40f, 42.5f), saved.setWeightsPerCableKg)
+    }
+
+    @Test
+    fun `manual PR percent weight edit before PR load converts when PR becomes available`() = runTest {
+        val repository = FakePersonalRecordRepository()
+        val viewModel = ExerciseConfigViewModel(repository)
+        val exercise = benchRoutineExercise(
+            id = "rex-pr-pending",
+            setReps = listOf(10, 10),
+            weightPerCableKg = 5f,
+            setWeightsPerCableKg = listOf(5f, 5f),
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            setWeightsPercentOfPR = listOf(80, 80),
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+        advanceUntilIdle()
+        assertNull(viewModel.currentExercisePR.value)
+
+        viewModel.updateWeight(viewModel.sets.value.first().id, 25f)
+        assertEquals(listOf(25f, 5f), viewModel.sets.value.map { it.weightPerCable })
+
+        repository.addRecord(weightPR(weight = 50f))
+        viewModel.loadPRForExercise("bench-1", "Old School")
+        advanceUntilIdle()
+
+        waitForCondition { viewModel.sets.value.map { it.weightPerCable } == listOf(25f, 40f) }
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertEquals(listOf(50, 80), saved.setWeightsPercentOfPR)
+        assertEquals(listOf(25f, 40f), saved.setWeightsPerCableKg)
+    }
+
+    @Test
     fun `initialize reloads PR lookup when active profile changes`() = runTest {
         val database = createTestDatabase()
         val queries = database.vitruvianDatabaseQueries
@@ -250,6 +335,7 @@ class ExerciseConfigViewModelTest {
         setWeightsPerCableKg: List<Float> = emptyList(),
         usePercentOfPR: Boolean = false,
         weightPercentOfPR: Int = 80,
+        setWeightsPercentOfPR: List<Int> = emptyList(),
     ) = RoutineExercise(
         id = id,
         exercise = Exercise(
@@ -268,6 +354,20 @@ class ExerciseConfigViewModelTest {
         echoLevel = EchoLevel.HARDER,
         usePercentOfPR = usePercentOfPR,
         weightPercentOfPR = weightPercentOfPR,
+        setWeightsPercentOfPR = setWeightsPercentOfPR,
+    )
+
+    private fun weightPR(weight: Float) = PersonalRecord(
+        id = 1,
+        exerciseId = "bench-1",
+        exerciseName = "Bench Press",
+        weightPerCableKg = weight,
+        reps = 6,
+        oneRepMax = weight * 1.2f,
+        timestamp = 1_000L,
+        workoutMode = "Old School",
+        prType = PRType.MAX_WEIGHT,
+        volume = weight * 6,
     )
 
     private fun insertExercise(queries: com.devil.phoenixproject.database.VitruvianDatabaseQueries, id: String, name: String) {
