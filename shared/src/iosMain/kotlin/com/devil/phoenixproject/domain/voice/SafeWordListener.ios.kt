@@ -15,10 +15,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import platform.AVFAudio.AVAudioEngine
+import platform.AVFAudio.AVAudioFormat
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryOptionMixWithOthers
 import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
 import platform.AVFAudio.AVAudioSessionModeDefault
+import platform.AVFAudio.AVAudioSessionRecordPermissionDenied
+import platform.AVFAudio.AVAudioSessionRecordPermissionGranted
+import platform.AVFAudio.AVAudioSessionRecordPermissionUndetermined
 import platform.AVFAudio.AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
 import platform.AVFAudio.setActive
 import platform.Foundation.NSDate
@@ -60,6 +64,7 @@ actual class SafeWordListener(private val safeWord: String) {
     private var audioEngine: AVAudioEngine? = null
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest? = null
     private var recognitionTask: SFSpeechRecognitionTask? = null
+    private var inputTapInstalled = false
 
     private val _isListening = MutableStateFlow(false)
     actual val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
@@ -109,9 +114,7 @@ actual class SafeWordListener(private val safeWord: String) {
         }
 
         shouldBeListening = true
-        dispatch_async(dispatch_get_main_queue()) {
-            startRecognition()
-        }
+        startRecognitionWhenRecordPermissionGranted()
     }
 
     actual fun stopListening() {
@@ -123,12 +126,53 @@ actual class SafeWordListener(private val safeWord: String) {
 
     // ---- internal ----
 
+    private fun startRecognitionWhenRecordPermissionGranted() {
+        val session = AVAudioSession.sharedInstance()
+        when (session.recordPermission) {
+            AVAudioSessionRecordPermissionGranted -> dispatchStartRecognition()
+            AVAudioSessionRecordPermissionUndetermined -> {
+                session.requestRecordPermission { granted ->
+                    dispatch_async(dispatch_get_main_queue()) {
+                        if (shouldBeListening) {
+                            if (granted) {
+                                startRecognition()
+                            } else {
+                                NSLog("$TAG: Microphone recording permission denied by user")
+                                shouldBeListening = false
+                                _isListening.value = false
+                            }
+                        }
+                    }
+                }
+            }
+            AVAudioSessionRecordPermissionDenied -> {
+                NSLog("$TAG: Microphone recording permission denied")
+                shouldBeListening = false
+                _isListening.value = false
+            }
+            else -> {
+                NSLog("$TAG: Microphone recording permission unavailable (status=${session.recordPermission})")
+                shouldBeListening = false
+                _isListening.value = false
+            }
+        }
+    }
+
+    private fun dispatchStartRecognition() {
+        dispatch_async(dispatch_get_main_queue()) {
+            startRecognition()
+        }
+    }
+
     private fun startRecognition() {
         if (!shouldBeListening) return
 
         try {
-            // Cancel any existing task
+            // Clear any existing task/engine before creating a fresh input tap.
             cancelExistingTask()
+            if (audioEngine != null) {
+                tearDown()
+            }
 
             // Configure audio session for recording while allowing music playback
             configureAudioSession()
@@ -145,6 +189,17 @@ actual class SafeWordListener(private val safeWord: String) {
 
             val inputNode = engine.inputNode
             val recordingFormat = inputNode.outputFormatForBus(0u)
+            if (!recordingFormat.isValidForRecordingTap()) {
+                // AVAudioNode raises an Objective-C exception for invalid tap
+                // formats, which Kotlin/Native cannot catch as Exception.
+                NSLog(
+                    "$TAG: Invalid input format for speech recognition " +
+                        "(sampleRate=${recordingFormat.sampleRate}, channels=${recordingFormat.channelCount})",
+                )
+                _isListening.value = false
+                scheduleRestart()
+                return
+            }
 
             inputNode.installTapOnBus(
                 bus = 0u,
@@ -153,6 +208,7 @@ actual class SafeWordListener(private val safeWord: String) {
             ) { buffer, _ ->
                 buffer?.let { request.appendAudioPCMBuffer(it) }
             }
+            inputTapInstalled = true
 
             engine.prepare()
             @OptIn(BetaInteropApi::class)
@@ -167,6 +223,7 @@ actual class SafeWordListener(private val safeWord: String) {
             }
             if (!engineStarted) {
                 _isListening.value = false
+                scheduleRestart()
                 return
             }
 
@@ -256,7 +313,10 @@ actual class SafeWordListener(private val safeWord: String) {
         isTearingDown = true
         try {
             audioEngine?.let { engine ->
-                engine.inputNode.removeTapOnBus(0u)
+                if (inputTapInstalled) {
+                    inputTapInstalled = false
+                    engine.inputNode.removeTapOnBus(0u)
+                }
                 engine.stop()
             }
             audioEngine = null
@@ -297,4 +357,6 @@ actual class SafeWordListener(private val safeWord: String) {
             }
         }
     }
+
+    private fun AVAudioFormat.isValidForRecordingTap(): Boolean = sampleRate > 0.0 && channelCount > 0u
 }

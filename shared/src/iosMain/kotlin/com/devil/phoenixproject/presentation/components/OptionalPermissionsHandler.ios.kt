@@ -17,6 +17,8 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.koin.compose.koinInject
+import platform.AVFAudio.AVAudioSession
+import platform.AVFAudio.AVAudioSessionRecordPermissionUndetermined
 import platform.Foundation.NSError
 import platform.HealthKit.HKHealthStore
 import platform.HealthKit.HKObjectType
@@ -28,7 +30,7 @@ import platform.Speech.SFSpeechRecognizerAuthorizationStatus
 private val log = Logger.withTag("OptionalPermissionsHandler")
 
 /**
- * iOS composable that prompts for optional permissions (HealthKit + Speech Recognition)
+ * iOS composable that prompts for optional permissions (HealthKit + Speech/Microphone)
  * on first launch. Non-blocking: users can skip and still access the app.
  *
  * Shows only once per install (tracked via [SettingsPreferencesManager]).
@@ -125,6 +127,24 @@ private suspend fun requestIosPermissions(healthAvailable: Boolean) {
     } catch (e: Exception) {
         log.e(e) { "Failed to request Speech Recognition permissions" }
     }
+
+    // 3. Request Microphone authorization for voice emergency stop recording
+    try {
+        val audioSession = AVAudioSession.sharedInstance()
+        val currentStatus = audioSession.recordPermission
+        if (currentStatus == AVAudioSessionRecordPermissionUndetermined) {
+            suspendCancellableCoroutine { continuation ->
+                audioSession.requestRecordPermission { granted ->
+                    log.d { "Microphone authorization result: $granted" }
+                    continuation.resume(Unit)
+                }
+            }
+        } else {
+            log.d { "Microphone permission already determined: $currentStatus" }
+        }
+    } catch (e: Exception) {
+        log.e(e) { "Failed to request Microphone permissions" }
+    }
 }
 
 /**
@@ -172,7 +192,7 @@ private fun OptionalPermissionsScreen(healthAvailable: Boolean, onGrantPermissio
                         append("\n\n")
                     }
                     append(
-                        "Speech Recognition -- Enable voice-activated emergency stop (\"safe word\") for hands-free workout safety.",
+                        "Microphone and Speech Recognition -- Enable voice-activated emergency stop (\"safe word\") for hands-free workout safety.",
                     )
                 },
                 style = MaterialTheme.typography.bodyMedium,
