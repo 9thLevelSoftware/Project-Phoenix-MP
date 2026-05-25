@@ -897,6 +897,8 @@ private fun getScreenTitle(route: String, routineName: String = "", exerciseName
 
     route == NavigationRoutes.ConnectionLogs.route -> "Connection Logs"
 
+    route == NavigationRoutes.Diagnostics.route -> "Diagnostics"
+
     route == NavigationRoutes.RoutineComplete.route -> "Complete"
 
     // Active workout - hidden, but provide fallback

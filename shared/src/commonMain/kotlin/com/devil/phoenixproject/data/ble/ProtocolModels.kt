@@ -28,8 +28,23 @@ data class MonitorPacket(
  * Created by parseDiagnosticPacket().
  */
 data class DiagnosticPacket(
-    val seconds: Int,
-    val faults: List<Short>, // 4 fault codes
-    val temps: List<Byte>, // 8 temperature readings
+    val runtimeSeconds: Long,
+    val faultWords: List<Int>, // up to 4 unsigned 16-bit fault words
+    val temperatures: List<Int>, // up to 8 unsigned 8-bit temperature readings
     val hasFaults: Boolean,
+    val crash: DiagnosticCrash? = null,
+    val warnings: Long? = null,
+    val receivedAtMillis: Long = 0L,
+) {
+    val seconds: Long get() = runtimeSeconds
+    val faults: List<Int> get() = faultWords
+    val temps: List<Int> get() = temperatures
+}
+
+/**
+ * Optional crash details from extended official diagnostics payloads.
+ */
+data class DiagnosticCrash(
+    val seconds: Long,
+    val stackBase64: String,
 )

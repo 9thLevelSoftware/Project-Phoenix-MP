@@ -19,7 +19,10 @@ import kotlinx.coroutines.test.runTest
  */
 class MetricPollingEngineTest {
 
-    private fun createTestEngine(onConnectionLost: suspend () -> Unit = {}): MetricPollingEngine {
+    private fun createTestEngine(
+        onConnectionLost: suspend () -> Unit = {},
+        onDiagnosticData: (DiagnosticPacket) -> Unit = {},
+    ): MetricPollingEngine {
         val testScope = kotlinx.coroutines.CoroutineScope(
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
         )
@@ -31,6 +34,7 @@ class MetricPollingEngineTest {
             onMetricEmit = { true },
             onHeuristicData = {},
             onConnectionLost = onConnectionLost,
+            onDiagnosticData = onDiagnosticData,
         )
     }
 
@@ -429,5 +433,26 @@ class MetricPollingEngineTest {
         )
 
         engine.stopAll()
+    }
+
+    @Test
+    fun `parseDiagnosticData emits parsed diagnostic packet`() = runTest {
+        var emitted: DiagnosticPacket? = null
+        val engine = createTestEngine(
+            onDiagnosticData = { packet -> emitted = packet },
+        )
+        val data = ByteArray(18)
+        data[0] = 0x2A
+        data[4] = 0x04
+        data[12] = 25
+
+        engine.parseDiagnosticData(data)
+
+        val packet = emitted
+        assertTrue(packet != null, "Diagnostic packet should be emitted")
+        assertEquals(42L, packet.runtimeSeconds)
+        assertEquals(4, packet.faultWords[0])
+        assertEquals(25, packet.temperatures[0])
+        assertTrue(packet.receivedAtMillis > 0L)
     }
 }

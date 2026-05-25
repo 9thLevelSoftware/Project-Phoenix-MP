@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlinx.coroutines.flow.Flow
@@ -146,6 +147,9 @@ interface BleRepository {
 
     // Heuristic/phase statistics from machine (for Echo mode force feedback)
     val heuristicData: StateFlow<com.devil.phoenixproject.domain.model.HeuristicStatistics?>
+
+    // Machine diagnostics from the official diagnostic characteristic.
+    val diagnostics: StateFlow<DiagnosticPacket?>
 
     suspend fun startScanning(): Result<Unit>
     suspend fun stopScanning()

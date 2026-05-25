@@ -23,6 +23,7 @@ sealed class NavigationRoutes(val route: String) {
     }
     object Settings : NavigationRoutes("settings")
     object ConnectionLogs : NavigationRoutes("connection_logs")
+    object Diagnostics : NavigationRoutes("diagnostics")
     object Badges : NavigationRoutes("badges")
     object RoutineEditor : NavigationRoutes("routine_editor/{routineId}") {
         fun createRoute(routineId: String) = "routine_editor/$routineId"

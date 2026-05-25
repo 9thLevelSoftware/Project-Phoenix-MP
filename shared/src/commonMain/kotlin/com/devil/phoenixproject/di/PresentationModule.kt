@@ -3,6 +3,7 @@ package com.devil.phoenixproject.di
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
+import com.devil.phoenixproject.presentation.viewmodel.DiagnosticsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExternalActivitiesViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExternalMeasurementsViewModel
@@ -17,6 +18,7 @@ import org.koin.dsl.module
 val presentationModule = module {
     // ViewModels
     factory { ConnectionLogsViewModel() }
+    factory { DiagnosticsViewModel(get()) }
     factory { CycleEditorViewModel(get(), get()) }
     factory { GamificationViewModel(get(), get()) }
     factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }

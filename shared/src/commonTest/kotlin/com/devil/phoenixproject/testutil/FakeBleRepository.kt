@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.HandleDetection
 import com.devil.phoenixproject.data.repository.HandleState
@@ -50,6 +51,9 @@ class FakeBleRepository : BleRepository {
 
     private val _heuristicData = MutableStateFlow<HeuristicStatistics?>(null)
     override val heuristicData: StateFlow<HeuristicStatistics?> = _heuristicData.asStateFlow()
+
+    private val _diagnostics = MutableStateFlow<DiagnosticPacket?>(null)
+    override val diagnostics: StateFlow<DiagnosticPacket?> = _diagnostics.asStateFlow()
 
     private val _discoModeActive = MutableStateFlow(false)
     override val discoModeActive: StateFlow<Boolean> = _discoModeActive.asStateFlow()
@@ -123,6 +127,10 @@ class FakeBleRepository : BleRepository {
         _heuristicData.value = data
     }
 
+    fun setDiagnostics(data: DiagnosticPacket?) {
+        _diagnostics.value = data
+    }
+
     fun setDiscoModeActive(active: Boolean) {
         _discoModeActive.value = active
     }
@@ -133,6 +141,7 @@ class FakeBleRepository : BleRepository {
         _handleDetection.value = HandleDetection()
         _handleState.value = HandleState.WaitingForRest
         _heuristicData.value = null
+        _diagnostics.value = null
         _discoModeActive.value = false
         commandsReceived.clear()
         workoutParameters.clear()

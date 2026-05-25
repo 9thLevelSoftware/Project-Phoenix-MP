@@ -40,6 +40,7 @@ class MetricPollingEngine(
     private val onMetricEmit: (WorkoutMetric) -> Boolean,
     private val onHeuristicData: (HeuristicStatistics) -> Unit,
     private val onConnectionLost: suspend () -> Unit,
+    private val onDiagnosticData: (DiagnosticPacket) -> Unit = {},
 ) {
     private val log = Logger.withTag("MetricPollingEngine")
 
@@ -61,7 +62,7 @@ class MetricPollingEngine(
     // Diagnostic state
     internal var diagnosticPollCount: Long = 0
         private set
-    internal var lastDiagnosticFaults: List<Short>? = null
+    internal var lastDiagnosticFaults: List<Int>? = null
         private set
 
     // Timeout tracking for POLL-03
@@ -538,19 +539,21 @@ class MetricPollingEngine(
     /**
      * Parse diagnostic data — detect fault changes and log.
      */
-    private fun parseDiagnosticData(bytes: ByteArray) {
+    internal fun parseDiagnosticData(bytes: ByteArray) {
         try {
             val packet = parseDiagnosticPacket(bytes) ?: return
+            val timestampedPacket = packet.copy(receivedAtMillis = currentTimeMillis())
+            onDiagnosticData(timestampedPacket)
 
-            val faultSnapshot = packet.faults
+            val faultSnapshot = timestampedPacket.faultWords
             val faultsChanged = lastDiagnosticFaults == null || lastDiagnosticFaults != faultSnapshot
             if (faultsChanged) {
-                log.i { "DIAGNOSTIC update: faults=$faultSnapshot temps=${packet.temps.map { it.toInt() }}" }
+                log.i { "DIAGNOSTIC update: faults=$faultSnapshot temps=${timestampedPacket.temperatures}" }
                 lastDiagnosticFaults = faultSnapshot
             }
 
-            if (packet.hasFaults) {
-                log.w { "DIAGNOSTIC FAULTS DETECTED: ${packet.faults}" }
+            if (timestampedPacket.hasFaults) {
+                log.w { "DIAGNOSTIC FAULTS DETECTED: ${timestampedPacket.faultWords}" }
             }
         } catch (e: Exception) {
             log.e { "Failed to parse diagnostic data: ${e.message}" }

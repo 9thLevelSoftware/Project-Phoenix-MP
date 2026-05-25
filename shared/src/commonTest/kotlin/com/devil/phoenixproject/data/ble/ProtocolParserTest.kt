@@ -354,39 +354,70 @@ class ProtocolParserTest {
 
     @Test
     fun `parseDiagnosticPacket returns null for short data`() {
-        val data = ByteArray(19) // Need 20 bytes minimum
+        val data = ByteArray(17) // Need 18 bytes minimum for non-empty official payloads
         assertNull(parseDiagnosticPacket(data))
     }
 
     @Test
-    fun `parseDiagnosticPacket detects faults`() {
-        val data = ByteArray(20)
+    fun `parseDiagnosticPacket returns default snapshot for empty data`() {
+        val result = parseDiagnosticPacket(byteArrayOf())
+
+        assertNotNull(result)
+        assertEquals(0L, result.runtimeSeconds)
+        assertEquals(emptyList(), result.faultWords)
+        assertEquals(emptyList(), result.temperatures)
+        assertFalse(result.hasFaults)
+    }
+
+    @Test
+    fun `parseDiagnosticPacket detects unsigned fault words`() {
+        val data = ByteArray(18)
         // Set second fault code to non-zero: offset 6-7
         data[6] = 0x01
         data[7] = 0x00
+        // Set fourth fault code to max ushort: offset 10-11
+        data[10] = 0xFF.toByte()
+        data[11] = 0xFF.toByte()
 
         val result = parseDiagnosticPacket(data)
 
         assertNotNull(result)
         assertTrue(result.hasFaults)
-        assertEquals(4, result.faults.size)
-        assertEquals(0.toShort(), result.faults[0])
-        assertEquals(1.toShort(), result.faults[1])
+        assertEquals(4, result.faultWords.size)
+        assertEquals(0, result.faultWords[0])
+        assertEquals(1, result.faultWords[1])
+        assertEquals(65535, result.faultWords[3])
     }
 
     @Test
     fun `parseDiagnosticPacket parses no faults`() {
-        val data = ByteArray(20) // All zeros
+        val data = ByteArray(18) // All zeros
 
         val result = parseDiagnosticPacket(data)
 
         assertNotNull(result)
         assertFalse(result.hasFaults)
-        assertTrue(result.faults.all { it == 0.toShort() })
+        assertTrue(result.faultWords.all { it == 0 })
     }
 
     @Test
-    fun `parseDiagnosticPacket parses temps`() {
+    fun `parseDiagnosticPacket parses 18-byte payload with six temps`() {
+        val data = ByteArray(18)
+        data[12] = 25
+        data[13] = 30
+        data[14] = 35
+        data[15] = 40
+        data[16] = 45
+        data[17] = 0xFF.toByte()
+
+        val result = parseDiagnosticPacket(data)
+
+        assertNotNull(result)
+        assertEquals(listOf(25, 30, 35, 40, 45, 255), result.temperatures)
+    }
+
+    @Test
+    fun `parseDiagnosticPacket parses 20-byte payload with eight temps`() {
         val data = ByteArray(20)
         // Set temperature readings at offsets 12-19
         data[12] = 25
@@ -401,13 +432,13 @@ class ProtocolParserTest {
         val result = parseDiagnosticPacket(data)
 
         assertNotNull(result)
-        assertEquals(8, result.temps.size)
-        assertEquals(25.toByte(), result.temps[0])
-        assertEquals(60.toByte(), result.temps[7])
+        assertEquals(8, result.temperatures.size)
+        assertEquals(25, result.temperatures[0])
+        assertEquals(60, result.temperatures[7])
     }
 
     @Test
-    fun `parseDiagnosticPacket parses seconds`() {
+    fun `parseDiagnosticPacket parses unsigned seconds`() {
         val data = ByteArray(20)
         // seconds = 3600 = 0x00000E10 LE
         data[0] = 0x10
@@ -418,7 +449,42 @@ class ProtocolParserTest {
         val result = parseDiagnosticPacket(data)
 
         assertNotNull(result)
-        assertEquals(3600, result.seconds)
+        assertEquals(3600L, result.runtimeSeconds)
+    }
+
+    @Test
+    fun `parseDiagnosticPacket parses extended crash and warnings`() {
+        val data = ByteArray(76)
+        // Standard 20-byte header with optional temps.
+        data[18] = 55
+        data[19] = 60
+        // crash seconds = 7
+        data[20] = 0x07
+        for (i in 0 until 48) {
+            data[24 + i] = (i + 1).toByte()
+        }
+        // warnings = 0x80000004 as unsigned uint32
+        data[72] = 0x04
+        data[75] = 0x80.toByte()
+
+        val result = parseDiagnosticPacket(data)
+
+        assertNotNull(result)
+        assertEquals(8, result.temperatures.size)
+        assertEquals(7L, result.crash?.seconds)
+        assertTrue(result.crash?.stackBase64?.isNotBlank() == true)
+        assertEquals(2147483652L, result.warnings)
+    }
+
+    @Test
+    fun `decodeDiagnosticFault maps 0x0004 by category`() {
+        val vitruvian = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, 0x0004)
+        val motor = decodeDiagnosticFault(DiagnosticFaultCategory.MOTOR_A, 0x0004)
+
+        assertEquals("TI restarted", vitruvian.label)
+        assertEquals("Over voltage", motor.label)
+        assertEquals("0x0004", vitruvian.rawHex)
+        assertEquals("0x0004", motor.rawHex)
     }
 
     // ==================== parseHeuristicPacket Tests ====================
@@ -540,13 +606,13 @@ class ProtocolParserTest {
 
     @Test
     fun `handles exactly minimum size diagnostic packet`() {
-        // Exactly 20 bytes
-        val data = ByteArray(20)
+        // Exactly 18 bytes
+        val data = ByteArray(18)
         val result = parseDiagnosticPacket(data)
 
         assertNotNull(result)
-        assertEquals(4, result.faults.size)
-        assertEquals(8, result.temps.size)
+        assertEquals(4, result.faultWords.size)
+        assertEquals(6, result.temperatures.size)
     }
 
     @Test

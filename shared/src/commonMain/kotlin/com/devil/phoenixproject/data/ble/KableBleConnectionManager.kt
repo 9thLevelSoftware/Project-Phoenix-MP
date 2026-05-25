@@ -58,6 +58,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * @param onRepEventFromCharacteristic Callback for rep events from REPS characteristic
  * @param onRepEventFromRx Callback for rep events from RX notifications (opcode 0x02)
  * @param onMetricFromRx Callback for metrics from RX notifications (opcode 0x01)
+ * @param onDiagnosticData Callback for diagnostic snapshots from one-shot diagnostic reads
  */
 @OptIn(ExperimentalUuidApi::class)
 class KableBleConnectionManager(
@@ -76,6 +77,7 @@ class KableBleConnectionManager(
     private val onRepEventFromCharacteristic: (ByteArray) -> Unit,
     private val onRepEventFromRx: (ByteArray) -> Unit,
     private val onMetricFromRx: (ByteArray) -> Unit,
+    private val onDiagnosticData: (DiagnosticPacket) -> Unit = {},
 ) {
     private val log = Logger.withTag("KableBleConnectionManager")
 
@@ -1110,9 +1112,11 @@ class KableBleConnectionManager(
     internal fun parseDiagnosticData(bytes: ByteArray) {
         try {
             val packet = parseDiagnosticPacket(bytes) ?: return
-            log.i { "DIAGNOSTIC: faults=${packet.faults} temps=${packet.temps.map { it.toInt() }}" }
-            if (packet.hasFaults) {
-                log.w { "DIAGNOSTIC FAULTS DETECTED: ${packet.faults}" }
+            val timestampedPacket = packet.copy(receivedAtMillis = currentTimeMillis())
+            onDiagnosticData(timestampedPacket)
+            log.i { "DIAGNOSTIC: faults=${timestampedPacket.faultWords} temps=${timestampedPacket.temperatures}" }
+            if (timestampedPacket.hasFaults) {
+                log.w { "DIAGNOSTIC FAULTS DETECTED: ${timestampedPacket.faultWords}" }
             }
         } catch (e: Exception) {
             log.e { "Failed to parse diagnostic data: ${e.message}" }

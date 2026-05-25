@@ -337,6 +337,7 @@ fun NavGraph(
                     onColorSchemeChange = { viewModel.setColorScheme(it) },
                     onDeleteAllWorkouts = { viewModel.deleteAllWorkouts() },
                     onNavigateToConnectionLogs = { navController.navigate(NavigationRoutes.ConnectionLogs.route) },
+                    onNavigateToDiagnostics = { navController.navigate(NavigationRoutes.Diagnostics.route) },
                     onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) },
                     onNavigateToLinkAccount = { navController.navigate(NavigationRoutes.LinkAccount.route) },
                     onNavigateToIntegrations = { navController.navigate(NavigationRoutes.Integrations.route) },
@@ -393,6 +394,13 @@ fun NavGraph(
             composable(NavigationRoutes.ConnectionLogs.route) {
                 ConnectionLogsScreen(
                     onNavigateBack = { navController.popBackStack() },
+                    mainViewModel = viewModel,
+                )
+            }
+
+            // Diagnostics screen - official-style machine diagnostics
+            composable(NavigationRoutes.Diagnostics.route) {
+                DiagnosticsScreen(
                     mainViewModel = viewModel,
                 )
             }

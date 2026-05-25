@@ -2,11 +2,14 @@ package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.ble.BleOperationQueue
+import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.data.ble.DiscoMode
 import com.devil.phoenixproject.data.ble.HandleStateDetector
 import com.devil.phoenixproject.data.ble.KableBleConnectionManager
 import com.devil.phoenixproject.data.ble.MetricPollingEngine
 import com.devil.phoenixproject.data.ble.MonitorDataProcessor
+import com.devil.phoenixproject.data.ble.decodeDiagnosticFaults
+import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
 import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseRepPacket
 import com.devil.phoenixproject.data.ble.toVitruvianHex
@@ -92,7 +95,10 @@ class KableBleRepository : BleRepository {
     override val reconnectionRequested: Flow<ReconnectionRequest> = _reconnectionRequested.asSharedFlow()
     private val _heuristicData = MutableStateFlow<HeuristicStatistics?>(null)
     override val heuristicData: StateFlow<HeuristicStatistics?> = _heuristicData.asStateFlow()
+    private val _diagnostics = MutableStateFlow<DiagnosticPacket?>(null)
+    override val diagnostics: StateFlow<DiagnosticPacket?> = _diagnostics.asStateFlow()
     override val discoModeActive: StateFlow<Boolean> get() = discoMode.isActive
+    private var lastDiagnosticFaultWords: List<Int>? = null
 
     // ===== Extracted modules (6 modules) =====
     private val bleQueue = BleOperationQueue()
@@ -131,6 +137,7 @@ class KableBleRepository : BleRepository {
         },
         onHeuristicData = { stats -> _heuristicData.value = stats },
         onConnectionLost = { connectionManager.disconnect() },
+        onDiagnosticData = { packet -> publishDiagnostics(packet) },
     )
 
     // ConnectionManager declared LAST (depends on all above modules for init-order safety)
@@ -141,13 +148,19 @@ class KableBleRepository : BleRepository {
         pollingEngine = pollingEngine,
         discoMode = discoMode,
         handleDetector = handleDetector,
-        onConnectionStateChanged = { state -> _connectionState.value = state },
+        onConnectionStateChanged = { state ->
+            _connectionState.value = state
+            if (state !is ConnectionState.Connected) {
+                clearDiagnostics()
+            }
+        },
         onScannedDevicesChanged = { devices -> _scannedDevices.value = devices },
         onReconnectionRequested = { request -> _reconnectionRequested.emit(request) },
         onCommandResponse = { _ -> /* no external consumer currently */ },
         onRepEventFromCharacteristic = { data -> parseRepsCharacteristicData(data) },
         onRepEventFromRx = { data -> parseRepNotification(data) },
         onMetricFromRx = { data -> parseMetricsPacket(data) },
+        onDiagnosticData = { packet -> publishDiagnostics(packet) },
     )
 
     // ===== Connection lifecycle delegations =====
@@ -384,6 +397,48 @@ class KableBleRepository : BleRepository {
         } catch (e: Exception) {
             log.e { "Error parsing REPS characteristic data: ${e.message}" }
         }
+    }
+
+    private fun publishDiagnostics(packet: DiagnosticPacket) {
+        val timestampedPacket = if (packet.receivedAtMillis == 0L) {
+            packet.copy(receivedAtMillis = currentTimeMillis())
+        } else {
+            packet
+        }
+        _diagnostics.value = timestampedPacket
+
+        val faultSnapshot = timestampedPacket.faultWords
+        val faultsChanged = lastDiagnosticFaultWords == null || lastDiagnosticFaultWords != faultSnapshot
+        if (!faultsChanged) return
+
+        val decodedFaults = decodeDiagnosticFaults(timestampedPacket)
+        val faultSummary = decodedFaults.joinToString(", ") { fault ->
+            "${fault.category.displayName}=${fault.label} ${fault.rawHex}"
+        }
+        val temperatureSummary = timestampedPacket.temperatures
+            .mapIndexed { index, temp -> "T${index + 1}=$temp" }
+            .joinToString(", ")
+        val details = buildString {
+            append("uptime=${timestampedPacket.runtimeSeconds}s; faults=$faultSummary; temps=$temperatureSummary")
+            timestampedPacket.crash?.let { crash ->
+                append("; crashSeconds=${crash.seconds}; crashBase64=${crash.stackBase64}")
+            }
+            timestampedPacket.warnings?.let { warnings ->
+                append("; warnings=$warnings (${formatDiagnosticUInt32(warnings)})")
+            }
+        }
+
+        if (timestampedPacket.hasFaults) {
+            logRepo.warning(LogEventType.DIAGNOSTIC, "Machine diagnostics reported faults", details = details)
+        } else {
+            logRepo.info(LogEventType.DIAGNOSTIC, "Machine diagnostics clear", details = details)
+        }
+        lastDiagnosticFaultWords = faultSnapshot
+    }
+
+    private fun clearDiagnostics() {
+        _diagnostics.value = null
+        lastDiagnosticFaultWords = null
     }
 
     private fun currentTimeMillis(): Long = Clock.System.now().toEpochMilliseconds()

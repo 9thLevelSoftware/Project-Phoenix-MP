@@ -57,6 +57,7 @@ class KableBleConnectionManagerTest {
             onRepEventFromCharacteristic = { data -> tracker.repEventsFromChar.add(data) },
             onRepEventFromRx = { data -> tracker.repEventsFromRx.add(data) },
             onMetricFromRx = { data -> tracker.metricsFromRx.add(data) },
+            onDiagnosticData = { packet -> tracker.diagnostics.add(packet) },
         )
         return manager to tracker
     }
@@ -70,6 +71,7 @@ class KableBleConnectionManagerTest {
         val repEventsFromChar = mutableListOf<ByteArray>()
         val repEventsFromRx = mutableListOf<ByteArray>()
         val metricsFromRx = mutableListOf<ByteArray>()
+        val diagnostics = mutableListOf<DiagnosticPacket>()
     }
 
     // =========================================================================
@@ -240,6 +242,24 @@ class KableBleConnectionManagerTest {
         // Should not throw - short data returns null from parseDiagnosticPacket
         manager.parseDiagnosticData(byteArrayOf(0x01, 0x02))
         // If we reach here, no exception was thrown
+    }
+
+    @Test
+    fun `parseDiagnosticData routes parsed packet to callback`() = runTest {
+        val (manager, tracker) = createTestManager()
+        val data = ByteArray(18)
+        data[0] = 0x2A
+        data[4] = 0x04
+        data[12] = 25
+
+        manager.parseDiagnosticData(data)
+
+        assertEquals(1, tracker.diagnostics.size)
+        val packet = tracker.diagnostics.single()
+        assertEquals(42L, packet.runtimeSeconds)
+        assertEquals(4, packet.faultWords[0])
+        assertEquals(25, packet.temperatures[0])
+        assertTrue(packet.receivedAtMillis > 0L)
     }
 
     // =========================================================================

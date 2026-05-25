@@ -3,6 +3,8 @@ package com.devil.phoenixproject.data.ble
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.domain.model.HeuristicPhaseStatistics
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Pure byte parsing utility functions for the Vitruvian BLE protocol.
@@ -64,6 +66,15 @@ fun getInt32LE(data: ByteArray, offset: Int): Int = (data[offset].toInt() and 0x
     ((data[offset + 1].toInt() and 0xFF) shl 8) or
     ((data[offset + 2].toInt() and 0xFF) shl 16) or
     ((data[offset + 3].toInt() and 0xFF) shl 24)
+
+/**
+ * Read unsigned 32-bit integer in LITTLE-ENDIAN format.
+ * Returned as Long because Kotlin Int cannot represent the full UInt range.
+ */
+fun getUInt32LE(data: ByteArray, offset: Int): Long = (data[offset].toLong() and 0xFFL) or
+    ((data[offset + 1].toLong() and 0xFFL) shl 8) or
+    ((data[offset + 2].toLong() and 0xFFL) shl 16) or
+    ((data[offset + 3].toLong() and 0xFFL) shl 24)
 
 /**
  * Read 32-bit float in LITTLE-ENDIAN format (IEEE 754).
@@ -239,43 +250,72 @@ fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
 /**
  * Parse diagnostic characteristic data into DiagnosticPacket.
  *
- * Format (20+ bytes, Little Endian):
- * - Bytes 0-3: uptime seconds
- * - Bytes 4-11: 4 fault codes (shorts)
- * - Bytes 12-19: 8 temperature readings (bytes)
+ * Official app format (Little Endian):
+ * - Empty payload: default/zero diagnostic snapshot
+ * - Bytes 0-3: uptime seconds (uint32)
+ * - Bytes 4-11: 4 fault codes (uint16)
+ * - Bytes 12-17: 6 temperature readings (uint8)
+ * - Bytes 18-19: optional 2 more temperature readings when present
+ * - Next 52 bytes: optional crash seconds (uint32) + 48-byte crash stack payload
+ * - Next 4 bytes: optional warnings (uint32)
  *
  * @param data The raw byte array
  * @return DiagnosticPacket or null if data too short
  */
+@OptIn(ExperimentalEncodingApi::class)
 fun parseDiagnosticPacket(data: ByteArray): DiagnosticPacket? {
-    if (data.size < 20) return null
+    if (data.isEmpty()) {
+        return DiagnosticPacket(
+            runtimeSeconds = 0L,
+            faultWords = emptyList(),
+            temperatures = emptyList(),
+            hasFaults = false,
+        )
+    }
+    if (data.size < 18) return null
 
-    val seconds = getInt32LE(data, 0)
+    val seconds = getUInt32LE(data, 0)
 
-    // Parse 4 fault codes (shorts)
-    val faults = mutableListOf<Short>()
+    val faultWords = mutableListOf<Int>()
     for (i in 0 until 4) {
-        val offset = 4 + (i * 2)
-        val fault = (
-            (data[offset].toInt() and 0xFF) or
-                ((data[offset + 1].toInt() and 0xFF) shl 8)
-            ).toShort()
-        faults.add(fault)
+        faultWords.add(getUInt16LE(data, 4 + (i * 2)))
     }
 
-    // Parse 8 temperature readings (bytes)
-    val temps = mutableListOf<Byte>()
-    for (i in 0 until 8) {
-        temps.add(data[12 + i])
+    val temperatures = mutableListOf<Int>()
+    for (i in 0 until 6) {
+        temperatures.add(data[12 + i].toInt() and 0xFF)
     }
 
-    val hasFaults = faults.any { it != 0.toShort() }
+    var offset = 18
+    if (data.size - offset > 1) {
+        temperatures.add(data[offset].toInt() and 0xFF)
+        temperatures.add(data[offset + 1].toInt() and 0xFF)
+        offset += 2
+    }
+
+    val crash = if (data.size - offset >= 52) {
+        val crashSeconds = getUInt32LE(data, offset)
+        val crashStack = data.copyOfRange(offset + 4, offset + 52)
+        offset += 52
+        DiagnosticCrash(
+            seconds = crashSeconds,
+            stackBase64 = Base64.Default.encode(crashStack),
+        )
+    } else {
+        null
+    }
+
+    val warnings = if (data.size - offset >= 4) getUInt32LE(data, offset) else null
+
+    val hasFaults = faultWords.any { it != 0 }
 
     return DiagnosticPacket(
-        seconds = seconds,
-        faults = faults.toList(),
-        temps = temps.toList(),
+        runtimeSeconds = seconds,
+        faultWords = faultWords.toList(),
+        temperatures = temperatures.toList(),
         hasFaults = hasFaults,
+        crash = crash,
+        warnings = warnings,
     )
 }
 

@@ -213,6 +213,7 @@ fun SettingsTab(
     onColorSchemeChange: (Int) -> Unit,
     onDeleteAllWorkouts: () -> Unit,
     onNavigateToConnectionLogs: () -> Unit = {},
+    onNavigateToDiagnostics: () -> Unit = {},
     onNavigateToBadges: () -> Unit = {},
     onNavigateToLinkAccount: () -> Unit = {},
     onNavigateToIntegrations: () -> Unit = {},
@@ -2210,6 +2211,39 @@ fun SettingsTab(
                     )
                 }
                 Spacer(modifier = Modifier.height(Spacing.small))
+
+                OutlinedButton(
+                    onClick = onNavigateToDiagnostics,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ),
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                ) {
+                    Icon(
+                        Icons.Default.BugReport,
+                        contentDescription = "Machine diagnostics",
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Text(
+                        "Machine Diagnostics",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "View uptime, fault codes, temperatures, crash data, and warnings from the machine",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
 
                 OutlinedButton(
                     onClick = onNavigateToConnectionLogs,
