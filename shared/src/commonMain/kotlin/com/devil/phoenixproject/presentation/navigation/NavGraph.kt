@@ -107,6 +107,22 @@ fun NavGraph(
                 )
             }
 
+            // Single Exercise screen - reopen a recent activity exercise for another set
+            composable(
+                route = NavigationRoutes.SingleExerciseForExercise.route,
+                arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
+            ) { backStackEntry ->
+                val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") }
+
+                SingleExerciseScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    exerciseRepository = exerciseRepository,
+                    themeMode = themeMode,
+                    initialExerciseId = exerciseId,
+                )
+            }
+
             // Daily Routines screen - pre-built routines
             composable(NavigationRoutes.DailyRoutines.route) {
                 DailyRoutinesScreen(

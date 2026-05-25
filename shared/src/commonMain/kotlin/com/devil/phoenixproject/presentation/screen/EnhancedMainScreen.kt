@@ -196,7 +196,7 @@ fun EnhancedMainScreen(
     val isWorkoutsRoute = remember(currentRoute) {
         currentRoute == NavigationRoutes.Home.route ||
             currentRoute == NavigationRoutes.JustLift.route ||
-            currentRoute == NavigationRoutes.SingleExercise.route ||
+            currentRoute.startsWith(NavigationRoutes.SingleExercise.route) ||
             currentRoute == NavigationRoutes.DailyRoutines.route ||
             currentRoute == NavigationRoutes.ActiveWorkout.route ||
             currentRoute == NavigationRoutes.TrainingCycles.route ||
@@ -870,7 +870,7 @@ private fun getScreenTitle(route: String, routineName: String = "", exerciseName
 
     route == NavigationRoutes.JustLift.route -> "Just Lift"
 
-    route == NavigationRoutes.SingleExercise.route -> "Single Exercise"
+    route.startsWith(NavigationRoutes.SingleExercise.route) -> "Single Exercise"
 
     // Routine flow (dynamic - uses routine name)
     route == NavigationRoutes.RoutineOverview.route -> routineName.ifEmpty { "Routine" }
@@ -907,7 +907,7 @@ private fun getCompactScreenTitle(route: String, title: String): String = when {
     route == NavigationRoutes.DailyRoutines.route -> "Routines"
     route == NavigationRoutes.TrainingCycles.route -> "Cycles"
     route == NavigationRoutes.SmartInsights.route -> "Insights"
-    route == NavigationRoutes.SingleExercise.route -> "Exercise"
+    route.startsWith(NavigationRoutes.SingleExercise.route) -> "Exercise"
     route.startsWith("cycle_editor") -> "Cycle"
     route.startsWith("cycleReview") -> "Review"
     route.startsWith("routine_editor") -> "Edit"

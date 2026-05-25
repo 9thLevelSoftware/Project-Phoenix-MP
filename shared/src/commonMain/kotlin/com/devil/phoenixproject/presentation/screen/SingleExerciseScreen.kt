@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -21,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
@@ -53,6 +56,7 @@ fun SingleExerciseScreen(
     viewModel: MainViewModel,
     exerciseRepository: ExerciseRepository,
     themeMode: ThemeMode,
+    initialExerciseId: String? = null,
 ) {
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
@@ -64,6 +68,9 @@ fun SingleExerciseScreen(
 
     var exerciseToConfig by remember { mutableStateOf<RoutineExercise?>(null) }
     var isLoadingDefaults by remember { mutableStateOf(false) }
+    var missingInitialExerciseMessage by remember { mutableStateOf<String?>(null) }
+    var initialExerciseHandled by remember(initialExerciseId) { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
     // Track current loading job to cancel on rapid selection changes
@@ -129,9 +136,56 @@ fun SingleExerciseScreen(
     val customExerciseCount by exerciseRepository.getCustomExercises().collectAsState(initial = emptyList())
     val customCount = customExerciseCount.size
 
+    fun openExerciseConfig(selectedExercise: Exercise) {
+        val exercise = selectedExercise.toSingleExerciseConfigModel()
+
+        // Cancel any in-progress loading to prevent race conditions
+        loadingJob?.cancel()
+
+        // Set loading state to prevent showing dialog before defaults are loaded
+        isLoadingDefaults = true
+
+        // Load saved defaults for this exercise asynchronously
+        loadingJob = coroutineScope.launch {
+            try {
+                val savedDefaults = selectedExercise.id?.let { exerciseId ->
+                    viewModel.getSingleExerciseDefaults(exerciseId)
+                }
+
+                exerciseToConfig = buildSingleExerciseRoutineExercise(
+                    exercise = exercise,
+                    savedDefaults = savedDefaults,
+                )
+            } finally {
+                isLoadingDefaults = false
+            }
+        }
+    }
+
     // Trigger import
     LaunchedEffect(Unit) {
         exerciseRepository.importExercises()
+    }
+
+    LaunchedEffect(initialExerciseId) {
+        val exerciseId = initialExerciseId?.trim()?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
+        if (initialExerciseHandled) return@LaunchedEffect
+        initialExerciseHandled = true
+
+        exerciseRepository.importExercises()
+        val exercise = exerciseRepository.getExerciseById(exerciseId)
+        if (exercise == null) {
+            missingInitialExerciseMessage = "Exercise is no longer available"
+            return@LaunchedEffect
+        }
+
+        openExerciseConfig(exercise)
+    }
+
+    LaunchedEffect(missingInitialExerciseMessage) {
+        val message = missingInitialExerciseMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        missingInitialExerciseMessage = null
     }
 
     // Set global title
@@ -192,6 +246,7 @@ fun SingleExerciseScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets.navigationBars,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             // Always show the picker content as the background
@@ -251,65 +306,7 @@ fun SingleExerciseScreen(
                     }
                 },
                 onExerciseSelected = { selectedExercise ->
-                    val exercise = Exercise(
-                        name = selectedExercise.name,
-                        muscleGroup = selectedExercise.muscleGroups.split(",").firstOrNull()?.trim() ?: "Full Body",
-                        muscleGroups = selectedExercise.muscleGroups,
-                        equipment = selectedExercise.equipment,
-                        id = selectedExercise.id,
-                    )
-
-                    // Cancel any in-progress loading to prevent race conditions
-                    loadingJob?.cancel()
-
-                    // Set loading state to prevent showing dialog before defaults are loaded
-                    isLoadingDefaults = true
-
-                    // Load saved defaults for this exercise asynchronously
-                    loadingJob = coroutineScope.launch {
-                        try {
-                            val savedDefaults = selectedExercise.id?.let { exerciseId ->
-                                viewModel.getSingleExerciseDefaults(exerciseId)
-                            }
-
-                            val newRoutineExercise = if (savedDefaults != null) {
-                                // Apply saved defaults
-                                RoutineExercise(
-                                    id = generateUUID(),
-                                    exercise = exercise,
-                                    orderIndex = 0,
-                                    setReps = savedDefaults.setReps,
-                                    weightPerCableKg = savedDefaults.weightPerCableKg,
-                                    setWeightsPerCableKg = savedDefaults.setWeightsPerCableKg,
-                                    progressionKg = savedDefaults.progressionKg,
-                                    setRestSeconds = savedDefaults.setRestSeconds,
-                                    programMode = savedDefaults.toProgramMode(),
-                                    eccentricLoad = savedDefaults.getEccentricLoad(),
-                                    echoLevel = savedDefaults.getEchoLevel(),
-                                    duration = savedDefaults.duration.takeIf { it > 0 },
-                                    isAMRAP = savedDefaults.isAMRAP,
-                                    perSetRestTime = savedDefaults.perSetRestTime,
-                                )
-                            } else {
-                                // No saved defaults - use system defaults
-                                RoutineExercise(
-                                    id = generateUUID(),
-                                    exercise = exercise,
-                                    orderIndex = 0,
-                                    setReps = listOf(10, 10, 10),
-                                    weightPerCableKg = 20f,
-                                    progressionKg = 0f,
-                                    setRestSeconds = listOf(60, 60, 60),
-                                    programMode = ProgramMode.OldSchool,
-                                    eccentricLoad = EccentricLoad.LOAD_100,
-                                    echoLevel = EchoLevel.HARD,
-                                )
-                            }
-                            exerciseToConfig = newRoutineExercise
-                        } finally {
-                            isLoadingDefaults = false
-                        }
-                    }
+                    openExerciseConfig(selectedExercise)
                 },
                 exerciseRepository = exerciseRepository,
                 enableVideoPlayback = enableVideoPlayback,
@@ -396,4 +393,47 @@ fun SingleExerciseScreen(
             )
         }
     }
+}
+
+private fun Exercise.toSingleExerciseConfigModel(): Exercise = Exercise(
+    name = name,
+    muscleGroup = muscleGroups.split(",").firstOrNull()?.trim() ?: "Full Body",
+    muscleGroups = muscleGroups,
+    equipment = equipment,
+    id = id,
+)
+
+private fun buildSingleExerciseRoutineExercise(
+    exercise: Exercise,
+    savedDefaults: SingleExerciseDefaults?,
+): RoutineExercise = if (savedDefaults != null) {
+    RoutineExercise(
+        id = generateUUID(),
+        exercise = exercise,
+        orderIndex = 0,
+        setReps = savedDefaults.setReps,
+        weightPerCableKg = savedDefaults.weightPerCableKg,
+        setWeightsPerCableKg = savedDefaults.setWeightsPerCableKg,
+        progressionKg = savedDefaults.progressionKg,
+        setRestSeconds = savedDefaults.setRestSeconds,
+        programMode = savedDefaults.toProgramMode(),
+        eccentricLoad = savedDefaults.getEccentricLoad(),
+        echoLevel = savedDefaults.getEchoLevel(),
+        duration = savedDefaults.duration.takeIf { it > 0 },
+        isAMRAP = savedDefaults.isAMRAP,
+        perSetRestTime = savedDefaults.perSetRestTime,
+    )
+} else {
+    RoutineExercise(
+        id = generateUUID(),
+        exercise = exercise,
+        orderIndex = 0,
+        setReps = listOf(10, 10, 10),
+        weightPerCableKg = 20f,
+        progressionKg = 0f,
+        setRestSeconds = listOf(60, 60, 60),
+        programMode = ProgramMode.OldSchool,
+        eccentricLoad = EccentricLoad.LOAD_100,
+        echoLevel = EchoLevel.HARD,
+    )
 }
