@@ -139,6 +139,7 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_developer_tools
 import vitruvianprojectphoenix.shared.generated.resources.cd_led_scheme
 import vitruvianprojectphoenix.shared.generated.resources.cd_leds_off
 import vitruvianprojectphoenix.shared.generated.resources.cd_link_portal
+import vitruvianprojectphoenix.shared.generated.resources.cd_machine_diagnostics
 import vitruvianprojectphoenix.shared.generated.resources.cd_open_backup_folder
 import vitruvianprojectphoenix.shared.generated.resources.cd_restore_data
 import vitruvianprojectphoenix.shared.generated.resources.cd_support_developer
@@ -2225,7 +2226,7 @@ fun SettingsTab(
                 ) {
                     Icon(
                         Icons.Default.BugReport,
-                        contentDescription = "Machine diagnostics",
+                        contentDescription = stringResource(Res.string.cd_machine_diagnostics),
                         modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))

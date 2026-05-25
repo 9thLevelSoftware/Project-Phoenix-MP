@@ -72,27 +72,36 @@ class FakeBleRepository : BleRepository {
 
     // ========== Test control methods ==========
 
+    private fun setConnectionState(state: ConnectionState) {
+        if (state !is ConnectionState.Connected) {
+            _diagnostics.value = null
+        }
+        _connectionState.value = state
+    }
+
     fun simulateConnect(deviceName: String, deviceAddress: String = "AA:BB:CC:DD:EE:FF") {
-        _connectionState.value = ConnectionState.Connected(
-            deviceName = deviceName,
-            deviceAddress = deviceAddress,
+        setConnectionState(
+            ConnectionState.Connected(
+                deviceName = deviceName,
+                deviceAddress = deviceAddress,
+            ),
         )
     }
 
     fun simulateDisconnect() {
-        _connectionState.value = ConnectionState.Disconnected
+        setConnectionState(ConnectionState.Disconnected)
     }
 
     fun simulateError(message: String, throwable: Throwable? = null) {
-        _connectionState.value = ConnectionState.Error(message, throwable)
+        setConnectionState(ConnectionState.Error(message, throwable))
     }
 
     fun simulateScanning() {
-        _connectionState.value = ConnectionState.Scanning
+        setConnectionState(ConnectionState.Scanning)
     }
 
     fun simulateConnecting() {
-        _connectionState.value = ConnectionState.Connecting
+        setConnectionState(ConnectionState.Connecting)
     }
 
     suspend fun emitMetric(metric: WorkoutMetric) {
@@ -136,7 +145,7 @@ class FakeBleRepository : BleRepository {
     }
 
     fun reset() {
-        _connectionState.value = ConnectionState.Disconnected
+        setConnectionState(ConnectionState.Disconnected)
         _scannedDevices.value = emptyList()
         _handleDetection.value = HandleDetection()
         _handleState.value = HandleState.WaitingForRest
@@ -157,57 +166,59 @@ class FakeBleRepository : BleRepository {
 
     override suspend fun startScanning(): Result<Unit> {
         if (scanResult.isSuccess) {
-            _connectionState.value = ConnectionState.Scanning
+            setConnectionState(ConnectionState.Scanning)
         }
         return scanResult
     }
 
     override suspend fun stopScanning() {
         if (_connectionState.value == ConnectionState.Scanning) {
-            _connectionState.value = ConnectionState.Disconnected
+            setConnectionState(ConnectionState.Disconnected)
         }
     }
 
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
         if (shouldFailConnect) {
-            _connectionState.value = ConnectionState.Error("Connection failed")
+            setConnectionState(ConnectionState.Error("Connection failed"))
             return Result.failure(Exception("Connection failed"))
         }
 
-        _connectionState.value = ConnectionState.Connecting
+        setConnectionState(ConnectionState.Connecting)
 
         if (connectDelay > 0) {
             kotlinx.coroutines.delay(connectDelay)
         }
 
         return if (connectResult.isSuccess) {
-            _connectionState.value = ConnectionState.Connected(
-                deviceName = device.name,
-                deviceAddress = device.address,
+            setConnectionState(
+                ConnectionState.Connected(
+                    deviceName = device.name,
+                    deviceAddress = device.address,
+                ),
             )
             Result.success(Unit)
         } else {
-            _connectionState.value = ConnectionState.Error("Connection failed")
+            setConnectionState(ConnectionState.Error("Connection failed"))
             connectResult
         }
     }
 
     override suspend fun cancelConnection() {
-        _connectionState.value = ConnectionState.Disconnected
+        setConnectionState(ConnectionState.Disconnected)
     }
 
     override suspend fun disconnect() {
-        _connectionState.value = ConnectionState.Disconnected
+        setConnectionState(ConnectionState.Disconnected)
     }
 
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
-        _connectionState.value = ConnectionState.Scanning
+        setConnectionState(ConnectionState.Scanning)
 
         val devices = _scannedDevices.value
         return if (devices.isNotEmpty()) {
             connect(devices.first())
         } else if (shouldFailConnect) {
-            _connectionState.value = ConnectionState.Error("No devices found")
+            setConnectionState(ConnectionState.Error("No devices found"))
             Result.failure(Exception("No devices found"))
         } else {
             // Auto-add a fake device and connect

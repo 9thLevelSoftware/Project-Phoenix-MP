@@ -255,7 +255,7 @@ fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
  * - Bytes 0-3: uptime seconds (uint32)
  * - Bytes 4-11: 4 fault codes (uint16)
  * - Bytes 12-17: 6 temperature readings (uint8)
- * - Bytes 18-19: optional 2 more temperature readings when present
+ * - Bytes 18-19: optional 2 more temperature readings when total length implies a 20-byte base
  * - Next 52 bytes: optional crash seconds (uint32) + 48-byte crash stack payload
  * - Next 4 bytes: optional warnings (uint32)
  *
@@ -287,7 +287,7 @@ fun parseDiagnosticPacket(data: ByteArray): DiagnosticPacket? {
     }
 
     var offset = 18
-    if (data.size - offset > 1) {
+    if (data.size >= 20 && data.size % 4 == 0) {
         temperatures.add(data[offset].toInt() and 0xFF)
         temperatures.add(data[offset + 1].toInt() and 0xFF)
         offset += 2

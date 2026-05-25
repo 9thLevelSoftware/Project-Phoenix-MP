@@ -465,6 +465,7 @@
     <string name="cd_connection_error">Connection error</string>
     <string name="cd_connection_lost">Connection lost</string>
     <string name="cd_connection_logs">Connection logs</string>
+    <string name="cd_machine_diagnostics">Machine diagnostics</string>
     <string name="cd_scan_devices">Scan for devices</string>
     <string name="cd_sync_error">Sync Error</string>
     <string name="cd_link_portal">Link Portal Account</string>

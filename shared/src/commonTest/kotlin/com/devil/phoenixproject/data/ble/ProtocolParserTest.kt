@@ -477,6 +477,37 @@ class ProtocolParserTest {
     }
 
     @Test
+    fun `parseDiagnosticPacket parses warnings after six-temperature payload`() {
+        val data = ByteArray(22)
+        data[18] = 0x04
+        data[21] = 0x80.toByte()
+
+        val result = parseDiagnosticPacket(data)
+
+        assertNotNull(result)
+        assertEquals(6, result.temperatures.size)
+        assertEquals(null, result.crash)
+        assertEquals(2147483652L, result.warnings)
+    }
+
+    @Test
+    fun `parseDiagnosticPacket parses crash after six-temperature payload`() {
+        val data = ByteArray(70)
+        data[18] = 0x07
+        for (i in 0 until 48) {
+            data[22 + i] = (i + 1).toByte()
+        }
+
+        val result = parseDiagnosticPacket(data)
+
+        assertNotNull(result)
+        assertEquals(6, result.temperatures.size)
+        assertEquals(7L, result.crash?.seconds)
+        assertTrue(result.crash?.stackBase64?.isNotBlank() == true)
+        assertEquals(null, result.warnings)
+    }
+
+    @Test
     fun `decodeDiagnosticFault maps 0x0004 by category`() {
         val vitruvian = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, 0x0004)
         val motor = decodeDiagnosticFault(DiagnosticFaultCategory.MOTOR_A, 0x0004)

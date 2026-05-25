@@ -28,6 +28,16 @@ class DiagnosticFaultDecoderTest {
     }
 
     @Test
+    fun `decodes combined Vitruvian fault bitfields`() {
+        val decoded = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, 0x0005)
+        val duplicateMessageFailureBits = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, 0x0018)
+
+        assertEquals("No comms, TI restarted", decoded.label)
+        assertEquals("0x0005", decoded.rawHex)
+        assertEquals("Message failure", duplicateMessageFailureBits.label)
+    }
+
+    @Test
     fun `decodes official motor fault labels`() {
         val expected = mapOf(
             0 to "None",
@@ -51,6 +61,14 @@ class DiagnosticFaultDecoderTest {
             assertEquals(label, decoded.label, "code=$code")
             assertEquals(formatDiagnosticFaultCode(code), decoded.rawHex)
         }
+    }
+
+    @Test
+    fun `decodes combined motor fault bitfields`() {
+        val decoded = decodeDiagnosticFault(DiagnosticFaultCategory.MOTOR_A, 0x1005)
+
+        assertEquals("HW Overcurrent, Over voltage, Motor overtemp", decoded.label)
+        assertEquals("0x1005", decoded.rawHex)
     }
 
     @Test
