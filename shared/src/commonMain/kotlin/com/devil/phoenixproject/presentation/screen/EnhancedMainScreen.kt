@@ -121,6 +121,9 @@ fun EnhancedMainScreen(
     exerciseRepository: ExerciseRepository,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    dynamicColorAvailable: Boolean,
+    dynamicColorEnabled: Boolean,
+    onDynamicColorEnabledChange: (Boolean) -> Unit,
     navController: NavHostController = rememberNavController(),
 ) {
     val workoutState by viewModel.workoutState.collectAsState()
@@ -426,6 +429,9 @@ fun EnhancedMainScreen(
                         exerciseRepository = exerciseRepository,
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
+                        dynamicColorAvailable = dynamicColorAvailable,
+                        dynamicColorEnabled = dynamicColorEnabled,
+                        onDynamicColorEnabledChange = onDynamicColorEnabledChange,
                         modifier = Modifier.padding(padding),
                     )
 

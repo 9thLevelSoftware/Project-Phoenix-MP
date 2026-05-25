@@ -38,6 +38,7 @@ import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.VitruvianTheme
+import com.devil.phoenixproject.ui.theme.isDynamicColorAvailable
 import kotlin.time.Clock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -115,7 +116,9 @@ fun AppContent(
     syncTriggerManager: SyncTriggerManager,
 ) {
     val themeMode by themeViewModel.themeMode.collectAsState()
+    val dynamicColorEnabled by themeViewModel.dynamicColorEnabled.collectAsState()
     val eulaAccepted by eulaViewModel.eulaAccepted.collectAsState()
+    val dynamicColorAvailable = isDynamicColorAvailable()
 
     var launchSplashCompleted by rememberSaveable { mutableStateOf(false) }
     var launchSplashStartedAtMillis by rememberSaveable { mutableLongStateOf(0L) }
@@ -148,7 +151,7 @@ fun AppContent(
 
     AppLifecycleObserver(syncTriggerManager)
 
-    VitruvianTheme(themeMode = themeMode) {
+    VitruvianTheme(themeMode = themeMode, dynamicColorEnabled = dynamicColorEnabled) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (!eulaAccepted) {
                 EulaScreen(
@@ -160,6 +163,9 @@ fun AppContent(
                     exerciseRepository = exerciseRepository,
                     themeMode = themeMode,
                     onThemeModeChange = { themeViewModel.setThemeMode(it) },
+                    dynamicColorAvailable = dynamicColorAvailable,
+                    dynamicColorEnabled = dynamicColorEnabled,
+                    onDynamicColorEnabledChange = { themeViewModel.setDynamicColorEnabled(it) },
                 )
             }
 

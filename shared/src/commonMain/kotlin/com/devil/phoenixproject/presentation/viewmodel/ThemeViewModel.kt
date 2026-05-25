@@ -21,15 +21,27 @@ class ThemeViewModel(private val settings: Settings) : ViewModel() {
     private val log = Logger.withTag("ThemeViewModel")
 
     private val _themeMode = MutableStateFlow(loadThemePreference())
+    private val _dynamicColorEnabled = MutableStateFlow(loadDynamicColorPreference())
 
     val themeMode: StateFlow<ThemeMode> = _themeMode
         .stateIn(viewModelScope, SharingStarted.Eagerly, _themeMode.value)
+
+    val dynamicColorEnabled: StateFlow<Boolean> = _dynamicColorEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, _dynamicColorEnabled.value)
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch {
             _themeMode.value = mode
             saveThemePreference(mode)
             log.d { "Theme mode changed to: $mode" }
+        }
+    }
+
+    fun setDynamicColorEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            _dynamicColorEnabled.value = enabled
+            saveDynamicColorPreference(enabled)
+            log.d { "Dynamic color enabled changed to: $enabled" }
         }
     }
 
@@ -51,7 +63,14 @@ class ThemeViewModel(private val settings: Settings) : ViewModel() {
         settings[THEME_MODE_KEY] = mode.name
     }
 
+    private fun loadDynamicColorPreference(): Boolean = settings.getBoolean(DYNAMIC_COLOR_ENABLED_KEY, false)
+
+    private fun saveDynamicColorPreference(enabled: Boolean) {
+        settings[DYNAMIC_COLOR_ENABLED_KEY] = enabled
+    }
+
     companion object {
         private const val THEME_MODE_KEY = "theme_mode"
+        private const val DYNAMIC_COLOR_ENABLED_KEY = "dynamic_color_enabled"
     }
 }

@@ -101,15 +101,28 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun VitruvianTheme(themeMode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
+fun VitruvianTheme(
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    dynamicColorEnabled: Boolean = false,
+    content: @Composable () -> Unit,
+) {
     val useDarkColors = when (themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
+    val colorScheme = if (dynamicColorEnabled) {
+        platformDynamicColorScheme(useDarkColors)
+    } else {
+        null
+    } ?: if (useDarkColors) {
+        DarkColorScheme
+    } else {
+        LightColorScheme
+    }
 
     MaterialTheme(
-        colorScheme = if (useDarkColors) DarkColorScheme else LightColorScheme,
+        colorScheme = colorScheme,
         typography = Typography,
         shapes = ExpressiveShapes, // Material 3 Expressive: More rounded shapes
     ) {

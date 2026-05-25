@@ -46,6 +46,9 @@ fun NavGraph(
     exerciseRepository: ExerciseRepository,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    dynamicColorAvailable: Boolean,
+    dynamicColorEnabled: Boolean,
+    onDynamicColorEnabledChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     SharedTransitionLayout {
@@ -316,6 +319,8 @@ fun NavGraph(
                     weightUnit = weightUnit,
                     enableVideoPlayback = userPreferences.enableVideoPlayback,
                     darkModeEnabled = themeMode == ThemeMode.DARK,
+                    dynamicColorAvailable = dynamicColorAvailable,
+                    dynamicColorEnabled = dynamicColorEnabled,
                     audioRepCountEnabled = userPreferences.audioRepCountEnabled,
                     countdownBeepsEnabled = userPreferences.countdownBeepsEnabled,
                     repSoundEnabled = userPreferences.repSoundEnabled,
@@ -331,6 +336,7 @@ fun NavGraph(
                     onWeightUnitChange = { viewModel.setWeightUnit(it) },
                     onEnableVideoPlaybackChange = { viewModel.setEnableVideoPlayback(it) },
                     onDarkModeChange = { enabled -> onThemeModeChange(if (enabled) ThemeMode.DARK else ThemeMode.LIGHT) },
+                    onDynamicColorEnabledChange = onDynamicColorEnabledChange,
                     onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
                     onSummaryCountdownChange = { viewModel.setSummaryCountdownSeconds(it) },
                     onAutoStartCountdownChange = { viewModel.setAutoStartCountdownSeconds(it) },

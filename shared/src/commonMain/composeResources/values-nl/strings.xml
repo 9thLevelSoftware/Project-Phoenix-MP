@@ -110,6 +110,8 @@
     <string name="settings_appearance">Uiterlijk</string>
     <string name="settings_dark_mode">Donkere modus</string>
     <string name="settings_dark_mode_description">Gebruik donker thema voor de app</string>
+    <string name="settings_dynamic_color">Material You colors</string>
+    <string name="settings_dynamic_color_description">Use colors from your Android wallpaper when available</string>
     <string name="settings_link_portal">Koppel Portal-account</string>
     <string name="settings_sync_description">Synchroniseer je trainingen met het Phoenix Portal voor toegang op meerdere apparaten</string>
     <string name="settings_version">Versie: %1$s</string>
@@ -470,6 +472,7 @@
     <string name="cd_active">Actief</string>
     <string name="cd_settings">Instellingen</string>
     <string name="cd_appearance">Uiterlijk-instellingen</string>
+    <string name="cd_dynamic_color">Material You dynamic color setting</string>
     <string name="cd_weight_unit">Gewichtseenheid-instellingen</string>
     <string name="cd_advanced_settings">Geavanceerde instellingen</string>
     <string name="cd_developer_tools">Ontwikkelaarshulpmiddelen</string>
