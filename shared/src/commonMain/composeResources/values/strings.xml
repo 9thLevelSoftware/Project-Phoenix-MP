@@ -610,6 +610,7 @@
     <string name="cd_toggle_theme">Toggle theme (current: %1$s)</string>
     <string name="cd_workouts">Workouts</string>
     <string name="cd_disconnect">Disconnect</string>
+    <string name="single_exercise_unavailable">Exercise is no longer available</string>
 
     <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
     <string name="settings_voice_stop_title">Voice Emergency Stop</string>

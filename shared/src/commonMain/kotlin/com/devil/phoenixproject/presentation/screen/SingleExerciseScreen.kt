@@ -44,6 +44,9 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.single_exercise_unavailable
 
 /**
  * Single Exercise screen - allows user to pick and configure a single exercise
@@ -70,10 +73,11 @@ fun SingleExerciseScreen(
     var isLoadingDefaults by remember { mutableStateOf(false) }
     var missingInitialExerciseMessage by remember { mutableStateOf<String?>(null) }
     var initialExerciseHandled by remember(initialExerciseId) { mutableStateOf(false) }
+    var loadingRequestId by remember { mutableStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    // Track current loading job to cancel on rapid selection changes
+    // Track current loading request to cancel and ignore stale rapid selections.
     var loadingJob by remember { mutableStateOf<Job?>(null) }
 
     // Local state for picker
@@ -141,6 +145,8 @@ fun SingleExerciseScreen(
 
         // Cancel any in-progress loading to prevent race conditions
         loadingJob?.cancel()
+        val requestId = loadingRequestId + 1
+        loadingRequestId = requestId
 
         // Set loading state to prevent showing dialog before defaults are loaded
         isLoadingDefaults = true
@@ -152,30 +158,31 @@ fun SingleExerciseScreen(
                     viewModel.getSingleExerciseDefaults(exerciseId)
                 }
 
-                exerciseToConfig = buildSingleExerciseRoutineExercise(
-                    exercise = exercise,
-                    savedDefaults = savedDefaults,
-                )
+                if (loadingRequestId == requestId) {
+                    exerciseToConfig = buildSingleExerciseRoutineExercise(
+                        exercise = exercise,
+                        savedDefaults = savedDefaults,
+                    )
+                }
             } finally {
-                isLoadingDefaults = false
+                if (loadingRequestId == requestId) {
+                    isLoadingDefaults = false
+                }
             }
         }
     }
 
-    // Trigger import
-    LaunchedEffect(Unit) {
-        exerciseRepository.importExercises()
-    }
-
+    // Trigger import before resolving a direct Recent Activity exercise link.
     LaunchedEffect(initialExerciseId) {
+        exerciseRepository.importExercises()
+
         val exerciseId = initialExerciseId?.trim()?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
         if (initialExerciseHandled) return@LaunchedEffect
         initialExerciseHandled = true
 
-        exerciseRepository.importExercises()
         val exercise = exerciseRepository.getExerciseById(exerciseId)
         if (exercise == null) {
-            missingInitialExerciseMessage = "Exercise is no longer available"
+            missingInitialExerciseMessage = getString(Res.string.single_exercise_unavailable)
             return@LaunchedEffect
         }
 
