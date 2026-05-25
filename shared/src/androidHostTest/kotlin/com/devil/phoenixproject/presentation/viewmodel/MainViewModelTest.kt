@@ -431,8 +431,10 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-        // Issue #222: INIT command removed - now only CONFIG (0x04) + START (0x03)
-        assertEquals(2, fakeBleRepository.commandsReceived.size)
+        // Official activation starts send CONFIG (0x04) only, without legacy START (0x03).
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        assertEquals(0x04.toByte(), fakeBleRepository.commandsReceived[0][0])
+        assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })
     }
 
     @Test
@@ -516,7 +518,9 @@ class MainViewModelTest {
         viewModel.startWorkout(skipCountdown = true)
         advanceUntilIdle()
 
-        assertEquals(2, fakeBleRepository.commandsReceived.size)
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        assertEquals(0x04.toByte(), fakeBleRepository.commandsReceived[0][0])
+        assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })
 
         emitRepNotification(
             repIndex = 2,
@@ -536,7 +540,12 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertFalse(viewModel.connectionLostDuringWorkout.value)
-        assertEquals(4, fakeBleRepository.commandsReceived.size)
+        assertEquals(2, fakeBleRepository.commandsReceived.size)
+        assertEquals(
+            listOf(0x04.toByte(), 0x04.toByte()),
+            fakeBleRepository.commandsReceived.map { it[0] },
+        )
+        assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })
         assertEquals(0, viewModel.repCount.value.workingReps)
         assertEquals(3, viewModel.workoutParameters.value.reps)
         assertEquals(0, viewModel.workoutParameters.value.warmupReps)
