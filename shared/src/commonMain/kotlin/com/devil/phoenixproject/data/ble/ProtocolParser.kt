@@ -101,6 +101,11 @@ fun Byte.toVitruvianHex(): String {
     return "${hex[value shr 4]}${hex[value and 0x0F]}"
 }
 
+private const val DIAGNOSTIC_BASE_PAYLOAD_BYTES = 18
+private const val DIAGNOSTIC_OPTIONAL_TEMPERATURE_BYTES = 2
+private const val DIAGNOSTIC_CRASH_BLOCK_BYTES = 52
+private const val DIAGNOSTIC_WARNING_BYTES = 4
+
 // ==================== PACKET PARSING FUNCTIONS ====================
 
 /**
@@ -255,7 +260,8 @@ fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
  * - Bytes 0-3: uptime seconds (uint32)
  * - Bytes 4-11: 4 fault codes (uint16)
  * - Bytes 12-17: 6 temperature readings (uint8)
- * - Bytes 18-19: optional 2 more temperature readings when present
+ * - Bytes 18-19: optional 2 more temperature readings when present. Extended
+ *   crash payloads can also begin at byte 18 when only six temperatures are sent.
  * - Next 52 bytes: optional crash seconds (uint32) + 48-byte crash stack payload
  * - Next 4 bytes: optional warnings (uint32)
  *
@@ -272,7 +278,7 @@ fun parseDiagnosticPacket(data: ByteArray): DiagnosticPacket? {
             hasFaults = false,
         )
     }
-    if (data.size < 18) return null
+    if (data.size < DIAGNOSTIC_BASE_PAYLOAD_BYTES) return null
 
     val seconds = getUInt32LE(data, 0)
 
@@ -286,17 +292,17 @@ fun parseDiagnosticPacket(data: ByteArray): DiagnosticPacket? {
         temperatures.add(data[12 + i].toInt() and 0xFF)
     }
 
-    var offset = 18
-    if (data.size - offset > 1) {
+    var offset = DIAGNOSTIC_BASE_PAYLOAD_BYTES
+    if (hasOptionalDiagnosticTemperatures(data.size, offset)) {
         temperatures.add(data[offset].toInt() and 0xFF)
         temperatures.add(data[offset + 1].toInt() and 0xFF)
-        offset += 2
+        offset += DIAGNOSTIC_OPTIONAL_TEMPERATURE_BYTES
     }
 
-    val crash = if (data.size - offset >= 52) {
+    val crash = if (data.size - offset >= DIAGNOSTIC_CRASH_BLOCK_BYTES) {
         val crashSeconds = getUInt32LE(data, offset)
-        val crashStack = data.copyOfRange(offset + 4, offset + 52)
-        offset += 52
+        val crashStack = data.copyOfRange(offset + 4, offset + DIAGNOSTIC_CRASH_BLOCK_BYTES)
+        offset += DIAGNOSTIC_CRASH_BLOCK_BYTES
         DiagnosticCrash(
             seconds = crashSeconds,
             stackBase64 = Base64.Default.encode(crashStack),
@@ -305,7 +311,7 @@ fun parseDiagnosticPacket(data: ByteArray): DiagnosticPacket? {
         null
     }
 
-    val warnings = if (data.size - offset >= 4) getUInt32LE(data, offset) else null
+    val warnings = if (data.size - offset >= DIAGNOSTIC_WARNING_BYTES) getUInt32LE(data, offset) else null
 
     val hasFaults = faultWords.any { it != 0 }
 
@@ -317,6 +323,14 @@ fun parseDiagnosticPacket(data: ByteArray): DiagnosticPacket? {
         crash = crash,
         warnings = warnings,
     )
+}
+
+private fun hasOptionalDiagnosticTemperatures(dataSize: Int, offset: Int): Boolean {
+    val remaining = dataSize - offset
+    if (remaining < DIAGNOSTIC_OPTIONAL_TEMPERATURE_BYTES) return false
+
+    return remaining != DIAGNOSTIC_CRASH_BLOCK_BYTES &&
+        remaining != DIAGNOSTIC_CRASH_BLOCK_BYTES + DIAGNOSTIC_WARNING_BYTES
 }
 
 /**

@@ -110,14 +110,36 @@
     <string name="settings_appearance">Apariencia</string>
     <string name="settings_dark_mode">Modo oscuro</string>
     <string name="settings_dark_mode_description">Usar tema oscuro para la interfaz de la app</string>
-    <string name="settings_dynamic_color">Material You colors</string>
-    <string name="settings_dynamic_color_description">Use colors from your Android wallpaper when available</string>
+    <string name="settings_dynamic_color">Colores de Material You</string>
+    <string name="settings_dynamic_color_description">Usar los colores de tu fondo de pantalla de Android cuando estén disponibles</string>
     <string name="settings_link_portal">Vincular cuenta del Portal</string>
     <string name="settings_sync_description">Sincroniza tus entrenamientos con el Phoenix Portal para acceso en múltiples dispositivos</string>
     <string name="settings_version">Versión: %1$s</string>
     <string name="settings_language">Idioma</string>
     <string name="settings_language_description">Selecciona tu idioma preferido</string>
     <string name="settings_language_help">Ayuda a mejorar las traducciones</string>
+    <string name="settings_machine_diagnostics_description">Ver tiempo de actividad, códigos de error, temperaturas, datos de fallos y advertencias de la máquina</string>
+
+    <!-- Machine diagnostics -->
+    <string name="diagnostics_title">Diagnóstico de la máquina</string>
+    <string name="diagnostics_copied_to_clipboard">Diagnóstico copiado al portapapeles</string>
+    <string name="diagnostics_status_no_snapshot">Sin instantánea</string>
+    <string name="diagnostics_status_faults_detected">Errores detectados</string>
+    <string name="diagnostics_status_no_active_faults">Sin errores activos</string>
+    <string name="diagnostics_copy_action">Copiar diagnóstico</string>
+    <string name="diagnostics_empty_title">Conéctate a una máquina para leer el diagnóstico.</string>
+    <string name="diagnostics_empty_description">Los errores, temperaturas, tiempo de actividad, datos de fallos y advertencias aparecerán aquí.</string>
+    <string name="diagnostics_waiting_title">Esperando diagnóstico</string>
+    <string name="diagnostics_waiting_description">Conectado. Esperando a que la característica de diagnóstico devuelva una instantánea.</string>
+    <string name="diagnostics_uptime">Tiempo activo</string>
+    <string name="diagnostics_faults">Errores</string>
+    <string name="diagnostics_temperatures">Temperaturas</string>
+    <string name="diagnostics_crash">Fallo</string>
+    <string name="diagnostics_warnings">Advertencias</string>
+    <string name="diagnostics_seconds">Segundos</string>
+    <string name="diagnostics_stack_base64">Pila Base64</string>
+    <string name="diagnostics_raw">Sin procesar</string>
+    <string name="diagnostics_none_reported">No se informó ninguno</string>
 
     <string name="language_english">English</string>
     <string name="language_dutch">Nederlands (Beta)</string>
@@ -481,7 +503,7 @@
     <!-- Settings / Preferences -->
     <string name="cd_settings">Settings</string>
     <string name="cd_appearance">Appearance settings</string>
-    <string name="cd_dynamic_color">Material You dynamic color setting</string>
+    <string name="cd_dynamic_color">Ajuste de colores dinámicos de Material You</string>
     <string name="cd_weight_unit">Weight unit settings</string>
     <string name="cd_advanced_settings">Advanced settings</string>
     <string name="cd_developer_tools">Developer Tools</string>

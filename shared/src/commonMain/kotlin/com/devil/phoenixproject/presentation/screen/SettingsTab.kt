@@ -149,6 +149,7 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_sync_error
 import vitruvianprojectphoenix.shared.generated.resources.cd_test_sounds
 import vitruvianprojectphoenix.shared.generated.resources.cd_view_badges
 import vitruvianprojectphoenix.shared.generated.resources.cd_weight_unit
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_title
 import vitruvianprojectphoenix.shared.generated.resources.import_completed
 import vitruvianprojectphoenix.shared.generated.resources.import_records_imported
 import vitruvianprojectphoenix.shared.generated.resources.import_records_skipped
@@ -181,6 +182,7 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color
 import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_language
 import vitruvianprojectphoenix.shared.generated.resources.settings_language_help
+import vitruvianprojectphoenix.shared.generated.resources.settings_machine_diagnostics_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_hint
 import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_label
 import vitruvianprojectphoenix.shared.generated.resources.settings_title
@@ -2271,12 +2273,12 @@ fun SettingsTab(
                 ) {
                     Icon(
                         Icons.Default.BugReport,
-                        contentDescription = "Machine diagnostics",
+                        contentDescription = null,
                         modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Machine Diagnostics",
+                        stringResource(Res.string.diagnostics_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -2284,7 +2286,7 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "View uptime, fault codes, temperatures, crash data, and warnings from the machine",
+                    stringResource(Res.string.settings_machine_diagnostics_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

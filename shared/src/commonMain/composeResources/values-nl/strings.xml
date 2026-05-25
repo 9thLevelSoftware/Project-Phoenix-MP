@@ -110,14 +110,36 @@
     <string name="settings_appearance">Uiterlijk</string>
     <string name="settings_dark_mode">Donkere modus</string>
     <string name="settings_dark_mode_description">Gebruik donker thema voor de app</string>
-    <string name="settings_dynamic_color">Material You colors</string>
-    <string name="settings_dynamic_color_description">Use colors from your Android wallpaper when available</string>
+    <string name="settings_dynamic_color">Material You-kleuren</string>
+    <string name="settings_dynamic_color_description">Gebruik kleuren van je Android-achtergrond wanneer beschikbaar</string>
     <string name="settings_link_portal">Koppel Portal-account</string>
     <string name="settings_sync_description">Synchroniseer je trainingen met het Phoenix Portal voor toegang op meerdere apparaten</string>
     <string name="settings_version">Versie: %1$s</string>
     <string name="settings_language">Taal</string>
     <string name="settings_language_description">Selecteer je voorkeurstaal</string>
     <string name="settings_language_help">Help vertalingen te verbeteren</string>
+    <string name="settings_machine_diagnostics_description">Bekijk uptime, foutcodes, temperaturen, crashgegevens en waarschuwingen van de machine</string>
+
+    <!-- Machine diagnostics -->
+    <string name="diagnostics_title">Machinediagnose</string>
+    <string name="diagnostics_copied_to_clipboard">Diagnose naar klembord gekopieerd</string>
+    <string name="diagnostics_status_no_snapshot">Geen momentopname</string>
+    <string name="diagnostics_status_faults_detected">Fouten gedetecteerd</string>
+    <string name="diagnostics_status_no_active_faults">Geen actieve fouten</string>
+    <string name="diagnostics_copy_action">Diagnose kopiëren</string>
+    <string name="diagnostics_empty_title">Maak verbinding met een machine om diagnose te lezen.</string>
+    <string name="diagnostics_empty_description">Fouten, temperaturen, uptime, crashgegevens en waarschuwingen verschijnen hier.</string>
+    <string name="diagnostics_waiting_title">Wachten op diagnose</string>
+    <string name="diagnostics_waiting_description">Verbonden. Wachten tot de diagnose-characteristic een momentopname teruggeeft.</string>
+    <string name="diagnostics_uptime">Uptime</string>
+    <string name="diagnostics_faults">Fouten</string>
+    <string name="diagnostics_temperatures">Temperaturen</string>
+    <string name="diagnostics_crash">Crash</string>
+    <string name="diagnostics_warnings">Waarschuwingen</string>
+    <string name="diagnostics_seconds">Seconden</string>
+    <string name="diagnostics_stack_base64">Stack Base64</string>
+    <string name="diagnostics_raw">Ruw</string>
+    <string name="diagnostics_none_reported">Geen gemeld</string>
 
     <string name="language_english">English</string>
     <string name="language_dutch">Nederlands (Beta)</string>
@@ -472,7 +494,7 @@
     <string name="cd_active">Actief</string>
     <string name="cd_settings">Instellingen</string>
     <string name="cd_appearance">Uiterlijk-instellingen</string>
-    <string name="cd_dynamic_color">Material You dynamic color setting</string>
+    <string name="cd_dynamic_color">Instelling voor dynamische Material You-kleuren</string>
     <string name="cd_weight_unit">Gewichtseenheid-instellingen</string>
     <string name="cd_advanced_settings">Geavanceerde instellingen</string>
     <string name="cd_developer_tools">Ontwikkelaarshulpmiddelen</string>

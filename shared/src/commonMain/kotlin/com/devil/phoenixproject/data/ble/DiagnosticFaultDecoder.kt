@@ -44,37 +44,49 @@ fun formatDiagnosticFaultCode(code: Int): String =
 fun formatDiagnosticUInt32(value: Long): String =
     "0x${(value and 0xFFFF_FFFFL).toString(16).uppercase().padStart(8, '0')}"
 
-private fun decodeVitruvianFault(code: Int): String = when (code) {
-    0 -> "None"
-    1 -> "No comms"
-    2 -> "Init failure"
-    4 -> "TI restarted"
-    8 -> "Message failure"
-    16 -> "Message failure"
-    32 -> "Firmware update failure"
-    64 -> "Overtemp failure"
-    else -> "Unknown"
-}
+private fun decodeVitruvianFault(code: Int): String = decodeFlaggedFault(
+    code = code,
+    flags = listOf(
+        1 to "No comms",
+        2 to "Init failure",
+        4 to "TI restarted",
+        8 to "Message failure",
+        16 to "Message failure",
+        32 to "Firmware update failure",
+        64 to "Overtemp failure",
+    ),
+)
 
 private fun decodeOtherFault(code: Int): String = when (code) {
     0 -> "None"
     else -> "Other"
 }
 
-private fun decodeMotorFault(code: Int): String = when (code) {
-    0 -> "None"
-    1 -> "HW Overcurrent"
-    2 -> "SW Overcurrent"
-    4 -> "Over voltage"
-    8 -> "Under voltage"
-    16 -> "PIM temp"
-    32 -> "Gate driver"
-    64 -> "Bord Temp"
-    128 -> "Kill switch"
-    256 -> "Alignment"
-    512 -> "Encoder"
-    1024 -> "HW/FW mismatch"
-    2048 -> "EEPROM"
-    4096 -> "Motor overtemp"
-    else -> "Unknown"
+private fun decodeMotorFault(code: Int): String = decodeFlaggedFault(
+    code = code,
+    flags = listOf(
+        1 to "HW Overcurrent",
+        2 to "SW Overcurrent",
+        4 to "Over voltage",
+        8 to "Under voltage",
+        16 to "PIM temp",
+        32 to "Gate driver",
+        64 to "Bord Temp",
+        128 to "Kill switch",
+        256 to "Alignment",
+        512 to "Encoder",
+        1024 to "HW/FW mismatch",
+        2048 to "EEPROM",
+        4096 to "Motor overtemp",
+    ),
+)
+
+private fun decodeFlaggedFault(code: Int, flags: List<Pair<Int, String>>): String {
+    if (code == 0) return "None"
+
+    val activeLabels = flags
+        .filter { (mask, _) -> code and mask != 0 }
+        .map { (_, label) -> label }
+
+    return activeLabels.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "Unknown"
 }

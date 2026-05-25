@@ -122,6 +122,28 @@
     <string name="settings_language">Language</string>
     <string name="settings_language_description">Select your preferred language</string>
     <string name="settings_language_help">Help improve translations</string>
+    <string name="settings_machine_diagnostics_description">View uptime, fault codes, temperatures, crash data, and warnings from the machine</string>
+
+    <!-- Machine diagnostics -->
+    <string name="diagnostics_title">Machine Diagnostics</string>
+    <string name="diagnostics_copied_to_clipboard">Diagnostics copied to clipboard</string>
+    <string name="diagnostics_status_no_snapshot">No snapshot</string>
+    <string name="diagnostics_status_faults_detected">Faults detected</string>
+    <string name="diagnostics_status_no_active_faults">No active faults</string>
+    <string name="diagnostics_copy_action">Copy Diagnostics</string>
+    <string name="diagnostics_empty_title">Connect to a machine to read diagnostics.</string>
+    <string name="diagnostics_empty_description">Faults, temperatures, uptime, crash data, and warnings will appear here.</string>
+    <string name="diagnostics_waiting_title">Waiting for diagnostics</string>
+    <string name="diagnostics_waiting_description">Connected. Waiting for the diagnostic characteristic to return a snapshot.</string>
+    <string name="diagnostics_uptime">Uptime</string>
+    <string name="diagnostics_faults">Faults</string>
+    <string name="diagnostics_temperatures">Temperatures</string>
+    <string name="diagnostics_crash">Crash</string>
+    <string name="diagnostics_warnings">Warnings</string>
+    <string name="diagnostics_seconds">Seconds</string>
+    <string name="diagnostics_stack_base64">Stack Base64</string>
+    <string name="diagnostics_raw">Raw</string>
+    <string name="diagnostics_none_reported">None reported</string>
 
     <!-- Language names -->
     <string name="language_english">English</string>

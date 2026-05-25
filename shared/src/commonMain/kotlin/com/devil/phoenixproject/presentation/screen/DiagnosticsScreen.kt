@@ -51,7 +51,28 @@ import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
 import com.devil.phoenixproject.presentation.viewmodel.DiagnosticsUiState
 import com.devil.phoenixproject.presentation.viewmodel.DiagnosticsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_copied_to_clipboard
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_copy_action
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_crash
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_empty_description
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_empty_title
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_faults
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_none_reported
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_raw
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_seconds
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_stack_base64
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_status_faults_detected
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_status_no_active_faults
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_status_no_snapshot
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_temperatures
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_title
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_uptime
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_waiting_description
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_waiting_title
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_warnings
 
 @Composable
 fun DiagnosticsScreen(
@@ -61,6 +82,7 @@ fun DiagnosticsScreen(
     val uiState by diagnosticsViewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showCopiedMessage by remember { mutableStateOf(false) }
+    val copiedMessage = stringResource(Res.string.diagnostics_copied_to_clipboard)
 
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
@@ -69,10 +91,10 @@ fun DiagnosticsScreen(
         mainViewModel.updateTopBarTitle("")
     }
 
-    LaunchedEffect(showCopiedMessage) {
+    LaunchedEffect(showCopiedMessage, copiedMessage) {
         if (showCopiedMessage) {
             snackbarHostState.showSnackbar(
-                message = "Diagnostics copied to clipboard",
+                message = copiedMessage,
                 duration = SnackbarDuration.Short,
             )
             showCopiedMessage = false
@@ -106,16 +128,23 @@ fun DiagnosticsScreen(
                 item { TemperaturesSection(packet) }
                 packet.crash?.let { crash ->
                     item {
-                        DetailSection(title = "Crash") {
-                            DiagnosticKeyValue("Seconds", crash.seconds.toString())
-                            DiagnosticKeyValue("Stack Base64", crash.stackBase64, monospace = true)
+                        DetailSection(title = stringResource(Res.string.diagnostics_crash)) {
+                            DiagnosticKeyValue(stringResource(Res.string.diagnostics_seconds), crash.seconds.toString())
+                            DiagnosticKeyValue(
+                                stringResource(Res.string.diagnostics_stack_base64),
+                                crash.stackBase64,
+                                monospace = true,
+                            )
                         }
                     }
                 }
                 packet.warnings?.let { warnings ->
                     item {
-                        DetailSection(title = "Warnings") {
-                            DiagnosticKeyValue("Raw", "$warnings (${formatDiagnosticUInt32(warnings)})")
+                        DetailSection(title = stringResource(Res.string.diagnostics_warnings)) {
+                            DiagnosticKeyValue(
+                                stringResource(Res.string.diagnostics_raw),
+                                "$warnings (${formatDiagnosticUInt32(warnings)})",
+                            )
                         }
                     }
                 }
@@ -152,7 +181,7 @@ private fun DiagnosticsHeader(uiState: DiagnosticsUiState, onCopy: () -> Unit) {
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Machine Diagnostics",
+                        text = stringResource(Res.string.diagnostics_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
@@ -173,9 +202,9 @@ private fun DiagnosticsHeader(uiState: DiagnosticsUiState, onCopy: () -> Unit) {
             ) {
                 StatusPill(
                     text = when {
-                        uiState.packet == null -> "No snapshot"
-                        uiState.packet.hasFaults -> "Faults detected"
-                        else -> "No active faults"
+                        uiState.packet == null -> stringResource(Res.string.diagnostics_status_no_snapshot)
+                        uiState.packet.hasFaults -> stringResource(Res.string.diagnostics_status_faults_detected)
+                        else -> stringResource(Res.string.diagnostics_status_no_active_faults)
                     },
                     isWarning = uiState.packet?.hasFaults == true,
                 )
@@ -194,7 +223,7 @@ private fun DiagnosticsHeader(uiState: DiagnosticsUiState, onCopy: () -> Unit) {
             ) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Copy Diagnostics")
+                Text(stringResource(Res.string.diagnostics_copy_action))
             }
         }
     }
@@ -210,13 +239,13 @@ private fun DiagnosticsEmptyState() {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "Connect to a machine to read diagnostics.",
+                text = stringResource(Res.string.diagnostics_empty_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Faults, temperatures, uptime, crash data, and warnings will appear here.",
+                text = stringResource(Res.string.diagnostics_empty_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
             )
@@ -226,9 +255,9 @@ private fun DiagnosticsEmptyState() {
 
 @Composable
 private fun DiagnosticsWaitingState() {
-    DetailSection(title = "Waiting for diagnostics") {
+    DetailSection(title = stringResource(Res.string.diagnostics_waiting_title)) {
         Text(
-            text = "Connected. Waiting for the diagnostic characteristic to return a snapshot.",
+            text = stringResource(Res.string.diagnostics_waiting_description),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -237,14 +266,14 @@ private fun DiagnosticsWaitingState() {
 
 @Composable
 private fun UptimeSection(packet: DiagnosticPacket) {
-    DetailSection(title = "Uptime") {
-        DiagnosticKeyValue("Seconds", packet.runtimeSeconds.toString())
+    DetailSection(title = stringResource(Res.string.diagnostics_uptime)) {
+        DiagnosticKeyValue(stringResource(Res.string.diagnostics_seconds), packet.runtimeSeconds.toString())
     }
 }
 
 @Composable
 private fun FaultsSection(faults: List<DiagnosticFault>) {
-    DetailSection(title = "Faults") {
+    DetailSection(title = stringResource(Res.string.diagnostics_faults)) {
         faults.forEachIndexed { index, fault ->
             if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             FaultRow(fault)
@@ -284,10 +313,10 @@ private fun FaultRow(fault: DiagnosticFault) {
 
 @Composable
 private fun TemperaturesSection(packet: DiagnosticPacket) {
-    DetailSection(title = "Temperatures") {
+    DetailSection(title = stringResource(Res.string.diagnostics_temperatures)) {
         if (packet.temperatures.isEmpty()) {
             Text(
-                text = "None reported",
+                text = stringResource(Res.string.diagnostics_none_reported),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
