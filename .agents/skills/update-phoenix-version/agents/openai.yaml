@@ -1,0 +1,4 @@
+interface:
+  display_name: "Update Phoenix Version"
+  short_description: "Bump Phoenix app versions in sync"
+  default_prompt: "Use $update-phoenix-version to bump the Phoenix app version to 0.10.0."
