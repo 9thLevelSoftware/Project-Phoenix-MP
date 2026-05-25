@@ -196,7 +196,7 @@ fun EnhancedMainScreen(
     val isWorkoutsRoute = remember(currentRoute) {
         currentRoute == NavigationRoutes.Home.route ||
             currentRoute == NavigationRoutes.JustLift.route ||
-            currentRoute == NavigationRoutes.SingleExercise.route ||
+            isSingleExerciseRoute(currentRoute) ||
             currentRoute == NavigationRoutes.DailyRoutines.route ||
             currentRoute == NavigationRoutes.ActiveWorkout.route ||
             currentRoute == NavigationRoutes.TrainingCycles.route ||
@@ -854,6 +854,10 @@ private fun ConnectionStatusIndicator(
  * Get the screen title based on the current route.
  * Supports dynamic titles for routine, exercise, and cycle flows.
  */
+private fun isSingleExerciseRoute(route: String): Boolean =
+    route == NavigationRoutes.SingleExercise.route ||
+        route.startsWith("${NavigationRoutes.SingleExercise.route}/")
+
 private fun getScreenTitle(route: String, routineName: String = "", exerciseName: String = "", cycleName: String = ""): String = when {
     // Main tabs (static titles)
     route == NavigationRoutes.Home.route -> "Choose Your Workout"
@@ -870,7 +874,7 @@ private fun getScreenTitle(route: String, routineName: String = "", exerciseName
 
     route == NavigationRoutes.JustLift.route -> "Just Lift"
 
-    route == NavigationRoutes.SingleExercise.route -> "Single Exercise"
+    isSingleExerciseRoute(route) -> "Single Exercise"
 
     // Routine flow (dynamic - uses routine name)
     route == NavigationRoutes.RoutineOverview.route -> routineName.ifEmpty { "Routine" }
@@ -907,7 +911,7 @@ private fun getCompactScreenTitle(route: String, title: String): String = when {
     route == NavigationRoutes.DailyRoutines.route -> "Routines"
     route == NavigationRoutes.TrainingCycles.route -> "Cycles"
     route == NavigationRoutes.SmartInsights.route -> "Insights"
-    route == NavigationRoutes.SingleExercise.route -> "Exercise"
+    isSingleExerciseRoute(route) -> "Exercise"
     route.startsWith("cycle_editor") -> "Cycle"
     route.startsWith("cycleReview") -> "Review"
     route.startsWith("routine_editor") -> "Edit"

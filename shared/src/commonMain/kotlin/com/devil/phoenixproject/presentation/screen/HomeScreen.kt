@@ -203,7 +203,13 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
-                    RecentActivitySummary(recentSessions, weightUnit)
+                    RecentActivitySummary(
+                        history = recentSessions,
+                        weightUnit = weightUnit,
+                        onExerciseClick = { exerciseId ->
+                            navController.navigate(NavigationRoutes.SingleExerciseForExercise.createRoute(exerciseId))
+                        },
+                    )
                 }
             }
         }
@@ -536,7 +542,11 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
 }
 
 @Composable
-private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: WeightUnit = WeightUnit.KG) {
+private fun RecentActivitySummary(
+    history: List<WorkoutSession>,
+    weightUnit: WeightUnit = WeightUnit.KG,
+    onExerciseClick: (String) -> Unit,
+) {
     if (history.isEmpty()) {
         Text(
             "No recent workouts yet.",
@@ -546,47 +556,81 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             history.take(2).forEach { session ->
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                val replayExerciseId = session.replayExerciseId()
+                if (replayExerciseId != null) {
+                    Surface(
+                        onClick = { onExerciseClick(replayExerciseId) },
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
+                        RecentActivityRowContent(
+                            session = session,
+                            weightUnit = weightUnit,
+                            showChevron = true,
                         )
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
-                                session.weightPerCableKg,
-                                session.displayMultiplier ?: session.cableCount,
-                                weightUnit,
-                            )
-                            val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-                            Text(
-                                session.exerciseName ?: "Workout Session",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                "${session.workingReps} reps • $displayWeight $unitLabel",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                    }
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        RecentActivityRowContent(
+                            session = session,
+                            weightUnit = weightUnit,
+                            showChevron = false,
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RecentActivityRowContent(session: WorkoutSession, weightUnit: WeightUnit, showChevron: Boolean) {
+    Row(
+        modifier = Modifier.padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
+                session.weightPerCableKg,
+                session.displayMultiplier ?: session.cableCount,
+                weightUnit,
+            )
+            val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+            Text(
+                session.exerciseName ?: "Workout Session",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${session.workingReps} reps • $displayWeight $unitLabel",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (showChevron) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }

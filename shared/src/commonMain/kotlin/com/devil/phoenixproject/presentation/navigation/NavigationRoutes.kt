@@ -8,6 +8,9 @@ sealed class NavigationRoutes(val route: String) {
     object Home : NavigationRoutes("home")
     object JustLift : NavigationRoutes("just_lift")
     object SingleExercise : NavigationRoutes("single_exercise")
+    object SingleExerciseForExercise : NavigationRoutes("single_exercise/{exerciseId}") {
+        fun createRoute(exerciseId: String) = "single_exercise/${exerciseId.encodeRouteSegment()}"
+    }
     object DailyRoutines : NavigationRoutes("daily_routines")
     object RoutineOverview : NavigationRoutes("routine_overview")
     object SetReady : NavigationRoutes("set_ready")
