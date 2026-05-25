@@ -208,6 +208,14 @@ class RoutineTest {
         assertEquals(80f, weights[2]) // Falls back to base 80%
     }
 
+    @Test
+    fun routineExercise_defaultEchoSettings_matchOfficialAppDefaults() {
+        val exercise = createTestRoutineExercise(programMode = ProgramMode.Echo)
+
+        assertEquals(EchoLevel.HARD, exercise.echoLevel)
+        assertEquals(EccentricLoad.LOAD_100, exercise.eccentricLoad)
+    }
+
     // ===== Helper =====
 
     private fun createTestRoutineExercise(
@@ -222,6 +230,7 @@ class RoutineTest {
         setWeightsPercentOfPR: List<Int> = emptyList(),
         weightPerCableKg: Float = 20f,
         warmupSets: List<WarmupSet> = emptyList(),
+        programMode: ProgramMode = ProgramMode.OldSchool,
     ): RoutineExercise = RoutineExercise(
         id = id,
         exercise = Exercise(
@@ -240,5 +249,6 @@ class RoutineTest {
         weightPercentOfPR = weightPercentOfPR,
         setWeightsPercentOfPR = setWeightsPercentOfPR,
         warmupSets = warmupSets,
+        programMode = programMode,
     )
 }

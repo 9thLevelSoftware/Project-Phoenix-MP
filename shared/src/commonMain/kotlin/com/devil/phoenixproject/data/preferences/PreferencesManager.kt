@@ -40,7 +40,7 @@ data class SingleExerciseDefaults(
     fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel = com.devil.phoenixproject.domain.model.EchoLevel.entries.find {
         it.levelValue == echoLevelValue
     }
-        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
+        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARD
 
     fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
         0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
@@ -62,7 +62,7 @@ data class JustLiftDefaults(
     val weightPerCableKg: Float = 20f,
     val weightChangePerRep: Float = 0f,
     val eccentricLoadPercentage: Int = 100,
-    val echoLevelValue: Int = 2,
+    val echoLevelValue: Int = 0,
     val stallDetectionEnabled: Boolean = true, // Stall detection auto-stop toggle
     val repCountTimingName: String = "TOP", // RepCountTiming enum name
     val restSeconds: Int = 60, // Rest timer between sets (0 = off, 5-300 in 5s increments)
@@ -77,7 +77,7 @@ data class JustLiftDefaults(
     fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel = com.devil.phoenixproject.domain.model.EchoLevel.entries.find {
         it.levelValue == echoLevelValue
     }
-        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
+        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARD
 
     fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
         0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool

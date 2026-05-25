@@ -88,7 +88,7 @@ class ExerciseConfigViewModel constructor(
     private val _eccentricLoad = MutableStateFlow(EccentricLoad.LOAD_100)
     val eccentricLoad: StateFlow<EccentricLoad> = _eccentricLoad.asStateFlow()
 
-    private val _echoLevel = MutableStateFlow(EchoLevel.HARDER)
+    private val _echoLevel = MutableStateFlow(EchoLevel.HARD)
     val echoLevel: StateFlow<EchoLevel> = _echoLevel.asStateFlow()
 
     private val _stallDetectionEnabled = MutableStateFlow(true)

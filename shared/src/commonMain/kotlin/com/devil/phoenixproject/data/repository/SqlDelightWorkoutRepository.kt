@@ -314,7 +314,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 }
 
                 val eccentricLoad = mapEccentricLoadFromDb(row.eccentricLoad)
-                val echoLevel = EchoLevel.entries.getOrNull(row.echoLevel.toInt()) ?: EchoLevel.HARDER
+                val echoLevel = EchoLevel.entries.getOrNull(row.echoLevel.toInt()) ?: EchoLevel.HARD
 
                 val programMode = parseProgramMode(row.mode)
 

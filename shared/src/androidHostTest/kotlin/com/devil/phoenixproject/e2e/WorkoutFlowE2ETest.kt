@@ -287,8 +287,10 @@ class WorkoutFlowE2ETest {
         advanceUntilIdle()
 
         localRobot.verifyWorkoutActive()
-        // Issue #222: INIT command removed - now only CONFIG (0x04) + START (0x03)
-        kotlin.test.assertEquals(2, fakeBleRepository.commandsReceived.size)
+        // Official activation starts send CONFIG (0x04) only, without legacy START (0x03).
+        kotlin.test.assertEquals(1, fakeBleRepository.commandsReceived.size)
+        kotlin.test.assertEquals(0x04.toByte(), fakeBleRepository.commandsReceived[0][0])
+        kotlin.test.assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })
     }
 
     @Test

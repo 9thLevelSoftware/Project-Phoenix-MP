@@ -180,7 +180,7 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                         },
                         weightPerCableKg = startingWeight,
                         programMode = selectedMode,
-                        echoLevel = config?.echoLevel ?: EchoLevel.HARDER,
+                        echoLevel = config?.echoLevel ?: EchoLevel.HARD,
                         eccentricLoad =
                             config?.eccentricLoadPercent?.toEccentricLoad()
                                 ?: EccentricLoad.LOAD_100,

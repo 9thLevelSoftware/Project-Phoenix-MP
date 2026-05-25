@@ -20,7 +20,7 @@ object BlePacketFactory {
     }
 
     @Volatile
-    var defaultForceConfigVariant: ForceConfigVariant = ForceConfigVariant.OVERLAP
+    var defaultForceConfigVariant: ForceConfigVariant = ForceConfigVariant.NON_OVERLAP
 
     // ========== Little-Endian Byte Helpers ==========
 
@@ -66,8 +66,8 @@ object BlePacketFactory {
     // ========== Control Commands ==========
 
     /**
-     * Creates a START command (4 bytes).
-     * Signals the device to begin the configured workout.
+     * Creates the legacy Phoenix START command (4 bytes).
+     * Official activation-mode starts do not send this after the configuration packet.
      */
     fun createStartCommand(): ByteArray = byteArrayOf(0x03, 0x00, 0x00, 0x00)
 
@@ -117,21 +117,13 @@ object BlePacketFactory {
      * Build the 96-byte activation/program parameters frame.
      *
      * Activation modes serialize a 32-byte mode profile at 0x30-0x4F, followed by
-     * the force config block at 0x50-0x5F.
-     * - NON_OVERLAP keeps 0x48-0x4F untouched so profile bytes are preserved.
-     * - OVERLAP writes legacy softMax/increment at 0x48/0x4C when required.
+     * the force config block at 0x50-0x5F. The official app keeps these regions
+     * separate: 0x48-0x4F remains the mode profile's eccentric-up ramp, while
+     * selected force/progression live at 0x58/0x5C.
      *
-     * Issue #262: Firmware reads softMax (weight ceiling) at 0x48 and increment
-     * (per-rep progression) at 0x4C. These offsets fall within the mode profile
-     * block (0x30-0x4F), so we overwrite the last 8 bytes of the eccentric phase
-     * with the correct force config values after copying the profile.
-     *
-     * Variant override: when the profile actually copied into the packet is
-     * [ProgramMode.EccentricOnly], the [variant] argument is forced to
-     * [ForceConfigVariant.NON_OVERLAP] to preserve the eccentric-up ramp bytes
-     * at 0x48-0x4F. The override keys off the resolved profile, not
-     * `params.programMode`, so Just Lift / Echo selections (which always use
-     * the OldSchool profile) continue to honor the requested variant.
+     * The default [ForceConfigVariant.NON_OVERLAP] preserves that official layout.
+     * [ForceConfigVariant.OVERLAP] is retained only to reproduce the legacy Phoenix
+     * behavior that overwrote 0x48/0x4C after copying the profile.
      */
     fun createProgramParams(params: WorkoutParameters, variant: ForceConfigVariant = defaultForceConfigVariant): ByteArray {
         // Resolve the profile up front so the variant decision can key off it.
@@ -235,10 +227,8 @@ object BlePacketFactory {
         }
 
         if (effectiveVariant == ForceConfigVariant.OVERLAP) {
-            // Issue #262: Firmware reads softMax at 0x48 and increment at 0x4C.
-            // These overlap the last 8 bytes of the mode profile, but the firmware
-            // interprets them as force config, not mode data. Write them AFTER the
-            // profile copy so they take priority.
+            // Legacy Phoenix behavior: overwrite the profile tail with softMax
+            // and increment. Production uses NON_OVERLAP to match the official app.
             putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_SOFT_MAX, softMax)
             putFloatLE(
                 frame,
@@ -270,18 +260,21 @@ object BlePacketFactory {
         }
         if (effectiveVariant == ForceConfigVariant.OVERLAP) {
             Logger.d("BlePacket") {
-                "softMax[0x48]=${readFloatLE(
+                "legacy softMax[0x48]=${readFloatLE(
                     frame,
                     BleConstants.ActivationPacket.OFFSET_SOFT_MAX,
                 )}kg, " +
-                    "increment[0x4C]=${readFloatLE(
+                    "legacy increment[0x4C]=${readFloatLE(
                         frame,
                         BleConstants.ActivationPacket.OFFSET_INCREMENT,
                     )}kg/rep"
             }
         } else {
             Logger.d("BlePacket") {
-                "non-overlap layout active (0x48..0x4F preserved as profile bytes)"
+                "official non-overlap layout active: " +
+                    "ecc.up.minMmS[0x48]=${readShortLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)}, " +
+                    "ecc.up.maxMmS[0x4A]=${readShortLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)}, " +
+                    "ecc.up.ramp[0x4C]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)}"
             }
         }
         Logger.d("BlePacket") {
@@ -335,7 +328,7 @@ object BlePacketFactory {
         targetReps: Int = 2,
         isJustLift: Boolean = false,
         isAMRAP: Boolean = false,
-        eccentricPct: Int = 75,
+        eccentricPct: Int = 100,
     ): ByteArray {
         // Defensive clamping: Machine hardware limit is 150% eccentric load
         // Values > 150% can cause machine faults (yellow light)
@@ -416,6 +409,12 @@ object BlePacketFactory {
             ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
             ((buffer[offset + 3].toInt() and 0xFF) shl 24)
         return Float.fromBits(bits)
+    }
+
+    private fun readShortLE(buffer: ByteArray, offset: Int): Short {
+        val value = (buffer[offset].toInt() and 0xFF) or
+            ((buffer[offset + 1].toInt() and 0xFF) shl 8)
+        return value.toShort()
     }
 
     // ========== Activation Phases (Mode Profiles) ==========
@@ -532,36 +531,21 @@ object BlePacketFactory {
         // concentricDurationSeconds = 50.0 / velocity
         // concentricMaxVelocity = velocity (raw EchoVelocity enum value)
         // eccentricMaxVelocity = -200.0 (fixed in official app constructor)
-        val params = EchoParams(
+        val velocity = when (level) {
+            EchoLevel.HARD -> 50.0f
+            EchoLevel.HARDER -> 40.0f
+            EchoLevel.HARDEST -> 30.0f
+            EchoLevel.EPIC -> 15.0f
+        }
+
+        return EchoParams(
             eccentricOverload = eccentricPct,
             referenceMapBlend = 50,
             concentricDelayS = 0.1f,
             eccentricDurationSeconds = 0.0f,
             eccentricMaxVelocity = -200.0f,
-            concentricDurationSeconds = 1.0f,
-            concentricMaxVelocity = 50.0f,
+            concentricDurationSeconds = 50.0f / velocity,
+            concentricMaxVelocity = velocity,
         )
-
-        return when (level) {
-            EchoLevel.HARD -> params.copy(
-                concentricDurationSeconds = 1.0f,
-                concentricMaxVelocity = 50.0f,
-            )
-
-            EchoLevel.HARDER -> params.copy(
-                concentricDurationSeconds = 1.25f,
-                concentricMaxVelocity = 40.0f,
-            )
-
-            EchoLevel.HARDEST -> params.copy(
-                concentricDurationSeconds = 1.667f,
-                concentricMaxVelocity = 30.0f,
-            )
-
-            EchoLevel.EPIC -> params.copy(
-                concentricDurationSeconds = 3.333f,
-                concentricMaxVelocity = 15.0f,
-            )
-        }
     }
 }

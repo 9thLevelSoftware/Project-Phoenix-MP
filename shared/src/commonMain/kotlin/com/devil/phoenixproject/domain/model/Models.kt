@@ -175,8 +175,8 @@ sealed class RoutineFlowState {
 /**
  * Program modes used by Phoenix workout setup.
  *
- * Non-Echo modes start with the 96-byte activation/config frame (command 0x04),
- * followed by a START command (0x03). Echo uses its dedicated 0x4E packet.
+ * Non-Echo modes start with the 96-byte activation/config frame (command 0x04).
+ * Echo uses its dedicated 0x4E packet.
  */
 sealed class ProgramMode(val modeValue: Int, val displayName: String) {
     object OldSchool : ProgramMode(0, "Old School")
