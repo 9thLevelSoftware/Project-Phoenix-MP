@@ -302,7 +302,7 @@ fun SingleExerciseScreen(
                                     setRestSeconds = listOf(60, 60, 60),
                                     programMode = ProgramMode.OldSchool,
                                     eccentricLoad = EccentricLoad.LOAD_100,
-                                    echoLevel = EchoLevel.HARDER,
+                                    echoLevel = EchoLevel.HARD,
                                 )
                             }
                             exerciseToConfig = newRoutineExercise

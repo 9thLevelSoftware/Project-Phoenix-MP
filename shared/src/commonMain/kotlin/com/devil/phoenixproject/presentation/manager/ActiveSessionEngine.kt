@@ -1581,7 +1581,7 @@ class ActiveSessionEngine(
         if (!params.isJustLift) return
 
         val eccentricLoadPct = if (params.isEchoMode) params.eccentricLoad.percentage else 100
-        val echoLevelVal = if (params.isEchoMode) params.echoLevel.levelValue else 2
+        val echoLevelVal = if (params.isEchoMode) params.echoLevel.levelValue else 0
 
         try {
             val defaults = com.devil.phoenixproject.data.preferences.JustLiftDefaults(
@@ -1620,7 +1620,7 @@ class ActiveSessionEngine(
 
         val isEchoExercise = currentExercise.programMode == ProgramMode.Echo
         val eccentricLoadPct = if (isEchoExercise) currentExercise.eccentricLoad.percentage else 100
-        val echoLevelVal = if (isEchoExercise) currentExercise.echoLevel.levelValue else 1
+        val echoLevelVal = if (isEchoExercise) currentExercise.echoLevel.levelValue else 0
 
         try {
             val setReps = currentExercise.setReps.ifEmpty { listOf(10) }
@@ -2373,6 +2373,9 @@ class ActiveSessionEngine(
                         Logger.w {
                             "BLE-ACTIVATION-VERIFY (temporary): offsets 0x48..0x5F => $activationTailDump"
                         }
+                        val eccentricUpDump = command
+                            .copyOfRange(0x48, 0x50)
+                            .joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
                         // Issue #390: Decode the key float values from packet bytes for readability
                         fun readFloatLE(buf: ByteArray, off: Int): Float {
                             val bits = (buf[off].toInt() and 0xFF) or
@@ -2382,8 +2385,7 @@ class ActiveSessionEngine(
                             return Float.fromBits(bits)
                         }
                         Logger.w("Issue390") {
-                            "PACKET DECODED: softMax@0x48=${readFloatLE(command, 0x48)}kg, " +
-                                "increment@0x4C=${readFloatLE(command, 0x4C)}kg, " +
+                            "PACKET DECODED: eccUpRamp@0x48..0x4F=$eccentricUpDump, " +
                                 "forceMin@0x50=${readFloatLE(command, 0x50)}kg, " +
                                 "forceMax@0x54=${readFloatLE(command, 0x54)}kg, " +
                                 "targetWeight@0x58=${readFloatLE(command, 0x58)}kg, " +
@@ -2394,19 +2396,6 @@ class ActiveSessionEngine(
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
                     return@launch
-                }
-
-                if (!effectiveParams.isEchoMode) {
-                    delay(100)
-                    try {
-                        val startCommand = BlePacketFactory.createStartCommand()
-                        bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
-                        Logger.i { "START command sent (0x03)" }
-                    } catch (e: Exception) {
-                        Logger.e(e) { "Failed to send START command" }
-                        coordinator._bleErrorEvents.tryEmit("Failed to start workout: ${e.message}")
-                        return@launch
-                    }
                 }
 
                 bleRepository.startActiveWorkoutPolling()

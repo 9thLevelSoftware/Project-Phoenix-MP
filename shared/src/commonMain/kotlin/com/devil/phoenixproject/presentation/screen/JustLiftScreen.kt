@@ -139,7 +139,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     var weightChangePerRep by rememberSaveable { mutableStateOf(0) } // Progression/Regression value
     // Keep enum/sealed types as `remember` — they need custom Savers:
     var eccentricLoad by remember { mutableStateOf(EccentricLoad.LOAD_100) }
-    var echoLevel by remember { mutableStateOf(EchoLevel.HARDER) }
+    var echoLevel by remember { mutableStateOf(EchoLevel.HARD) }
     var repCountTiming by remember { mutableStateOf(RepCountTiming.TOP) }
     var stallDetectionEnabled by rememberSaveable { mutableStateOf(true) }
     var restSeconds by rememberSaveable { mutableStateOf(60) } // Rest timer between sets (0 = off)

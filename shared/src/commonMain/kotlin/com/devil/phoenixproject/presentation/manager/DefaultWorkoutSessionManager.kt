@@ -53,7 +53,7 @@ data class JustLiftDefaults(
     val weightChangePerRep: Int, // In display units (kg or lbs based on user preference)
     val workoutModeId: Int, // 0=OldSchool, 1=Pump, 10=Echo
     val eccentricLoadPercentage: Int = 100,
-    val echoLevelValue: Int = 1, // 0=Hard, 1=Harder, 2=Hardest, 3=Epic
+    val echoLevelValue: Int = 0, // 0=Hard, 1=Harder, 2=Hardest, 3=Epic
     val stallDetectionEnabled: Boolean = true, // Stall detection auto-stop toggle
     val repCountTimingName: String = "TOP", // RepCountTiming enum name for persistence
     val restSeconds: Int = 60, // Rest timer between sets (0 = off, 5-300 in 5s increments)
@@ -90,7 +90,7 @@ data class JustLiftDefaults(
     /**
      * Get EchoLevel from stored value
      */
-    fun getEchoLevel(): EchoLevel = EchoLevel.entries.getOrElse(echoLevelValue) { EchoLevel.HARDER }
+    fun getEchoLevel(): EchoLevel = EchoLevel.entries.getOrElse(echoLevelValue) { EchoLevel.HARD }
 
     /**
      * Get RepCountTiming from stored name

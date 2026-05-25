@@ -66,28 +66,31 @@ object BleConstants {
      * Layout:
      * - 0x30-0x3F: concentric activation phase
      * - 0x40-0x4F: eccentric activation phase
-     * - 0x48-0x4B: legacy softMax for overlap firmware variants (overlaps eccentric tail)
-     * - 0x4C-0x4F: legacy increment for overlap firmware variants (overlaps eccentric tail)
+     * - 0x48-0x4F: eccentric-up ramp inside the eccentric activation phase
      * - 0x50-0x53: forceMin (0.0f)
      * - 0x54-0x57: forceMax (adjustedWeight + 10.0f — force ceiling)
      * - 0x58-0x5B: target weight (adjustedWeight — actual operating weight)
      * - 0x5C-0x5F: progression (progressionRegressionKg)
      *
-     * Firmware variants differ:
-     * - NON_OVERLAP: keep 0x48-0x4F as profile bytes and use 0x58/0x5C for active weights.
-     * - OVERLAP: write legacy softMax/increment at 0x48/0x4C after profile copy.
+     * Official activation packets keep 0x48-0x4F as the mode profile's eccentric-up
+     * ramp bytes. The active force fields live in the trailing block at 0x50-0x5F.
      *
-     * Issue #262: Firmware reads softMax (0x48) and increment (0x4C) from offsets
-     * that overlap the mode profile block (0x30-0x4F). We write these values AFTER
-     * copying the profile so they overwrite the eccentric phase's last 8 bytes.
+     * The legacy OVERLAP experiment wrote softMax/increment at 0x48/0x4C. Those
+     * aliases remain for explicit regression tests only; production packets should
+     * preserve the profile tail and use 0x58/0x5C for selected force/progression.
      */
     object ActivationPacket {
         const val SIZE = 96
         const val OFFSET_MODE_PROFILE = 0x30 // 32 bytes (concentric + eccentric phases)
 
-        // Firmware force config (overlaps end of mode profile — write AFTER profile copy)
-        const val OFFSET_SOFT_MAX = 0x48 // Weight ceiling (float LE) — caps progression
-        const val OFFSET_INCREMENT = 0x4C // Per-rep progression kg (float LE)
+        // Official profile-tail offsets.
+        const val OFFSET_ECC_UP_MIN_MMS = 0x48
+        const val OFFSET_ECC_UP_MAX_MMS = 0x4A
+        const val OFFSET_ECC_UP_RAMP = 0x4C
+
+        // Legacy OVERLAP aliases retained for explicit regression tests only.
+        const val OFFSET_SOFT_MAX = 0x48
+        const val OFFSET_INCREMENT = 0x4C
 
         // Force config block
         const val OFFSET_FORCE_MIN = 0x50 // 0.0f in activation packets

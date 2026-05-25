@@ -1002,7 +1002,7 @@ class SqlDelightSyncRepository(
                     }
 
                     val eccentricLoad = mapEccentricLoadFromDb(exRow.eccentricLoad)
-                    val echoLevel = EchoLevel.entries.getOrNull(exRow.echoLevel.toInt()) ?: EchoLevel.HARDER
+                    val echoLevel = EchoLevel.entries.getOrNull(exRow.echoLevel.toInt()) ?: EchoLevel.HARD
                     val programMode = parseProgramMode(exRow.mode)
 
                     val prTypeForScaling = try {

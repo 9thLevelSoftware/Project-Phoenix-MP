@@ -125,7 +125,7 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
 
-        // DWSM sends CONFIG command + START command (for non-Echo mode)
+        // DWSM sends the trainer configuration command.
         assertTrue(
             harness.fakeBleRepo.commandsReceived.isNotEmpty(),
             "Should have sent at least one BLE command (CONFIG)",
@@ -134,8 +134,14 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `startWorkout uses single activation config for TUT and Eccentric Only`() = runTest {
-        val modes = listOf(ProgramMode.TUT, ProgramMode.EccentricOnly)
+    fun `startWorkout uses single activation config for non-Echo activation modes`() = runTest {
+        val modes = listOf(
+            ProgramMode.OldSchool,
+            ProgramMode.Pump,
+            ProgramMode.TUT,
+            ProgramMode.TUTBeast,
+            ProgramMode.EccentricOnly,
+        )
         for (mode in modes) {
             val harness = DWSMTestHarness(this)
             harness.fakeBleRepo.simulateConnect("Vee_Test")
@@ -151,12 +157,15 @@ class DWSMWorkoutLifecycleTest {
             harness.dwsm.startWorkout(skipCountdown = true)
             advanceUntilIdle()
 
-            assertEquals(2, harness.fakeBleRepo.commandsReceived.size, "Expected config + start for $mode")
+            assertEquals(1, harness.fakeBleRepo.commandsReceived.size, "Expected only activation config for $mode")
             assertEquals(0x04.toByte(), harness.fakeBleRepo.commandsReceived[0][0], "Expected activation packet for $mode")
-            assertEquals(0x03.toByte(), harness.fakeBleRepo.commandsReceived[1][0], "Expected start packet for $mode")
             assertFalse(
                 harness.fakeBleRepo.commandsReceived.any { it.firstOrNull() == 0x4F.toByte() },
                 "Workout start should not send a regular packet for $mode",
+            )
+            assertFalse(
+                harness.fakeBleRepo.commandsReceived.any { it.firstOrNull() == 0x03.toByte() },
+                "Activation workout start should not send legacy 0x03 start packet for $mode",
             )
             harness.cleanup()
         }

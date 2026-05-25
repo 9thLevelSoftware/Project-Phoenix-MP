@@ -61,10 +61,16 @@ class BleConstantsTest {
 
     @Test
     fun `activation packet force config offsets match firmware layout`() {
-        // Firmware force config (overlaps eccentric phase tail)
+        // Official eccentric-up profile tail.
+        assertEquals(0x48, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)
+        assertEquals(0x4A, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)
+        assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)
+
+        // Legacy OVERLAP aliases kept only for explicit regression tests.
         assertEquals(0x48, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)
         assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_INCREMENT)
-        // Protocol force config block
+
+        // Official force config block.
         assertEquals(0x50, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)
         assertEquals(0x54, BleConstants.ActivationPacket.OFFSET_FORCE_MAX)
         assertEquals(0x58, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)

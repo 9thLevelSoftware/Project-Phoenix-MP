@@ -87,7 +87,7 @@ data class RoutineExercise(
     val programMode: ProgramMode = ProgramMode.OldSchool,
     // Echo-specific configuration
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
-    val echoLevel: EchoLevel = EchoLevel.HARDER,
+    val echoLevel: EchoLevel = EchoLevel.HARD,
     val progressionKg: Float = 0f,
     val setRestSeconds: List<Int> = emptyList(), // per-set rest times
     // Per-set echo level overrides; null entries fall back to exercise-level echoLevel
