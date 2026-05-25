@@ -87,6 +87,7 @@ private fun decodeFlaggedFault(code: Int, flags: List<Pair<Int, String>>): Strin
     val activeLabels = flags
         .filter { (mask, _) -> code and mask != 0 }
         .map { (_, label) -> label }
+        .distinct()
 
     return activeLabels.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "Unknown"
 }

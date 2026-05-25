@@ -30,10 +30,12 @@ class DiagnosticFaultDecoderTest {
     @Test
     fun `decodes combined Vitruvian fault bit flags`() {
         val decoded = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, 0x0043)
+        val duplicateMessageFailureBits = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, 0x0018)
 
         assertEquals("No comms, Init failure, Overtemp failure", decoded.label)
         assertEquals("0x0043", decoded.rawHex)
         assertTrue(decoded.hasFault)
+        assertEquals("Message failure", duplicateMessageFailureBits.label)
     }
 
     @Test

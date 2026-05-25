@@ -477,6 +477,20 @@ class ProtocolParserTest {
     }
 
     @Test
+    fun `parseDiagnosticPacket parses warnings after six-temperature payload`() {
+        val data = ByteArray(22)
+        data[18] = 0x04
+        data[21] = 0x80.toByte()
+
+        val result = parseDiagnosticPacket(data)
+
+        assertNotNull(result)
+        assertEquals(6, result.temperatures.size)
+        assertEquals(null, result.crash)
+        assertEquals(2147483652L, result.warnings)
+    }
+
+    @Test
     fun `parseDiagnosticPacket parses six-temperature extended crash payload`() {
         val data = ByteArray(70)
         data[12] = 25

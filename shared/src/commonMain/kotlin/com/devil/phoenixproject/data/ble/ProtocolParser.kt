@@ -329,7 +329,8 @@ private fun hasOptionalDiagnosticTemperatures(dataSize: Int, offset: Int): Boole
     val remaining = dataSize - offset
     if (remaining < DIAGNOSTIC_OPTIONAL_TEMPERATURE_BYTES) return false
 
-    return remaining != DIAGNOSTIC_CRASH_BLOCK_BYTES &&
+    return remaining != DIAGNOSTIC_WARNING_BYTES &&
+        remaining != DIAGNOSTIC_CRASH_BLOCK_BYTES &&
         remaining != DIAGNOSTIC_CRASH_BLOCK_BYTES + DIAGNOSTIC_WARNING_BYTES
 }
 
