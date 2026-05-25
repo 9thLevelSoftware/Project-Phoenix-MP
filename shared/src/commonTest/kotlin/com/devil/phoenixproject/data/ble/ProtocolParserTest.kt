@@ -491,8 +491,11 @@ class ProtocolParserTest {
     }
 
     @Test
-    fun `parseDiagnosticPacket parses crash after six-temperature payload`() {
+    fun `parseDiagnosticPacket parses six-temperature extended crash payload`() {
         val data = ByteArray(70)
+        data[12] = 25
+        data[17] = 50
+        // crash seconds = 7 at byte 18 when no optional T7/T8 bytes are present
         data[18] = 0x07
         for (i in 0 until 48) {
             data[22 + i] = (i + 1).toByte()
@@ -501,10 +504,33 @@ class ProtocolParserTest {
         val result = parseDiagnosticPacket(data)
 
         assertNotNull(result)
-        assertEquals(6, result.temperatures.size)
+        assertEquals(listOf(25, 0, 0, 0, 0, 50), result.temperatures)
         assertEquals(7L, result.crash?.seconds)
         assertTrue(result.crash?.stackBase64?.isNotBlank() == true)
-        assertEquals(null, result.warnings)
+        assertNull(result.warnings)
+    }
+
+    @Test
+    fun `parseDiagnosticPacket parses six-temperature extended crash and warnings payload`() {
+        val data = ByteArray(74)
+        data[12] = 25
+        data[17] = 50
+        // crash seconds = 9 at byte 18 when no optional T7/T8 bytes are present
+        data[18] = 0x09
+        for (i in 0 until 48) {
+            data[22 + i] = (i + 1).toByte()
+        }
+        // warnings = 0x80000004 as unsigned uint32
+        data[70] = 0x04
+        data[73] = 0x80.toByte()
+
+        val result = parseDiagnosticPacket(data)
+
+        assertNotNull(result)
+        assertEquals(6, result.temperatures.size)
+        assertEquals(9L, result.crash?.seconds)
+        assertTrue(result.crash?.stackBase64?.isNotBlank() == true)
+        assertEquals(2147483652L, result.warnings)
     }
 
     @Test

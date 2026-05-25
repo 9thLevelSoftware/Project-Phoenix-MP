@@ -72,13 +72,13 @@ fun SingleExerciseScreen(
     var exerciseToConfig by remember { mutableStateOf<RoutineExercise?>(null) }
     var isLoadingDefaults by remember { mutableStateOf(false) }
     var missingInitialExerciseMessage by remember { mutableStateOf<String?>(null) }
-    val initialExerciseHandled = remember(initialExerciseId) { booleanArrayOf(false) }
-    val loadingRequestId = remember { intArrayOf(0) }
+    var initialExerciseHandled by remember(initialExerciseId) { mutableStateOf(false) }
+    var loadingRequestId by remember { mutableStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
     // Track current loading request to cancel and ignore stale rapid selections.
-    val loadingJob = remember { arrayOf<Job?>(null) }
+    var loadingJob by remember { mutableStateOf<Job?>(null) }
 
     // Local state for picker
     var searchQuery by remember { mutableStateOf("") }
@@ -144,28 +144,28 @@ fun SingleExerciseScreen(
         val exercise = selectedExercise.toSingleExerciseConfigModel()
 
         // Cancel any in-progress loading to prevent race conditions
-        loadingJob[0]?.cancel()
-        val requestId = loadingRequestId[0] + 1
-        loadingRequestId[0] = requestId
+        loadingJob?.cancel()
+        val requestId = loadingRequestId + 1
+        loadingRequestId = requestId
 
         // Set loading state to prevent showing dialog before defaults are loaded
         isLoadingDefaults = true
 
         // Load saved defaults for this exercise asynchronously
-        loadingJob[0] = coroutineScope.launch {
+        loadingJob = coroutineScope.launch {
             try {
                 val savedDefaults = selectedExercise.id?.let { exerciseId ->
                     viewModel.getSingleExerciseDefaults(exerciseId)
                 }
 
-                if (loadingRequestId[0] == requestId) {
+                if (loadingRequestId == requestId) {
                     exerciseToConfig = buildSingleExerciseRoutineExercise(
                         exercise = exercise,
                         savedDefaults = savedDefaults,
                     )
                 }
             } finally {
-                if (loadingRequestId[0] == requestId) {
+                if (loadingRequestId == requestId) {
                     isLoadingDefaults = false
                 }
             }
@@ -177,8 +177,8 @@ fun SingleExerciseScreen(
         exerciseRepository.importExercises()
 
         val exerciseId = initialExerciseId?.trim()?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
-        if (initialExerciseHandled[0]) return@LaunchedEffect
-        initialExerciseHandled[0] = true
+        if (initialExerciseHandled) return@LaunchedEffect
+        initialExerciseHandled = true
 
         val exercise = exerciseRepository.getExerciseById(exerciseId)
         if (exercise == null) {

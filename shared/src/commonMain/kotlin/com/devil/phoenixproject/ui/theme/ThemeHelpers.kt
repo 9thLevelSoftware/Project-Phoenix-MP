@@ -3,7 +3,6 @@ package com.devil.phoenixproject.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 
 /**
@@ -25,15 +24,15 @@ fun screenBackgroundBrush(): Brush {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     return if (isDark) {
         Brush.verticalGradient(
-            0.0f to Slate950,
+            0.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
             0.5f to MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-            1.0f to Slate950,
+            1.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
         )
     } else {
         Brush.verticalGradient(
-            0.0f to Slate50,
+            0.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
             0.5f to MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
-            1.0f to Color.White,
+            1.0f to MaterialTheme.colorScheme.surface,
         )
     }
 }

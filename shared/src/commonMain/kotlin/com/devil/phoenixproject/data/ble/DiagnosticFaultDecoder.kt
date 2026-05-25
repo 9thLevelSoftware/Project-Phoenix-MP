@@ -44,42 +44,50 @@ fun formatDiagnosticFaultCode(code: Int): String =
 fun formatDiagnosticUInt32(value: Long): String =
     "0x${(value and 0xFFFF_FFFFL).toString(16).uppercase().padStart(8, '0')}"
 
-private fun decodeVitruvianFault(code: Int): String {
-    if (code == 0) return "None"
-
-    val faults = mutableListOf<String>()
-    if ((code and 1) != 0) faults.add("No comms")
-    if ((code and 2) != 0) faults.add("Init failure")
-    if ((code and 4) != 0) faults.add("TI restarted")
-    if ((code and 8) != 0 || (code and 16) != 0) faults.add("Message failure")
-    if ((code and 32) != 0) faults.add("Firmware update failure")
-    if ((code and 64) != 0) faults.add("Overtemp failure")
-
-    return faults.joinToString(", ").ifEmpty { "Unknown" }
-}
+private fun decodeVitruvianFault(code: Int): String = decodeFlaggedFault(
+    code = code,
+    flags = listOf(
+        1 to "No comms",
+        2 to "Init failure",
+        4 to "TI restarted",
+        8 to "Message failure",
+        16 to "Message failure",
+        32 to "Firmware update failure",
+        64 to "Overtemp failure",
+    ),
+)
 
 private fun decodeOtherFault(code: Int): String = when (code) {
     0 -> "None"
     else -> "Other"
 }
 
-private fun decodeMotorFault(code: Int): String {
+private fun decodeMotorFault(code: Int): String = decodeFlaggedFault(
+    code = code,
+    flags = listOf(
+        1 to "HW Overcurrent",
+        2 to "SW Overcurrent",
+        4 to "Over voltage",
+        8 to "Under voltage",
+        16 to "PIM temp",
+        32 to "Gate driver",
+        64 to "Bord Temp",
+        128 to "Kill switch",
+        256 to "Alignment",
+        512 to "Encoder",
+        1024 to "HW/FW mismatch",
+        2048 to "EEPROM",
+        4096 to "Motor overtemp",
+    ),
+)
+
+private fun decodeFlaggedFault(code: Int, flags: List<Pair<Int, String>>): String {
     if (code == 0) return "None"
 
-    val faults = mutableListOf<String>()
-    if ((code and 1) != 0) faults.add("HW Overcurrent")
-    if ((code and 2) != 0) faults.add("SW Overcurrent")
-    if ((code and 4) != 0) faults.add("Over voltage")
-    if ((code and 8) != 0) faults.add("Under voltage")
-    if ((code and 16) != 0) faults.add("PIM temp")
-    if ((code and 32) != 0) faults.add("Gate driver")
-    if ((code and 64) != 0) faults.add("Bord Temp")
-    if ((code and 128) != 0) faults.add("Kill switch")
-    if ((code and 256) != 0) faults.add("Alignment")
-    if ((code and 512) != 0) faults.add("Encoder")
-    if ((code and 1024) != 0) faults.add("HW/FW mismatch")
-    if ((code and 2048) != 0) faults.add("EEPROM")
-    if ((code and 4096) != 0) faults.add("Motor overtemp")
+    val activeLabels = flags
+        .filter { (mask, _) -> code and mask != 0 }
+        .map { (_, label) -> label }
+        .distinct()
 
-    return faults.joinToString(", ").ifEmpty { "Unknown" }
+    return activeLabels.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: "Unknown"
 }

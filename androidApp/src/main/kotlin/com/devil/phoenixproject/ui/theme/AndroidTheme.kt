@@ -14,16 +14,15 @@ import com.devil.phoenixproject.ui.theme.VitruvianTheme as SharedVitruvianTheme
  * Delegates to shared theme and configures status bar appearance.
  * Note: enableEdgeToEdge() in MainActivity handles status bar coloring.
  */
-@Suppress("UNUSED_PARAMETER") // dynamicColor kept for API compatibility, intentionally disabled
 @Composable
 fun VitruvianTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Disabled - breaks brand identity
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val themeMode = if (darkTheme) SharedThemeMode.DARK else SharedThemeMode.LIGHT
 
-    SharedVitruvianTheme(themeMode = themeMode) {
+    SharedVitruvianTheme(themeMode = themeMode, dynamicColorEnabled = dynamicColor) {
         val view = LocalView.current
 
         if (!view.isInEditMode) {

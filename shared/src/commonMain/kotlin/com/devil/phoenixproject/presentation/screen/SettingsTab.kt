@@ -96,6 +96,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -136,10 +138,10 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_cloud_sync
 import vitruvianprojectphoenix.shared.generated.resources.cd_connection_logs
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_workouts
 import vitruvianprojectphoenix.shared.generated.resources.cd_developer_tools
+import vitruvianprojectphoenix.shared.generated.resources.cd_dynamic_color
 import vitruvianprojectphoenix.shared.generated.resources.cd_led_scheme
 import vitruvianprojectphoenix.shared.generated.resources.cd_leds_off
 import vitruvianprojectphoenix.shared.generated.resources.cd_link_portal
-import vitruvianprojectphoenix.shared.generated.resources.cd_machine_diagnostics
 import vitruvianprojectphoenix.shared.generated.resources.cd_open_backup_folder
 import vitruvianprojectphoenix.shared.generated.resources.cd_restore_data
 import vitruvianprojectphoenix.shared.generated.resources.cd_support_developer
@@ -147,6 +149,7 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_sync_error
 import vitruvianprojectphoenix.shared.generated.resources.cd_test_sounds
 import vitruvianprojectphoenix.shared.generated.resources.cd_view_badges
 import vitruvianprojectphoenix.shared.generated.resources.cd_weight_unit
+import vitruvianprojectphoenix.shared.generated.resources.diagnostics_title
 import vitruvianprojectphoenix.shared.generated.resources.import_completed
 import vitruvianprojectphoenix.shared.generated.resources.import_records_imported
 import vitruvianprojectphoenix.shared.generated.resources.import_records_skipped
@@ -175,8 +178,11 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_t
 import vitruvianprojectphoenix.shared.generated.resources.settings_cloud_sync
 import vitruvianprojectphoenix.shared.generated.resources.settings_dark_mode
 import vitruvianprojectphoenix.shared.generated.resources.settings_dark_mode_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color
+import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_language
 import vitruvianprojectphoenix.shared.generated.resources.settings_language_help
+import vitruvianprojectphoenix.shared.generated.resources.settings_machine_diagnostics_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_hint
 import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_label
 import vitruvianprojectphoenix.shared.generated.resources.settings_title
@@ -190,6 +196,8 @@ fun SettingsTab(
     weightUnit: WeightUnit,
     enableVideoPlayback: Boolean,
     darkModeEnabled: Boolean,
+    dynamicColorAvailable: Boolean = false,
+    dynamicColorEnabled: Boolean = false,
     audioRepCountEnabled: Boolean = false,
     // Issue #100: Per-sound toggles
     countdownBeepsEnabled: Boolean = true,
@@ -208,6 +216,7 @@ fun SettingsTab(
     onWeightUnitChange: (WeightUnit) -> Unit,
     onEnableVideoPlaybackChange: (Boolean) -> Unit,
     onDarkModeChange: (Boolean) -> Unit,
+    onDynamicColorEnabledChange: (Boolean) -> Unit = {},
     onAudioRepCountChange: (Boolean) -> Unit,
     onSummaryCountdownChange: (Int) -> Unit = {},
     onAutoStartCountdownChange: (Int) -> Unit = {},
@@ -906,6 +915,44 @@ fun SettingsTab(
                         checked = darkModeEnabled,
                         onCheckedChange = onDarkModeChange,
                     )
+                }
+
+                if (dynamicColorAvailable) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = Spacing.small),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(
+                                stringResource(Res.string.settings_dynamic_color),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                stringResource(Res.string.settings_dynamic_color_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        val dynamicColorContentDescription = stringResource(Res.string.cd_dynamic_color)
+                        Switch(
+                            checked = dynamicColorEnabled,
+                            onCheckedChange = onDynamicColorEnabledChange,
+                            modifier = Modifier.semantics {
+                                contentDescription = dynamicColorContentDescription
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -2226,12 +2273,12 @@ fun SettingsTab(
                 ) {
                     Icon(
                         Icons.Default.BugReport,
-                        contentDescription = stringResource(Res.string.cd_machine_diagnostics),
+                        contentDescription = null,
                         modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Machine Diagnostics",
+                        stringResource(Res.string.diagnostics_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -2239,7 +2286,7 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "View uptime, fault codes, temperatures, crash data, and warnings from the machine",
+                    stringResource(Res.string.settings_machine_diagnostics_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

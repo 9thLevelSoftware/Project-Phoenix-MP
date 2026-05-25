@@ -19,6 +19,7 @@ class ThemeViewModelTest {
         val viewModel = ThemeViewModel(MapSettings())
 
         assertEquals(ThemeMode.SYSTEM, viewModel.themeMode.value)
+        assertEquals(false, viewModel.dynamicColorEnabled.value)
     }
 
     @Test
@@ -31,5 +32,23 @@ class ThemeViewModelTest {
 
         assertEquals(ThemeMode.DARK, viewModel.themeMode.value)
         assertEquals(ThemeMode.DARK.name, settings.getStringOrNull("theme_mode"))
+    }
+
+    @Test
+    fun `setDynamicColorEnabled updates state and persists`() = runTest {
+        val settings = MapSettings()
+        val viewModel = ThemeViewModel(settings)
+
+        viewModel.setDynamicColorEnabled(true)
+        advanceUntilIdle()
+
+        assertEquals(true, viewModel.dynamicColorEnabled.value)
+        assertEquals(true, settings.getBoolean("dynamic_color_enabled", false))
+
+        viewModel.setDynamicColorEnabled(false)
+        advanceUntilIdle()
+
+        assertEquals(false, viewModel.dynamicColorEnabled.value)
+        assertEquals(false, settings.getBoolean("dynamic_color_enabled", true))
     }
 }
