@@ -382,6 +382,11 @@ fun ExerciseEditBottomSheet(
                         val updatedExercise = exercise.copy(
                             setReps = setReps.toList(),
                             weightPerCableKg = displayToKg(weightPerCable, weightUnit),
+                            setWeightsPerCableKg = if (displayToKg(weightPerCable, weightUnit) != exercise.weightPerCableKg || setReps.size != exercise.setReps.size) {
+                                emptyList()
+                            } else {
+                                exercise.setWeightsPerCableKg
+                            },
                             setRestSeconds = listOf(restSeconds),
                             eccentricLoad = selectedEccentricLoad,
                             echoLevel = selectedEchoLevel,
