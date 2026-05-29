@@ -2259,11 +2259,30 @@ class ActiveSessionEngine(
                     coordinator._workoutParameters.value = warmupOverrideParams
                 }
 
-                val bleParams = if (isTimedCableExercise) {
-                    Logger.d { "Duration cable: overriding isAMRAP=true for BLE command (prevents machine rep limit)" }
-                    warmupOverrideParams.copy(isAMRAP = true)
-                } else {
-                    warmupOverrideParams
+                val bleParams = run {
+                    val base = if (isTimedCableExercise) {
+                        Logger.d { "Duration cable: overriding isAMRAP=true for BLE command (prevents machine rep limit)" }
+                        warmupOverrideParams.copy(isAMRAP = true)
+                    } else {
+                        warmupOverrideParams
+                    }
+                    // Issue #481: Variable warm-up sets must never carry the working-set's
+                    // per-rep weight progression to the machine — the firmware applies the
+                    // increment to every rep, including warm-up reps. The warm-up override
+                    // (inline above and buildWarmupOverrideParams) intentionally inherits
+                    // progressionRegressionKg so that _workoutParameters retains the working
+                    // value for the warm-up→working transition (handleSetCompletion restores
+                    // weight/reps but NOT progression). So zero it here for the BLE packet
+                    // ONLY, leaving persisted state intact. Covers both the inline override
+                    // and the interrupted-workout recovery replay (skipVariableWarmupOverride).
+                    val sendingWarmupSet = hasVariableWarmupOverrideApplied ||
+                        (skipVariableWarmupOverride && isInWarmupPhase)
+                    if (sendingWarmupSet && base.progressionRegressionKg != 0f) {
+                        Logger.d { "Issue #481: zeroing per-rep progression for warm-up BLE packet (was ${base.progressionRegressionKg}kg)" }
+                        base.copy(progressionRegressionKg = 0f)
+                    } else {
+                        base
+                    }
                 }
 
                 // Issue #390: Diagnostic logging for weight tracing from routine → BLE
