@@ -283,10 +283,12 @@ object PortalSyncAdapter {
             orderIndex = orderIndex,
             // Per-cable estimate from this exercise's single set; matches the
             // set's weightKg (per-cable). Portal applies its x2 display transform.
+            // null when there is no meaningful estimate (0-rep/0-weight) so the
+            // portal treats the field as absent and falls back, per the DTO doc.
             estimatedOneRepMaxKg = OneRepMaxCalculator.estimate(
                 session.weightPerCableKg,
                 session.totalReps,
-            ),
+            ).takeIf { it > 0f },
             sets = listOf(set),
         )
         return ExerciseWithTelemetry(exercise, telemetry)
