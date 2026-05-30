@@ -214,6 +214,14 @@ object KmpUtils {
      * @return Formatted string
      */
     fun formatFloat(value: Float, decimals: Int): String {
+        // Guard against non-finite values: kotlin.math.roundToInt() throws
+        // IllegalArgumentException("Cannot round NaN value.") on NaN, which would
+        // crash any screen that formats a corrupt/missing metric (e.g. a workout
+        // history entry with a NaN weight). Treat non-finite as 0 for display.
+        if (!value.isFinite()) {
+            return if (decimals <= 0) "0" else "0.${"0".repeat(decimals)}"
+        }
+
         if (decimals <= 0) {
             return value.roundToInt().toString()
         }
