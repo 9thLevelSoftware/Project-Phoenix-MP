@@ -73,7 +73,7 @@ import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.presentation.manager.historyItemLazyColumnKey
+import com.devil.phoenixproject.presentation.manager.lazyColumnKey
 import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
