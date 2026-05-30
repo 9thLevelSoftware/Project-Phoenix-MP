@@ -94,15 +94,36 @@ object UnitConverter {
 
 /**
  * Estimated one-rep max calculators.
+ *
+ * PARITY-CRITICAL: `estimate()` is the canonical cross-stack 1RM formula.
+ * Mobile computes it and ships it to the portal (per-cable kg). The portal
+ * MUST NOT use a different formula — see the monorepo parity doctrine.
  */
 object OneRepMaxCalculator {
-    /**
-     * Calculate estimated 1RM using Epley formula.
-     */
+    /** Epley: weight * (1 + reps/30). Robust for any rep count. */
     fun epley(weight: Float, reps: Int): Float {
         if (reps <= 0) return 0f
         if (reps == 1) return weight
         return weight * (1f + reps / 30f)
+    }
+
+    /** Brzycki: weight * 36 / (37 - reps). Accurate for low reps; invalid for reps >= 37. */
+    fun brzycki(weight: Float, reps: Int): Float {
+        if (reps <= 0) return 0f
+        if (reps == 1) return weight
+        if (reps >= 37) return 0f
+        return weight * (36f / (37f - reps))
+    }
+
+    /**
+     * Canonical hybrid estimate: Brzycki for reps <= 10, Epley for reps > 10.
+     * Continuous at reps == 10 (both yield weight * 1.3333).
+     */
+    fun estimate(weight: Float, reps: Int): Float {
+        if (weight <= 0f || reps <= 0) return 0f
+        if (reps == 1) return weight
+        return if (reps <= 10) weight * (36f / (37f - reps))
+        else weight * (1f + reps / 30f)
     }
 }
 
