@@ -927,9 +927,13 @@ class SqlDelightSyncRepository(
      * exercise is not in the catalog so the caller can default to "General".
      */
     override suspend fun getExerciseMuscleGroup(exerciseId: String?, name: String?): String? = withContext(Dispatchers.IO) {
-        // Strategy 0: Direct ID lookup — O(1), unambiguous
-        exerciseId?.let { id ->
-            queries.selectExerciseById(id).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
+        // Strategy 0: Direct ID lookup - O(1), unambiguous. When the catalog row
+        // is found by id it is the single source of truth, so return its
+        // muscleGroup directly rather than falling through to fuzzier name-based
+        // lookups (which could return a different exercise's group).
+        if (exerciseId != null) {
+            val byId = queries.selectExerciseById(exerciseId).executeAsOneOrNull()
+            if (byId != null) return@withContext byId.muscleGroup
         }
 
         if (!name.isNullOrBlank()) {

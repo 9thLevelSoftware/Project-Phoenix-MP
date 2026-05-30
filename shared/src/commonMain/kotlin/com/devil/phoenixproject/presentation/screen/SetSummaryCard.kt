@@ -434,7 +434,8 @@ private fun ExerciseTagSection(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = taggedExerciseName ?: "Tag this exercise",
+                        text = taggedExerciseName
+                            ?: stringResource(Res.string.tag_exercise_prompt),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = if (isUntagged) {
@@ -445,13 +446,13 @@ private fun ExerciseTagSection(
                     )
                     if (isUntagged) {
                         Text(
-                            text = "Label this lift to track it",
+                            text = stringResource(Res.string.tag_exercise_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                         )
                     } else {
                         Text(
-                            text = "Exercise tagged",
+                            text = stringResource(Res.string.exercise_tagged),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -460,11 +461,11 @@ private fun ExerciseTagSection(
             }
             if (isUntagged) {
                 FilledTonalButton(onClick = onClick) {
-                    Text("Tag exercise")
+                    Text(stringResource(Res.string.tag_exercise_action))
                 }
             } else {
                 TextButton(onClick = onClick) {
-                    Text("Change")
+                    Text(stringResource(Res.string.action_change))
                 }
             }
         }

@@ -608,4 +608,13 @@
 
     <!-- ==================== RPG Attributes ==================== -->
     <string name="rpg_no_data_yet">Terminez votre premier entra\u00eenement pour d\u00e9bloquer les attributs RPG</string>
+    <!-- Just Lift exercise tagging -->
+    <string name="action_tag">Associer</string>
+    <string name="action_change">Modifier</string>
+    <string name="tag_lift_title">Associer ce mouvement ?</string>
+    <string name="tag_lift_message">Cette série Just Lift n\'est pas encore associée à un exercice. L\'associer garde votre historique précis.</string>
+    <string name="tag_exercise_prompt">Associer cet exercice</string>
+    <string name="tag_exercise_hint">Associez ce mouvement pour le suivre</string>
+    <string name="tag_exercise_action">Associer l\'exercice</string>
+    <string name="exercise_tagged">Exercice associé</string>
 </resources>

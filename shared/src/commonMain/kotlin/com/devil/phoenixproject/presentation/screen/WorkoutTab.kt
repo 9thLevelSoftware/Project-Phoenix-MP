@@ -103,6 +103,8 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_skip
+import vitruvianprojectphoenix.shared.generated.resources.action_tag
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_no_weight_volume
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_completed
@@ -130,6 +132,8 @@ import vitruvianprojectphoenix.shared.generated.resources.scan
 import vitruvianprojectphoenix.shared.generated.resources.scanning_for_devices
 import vitruvianprojectphoenix.shared.generated.resources.save_set
 import vitruvianprojectphoenix.shared.generated.resources.stop_workout
+import vitruvianprojectphoenix.shared.generated.resources.tag_lift_message
+import vitruvianprojectphoenix.shared.generated.resources.tag_lift_title
 
 /**
  * WorkoutTab with State Holder Pattern (2025 Material Expressive).
@@ -623,18 +627,15 @@ fun WorkoutTab(
                         if (showTagPrompt && summarySessionId != null) {
                             AlertDialog(
                                 onDismissRequest = {
-                                    // Treat dismiss like Skip: resolve and proceed unchanged.
+                                    // Scrim/back cancels the prompt and stays on the
+                                    // summary - it does NOT auto-advance (an accidental
+                                    // outside-tap shouldn't dismiss the workout). Resolve
+                                    // so the next Done press won't re-prompt.
                                     showTagPrompt = false
                                     tagPromptResolved = true
-                                    onProceedFromSummary()
                                 },
-                                title = { Text("Tag this lift?") },
-                                text = {
-                                    Text(
-                                        "This Just Lift set isn't tagged to an exercise yet. " +
-                                            "Tagging it keeps your history accurate.",
-                                    )
-                                },
+                                title = { Text(stringResource(Res.string.tag_lift_title)) },
+                                text = { Text(stringResource(Res.string.tag_lift_message)) },
                                 confirmButton = {
                                     TextButton(
                                         onClick = {
@@ -643,10 +644,11 @@ fun WorkoutTab(
                                             showExerciseTagPicker = true
                                         },
                                     ) {
-                                        Text("Tag")
+                                        Text(stringResource(Res.string.action_tag))
                                     }
                                 },
                                 dismissButton = {
+                                    // Explicit Skip proceeds (honors the original Done tap).
                                     TextButton(
                                         onClick = {
                                             showTagPrompt = false
@@ -654,7 +656,7 @@ fun WorkoutTab(
                                             onProceedFromSummary()
                                         },
                                     ) {
-                                        Text("Skip")
+                                        Text(stringResource(Res.string.action_skip))
                                     }
                                 },
                             )
