@@ -436,6 +436,9 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                         kgToDisplay = viewModel::kgToDisplay,
                         onDeleteWorkout = { viewModel.deleteWorkout(it) },
                         exerciseRepository = viewModel.exerciseRepository,
+                        onTagJustLiftSessionExercise = { sessionId, exercise, isAmrap ->
+                            viewModel.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
+                        },
                         onRefresh = { /* Workout history refreshes automatically via StateFlow */ },
                         modifier = Modifier.fillMaxSize(),
                     )

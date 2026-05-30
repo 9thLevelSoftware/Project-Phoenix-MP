@@ -286,7 +286,10 @@ fun SetSummaryCard(
                 AsymmetrySummaryCard(biomechanics)
             }
 
-            if (!isHistoryView && isJustLiftTaggingEnabled && onTagExerciseClick != null) {
+            // Just Lift tagging affordance. Visibility is driven purely by the caller via
+            // isJustLiftTaggingEnabled so it works in both the live summary and the history view
+            // (retroactive tagging of untagged Just Lift sessions).
+            if (isJustLiftTaggingEnabled && onTagExerciseClick != null) {
                 ExerciseTagSection(
                     taggedExerciseName = taggedExerciseName,
                     onClick = onTagExerciseClick,
