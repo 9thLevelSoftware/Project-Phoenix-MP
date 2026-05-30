@@ -219,7 +219,7 @@ object KmpUtils {
         // crash any screen that formats a corrupt/missing metric (e.g. a workout
         // history entry with a NaN weight). Treat non-finite as 0 for display.
         if (!value.isFinite()) {
-            return if (decimals <= 0) "0" else "0.${"".padStart(decimals, '0')}"
+            return if (decimals <= 0) "0" else "0.${"0".repeat(decimals)}"
         }
 
         if (decimals <= 0) {
