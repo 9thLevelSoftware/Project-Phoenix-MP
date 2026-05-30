@@ -83,6 +83,13 @@ data class PortalExerciseDto(
     val name: String,
     val muscleGroup: String = "General",
     val orderIndex: Int = 0,
+    /**
+     * Canonical estimated 1RM (per-cable kg) for this exercise in this session.
+     * Mobile is the source of truth (see OneRepMaxCalculator.estimate). The
+     * portal stores this verbatim in exercise_progress.estimated_1rm_kg and
+     * only recomputes when this field is absent (legacy payloads).
+     */
+    val estimatedOneRepMaxKg: Float? = null,
     val sets: List<PortalSetDto> = emptyList(),
 )
 

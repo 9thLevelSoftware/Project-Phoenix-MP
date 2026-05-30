@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.KmpUtils.currentTimeMillis
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.nullable
@@ -280,6 +281,12 @@ object PortalSyncAdapter {
             name = session.exerciseName ?: "Unknown Exercise",
             muscleGroup = swr.muscleGroup,
             orderIndex = orderIndex,
+            // Per-cable estimate from this exercise's single set; matches the
+            // set's weightKg (per-cable). Portal applies its x2 display transform.
+            estimatedOneRepMaxKg = OneRepMaxCalculator.estimate(
+                session.weightPerCableKg,
+                session.totalReps,
+            ),
             sets = listOf(set),
         )
         return ExerciseWithTelemetry(exercise, telemetry)
