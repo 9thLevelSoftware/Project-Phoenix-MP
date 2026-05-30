@@ -888,7 +888,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
             if (!isNewWeightPR && !isNewVolumePR) return@withContext
 
-            val oneRepMax = OneRepMaxCalculator.epley(weightKg, reps)
+            val oneRepMax = OneRepMaxCalculator.estimate(weightKg, reps)
 
             if (isNewWeightPR) {
                 queries.upsertPR(

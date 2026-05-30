@@ -201,8 +201,6 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         value
     }
 
-    private fun calculateOneRM(weight: Float, reps: Int): Float {
-        // Brzycki formula: 1RM = weight * (36 / (37 - reps))
-        return if (reps >= 37) weight else weight * (36f / (37f - reps))
-    }
+    private fun calculateOneRM(weight: Float, reps: Int): Float =
+        OneRepMaxCalculator.estimate(weight, reps)
 }

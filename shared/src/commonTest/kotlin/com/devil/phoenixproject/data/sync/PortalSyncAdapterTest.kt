@@ -971,6 +971,30 @@ class PortalSyncAdapterTest {
         assertFloatEquals(500f, result[0].totalVolume)
     }
 
+    // ========== Estimated 1RM in sync payload (Task 4) ==========
+
+    @Test
+    fun `exercise dto carries hybrid estimated 1RM per cable`() {
+        // 60 kg per cable x 5 reps -> Brzycki: 60 * 36 / 32 = 67.5
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                routineSessionId = null,
+                exerciseName = "Bench Press",
+                weightPerCableKg = 60f,
+                totalReps = 5,
+            ).let { swr ->
+                swr.copy(session = swr.session.copy(workingReps = 5))
+            }
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
+
+        val estimate = result[0].exercises[0].estimatedOneRepMaxKg
+        assertNotNull(estimate)
+        assertTrue(abs(estimate - 67.5f) < 0.01f, "expected 67.5, got $estimate")
+    }
+
     // ========== Factory Helpers ==========
 
     private fun makeSessionWithReps(

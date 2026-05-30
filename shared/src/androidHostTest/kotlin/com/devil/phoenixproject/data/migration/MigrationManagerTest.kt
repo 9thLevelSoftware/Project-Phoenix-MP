@@ -394,7 +394,7 @@ class MigrationManagerTest {
         assertEquals(500.0, volumePr.volume)
         assertEquals(2, repairedRecords.size)
         assertEquals(
-            OneRepMaxCalculator.epley(60f, 10).toDouble(),
+            OneRepMaxCalculator.estimate(60f, 10).toDouble(),
             exercise?.one_rep_max_kg,
         )
     }

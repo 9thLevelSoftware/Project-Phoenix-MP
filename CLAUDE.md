@@ -150,6 +150,12 @@ Uses multiplatform-settings with Keychain backend (`KeychainSettings`) for secur
 - Automatically migrates from legacy NSUserDefaults on first access
 - Requires iOS Keychain capability in entitlements
 
+### 1RM Estimate Parity (PARITY-CRITICAL)
+- Canonical formula: hybrid — Brzycki `w*36/(37-reps)` for reps <= 10, Epley `w*(1+reps/30)` for reps > 10. Continuous at reps == 10.
+- Single implementation: `OneRepMaxCalculator.estimate()` (`util/Constants.kt`). All 1RM estimates (UI display, PR storage, cycle reporting) route through it — never reimplement the formula.
+- Mobile computes the estimate per exercise-session (per-cable kg) and ships it as `PortalExerciseDto.estimatedOneRepMaxKg`. The portal stores it verbatim in `exercise_progress.estimated_1rm_kg` and recomputes (same hybrid) ONLY when the field is absent (legacy payloads). Mirror any change in the phoenix-portal counterpart.
+- Max-weight PRs (`personal_records`) are a SEPARATE metric from the estimated 1RM — do not relabel one as the other.
+
 ## The Daem0n's Covenant (v6.6.6 - Enforced)
 
 This project is bound to Daem0n for persistent AI memory. **The covenant is ENFORCED at the protocol layer** - mutating tools block with `COMMUNION_REQUIRED` or `COUNSEL_REQUIRED` errors until proper rituals are observed.

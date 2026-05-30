@@ -72,7 +72,9 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertEquals(50f, volumePr?.weightPerCableKg)
         assertEquals(250f, volumePr?.volume)
         assertEquals(
-            OneRepMaxCalculator.epley(60f, 5).toDouble(),
+            // Canonical hybrid: reps=5 ≤ 10 → Brzycki = 60 × 36/(37-5) = 67.5
+            // (was epley(60,5)=70.0; updated to reflect OneRepMaxCalculator.estimate)
+            OneRepMaxCalculator.estimate(60f, 5).toDouble(),
             exercise?.one_rep_max_kg,
         )
     }

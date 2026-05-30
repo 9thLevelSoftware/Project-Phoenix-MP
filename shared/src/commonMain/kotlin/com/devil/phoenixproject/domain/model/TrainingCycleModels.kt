@@ -389,9 +389,9 @@ data class CompletedSet(
     val completedAt: Long,
 ) {
     /**
-     * Calculate estimated 1RM using Epley formula.
+     * Calculate estimated 1RM using canonical hybrid formula (Brzycki ≤10 reps, Epley >10 reps).
      */
-    fun estimatedOneRepMax(): Float = OneRepMaxCalculator.epley(actualWeightKg, actualReps)
+    fun estimatedOneRepMax(): Float = OneRepMaxCalculator.estimate(actualWeightKg, actualReps)
 
     /**
      * Calculate volume (weight × reps).

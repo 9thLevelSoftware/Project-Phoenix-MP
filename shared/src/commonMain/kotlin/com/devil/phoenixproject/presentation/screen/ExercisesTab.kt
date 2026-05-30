@@ -21,6 +21,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.displayLoadMultiplier
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -335,13 +336,10 @@ private fun formatRelativeTime(timestamp: Long): String {
 }
 
 /**
- * Epley formula for estimated one-rep max
+ * Estimated one-rep max using canonical hybrid formula (Brzycki ≤10 reps, Epley >10 reps).
  */
-private fun calculateOneRepMax(weight: Float, reps: Int): Float {
-    if (reps <= 0) return weight
-    if (reps == 1) return weight
-    return weight * (1 + 0.0333f * reps)
-}
+private fun calculateOneRepMax(weight: Float, reps: Int): Float =
+    OneRepMaxCalculator.estimate(weight, reps)
 
 /**
  * Get best 1RM from a list of sessions

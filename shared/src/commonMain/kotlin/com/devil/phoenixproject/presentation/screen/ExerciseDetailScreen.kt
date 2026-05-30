@@ -41,6 +41,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -752,11 +753,8 @@ private enum class TimeRange(val label: String) {
     ALL("All"),
 }
 
-private fun calculateOneRepMax(weight: Float, reps: Int): Float {
-    if (reps <= 0) return weight
-    if (reps == 1) return weight
-    return weight * (1 + 0.0333f * reps)
-}
+private fun calculateOneRepMax(weight: Float, reps: Int): Float =
+    OneRepMaxCalculator.estimate(weight, reps)
 
 private fun formatDuration(durationMs: Long): String {
     val minutes = durationMs / 60000
