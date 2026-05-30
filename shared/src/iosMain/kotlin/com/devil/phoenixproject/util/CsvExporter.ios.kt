@@ -24,9 +24,10 @@ class IosCsvExporter : CsvExporter {
     private val fileManager = NSFileManager.defaultManager
 
     /**
-     * Calculate estimated 1RM using Brzycki formula
+     * Calculate estimated 1RM using the canonical hybrid (OneRepMaxCalculator.estimate).
      */
-    private fun calculateOneRM(weight: Float, reps: Int): Float = if (reps <= 1) weight else weight * (36f / (37f - reps))
+    private fun calculateOneRM(weight: Float, reps: Int): Float =
+        OneRepMaxCalculator.estimate(weight, reps)
 
     override fun exportPersonalRecords(
         personalRecords: List<PersonalRecord>,
