@@ -287,7 +287,7 @@ object PortalSyncAdapter {
             // portal treats the field as absent and falls back, per the DTO doc.
             estimatedOneRepMaxKg = OneRepMaxCalculator.estimate(
                 session.weightPerCableKg,
-                session.totalReps,
+                session.workingReps,
             ).takeIf { it > 0f },
             sets = listOf(set),
         )
