@@ -271,7 +271,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         val canonicalWorkoutMode = normalizeWorkoutModeKey(workoutMode)
         val volumeForWeightPR = weightPRWeightPerCableKg * reps
         val volumeForVolumePR = volumePRWeightPerCableKg * reps
-        val estimatedOneRepMax = OneRepMaxCalculator.epley(weightPRWeightPerCableKg, reps)
+        val estimatedOneRepMax = OneRepMaxCalculator.estimate(weightPRWeightPerCableKg, reps)
         val phaseName = phase.name
 
         // Issue #319: Log the profile context being used

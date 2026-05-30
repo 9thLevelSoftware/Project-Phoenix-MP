@@ -94,7 +94,7 @@ class TrainingCycleModelsTest {
     }
 
     @Test
-    fun `CompletedSet estimatedOneRepMax uses Epley formula`() {
+    fun `CompletedSet estimatedOneRepMax uses canonical hybrid formula`() {
         val set = CompletedSet(
             id = "set-1",
             sessionId = "session-1",
@@ -109,7 +109,9 @@ class TrainingCycleModelsTest {
         )
 
         val estimated = set.estimatedOneRepMax()
-        assertEquals(116.65f, estimated, absoluteTolerance = 0.1f)
+        // Canonical hybrid: reps=5 ≤ 10 → Brzycki = 100 × 36/(37-5) = 100 × 36/32 = 112.5
+        // (was 116.65 under raw Epley; updated to reflect OneRepMaxCalculator.estimate)
+        assertEquals(112.5f, estimated, absoluteTolerance = 0.1f)
     }
 
     @Test
