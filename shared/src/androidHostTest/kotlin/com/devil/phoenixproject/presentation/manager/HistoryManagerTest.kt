@@ -84,7 +84,7 @@ class HistoryManagerTest {
             advanceUntilIdle()
 
             val historyItems = assertNotNull(latestHistory)
-            val keys = historyItems.map { historyItemLazyColumnKey(it) }
+            val keys = historyItems.map { it.lazyColumnKey }
             val duplicateKeys = keys.groupingBy { it }.eachCount().filter { it.value > 1 }
 
             assertEquals(emptyList(), duplicateKeys.keys.toList())
