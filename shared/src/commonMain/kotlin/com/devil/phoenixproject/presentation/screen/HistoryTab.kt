@@ -73,6 +73,7 @@ import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.presentation.manager.lazyColumnKey
 import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
@@ -175,10 +176,7 @@ fun HistoryTab(
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 items(filteredHistory.size, key = { index ->
-                    when (val item = filteredHistory[index]) {
-                        is com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem -> item.session.id
-                        is com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem -> item.routineSessionId
-                    }
+                    historyItemLazyColumnKey(filteredHistory[index])
                 }) { index ->
                     when (val item = filteredHistory[index]) {
                         is com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem -> {

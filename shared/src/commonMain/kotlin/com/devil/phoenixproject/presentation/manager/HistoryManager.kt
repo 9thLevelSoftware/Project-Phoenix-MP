@@ -42,6 +42,13 @@ data class GroupedRoutineHistoryItem(
     override val timestamp: Long,
 ) : HistoryItem()
 
+/** LazyColumn key used by [HistoryTab]; prefixed by item type to avoid id/routineSessionId collisions. */
+val HistoryItem.lazyColumnKey: String
+    get() = when (this) {
+        is SingleSessionHistoryItem -> "single:${session.id}"
+        is GroupedRoutineHistoryItem -> "routine:$routineSessionId"
+    }
+
 /**
  * Manages workout history and personal records display.
  * Extracted from MainViewModel — pure read-only computed flows.

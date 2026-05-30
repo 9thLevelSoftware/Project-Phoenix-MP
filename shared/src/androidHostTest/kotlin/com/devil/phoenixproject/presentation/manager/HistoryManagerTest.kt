@@ -43,6 +43,59 @@ class HistoryManagerTest {
     }
 
     @Test
+    fun `history lazy column keys stay unique when standalone session id matches grouped routineSessionId`() = runTest {
+        val collisionId = "dd283eb8-d6d9-4ff0-b9af-50969e583b4f"
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager =
+                HistoryManager(
+                    fakeWorkoutRepository,
+                    fakePersonalRecordRepository,
+                    fakeUserProfileRepository,
+                    managerScope,
+                )
+            var latestHistory: List<HistoryItem>? = null
+            val collectJob = launch {
+                manager.groupedWorkoutHistory.collect { latestHistory = it }
+            }
+            advanceUntilIdle()
+
+            // Original standalone workout (local BLE capture)
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(
+                    id = collisionId,
+                    timestamp = 1_000L,
+                    routineSessionId = null,
+                    totalReps = 10,
+                    duration = 60L,
+                ),
+            )
+            // Pulled portal copy: exercise row references same portal session id as routineSessionId
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(
+                    id = "portal-exercise-row-1",
+                    timestamp = 1_000L,
+                    routineSessionId = collisionId,
+                    routineName = "Synced Workout",
+                    totalReps = 10,
+                    duration = 60L,
+                ),
+            )
+            advanceUntilIdle()
+
+            val historyItems = assertNotNull(latestHistory)
+            val keys = historyItems.map { it.lazyColumnKey }
+            val duplicateKeys = keys.groupingBy { it }.eachCount().filter { it.value > 1 }
+
+            assertEquals(emptyList(), duplicateKeys.keys.toList())
+            assertEquals(2, historyItems.size)
+            collectJob.cancel()
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
     fun `groupedWorkoutHistory groups routine sessions and keeps singles separate`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
