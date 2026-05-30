@@ -534,7 +534,18 @@ fun WorkoutTab(
                 is WorkoutState.SetSummary -> {
                     val summarySessionId = workoutState.sessionId
                     var showExerciseTagPicker by remember(summarySessionId) { mutableStateOf(false) }
+                    // One-time "tag this lift?" prompt shown when the user tries to dismiss an
+                    // untagged Just Lift set that has real reps. Once the user decides (tag or
+                    // skip) for this summary, the decision sticks so we never re-prompt (no nag).
+                    var showTagPrompt by remember(summarySessionId) { mutableStateOf(false) }
+                    var tagPromptResolved by remember(summarySessionId) { mutableStateOf(false) }
                     val scope = rememberCoroutineScope()
+
+                    // Only offer the prompt for an untagged Just Lift set with real reps.
+                    val shouldOfferTagPrompt = workoutParameters.isJustLift &&
+                        summarySessionId != null &&
+                        workoutState.taggedExerciseName == null &&
+                        workoutState.repCount > 0
 
                     // Compute contextual button label
                     val buttonLabel = run {
@@ -569,7 +580,16 @@ fun WorkoutTab(
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
                             formatWeight = formatWeight,
-                            onContinue = onProceedFromSummary,
+                            onContinue = {
+                                // Intercept dismissal once to nudge tagging of an untagged
+                                // Just Lift set. If the user already decided, or the set isn't a
+                                // taggable Just Lift set, proceed exactly as before.
+                                if (shouldOfferTagPrompt && !tagPromptResolved) {
+                                    showTagPrompt = true
+                                } else {
+                                    onProceedFromSummary()
+                                }
+                            },
                             autoplayEnabled = autoplayEnabled,
                             summaryCountdownSeconds = summaryCountdownSeconds,
                             onRpeLogged = onRpeLogged,
@@ -591,6 +611,50 @@ fun WorkoutTab(
                                             exercise,
                                             workoutState.isAmrap,
                                         )
+                                    }
+                                },
+                            )
+                        }
+
+                        // One-time nudge to tag an untagged Just Lift set before dismissal.
+                        // "Tag" opens the existing exercise picker; "Skip" (or dismiss) proceeds
+                        // exactly as the original Done button did. Either choice resolves the
+                        // prompt so the next Done press never re-prompts.
+                        if (showTagPrompt && summarySessionId != null) {
+                            AlertDialog(
+                                onDismissRequest = {
+                                    // Treat dismiss like Skip: resolve and proceed unchanged.
+                                    showTagPrompt = false
+                                    tagPromptResolved = true
+                                    onProceedFromSummary()
+                                },
+                                title = { Text("Tag this lift?") },
+                                text = {
+                                    Text(
+                                        "This Just Lift set isn't tagged to an exercise yet. " +
+                                            "Tagging it keeps your history accurate.",
+                                    )
+                                },
+                                confirmButton = {
+                                    TextButton(
+                                        onClick = {
+                                            tagPromptResolved = true
+                                            showTagPrompt = false
+                                            showExerciseTagPicker = true
+                                        },
+                                    ) {
+                                        Text("Tag")
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(
+                                        onClick = {
+                                            showTagPrompt = false
+                                            tagPromptResolved = true
+                                            onProceedFromSummary()
+                                        },
+                                    ) {
+                                        Text("Skip")
                                     }
                                 },
                             )
