@@ -55,4 +55,11 @@ class OneRepMaxCalculatorTest {
         // reps > 10 always routes to Epley, so 37 - reps is never <= 0
         assertEquals(100f * (1f + 40f / 30f), OneRepMaxCalculator.estimate(100f, 40), tol)
     }
+
+    @Test
+    fun `brzycki returns zero for invalid weight and out-of-range reps`() {
+        assertEquals(0f, OneRepMaxCalculator.brzycki(100f, 0), tol)
+        assertEquals(0f, OneRepMaxCalculator.brzycki(100f, 37), tol)
+        assertEquals(0f, OneRepMaxCalculator.brzycki(-10f, 5), tol)
+    }
 }

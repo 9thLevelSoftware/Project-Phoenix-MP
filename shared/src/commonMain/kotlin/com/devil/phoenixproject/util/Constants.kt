@@ -100,7 +100,7 @@ object UnitConverter {
  * MUST NOT use a different formula — see the monorepo parity doctrine.
  */
 object OneRepMaxCalculator {
-    /** Epley: weight * (1 + reps/30). Robust for any rep count. */
+    /** Epley: weight * (1 + reps/30). Linear estimate; tends to overestimate at very high rep counts (>20). */
     fun epley(weight: Float, reps: Int): Float {
         if (reps <= 0) return 0f
         if (reps == 1) return weight
@@ -109,7 +109,7 @@ object OneRepMaxCalculator {
 
     /** Brzycki: weight * 36 / (37 - reps). Accurate for low reps; invalid for reps >= 37. */
     fun brzycki(weight: Float, reps: Int): Float {
-        if (reps <= 0) return 0f
+        if (weight <= 0f || reps <= 0) return 0f
         if (reps == 1) return weight
         if (reps >= 37) return 0f
         return weight * (36f / (37f - reps))
@@ -122,8 +122,7 @@ object OneRepMaxCalculator {
     fun estimate(weight: Float, reps: Int): Float {
         if (weight <= 0f || reps <= 0) return 0f
         if (reps == 1) return weight
-        return if (reps <= 10) weight * (36f / (37f - reps))
-        else weight * (1f + reps / 30f)
+        return if (reps <= 10) brzycki(weight, reps) else epley(weight, reps)
     }
 }
 
