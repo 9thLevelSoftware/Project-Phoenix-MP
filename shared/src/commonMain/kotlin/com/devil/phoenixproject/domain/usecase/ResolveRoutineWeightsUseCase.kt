@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.domain.usecase
 
+import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -10,9 +11,13 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
  *
  * When a routine exercise is configured to use a percentage of PR (usePercentOfPR = true),
  * this use case looks up the user's current PR for that exercise and calculates the
- * actual weight based on the configured percentage.
+ * actual weight based on the configured percentage. When no PR exists, falls back to the
+ * exercise's stored oneRepMaxKg (manual input or VBT assessment) before using absolute weights.
  */
-class ResolveRoutineWeightsUseCase(private val prRepository: PersonalRecordRepository) {
+class ResolveRoutineWeightsUseCase(
+    private val prRepository: PersonalRecordRepository,
+    private val exerciseRepository: ExerciseRepository,
+) {
     /**
      * Resolves RoutineExercise weights from PR percentages to absolute values.
      * Call this at workout start time to get current weights based on latest PRs.
@@ -59,23 +64,26 @@ class ResolveRoutineWeightsUseCase(private val prRepository: PersonalRecordRepos
             )
         }
 
-        val prWeight = pr?.weightPerCableKg
+        val prWeight = pr?.weightPerCableKg?.takeIf { it > 0 }
+        val storedOneRepMax = exerciseRepository.getExerciseById(exerciseId)
+            ?.oneRepMaxKg
+            ?.takeIf { it > 0 }
+        val scalingWeight = prWeight ?: storedOneRepMax
 
-        return if (prWeight != null && prWeight > 0) {
+        return if (scalingWeight != null) {
             ResolvedExerciseWeights(
-                baseWeight = exercise.resolveWeight(prWeight),
-                setWeights = exercise.resolveSetWeights(prWeight),
-                usedPR = prWeight,
+                baseWeight = exercise.resolveWeight(scalingWeight),
+                setWeights = exercise.resolveSetWeights(scalingWeight),
+                usedPR = scalingWeight,
                 percentOfPR = exercise.weightPercentOfPR,
             )
         } else {
-            // No PR found - fall back to absolute weight
             ResolvedExerciseWeights(
                 baseWeight = exercise.weightPerCableKg,
                 setWeights = exercise.setWeightsPerCableKg,
                 usedPR = null,
                 percentOfPR = null,
-                fallbackReason = "No PR found for exercise",
+                fallbackReason = "No PR or stored 1RM found for exercise",
             )
         }
     }

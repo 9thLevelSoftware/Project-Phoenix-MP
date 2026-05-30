@@ -155,6 +155,7 @@ Uses multiplatform-settings with Keychain backend (`KeychainSettings`) for secur
 - Single implementation: `OneRepMaxCalculator.estimate()` (`util/Constants.kt`). All 1RM estimates (UI display, PR storage, cycle reporting) route through it — never reimplement the formula.
 - Mobile computes the estimate per exercise-session (per-cable kg) and ships it as `PortalExerciseDto.estimatedOneRepMaxKg`. The portal stores it verbatim in `exercise_progress.estimated_1rm_kg` and recomputes (same hybrid) ONLY when the field is absent (legacy payloads). Mirror any change in the phoenix-portal counterpart.
 - Max-weight PRs (`personal_records`) are a SEPARATE metric from the estimated 1RM — do not relabel one as the other.
+- Stored `Exercise.one_rep_max_kg` (manual 5/3/1 input or VBT assessment) is the fallback scaling baseline for `% of PR` routines when no matching PersonalRecord exists (`ResolveRoutineWeightsUseCase`).
 
 ## The Daem0n's Covenant (v6.6.6 - Enforced)
 

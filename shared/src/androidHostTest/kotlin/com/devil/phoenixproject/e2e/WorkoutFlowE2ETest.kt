@@ -62,7 +62,7 @@ class WorkoutFlowE2ETest {
         fakeCompletedSetRepository = FakeCompletedSetRepository()
         fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
-        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository)
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository)
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,

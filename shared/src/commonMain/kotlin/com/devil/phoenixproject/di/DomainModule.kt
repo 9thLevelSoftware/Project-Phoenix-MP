@@ -23,7 +23,7 @@ val domainModule = module {
     // Use Cases
     single { RepCounterFromMachine() }
     single { ProgressionUseCase(get(), get()) }
-    factory { ResolveRoutineWeightsUseCase(get()) }
+    factory { ResolveRoutineWeightsUseCase(get(), get()) }
     factory { RoutineTimeEstimator(get()) }
     single { TemplateConverter(get()) }
 

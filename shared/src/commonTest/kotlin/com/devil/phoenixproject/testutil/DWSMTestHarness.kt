@@ -59,7 +59,7 @@ class DWSMTestHarness(val testScope: TestScope) {
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
 
     val repCounter = RepCounterFromMachine()
-    val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo)
+    val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeExerciseRepo)
 
     // Child scope of testScope: shares TestCoroutineScheduler so advanceUntilIdle() works,
     // but can be cancelled independently via cleanup() to prevent UncompletedCoroutinesError.

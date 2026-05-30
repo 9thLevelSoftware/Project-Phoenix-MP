@@ -534,6 +534,15 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 kgToDisplay = viewModel::kgToDisplay,
                 displayToKg = viewModel::displayToKg,
                 onConfirm = { oneRepMaxValues ->
+                    scope.launch {
+                        oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
+                            if (oneRepMax > 0f) {
+                                exerciseRepository.findByName(exerciseName)?.let { exercise ->
+                                    exerciseRepository.updateOneRepMax(exercise.id ?: "", oneRepMax)
+                                }
+                            }
+                        }
+                    }
                     creationState = CycleCreationState.ModeConfirmation(
                         template = state.template,
                         oneRepMaxValues = oneRepMaxValues,

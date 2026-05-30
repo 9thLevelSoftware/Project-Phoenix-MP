@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -24,6 +25,7 @@ import kotlinx.coroutines.test.runTest
 class ResolveRoutineWeightsUseCaseTest {
 
     private lateinit var prRepository: FakePersonalRecordRepository
+    private lateinit var exerciseRepository: FakeExerciseRepository
     private lateinit var useCase: ResolveRoutineWeightsUseCase
 
     private val testExercise = Exercise(
@@ -36,7 +38,9 @@ class ResolveRoutineWeightsUseCaseTest {
     fun setup() {
         prRepository = FakePersonalRecordRepository()
         prRepository.reset()
-        useCase = ResolveRoutineWeightsUseCase(prRepository)
+        exerciseRepository = FakeExerciseRepository()
+        exerciseRepository.reset()
+        useCase = ResolveRoutineWeightsUseCase(prRepository, exerciseRepository)
     }
 
     // ========== Test 1: Resolves percentage to absolute weight using PR ==========
@@ -107,7 +111,66 @@ class ResolveRoutineWeightsUseCaseTest {
         assertFalse(result.isFromPR)
         // And: fallbackReason is set
         assertNotNull(result.fallbackReason)
-        assertTrue(result.fallbackReason.orEmpty().contains("No PR found"))
+        assertTrue(result.fallbackReason.orEmpty().contains("No PR or stored 1RM"))
+    }
+
+    @Test
+    fun `resolves percentage using stored exercise 1RM when no PR exists`() = runTest {
+        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 100f))
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-1",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            prTypeForScaling = PRType.MAX_WEIGHT,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        assertEquals(80f, result.baseWeight)
+        assertEquals(100f, result.usedPR)
+        assertEquals(80, result.percentOfPR)
+        assertTrue(result.isFromPR)
+        assertNull(result.fallbackReason)
+    }
+
+    @Test
+    fun `prefers PR weight over stored exercise 1RM when both exist`() = runTest {
+        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 100f))
+        prRepository.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = "bench-press",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 50f,
+                reps = 5,
+                oneRepMax = 60f,
+                timestamp = 1000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 250f,
+            ),
+        )
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-1",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            prTypeForScaling = PRType.MAX_WEIGHT,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        assertEquals(40f, result.baseWeight)
+        assertEquals(50f, result.usedPR)
     }
 
     // ========== Test 3: Returns absolute weight when usePercentOfPR is false ==========

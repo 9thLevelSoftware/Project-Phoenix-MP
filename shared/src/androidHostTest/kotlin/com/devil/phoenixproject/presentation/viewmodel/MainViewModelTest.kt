@@ -76,7 +76,7 @@ class MainViewModelTest {
         fakeCompletedSetRepository = FakeCompletedSetRepository()
         fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
-        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository)
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository)
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
