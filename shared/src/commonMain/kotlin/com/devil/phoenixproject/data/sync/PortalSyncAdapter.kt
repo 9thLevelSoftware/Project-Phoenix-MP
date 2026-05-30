@@ -187,7 +187,14 @@ object PortalSyncAdapter {
         val sessionDto = PortalWorkoutSessionDto(
             id = portalSessionId,
             userId = userId,
-            name = first.routineName ?: first.exerciseName,
+            // Fall back to a "Just Lift" label for untagged freestyle sessions.
+            // Just Lift sessions are saved without a routine or exercise, so both
+            // routineName and exerciseName are null until the user tags them.
+            // Without this, the portal session title is blank (regression after
+            // mobile PR #435 removed Just Lift exercise auto-detection).
+            name = first.routineName
+                ?: first.exerciseName
+                ?: "Just Lift".takeIf { first.isJustLift },
             startedAt = epochToIso8601(first.timestamp),
             // LWW gate (Phase 3.2): epoch-ms push time as ISO 8601. When mobile
             // domain starts tracking per-row updated_at end-to-end, replace

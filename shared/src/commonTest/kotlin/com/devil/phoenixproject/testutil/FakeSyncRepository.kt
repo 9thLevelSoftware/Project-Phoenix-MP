@@ -203,6 +203,24 @@ class FakeSyncRepository : SyncRepository {
             ?: exerciseIdLookupResults[name]
     }
 
+    /**
+     * Configurable muscle-group lookup for push tests. Keyed by exerciseId first,
+     * then by exercise name. Returns null (caller defaults to "General") for misses.
+     */
+    var muscleGroupLookupResults: Map<String, String> = emptyMap()
+    var getExerciseMuscleGroupCallCount = 0
+
+    override suspend fun getExerciseMuscleGroup(exerciseId: String?, name: String?): String? {
+        getExerciseMuscleGroupCallCount++
+        if (exerciseId != null) {
+            muscleGroupLookupResults[exerciseId]?.let { return it }
+        }
+        if (!name.isNullOrBlank()) {
+            muscleGroupLookupResults[name]?.let { return it }
+        }
+        return null
+    }
+
     // === Atomic Pull Merge ===
 
     /** Captured data from atomic merge calls */

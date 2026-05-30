@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -65,12 +67,14 @@ import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
 import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
+import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -95,6 +99,7 @@ fun HistoryTab(
     kgToDisplay: (Float, WeightUnit) -> Float,
     onDeleteWorkout: (String) -> Unit,
     exerciseRepository: ExerciseRepository,
+    onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -184,6 +189,7 @@ fun HistoryTab(
                                 kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
+                                onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
                                 onDelete = { onDeleteWorkout(item.session.id) },
                             )
                         }
@@ -196,6 +202,7 @@ fun HistoryTab(
                                 kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
+                                onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
                                 onDelete = { sessionId -> onDeleteWorkout(sessionId) },
                             )
                         }
@@ -215,10 +222,13 @@ fun WorkoutHistoryCard(
     kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
+    onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onDelete: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isExpanded by remember { mutableStateOf(false) }
+    var showExerciseTagPicker by remember { mutableStateOf(false) }
 
     // Chevron rotation animation
     val chevronRotation by animateFloatAsState(
@@ -229,6 +239,10 @@ fun WorkoutHistoryCard(
 
     // Get exercise name from session (no DB lookup needed!)
     val exerciseName = session.exerciseName ?: if (session.isJustLift) "Just Lift" else "Unknown Exercise"
+
+    // Retroactive Just Lift tagging is only offered for untagged Just Lift sessions.
+    // Once tagged, exerciseId is non-null so the affordance disappears and the name shows.
+    val canTagJustLift = session.isJustLift && session.exerciseId.isNullOrBlank()
 
     Card(
         onClick = { isExpanded = !isExpanded },
@@ -406,7 +420,29 @@ fun WorkoutHistoryCard(
                             summaryCountdownSeconds = 0, // History view - no auto-continue
                             isHistoryView = true,
                             savedRpe = session.rpe,
+                            // Retroactive Just Lift tagging (untagged Just Lift sessions only)
+                            isJustLiftTaggingEnabled = canTagJustLift,
+                            onTagExerciseClick = if (canTagJustLift) {
+                                { showExerciseTagPicker = true }
+                            } else {
+                                null
+                            },
                         )
+
+                        if (showExerciseTagPicker) {
+                            MiniExercisePickerDialog(
+                                exerciseRepository = exerciseRepository,
+                                onDismiss = { showExerciseTagPicker = false },
+                                onExerciseSelected = { exercise ->
+                                    showExerciseTagPicker = false
+                                    scope.launch {
+                                        // No amrap flag is persisted on a saved session, so default
+                                        // to false (STANDARD set type) for retroactive tagging.
+                                        onTagJustLiftSessionExercise(session.id, exercise, false)
+                                    }
+                                },
+                            )
+                        }
                     } else {
                         // Pre-v0.2.1 session - show message
                         Card(
@@ -719,10 +755,15 @@ fun GroupedRoutineCard(
     kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
+    onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onDelete: (String) -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isExpanded by remember { mutableStateOf(false) }
+    // Tracks which session's exercise-tag picker is open (null = none).
+    // A nullable session id is used because multiple sessions render in the loop below.
+    var taggingSessionId by remember { mutableStateOf<String?>(null) }
 
     // Chevron rotation animation
     val chevronRotation by animateFloatAsState(
@@ -960,6 +1001,8 @@ fun GroupedRoutineCard(
                         )
                         Spacer(modifier = Modifier.height(Spacing.small))
 
+                        val canTagJustLift = session.isJustLift && session.exerciseId.isNullOrBlank()
+
                         if (summary != null) {
                             SetSummaryCard(
                                 summary = summary,
@@ -972,7 +1015,29 @@ fun GroupedRoutineCard(
                                 summaryCountdownSeconds = 0, // History view - no auto-continue
                                 isHistoryView = true,
                                 savedRpe = session.rpe,
+                                // Retroactive Just Lift tagging (untagged Just Lift sessions only)
+                                isJustLiftTaggingEnabled = canTagJustLift,
+                                onTagExerciseClick = if (canTagJustLift) {
+                                    { taggingSessionId = session.id }
+                                } else {
+                                    null
+                                },
                             )
+
+                            if (taggingSessionId == session.id) {
+                                MiniExercisePickerDialog(
+                                    exerciseRepository = exerciseRepository,
+                                    onDismiss = { taggingSessionId = null },
+                                    onExerciseSelected = { exercise ->
+                                        taggingSessionId = null
+                                        scope.launch {
+                                            // No amrap flag is persisted on a saved session, so
+                                            // default to false (STANDARD set type) when retro-tagging.
+                                            onTagJustLiftSessionExercise(session.id, exercise, false)
+                                        }
+                                    },
+                                )
+                            }
                         } else {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),

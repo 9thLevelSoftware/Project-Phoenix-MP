@@ -661,4 +661,13 @@
 
     <!-- ==================== RPG Attributes ==================== -->
     <string name="rpg_no_data_yet">Complete your first workout to unlock RPG attributes</string>
+    <!-- Just Lift exercise tagging -->
+    <string name="action_tag">Tag</string>
+    <string name="action_change">Change</string>
+    <string name="tag_lift_title">Tag this lift?</string>
+    <string name="tag_lift_message">This Just Lift set is not tagged to an exercise yet. Tagging it keeps your history accurate.</string>
+    <string name="tag_exercise_prompt">Tag this exercise</string>
+    <string name="tag_exercise_hint">Label this lift to track it</string>
+    <string name="tag_exercise_action">Tag exercise</string>
+    <string name="exercise_tagged">Exercise tagged</string>
 </resources>

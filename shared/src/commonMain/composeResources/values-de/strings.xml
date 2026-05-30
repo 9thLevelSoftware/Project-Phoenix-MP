@@ -608,4 +608,13 @@
 
     <!-- ==================== RPG Attributes ==================== -->
     <string name="rpg_no_data_yet">Schlie\u00dfe dein erstes Training ab, um RPG-Attribute freizuschalten</string>
+    <!-- Just Lift exercise tagging -->
+    <string name="action_tag">Zuordnen</string>
+    <string name="action_change">Ändern</string>
+    <string name="tag_lift_title">Diesen Lift zuordnen?</string>
+    <string name="tag_lift_message">Dieser Just-Lift-Satz ist noch keiner Übung zugeordnet. Das Zuordnen hält deinen Verlauf genau.</string>
+    <string name="tag_exercise_prompt">Diese Übung zuordnen</string>
+    <string name="tag_exercise_hint">Ordne diesen Lift zu, um ihn zu verfolgen</string>
+    <string name="tag_exercise_action">Übung zuordnen</string>
+    <string name="exercise_tagged">Übung zugeordnet</string>
 </resources>

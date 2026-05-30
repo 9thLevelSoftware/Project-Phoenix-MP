@@ -59,6 +59,7 @@ fun SetSummaryCard(
     onContinue: () -> Unit,
     autoplayEnabled: Boolean,
     summaryCountdownSeconds: Int, // Configurable countdown duration (0 = Off, no auto-continue)
+    onAutoContinue: (() -> Unit)? = null,
     onRpeLogged: ((Int) -> Unit)? = null, // Optional RPE callback
     isHistoryView: Boolean = false, // Hide interactive elements when viewing from history
     savedRpe: Int? = null, // Show saved RPE value in history view
@@ -92,7 +93,7 @@ fun SetSummaryCard(
             }
             // Countdown completed - advance to next set/exercise
             if (autoCountdown == 0) {
-                onContinue()
+                (onAutoContinue ?: onContinue)()
             }
         }
     }
@@ -286,7 +287,10 @@ fun SetSummaryCard(
                 AsymmetrySummaryCard(biomechanics)
             }
 
-            if (!isHistoryView && isJustLiftTaggingEnabled && onTagExerciseClick != null) {
+            // Just Lift tagging affordance. Visibility is driven purely by the caller via
+            // isJustLiftTaggingEnabled so it works in both the live summary and the history view
+            // (retroactive tagging of untagged Just Lift sessions).
+            if (isJustLiftTaggingEnabled && onTagExerciseClick != null) {
                 ExerciseTagSection(
                     taggedExerciseName = taggedExerciseName,
                     onClick = onTagExerciseClick,
@@ -396,12 +400,17 @@ private fun ExerciseTagSection(
     taggedExerciseName: String?,
     onClick: () -> Unit,
 ) {
+    val isUntagged = taggedExerciseName == null
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (isUntagged) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
     ) {
         Row(
             modifier = Modifier
@@ -418,26 +427,47 @@ private fun ExerciseTagSection(
                 Icon(
                     imageVector = Icons.Default.FitnessCenter,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = if (isUntagged) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = taggedExerciseName ?: "Tag exercise",
+                        text = taggedExerciseName
+                            ?: stringResource(Res.string.tag_exercise_prompt),
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isUntagged) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                     )
-                    taggedExerciseName?.let {
+                    if (isUntagged) {
                         Text(
-                            text = "Exercise tagged",
+                            text = stringResource(Res.string.tag_exercise_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(Res.string.exercise_tagged),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
-            TextButton(onClick = onClick) {
-                Text(if (taggedExerciseName == null) "Select" else "Change")
+            if (isUntagged) {
+                FilledTonalButton(onClick = onClick) {
+                    Text(stringResource(Res.string.tag_exercise_action))
+                }
+            } else {
+                TextButton(onClick = onClick) {
+                    Text(stringResource(Res.string.action_change))
+                }
             }
         }
     }

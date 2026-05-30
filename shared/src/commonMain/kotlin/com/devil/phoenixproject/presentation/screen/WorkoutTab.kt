@@ -103,6 +103,8 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_skip
+import vitruvianprojectphoenix.shared.generated.resources.action_tag
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_no_weight_volume
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_completed
@@ -130,6 +132,8 @@ import vitruvianprojectphoenix.shared.generated.resources.scan
 import vitruvianprojectphoenix.shared.generated.resources.scanning_for_devices
 import vitruvianprojectphoenix.shared.generated.resources.save_set
 import vitruvianprojectphoenix.shared.generated.resources.stop_workout
+import vitruvianprojectphoenix.shared.generated.resources.tag_lift_message
+import vitruvianprojectphoenix.shared.generated.resources.tag_lift_title
 
 /**
  * WorkoutTab with State Holder Pattern (2025 Material Expressive).
@@ -534,7 +538,18 @@ fun WorkoutTab(
                 is WorkoutState.SetSummary -> {
                     val summarySessionId = workoutState.sessionId
                     var showExerciseTagPicker by remember(summarySessionId) { mutableStateOf(false) }
+                    // One-time "tag this lift?" prompt shown when the user tries to dismiss an
+                    // untagged Just Lift set that has real reps. Once the user decides (tag or
+                    // skip) for this summary, the decision sticks so we never re-prompt (no nag).
+                    var showTagPrompt by remember(summarySessionId) { mutableStateOf(false) }
+                    var tagPromptResolved by remember(summarySessionId) { mutableStateOf(false) }
                     val scope = rememberCoroutineScope()
+
+                    // Only offer the prompt for an untagged Just Lift set with real reps.
+                    val shouldOfferTagPrompt = workoutParameters.isJustLift &&
+                        summarySessionId != null &&
+                        workoutState.taggedExerciseName == null &&
+                        workoutState.repCount > 0
 
                     // Compute contextual button label
                     val buttonLabel = run {
@@ -569,7 +584,17 @@ fun WorkoutTab(
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
                             formatWeight = formatWeight,
-                            onContinue = onProceedFromSummary,
+                            onContinue = {
+                                // Intercept dismissal once to nudge tagging of an untagged
+                                // Just Lift set. If the user already decided, or the set isn't a
+                                // taggable Just Lift set, proceed exactly as before.
+                                if (shouldOfferTagPrompt && !tagPromptResolved) {
+                                    showTagPrompt = true
+                                } else {
+                                    onProceedFromSummary()
+                                }
+                            },
+                            onAutoContinue = onProceedFromSummary,
                             autoplayEnabled = autoplayEnabled,
                             summaryCountdownSeconds = summaryCountdownSeconds,
                             onRpeLogged = onRpeLogged,
@@ -591,6 +616,48 @@ fun WorkoutTab(
                                             exercise,
                                             workoutState.isAmrap,
                                         )
+                                    }
+                                },
+                            )
+                        }
+
+                        // One-time nudge to tag an untagged Just Lift set before dismissal.
+                        // "Tag" opens the existing exercise picker; "Skip" (or dismiss) proceeds
+                        // exactly as the original Done button did. Either choice resolves the
+                        // prompt so the next Done press never re-prompts.
+                        if (showTagPrompt && summarySessionId != null) {
+                            AlertDialog(
+                                onDismissRequest = {
+                                    // Scrim/back cancels the prompt and stays on the
+                                    // summary - it does NOT auto-advance (an accidental
+                                    // outside-tap shouldn't dismiss the workout). Resolve
+                                    // so the next Done press won't re-prompt.
+                                    showTagPrompt = false
+                                    tagPromptResolved = true
+                                },
+                                title = { Text(stringResource(Res.string.tag_lift_title)) },
+                                text = { Text(stringResource(Res.string.tag_lift_message)) },
+                                confirmButton = {
+                                    TextButton(
+                                        onClick = {
+                                            tagPromptResolved = true
+                                            showTagPrompt = false
+                                            showExerciseTagPicker = true
+                                        },
+                                    ) {
+                                        Text(stringResource(Res.string.action_tag))
+                                    }
+                                },
+                                dismissButton = {
+                                    // Explicit Skip proceeds (honors the original Done tap).
+                                    TextButton(
+                                        onClick = {
+                                            showTagPrompt = false
+                                            tagPromptResolved = true
+                                            onProceedFromSummary()
+                                        },
+                                    ) {
+                                        Text(stringResource(Res.string.action_skip))
                                     }
                                 },
                             )

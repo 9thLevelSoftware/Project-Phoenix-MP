@@ -90,6 +90,51 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `getExerciseMuscleGroup resolves by id then name and is null for unknown`() = runTest {
+        // Seed one catalog exercise. Positional args follow the insertExercise
+        // column order: id, name, displayName, description, created, muscleGroup,
+        // muscleGroups, muscles, equipment, movement, sidedness, grip, gripWidth,
+        // minRepRange, popularity, archived, isFavorite, isCustom, timesPerformed,
+        // lastPerformed, aliases, defaultCableConfig, one_rep_max_kg.
+        database.vitruvianDatabaseQueries.insertExercise(
+            "bench-press",
+            "Bench Press",
+            "Bench Press",
+            null,
+            0L,
+            "Chest",
+            "Chest",
+            null,
+            "BAR",
+            null,
+            null,
+            null,
+            null,
+            null,
+            0.0,
+            0L,
+            0L,
+            0L,
+            0L,
+            null,
+            null,
+            "DUAL",
+            null,
+        )
+
+        // Strategy 0: resolves by catalog id (unambiguous), ignoring name
+        assertEquals("Chest", repository.getExerciseMuscleGroup("bench-press", "Mislabeled"))
+        // Strategy 1: resolves by exact name when id is absent
+        assertEquals("Chest", repository.getExerciseMuscleGroup(null, "Bench Press"))
+        // Strategy 2: resolves case-insensitively by name
+        assertEquals("Chest", repository.getExerciseMuscleGroup(null, "bench press"))
+        // Miss: unknown exercise -> null so the caller defaults to "General"
+        assertEquals(null, repository.getExerciseMuscleGroup("nope", "Totally Unknown"))
+        // Miss: null/blank inputs -> null
+        assertEquals(null, repository.getExerciseMuscleGroup(null, null))
+    }
+
+    @Test
     fun `mergeRoutines uses active profile id`() = runTest {
         repository.mergeRoutines(
             routines = listOf(
