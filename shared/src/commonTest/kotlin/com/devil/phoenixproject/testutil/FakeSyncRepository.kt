@@ -215,7 +215,7 @@ class FakeSyncRepository : SyncRepository {
         if (exerciseId != null) {
             muscleGroupLookupResults[exerciseId]?.let { return it }
         }
-        if (name != null) {
+        if (!name.isNullOrBlank()) {
             muscleGroupLookupResults[name]?.let { return it }
         }
         return null

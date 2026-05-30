@@ -594,6 +594,7 @@ fun WorkoutTab(
                                     onProceedFromSummary()
                                 }
                             },
+                            onAutoContinue = onProceedFromSummary,
                             autoplayEnabled = autoplayEnabled,
                             summaryCountdownSeconds = summaryCountdownSeconds,
                             onRpeLogged = onRpeLogged,

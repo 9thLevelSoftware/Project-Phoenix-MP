@@ -59,6 +59,7 @@ fun SetSummaryCard(
     onContinue: () -> Unit,
     autoplayEnabled: Boolean,
     summaryCountdownSeconds: Int, // Configurable countdown duration (0 = Off, no auto-continue)
+    onAutoContinue: (() -> Unit)? = null,
     onRpeLogged: ((Int) -> Unit)? = null, // Optional RPE callback
     isHistoryView: Boolean = false, // Hide interactive elements when viewing from history
     savedRpe: Int? = null, // Show saved RPE value in history view
@@ -92,7 +93,7 @@ fun SetSummaryCard(
             }
             // Countdown completed - advance to next set/exercise
             if (autoCountdown == 0) {
-                onContinue()
+                (onAutoContinue ?: onContinue)()
             }
         }
     }
