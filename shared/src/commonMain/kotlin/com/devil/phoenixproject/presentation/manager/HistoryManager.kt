@@ -43,10 +43,11 @@ data class GroupedRoutineHistoryItem(
 ) : HistoryItem()
 
 /** LazyColumn key used by [HistoryTab]; prefixed by item type to avoid id/routineSessionId collisions. */
-fun historyItemLazyColumnKey(item: HistoryItem): String = when (item) {
-    is SingleSessionHistoryItem -> "single:${item.session.id}"
-    is GroupedRoutineHistoryItem -> "routine:${item.routineSessionId}"
-}
+val HistoryItem.lazyColumnKey: String
+    get() = when (this) {
+        is SingleSessionHistoryItem -> "single:${session.id}"
+        is GroupedRoutineHistoryItem -> "routine:$routineSessionId"
+    }
 
 /**
  * Manages workout history and personal records display.
