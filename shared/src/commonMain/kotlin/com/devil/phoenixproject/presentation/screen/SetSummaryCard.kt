@@ -399,12 +399,17 @@ private fun ExerciseTagSection(
     taggedExerciseName: String?,
     onClick: () -> Unit,
 ) {
+    val isUntagged = taggedExerciseName == null
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (isUntagged) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
     ) {
         Row(
             modifier = Modifier
@@ -421,16 +426,30 @@ private fun ExerciseTagSection(
                 Icon(
                     imageVector = Icons.Default.FitnessCenter,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = if (isUntagged) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = taggedExerciseName ?: "Tag exercise",
+                        text = taggedExerciseName ?: "Tag this exercise",
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isUntagged) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                     )
-                    taggedExerciseName?.let {
+                    if (isUntagged) {
+                        Text(
+                            text = "Label this lift to track it",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                        )
+                    } else {
                         Text(
                             text = "Exercise tagged",
                             style = MaterialTheme.typography.bodySmall,
@@ -439,8 +458,14 @@ private fun ExerciseTagSection(
                     }
                 }
             }
-            TextButton(onClick = onClick) {
-                Text(if (taggedExerciseName == null) "Select" else "Change")
+            if (isUntagged) {
+                FilledTonalButton(onClick = onClick) {
+                    Text("Tag exercise")
+                }
+            } else {
+                TextButton(onClick = onClick) {
+                    Text("Change")
+                }
             }
         }
     }
