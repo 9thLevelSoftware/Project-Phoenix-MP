@@ -983,7 +983,9 @@ class PortalSyncAdapterTest {
                 exerciseName = "Bench Press",
                 weightPerCableKg = 60f,
                 totalReps = 5,
-            ),
+            ).let { swr ->
+                swr.copy(session = swr.session.copy(workingReps = 5))
+            }
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
