@@ -543,10 +543,18 @@ class SyncManager(
             val sessionKey = "${session.exerciseId}:${session.timestamp}"
             val prRecord = prBySessionKey[sessionKey]
 
+            // Resolve the real muscle group from the exercise catalog instead of
+            // hardcoding "General". Sessions don't carry a muscle group, so look it
+            // up by exerciseId/name; fall back to "General" only for ad-hoc /
+            // unknown movements that aren't in the catalog.
+            val muscleGroup =
+                syncRepository.getExerciseMuscleGroup(session.exerciseId, session.exerciseName)
+                    ?: "General"
+
             PortalSyncAdapter.SessionWithReps(
                 session = session,
                 repMetrics = repMetrics,
-                muscleGroup = "General",
+                muscleGroup = muscleGroup,
                 isPr = prRecord != null,
                 prRecord = prRecord,
             )

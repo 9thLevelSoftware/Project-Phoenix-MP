@@ -232,6 +232,20 @@ interface SyncRepository {
      */
     suspend fun findExerciseId(name: String, muscleGroup: String? = null, exerciseId: String? = null): String?
 
+    /**
+     * Resolves the catalog muscle group for a performed exercise during push.
+     *
+     * WorkoutSession rows do not carry a muscle group of their own, so the push
+     * path must look it up from the exercise catalog. Lookup strategy:
+     * 1. Direct catalog ID match (unambiguous)
+     * 2. Exact name match
+     * 3. Case-insensitive name match
+     *
+     * @return The catalog muscle group, or null when the exercise is not in the
+     *         catalog (ad-hoc / unknown movement). Callers default to "General".
+     */
+    suspend fun getExerciseMuscleGroup(exerciseId: String?, name: String?): String?
+
     // === Atomic Pull Merge ===
 
     /**

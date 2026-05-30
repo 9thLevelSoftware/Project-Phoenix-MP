@@ -920,6 +920,28 @@ class SqlDelightSyncRepository(
         return@withContext caseInsensitiveMatch?.id
     }
 
+    /**
+     * Resolves the catalog muscle group for a performed exercise during push.
+     * Mirrors [findExerciseId]'s lookup order (ID → exact name → case-insensitive
+     * name) but returns the muscle group rather than the ID. Returns null when the
+     * exercise is not in the catalog so the caller can default to "General".
+     */
+    override suspend fun getExerciseMuscleGroup(exerciseId: String?, name: String?): String? = withContext(Dispatchers.IO) {
+        // Strategy 0: Direct ID lookup — O(1), unambiguous
+        exerciseId?.let { id ->
+            queries.selectExerciseById(id).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
+        }
+
+        if (!name.isNullOrBlank()) {
+            // Strategy 1: Exact name match
+            queries.findExerciseByName(name).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
+            // Strategy 2: Case-insensitive name match
+            queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
+        }
+
+        return@withContext null
+    }
+
     // === Portal Push Operations (full domain objects) ===
 
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = withContext(Dispatchers.IO) {
