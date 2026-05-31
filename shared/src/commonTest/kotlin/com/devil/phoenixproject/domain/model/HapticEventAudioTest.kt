@@ -367,7 +367,7 @@ class AudioPreferenceGateTest {
         }
         if (isFinalRep && repSoundEnabled) {
             events.add(HapticEvent.FINAL_REP)
-        } else if (!audioRepCountEnabled && repSoundEnabled) {
+        } else if ((!audioRepCountEnabled || repNumber !in 1..25) && repSoundEnabled) {
             events.add(HapticEvent.REP_COMPLETED)
         }
         return events
