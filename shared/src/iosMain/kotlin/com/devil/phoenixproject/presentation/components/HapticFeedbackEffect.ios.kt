@@ -9,7 +9,6 @@ import androidx.compose.runtime.remember
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.HapticEvent
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.collectLatest
 import platform.AVFAudio.AVAudioPlayer
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryAmbient
@@ -45,7 +44,7 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     }
 
     LaunchedEffect(hapticEvents) {
-        hapticEvents.collectLatest { event ->
+        hapticEvents.collect { event ->
             // Play haptic feedback
             playHapticFeedback(event)
             // Play sound (if available)
