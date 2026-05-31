@@ -25,6 +25,8 @@ class PixelGattPolicyTest {
             assertFalse(PixelGattPolicy.isOfficialSmallMtuPathActive(isPixel = false))
             assertFalse(PixelGattPolicy.includeHeartbeat(isPixel = true))
             assertTrue(PixelGattPolicy.includeHeartbeat(isPixel = false))
+            assertFalse(PixelGattPolicy.includePreReadyDiagnosticReads(isPixel = true))
+            assertTrue(PixelGattPolicy.includePreReadyDiagnosticReads(isPixel = false))
         } finally {
             resetFlags()
         }

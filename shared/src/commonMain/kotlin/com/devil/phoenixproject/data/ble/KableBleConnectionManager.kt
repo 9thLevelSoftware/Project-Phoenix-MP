@@ -116,6 +116,9 @@ class KableBleConnectionManager(
     /** Active state observer job — must be cancelled before launching a new one. */
     private var stateObserverJob: Job? = null
 
+    /** Active app-level readiness job — cancelled when a connection attempt is abandoned. */
+    private var deviceReadyJob: Job? = null
+
     /** Connected device name (for logging). */
     private var connectedDeviceName: String = ""
 
@@ -485,6 +488,9 @@ class KableBleConnectionManager(
 
             // Cancel any stale state observer before launching a new one (H2 fix)
             stateObserverJob?.cancel()
+            deviceReadyJob?.cancel()
+            deviceReadyJob = null
+            var readyGate = CompletableDeferred<Unit>()
 
             // Observe connection state
             stateObserverJob = peripheral?.state
@@ -509,29 +515,57 @@ class KableBleConnectionManager(
                             // The UI observes Connected and immediately restores the saved
                             // LED color scheme, so publishing early can inject a 34-byte write
                             // directly into the ready-up GATT sequence.
-                            scope.launch {
-                                try {
-                                    onDeviceReady()
-                                    reportConnectionState(
-                                        ConnectionState.Connected(
-                                            deviceName = device.name,
-                                            deviceAddress = device.address,
-                                            hardwareModel = HardwareDetection.detectModel(device.name),
-                                        ),
-                                    )
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    log.e(e) { "onDeviceReady failed: ${e.message}" }
-                                    logRepo.error(
-                                        LogEventType.ERROR,
-                                        "Device initialization failed",
-                                        connectedDeviceName,
-                                        connectedDeviceAddress,
-                                        e.message,
-                                    )
-                                    cleanupExistingConnection()
-                                    reportConnectionState(ConnectionState.Disconnected)
+                            if (deviceReadyJob == null && !readyGate.isCompleted) {
+                                deviceReadyJob = scope.launch {
+                                    try {
+                                        withTimeout(BleConstants.CONNECTION_TIMEOUT_MS) {
+                                            onDeviceReady()
+                                        }
+                                        reportConnectionState(
+                                            ConnectionState.Connected(
+                                                deviceName = device.name,
+                                                deviceAddress = device.address,
+                                                hardwareModel = HardwareDetection.detectModel(device.name),
+                                            ),
+                                        )
+                                        readyGate.complete(Unit)
+                                    } catch (e: TimeoutCancellationException) {
+                                        val failure = BleDeviceInitializationException(
+                                            "Device initialization timeout after ${BleConstants.CONNECTION_TIMEOUT_MS}ms",
+                                            e,
+                                        )
+                                        log.e(e) { failure.message ?: "Device initialization timeout" }
+                                        logRepo.error(
+                                            LogEventType.ERROR,
+                                            "Device initialization timeout",
+                                            connectedDeviceName,
+                                            connectedDeviceAddress,
+                                            failure.message,
+                                        )
+                                        if (!readyGate.isCompleted) {
+                                            readyGate.completeExceptionally(failure)
+                                        }
+                                    } catch (e: CancellationException) {
+                                        readyGate.cancel(e)
+                                        throw e
+                                    } catch (e: Exception) {
+                                        log.e(e) { "onDeviceReady failed: ${e.message}" }
+                                        logRepo.error(
+                                            LogEventType.ERROR,
+                                            "Device initialization failed",
+                                            connectedDeviceName,
+                                            connectedDeviceAddress,
+                                            e.message,
+                                        )
+                                        if (!readyGate.isCompleted) {
+                                            readyGate.completeExceptionally(
+                                                BleDeviceInitializationException(
+                                                    "Device initialization failed: ${e.message}",
+                                                    e,
+                                                ),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -564,6 +598,14 @@ class KableBleConnectionManager(
 
                             // Only process disconnect if we were actually connected
                             if (hadConnection) {
+                                if (!readyGate.isCompleted) {
+                                    readyGate.completeExceptionally(
+                                        BleDeviceInitializationException("Device disconnected during initialization"),
+                                    )
+                                }
+                                deviceReadyJob?.cancel()
+                                deviceReadyJob = null
+
                                 logRepo.info(
                                     LogEventType.DISCONNECT,
                                     "Device disconnected",
@@ -615,8 +657,11 @@ class KableBleConnectionManager(
             for (attempt in 1..BleConstants.Timing.CONNECTION_RETRY_COUNT) {
                 try {
                     log.d { "Connection attempt $attempt of ${BleConstants.Timing.CONNECTION_RETRY_COUNT}" }
+                    readyGate = CompletableDeferred()
+                    deviceReadyJob?.cancel()
+                    deviceReadyJob = null
 
-                    // Wrap connection in timeout to prevent zombie "Connecting" state
+                    // Wrap the physical connection in timeout to prevent zombie "Connecting" state
                     withTimeout(BleConstants.CONNECTION_TIMEOUT_MS) {
                         peripheral?.connect()
                         log.i { "Connection initiated to ${device.name}, waiting for established state..." }
@@ -627,6 +672,11 @@ class KableBleConnectionManager(
                         log.i { "Connection established to ${device.name}" }
                     }
 
+                    awaitBleReadyGate(readyGate) {
+                        deviceReadyJob?.cancel()
+                        deviceReadyJob = null
+                    }
+
                     return Result.success(Unit) // Success, exit retry loop
                 } catch (_: TimeoutCancellationException) {
                     lastException = Exception("Connection timeout after ${BleConstants.CONNECTION_TIMEOUT_MS}ms")
@@ -634,6 +684,10 @@ class KableBleConnectionManager(
                     if (attempt < BleConstants.Timing.CONNECTION_RETRY_COUNT) {
                         delay(BleConstants.Timing.CONNECTION_RETRY_DELAY_MS)
                     }
+                } catch (e: BleDeviceInitializationException) {
+                    lastException = e
+                    log.w { "Connection attempt $attempt failed during device initialization: ${e.message}" }
+                    break
                 } catch (e: Exception) {
                     lastException = e
                     log.w { "Connection attempt $attempt failed: ${e.message}" }
@@ -644,8 +698,15 @@ class KableBleConnectionManager(
             }
 
             // All retries failed - cleanup and return to disconnected state
+            stateObserverJob?.cancel()
+            stateObserverJob = null
+            isExplicitDisconnect = true
+            deviceReadyJob?.cancel()
+            deviceReadyJob = null
             peripheral?.disconnect()
             peripheral = null
+            wasEverConnected = false
+            isExplicitDisconnect = false
             reportConnectionState(ConnectionState.Disconnected)
             throw lastException ?: Exception("Connection failed after ${BleConstants.Timing.CONNECTION_RETRY_COUNT} attempts")
         } catch (e: Exception) {
@@ -881,9 +942,20 @@ class KableBleConnectionManager(
         )
 
         // ===== FIRMWARE VERSION READ (best effort) =====
-        // Try to read firmware version from Device Information Service
-        tryReadFirmwareVersion(p)
-        tryReadVitruvianVersion(p)
+        // Flag I is deliberately quiet before critical notifications are ready.
+        // Best-effort diagnostic reads must not block the connection ready gate.
+        if (PixelGattPolicy.includePreReadyDiagnosticReads()) {
+            tryReadFirmwareVersion(p)
+            tryReadVitruvianVersion(p)
+        } else {
+            log.i { "[#333 Flag I] Skipping pre-ready diagnostic version reads" }
+            logRepo.debug(
+                LogEventType.NOTIFICATION,
+                "[#333 Flag I] Skipping pre-ready diagnostic version reads",
+                connectedDeviceName,
+                connectedDeviceAddress,
+            )
+        }
 
         // ===== CORE NOTIFICATIONS =====
 
@@ -1100,6 +1172,8 @@ class KableBleConnectionManager(
 
         // Cancel all polling jobs
         pollingEngine.stopAll()
+        deviceReadyJob?.cancel()
+        deviceReadyJob = null
 
         try {
             peripheral?.disconnect()
@@ -1117,6 +1191,8 @@ class KableBleConnectionManager(
     suspend fun cancelConnection() {
         log.i { "Cancelling in-progress connection" }
         isExplicitDisconnect = true // Prevent auto-reconnect
+        deviceReadyJob?.cancel()
+        deviceReadyJob = null
         try {
             peripheral?.disconnect()
         } catch (e: Exception) {
@@ -1151,6 +1227,8 @@ class KableBleConnectionManager(
         // Cancel stale state observer to prevent ghost callbacks (H2 fix)
         stateObserverJob?.cancel()
         stateObserverJob = null
+        deviceReadyJob?.cancel()
+        deviceReadyJob = null
 
         // Cancel all polling jobs (matches disconnect() behavior)
         pollingEngine.stopAll()

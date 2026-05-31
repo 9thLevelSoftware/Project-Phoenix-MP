@@ -14,4 +14,7 @@ object PixelGattPolicy {
 
     fun includeHeartbeat(isPixel: Boolean = DeviceInfo.isPixel()): Boolean =
         !isOfficialSmallMtuPathActive(isPixel)
+
+    fun includePreReadyDiagnosticReads(isPixel: Boolean = DeviceInfo.isPixel()): Boolean =
+        !isOfficialSmallMtuPathActive(isPixel)
 }
