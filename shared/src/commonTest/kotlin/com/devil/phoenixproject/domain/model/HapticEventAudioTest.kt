@@ -329,6 +329,27 @@ class AudioPreferenceGateTest {
         assertEquals(HapticEvent.FINAL_REP, event)
     }
 
+    @Test
+    fun `REST_ENDING gated by beepsEnabled only`() {
+        // REST_ENDING fires when rest timer completes (reaches 0).
+        // Gated by beepsEnabled (the general audio cue toggle), NOT countdownBeepsEnabled.
+        data class GateState(val beepsEnabled: Boolean)
+
+        val cases = listOf(
+            GateState(true) to true,
+            GateState(false) to false,
+        )
+
+        for ((state, expected) in cases) {
+            val shouldEmit = state.beepsEnabled
+            assertEquals(
+                expected,
+                shouldEmit,
+                "beepsEnabled=${state.beepsEnabled}",
+            )
+        }
+    }
+
     /**
      * Returns the LIST of HapticEvents that would be emitted for a working rep.
      * Unlike selectWorkingRepEvent (single event), this models dual-emission

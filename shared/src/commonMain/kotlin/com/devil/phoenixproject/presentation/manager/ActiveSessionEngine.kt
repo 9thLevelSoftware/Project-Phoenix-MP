@@ -3810,6 +3810,14 @@ class ActiveSessionEngine(
                         )
                     }
 
+                    // Emit REST_ENDING when timer completes (gated by beepsEnabled)
+                    if (remainingSeconds <= 0 && lastRenderedSecond > 0) {
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.beepsEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
+                        }
+                    }
+
                     if (remainingSeconds <= 0 && autoplay && !coordinator._isRestPaused.value) break
 
                     delay(100)
@@ -3873,7 +3881,13 @@ class ActiveSessionEngine(
                         lastRenderedSecond = remaining
                     }
 
-                    if (remaining <= 0) break
+                    if (remaining <= 0) {
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.beepsEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
+                        }
+                        break
+                    }
 
                     delay(100)
                 }
