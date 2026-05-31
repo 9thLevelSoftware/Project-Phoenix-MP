@@ -328,4 +328,64 @@ class AudioPreferenceGateTest {
         )
         assertEquals(HapticEvent.FINAL_REP, event)
     }
+
+    /**
+     * Returns the LIST of HapticEvents that would be emitted for a working rep.
+     * Unlike selectWorkingRepEvent (single event), this models dual-emission
+     * on the final rep when voice counting is active.
+     */
+    private fun selectWorkingRepEvents(
+        audioRepCountEnabled: Boolean,
+        repSoundEnabled: Boolean,
+        repNumber: Int,
+        isFinalRep: Boolean,
+    ): List<HapticEvent> {
+        val events = mutableListOf<HapticEvent>()
+        if (audioRepCountEnabled && repNumber in 1..25) {
+            events.add(HapticEvent.REP_COUNT_ANNOUNCED(repNumber))
+        }
+        if (isFinalRep && repSoundEnabled) {
+            events.add(HapticEvent.FINAL_REP)
+        } else if (!audioRepCountEnabled && repSoundEnabled) {
+            events.add(HapticEvent.REP_COMPLETED)
+        }
+        return events
+    }
+
+    @Test
+    fun `final rep with audioRepCount emits BOTH announced AND final_rep`() {
+        val events = selectWorkingRepEvents(
+            audioRepCountEnabled = true,
+            repSoundEnabled = true,
+            repNumber = 10,
+            isFinalRep = true,
+        )
+        assertEquals(2, events.size, "Final rep with voice counting should emit 2 events")
+        assertTrue(events[0] is HapticEvent.REP_COUNT_ANNOUNCED, "First event should be rep count")
+        assertEquals(HapticEvent.FINAL_REP, events[1], "Second event should be FINAL_REP")
+    }
+
+    @Test
+    fun `non-final rep with audioRepCount emits only announced`() {
+        val events = selectWorkingRepEvents(
+            audioRepCountEnabled = true,
+            repSoundEnabled = true,
+            repNumber = 5,
+            isFinalRep = false,
+        )
+        assertEquals(1, events.size)
+        assertTrue(events[0] is HapticEvent.REP_COUNT_ANNOUNCED)
+    }
+
+    @Test
+    fun `final rep without audioRepCount emits only FINAL_REP`() {
+        val events = selectWorkingRepEvents(
+            audioRepCountEnabled = false,
+            repSoundEnabled = true,
+            repNumber = 10,
+            isFinalRep = true,
+        )
+        assertEquals(1, events.size)
+        assertEquals(HapticEvent.FINAL_REP, events[0])
+    }
 }

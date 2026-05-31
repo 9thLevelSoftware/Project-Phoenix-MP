@@ -217,9 +217,10 @@ class ActiveSessionEngine(
                                 params.reps > 0 && repNumber >= params.reps
                             if (prefs.audioRepCountEnabled && repNumber in 1..25) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(repNumber))
-                            } else if (prefs.repSoundEnabled && isFinalRep) {
+                            }
+                            if (isFinalRep && prefs.repSoundEnabled) {
                                 coordinator._hapticEvents.emit(HapticEvent.FINAL_REP)
-                            } else if (prefs.repSoundEnabled) {
+                            } else if (!prefs.audioRepCountEnabled && prefs.repSoundEnabled) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
                             }
                         }
@@ -235,9 +236,10 @@ class ActiveSessionEngine(
                                 params.reps > 0 && event.workingCount >= params.reps
                             if (prefs.audioRepCountEnabled && event.workingCount in 1..25) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(event.workingCount))
-                            } else if (prefs.repSoundEnabled && isFinalRep) {
+                            }
+                            if (isFinalRep && prefs.repSoundEnabled) {
                                 coordinator._hapticEvents.emit(HapticEvent.FINAL_REP)
-                            } else if (prefs.repSoundEnabled) {
+                            } else if (!prefs.audioRepCountEnabled && prefs.repSoundEnabled) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
                             }
                         }

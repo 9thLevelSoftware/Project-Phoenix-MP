@@ -176,7 +176,7 @@ fun HistoryTab(
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 items(filteredHistory.size, key = { index ->
-                    historyItemLazyColumnKey(filteredHistory[index])
+                    filteredHistory[index].lazyColumnKey
                 }) { index ->
                     when (val item = filteredHistory[index]) {
                         is com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem -> {
