@@ -36,9 +36,6 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
         }
     }
 
-    // Track which sounds are loaded and ready to play
-    val loadedSounds = remember { mutableSetOf<Int>() }
-
     // Create SoundPool for audio feedback. USAGE_MEDIA keeps cues on STREAM_MUSIC,
     // matching Spotify mix behavior and foreground hardware volume buttons.
     val soundPool = remember {
@@ -47,13 +44,7 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
             .setAudioAttributes(
                 buildCueAudioAttributes(),
             )
-            .build().apply {
-                setOnLoadCompleteListener { _, sampleId, status ->
-                    if (status == 0) {
-                        loadedSounds.add(sampleId)
-                    }
-                }
-            }
+            .build()
     }
 
     // Load sounds from static shared-module raw resource IDs so release shrinking
@@ -93,7 +84,7 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     LaunchedEffect(hapticEvents) {
         hapticEvents.collect { event ->
             playHapticFeedback(vibrator, event)
-            playSound(event, soundPool, soundIds, badgeSoundIds, prSoundIds, repCountSoundIds, countdownTickSoundId, loadedSounds, context)
+            playSound(event, soundPool, soundIds, badgeSoundIds, prSoundIds, repCountSoundIds, countdownTickSoundId, context)
         }
     }
 
@@ -126,7 +117,6 @@ private fun playSound(
     prSoundIds: List<Int>,
     repCountSoundIds: List<Int>,
     countdownTickSoundId: Int?,
-    loadedSounds: Set<Int>,
     context: Context,
 ) {
     // ERROR event has no sound
