@@ -154,8 +154,8 @@ class DefaultWorkoutSessionManager(
     private val scope: CoroutineScope,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
-        extraBufferCapacity = 10,
-        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        extraBufferCapacity = 32,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.SUSPEND,
     ),
 ) : WorkoutStateProvider {
     private val isIosPlatform = getPlatform().name.startsWith("iOS")

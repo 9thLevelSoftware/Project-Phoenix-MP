@@ -40,8 +40,8 @@ import kotlin.concurrent.Volatile
  */
 class WorkoutCoordinator(
     internal val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
-        extraBufferCapacity = 10,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        extraBufferCapacity = 32,
+        onBufferOverflow = BufferOverflow.SUSPEND,
     ),
     private val velocityLossThresholdPercent: Float = 20f,
     autoEndOnVelocityLoss: Boolean = false,

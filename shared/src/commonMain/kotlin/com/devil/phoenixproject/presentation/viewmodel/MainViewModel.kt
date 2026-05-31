@@ -93,8 +93,8 @@ class MainViewModel constructor(
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
     private val _hapticEvents = MutableSharedFlow<HapticEvent>(
-        extraBufferCapacity = 10,
-        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+        extraBufferCapacity = 32,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.SUSPEND,
     )
 
     // === Phase 1b: SettingsManager (extracted from this class) ===
