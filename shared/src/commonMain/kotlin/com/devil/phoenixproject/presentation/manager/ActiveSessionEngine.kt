@@ -3811,7 +3811,8 @@ class ActiveSessionEngine(
                     }
 
                     // Emit REST_ENDING when timer completes (gated by beepsEnabled)
-                    if (remainingSeconds <= 0 && lastRenderedSecond > 0) {
+                    if (remainingSeconds <= 0 && lastTickedSecond != 0) {
+                        lastTickedSecond = 0
                         val prefs = settingsManager.userPreferences.value
                         if (prefs.beepsEnabled) {
                             coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
