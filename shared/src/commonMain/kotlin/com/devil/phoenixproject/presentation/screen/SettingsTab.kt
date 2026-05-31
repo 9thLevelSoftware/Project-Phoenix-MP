@@ -2291,14 +2291,60 @@ fun SettingsTab(
 
                 Text(
                     "Experimental fixes for GATT_ERROR(133) on Pixel 6/7 " +
-                        "(BCM4389 controller). Enable individually or together.",
+                        "(BCM4389 controller). Flag I is mutually exclusive " +
+                        "with the legacy D-H experiments.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
 
-                // Flag D: GATT Cache Refresh
+                val isPixelBleExperimentDevice = remember { DeviceInfo.isPixel() }
+                var flagIEnabled by remember { mutableStateOf(PixelGattFlags.officialSmallMtuPath) }
                 var flagDEnabled by remember { mutableStateOf(PixelGattFlags.refreshGattCache) }
+                var flagEEnabled by remember { mutableStateOf(PixelGattFlags.forceImmediateClose) }
+                var flagFEnabled by remember { mutableStateOf(PixelGattFlags.quiescePolling) }
+                var flagGEnabled by remember { mutableStateOf(PixelGattFlags.skipPhantomStart) }
+                var flagHEnabled by remember { mutableStateOf(PixelGattFlags.rawGattWrite) }
+
+                // Flag I: Official Small-MTU Path
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Flag I: Official Small-MTU Path",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF2563EB),
+                        )
+                        Text(
+                            "Pixel-only evidence path: skips requestMtu(), keeps " +
+                                "CONFIG writes WithResponse, disables heartbeat traffic, " +
+                                "and skips the post-CONFIG diagnostic read.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = flagIEnabled,
+                        enabled = isPixelBleExperimentDevice,
+                        onCheckedChange = {
+                            flagIEnabled = it
+                            PixelGattFlags.setOfficialSmallMtuPathEnabled(enabled = it)
+                            if (it) {
+                                flagDEnabled = false
+                                flagEEnabled = false
+                                flagFEnabled = false
+                                flagGEnabled = false
+                                flagHEnabled = false
+                            }
+                        },
+                    )
+                }
+
+                // Flag D: GATT Cache Refresh
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2319,6 +2365,7 @@ fun SettingsTab(
                     }
                     Switch(
                         checked = flagDEnabled,
+                        enabled = !flagIEnabled,
                         onCheckedChange = {
                             flagDEnabled = it
                             PixelGattFlags.refreshGattCache = it
@@ -2327,7 +2374,6 @@ fun SettingsTab(
                 }
 
                 // Flag E: Force Immediate GATT Close
-                var flagEEnabled by remember { mutableStateOf(PixelGattFlags.forceImmediateClose) }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2348,6 +2394,7 @@ fun SettingsTab(
                     }
                     Switch(
                         checked = flagEEnabled,
+                        enabled = !flagIEnabled,
                         onCheckedChange = {
                             flagEEnabled = it
                             PixelGattFlags.forceImmediateClose = it
@@ -2356,7 +2403,6 @@ fun SettingsTab(
                 }
 
                 // Flag F: Polling Quiesce around CONFIG/START
-                var flagFEnabled by remember { mutableStateOf(PixelGattFlags.quiescePolling) }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2379,6 +2425,7 @@ fun SettingsTab(
                     }
                     Switch(
                         checked = flagFEnabled,
+                        enabled = !flagIEnabled,
                         onCheckedChange = {
                             flagFEnabled = it
                             PixelGattFlags.quiescePolling = it
@@ -2387,7 +2434,6 @@ fun SettingsTab(
                 }
 
                 // Flag G: Skip Phantom START
-                var flagGEnabled by remember { mutableStateOf(PixelGattFlags.skipPhantomStart) }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2411,6 +2457,7 @@ fun SettingsTab(
                     }
                     Switch(
                         checked = flagGEnabled,
+                        enabled = !flagIEnabled,
                         onCheckedChange = {
                             flagGEnabled = it
                             PixelGattFlags.skipPhantomStart = it
@@ -2419,7 +2466,6 @@ fun SettingsTab(
                 }
 
                 // Flag H: Raw GATT Write
-                var flagHEnabled by remember { mutableStateOf(PixelGattFlags.rawGattWrite) }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2445,6 +2491,7 @@ fun SettingsTab(
                     }
                     Switch(
                         checked = flagHEnabled,
+                        enabled = !flagIEnabled,
                         onCheckedChange = {
                             flagHEnabled = it
                             PixelGattFlags.rawGattWrite = it
@@ -2457,7 +2504,7 @@ fun SettingsTab(
                     "Active: ${PixelGattFlags.activeFlagsSummary()}",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (flagDEnabled || flagEEnabled || flagFEnabled || flagGEnabled || flagHEnabled)
+                    color = if (flagDEnabled || flagEEnabled || flagFEnabled || flagGEnabled || flagHEnabled || flagIEnabled)
                         Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )

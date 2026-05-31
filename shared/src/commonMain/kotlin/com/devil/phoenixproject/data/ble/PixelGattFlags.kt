@@ -16,6 +16,9 @@ package com.devil.phoenixproject.data.ble
  *         BluetoothGatt.writeCharacteristic() directly via reflection. Matches the
  *         official app's raw GATT write path — eliminates the double-Mutex and the
  *         connectionScope cancellation that causes "StandaloneCoroutine was cancelled".
+ * Flag I: Official small-MTU path. Pixel-only experiment that does not call
+ *         requestMtu(), keeps CONFIG on Kable WithResponse, and suppresses heartbeat
+ *         traffic. Mutually exclusive with D-H to keep validation clean.
  *
  * All flags are Android-only and toggled from Developer Tools.
  */
@@ -59,6 +62,37 @@ object PixelGattFlags {
     @Volatile
     var rawGattWrite: Boolean = false
 
+    /**
+     * Flag I: Evidence-first Pixel path for Issue #333. Android 14+ forces the
+     * first requestMtu() call to ATT MTU 517, so this experiment avoids requesting
+     * MTU at all and leaves writes on the standard WithResponse path.
+     */
+    @Volatile
+    var officialSmallMtuPath: Boolean = false
+
+    fun setOfficialSmallMtuPathEnabled(enabled: Boolean) {
+        officialSmallMtuPath = enabled
+        if (enabled) {
+            clearLegacyExperiments()
+        }
+    }
+
+    fun clearLegacyExperiments() {
+        refreshGattCache = false
+        forceImmediateClose = false
+        quiescePolling = false
+        skipPhantomStart = false
+        rawGattWrite = false
+    }
+
+    fun hasAnyActiveFlag(): Boolean =
+        refreshGattCache ||
+            forceImmediateClose ||
+            quiescePolling ||
+            skipPhantomStart ||
+            rawGattWrite ||
+            officialSmallMtuPath
+
     fun activeFlagsSummary(): String {
         val active = mutableListOf<String>()
         if (refreshGattCache) active.add("D:GattRefresh")
@@ -66,6 +100,7 @@ object PixelGattFlags {
         if (quiescePolling) active.add("F:Quiesce")
         if (skipPhantomStart) active.add("G:NoStart")
         if (rawGattWrite) active.add("H:RawGatt")
+        if (officialSmallMtuPath) active.add("I:SmallMtu")
         return if (active.isEmpty()) "None" else active.joinToString(", ")
     }
 }

@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.ble.HandleStateDetector
 import com.devil.phoenixproject.data.ble.KableBleConnectionManager
 import com.devil.phoenixproject.data.ble.MetricPollingEngine
 import com.devil.phoenixproject.data.ble.MonitorDataProcessor
+import com.devil.phoenixproject.data.ble.PixelGattPolicy
 import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseRepPacket
 import com.devil.phoenixproject.data.ble.toVitruvianHex
@@ -271,7 +272,7 @@ class KableBleRepository : BleRepository {
             return
         }
         stopDiscoMode()
-        pollingEngine.restartAll(p)
+        pollingEngine.restartAll(p, includeHeartbeat = PixelGattPolicy.includeHeartbeat())
     }
 
     override fun stopPolling() = pollingEngine.stopAll()
@@ -289,7 +290,7 @@ class KableBleRepository : BleRepository {
             log.w { "Cannot restart diagnostic polling - peripheral is null" }
             return
         }
-        pollingEngine.restartDiagnosticAndHeartbeat(p)
+        pollingEngine.restartDiagnosticAndHeartbeat(p, includeHeartbeat = PixelGattPolicy.includeHeartbeat())
     }
 
     // ===== Parsing methods (stay in facade) =====

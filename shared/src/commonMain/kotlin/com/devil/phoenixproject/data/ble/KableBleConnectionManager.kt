@@ -440,7 +440,7 @@ class KableBleConnectionManager(
     suspend fun connect(device: ScannedDevice): Result<Unit> {
         log.i { "Connecting to device: ${device.name}" }
         // Issue #333: Log active GATT experiment flags
-        if (PixelGattFlags.refreshGattCache || PixelGattFlags.forceImmediateClose) {
+        if (PixelGattFlags.hasAnyActiveFlag()) {
             log.i { "[#333] Active GATT experiment flags: ${PixelGattFlags.activeFlagsSummary()}" }
         }
         logRepo.info(
@@ -676,11 +676,23 @@ class KableBleConnectionManager(
      */
     private suspend fun onDeviceReady() {
         val p = peripheral ?: return
+        val useOfficialSmallMtuPath = PixelGattPolicy.isOfficialSmallMtuPathActive()
+
+        if (useOfficialSmallMtuPath) {
+            log.i { "[#333 Flag I] Official small-MTU path active; flags=${PixelGattFlags.activeFlagsSummary()}" }
+            logRepo.info(
+                LogEventType.MTU_CHANGED,
+                "[#333 Flag I] Official small-MTU path active",
+                connectedDeviceName,
+                connectedDeviceAddress,
+                "requestMtu() will be skipped; active flags=${PixelGattFlags.activeFlagsSummary()}",
+            )
+        }
 
         // Issue #333 Flag D: Refresh GATT cache before any operations
         // Clears stale cached service data that can cause GATT_ERROR(133)
         // on Pixel 6/7 BCM4389 controllers
-        if (PixelGattFlags.refreshGattCache) {
+        if (PixelGattFlags.refreshGattCache && !useOfficialSmallMtuPath) {
             log.i { "[#333 Flag D] Refreshing GATT cache..." }
             val refreshed = p.refreshGattCache()
             log.i { "[#333 Flag D] GATT cache refresh result: $refreshed" }
@@ -690,30 +702,64 @@ class KableBleConnectionManager(
             }
         }
 
-        // Request High Connection Priority (Android only - via expect/actual extension)
-        // Critical for maintaining ~20Hz polling rate without lag
-        p.requestHighPriority()
+        if (!useOfficialSmallMtuPath) {
+            // Request High Connection Priority (Android only - via expect/actual extension)
+            // Critical for maintaining ~20Hz polling rate without lag
+            p.requestHighPriority()
+        }
 
-        // Request MTU negotiation (Android only - iOS handles automatically)
-        // CRITICAL: Without MTU negotiation, BLE uses default 23-byte MTU (20 usable)
-        // Vitruvian commands require up to 96 bytes for activation frames
-        val mtu = p.requestMtuIfSupported(BleConstants.Timing.DESIRED_MTU)
-        if (mtu != null) {
-            negotiatedMtu = mtu
-            log.i { "MTU negotiated: $mtu bytes (requested: ${BleConstants.Timing.DESIRED_MTU})" }
+        if (useOfficialSmallMtuPath) {
+            negotiatedMtu = null
+            log.i { "[#333 Flag I] Skipping requestMtu(); preserving default Android ATT MTU path" }
             logRepo.info(
                 LogEventType.MTU_CHANGED,
-                "MTU negotiated: $mtu bytes",
+                "[#333 Flag I] Skipping requestMtu()",
                 connectedDeviceName,
                 connectedDeviceAddress,
+                "Android 14+ first requestMtu() asks for ATT MTU 517; Flag I makes no app-side MTU request",
             )
+            try {
+                val maxWriteLength = p.maximumWriteValueLengthForType(WriteType.WithResponse)
+                log.i { "[#333 Flag I] WithResponse max write length before CONFIG path: $maxWriteLength bytes" }
+                logRepo.debug(
+                    LogEventType.MTU_CHANGED,
+                    "[#333 Flag I] WithResponse max write length",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    "$maxWriteLength bytes",
+                )
+            } catch (e: Exception) {
+                log.w { "[#333 Flag I] Could not read WithResponse max write length: ${e.message}" }
+                logRepo.warning(
+                    LogEventType.MTU_CHANGED,
+                    "[#333 Flag I] Could not read WithResponse max write length",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    e.message,
+                )
+            }
         } else {
-            // iOS returns null (handled by OS), or Android negotiation failed
-            log.i { "MTU negotiation: using system default (iOS) or failed (Android)" }
-            logRepo.debug(
-                LogEventType.MTU_CHANGED,
-                "MTU using system default",
-            )
+            // Request MTU negotiation (Android only - iOS handles automatically)
+            // CRITICAL: Without MTU negotiation, BLE uses default 23-byte MTU (20 usable)
+            // Vitruvian commands require up to 96 bytes for activation frames
+            val mtu = p.requestMtuIfSupported(BleConstants.Timing.DESIRED_MTU)
+            if (mtu != null) {
+                negotiatedMtu = mtu
+                log.i { "MTU negotiated: $mtu bytes (requested: ${BleConstants.Timing.DESIRED_MTU})" }
+                logRepo.info(
+                    LogEventType.MTU_CHANGED,
+                    "MTU negotiated: $mtu bytes",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                )
+            } else {
+                // iOS returns null (handled by OS), or Android negotiation failed
+                log.i { "MTU negotiation: using system default (iOS) or failed (Android)" }
+                logRepo.debug(
+                    LogEventType.MTU_CHANGED,
+                    "MTU using system default",
+                )
+            }
         }
 
         // Verify services are discovered and log GATT structure
@@ -795,9 +841,24 @@ class KableBleConnectionManager(
             )
         }
 
+        if (useOfficialSmallMtuPath) {
+            p.requestHighPriority()
+            log.i { "[#333 Flag I] High connection priority requested after service discovery logging" }
+            logRepo.debug(
+                LogEventType.SERVICE_DISCOVERED,
+                "[#333 Flag I] High priority requested after service discovery",
+                connectedDeviceName,
+                connectedDeviceAddress,
+            )
+        }
+
         logRepo.info(
             LogEventType.SERVICE_DISCOVERED,
-            "Device ready, starting notifications and heartbeat",
+            if (useOfficialSmallMtuPath) {
+                "[#333 Flag I] Device ready, starting notifications without heartbeat"
+            } else {
+                "Device ready, starting notifications and heartbeat"
+            },
             connectedDeviceName,
             connectedDeviceAddress,
         )
@@ -905,13 +966,18 @@ class KableBleConnectionManager(
 
         // ===== POLLING (delegated to MetricPollingEngine) =====
         discoMode.stop()
+        val includeHeartbeat = PixelGattPolicy.includeHeartbeat()
         logRepo.info(
             LogEventType.NOTIFICATION,
-            "[#333 v10] BLE ready gate complete; starting polling",
+            if (includeHeartbeat) {
+                "[#333 v10] BLE ready gate complete; starting polling"
+            } else {
+                "[#333 Flag I] BLE ready gate complete; starting polling without heartbeat"
+            },
             connectedDeviceName,
             connectedDeviceAddress,
         )
-        pollingEngine.startAll(p)
+        pollingEngine.startAll(p, includeHeartbeat = includeHeartbeat)
     }
 
     private suspend fun startObservationAndAwaitSubscription(
@@ -1130,7 +1196,10 @@ class KableBleConnectionManager(
         // Matches the official Vitruvian app's raw writeCharacteristic() path.
         val isProgramConfig = command.size == 96 && command[0] == 0x04.toByte()
         val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
-        val useRawGatt = PixelGattFlags.rawGattWrite && (isProgramConfig || isEchoConfig)
+        val useOfficialSmallMtuPath = PixelGattPolicy.isOfficialSmallMtuPathActive()
+        val useRawGatt = !useOfficialSmallMtuPath &&
+            PixelGattFlags.rawGattWrite &&
+            (isProgramConfig || isEchoConfig)
 
         if (useRawGatt) {
             log.i { "[#333 Flag H] Using raw GATT write for ${command.size}-byte CONFIG packet" }
@@ -1175,6 +1244,25 @@ class KableBleConnectionManager(
         // Issue #222: Log queue state before acquiring for debugging
         log.d { "BLE queue locked: ${bleQueue.isLocked}, acquiring..." }
 
+        if (useOfficialSmallMtuPath && isProgramConfig) {
+            val maxWriteLength = try {
+                p.maximumWriteValueLengthForType(WriteType.WithResponse).toString()
+            } catch (e: Exception) {
+                "unavailable (${e.message})"
+            }
+            log.i {
+                "[#333 Flag I] CONFIG command details: $commandDetails, " +
+                    "writeType=WithResponse, maxWriteLength=$maxWriteLength, flags=${PixelGattFlags.activeFlagsSummary()}"
+            }
+            logRepo.debug(
+                LogEventType.CHARACTERISTIC_WRITE,
+                "[#333 Flag I] CONFIG write starting",
+                connectedDeviceName,
+                connectedDeviceAddress,
+                "$commandDetails; writeType=WithResponse; maxWriteLength=$maxWriteLength; flags=${PixelGattFlags.activeFlagsSummary()}",
+            )
+        }
+
         val attemptStart = currentTimeMillis()
         val result = bleQueue.write(p, txCharacteristic, command, WriteType.WithResponse)
 
@@ -1182,9 +1270,19 @@ class KableBleConnectionManager(
             val elapsedMs = currentTimeMillis() - attemptStart
             log.d { "TX write ok: $commandDetails, type=WithResponse, elapsed=${elapsedMs}ms" }
             log.i { "Command sent via NUS TX: $commandDetails" }
+            if (useOfficialSmallMtuPath && isProgramConfig) {
+                log.i { "[#333 Flag I] CONFIG write result: success, elapsed=${elapsedMs}ms" }
+                logRepo.info(
+                    LogEventType.COMMAND_SENT,
+                    "[#333 Flag I] CONFIG write succeeded",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    "$commandDetails; writeType=WithResponse; elapsed=${elapsedMs}ms",
+                )
+            }
 
             // Issue #222 v16 (optional): One-shot diagnostic read after CONFIG to catch early faults.
-            if (isEchoConfig || isProgramConfig) {
+            if ((isEchoConfig || isProgramConfig) && !useOfficialSmallMtuPath) {
                 val preDelayMs = if (isProgramConfig && DeviceInfo.isPixel()) 500L else 0L
                 val delayMs = if (isProgramConfig) 350L else 200L
                 scope.launch {
@@ -1206,11 +1304,23 @@ class KableBleConnectionManager(
                         log.w { "Post-CONFIG diagnostic read failed: ${e.message}" }
                     }
                 }
+            } else if (useOfficialSmallMtuPath && isProgramConfig) {
+                log.i { "[#333 Flag I] Skipping post-CONFIG diagnostic read to keep post-CONFIG traffic quiet" }
+                logRepo.debug(
+                    LogEventType.CHARACTERISTIC_READ,
+                    "[#333 Flag I] Skipped post-CONFIG diagnostic read",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                )
             }
 
             logRepo.debug(
                 LogEventType.COMMAND_SENT,
-                "Command sent (NUS TX)",
+                if (useOfficialSmallMtuPath && isProgramConfig) {
+                    "Command sent (NUS TX, Flag I small-MTU path)"
+                } else {
+                    "Command sent (NUS TX)"
+                },
                 connectedDeviceName,
                 connectedDeviceAddress,
                 commandDetails,
@@ -1219,6 +1329,16 @@ class KableBleConnectionManager(
         } else {
             val ex = result.exceptionOrNull()
             log.e { "Failed to send $commandDetails after retries: ${ex?.message}" }
+            if (useOfficialSmallMtuPath && isProgramConfig) {
+                log.e { "[#333 Flag I] CONFIG write result: failure; no reconnect-on-133 recovery applied: ${ex?.message}" }
+                logRepo.error(
+                    LogEventType.ERROR,
+                    "[#333 Flag I] CONFIG write failed",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    "$commandDetails; error=${ex?.message}",
+                )
+            }
             logRepo.error(
                 LogEventType.ERROR,
                 "Failed to send command",

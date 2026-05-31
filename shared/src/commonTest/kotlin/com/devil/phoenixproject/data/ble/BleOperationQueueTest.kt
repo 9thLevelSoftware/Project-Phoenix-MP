@@ -92,4 +92,21 @@ class BleOperationQueueTest {
         val result = queue.withLock { 42 }
         assertEquals(42, result)
     }
+
+    @Test
+    fun `write retry classifier treats busy errors as retryable`() {
+        val queue = BleOperationQueue()
+
+        assertTrue(queue.shouldRetryWriteFailure(Exception("WriteRequestBusy after 2500ms")))
+        assertTrue(queue.shouldRetryWriteFailure(Exception("GATT Busy during characteristic write")))
+    }
+
+    @Test
+    fun `write retry classifier does not retry GATT error 133`() {
+        val queue = BleOperationQueue()
+
+        assertFalse(queue.shouldRetryWriteFailure(Exception("OnCharacteristicWrite failed: GATT_ERROR(133)")))
+        assertFalse(queue.shouldRetryWriteFailure(Exception("status=133")))
+        assertFalse(queue.shouldRetryWriteFailure(Exception("status=0x85")))
+    }
 }

@@ -23,6 +23,21 @@ class BleOperationQueue {
     /** Check if mutex is currently locked (for diagnostic logging). */
     val isLocked: Boolean get() = mutex.isLocked
 
+    internal fun shouldRetryWriteFailure(e: Exception): Boolean {
+        val message = e.message ?: return false
+        val normalized = message.lowercase()
+
+        if (
+            normalized.contains("gatt_error(133)") ||
+            normalized.contains("status=133") ||
+            normalized.contains("status=0x85")
+        ) {
+            return false
+        }
+
+        return normalized.contains("writerequestbusy") || normalized.contains("busy")
+    }
+
     /**
      * Execute a read operation through the serialization gate.
      * All BLE reads MUST go through this method.
@@ -57,8 +72,7 @@ class BleOperationQueue {
                 return Result.success(Unit)
             } catch (e: Exception) {
                 lastException = e
-                val isBusyError = e.message?.contains("Busy", ignoreCase = true) == true ||
-                    e.message?.contains("WriteRequestBusy", ignoreCase = true) == true
+                val isBusyError = shouldRetryWriteFailure(e)
 
                 if (isBusyError && attempt < maxRetries - 1) {
                     // Exponential backoff: 50ms, 100ms, 150ms

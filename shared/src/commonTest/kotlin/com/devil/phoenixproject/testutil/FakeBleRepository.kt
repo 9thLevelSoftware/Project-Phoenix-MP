@@ -254,6 +254,12 @@ class FakeBleRepository : BleRepository {
         // No-op in fake
     }
 
+    override fun isBleQueueLocked(): Boolean = false
+
+    override fun currentConnectionState(): ConnectionState = _connectionState.value
+
+    override suspend fun probeRead(): Result<ByteArray?> = Result.success(null)
+
     override fun stopMonitorPollingOnly() {
         // No-op in fake
     }

@@ -18,7 +18,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Manages the 4 BLE polling loops and their lifecycle for MetricPollingEngine extraction (Phase 11).
+ * Manages BLE polling loops and their lifecycle for MetricPollingEngine extraction (Phase 11).
  *
  * Polling loops:
  * - Monitor: 10-20Hz (no delay on success, BLE response time rate-limits)
@@ -80,7 +80,7 @@ class MetricPollingEngine(
 
     // ===== Test helpers (internal, not part of public API) =====
 
-    internal fun startFakeJobs() {
+    internal fun startFakeJobs(includeHeartbeat: Boolean = true) {
         monitorPollingJob?.cancel()
         monitorPollingJob = scope.launch {
             while (true) {
@@ -99,11 +99,15 @@ class MetricPollingEngine(
                 delay(Long.MAX_VALUE)
             }
         }
-        heartbeatJob?.cancel()
-        heartbeatJob = scope.launch {
-            while (true) {
-                delay(Long.MAX_VALUE)
+        if (includeHeartbeat) {
+            heartbeatJob?.cancel()
+            heartbeatJob = scope.launch {
+                while (true) {
+                    delay(Long.MAX_VALUE)
+                }
             }
+        } else {
+            cancelHeartbeat()
         }
     }
 
@@ -147,16 +151,24 @@ class MetricPollingEngine(
         }
     }
 
-    internal fun restartAllFake() {
+    internal fun restartAllFake(includeHeartbeat: Boolean = true) {
         startFakeJob(PollingType.MONITOR)
         if (diagnosticPollingJob?.isActive != true) startFakeJob(PollingType.DIAGNOSTIC)
-        if (heartbeatJob?.isActive != true) startFakeJob(PollingType.HEARTBEAT)
+        if (includeHeartbeat) {
+            if (heartbeatJob?.isActive != true) startFakeJob(PollingType.HEARTBEAT)
+        } else {
+            cancelHeartbeat()
+        }
         if (heuristicPollingJob?.isActive != true) startFakeJob(PollingType.HEURISTIC)
     }
 
-    internal fun restartDiagnosticAndHeartbeatFake() {
+    internal fun restartDiagnosticAndHeartbeatFake(includeHeartbeat: Boolean = true) {
         if (diagnosticPollingJob?.isActive != true) startFakeJob(PollingType.DIAGNOSTIC)
-        if (heartbeatJob?.isActive != true) startFakeJob(PollingType.HEARTBEAT)
+        if (includeHeartbeat) {
+            if (heartbeatJob?.isActive != true) startFakeJob(PollingType.HEARTBEAT)
+        } else {
+            cancelHeartbeat()
+        }
     }
 
     internal fun incrementDiagnosticCount() {
@@ -177,13 +189,17 @@ class MetricPollingEngine(
 
     // ===== Public API =====
 
-    /** Start all 4 polling loops. Called from startObservingNotifications(). */
-    fun startAll(peripheral: Peripheral) {
-        log.i { "Starting all polling loops" }
+    /** Start all polling loops. Called from startObservingNotifications(). */
+    fun startAll(peripheral: Peripheral, includeHeartbeat: Boolean = true) {
+        log.i { "Starting polling loops (includeHeartbeat=$includeHeartbeat)" }
         startMonitorPolling(peripheral)
         startDiagnosticPolling(peripheral)
         startHeuristicPolling(peripheral)
-        startHeartbeat(peripheral)
+        if (includeHeartbeat) {
+            startHeartbeat(peripheral)
+        } else {
+            disableHeartbeatForFlagI()
+        }
     }
 
     /**
@@ -394,6 +410,16 @@ class MetricPollingEngine(
         }
     }
 
+    private fun disableHeartbeatForFlagI() {
+        cancelHeartbeat()
+        log.i { "[#333 Flag I] Heartbeat loop disabled; skipping TX read and no-op write" }
+    }
+
+    private fun cancelHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+    }
+
     /**
      * Stop ALL polling loops and reset diagnostic state.
      * Maps to KableBleRepository.stopPolling().
@@ -462,8 +488,8 @@ class MetricPollingEngine(
      * Monitor is always restarted. Others are only restarted if not already active.
      * Maps to KableBleRepository.startActiveWorkoutPolling().
      */
-    fun restartAll(peripheral: Peripheral) {
-        log.i { "Restarting all polling loops" }
+    fun restartAll(peripheral: Peripheral, includeHeartbeat: Boolean = true) {
+        log.i { "Restarting all polling loops (includeHeartbeat=$includeHeartbeat)" }
         log.d {
             "Issue #222 v16: Polling job states before restart - " +
                 "monitor=${monitorPollingJob?.isActive}, " +
@@ -480,9 +506,13 @@ class MetricPollingEngine(
             log.d { "Issue #222 v16: Restarting diagnostic polling" }
             startDiagnosticPolling(peripheral)
         }
-        if (heartbeatJob?.isActive != true) {
-            log.d { "Issue #222 v16: Restarting heartbeat" }
-            startHeartbeat(peripheral)
+        if (includeHeartbeat) {
+            if (heartbeatJob?.isActive != true) {
+                log.d { "Issue #222 v16: Restarting heartbeat" }
+                startHeartbeat(peripheral)
+            }
+        } else {
+            disableHeartbeatForFlagI()
         }
         if (heuristicPollingJob?.isActive != true) {
             log.d { "Issue #222 v16: Restarting heuristic polling" }
@@ -494,8 +524,8 @@ class MetricPollingEngine(
      * Restart diagnostic polling and heartbeat only (not monitor).
      * Issue #222 v10: Maintains BLE link during rest between bodyweight sets.
      */
-    fun restartDiagnosticAndHeartbeat(peripheral: Peripheral) {
-        log.d { "Restarting diagnostic polling + heartbeat (Issue #222 v10)" }
+    fun restartDiagnosticAndHeartbeat(peripheral: Peripheral, includeHeartbeat: Boolean = true) {
+        log.d { "Restarting diagnostic polling + heartbeat (Issue #222 v10, includeHeartbeat=$includeHeartbeat)" }
 
         if (diagnosticPollingJob?.isActive != true) {
             startDiagnosticPolling(peripheral)
@@ -503,10 +533,14 @@ class MetricPollingEngine(
             log.d { "Diagnostic polling already active - skip restart" }
         }
 
-        if (heartbeatJob?.isActive != true) {
-            startHeartbeat(peripheral)
+        if (includeHeartbeat) {
+            if (heartbeatJob?.isActive != true) {
+                startHeartbeat(peripheral)
+            } else {
+                log.d { "Heartbeat already active - skip restart" }
+            }
         } else {
-            log.d { "Heartbeat already active - skip restart" }
+            disableHeartbeatForFlagI()
         }
     }
 

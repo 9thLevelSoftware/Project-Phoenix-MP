@@ -65,6 +65,32 @@ class MetricPollingEngineTest {
     }
 
     @Test
+    fun `startFakeJobs omits heartbeat when includeHeartbeat is false`() = runTest {
+        val engine = createTestEngine()
+        engine.startFakeJobs(includeHeartbeat = false)
+        delay(50)
+
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
+            "Monitor job should be active",
+        )
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic job should be active",
+        )
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC),
+            "Heuristic job should be active",
+        )
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat job should be omitted",
+        )
+
+        engine.stopAll()
+    }
+
+    @Test
     fun `stopAll cancels all 4 polling jobs`() = runTest {
         val engine = createTestEngine()
         engine.startFakeJobs()
@@ -321,6 +347,33 @@ class MetricPollingEngineTest {
         engine.stopAll()
     }
 
+    @Test
+    fun `restartAll omits heartbeat when includeHeartbeat is false`() = runTest {
+        val engine = createTestEngine()
+
+        engine.restartAllFake(includeHeartbeat = false)
+        delay(50)
+
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
+            "Monitor job should be started",
+        )
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic job should be started",
+        )
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC),
+            "Heuristic job should be started",
+        )
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat job should be omitted",
+        )
+
+        engine.stopAll()
+    }
+
     // =========================================================================
     // Timeout Disconnect - POLL-03 (3 tests)
     // Tests consecutive timeout counter logic directly via internal helpers.
@@ -399,6 +452,28 @@ class MetricPollingEngineTest {
         assertTrue(
             engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
             "Heartbeat should be started",
+        )
+
+        engine.stopAll()
+    }
+
+    @Test
+    fun `restartDiagnosticAndHeartbeat omits heartbeat when includeHeartbeat is false`() = runTest {
+        val engine = createTestEngine()
+
+        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC))
+        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT))
+
+        engine.restartDiagnosticAndHeartbeatFake(includeHeartbeat = false)
+        delay(50)
+
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic should be started",
+        )
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat should be omitted",
         )
 
         engine.stopAll()
