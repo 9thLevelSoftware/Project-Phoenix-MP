@@ -709,6 +709,10 @@ class SyncManager(
             .groupBy { it.sessionId }
         val assessmentDtos = syncRepository.getAllAssessments(activeProfileId)
             .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
+        // Send all custom catalog rows, not just rows modified since lastSync.
+        // Older portal-sync builds never sent this field, so existing custom
+        // exercise IDs may be missing remotely even after a successful sync.
+        val customExerciseDtos = syncRepository.getCustomExercisesModifiedSince(0L)
 
         // 7. Build portal session + telemetry DTOs (telemetry setIds match generated exercise set IDs)
         val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(
@@ -755,7 +759,7 @@ class SyncManager(
 
         // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB)
         //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH).
-        //    Non-session data (routines, cycles, badges, RPG, gamification, assessments)
+        //    Non-session data (routines, cycles, custom exercises, badges, RPG, gamification, assessments)
         //    is included only in the final batch to avoid duplicate upserts.
         //    IMPORTANT: We do NOT update lastSync until ALL batches succeed. This prevents
         //    data consistency gaps where a partial batch sequence leaves the timestamp
@@ -774,6 +778,7 @@ class SyncManager(
             "Pushing portal payload: ${allSessions.size} sessions ($totalBatches batch(es)), " +
                 "${effectiveTelemetry.size} telemetry points, " +
                 "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
+                "${customExerciseDtos.size} custom exercises, " +
                 "${phaseStatsBySessionId.size} sessions with phase stats, " +
                 "${assessmentDtos.size} assessments"
         }
@@ -797,6 +802,7 @@ class SyncManager(
                 gamificationStats = gamStatsDto,
                 phaseStatistics = phaseStatsBySessionId.values.flatten(),
                 assessments = assessmentDtos,
+                customExercises = customExerciseDtos,
                 profileId = activeProfile?.id,
                 profileName = activeProfile?.name,
                 allProfiles = profileDtos,
@@ -846,6 +852,7 @@ class SyncManager(
                     gamificationStats = if (isLastBatch) gamStatsDto else null,
                     phaseStatistics = batchPhaseStats,
                     assessments = if (isLastBatch) assessmentDtos else emptyList(),
+                    customExercises = if (isLastBatch) customExerciseDtos else emptyList(),
                     profileId = activeProfile?.id,
                     profileName = activeProfile?.name,
                     allProfiles = if (isLastBatch) profileDtos else null,
@@ -1500,6 +1507,10 @@ internal fun findPushPayloadDuplicateKeys(
     reports.addDuplicateKeys(
         table = "training_cycles",
         values = payload.cycles.map { cycle -> cycle.id },
+    )
+    reports.addDuplicateKeys(
+        table = "exercise_catalog",
+        values = payload.customExercises.map { exercise -> exercise.clientId },
     )
     reports.addDuplicateKeys(
         table = "exercises",

@@ -504,6 +504,7 @@ data class PortalSyncPayload(
     val phaseStatistics: List<PortalPhaseStatisticsDto> = emptyList(),
     val exerciseSignatures: List<PortalExerciseSignatureDto> = emptyList(),
     val assessments: List<PortalAssessmentResultDto> = emptyList(),
+    val customExercises: List<CustomExerciseSyncDto> = emptyList(),
     // Profile data separation: active profile tagging + full profile snapshot
     val profileId: String? = null,
     val profileName: String? = null,
