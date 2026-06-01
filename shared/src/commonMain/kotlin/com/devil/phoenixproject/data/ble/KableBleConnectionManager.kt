@@ -936,7 +936,7 @@ class KableBleConnectionManager(
 
         logRepo.info(
             LogEventType.NOTIFICATION,
-            "[#333 v10] Enabling BLE notifications with ready gate",
+            "[#333 v14] Enabling BLE notifications with ready gate",
             connectedDeviceName,
             connectedDeviceAddress,
         )
@@ -1042,7 +1042,7 @@ class KableBleConnectionManager(
         logRepo.info(
             LogEventType.NOTIFICATION,
             if (includeHeartbeat) {
-                "[#333 v10] BLE ready gate complete; starting polling"
+                "[#333 v14] BLE ready gate complete; starting polling"
             } else {
                 "[#333 Flag I] BLE ready gate complete; starting polling without heartbeat"
             },
@@ -1056,61 +1056,103 @@ class KableBleConnectionManager(
         label: String,
         critical: Boolean,
         collector: suspend (onSubscription: suspend () -> Unit) -> Unit,
-    ): Boolean {
-        val subscribed = CompletableDeferred<Unit>()
-        scope.launch {
-            try {
-                log.i { "[#333 v10] Starting $label notifications" }
-                collector {
-                    subscribed.complete(Unit)
-                    log.i { "[#333 v10] $label notifications subscribed" }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (!subscribed.isCompleted) {
-                    subscribed.completeExceptionally(e)
-                }
-                val message = "[#333 v10] Failed to observe $label: ${e.message}"
+    ): Boolean = awaitBleNotificationSubscription(
+        scope = scope,
+        timeoutMs = NOTIFICATION_SUBSCRIPTION_TIMEOUT_MS,
+        startCollector = collector,
+        onStart = {
+            val message = "[#333 v14] Starting $label notification subscription"
+            log.i { message }
+            logRepo.debug(
+                LogEventType.NOTIFICATION,
+                message,
+                connectedDeviceName,
+                connectedDeviceAddress,
+                "timeout=${NOTIFICATION_SUBSCRIPTION_TIMEOUT_MS}ms",
+            )
+        },
+        onSubscribed = {
+            val message = "[#333 v14] $label notifications subscribed"
+            log.i { message }
+            logRepo.info(
+                LogEventType.NOTIFICATION,
+                message,
+                connectedDeviceName,
+                connectedDeviceAddress,
+            )
+        },
+        onCollectorFailure = { e, subscriptionAlreadyResolved ->
+            val message = "[#333 v14] $label notification observer failed: ${e.message}"
+            if (subscriptionAlreadyResolved) {
                 if (critical) {
                     log.e(e) { message }
                     logRepo.error(
-                        LogEventType.ERROR,
-                        "$label notification setup failed",
+                        LogEventType.NOTIFICATION,
+                        "$label notification observer failed",
                         connectedDeviceName,
                         connectedDeviceAddress,
                         e.message,
                     )
                 } else {
                     log.d { message }
+                    logRepo.debug(
+                        LogEventType.NOTIFICATION,
+                        "$label notification observer failed (non-fatal)",
+                        connectedDeviceName,
+                        connectedDeviceAddress,
+                        e.message,
+                    )
                 }
+            } else {
+                log.d { message }
             }
-        }
-
-        return try {
-            withTimeout(2000L) {
-                subscribed.await()
-            }
-            true
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            val message = "[#333 v10] $label notification subscription did not complete: ${e.message}"
+        },
+        onSubscriptionTimeout = { timeoutMs ->
+            val message = "[#333 v14] $label notification subscription timed out"
+            val details = "No onSubscription callback after ${timeoutMs}ms"
             if (critical) {
                 logRepo.error(
-                    LogEventType.ERROR,
-                    "$label notification setup failed",
+                    LogEventType.NOTIFICATION,
+                    message,
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    details,
+                )
+                log.e { "$message: $details" }
+            } else {
+                logRepo.debug(
+                    LogEventType.NOTIFICATION,
+                    "$message (non-fatal)",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    details,
+                )
+                log.d { "$message (non-fatal): $details" }
+            }
+        },
+        onAwaitFailure = { e ->
+            val message = "[#333 v14] $label notification subscription failed: ${e.message}"
+            if (critical) {
+                logRepo.error(
+                    LogEventType.NOTIFICATION,
+                    message,
                     connectedDeviceName,
                     connectedDeviceAddress,
                     e.message,
                 )
                 log.e(e) { message }
             } else {
-                log.d { message }
+                logRepo.debug(
+                    LogEventType.NOTIFICATION,
+                    "$message (non-fatal)",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    e.message,
+                )
+                log.d { "$message (non-fatal)" }
             }
-            false
-        }
-    }
+        },
+    )
 
     // -------------------------------------------------------------------------
     // 7. tryReadFirmwareVersion()
