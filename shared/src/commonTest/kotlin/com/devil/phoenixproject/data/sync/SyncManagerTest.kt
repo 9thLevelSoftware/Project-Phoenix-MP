@@ -1,9 +1,11 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -14,6 +16,8 @@ import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -37,6 +41,7 @@ class SyncManagerTest {
     private val fakeRepMetricRepo = FakeRepMetricRepository()
     private val fakeUserProfileRepo = FakeUserProfileRepository()
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
+    private val json = Json { encodeDefaults = true }
 
     private fun createManager() = SyncManager(
         apiClient = fakeApi,
@@ -312,6 +317,62 @@ class SyncManagerTest {
             "Local validation failures must not stamp sessions as synced",
         )
         assertEquals(0L, tokenStorage.getLastSyncTimestamp())
+    }
+
+    @Test
+    fun syncIncludesCustomExercisesBeforeRoutinesThatReferenceThem() = runTest {
+        setupAuthenticated()
+        val customExerciseId = "custom_1740000000000"
+        fakeSyncRepo.customExercisesToReturn = listOf(
+            CustomExerciseSyncDto(
+                clientId = customExerciseId,
+                name = "Garage Press",
+                displayName = "Garage Press",
+                muscleGroup = "Chest",
+                equipment = "HANDLES",
+                defaultCableConfig = "DOUBLE",
+                createdAt = 1_740_000_000_000L,
+                updatedAt = 1_740_000_000_000L,
+            ),
+        )
+        fakeSyncRepo.routinesToReturn = listOf(
+            Routine(
+                id = "8db61128-c19d-48dc-a05e-ade968afa87e",
+                name = "Custom Day",
+                profileId = "default",
+                exercises = listOf(
+                    RoutineExercise(
+                        id = "9db61128-c19d-48dc-a05e-ade968afa87e",
+                        exercise = Exercise(
+                            id = customExerciseId,
+                            name = "Garage Press",
+                            muscleGroup = "Chest",
+                            equipment = "HANDLES",
+                            isCustom = true,
+                        ),
+                        orderIndex = 0,
+                        weightPerCableKg = 20f,
+                    ),
+                ),
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        val serialized = json.encodeToString(PortalSyncPayload.serializer(), payload)
+        assertTrue(
+            serialized.contains("\"customExercises\""),
+            "Routine exercise FK targets must be sent as custom catalog rows first",
+        )
+        assertTrue(
+            serialized.contains("\"clientId\":\"$customExerciseId\""),
+            "The custom exercise referenced by the routine must be present in the portal payload",
+        )
     }
 
     @Test
