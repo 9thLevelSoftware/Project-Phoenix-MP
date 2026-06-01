@@ -12,6 +12,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.CharacterClass
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.RpgProfile
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.devil.phoenixproject.getPlatform
@@ -406,9 +407,12 @@ class SyncManager(
         // earlier-batch sessions to be missed by the re-query.
         val stampTime = currentTimeMillis()
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
-        val pushedSessions = syncRepository.getWorkoutSessionsModifiedSince(
-            prePushLastSync,
-            activeProfileId,
+        val pushedSessions = dedupeWorkoutSessionsById(
+            syncRepository.getWorkoutSessionsModifiedSince(
+                prePushLastSync,
+                activeProfileId,
+            ),
+            context = "Post-push stamping",
         )
         pushedSessions.forEach { session ->
             syncRepository.updateSessionTimestamp(session.id, stampTime)
@@ -531,7 +535,10 @@ class SyncManager(
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
 
         // 1. Gather workout sessions as full domain objects (profile-scoped to prevent cross-profile leak)
-        val sessions = syncRepository.getWorkoutSessionsModifiedSince(lastSync, activeProfileId)
+        val sessions = dedupeWorkoutSessionsById(
+            syncRepository.getWorkoutSessionsModifiedSince(lastSync, activeProfileId),
+            context = "Push payload",
+        )
 
         // 2. Fetch full PRs with type/phase/volume metadata (GAP 2 fix), profile-scoped
         val recentPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
@@ -795,6 +802,7 @@ class SyncManager(
                 allProfiles = profileDtos,
                 externalActivities = externalActivityDtos,
             )
+            rejectDuplicatePushPayloadKeys(payload)?.let { return it }
             val result = apiClient.pushPortalPayload(payload)
             if (result.isFailure) return result
             lastResponse = result.getOrThrow()
@@ -844,6 +852,7 @@ class SyncManager(
                     externalActivities = if (isLastBatch) externalActivityDtos else emptyList(),
                 )
 
+                rejectDuplicatePushPayloadKeys(payload)?.let { return it }
                 val result = apiClient.pushPortalPayload(payload)
                 if (result.isFailure) {
                     val error = result.exceptionOrNull()
@@ -1432,6 +1441,100 @@ class SyncManager(
             isIosPlatform -> "ios"
             else -> "android"
         }
+    }
+
+    private fun dedupeWorkoutSessionsById(
+        sessions: List<WorkoutSession>,
+        context: String,
+    ): List<WorkoutSession> {
+        if (sessions.size < 2) return sessions
+
+        val countsById = sessions.groupingBy { it.id }.eachCount()
+        val duplicateCounts = countsById.filterValues { count -> count > 1 }
+        if (duplicateCounts.isEmpty()) return sessions
+
+        val seen = mutableSetOf<String>()
+        val deduped = sessions.filter { session -> seen.add(session.id) }
+        val sample = duplicateCounts.entries
+            .take(10)
+            .joinToString { (id, count) -> "$id x$count" }
+        val suffix = if (duplicateCounts.size > 10) ", ..." else ""
+        Logger.w("SyncManager") {
+            "$context: dropped ${sessions.size - deduped.size} duplicate workout session row(s) " +
+                "before portal sync; duplicate IDs/counts=[$sample$suffix]"
+        }
+        return deduped
+    }
+
+    private fun rejectDuplicatePushPayloadKeys(
+        payload: PortalSyncPayload,
+    ): Result<PortalSyncPushResponse>? {
+        val duplicate = findPushPayloadDuplicateKeys(payload).firstOrNull() ?: return null
+        val message = duplicate.toExceptionMessage()
+        Logger.e("SyncManager") { message }
+        return Result.failure(PortalApiException(message, null, 400))
+    }
+}
+
+internal data class PushPayloadDuplicateKeys(
+    val table: String,
+    val ids: List<String>,
+) {
+    fun toExceptionMessage(): String =
+        "Duplicate IDs in local push payload: $table contains duplicate key(s): ${ids.joinToString()}"
+}
+
+internal fun findPushPayloadDuplicateKeys(
+    payload: PortalSyncPayload,
+): List<PushPayloadDuplicateKeys> {
+    val reports = mutableListOf<PushPayloadDuplicateKeys>()
+
+    reports.addDuplicateKeys(
+        table = "workout_sessions",
+        values = payload.sessions.map { session -> session.id },
+    )
+    reports.addDuplicateKeys(
+        table = "exercises",
+        values = payload.sessions.flatMap { session ->
+            session.exercises.map { exercise -> exercise.id }
+        },
+    )
+    reports.addDuplicateKeys(
+        table = "sets",
+        values = payload.sessions.flatMap { session ->
+            session.exercises.flatMap { exercise -> exercise.sets.map { set -> set.id } }
+        },
+    )
+    reports.addDuplicateKeys(
+        table = "rep_summaries",
+        values = payload.sessions.flatMap { session ->
+            session.exercises.flatMap { exercise ->
+                exercise.sets.flatMap { set -> set.repSummaries.map { rep -> rep.id } }
+            }
+        },
+    )
+    reports.addDuplicateKeys(
+        table = "rep_telemetry",
+        values = payload.telemetry.map { telemetry -> telemetry.id },
+    )
+
+    return reports
+}
+
+private fun MutableList<PushPayloadDuplicateKeys>.addDuplicateKeys(
+    table: String,
+    values: List<String>,
+) {
+    val seen = mutableSetOf<String>()
+    val duplicates = linkedSetOf<String>()
+    values.forEach { value ->
+        val normalized = value.lowercase()
+        if (normalized.isNotBlank() && !seen.add(normalized)) {
+            duplicates.add(value)
+        }
+    }
+    if (duplicates.isNotEmpty()) {
+        add(PushPayloadDuplicateKeys(table, duplicates.toList()))
     }
 }
 

@@ -214,6 +214,18 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `exercise id remains stable from workout session id`() {
+        val sessionId = "773e35b1-57be-42f8-9d64-69d127cadd3c"
+        val swr = makeSessionWithReps(sessionId = sessionId)
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
+
+        val exercise = result.single().exercises.single()
+        assertEquals(sessionId, exercise.id)
+        assertEquals(sessionId, exercise.sets.single().exerciseId)
+    }
+
+    @Test
     fun `exercise contains one set with correct weight and reps`() {
         val swr = makeSessionWithReps(
             weightPerCableKg = 30f,

@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.sync
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
@@ -230,6 +231,95 @@ class SyncManagerTest {
         assertTrue(payload.sessions.isEmpty(), "Sessions should be empty")
         assertTrue(payload.routines.isEmpty(), "Routines should be empty")
         assertEquals(1, fakeApi.pushCallCount, "Push should still be called even with empty data")
+    }
+
+    @Test
+    fun syncDeduplicatesDuplicateWorkoutSessionIdsBeforePush() = runTest {
+        setupAuthenticated()
+        val sessionId = "773e35b1-57be-42f8-9d64-69d127cadd3c"
+        val firstSession = makeWorkoutSession(
+            id = sessionId,
+            timestamp = 1000L,
+            reps = 8,
+            totalReps = 8,
+            exerciseName = "Bench Press",
+        )
+        val duplicateSession = firstSession.copy(
+            timestamp = 2000L,
+            reps = 12,
+            totalReps = 12,
+            exerciseName = "Duplicate Bench Press",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(firstSession, duplicateSession)
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, fakeApi.pushCallCount)
+        val payload = fakeApi.lastPushPayload
+        assertNotNull(payload, "Push payload should be captured")
+        assertEquals(1, payload.sessions.size, "Duplicate session IDs should be sent once")
+        val pushedSession = payload.sessions.single()
+        assertEquals(sessionId, pushedSession.id)
+        assertEquals(sessionId, pushedSession.exercises.single().id)
+        assertEquals(
+            8,
+            pushedSession.exercises.single().sets.single().actualReps,
+            "The first repository row should win deterministically",
+        )
+        assertEquals(
+            listOf(sessionId),
+            fakeSyncRepo.updateSessionTimestampCalls,
+            "Post-push timestamp stamping should run once for the deduped session",
+        )
+    }
+
+    @Test
+    fun syncFailsBeforePushWhenPortalPayloadHasDuplicateNestedExerciseIds() = runTest {
+        setupAuthenticated()
+        val lowerId = "8db61128-c19d-48dc-a05e-ade968afa87e"
+        val upperId = lowerId.uppercase()
+        fakeSyncRepo.workoutSessionsToReturn = listOf(
+            makeWorkoutSession(
+                id = lowerId,
+                timestamp = 1000L,
+                exerciseName = "Bench Press",
+                routineSessionId = "routine-run-1",
+            ),
+            makeWorkoutSession(
+                id = upperId,
+                timestamp = 2000L,
+                exerciseName = "Row",
+                routineSessionId = "routine-run-1",
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isFailure)
+        val error = result.exceptionOrNull()
+        assertIs<PortalApiException>(error)
+        assertEquals(400, error.statusCode)
+        assertTrue(
+            error.message.orEmpty().contains("exercises contains duplicate key(s): $upperId"),
+            "Local preflight should name the duplicate nested exercise key",
+        )
+        val state = manager.syncState.value
+        assertIs<SyncState.Error>(state)
+        assertTrue(state.message.contains("Duplicate IDs in local push payload: exercises"))
+        assertEquals(0, fakeApi.pushCallCount, "Payload with duplicate keys should not be pushed")
+        assertEquals(0, fakeApi.pullCallCount, "Failed push preflight should not start pull")
+        assertNull(fakeApi.lastPushPayload, "No doomed payload should be sent")
+        assertTrue(
+            fakeSyncRepo.updateSessionTimestampCalls.isEmpty(),
+            "Local validation failures must not stamp sessions as synced",
+        )
+        assertEquals(0L, tokenStorage.getLastSyncTimestamp())
     }
 
     @Test
@@ -1007,4 +1097,25 @@ class SyncManagerTest {
             "Session returned by server (session-2) should be converted and merged into local database",
         )
     }
+
+    private fun makeWorkoutSession(
+        id: String,
+        timestamp: Long,
+        reps: Int = 10,
+        totalReps: Int = 10,
+        exerciseName: String = "Test Exercise",
+        routineSessionId: String? = null,
+    ) = WorkoutSession(
+        id = id,
+        timestamp = timestamp,
+        mode = "OldSchool",
+        reps = reps,
+        weightPerCableKg = 20f,
+        duration = 60_000L,
+        totalReps = totalReps,
+        exerciseId = "exercise-$id",
+        exerciseName = exerciseName,
+        routineSessionId = routineSessionId,
+        profileId = "default",
+    )
 }

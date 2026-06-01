@@ -124,8 +124,10 @@ class FakeSyncRepository : SyncRepository {
     // === Post-Push Stamping ===
 
     var updatedSessionTimestamps: MutableMap<String, Long> = mutableMapOf()
+    var updateSessionTimestampCalls: MutableList<String> = mutableListOf()
 
     override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) {
+        updateSessionTimestampCalls += sessionId
         updatedSessionTimestamps[sessionId] = timestamp
     }
 

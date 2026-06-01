@@ -457,6 +457,75 @@ class PortalPushLimitsTest {
         assertTrue(batches[0].isEmpty())
     }
 
+    @Test
+    fun findPushPayloadDuplicateKeysReportsAllPortalPushTablesCaseInsensitive() {
+        val firstSession = PortalWorkoutSessionDto(
+            id = "session-a",
+            userId = "user-123",
+            startedAt = "2026-03-02T12:00:00Z",
+            exercises = listOf(
+                PortalExerciseDto(
+                    id = "exercise-a",
+                    sessionId = "session-a",
+                    name = "Bench Press",
+                    sets = listOf(
+                        PortalSetDto(
+                            id = "set-a",
+                            exerciseId = "exercise-a",
+                            setNumber = 1,
+                            repSummaries = listOf(
+                                PortalRepSummaryDto(
+                                    id = "rep-a",
+                                    setId = "set-a",
+                                    repNumber = 1,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val secondSession = firstSession.copy(
+            id = "SESSION-A",
+            exercises = listOf(
+                firstSession.exercises.single().copy(
+                    id = "EXERCISE-A",
+                    sets = listOf(
+                        firstSession.exercises.single().sets.single().copy(
+                            id = "SET-A",
+                            repSummaries = listOf(
+                                firstSession.exercises.single().sets.single().repSummaries
+                                    .single()
+                                    .copy(id = "REP-A"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val payload = PortalSyncPayload(
+            deviceId = "device-1",
+            lastSync = 0L,
+            sessions = listOf(firstSession, secondSession),
+            telemetry = listOf(
+                PortalRepTelemetryDto(id = "telemetry-a", setId = "set-a", timestampMs = 1L),
+                PortalRepTelemetryDto(id = "TELEMETRY-A", setId = "SET-A", timestampMs = 2L),
+            ),
+        )
+
+        val duplicates = findPushPayloadDuplicateKeys(payload)
+
+        assertEquals(
+            listOf("workout_sessions", "exercises", "sets", "rep_summaries", "rep_telemetry"),
+            duplicates.map { duplicate -> duplicate.table },
+        )
+        assertEquals(listOf("SESSION-A"), duplicates[0].ids)
+        assertEquals(listOf("EXERCISE-A"), duplicates[1].ids)
+        assertEquals(listOf("SET-A"), duplicates[2].ids)
+        assertEquals(listOf("REP-A"), duplicates[3].ids)
+        assertEquals(listOf("TELEMETRY-A"), duplicates[4].ids)
+    }
+
     private fun stubPortalSession(id: String) = PortalWorkoutSessionDto(
         id = id,
         userId = "user-123",
