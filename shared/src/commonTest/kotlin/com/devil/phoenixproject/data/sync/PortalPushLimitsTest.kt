@@ -458,7 +458,7 @@ class PortalPushLimitsTest {
     }
 
     @Test
-    fun findPushPayloadDuplicateKeysReportsAllPortalPushTablesCaseInsensitive() {
+    fun findPushPayloadDuplicateKeysReportsConfiguredPortalPushTablesCaseInsensitive() {
         val firstSession = PortalWorkoutSessionDto(
             id = "session-a",
             userId = "user-123",
@@ -507,6 +507,22 @@ class PortalPushLimitsTest {
             deviceId = "device-1",
             lastSync = 0L,
             sessions = listOf(firstSession, secondSession),
+            routines = listOf(
+                PortalRoutineSyncDto(id = "routine-a", userId = "user-123", name = "Routine A"),
+                PortalRoutineSyncDto(id = "ROUTINE-A", userId = "user-123", name = "Routine B"),
+            ),
+            cycles = listOf(
+                PortalTrainingCycleSyncDto(
+                    id = "cycle-a",
+                    userId = "user-123",
+                    name = "Cycle A",
+                ),
+                PortalTrainingCycleSyncDto(
+                    id = "CYCLE-A",
+                    userId = "user-123",
+                    name = "Cycle B",
+                ),
+            ),
             telemetry = listOf(
                 PortalRepTelemetryDto(id = "telemetry-a", setId = "set-a", timestampMs = 1L),
                 PortalRepTelemetryDto(id = "TELEMETRY-A", setId = "SET-A", timestampMs = 2L),
@@ -516,14 +532,24 @@ class PortalPushLimitsTest {
         val duplicates = findPushPayloadDuplicateKeys(payload)
 
         assertEquals(
-            listOf("workout_sessions", "exercises", "sets", "rep_summaries", "rep_telemetry"),
+            listOf(
+                "workout_sessions",
+                "routines",
+                "training_cycles",
+                "exercises",
+                "sets",
+                "rep_summaries",
+                "rep_telemetry",
+            ),
             duplicates.map { duplicate -> duplicate.table },
         )
         assertEquals(listOf("SESSION-A"), duplicates[0].ids)
-        assertEquals(listOf("EXERCISE-A"), duplicates[1].ids)
-        assertEquals(listOf("SET-A"), duplicates[2].ids)
-        assertEquals(listOf("REP-A"), duplicates[3].ids)
-        assertEquals(listOf("TELEMETRY-A"), duplicates[4].ids)
+        assertEquals(listOf("ROUTINE-A"), duplicates[1].ids)
+        assertEquals(listOf("CYCLE-A"), duplicates[2].ids)
+        assertEquals(listOf("EXERCISE-A"), duplicates[3].ids)
+        assertEquals(listOf("SET-A"), duplicates[4].ids)
+        assertEquals(listOf("REP-A"), duplicates[5].ids)
+        assertEquals(listOf("TELEMETRY-A"), duplicates[6].ids)
     }
 
     private fun stubPortalSession(id: String) = PortalWorkoutSessionDto(

@@ -1449,12 +1449,12 @@ class SyncManager(
     ): List<WorkoutSession> {
         if (sessions.size < 2) return sessions
 
-        val countsById = sessions.groupingBy { it.id }.eachCount()
+        val countsById = sessions.groupingBy { it.id.lowercase() }.eachCount()
         val duplicateCounts = countsById.filterValues { count -> count > 1 }
         if (duplicateCounts.isEmpty()) return sessions
 
         val seen = mutableSetOf<String>()
-        val deduped = sessions.filter { session -> seen.add(session.id) }
+        val deduped = sessions.filter { session -> seen.add(session.id.lowercase()) }
         val sample = duplicateCounts.entries
             .take(10)
             .joinToString { (id, count) -> "$id x$count" }
@@ -1492,6 +1492,14 @@ internal fun findPushPayloadDuplicateKeys(
     reports.addDuplicateKeys(
         table = "workout_sessions",
         values = payload.sessions.map { session -> session.id },
+    )
+    reports.addDuplicateKeys(
+        table = "routines",
+        values = payload.routines.map { routine -> routine.id },
+    )
+    reports.addDuplicateKeys(
+        table = "training_cycles",
+        values = payload.cycles.map { cycle -> cycle.id },
     )
     reports.addDuplicateKeys(
         table = "exercises",

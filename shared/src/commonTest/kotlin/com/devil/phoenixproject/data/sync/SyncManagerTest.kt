@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.sync
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -245,6 +246,7 @@ class SyncManagerTest {
             exerciseName = "Bench Press",
         )
         val duplicateSession = firstSession.copy(
+            id = sessionId.uppercase(),
             timestamp = 2000L,
             reps = 12,
             totalReps = 12,
@@ -279,23 +281,13 @@ class SyncManagerTest {
     }
 
     @Test
-    fun syncFailsBeforePushWhenPortalPayloadHasDuplicateNestedExerciseIds() = runTest {
+    fun syncFailsBeforePushWhenPortalPayloadHasDuplicateRoutineIds() = runTest {
         setupAuthenticated()
-        val lowerId = "8db61128-c19d-48dc-a05e-ade968afa87e"
-        val upperId = lowerId.uppercase()
-        fakeSyncRepo.workoutSessionsToReturn = listOf(
-            makeWorkoutSession(
-                id = lowerId,
-                timestamp = 1000L,
-                exerciseName = "Bench Press",
-                routineSessionId = "routine-run-1",
-            ),
-            makeWorkoutSession(
-                id = upperId,
-                timestamp = 2000L,
-                exerciseName = "Row",
-                routineSessionId = "routine-run-1",
-            ),
+        val routineId = "8db61128-c19d-48dc-a05e-ade968afa87e"
+        val upperId = routineId.uppercase()
+        fakeSyncRepo.routinesToReturn = listOf(
+            makeRoutine(id = routineId, name = "Strength A"),
+            makeRoutine(id = upperId, name = "Strength B"),
         )
         val manager = createManager()
 
@@ -306,12 +298,12 @@ class SyncManagerTest {
         assertIs<PortalApiException>(error)
         assertEquals(400, error.statusCode)
         assertTrue(
-            error.message.orEmpty().contains("exercises contains duplicate key(s): $upperId"),
-            "Local preflight should name the duplicate nested exercise key",
+            error.message.orEmpty().contains("routines contains duplicate key(s): $upperId"),
+            "Local preflight should name the duplicate routine key",
         )
         val state = manager.syncState.value
         assertIs<SyncState.Error>(state)
-        assertTrue(state.message.contains("Duplicate IDs in local push payload: exercises"))
+        assertTrue(state.message.contains("Duplicate IDs in local push payload: routines"))
         assertEquals(0, fakeApi.pushCallCount, "Payload with duplicate keys should not be pushed")
         assertEquals(0, fakeApi.pullCallCount, "Failed push preflight should not start pull")
         assertNull(fakeApi.lastPushPayload, "No doomed payload should be sent")
@@ -1116,6 +1108,15 @@ class SyncManagerTest {
         exerciseId = "exercise-$id",
         exerciseName = exerciseName,
         routineSessionId = routineSessionId,
+        profileId = "default",
+    )
+
+    private fun makeRoutine(
+        id: String,
+        name: String,
+    ) = Routine(
+        id = id,
+        name = name,
         profileId = "default",
     )
 }
