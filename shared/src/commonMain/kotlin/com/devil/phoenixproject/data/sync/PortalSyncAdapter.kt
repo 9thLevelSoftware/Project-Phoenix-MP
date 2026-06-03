@@ -2,12 +2,14 @@ package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleProgression
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.KmpUtils.currentTimeMillis
@@ -44,6 +46,7 @@ object PortalSyncAdapter {
         val repBiomechanics: List<RepBiomechanicsData> = emptyList(),
         val muscleGroup: String = "General",
         val isPr: Boolean = false,
+        val prRecords: List<PersonalRecord> = emptyList(),
         val prRecord: PersonalRecord? = null, // Carries PR metadata (type, phase, volume)
     )
 
@@ -257,7 +260,7 @@ object PortalSyncAdapter {
         }
 
         // One mobile session = one "set" in portal (the entire exercise execution)
-        val pr = swr.prRecord
+        val pr = swr.prRecord ?: swr.prRecords.legacySetPrHint()
         val set = PortalSetDto(
             id = setId,
             exerciseId = exerciseId,
@@ -266,7 +269,7 @@ object PortalSyncAdapter {
             actualReps = session.totalReps,
             weightKg = session.weightPerCableKg,
             rpe = session.rpe,
-            isPr = swr.isPr,
+            isPr = swr.isPr || swr.prRecords.isNotEmpty(),
             prType = pr?.prType?.name, // "MAX_WEIGHT" or "MAX_VOLUME"
             prPhase = pr?.phase?.name, // "COMBINED", "CONCENTRIC", "ECCENTRIC"
             prVolume = if (pr?.prType?.name == "MAX_VOLUME") pr.volume else null,
@@ -293,6 +296,40 @@ object PortalSyncAdapter {
         )
         return ExerciseWithTelemetry(exercise, telemetry)
     }
+
+    fun toPortalPersonalRecord(
+        record: PersonalRecord,
+        sessionId: String?,
+        muscleGroup: String,
+    ): PortalPersonalRecordDto {
+        val value = if (record.prType == PRType.MAX_VOLUME) {
+            record.volume
+        } else {
+            record.weightPerCableKg
+        }
+        return PortalPersonalRecordDto(
+            exerciseName = record.exerciseName.ifBlank { record.exerciseId },
+            exerciseId = record.exerciseId,
+            muscleGroup = muscleGroup.ifBlank { "General" },
+            recordType = record.prType.name,
+            value = value,
+            volume = record.volume.takeIf { record.prType == PRType.MAX_VOLUME },
+            weightKg = record.weightPerCableKg,
+            reps = record.reps,
+            workoutPhase = record.phase.name,
+            sessionId = sessionId,
+            achievedAt = epochToIso8601(record.timestamp),
+            updatedAt = epochToIso8601(currentTimeMillis()),
+            localProfileId = record.profileId,
+            workoutMode = PortalMappings.workoutModeToSync(record.workoutMode),
+        )
+    }
+
+    private fun List<PersonalRecord>.legacySetPrHint(): PersonalRecord? =
+        firstOrNull { it.phase == WorkoutPhase.CONCENTRIC && it.prType == PRType.MAX_WEIGHT }
+            ?: firstOrNull { it.phase == WorkoutPhase.COMBINED && it.prType == PRType.MAX_WEIGHT }
+            ?: firstOrNull { it.prType == PRType.MAX_WEIGHT }
+            ?: firstOrNull()
 
     // ─── Rep Data Mapping ───────────────────────────────────────────
 

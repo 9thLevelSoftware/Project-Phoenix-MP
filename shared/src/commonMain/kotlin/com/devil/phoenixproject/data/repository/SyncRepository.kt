@@ -91,6 +91,14 @@ interface SyncRepository {
     suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String = "default"): List<PersonalRecord>
 
     /**
+     * Idempotently backfill phase-specific PRs from historical sessions that
+     * have tagged exercises and saved concentric/eccentric force metrics.
+     *
+     * @return number of phase/type PR rows created or improved.
+     */
+    suspend fun backfillPhaseSpecificPRs(profileId: String = "default"): Int = 0
+
+    /**
      * Get phase statistics for the given session IDs.
      * Returns SQLDelight PhaseStatistics rows for conversion to portal DTOs.
      */

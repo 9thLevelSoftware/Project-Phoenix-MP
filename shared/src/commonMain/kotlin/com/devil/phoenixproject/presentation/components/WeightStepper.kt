@@ -47,6 +47,7 @@ fun WeightStepper(
     step: Float = 2.5f,
     label: String = "Weight",
     prWeight: Float? = null,
+    prPhaseLabel: String? = null,
 ) {
     Column(modifier = modifier) {
         // Header row with label and PR indicator
@@ -67,6 +68,7 @@ fun WeightStepper(
                 PRIndicator(
                     currentWeight = weight,
                     prWeight = prWeight,
+                    phaseLabel = prPhaseLabel,
                 )
             }
         }

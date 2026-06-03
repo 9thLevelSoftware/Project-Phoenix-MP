@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlinx.coroutines.test.runTest
@@ -135,6 +136,72 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `backfillPhaseSpecificPRs creates phase records and preserves better existing phase PRs`() = runTest {
+        insertHistoricalSession(
+            id = "historical-bicep-curl",
+            timestamp = 1_700_000_000_000,
+            exerciseId = "bicep-curl",
+            exerciseName = "Bicep Curl",
+            workingReps = 8,
+            peakConcentricA = 20.0,
+            peakConcentricB = 18.0,
+            peakEccentricA = 42.0,
+            peakEccentricB = 39.0,
+            profileId = "active-profile",
+        )
+        val prRepository = SqlDelightPersonalRecordRepository(database)
+        prRepository.updatePhaseSpecificPRs(
+            exerciseId = "bicep-curl",
+            workoutMode = "Old School",
+            timestamp = 1_600_000_000_000,
+            reps = 50,
+            peakConcentricForceKg = 30f,
+            peakEccentricForceKg = 0f,
+            profileId = "active-profile",
+            cableCount = 2,
+        )
+
+        val firstBackfillCount = repository.backfillPhaseSpecificPRs("active-profile")
+        val secondBackfillCount = repository.backfillPhaseSpecificPRs("active-profile")
+
+        assertEquals(2, firstBackfillCount, "Only the missing eccentric weight and volume PRs should be created")
+        assertEquals(0, secondBackfillCount, "Backfill should be idempotent")
+        val concentricWeight = database.vitruvianDatabaseQueries.selectPR(
+            exerciseId = "bicep-curl",
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            phase = WorkoutPhase.CONCENTRIC.name,
+            profileId = "active-profile",
+        ).executeAsOne()
+        val concentricVolume = database.vitruvianDatabaseQueries.selectPR(
+            exerciseId = "bicep-curl",
+            workoutMode = "Old School",
+            prType = PRType.MAX_VOLUME.name,
+            phase = WorkoutPhase.CONCENTRIC.name,
+            profileId = "active-profile",
+        ).executeAsOne()
+        val eccentricWeight = database.vitruvianDatabaseQueries.selectPR(
+            exerciseId = "bicep-curl",
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            phase = WorkoutPhase.ECCENTRIC.name,
+            profileId = "active-profile",
+        ).executeAsOne()
+        val eccentricVolume = database.vitruvianDatabaseQueries.selectPR(
+            exerciseId = "bicep-curl",
+            workoutMode = "Old School",
+            prType = PRType.MAX_VOLUME.name,
+            phase = WorkoutPhase.ECCENTRIC.name,
+            profileId = "active-profile",
+        ).executeAsOne()
+
+        assertEquals(30.0, concentricWeight.weight)
+        assertEquals(1500.0, concentricVolume.volume)
+        assertEquals(42.0, eccentricWeight.weight)
+        assertEquals(336.0, eccentricVolume.volume)
+    }
+
+    @Test
     fun `mergeRoutines uses active profile id`() = runTest {
         repository.mergeRoutines(
             routines = listOf(
@@ -155,5 +222,69 @@ class SqlDelightSyncRepositoryTest {
 
         assertNotNull(routine)
         assertEquals("active-profile", routine.profile_id)
+    }
+
+    private fun insertHistoricalSession(
+        id: String,
+        timestamp: Long,
+        exerciseId: String,
+        exerciseName: String,
+        workingReps: Long,
+        peakConcentricA: Double?,
+        peakConcentricB: Double?,
+        peakEccentricA: Double?,
+        peakEccentricB: Double?,
+        profileId: String,
+    ) {
+        database.vitruvianDatabaseQueries.insertSession(
+            id = id,
+            timestamp = timestamp,
+            mode = "OldSchool",
+            targetReps = workingReps,
+            weightPerCableKg = 20.0,
+            progressionKg = 0.0,
+            duration = 60_000L,
+            totalReps = workingReps,
+            warmupReps = 0L,
+            workingReps = workingReps,
+            isJustLift = 0L,
+            stopAtTop = 0L,
+            eccentricLoad = 100L,
+            echoLevel = 1L,
+            exerciseId = exerciseId,
+            exerciseName = exerciseName,
+            routineSessionId = null,
+            routineName = null,
+            safetyFlags = 0L,
+            deloadWarningCount = 0L,
+            romViolationCount = 0L,
+            spotterActivations = 0L,
+            peakForceConcentricA = peakConcentricA,
+            peakForceConcentricB = peakConcentricB,
+            peakForceEccentricA = peakEccentricA,
+            peakForceEccentricB = peakEccentricB,
+            avgForceConcentricA = null,
+            avgForceConcentricB = null,
+            avgForceEccentricA = null,
+            avgForceEccentricB = null,
+            heaviestLiftKg = null,
+            totalVolumeKg = null,
+            cableCount = 2L,
+            estimatedCalories = null,
+            warmupAvgWeightKg = null,
+            workingAvgWeightKg = null,
+            burnoutAvgWeightKg = null,
+            peakWeightKg = null,
+            rpe = null,
+            routineId = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = profileId,
+            display_multiplier = 2L,
+        )
     }
 }

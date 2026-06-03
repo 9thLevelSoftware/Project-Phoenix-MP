@@ -1367,6 +1367,51 @@ class SqlDelightSyncRepository(
         }
     }
 
+    override suspend fun backfillPhaseSpecificPRs(profileId: String): Int = withContext(Dispatchers.IO) {
+        val prRepository = SqlDelightPersonalRecordRepository(db)
+        val sessions = getWorkoutSessionsModifiedSince(0L, profileId)
+        var changedRows = 0
+
+        for (session in sessions) {
+            val exerciseId = session.exerciseId?.takeIf { it.isNotBlank() } ?: continue
+            val reps = when {
+                session.workingReps > 0 -> session.workingReps
+                session.totalReps > 0 -> session.totalReps
+                else -> 0
+            }
+            if (reps <= 0) continue
+
+            val peakConcentric = maxOf(
+                session.peakForceConcentricA ?: 0f,
+                session.peakForceConcentricB ?: 0f,
+            )
+            val peakEccentric = maxOf(
+                session.peakForceEccentricA ?: 0f,
+                session.peakForceEccentricB ?: 0f,
+            )
+            if (peakConcentric <= 0f && peakEccentric <= 0f) continue
+
+            val result = prRepository.updatePhaseSpecificPRs(
+                exerciseId = exerciseId,
+                workoutMode = session.mode,
+                timestamp = session.timestamp,
+                reps = reps,
+                peakConcentricForceKg = peakConcentric,
+                peakEccentricForceKg = peakEccentric,
+                profileId = session.profileId,
+                cableCount = session.displayMultiplier ?: session.cableCount,
+            )
+            changedRows += result.getOrElse { error ->
+                Logger.e(error) {
+                    "Phase PR backfill failed for session=${session.id}, exercise=$exerciseId, profile=${session.profileId}"
+                }
+                emptyList()
+            }.size
+        }
+
+        changedRows
+    }
+
     override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<com.devil.phoenixproject.database.PhaseStatistics> {
         if (sessionIds.isEmpty()) return emptyList()
         return withContext(Dispatchers.IO) {

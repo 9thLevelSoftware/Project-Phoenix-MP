@@ -75,6 +75,7 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
@@ -292,7 +293,7 @@ fun ExerciseEditBottomSheet(
                                 )
                                 Column {
                                     Text(
-                                        "Personal Record",
+                                        "${pr.phase.displayLabel()} Personal Record",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1244,7 +1245,7 @@ fun WeightConfigurationCard(
                     )
                     Text(
                         text = if (currentExercisePR != null) {
-                            "Scale weight based on your personal record"
+                            "Scale weight based on your ${currentExercisePR.phase.displayLabel().lowercase()} personal record"
                         } else {
                             "No PR set for this exercise"
                         },
@@ -1274,7 +1275,7 @@ fun WeightConfigurationCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "$weightPercentOfPR% of PR",
+                        text = "$weightPercentOfPR% of ${currentExercisePR.phase.displayLabel()} PR",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -1633,4 +1634,10 @@ private fun WarmupSetRow(
             }
         }
     }
+}
+
+private fun WorkoutPhase.displayLabel(): String = when (this) {
+    WorkoutPhase.CONCENTRIC -> "Concentric"
+    WorkoutPhase.ECCENTRIC -> "Eccentric"
+    WorkoutPhase.COMBINED -> "Combined"
 }

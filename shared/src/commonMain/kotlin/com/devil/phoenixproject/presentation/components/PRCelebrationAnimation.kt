@@ -39,6 +39,7 @@ fun PRCelebrationDialog(
     exerciseName: String,
     weight: String,
     workoutMode: String? = null,
+    phaseLabel: String? = null,
     onDismiss: () -> Unit,
     onSoundTrigger: () -> Unit = {},
 ) {
@@ -66,12 +67,18 @@ fun PRCelebrationDialog(
             exerciseName = exerciseName,
             weight = weight,
             workoutMode = workoutMode,
+            phaseLabel = phaseLabel,
         )
     }
 }
 
 @Composable
-private fun PRCelebrationContent(exerciseName: String, weight: String, workoutMode: String? = null) {
+private fun PRCelebrationContent(
+    exerciseName: String,
+    weight: String,
+    workoutMode: String? = null,
+    phaseLabel: String? = null,
+) {
     // Animation states
     val infiniteTransition = rememberInfiniteTransition(label = "celebration")
 
@@ -139,6 +146,15 @@ private fun PRCelebrationContent(exerciseName: String, weight: String, workoutMo
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+
+            phaseLabel?.takeIf { it.isNotBlank() }?.let { label ->
+                Text(
+                    "$label phase",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             // Weight achieved
             Surface(

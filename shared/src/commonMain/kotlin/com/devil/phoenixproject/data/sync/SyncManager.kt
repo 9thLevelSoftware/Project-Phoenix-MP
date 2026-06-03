@@ -534,6 +534,13 @@ class SyncManager(
         val platform = getPlatformName()
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
 
+        val phaseBackfillCount = syncRepository.backfillPhaseSpecificPRs(activeProfileId)
+        if (phaseBackfillCount > 0) {
+            Logger.i("SyncManager") {
+                "Backfilled $phaseBackfillCount phase-specific PR row(s) before portal push"
+            }
+        }
+
         // 1. Gather workout sessions as full domain objects (profile-scoped to prevent cross-profile leak)
         val sessions = dedupeWorkoutSessionsById(
             syncRepository.getWorkoutSessionsModifiedSince(lastSync, activeProfileId),
@@ -542,13 +549,16 @@ class SyncManager(
 
         // 2. Fetch full PRs with type/phase/volume metadata (GAP 2 fix), profile-scoped
         val recentPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
-        val prBySessionKey = recentPRs.associateBy { pr -> "${pr.exerciseId}:${pr.timestamp}" }
+        val prBySessionKey = recentPRs.groupBy { pr -> "${pr.exerciseId}:${pr.timestamp}" }
+        val sessionIdByPrKey = sessions.associate { session ->
+            "${session.exerciseId}:${session.timestamp}" to session.id
+        }
 
         // 3. Build SessionWithReps (fetch rep metrics per session, detect PRs, attach PR metadata)
         val sessionsWithReps = sessions.map { session ->
             val repMetrics = repMetricRepository.getRepMetrics(session.id)
             val sessionKey = "${session.exerciseId}:${session.timestamp}"
-            val prRecord = prBySessionKey[sessionKey]
+            val prRecords = prBySessionKey[sessionKey] ?: emptyList()
 
             // Resolve the real muscle group from the exercise catalog instead of
             // hardcoding "General". Sessions don't carry a muscle group, so look it
@@ -562,8 +572,19 @@ class SyncManager(
                 session = session,
                 repMetrics = repMetrics,
                 muscleGroup = muscleGroup,
-                isPr = prRecord != null,
-                prRecord = prRecord,
+                isPr = prRecords.isNotEmpty(),
+                prRecords = prRecords,
+            )
+        }
+        val personalRecordDtos = recentPRs.map { pr ->
+            val sessionKey = "${pr.exerciseId}:${pr.timestamp}"
+            val muscleGroup =
+                syncRepository.getExerciseMuscleGroup(pr.exerciseId, pr.exerciseName)
+                    ?: "General"
+            PortalSyncAdapter.toPortalPersonalRecord(
+                record = pr,
+                sessionId = sessionIdByPrKey[sessionKey],
+                muscleGroup = muscleGroup,
             )
         }
 
@@ -779,6 +800,7 @@ class SyncManager(
                 "${effectiveTelemetry.size} telemetry points, " +
                 "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
                 "${customExerciseDtos.size} custom exercises, " +
+                "${personalRecordDtos.size} personal records, " +
                 "${phaseStatsBySessionId.size} sessions with phase stats, " +
                 "${assessmentDtos.size} assessments"
         }
@@ -807,6 +829,7 @@ class SyncManager(
                 profileName = activeProfile?.name,
                 allProfiles = profileDtos,
                 externalActivities = externalActivityDtos,
+                personalRecords = personalRecordDtos,
             )
             rejectDuplicatePushPayloadKeys(payload)?.let { return it }
             val result = apiClient.pushPortalPayload(payload)
@@ -857,6 +880,7 @@ class SyncManager(
                     profileName = activeProfile?.name,
                     allProfiles = if (isLastBatch) profileDtos else null,
                     externalActivities = if (isLastBatch) externalActivityDtos else emptyList(),
+                    personalRecords = if (isLastBatch) personalRecordDtos else emptyList(),
                 )
 
                 rejectDuplicatePushPayloadKeys(payload)?.let { return it }
@@ -1535,6 +1559,20 @@ internal fun findPushPayloadDuplicateKeys(
     reports.addDuplicateKeys(
         table = "rep_telemetry",
         values = payload.telemetry.map { telemetry -> telemetry.id },
+    )
+    reports.addDuplicateKeys(
+        table = "personal_records",
+        values = payload.personalRecords.map { record ->
+            val exerciseKey = record.exerciseId?.let { "id:$it" }
+                ?: "name:${record.exerciseName}"
+            listOf(
+                record.localProfileId ?: "__no_profile__",
+                exerciseKey,
+                record.achievedAt,
+                record.recordType,
+                record.workoutPhase,
+            ).joinToString("|")
+        },
     )
 
     return reports

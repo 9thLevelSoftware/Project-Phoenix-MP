@@ -29,7 +29,12 @@ import androidx.compose.ui.unit.dp
  * @param modifier Modifier for the composable
  */
 @Composable
-fun PRIndicator(currentWeight: Float, prWeight: Float?, modifier: Modifier = Modifier) {
+fun PRIndicator(
+    currentWeight: Float,
+    prWeight: Float?,
+    modifier: Modifier = Modifier,
+    phaseLabel: String? = null,
+) {
     if (prWeight == null || prWeight <= 0) {
         Text(
             text = "No PR",
@@ -51,7 +56,7 @@ fun PRIndicator(currentWeight: Float, prWeight: Float?, modifier: Modifier = Mod
         horizontalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "$percentage% PR",
+            text = "$percentage% PR${phaseLabel?.let { " · $it" } ?: ""}",
             style = MaterialTheme.typography.labelMedium,
             color = when {
                 isAbovePR -> MaterialTheme.colorScheme.primary

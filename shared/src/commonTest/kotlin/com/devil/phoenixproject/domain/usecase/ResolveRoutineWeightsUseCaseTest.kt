@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import kotlin.test.BeforeTest
@@ -527,6 +528,64 @@ class ResolveRoutineWeightsUseCaseTest {
     }
 
     @Test
+    fun `normal mode percent of PR uses concentric PR instead of stronger eccentric PR`() = runTest {
+        prRepository.addRecord(
+            phaseRecord(id = 1, mode = "Old School", phase = WorkoutPhase.COMBINED, weight = 35f),
+        )
+        prRepository.addRecord(
+            phaseRecord(id = 2, mode = "Old School", phase = WorkoutPhase.CONCENTRIC, weight = 45f),
+        )
+        prRepository.addRecord(
+            phaseRecord(id = 3, mode = "Old School", phase = WorkoutPhase.ECCENTRIC, weight = 90f),
+        )
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-phase",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 100,
+            prTypeForScaling = PRType.MAX_WEIGHT,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        assertEquals(45f, result.baseWeight)
+        assertEquals(45f, result.usedPR)
+    }
+
+    @Test
+    fun `eccentric only percent of PR uses eccentric phase PR`() = runTest {
+        prRepository.addRecord(
+            phaseRecord(id = 1, mode = "Eccentric Only", phase = WorkoutPhase.COMBINED, weight = 35f),
+        )
+        prRepository.addRecord(
+            phaseRecord(id = 2, mode = "Eccentric Only", phase = WorkoutPhase.CONCENTRIC, weight = 45f),
+        )
+        prRepository.addRecord(
+            phaseRecord(id = 3, mode = "Eccentric Only", phase = WorkoutPhase.ECCENTRIC, weight = 90f),
+        )
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-eccentric",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 100,
+            prTypeForScaling = PRType.MAX_WEIGHT,
+            programMode = ProgramMode.EccentricOnly,
+        )
+
+        val result = useCase(routineExercise)
+
+        assertEquals(90f, result.baseWeight)
+        assertEquals(90f, result.usedPR)
+    }
+
+    @Test
     fun `set weights default to base percentage when no per-set percentages defined`() = runTest {
         // Given: Exercise uses PR percentage for base weight, but no per-set percentages
         prRepository.addRecord(
@@ -571,3 +630,17 @@ class ResolveRoutineWeightsUseCaseTest {
         }
     }
 }
+
+private fun phaseRecord(id: Long, mode: String, phase: WorkoutPhase, weight: Float) = PersonalRecord(
+    id = id,
+    exerciseId = "bench-press",
+    exerciseName = "Bench Press",
+    weightPerCableKg = weight,
+    reps = 10,
+    oneRepMax = weight * 1.2f,
+    timestamp = 1_000L + id,
+    workoutMode = mode,
+    prType = PRType.MAX_WEIGHT,
+    volume = weight * 10,
+    phase = phase,
+)

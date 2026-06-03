@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -290,6 +291,129 @@ class PersonalRecordRepositoryTest {
         val bestVolumePR = repository.getBestVolumePR(exerciseId, profileId)
         assertNotNull(bestVolumePR)
         assertEquals(450f, bestVolumePR.volume)
+    }
+
+    @Test
+    fun `unphased best weight lookup ignores stronger eccentric PR`() = runTest {
+        repository.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+                weightPerCableKg = 35f,
+                reps = 8,
+                oneRepMax = 45f,
+                timestamp = 1_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 280f,
+                phase = WorkoutPhase.COMBINED,
+            ),
+        )
+        repository.addRecord(
+            PersonalRecord(
+                id = 2,
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+                weightPerCableKg = 80f,
+                reps = 4,
+                oneRepMax = 90f,
+                timestamp = 2_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 320f,
+                phase = WorkoutPhase.ECCENTRIC,
+            ),
+        )
+
+        val bestWeightPR = repository.getBestWeightPR(exerciseId, "OldSchool", profileId)
+
+        assertNotNull(bestWeightPR)
+        assertEquals(WorkoutPhase.COMBINED, bestWeightPR.phase)
+        assertEquals(35f, bestWeightPR.weightPerCableKg)
+    }
+
+    @Test
+    fun `phase-aware lookup falls back from concentric to combined but never eccentric`() = runTest {
+        repository.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+                weightPerCableKg = 35f,
+                reps = 8,
+                oneRepMax = 45f,
+                timestamp = 1_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 280f,
+                phase = WorkoutPhase.COMBINED,
+            ),
+        )
+        repository.addRecord(
+            PersonalRecord(
+                id = 2,
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+                weightPerCableKg = 80f,
+                reps = 4,
+                oneRepMax = 90f,
+                timestamp = 2_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 320f,
+                phase = WorkoutPhase.ECCENTRIC,
+            ),
+        )
+
+        val startupPR = repository.getBestWeightPRForWorkoutMode(exerciseId, "OldSchool", profileId)
+        val eccentricOnlyPR = repository.getBestWeightPRForWorkoutMode(exerciseId, "EccentricOnly", profileId)
+
+        assertNotNull(startupPR)
+        assertEquals(WorkoutPhase.COMBINED, startupPR.phase)
+        assertEquals(35f, startupPR.weightPerCableKg)
+        assertNull(eccentricOnlyPR, "Eccentric Only must not borrow a PR from a different workout mode")
+    }
+
+    @Test
+    fun `phase-specific update records weight and volume breaks for each phase`() = runTest {
+        val result = repository.updatePhaseSpecificPRs(
+            exerciseId = exerciseId,
+            workoutMode = "OldSchool",
+            timestamp = 1_000L,
+            reps = 5,
+            peakConcentricForceKg = 30f,
+            peakEccentricForceKg = 60f,
+            profileId = profileId,
+        ).getOrThrow()
+
+        assertEquals(
+            setOf(
+                WorkoutPhase.CONCENTRIC to PRType.MAX_WEIGHT,
+                WorkoutPhase.CONCENTRIC to PRType.MAX_VOLUME,
+                WorkoutPhase.ECCENTRIC to PRType.MAX_WEIGHT,
+                WorkoutPhase.ECCENTRIC to PRType.MAX_VOLUME,
+            ),
+            result.map { it.phase to it.prType }.toSet(),
+        )
+        assertEquals(
+            30f,
+            repository.getBestWeightPR(
+                exerciseId,
+                "OldSchool",
+                profileId,
+                phase = WorkoutPhase.CONCENTRIC,
+            )?.weightPerCableKg,
+        )
+        assertEquals(
+            60f,
+            repository.getBestWeightPR(
+                exerciseId,
+                "OldSchool",
+                profileId,
+                phase = WorkoutPhase.ECCENTRIC,
+            )?.weightPerCableKg,
+        )
     }
 
     @Test

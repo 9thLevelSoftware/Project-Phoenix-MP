@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.PhasePRBreak
 import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -32,7 +33,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     // Test control methods
     fun addRecord(record: PersonalRecord) {
-        val key = "${record.exerciseId}-${normalizeWorkoutModeKey(record.workoutMode)}-${record.prType}"
+        val key = recordKey(record.exerciseId, record.workoutMode, record.prType, record.phase, record.profileId)
         records[key] = record
         updateRecordsFlow()
     }
@@ -88,7 +89,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         updateCalls.add(UpdateCall(exerciseId, weightPerCableKg, weightPerCableKg, reps, workoutMode, timestamp))
 
         val normalizedMode = normalizeWorkoutModeKey(workoutMode)
-        val key = "$exerciseId-$normalizedMode-${PRType.MAX_VOLUME}"
+        val key = recordKey(exerciseId, normalizedMode, PRType.MAX_VOLUME, WorkoutPhase.COMBINED, profileId)
         val existing = records[key]
         val newVolume = weightPerCableKg * reps
 
@@ -104,6 +105,9 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                 workoutMode = workoutMode,
                 prType = PRType.MAX_VOLUME,
                 volume = newVolume,
+                phase = WorkoutPhase.COMBINED,
+                profileId = profileId,
+                cableCount = cableCount,
             )
             updateRecordsFlow()
             Result.success(true)
@@ -116,7 +120,8 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         .filter {
             it.exerciseId == exerciseId &&
                 normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode) &&
-                it.prType == PRType.MAX_WEIGHT
+                it.prType == PRType.MAX_WEIGHT &&
+                it.phase == WorkoutPhase.COMBINED
         }
         .maxByOrNull { it.weightPerCableKg }
 
@@ -124,31 +129,34 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         .filter {
             it.exerciseId == exerciseId &&
                 normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode) &&
-                it.prType == PRType.MAX_VOLUME
+                it.prType == PRType.MAX_VOLUME &&
+                it.phase == WorkoutPhase.COMBINED
         }
         .maxByOrNull { it.volume }
 
-    override suspend fun getBestWeightPR(exerciseId: String, profileId: String): PersonalRecord? = records.values
-        .filter { it.exerciseId == exerciseId && it.prType == PRType.MAX_WEIGHT }
+    override suspend fun getBestWeightPR(exerciseId: String, profileId: String, phase: WorkoutPhase): PersonalRecord? = records.values
+        .filter { it.exerciseId == exerciseId && it.prType == PRType.MAX_WEIGHT && it.phase == phase }
         .maxByOrNull { it.weightPerCableKg }
 
-    override suspend fun getBestVolumePR(exerciseId: String, profileId: String): PersonalRecord? = records.values
-        .filter { it.exerciseId == exerciseId && it.prType == PRType.MAX_VOLUME }
+    override suspend fun getBestVolumePR(exerciseId: String, profileId: String, phase: WorkoutPhase): PersonalRecord? = records.values
+        .filter { it.exerciseId == exerciseId && it.prType == PRType.MAX_VOLUME && it.phase == phase }
         .maxByOrNull { it.volume }
 
-    override suspend fun getBestWeightPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = records.values
+    override suspend fun getBestWeightPR(exerciseId: String, workoutMode: String, profileId: String, phase: WorkoutPhase): PersonalRecord? = records.values
         .filter {
             it.exerciseId == exerciseId &&
                 normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode) &&
-                it.prType == PRType.MAX_WEIGHT
+                it.prType == PRType.MAX_WEIGHT &&
+                it.phase == phase
         }
         .maxByOrNull { it.weightPerCableKg }
 
-    override suspend fun getBestVolumePR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = records.values
+    override suspend fun getBestVolumePR(exerciseId: String, workoutMode: String, profileId: String, phase: WorkoutPhase): PersonalRecord? = records.values
         .filter {
             it.exerciseId == exerciseId &&
                 normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode) &&
-                it.prType == PRType.MAX_VOLUME
+                it.prType == PRType.MAX_VOLUME &&
+                it.phase == phase
         }
         .maxByOrNull { it.volume }
 
@@ -184,7 +192,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         val newOneRepMax = calculateOneRepMax(weightPRWeightPerCableKg, reps)
 
         // Check weight PR
-        val weightKey = "$exerciseId-$normalizedMode-${PRType.MAX_WEIGHT}"
+        val weightKey = recordKey(exerciseId, normalizedMode, PRType.MAX_WEIGHT, WorkoutPhase.COMBINED, profileId)
         val existingWeightPR = records[weightKey]
         if (existingWeightPR == null || weightPRWeightPerCableKg > existingWeightPR.weightPerCableKg) {
             records[weightKey] = PersonalRecord(
@@ -198,12 +206,15 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                 workoutMode = workoutMode,
                 prType = PRType.MAX_WEIGHT,
                 volume = weightPRVolume,
+                phase = WorkoutPhase.COMBINED,
+                profileId = profileId,
+                cableCount = cableCount,
             )
             brokenPRs.add(PRType.MAX_WEIGHT)
         }
 
         // Check volume PR
-        val volumeKey = "$exerciseId-$normalizedMode-${PRType.MAX_VOLUME}"
+        val volumeKey = recordKey(exerciseId, normalizedMode, PRType.MAX_VOLUME, WorkoutPhase.COMBINED, profileId)
         val existingVolumePR = records[volumeKey]
         if (existingVolumePR == null || newVolumePRVolume > existingVolumePR.volume) {
             records[volumeKey] = PersonalRecord(
@@ -217,6 +228,9 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                 workoutMode = workoutMode,
                 prType = PRType.MAX_VOLUME,
                 volume = newVolumePRVolume,
+                phase = WorkoutPhase.COMBINED,
+                profileId = profileId,
+                cableCount = cableCount,
             )
             brokenPRs.add(PRType.MAX_VOLUME)
         }
@@ -234,52 +248,110 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         peakEccentricForceKg: Float,
         profileId: String,
         cableCount: Int?,
-    ): Result<List<WorkoutPhase>> {
-        val brokenPhases = mutableListOf<WorkoutPhase>()
+    ): Result<List<PhasePRBreak>> {
+        val brokenPRs = mutableListOf<PhasePRBreak>()
 
         if (peakConcentricForceKg > 0f) {
-            val key = "$exerciseId-$workoutMode-${PRType.MAX_WEIGHT}-CONCENTRIC"
-            val existing = records[key]
-            if (existing == null || peakConcentricForceKg > existing.weightPerCableKg) {
-                records[key] = PersonalRecord(
-                    id = records.size.toLong(),
+            brokenPRs.addAll(
+                updatePhasePRs(
                     exerciseId = exerciseId,
-                    exerciseName = exerciseId,
-                    weightPerCableKg = peakConcentricForceKg,
-                    reps = reps,
-                    oneRepMax = calculateOneRepMax(peakConcentricForceKg * 2, reps),
-                    timestamp = timestamp,
                     workoutMode = workoutMode,
-                    prType = PRType.MAX_WEIGHT,
-                    volume = peakConcentricForceKg * reps,
+                    timestamp = timestamp,
+                    reps = reps,
+                    weightPerCableKg = peakConcentricForceKg,
                     phase = WorkoutPhase.CONCENTRIC,
-                )
-                brokenPhases.add(WorkoutPhase.CONCENTRIC)
-            }
+                    profileId = profileId,
+                    cableCount = cableCount,
+                ),
+            )
         }
 
         if (peakEccentricForceKg > 0f) {
-            val key = "$exerciseId-$workoutMode-${PRType.MAX_WEIGHT}-ECCENTRIC"
-            val existing = records[key]
-            if (existing == null || peakEccentricForceKg > existing.weightPerCableKg) {
-                records[key] = PersonalRecord(
-                    id = records.size.toLong(),
+            brokenPRs.addAll(
+                updatePhasePRs(
                     exerciseId = exerciseId,
-                    exerciseName = exerciseId,
-                    weightPerCableKg = peakEccentricForceKg,
-                    reps = reps,
-                    oneRepMax = calculateOneRepMax(peakEccentricForceKg * 2, reps),
-                    timestamp = timestamp,
                     workoutMode = workoutMode,
-                    prType = PRType.MAX_WEIGHT,
-                    volume = peakEccentricForceKg * reps,
+                    timestamp = timestamp,
+                    reps = reps,
+                    weightPerCableKg = peakEccentricForceKg,
                     phase = WorkoutPhase.ECCENTRIC,
-                )
-                brokenPhases.add(WorkoutPhase.ECCENTRIC)
-            }
+                    profileId = profileId,
+                    cableCount = cableCount,
+                ),
+            )
         }
 
         updateRecordsFlow()
-        return Result.success(brokenPhases)
+        return Result.success(brokenPRs)
+    }
+
+    private fun updatePhasePRs(
+        exerciseId: String,
+        workoutMode: String,
+        timestamp: Long,
+        reps: Int,
+        weightPerCableKg: Float,
+        phase: WorkoutPhase,
+        profileId: String,
+        cableCount: Int?,
+    ): List<PhasePRBreak> {
+        val broken = mutableListOf<PhasePRBreak>()
+        val normalizedMode = normalizeWorkoutModeKey(workoutMode)
+        val volume = weightPerCableKg * reps
+        val oneRepMax = calculateOneRepMax(weightPerCableKg, reps)
+
+        val weightKey = recordKey(exerciseId, normalizedMode, PRType.MAX_WEIGHT, phase, profileId)
+        val existingWeight = records[weightKey]
+        if (existingWeight == null || weightPerCableKg > existingWeight.weightPerCableKg) {
+            records[weightKey] = PersonalRecord(
+                id = existingWeight?.id ?: records.size.toLong(),
+                exerciseId = exerciseId,
+                exerciseName = existingWeight?.exerciseName ?: exerciseId,
+                weightPerCableKg = weightPerCableKg,
+                reps = reps,
+                oneRepMax = oneRepMax,
+                timestamp = timestamp,
+                workoutMode = normalizedMode,
+                prType = PRType.MAX_WEIGHT,
+                volume = volume,
+                phase = phase,
+                profileId = profileId,
+                cableCount = cableCount,
+            )
+            broken.add(PhasePRBreak(phase, PRType.MAX_WEIGHT))
+        }
+
+        val volumeKey = recordKey(exerciseId, normalizedMode, PRType.MAX_VOLUME, phase, profileId)
+        val existingVolume = records[volumeKey]
+        if (existingVolume == null || volume > existingVolume.volume) {
+            records[volumeKey] = PersonalRecord(
+                id = existingVolume?.id ?: records.size.toLong(),
+                exerciseId = exerciseId,
+                exerciseName = existingVolume?.exerciseName ?: exerciseId,
+                weightPerCableKg = weightPerCableKg,
+                reps = reps,
+                oneRepMax = oneRepMax,
+                timestamp = timestamp,
+                workoutMode = normalizedMode,
+                prType = PRType.MAX_VOLUME,
+                volume = volume,
+                phase = phase,
+                profileId = profileId,
+                cableCount = cableCount,
+            )
+            broken.add(PhasePRBreak(phase, PRType.MAX_VOLUME))
+        }
+
+        return broken
+    }
+
+    private fun recordKey(
+        exerciseId: String,
+        workoutMode: String,
+        prType: PRType,
+        phase: WorkoutPhase,
+        profileId: String,
+    ): String {
+        return "$exerciseId-${normalizeWorkoutModeKey(workoutMode)}-$prType-$phase-$profileId"
     }
 }

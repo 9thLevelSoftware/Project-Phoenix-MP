@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.presentation.screen.shouldShowCableOnlyExerciseControls
 import com.devil.phoenixproject.presentation.screen.shouldShowStopAtTopToggle
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
@@ -395,6 +396,36 @@ class ExerciseConfigViewModelTest {
         assertNull(viewModel.currentExercisePR.value)
     }
 
+    @Test
+    fun `initialize uses concentric PR for normal workout setup and ignores higher eccentric PR`() = runTest {
+        val database = createTestDatabase()
+        val queries = database.vitruvianDatabaseQueries
+        val repository = SqlDelightPersonalRecordRepository(database)
+        val viewModel = ExerciseConfigViewModel(repository)
+        val exercise = benchRoutineExercise(
+            id = "rex-phase",
+            setReps = listOf(10),
+            weightPerCableKg = 20f,
+        )
+
+        insertExercise(queries, id = "bench-1", name = "Bench Press")
+        insertWeightPR(queries, weight = 35.0, phase = WorkoutPhase.COMBINED)
+        insertWeightPR(queries, weight = 45.0, phase = WorkoutPhase.CONCENTRIC)
+        insertWeightPR(queries, weight = 90.0, phase = WorkoutPhase.ECCENTRIC)
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+            profileId = "default",
+        )
+
+        waitForCondition { viewModel.currentExercisePR.value?.weightPerCableKg == 45f }
+        assertEquals(WorkoutPhase.CONCENTRIC, viewModel.currentExercisePR.value?.phase)
+        assertEquals(45f, viewModel.currentExercisePR.value?.weightPerCableKg)
+    }
+
     private fun benchRoutineExercise(
         id: String,
         setReps: List<Int?>,
@@ -465,7 +496,11 @@ class ExerciseConfigViewModelTest {
         )
     }
 
-    private fun insertWeightPR(queries: com.devil.phoenixproject.database.VitruvianDatabaseQueries, weight: Double) {
+    private fun insertWeightPR(
+        queries: com.devil.phoenixproject.database.VitruvianDatabaseQueries,
+        weight: Double,
+        phase: WorkoutPhase = WorkoutPhase.COMBINED,
+    ) {
         queries.insertRecord(
             exerciseId = "bench-1",
             exerciseName = "Bench Press",
@@ -476,7 +511,7 @@ class ExerciseConfigViewModelTest {
             workoutMode = "Old School",
             prType = PRType.MAX_WEIGHT.name,
             volume = weight * 6,
-            phase = "COMBINED",
+            phase = phase.name,
             profile_id = "default",
             cable_count = null,
         )

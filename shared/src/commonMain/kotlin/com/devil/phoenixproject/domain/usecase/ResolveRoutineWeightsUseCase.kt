@@ -2,6 +2,8 @@ package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.getBestVolumePRForWorkoutMode
+import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -51,13 +53,13 @@ class ResolveRoutineWeightsUseCase(
 
         // Lookup PR for this exercise filtered by mode and profile
         val pr = when (exercise.prTypeForScaling) {
-            PRType.MAX_WEIGHT -> prRepository.getBestWeightPR(
+            PRType.MAX_WEIGHT -> prRepository.getBestWeightPRForWorkoutMode(
                 exerciseId,
                 mode.displayName,
                 profileId,
             )
 
-            PRType.MAX_VOLUME -> prRepository.getBestVolumePR(
+            PRType.MAX_VOLUME -> prRepository.getBestVolumePRForWorkoutMode(
                 exerciseId,
                 mode.displayName,
                 profileId,

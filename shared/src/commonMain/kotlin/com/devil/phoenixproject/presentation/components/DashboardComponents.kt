@@ -21,8 +21,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -368,7 +370,7 @@ private fun PRListItem(
                     maxLines = 1,
                 )
                 Text(
-                    text = "${pr.reps} reps • ${KmpUtils.formatTimestamp(
+                    text = "${pr.phase.displayLabel()} ${pr.prType.displayLabel()} • ${pr.reps} reps • ${KmpUtils.formatTimestamp(
                         pr.timestamp,
                         "MMM dd, yyyy",
                     )}",
@@ -525,7 +527,7 @@ private fun TopExerciseItem(
                         maxLines = 1,
                     )
                     Text(
-                        text = "${pr.reps} reps",
+                        text = "${pr.phase.displayLabel()} • ${pr.reps} reps",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -543,6 +545,17 @@ private fun TopExerciseItem(
             )
         }
     }
+}
+
+private fun WorkoutPhase.displayLabel(): String = when (this) {
+    WorkoutPhase.CONCENTRIC -> "Concentric"
+    WorkoutPhase.ECCENTRIC -> "Eccentric"
+    WorkoutPhase.COMBINED -> "Combined"
+}
+
+private fun PRType.displayLabel(): String = when (this) {
+    PRType.MAX_WEIGHT -> "Weight"
+    PRType.MAX_VOLUME -> "Volume"
 }
 
 /**

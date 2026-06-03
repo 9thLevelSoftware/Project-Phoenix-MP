@@ -25,8 +25,11 @@ class FakeSyncRepository : SyncRepository {
 
     // === Configurable return values for push ===
 
+    val callLog: MutableList<String> = mutableListOf()
     var workoutSessionsToReturn: List<WorkoutSession> = emptyList()
     var prsToReturn: List<PersonalRecordSyncDto> = emptyList()
+    var fullPRsToReturn: List<PersonalRecord> = emptyList()
+    var phaseBackfillBreaksToReturn: Int = 0
     var routinesToReturn: List<Routine> = emptyList()
     var gamificationStatsToReturn: GamificationStatsSyncDto? = null
 
@@ -161,7 +164,15 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = cyclesToReturn
 
-    override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> = emptyList()
+    override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> {
+        callLog += "getFullPRsModifiedSince"
+        return fullPRsToReturn
+    }
+
+    override suspend fun backfillPhaseSpecificPRs(profileId: String): Int {
+        callLog += "backfillPhaseSpecificPRs"
+        return phaseBackfillBreaksToReturn
+    }
 
     override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
 

@@ -106,7 +106,11 @@ interface PersonalRecordRepository {
      * @param profileId Profile to filter by
      * @return PersonalRecord with highest weight, or null if no PR exists
      */
-    suspend fun getBestWeightPR(exerciseId: String, profileId: String): PersonalRecord?
+    suspend fun getBestWeightPR(
+        exerciseId: String,
+        profileId: String,
+        phase: WorkoutPhase = WorkoutPhase.COMBINED,
+    ): PersonalRecord?
 
     /**
      * Get the best volume PR for an exercise across all modes
@@ -114,7 +118,11 @@ interface PersonalRecordRepository {
      * @param profileId Profile to filter by
      * @return PersonalRecord with highest volume (weight × reps), or null if no PR exists
      */
-    suspend fun getBestVolumePR(exerciseId: String, profileId: String): PersonalRecord?
+    suspend fun getBestVolumePR(
+        exerciseId: String,
+        profileId: String,
+        phase: WorkoutPhase = WorkoutPhase.COMBINED,
+    ): PersonalRecord?
 
     /**
      * Get the best weight PR for an exercise in a specific mode
@@ -123,7 +131,12 @@ interface PersonalRecordRepository {
      * @param profileId Profile to filter by
      * @return PersonalRecord with highest weight for this mode, or null if no PR exists
      */
-    suspend fun getBestWeightPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord?
+    suspend fun getBestWeightPR(
+        exerciseId: String,
+        workoutMode: String,
+        profileId: String,
+        phase: WorkoutPhase = WorkoutPhase.COMBINED,
+    ): PersonalRecord?
 
     /**
      * Get the best volume PR for an exercise in a specific mode
@@ -132,7 +145,12 @@ interface PersonalRecordRepository {
      * @param profileId Profile to filter by
      * @return PersonalRecord with highest volume for this mode, or null if no PR exists
      */
-    suspend fun getBestVolumePR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord?
+    suspend fun getBestVolumePR(
+        exerciseId: String,
+        workoutMode: String,
+        profileId: String,
+        phase: WorkoutPhase = WorkoutPhase.COMBINED,
+    ): PersonalRecord?
 
     /**
      * Get all PRs for an exercise (all modes) for display
@@ -207,7 +225,7 @@ interface PersonalRecordRepository {
      * @param reps Number of reps completed
      * @param peakConcentricForceKg Peak force during concentric phase (per cable, kg)
      * @param peakEccentricForceKg Peak force during eccentric phase (per cable, kg)
-     * @return List of phases where PRs were broken (can be empty, one, or both)
+     * @return List of phase/type pairs where PRs were broken
      */
     suspend fun updatePhaseSpecificPRs(
         exerciseId: String,
@@ -218,8 +236,13 @@ interface PersonalRecordRepository {
         peakEccentricForceKg: Float,
         profileId: String,
         cableCount: Int? = null,
-    ): Result<List<WorkoutPhase>>
+    ): Result<List<PhasePRBreak>>
 }
+
+data class PhasePRBreak(
+    val phase: WorkoutPhase,
+    val prType: PRType,
+)
 
 fun normalizeWorkoutModeKey(workoutMode: String): String {
     val trimmed = workoutMode.trim()
@@ -235,4 +258,37 @@ fun normalizeWorkoutModeKey(workoutMode: String): String {
         trimmed.equals("Eccentric Only", ignoreCase = true) -> "Eccentric Only"
         else -> trimmed
     }
+}
+
+fun preferredPRPhaseForWorkoutMode(workoutMode: String): WorkoutPhase = when (normalizeWorkoutModeKey(workoutMode)) {
+    "Eccentric Only" -> WorkoutPhase.ECCENTRIC
+    else -> WorkoutPhase.CONCENTRIC
+}
+
+suspend fun PersonalRecordRepository.getBestWeightPRForWorkoutMode(
+    exerciseId: String,
+    workoutMode: String,
+    profileId: String,
+): PersonalRecord? {
+    val preferredPhase = preferredPRPhaseForWorkoutMode(workoutMode)
+    return getBestWeightPR(exerciseId, workoutMode, profileId, preferredPhase)
+        ?: if (preferredPhase != WorkoutPhase.COMBINED) {
+            getBestWeightPR(exerciseId, workoutMode, profileId, WorkoutPhase.COMBINED)
+        } else {
+            null
+        }
+}
+
+suspend fun PersonalRecordRepository.getBestVolumePRForWorkoutMode(
+    exerciseId: String,
+    workoutMode: String,
+    profileId: String,
+): PersonalRecord? {
+    val preferredPhase = preferredPRPhaseForWorkoutMode(workoutMode)
+    return getBestVolumePR(exerciseId, workoutMode, profileId, preferredPhase)
+        ?: if (preferredPhase != WorkoutPhase.COMBINED) {
+            getBestVolumePR(exerciseId, workoutMode, profileId, WorkoutPhase.COMBINED)
+        } else {
+            null
+        }
 }
