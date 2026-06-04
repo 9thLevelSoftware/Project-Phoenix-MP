@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.repository.PhasePRBackfillResult
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
@@ -29,7 +30,10 @@ class FakeSyncRepository : SyncRepository {
     var workoutSessionsToReturn: List<WorkoutSession> = emptyList()
     var prsToReturn: List<PersonalRecordSyncDto> = emptyList()
     var fullPRsToReturn: List<PersonalRecord> = emptyList()
-    var phaseBackfillBreaksToReturn: Int = 0
+    var phaseBackfillResultToReturn: PhasePRBackfillResult = PhasePRBackfillResult(changedRows = 0)
+    var lastPhaseBackfillFromTimestamp: Long? = null
+    var sessionIdsForPersonalRecordsToReturn: Map<String, String> = emptyMap()
+    var lastSessionIdPersonalRecords: List<PersonalRecord> = emptyList()
     var routinesToReturn: List<Routine> = emptyList()
     var gamificationStatsToReturn: GamificationStatsSyncDto? = null
 
@@ -169,9 +173,22 @@ class FakeSyncRepository : SyncRepository {
         return fullPRsToReturn
     }
 
-    override suspend fun backfillPhaseSpecificPRs(profileId: String): Int {
+    override suspend fun backfillPhaseSpecificPRs(
+        profileId: String,
+        fromSessionTimestamp: Long,
+    ): PhasePRBackfillResult {
         callLog += "backfillPhaseSpecificPRs"
-        return phaseBackfillBreaksToReturn
+        lastPhaseBackfillFromTimestamp = fromSessionTimestamp
+        return phaseBackfillResultToReturn
+    }
+
+    override suspend fun findSessionIdsForPersonalRecords(
+        records: List<PersonalRecord>,
+        profileId: String,
+    ): Map<String, String> {
+        callLog += "findSessionIdsForPersonalRecords"
+        lastSessionIdPersonalRecords = records
+        return sessionIdsForPersonalRecordsToReturn
     }
 
     override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()

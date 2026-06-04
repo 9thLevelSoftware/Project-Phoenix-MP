@@ -14,6 +14,11 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
 
+data class PhasePRBackfillResult(
+    val changedRows: Int,
+    val maxScannedSessionTimestamp: Long? = null,
+)
+
 /**
  * Repository interface for sync operations.
  * Provides methods to get local changes for push and merge remote changes from pull.
@@ -94,9 +99,21 @@ interface SyncRepository {
      * Idempotently backfill phase-specific PRs from historical sessions that
      * have tagged exercises and saved concentric/eccentric force metrics.
      *
-     * @return number of phase/type PR rows created or improved.
+     * @return phase PR change count and the newest scanned session timestamp for checkpointing.
      */
-    suspend fun backfillPhaseSpecificPRs(profileId: String = "default"): Int = 0
+    suspend fun backfillPhaseSpecificPRs(
+        profileId: String = "default",
+        fromSessionTimestamp: Long = 0L,
+    ): PhasePRBackfillResult = PhasePRBackfillResult(changedRows = 0)
+
+    /**
+     * Resolve local workout session IDs for dedicated PR rows whose source
+     * sessions may not be included in the current modified-since push batch.
+     */
+    suspend fun findSessionIdsForPersonalRecords(
+        records: List<PersonalRecord>,
+        profileId: String = "default",
+    ): Map<String, String> = emptyMap()
 
     /**
      * Get phase statistics for the given session IDs.

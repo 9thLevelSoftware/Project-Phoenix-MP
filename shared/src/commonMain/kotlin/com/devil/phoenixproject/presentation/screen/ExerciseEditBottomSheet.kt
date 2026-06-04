@@ -1244,9 +1244,9 @@ fun WeightConfigurationCard(
                         color = if (usePercentOfPR) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = if (currentExercisePR != null) {
-                            "Scale weight based on your ${currentExercisePR.phase.displayLabel().lowercase()} personal record"
-                        } else {
+                        text = currentExercisePR?.let { pr ->
+                            "Scale weight based on your ${pr.phase.displayLabel().lowercase()} personal record"
+                        } ?: run {
                             "No PR set for this exercise"
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -1261,11 +1261,12 @@ fun WeightConfigurationCard(
             }
 
             // Show percentage controls when toggle is ON and PR exists
-            if (usePercentOfPR && currentExercisePR != null) {
+            val prForScaling = currentExercisePR
+            if (usePercentOfPR && prForScaling != null) {
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
                 // Calculate resolved weight
-                val resolvedWeight = (currentExercisePR.weightPerCableKg * weightPercentOfPR / 100f)
+                val resolvedWeight = (prForScaling.weightPerCableKg * weightPercentOfPR / 100f)
                     .let { (it * 2).roundToInt() / 2f } // Round to 0.5kg
 
                 // Display current percentage and resolved weight
@@ -1275,7 +1276,7 @@ fun WeightConfigurationCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "$weightPercentOfPR% of ${currentExercisePR.phase.displayLabel()} PR",
+                        text = "$weightPercentOfPR% of ${prForScaling.phase.displayLabel()} PR",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,

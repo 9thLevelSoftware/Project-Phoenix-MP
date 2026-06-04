@@ -61,6 +61,7 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_REFRESH_TOKEN = "portal_refresh_token"
         private const val KEY_EXPIRES_AT = "portal_token_expires_at"
         private const val KEY_LAST_SYNC = "portal_last_sync_timestamp"
+        private const val KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX = "portal_phase_pr_backfill_checkpoint_"
         private const val KEY_DEVICE_ID = "portal_device_id"
         private const val KEY_STORAGE_VERIFIED = "portal_storage_verified"
     }
@@ -175,6 +176,13 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_LAST_SYNC] = timestamp
     }
 
+    fun getPhasePRBackfillCheckpoint(profileId: String): Long =
+        settings[phasePRBackfillCheckpointKey(profileId), 0L]
+
+    fun setPhasePRBackfillCheckpoint(profileId: String, timestamp: Long) {
+        settings[phasePRBackfillCheckpointKey(profileId)] = timestamp
+    }
+
     fun updatePremiumStatus(isPremium: Boolean) {
         settings[KEY_IS_PREMIUM] = isPremium
         _currentUser.value = _currentUser.value?.copy(isPremium = isPremium)
@@ -249,5 +257,10 @@ class PortalTokenStorage(private val settings: Settings) {
     private fun generateDeviceId(): String {
         // Generate a stable device identifier using multiplatform UUID
         return generateUUID()
+    }
+
+    private fun phasePRBackfillCheckpointKey(profileId: String): String {
+        val normalizedProfileId = profileId.trim().ifBlank { "default" }
+        return "$KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX$normalizedProfileId"
     }
 }

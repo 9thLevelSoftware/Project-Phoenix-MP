@@ -155,6 +155,9 @@ class SyncManager(
             "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
             RegexOption.IGNORE_CASE,
         )
+
+        private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String =
+            "$exerciseId:$timestamp"
     }
 
     /**
@@ -534,10 +537,17 @@ class SyncManager(
         val platform = getPlatformName()
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
 
-        val phaseBackfillCount = syncRepository.backfillPhaseSpecificPRs(activeProfileId)
-        if (phaseBackfillCount > 0) {
+        val phaseBackfillCheckpoint = tokenStorage.getPhasePRBackfillCheckpoint(activeProfileId)
+        val phaseBackfillResult = syncRepository.backfillPhaseSpecificPRs(
+            profileId = activeProfileId,
+            fromSessionTimestamp = phaseBackfillCheckpoint,
+        )
+        phaseBackfillResult.maxScannedSessionTimestamp?.let { maxScannedTimestamp ->
+            tokenStorage.setPhasePRBackfillCheckpoint(activeProfileId, maxScannedTimestamp)
+        }
+        if (phaseBackfillResult.changedRows > 0) {
             Logger.i("SyncManager") {
-                "Backfilled $phaseBackfillCount phase-specific PR row(s) before portal push"
+                "Backfilled ${phaseBackfillResult.changedRows} phase-specific PR row(s) before portal push"
             }
         }
 
@@ -549,16 +559,30 @@ class SyncManager(
 
         // 2. Fetch full PRs with type/phase/volume metadata (GAP 2 fix), profile-scoped
         val recentPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
-        val prBySessionKey = recentPRs.groupBy { pr -> "${pr.exerciseId}:${pr.timestamp}" }
-        val sessionIdByPrKey = sessions.associate { session ->
-            "${session.exerciseId}:${session.timestamp}" to session.id
+        val prBySessionKey = recentPRs.groupBy { pr ->
+            personalRecordSessionKey(pr.exerciseId, pr.timestamp)
         }
+        val sessionIdByDeltaPrKey = sessions.mapNotNull { session ->
+            val exerciseId = session.exerciseId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            personalRecordSessionKey(exerciseId, session.timestamp) to session.id
+        }.toMap()
+        val missingSessionRecords = recentPRs.filter { pr ->
+            personalRecordSessionKey(pr.exerciseId, pr.timestamp) !in sessionIdByDeltaPrKey
+        }
+        val historicalSessionIdByPrKey = if (missingSessionRecords.isEmpty()) {
+            emptyMap()
+        } else {
+            syncRepository.findSessionIdsForPersonalRecords(missingSessionRecords, activeProfileId)
+        }
+        val sessionIdByPrKey = sessionIdByDeltaPrKey + historicalSessionIdByPrKey
 
         // 3. Build SessionWithReps (fetch rep metrics per session, detect PRs, attach PR metadata)
         val sessionsWithReps = sessions.map { session ->
             val repMetrics = repMetricRepository.getRepMetrics(session.id)
-            val sessionKey = "${session.exerciseId}:${session.timestamp}"
-            val prRecords = prBySessionKey[sessionKey] ?: emptyList()
+            val sessionKey = session.exerciseId
+                ?.takeIf { it.isNotBlank() }
+                ?.let { exerciseId -> personalRecordSessionKey(exerciseId, session.timestamp) }
+            val prRecords = sessionKey?.let { prBySessionKey[it] } ?: emptyList()
 
             // Resolve the real muscle group from the exercise catalog instead of
             // hardcoding "General". Sessions don't carry a muscle group, so look it
@@ -577,7 +601,7 @@ class SyncManager(
             )
         }
         val personalRecordDtos = recentPRs.map { pr ->
-            val sessionKey = "${pr.exerciseId}:${pr.timestamp}"
+            val sessionKey = personalRecordSessionKey(pr.exerciseId, pr.timestamp)
             val muscleGroup =
                 syncRepository.getExerciseMuscleGroup(pr.exerciseId, pr.exerciseName)
                     ?: "General"

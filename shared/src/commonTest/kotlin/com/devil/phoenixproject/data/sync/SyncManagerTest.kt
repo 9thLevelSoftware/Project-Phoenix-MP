@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.repository.PhasePRBackfillResult
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExternalActivity
@@ -175,7 +176,10 @@ class SyncManagerTest {
     @Test
     fun syncBackfillsPhaseSpecificPRsBeforeCollectingPushRecords() = runTest {
         setupAuthenticated()
-        fakeSyncRepo.phaseBackfillBreaksToReturn = 2
+        fakeSyncRepo.phaseBackfillResultToReturn = PhasePRBackfillResult(
+            changedRows = 2,
+            maxScannedSessionTimestamp = 1_700_000_000_000L,
+        )
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
@@ -190,6 +194,40 @@ class SyncManagerTest {
                 it == "backfillPhaseSpecificPRs" || it == "getFullPRsModifiedSince"
             },
             "Historical phase PR backfill must run before building the dedicated PR payload",
+        )
+        assertEquals(0L, fakeSyncRepo.lastPhaseBackfillFromTimestamp)
+        assertEquals(
+            1_700_000_000_000L,
+            tokenStorage.getPhasePRBackfillCheckpoint("default"),
+            "Successful backfill progress should be checkpointed by profile",
+        )
+    }
+
+    @Test
+    fun syncUsesStoredPhasePRBackfillCheckpoint() = runTest {
+        setupAuthenticated()
+        tokenStorage.setPhasePRBackfillCheckpoint("default", 1_700_000_000_000L)
+        fakeSyncRepo.phaseBackfillResultToReturn = PhasePRBackfillResult(
+            changedRows = 0,
+            maxScannedSessionTimestamp = 1_700_000_100_000L,
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            1_700_000_000_000L,
+            fakeSyncRepo.lastPhaseBackfillFromTimestamp,
+            "Backfill should resume from the stored checkpoint instead of scanning from zero",
+        )
+        assertEquals(
+            1_700_000_100_000L,
+            tokenStorage.getPhasePRBackfillCheckpoint("default"),
+            "Backfill checkpoint should advance to the newest scanned session",
         )
     }
 
@@ -392,6 +430,37 @@ class SyncManagerTest {
             payload.sessions.single().exercises.single().sets.single().prPhase,
             "Legacy set-level hint should prefer the normal concentric weight PR when present",
         )
+    }
+
+    @Test
+    fun syncResolvesSessionIdForDedicatedPROutsideDeltaSessionBatch() = runTest {
+        setupAuthenticated()
+        val exerciseId = "bicep-curl"
+        val timestamp = 1_740_916_800_000L
+        val sessionKey = "$exerciseId:$timestamp"
+        val pr = makePersonalRecord(
+            id = 42,
+            exerciseId = exerciseId,
+            exerciseName = "Bicep Curl",
+            weightPerCableKg = 42f,
+            reps = 8,
+            timestamp = timestamp,
+            prType = PRType.MAX_WEIGHT,
+            phase = WorkoutPhase.ECCENTRIC,
+        )
+        fakeSyncRepo.fullPRsToReturn = listOf(pr)
+        fakeSyncRepo.sessionIdsForPersonalRecordsToReturn = mapOf(sessionKey to "historical-session")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertEquals("historical-session", payload.personalRecords.single().sessionId)
+        assertEquals(listOf(pr), fakeSyncRepo.lastSessionIdPersonalRecords)
     }
 
     @Test
