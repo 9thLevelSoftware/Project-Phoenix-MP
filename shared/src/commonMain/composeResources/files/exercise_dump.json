@@ -1599,10 +1599,7 @@
                 "CHEST"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/gkWLI5m6Ni9pWGgJ4FS301uYyCrG1gzCGsex1cc6nv3c.m3u8",
-            "thumbnail": "https://image.mux.com/gkWLI5m6Ni9pWGgJ4FS301uYyCrG1gzCGsex1cc6nv3c/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -1653,10 +1650,7 @@
                 "CHEST"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/bO02WcSpA8IUUPATz9bydtjyzzMYCsuncG7atlWQKqHk.m3u8",
-            "thumbnail": "https://image.mux.com/bO02WcSpA8IUUPATz9bydtjyzzMYCsuncG7atlWQKqHk/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -2057,10 +2051,7 @@
                 "BACK"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/XsWNJd7YOU28smY88nzlKLdsHjbVslBEXccyAddmuRU.m3u8",
-            "thumbnail": "https://image.mux.com/XsWNJd7YOU28smY88nzlKLdsHjbVslBEXccyAddmuRU/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -2797,10 +2788,7 @@
                 "ARMS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/WEGd023AO1F36azz216TP7YXkG2plQOHpj3HJkQE3C3E.m3u8",
-            "thumbnail": "https://image.mux.com/WEGd023AO1F36azz216TP7YXkG2plQOHpj3HJkQE3C3E/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": "supinated",
         "gripWidth": null,
@@ -3360,10 +3348,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/JNCkXrQ8LG6024f4igvBmyelgeyvLci4zNZ7XOIpGP02Q.m3u8",
-            "thumbnail": "https://image.mux.com/JNCkXrQ8LG6024f4igvBmyelgeyvLci4zNZ7XOIpGP02Q/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -3600,10 +3585,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/nCOINP65NP3bXX1JJa7SNZFj4N3ygteyWLkHv1Z01Bac.m3u8",
-            "thumbnail": "https://image.mux.com/nCOINP65NP3bXX1JJa7SNZFj4N3ygteyWLkHv1Z01Bac/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -3913,10 +3895,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/klk9QipHu5ufXM5kQ8JS925zqDHUo8K2ffVXo8D3RfM.m3u8",
-            "thumbnail": "https://image.mux.com/klk9QipHu5ufXM5kQ8JS925zqDHUo8K2ffVXo8D3RfM/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -3961,10 +3940,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/GQp8lYq4W0200IsiLRNDXllABnpJ1ocUD3Lqd9hrRkCNg.m3u8",
-            "thumbnail": "https://image.mux.com/GQp8lYq4W0200IsiLRNDXllABnpJ1ocUD3Lqd9hrRkCNg/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -4008,10 +3984,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/8e82IqZ01Ino3J8uom01Yblz01A8rKfJ86N5G77tJ9H2500.m3u8",
-            "thumbnail": "https://image.mux.com/8e82IqZ01Ino3J8uom01Yblz01A8rKfJ86N5G77tJ9H2500/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -4057,10 +4030,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/flb8qCWSAU00vp4RYhN8fwdZR9ZNwzG67h7pamZH01Rqg.m3u8",
-            "thumbnail": "https://image.mux.com/flb8qCWSAU00vp4RYhN8fwdZR9ZNwzG67h7pamZH01Rqg/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -4104,10 +4074,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/ezbbmAThu7lkcF401bvxrgUJ01vHf4Njq2awZZcmTOyuw.m3u8",
-            "thumbnail": "https://image.mux.com/ezbbmAThu7lkcF401bvxrgUJ01vHf4Njq2awZZcmTOyuw/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -4769,10 +4736,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/JbH7SBerl700lemBEo8QSOtBNqBlXjgPDvs5hQW6Fuck.m3u8",
-            "thumbnail": "https://image.mux.com/JbH7SBerl700lemBEo8QSOtBNqBlXjgPDvs5hQW6Fuck/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": "pronated",
         "gripWidth": null,
@@ -5144,10 +5108,7 @@
                 "SHOULDERS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/DA5yG4SQMIgnuEdP4COMpiWK1iPjWqVsBLRiu7SRsk8.m3u8",
-            "thumbnail": "https://image.mux.com/DA5yG4SQMIgnuEdP4COMpiWK1iPjWqVsBLRiu7SRsk8/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": "neutral",
         "gripWidth": null,
@@ -5754,10 +5715,7 @@
                 "CORE"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/OUJb01dlX01kuhs00yp0102uIOga8ZIfHfslJDh6s9UKbUyw.m3u8",
-            "thumbnail": "https://image.mux.com/OUJb01dlX01kuhs00yp0102uIOga8ZIfHfslJDh6s9UKbUyw/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": "neutral",
         "gripWidth": null,
@@ -6140,10 +6098,7 @@
                 "CHEST"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/RF7IC1fbgZMY00Izidf9FFiPwcYR9zpRApHeIZZWV7wA.m3u8",
-            "thumbnail": "https://image.mux.com/RF7IC1fbgZMY00Izidf9FFiPwcYR9zpRApHeIZZWV7wA/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -6190,10 +6145,7 @@
                 "CHEST"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/sXi82R8VFf428kjznWVOumz6pOAX4sNhFvmYhpUMM6E.m3u8",
-            "thumbnail": "https://image.mux.com/sXi82R8VFf428kjznWVOumz6pOAX4sNhFvmYhpUMM6E/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -9355,10 +9307,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/UqBxgXeNs6B00H016scVEcAO6ApNdO00uiH5Jq7004p2s00o.m3u8",
-            "thumbnail": "https://image.mux.com/UqBxgXeNs6B00H016scVEcAO6ApNdO00uiH5Jq7004p2s00o/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -9677,10 +9626,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/2umWZD200lLrfFozUqrVmdMeiMH1Ru3SIpEFj3D8hzik.m3u8",
-            "thumbnail": "https://image.mux.com/2umWZD200lLrfFozUqrVmdMeiMH1Ru3SIpEFj3D8hzik/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -10507,10 +10453,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/q9102hybR85TPpZRGd3jfsizOQV9il02bNqIyz7ZoL44c.m3u8",
-            "thumbnail": "https://image.mux.com/q9102hybR85TPpZRGd3jfsizOQV9il02bNqIyz7ZoL44c/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [
             "back squat"
         ],
@@ -11031,10 +10974,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/01uW800Owah5MqksmwcwYfFIKQwymiNJJEaIdJ02S1Dz01M.m3u8",
-            "thumbnail": "https://image.mux.com/01uW800Owah5MqksmwcwYfFIKQwymiNJJEaIdJ02S1Dz01M/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -11127,10 +11067,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/0100ZBddmAymGYDeF5NEZPP01gyS101Q2GBDvi102uyVPO5I.m3u8",
-            "thumbnail": "https://image.mux.com/0100ZBddmAymGYDeF5NEZPP01gyS101Q2GBDvi102uyVPO5I/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -11375,10 +11312,7 @@
                 "SHOULDERS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/znkW8UtfaAur6EZQdTb8IX58nUXEyAIyOOmJ00wnMzJI.m3u8",
-            "thumbnail": "https://image.mux.com/znkW8UtfaAur6EZQdTb8IX58nUXEyAIyOOmJ00wnMzJI/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -11429,10 +11363,7 @@
                 "SHOULDERS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/5Mm8dsq5wZA532Xz3MI3SA5G01KPdTILKA9jGiQmJ7vc.m3u8",
-            "thumbnail": "https://image.mux.com/5Mm8dsq5wZA532Xz3MI3SA5G01KPdTILKA9jGiQmJ7vc/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -11485,10 +11416,7 @@
                 "SHOULDERS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/EvpkYiXMrRbg7WAw8Z97JbdJwBr3BoGtcc87l9utsos.m3u8",
-            "thumbnail": "https://image.mux.com/EvpkYiXMrRbg7WAw8Z97JbdJwBr3BoGtcc87l9utsos/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": "pronated",
         "gripWidth": null,
@@ -11541,10 +11469,7 @@
                 "SHOULDERS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/513osIgJggW007Yj7FBiDnJlTAxF5Ha1Jr02qoPC6YGDU.m3u8",
-            "thumbnail": "https://image.mux.com/513osIgJggW007Yj7FBiDnJlTAxF5Ha1Jr02qoPC6YGDU/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -12342,10 +12267,7 @@
                 "BACK"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/CXHDIHRuqN02tsgGzHzvDclh7zU00ZVpa01BztXSc5mVHc.m3u8",
-            "thumbnail": "https://image.mux.com/CXHDIHRuqN02tsgGzHzvDclh7zU00ZVpa01BztXSc5mVHc/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [
             "Bench Supported Kneeling SA Row",
             "Single Arm Row"
@@ -13175,10 +13097,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/x2cwXPIZiNQg6lNRWJwlqmAN9JcizRGamc2EAA2FI01I.m3u8",
-            "thumbnail": "https://image.mux.com/x2cwXPIZiNQg6lNRWJwlqmAN9JcizRGamc2EAA2FI01I/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [
             "Back Squat"
         ],
@@ -13684,10 +13603,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/LZapOKf3027yLvX23eqxXivCudDKSnBO2C33DPXI600sI.m3u8",
-            "thumbnail": "https://image.mux.com/LZapOKf3027yLvX23eqxXivCudDKSnBO2C33DPXI600sI/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -14002,10 +13918,7 @@
                 "SHOULDERS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/uAa4Atcbzm01Roa2xw02l01SCCgGmW27Ia2n6xpxIwE5es.m3u8",
-            "thumbnail": "https://image.mux.com/uAa4Atcbzm01Roa2xw02l01SCCgGmW27Ia2n6xpxIwE5es/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -14635,10 +14548,7 @@
                 "ARMS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/G11aXkMP300LGfS3WJ6NEmohwKfWvG00B4Iy301zEunIxo.m3u8",
-            "thumbnail": "https://image.mux.com/G11aXkMP300LGfS3WJ6NEmohwKfWvG00B4Iy301zEunIxo/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -14820,10 +14730,7 @@
                 "ARMS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/Np01wbxLoyAYQAsCetBiF9QW4WIsNb3pHEF9tVwKY11I.m3u8",
-            "thumbnail": "https://image.mux.com/Np01wbxLoyAYQAsCetBiF9QW4WIsNb3pHEF9tVwKY11I/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [
             "SA Overhead Tricep Extension"
         ],
@@ -15805,10 +15712,7 @@
                 "CHEST"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/XbVuFwxabhJg013XCeOjWZX02pqGAdM6zgHyvHHMdh2nQ.m3u8",
-            "thumbnail": "https://image.mux.com/XbVuFwxabhJg013XCeOjWZX02pqGAdM6zgHyvHHMdh2nQ/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -16706,10 +16610,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/wP45LJOjf28alxalQ9y7wOw02tfZpZ01xcC02UY9fDVCLs.m3u8",
-            "thumbnail": "https://image.mux.com/wP45LJOjf28alxalQ9y7wOw02tfZpZ01xcC02UY9fDVCLs/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": "pronated",
         "gripWidth": null,
@@ -16808,10 +16709,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/o6qurisVEu02a5fUd00s6wofOHBlWJtOuhcRe9rTDpleU.m3u8",
-            "thumbnail": "https://image.mux.com/o6qurisVEu02a5fUd00s6wofOHBlWJtOuhcRe9rTDpleU/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": "pronated",
         "gripWidth": null,
@@ -18517,10 +18415,7 @@
                 "BACK"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/xmyRaZVBL6L02XL2rzsxe6Py6QQtd4sIoTdDf3lSWfSY.m3u8",
-            "thumbnail": "https://image.mux.com/xmyRaZVBL6L02XL2rzsxe6Py6QQtd4sIoTdDf3lSWfSY/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [
             "Reverse grip Seated Row",
             "Underhand Seated Row"
@@ -19256,10 +19151,7 @@
                 "SHOULDERS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/jz6C8SVNg188BXR7moYOVN9Sw5I9a00jtSkWczv7nqx8.m3u8",
-            "thumbnail": "https://image.mux.com/jz6C8SVNg188BXR7moYOVN9Sw5I9a00jtSkWczv7nqx8/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -19538,10 +19430,7 @@
                 "SHOULDERS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/RrwWfnhq4PXMQsSTnpXy8mMIKxZ6zUZExT1bfPj3zv8.m3u8",
-            "thumbnail": "https://image.mux.com/RrwWfnhq4PXMQsSTnpXy8mMIKxZ6zUZExT1bfPj3zv8/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": "pronated",
         "gripWidth": null,
@@ -23302,10 +23191,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/00IDq701gYlB9ZlShRJh7pDuY5VzkBAxdgSRjVTBYnsFo.m3u8",
-            "thumbnail": "https://image.mux.com/00IDq701gYlB9ZlShRJh7pDuY5VzkBAxdgSRjVTBYnsFo/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -23392,10 +23278,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/uKFvAZGeeXFoeZMueIe01PnwX6Hlpz93LrhZkqiWHg00s.m3u8",
-            "thumbnail": "https://image.mux.com/uKFvAZGeeXFoeZMueIe01PnwX6Hlpz93LrhZkqiWHg00s/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -23892,10 +23775,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/mS2Wm4EmwxcvTc81CVcS3LQwPq1bGTDW2QP0167sRmf00.m3u8",
-            "thumbnail": "https://image.mux.com/mS2Wm4EmwxcvTc81CVcS3LQwPq1bGTDW2QP0167sRmf00/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,
@@ -24037,10 +23917,7 @@
                 "LEGS"
             ]
         },
-        "tutorial": {
-            "video": "https://stream.mux.com/7wA1KF43gZYOjPFJjMSdlkhR9oa8lz5pskOs01bxgRKU.m3u8",
-            "thumbnail": "https://image.mux.com/7wA1KF43gZYOjPFJjMSdlkhR9oa8lz5pskOs01bxgRKU/thumbnail.jpg"
-        },
+        "tutorial": null,
         "aliases": [],
         "grip": null,
         "gripWidth": null,

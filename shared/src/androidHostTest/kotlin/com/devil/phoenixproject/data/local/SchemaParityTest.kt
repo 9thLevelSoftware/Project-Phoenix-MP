@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.VitruvianDatabase
+import kotlin.test.assertEquals
 import kotlin.test.fail
 import org.junit.Test
 
@@ -14,9 +15,9 @@ import org.junit.Test
  * identical result:
  *
  * 1. A fresh install (Schema.create) must match an upgrade-from-v1 path
- *    (manual v1 + migrate 1->31 + reconcileFullSchema).
+ *    (manual v1 + migrate 1->current + reconcileFullSchema).
  *
- * 2. Every intermediate version (1..30) must upgrade cleanly to 31 with all
+ * 2. Every intermediate version must upgrade cleanly to current with all
  *    manifest columns and indexes present after reconciliation.
  */
 class SchemaParityTest {
@@ -148,10 +149,54 @@ class SchemaParityTest {
         }
     }
 
+    @Test
+    fun `migration 32 deletes instructional tutorial videos and preserves demos`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 32)
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'ex-1', 'Bench Press', 'Bench Press', '', 0, 'CHEST', 'CHEST', '',
+                'BAR', '', '', '', '', 1, 0, 0,
+                0, 0, 0, NULL, '', 'DOUBLE',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO ExerciseVideo (exerciseId, angle, videoUrl, thumbnailUrl, isTutorial)
+            VALUES ('ex-1', 'front', 'https://example.com/demo.mp4', 'https://example.com/demo.jpg', 0)
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO ExerciseVideo (exerciseId, angle, videoUrl, thumbnailUrl, isTutorial)
+            VALUES ('ex-1', 'tutorial', 'https://example.com/tutorial.mp4', 'https://example.com/tutorial.jpg', 1)
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 32, 33)
+
+        assertEquals(1L, countExerciseVideos(driver, isTutorial = false))
+        assertEquals(0L, countExerciseVideos(driver, isTutorial = true))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 31L
+        private const val CURRENT_VERSION = 33L
 
         /**
          * Transient tables are intermediate artifacts of table-rebuild migrations
@@ -427,5 +472,21 @@ class SchemaParityTest {
             parameters = 0,
         )
         return exists
+    }
+
+    private fun countExerciseVideos(driver: SqlDriver, isTutorial: Boolean): Long {
+        var count = 0L
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT COUNT(*) FROM ExerciseVideo WHERE isTutorial = ${if (isTutorial) 1 else 0}",
+            mapper = { cursor ->
+                if (cursor.next().value) {
+                    count = cursor.getLong(0) ?: 0L
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        return count
     }
 }

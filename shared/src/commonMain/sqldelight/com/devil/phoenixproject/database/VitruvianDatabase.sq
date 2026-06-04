@@ -514,7 +514,7 @@ DELETE FROM WorkoutSession;
 
 -- Exercise Video Queries
 selectVideosByExercise:
-SELECT * FROM ExerciseVideo WHERE exerciseId = ?;
+SELECT * FROM ExerciseVideo WHERE exerciseId = ? AND isTutorial = 0;
 
 countVideos:
 SELECT COUNT(*) FROM ExerciseVideo;
