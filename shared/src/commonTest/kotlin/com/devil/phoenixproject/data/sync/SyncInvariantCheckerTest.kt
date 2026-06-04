@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SyncInvariantCheckerTest {
@@ -80,6 +81,65 @@ class SyncInvariantCheckerTest {
         )
 
         assertTrue(violations.isEmpty(), "Expected no invariant warnings, got $violations")
+    }
+
+    @Test
+    fun `relationship id comparisons ignore UUID casing`() {
+        val response = PortalSyncPullResponse(
+            syncTime = 123L,
+            sessions = listOf(
+                PullWorkoutSessionDto(
+                    id = "session-uuid",
+                    exercises = listOf(
+                        PullExerciseDto(
+                            id = "exercise-uuid",
+                            sessionId = "SESSION-UUID",
+                            sets = listOf(
+                                PullSetDto(
+                                    id = "set-uuid",
+                                    exerciseId = "EXERCISE-UUID",
+                                    repSummaries = listOf(
+                                        PullRepSummaryDto(id = "rep-uuid", setId = "SET-UUID"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-uuid",
+                    name = "Push",
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "routine-exercise-uuid",
+                            routineId = "ROUTINE-UUID",
+                            exerciseId = "catalog-bench",
+                            name = "Bench",
+                        ),
+                    ),
+                ),
+            ),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = "cycle-uuid",
+                    name = "Base",
+                    days = listOf(PullCycleDayDto(id = "day-uuid", cycleId = "CYCLE-UUID")),
+                ),
+            ),
+        )
+
+        val violations = SyncInvariantChecker.checkPullPage(
+            pullResponse = response,
+            mobileSessions = emptyList(),
+            sessionNoteKeys = setOf("SESSION-UUID"),
+        )
+
+        assertFalse(
+            violations.any { it.code.startsWith("ORPHAN_") },
+            "Case-only UUID differences should not be reported as orphan references: $violations",
+        )
     }
 
     @Test

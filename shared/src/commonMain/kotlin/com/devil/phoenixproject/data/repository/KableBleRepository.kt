@@ -175,11 +175,14 @@ class KableBleRepository : BleRepository {
 
     override suspend fun shutdown() {
         log.i { "Shutting down BLE repository" }
-        connectionManager.shutdown()
-        _scannedDevices.value = emptyList()
-        _heuristicData.value = null
-        clearDiagnostics()
-        repositoryJob.cancel()
+        try {
+            connectionManager.shutdown()
+        } finally {
+            _scannedDevices.value = emptyList()
+            _heuristicData.value = null
+            clearDiagnostics()
+            repositoryJob.cancel()
+        }
     }
 
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {

@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 violations=()
 
-while IFS= read -r raw_path; do
+while IFS= read -r -d '' raw_path; do
   path="${raw_path//\\//}"
   lower="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
   is_template=false
@@ -36,7 +36,7 @@ while IFS= read -r raw_path; do
     violations+=("$path (environment files must not be tracked)")
     continue
   fi
-done < <(git -C "$repo_root" ls-files)
+done < <(git -C "$repo_root" ls-files -z)
 
 if (( ${#violations[@]} > 0 )); then
   printf 'Forbidden tracked secret-bearing files found:\n' >&2

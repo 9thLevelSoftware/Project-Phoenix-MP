@@ -441,10 +441,10 @@ class KableBleConnectionManager(
         } catch (e: Exception) {
             e.rethrowIfCancellation()
             log.w { "Shutdown disconnect error (non-fatal): ${e.message}" }
+        } finally {
+            clearConnectionState(clearScannedDevices = true)
+            reportConnectionState(ConnectionState.Disconnected)
         }
-
-        clearConnectionState(clearScannedDevices = true)
-        reportConnectionState(ConnectionState.Disconnected)
     }
 
     // -------------------------------------------------------------------------

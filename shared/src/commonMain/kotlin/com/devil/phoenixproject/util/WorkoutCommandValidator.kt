@@ -95,10 +95,12 @@ object WorkoutCommandValidator {
     private fun isFinite(value: Float): Boolean = !value.isNaN() && !value.isInfinite()
 
     private fun validateWeightRange(weightPerCableKg: Float, allowZero: Boolean): Result<Unit> {
-        val min = if (allowZero) Constants.MIN_WEIGHT_KG else Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG
-        if (weightPerCableKg < min || weightPerCableKg > Constants.MAX_WEIGHT_PER_CABLE_KG) {
+        if (!allowZero && weightPerCableKg <= Constants.MIN_WEIGHT_KG) {
+            return failure("weightPerCableKg must be greater than ${Constants.MIN_WEIGHT_KG}kg, got $weightPerCableKg")
+        }
+        if (weightPerCableKg < Constants.MIN_WEIGHT_KG || weightPerCableKg > Constants.MAX_WEIGHT_PER_CABLE_KG) {
             return failure(
-                "weightPerCableKg must be $min..${Constants.MAX_WEIGHT_PER_CABLE_KG}kg, got $weightPerCableKg",
+                "weightPerCableKg must be ${Constants.MIN_WEIGHT_KG}..${Constants.MAX_WEIGHT_PER_CABLE_KG}kg, got $weightPerCableKg",
             )
         }
         return Result.success(Unit)

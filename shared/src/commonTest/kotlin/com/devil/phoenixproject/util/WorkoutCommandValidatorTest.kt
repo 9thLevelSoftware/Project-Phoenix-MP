@@ -23,6 +23,26 @@ class WorkoutCommandValidatorTest {
     }
 
     @Test
+    fun `normal workout commands allow fractional positive weight`() {
+        assertTrue(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    weightPerCableKg = 0.5f,
+                ),
+            ).isSuccess,
+        )
+        assertTrue(
+            WorkoutCommandValidator.validateLegacyWorkoutCommand(
+                programMode = ProgramMode.OldSchool,
+                weightPerCableKg = 0.5f,
+                targetReps = 8,
+            ).isSuccess,
+        )
+    }
+
+    @Test
     fun `program params reject non-finite and out-of-range weights`() {
         assertFailureContains(
             WorkoutCommandValidator.validateProgramParams(
@@ -35,6 +55,12 @@ class WorkoutCommandValidatorTest {
                 WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 111f),
             ),
             "weightPerCableKg",
+        )
+        assertFailureContains(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 0f),
+            ),
+            "greater than",
         )
     }
 

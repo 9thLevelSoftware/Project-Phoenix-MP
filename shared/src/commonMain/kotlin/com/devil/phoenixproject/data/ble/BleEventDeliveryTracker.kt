@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.ble
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 enum class BleCriticalEventType {
     REP,
@@ -23,16 +24,18 @@ internal class BleEventDeliveryTracker {
     val snapshot: StateFlow<BleEventDeliverySnapshot> = _snapshot.asStateFlow()
 
     fun recordDropped(type: BleCriticalEventType) {
-        _snapshot.value = when (type) {
-            BleCriticalEventType.REP -> _snapshot.value.copy(repEventsDropped = _snapshot.value.repEventsDropped + 1)
+        _snapshot.update { current ->
+            when (type) {
+                BleCriticalEventType.REP -> current.copy(repEventsDropped = current.repEventsDropped + 1)
 
-            BleCriticalEventType.DELOAD -> _snapshot.value.copy(deloadEventsDropped = _snapshot.value.deloadEventsDropped + 1)
+                BleCriticalEventType.DELOAD -> current.copy(deloadEventsDropped = current.deloadEventsDropped + 1)
 
-            BleCriticalEventType.ROM_VIOLATION ->
-                _snapshot.value.copy(romViolationEventsDropped = _snapshot.value.romViolationEventsDropped + 1)
+                BleCriticalEventType.ROM_VIOLATION ->
+                    current.copy(romViolationEventsDropped = current.romViolationEventsDropped + 1)
 
-            BleCriticalEventType.RECONNECTION_REQUEST ->
-                _snapshot.value.copy(reconnectionRequestsDropped = _snapshot.value.reconnectionRequestsDropped + 1)
+                BleCriticalEventType.RECONNECTION_REQUEST ->
+                    current.copy(reconnectionRequestsDropped = current.reconnectionRequestsDropped + 1)
+            }
         }
     }
 }

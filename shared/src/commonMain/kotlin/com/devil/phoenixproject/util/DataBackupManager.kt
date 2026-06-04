@@ -1749,9 +1749,7 @@ abstract class BaseDataBackupManager(
         val routineNameResolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
 
         // JSON header
-        val exportNowMs = KmpUtils.currentTimeMillis()
-        val exportedAt = KmpUtils.formatTimestamp(exportNowMs, "yyyy-MM-dd") + "T" +
-            KmpUtils.formatTimestamp(exportNowMs, "HH:mm:ss") + "Z"
+        val exportedAt = kotlin.time.Instant.fromEpochMilliseconds(KmpUtils.currentTimeMillis()).toString()
         val privacy = json.encodeToString(BackupPrivacyMetadata.serializer(), BackupPrivacyMetadata())
         writer.write("""{"version":$CURRENT_BACKUP_VERSION,"exportedAt":"$exportedAt","appVersion":"${Constants.APP_VERSION}","privacy":$privacy,"data":{""")
 

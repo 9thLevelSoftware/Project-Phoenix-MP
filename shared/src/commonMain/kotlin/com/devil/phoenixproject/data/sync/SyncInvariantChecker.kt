@@ -40,7 +40,7 @@ object SyncInvariantChecker {
         for (session in sessions) {
             addDuplicateIdViolations("DUPLICATE_PULL_EXERCISE_ID", session.exercises.map { it.id }, violations)
             for (exercise in session.exercises) {
-                if (exercise.sessionId.isNotBlank() && exercise.sessionId != session.id) {
+                if (exercise.sessionId.isNotBlank() && !sameId(exercise.sessionId, session.id)) {
                     violations += SyncInvariantViolation(
                         code = "ORPHAN_PULL_EXERCISE",
                         entityId = exercise.id,
@@ -49,7 +49,7 @@ object SyncInvariantChecker {
                 }
                 addDuplicateIdViolations("DUPLICATE_PULL_SET_ID", exercise.sets.map { it.id }, violations)
                 for (set in exercise.sets) {
-                    if (set.exerciseId.isNotBlank() && set.exerciseId != exercise.id) {
+                    if (set.exerciseId.isNotBlank() && !sameId(set.exerciseId, exercise.id)) {
                         violations += SyncInvariantViolation(
                             code = "ORPHAN_PULL_SET",
                             entityId = set.id,
@@ -58,7 +58,7 @@ object SyncInvariantChecker {
                     }
                     addDuplicateIdViolations("DUPLICATE_PULL_REP_SUMMARY_ID", set.repSummaries.map { it.id }, violations)
                     for (rep in set.repSummaries) {
-                        if (rep.setId.isNotBlank() && rep.setId != set.id) {
+                        if (rep.setId.isNotBlank() && !sameId(rep.setId, set.id)) {
                             violations += SyncInvariantViolation(
                                 code = "ORPHAN_PULL_REP_SUMMARY",
                                 entityId = rep.id,
@@ -78,7 +78,7 @@ object SyncInvariantChecker {
         for (routine in routines) {
             addDuplicateIdViolations("DUPLICATE_PULL_ROUTINE_EXERCISE_ID", routine.exercises.map { it.id }, violations)
             for (exercise in routine.exercises) {
-                if (exercise.routineId.isNotBlank() && exercise.routineId != routine.id) {
+                if (exercise.routineId.isNotBlank() && !sameId(exercise.routineId, routine.id)) {
                     violations += SyncInvariantViolation(
                         code = "ORPHAN_PULL_ROUTINE_EXERCISE",
                         entityId = exercise.id,
@@ -103,7 +103,7 @@ object SyncInvariantChecker {
         for (cycle in cycles) {
             addDuplicateIdViolations("DUPLICATE_PULL_CYCLE_DAY_ID", cycle.days.map { it.id }, violations)
             for (day in cycle.days) {
-                if (day.cycleId.isNotBlank() && day.cycleId != cycle.id) {
+                if (day.cycleId.isNotBlank() && !sameId(day.cycleId, cycle.id)) {
                     violations += SyncInvariantViolation(
                         code = "ORPHAN_PULL_CYCLE_DAY",
                         entityId = day.id,
@@ -140,7 +140,7 @@ object SyncInvariantChecker {
             .groupBy {
                 listOf(
                     it.exerciseName.trim().lowercase(),
-                    it.recordType.trim().lowercase(),
+                    it.recordType.orEmpty().trim().lowercase(),
                     it.workoutPhase.orEmpty().trim().lowercase(),
                     it.achievedAt.orEmpty().trim(),
                     it.sessionId.orEmpty().trim(),
@@ -161,9 +161,9 @@ object SyncInvariantChecker {
         sessionNoteKeys: Set<String>,
         violations: MutableList<SyncInvariantViolation>,
     ) {
-        val sessionIds = sessions.map { it.id }.toSet()
+        val sessionIds = sessions.map { it.id.trim().lowercase() }.toSet()
         for (key in sessionNoteKeys) {
-            if (key !in sessionIds) {
+            if (key.trim().lowercase() !in sessionIds) {
                 violations += SyncInvariantViolation(
                     code = "ORPHAN_SESSION_NOTE",
                     entityId = key,
@@ -180,8 +180,8 @@ object SyncInvariantChecker {
         mobileSessions
             .groupBy {
                 listOf(
-                    it.routineSessionId.orEmpty().trim(),
-                    it.exerciseId.orEmpty().trim(),
+                    it.routineSessionId.orEmpty().trim().lowercase(),
+                    it.exerciseId.orEmpty().trim().lowercase(),
                     it.exerciseName.orEmpty().trim().lowercase(),
                     it.timestamp.toString(),
                     it.mode.trim().lowercase(),
@@ -196,6 +196,8 @@ object SyncInvariantChecker {
                 )
             }
     }
+
+    private fun sameId(left: String, right: String): Boolean = left.trim().equals(right.trim(), ignoreCase = true)
 
     private fun addDuplicateIdViolations(
         code: String,
