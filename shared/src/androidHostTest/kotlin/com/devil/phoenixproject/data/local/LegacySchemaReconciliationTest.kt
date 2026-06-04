@@ -4,9 +4,9 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.VitruvianDatabase
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.junit.Test
 
 class LegacySchemaReconciliationTest {
 
@@ -488,5 +488,4 @@ class LegacySchemaReconciliationTest {
         }
         return value
     }
-
 }

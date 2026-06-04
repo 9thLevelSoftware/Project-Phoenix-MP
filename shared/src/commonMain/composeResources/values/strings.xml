@@ -122,7 +122,7 @@
     <string name="settings_language">Language</string>
     <string name="settings_language_description">Select your preferred language</string>
     <string name="settings_language_help">Help improve translations</string>
-    <string name="settings_machine_diagnostics_description">View uptime, fault codes, temperatures, crash data, and warnings from the machine</string>
+    <string name="settings_machine_diagnostics_description">View a redacted machine diagnostics snapshot: uptime, fault codes, temperatures, crash data, and warnings. This is not a full backup.</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Machine Diagnostics</string>
@@ -154,7 +154,7 @@
 
     <!-- ==================== Backup / Restore ==================== -->
     <string name="backup_all_data">Backup All Data</string>
-    <string name="backup_description">This will export all your workout history, routines, training cycles, achievements, and settings to a JSON file.\n\nYou can use this file to restore your data later or transfer to another device.</string>
+    <string name="backup_description">This is a full personal-data export: workout history, routines, training cycles, achievements, profiles, notes, and settings.\n\nIt does not include auth/session tokens, Supabase config, or keystore data. Machine Diagnostics exports are separate redacted troubleshooting snapshots and cannot restore your workouts.</string>
     <string name="restore_from_backup">Restore from Backup</string>
     <string name="restore_description">Select a backup file to restore your data.\n\nExisting data will NOT be overwritten - only new records will be imported.</string>
     <string name="select_file">Select File</string>

@@ -157,6 +157,7 @@ fun BulkWeightAdjustDialog(
                     val pct = selectedPreset ?: percentValue.toFloatOrNull()
                     pct?.let { BulkAdjustMode.Percentage(it) }
                 }
+
                 else -> {
                     val delta = absoluteValue.toFloatOrNull()
                     delta?.let { displayDelta ->
@@ -226,6 +227,7 @@ fun BulkWeightAdjustDialog(
                             selectedPreset = null
                         },
                     )
+
                     1 -> AbsoluteModeContent(
                         absoluteValue = absoluteValue,
                         onValueChange = { absoluteValue = it },
@@ -411,6 +413,7 @@ private fun PreviewRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
+
             hasChanged && newWeight != null -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -442,6 +445,7 @@ private fun PreviewRow(
                     }
                 }
             }
+
             else -> {
                 Text(
                     text = currentFormatted,

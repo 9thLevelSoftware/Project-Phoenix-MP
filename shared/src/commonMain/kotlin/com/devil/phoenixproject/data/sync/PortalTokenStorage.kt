@@ -176,8 +176,7 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_LAST_SYNC] = timestamp
     }
 
-    fun getPhasePRBackfillCheckpoint(profileId: String): Long =
-        settings[phasePRBackfillCheckpointKey(profileId), 0L]
+    fun getPhasePRBackfillCheckpoint(profileId: String): Long = settings[phasePRBackfillCheckpointKey(profileId), 0L]
 
     fun setPhasePRBackfillCheckpoint(profileId: String, timestamp: Long) {
         settings[phasePRBackfillCheckpointKey(profileId)] = timestamp

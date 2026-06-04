@@ -4,12 +4,12 @@ import com.devil.phoenixproject.data.repository.SqlDelightSyncRepository
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /**
  * Conflict Resolution Strategy Tests

@@ -125,13 +125,16 @@ class SyncFailureCapTest {
                 SyncErrorCategory.TRANSIENT -> {
                     if (currentBackoffIndex < BACKOFF_SCHEDULE_MINUTES.size) currentBackoffIndex++
                 }
+
                 SyncErrorCategory.PERMANENT -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true
                 }
+
                 SyncErrorCategory.NETWORK -> {
                     isWaitingForConnectivity = true
                 }
+
                 SyncErrorCategory.AUTH -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true

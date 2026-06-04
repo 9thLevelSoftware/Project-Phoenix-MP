@@ -3,11 +3,11 @@ package com.devil.phoenixproject.domain.premium
 import com.devil.phoenixproject.domain.model.MovementCategory
 import com.devil.phoenixproject.domain.model.SessionSummary
 import com.devil.phoenixproject.domain.model.TimeWindow
-import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.datetime.TimeZone
 
 class SmartSuggestionsEngineTest {
 

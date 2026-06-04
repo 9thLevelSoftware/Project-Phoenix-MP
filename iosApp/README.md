@@ -22,6 +22,21 @@ The framework will be built at:
 
 ## Xcode Project Setup
 
+### Supabase Configuration
+
+The Xcode project references `VitruvianPhoenix/Config/Supabase.xcconfig`, but
+the real file is intentionally ignored by git because it contains environment
+values. Create it locally from the tracked template before opening the project:
+
+```bash
+cp VitruvianPhoenix/Config/Supabase.xcconfig.example VitruvianPhoenix/Config/Supabase.xcconfig
+```
+
+Fill in local development values in `Supabase.xcconfig`. GitHub Actions writes
+this file from encrypted repository secrets during iOS build workflows, so the
+real file must not be committed. If a real anon key was ever committed, rotate
+it in Supabase and update the GitHub secrets.
+
 ### Option 1: Create New Xcode Project
 
 1. Open Xcode and create a new iOS App project:

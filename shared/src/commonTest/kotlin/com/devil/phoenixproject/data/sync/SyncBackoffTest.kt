@@ -99,15 +99,13 @@ class SyncBackoffTest {
         }
         fun consecutiveFailures(): Int = consecutiveFailures
 
-        private fun currentThrottleMillis(): Long {
-            return if (currentBackoffIndex == 0) {
-                DEFAULT_THROTTLE_MILLIS
-            } else {
-                val delayMin = BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) {
-                    BACKOFF_SCHEDULE_MINUTES.last()
-                }
-                delayMin * 60 * 1000L
+        private fun currentThrottleMillis(): Long = if (currentBackoffIndex == 0) {
+            DEFAULT_THROTTLE_MILLIS
+        } else {
+            val delayMin = BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) {
+                BACKOFF_SCHEDULE_MINUTES.last()
             }
+            delayMin * 60 * 1000L
         }
 
         suspend fun onWorkoutCompleted() = attemptSync(bypassThrottle = true)
@@ -163,13 +161,16 @@ class SyncBackoffTest {
                         currentBackoffIndex++
                     }
                 }
+
                 SyncErrorCategory.PERMANENT -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true
                 }
+
                 SyncErrorCategory.NETWORK -> {
                     isWaitingForConnectivity = true
                 }
+
                 SyncErrorCategory.AUTH -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true

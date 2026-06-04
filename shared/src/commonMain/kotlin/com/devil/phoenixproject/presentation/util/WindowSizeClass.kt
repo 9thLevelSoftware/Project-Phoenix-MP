@@ -100,13 +100,11 @@ fun shouldUseCompactAccessibilityLayout(
     fontScale: Float,
     boldTextEnabled: Boolean,
     fontScaleThreshold: Float = 1.15f,
-): Boolean {
-    return windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact ||
-        (
-            windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact &&
-                (fontScale >= fontScaleThreshold || boldTextEnabled)
-            )
-}
+): Boolean = windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact ||
+    (
+        windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact &&
+            (fontScale >= fontScaleThreshold || boldTextEnabled)
+        )
 
 /**
  * Responsive dimension helpers for common UI patterns.

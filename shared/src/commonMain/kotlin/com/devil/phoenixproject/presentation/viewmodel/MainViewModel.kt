@@ -186,8 +186,7 @@ class MainViewModel constructor(
     val cycleDayCompletionEvent get() = workoutSessionManager.coordinator.cycleDayCompletionEvent
     fun clearCycleDayCompletionEvent() = workoutSessionManager.clearCycleDayCompletionEvent()
 
-    suspend fun tagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) =
-        workoutSessionManager.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
+    suspend fun tagJustLiftSessionExercise(sessionId: String, exercise: Exercise, isAmrap: Boolean) = workoutSessionManager.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
 
     // ===== BLE Connection Delegation =====
 

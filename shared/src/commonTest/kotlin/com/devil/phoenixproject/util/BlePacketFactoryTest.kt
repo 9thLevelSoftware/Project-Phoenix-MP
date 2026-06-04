@@ -1419,7 +1419,7 @@ class BlePacketFactoryTest {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
-            weightPerCableKg = 1.5f,  // Suspiciously low but valid
+            weightPerCableKg = 1.5f, // Suspiciously low but valid
             progressionRegressionKg = 0.5f,
         )
 

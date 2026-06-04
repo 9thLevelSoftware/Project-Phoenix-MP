@@ -28,16 +28,14 @@ class AsymmetryThresholdTest {
      * Build a list of workout metrics where every sample has exactly (loadA, loadB).
      * That way the avg of the list is just (loadA, loadB) itself — no sampling noise.
      */
-    private fun metricsWithLoads(loadA: Float, loadB: Float, count: Int = 5): List<WorkoutMetric> {
-        return List(count) {
-            WorkoutMetric(
-                timestamp = 1000L + it,
-                loadA = loadA,
-                loadB = loadB,
-                positionA = 0f,
-                positionB = 0f,
-            )
-        }
+    private fun metricsWithLoads(loadA: Float, loadB: Float, count: Int = 5): List<WorkoutMetric> = List(count) {
+        WorkoutMetric(
+            timestamp = 1000L + it,
+            loadA = loadA,
+            loadB = loadB,
+            positionA = 0f,
+            positionB = 0f,
+        )
     }
 
     // ==================== Exact Boundary Values ====================

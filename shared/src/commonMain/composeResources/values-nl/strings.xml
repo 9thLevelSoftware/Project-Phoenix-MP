@@ -118,7 +118,7 @@
     <string name="settings_language">Taal</string>
     <string name="settings_language_description">Selecteer je voorkeurstaal</string>
     <string name="settings_language_help">Help vertalingen te verbeteren</string>
-    <string name="settings_machine_diagnostics_description">Bekijk uptime, foutcodes, temperaturen, crashgegevens en waarschuwingen van de machine</string>
+    <string name="settings_machine_diagnostics_description">Bekijk een geredigeerde machine-diagnosesnapshot: uptime, foutcodes, temperaturen, crashgegevens en waarschuwingen. Dit is geen volledige back-up.</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Machinediagnose</string>
@@ -149,7 +149,7 @@
 
     <!-- Backup -->
     <string name="backup_all_data">Alle gegevens back-uppen</string>
-    <string name="backup_description">Dit exporteert al je trainingsgeschiedenis, routines, trainingscycli, prestaties en instellingen naar een JSON-bestand.\n\nJe kunt dit bestand gebruiken om je gegevens later te herstellen of over te zetten naar een ander apparaat.</string>
+    <string name="backup_description">Dit is een volledige export van persoonlijke gegevens: trainingsgeschiedenis, routines, trainingscycli, prestaties, profielen, notities en instellingen.\n\nDeze bevat geen authenticatie-/sessietokens, Supabase-configuratie of keystore-gegevens. Machine-diagnose-exporten zijn afzonderlijke geredigeerde probleemoplossingssnapshots en kunnen je trainingen niet herstellen.</string>
     <string name="restore_from_backup">Herstellen vanuit back-up</string>
     <string name="restore_description">Selecteer een back-upbestand om je gegevens te herstellen.\n\nBestaande gegevens worden NIET overschreven - alleen nieuwe records worden geïmporteerd.</string>
     <string name="select_file">Selecteer bestand</string>

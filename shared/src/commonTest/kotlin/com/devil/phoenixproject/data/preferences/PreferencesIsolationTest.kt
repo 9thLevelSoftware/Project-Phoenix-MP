@@ -3,11 +3,11 @@ package com.devil.phoenixproject.data.preferences
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.testutil.FakePreferencesManager
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /**
  * Tests verifying that v0.9.0 preference fields are properly isolated from each other.

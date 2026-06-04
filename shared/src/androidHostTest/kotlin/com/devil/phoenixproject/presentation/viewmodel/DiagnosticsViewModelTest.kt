@@ -92,6 +92,8 @@ class DiagnosticsViewModelTest {
         )
 
         assertTrue(export.contains("Crash:"))
+        assertTrue(export.contains("Classification: REDACTED_DIAGNOSTICS"))
+        assertTrue(export.contains("no workout history, profiles, auth/session tokens, Supabase config, or keystore data"))
         assertTrue(export.contains("Stack Base64: AQID"))
         assertTrue(export.contains("Warnings: 2147483652 (0x80000004)"))
     }

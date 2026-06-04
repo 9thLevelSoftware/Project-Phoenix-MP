@@ -3,11 +3,11 @@ package com.devil.phoenixproject.data.repository
 import app.cash.turbine.test
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class SqlDelightGamificationRepositoryTest {
 

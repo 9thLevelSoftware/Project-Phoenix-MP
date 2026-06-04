@@ -23,8 +23,7 @@ class FakeBackupDestinationResolver : BackupDestinationResolver {
     /** Controls what [listFiles] returns. */
     var listFilesResult: List<String> = emptyList()
 
-    override suspend fun isAccessible(destination: BackupDestination.Custom): Boolean =
-        isAccessibleResult
+    override suspend fun isAccessible(destination: BackupDestination.Custom): Boolean = isAccessibleResult
 
     override suspend fun writeFile(
         destination: BackupDestination.Custom,
@@ -35,6 +34,5 @@ class FakeBackupDestinationResolver : BackupDestinationResolver {
         return writeFileResult
     }
 
-    override suspend fun listFiles(destination: BackupDestination.Custom): List<String> =
-        listFilesResult
+    override suspend fun listFiles(destination: BackupDestination.Custom): List<String> = listFilesResult
 }

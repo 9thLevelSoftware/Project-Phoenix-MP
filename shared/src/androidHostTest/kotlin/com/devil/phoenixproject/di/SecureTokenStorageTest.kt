@@ -1,9 +1,9 @@
 package com.devil.phoenixproject.di
 
+import com.google.common.truth.Truth.assertThat
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
 import org.junit.Test
-import com.google.common.truth.Truth.assertThat
 
 /**
  * Tests for secure token storage migration logic.

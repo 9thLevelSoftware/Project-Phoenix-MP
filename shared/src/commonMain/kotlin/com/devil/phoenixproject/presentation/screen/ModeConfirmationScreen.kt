@@ -17,9 +17,9 @@ import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.util.format
 import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.format
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res

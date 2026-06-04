@@ -10,18 +10,17 @@ import kotlin.test.assertTrue
 
 class VbtThresholdTest {
 
-    private fun createUniformMetrics(velocity: Double, count: Int = 5): List<WorkoutMetric> =
-        (1..count).map {
-            WorkoutMetric(
-                timestamp = currentTimeMillis(),
-                loadA = 50f,
-                loadB = 50f,
-                positionA = 0f,
-                positionB = 0f,
-                velocityA = velocity,
-                velocityB = velocity,
-            )
-        }
+    private fun createUniformMetrics(velocity: Double, count: Int = 5): List<WorkoutMetric> = (1..count).map {
+        WorkoutMetric(
+            timestamp = currentTimeMillis(),
+            loadA = 50f,
+            loadB = 50f,
+            positionA = 0f,
+            positionB = 0f,
+            velocityA = velocity,
+            velocityB = velocity,
+        )
+    }
 
     @Test
     fun `default threshold 20 percent triggers shouldStopSet at 20 percent loss`() {

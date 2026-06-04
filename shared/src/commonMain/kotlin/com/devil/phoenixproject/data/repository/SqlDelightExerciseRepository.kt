@@ -47,25 +47,23 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
         updatedAt: Long?,
         serverId: String?,
         deletedAt: Long?,
-    ): Exercise {
-        return Exercise(
-            id = id,
-            name = name,
-            muscleGroup = muscleGroup,
-            muscleGroups = muscleGroups,
-            equipment = equipment,
-            isFavorite = isFavorite == 1L,
+    ): Exercise = Exercise(
+        id = id,
+        name = name,
+        muscleGroup = muscleGroup,
+        muscleGroups = muscleGroups,
+        equipment = equipment,
+        isFavorite = isFavorite == 1L,
+        isCustom = isCustom == 1L,
+        timesPerformed = timesPerformed.toInt(),
+        oneRepMaxKg = one_rep_max_kg?.toFloat(),
+        cableIntent = resolveCableIntent(
+            sidedness = sidedness,
+            defaultCableConfig = defaultCableConfig,
             isCustom = isCustom == 1L,
-            timesPerformed = timesPerformed.toInt(),
-            oneRepMaxKg = one_rep_max_kg?.toFloat(),
-            cableIntent = resolveCableIntent(
-                sidedness = sidedness,
-                defaultCableConfig = defaultCableConfig,
-                isCustom = isCustom == 1L,
-            ),
-            displayName = displayName ?: name,
-        )
-    }
+        ),
+        displayName = displayName ?: name,
+    )
 
     private fun resolveCableIntent(
         sidedness: String?,
@@ -76,8 +74,11 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
 
         return when (sidedness?.trim()?.lowercase()) {
             "single", "unilateral" -> ExerciseCableIntent.SINGLE
+
             "double", "bilateral" -> ExerciseCableIntent.DUAL
+
             "alternating" -> ExerciseCableIntent.EITHER
+
             else -> when (defaultCableConfig.trim().uppercase()) {
                 "SINGLE" -> ExerciseCableIntent.SINGLE
                 "EITHER" -> ExerciseCableIntent.EITHER

@@ -211,6 +211,10 @@ class FakeBleRepository : BleRepository {
         setConnectionState(ConnectionState.Disconnected)
     }
 
+    override suspend fun shutdown() {
+        reset()
+    }
+
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
         setConnectionState(ConnectionState.Scanning)
 

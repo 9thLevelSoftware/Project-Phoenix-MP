@@ -501,8 +501,7 @@ class IntegrationManager(
         hasMore = other.hasMore,
     )
 
-    private fun String.parseEpochMillisOrNow(field: String, externalId: String): Long =
-        parseEpochMillisOrNull(field, externalId) ?: currentTimeMillis()
+    private fun String.parseEpochMillisOrNow(field: String, externalId: String): Long = parseEpochMillisOrNull(field, externalId) ?: currentTimeMillis()
 
     private fun String.parseEpochMillisOrNull(field: String, externalId: String): Long? = try {
         Instant.parse(this).toEpochMilliseconds()

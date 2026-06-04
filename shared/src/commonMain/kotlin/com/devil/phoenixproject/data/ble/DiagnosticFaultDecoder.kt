@@ -30,7 +30,9 @@ fun decodeDiagnosticFault(category: DiagnosticFaultCategory, code: Int): Diagnos
     val normalizedCode = code and 0xFFFF
     val label = when (category) {
         DiagnosticFaultCategory.VITRUVIAN -> decodeVitruvianFault(normalizedCode)
+
         DiagnosticFaultCategory.OTHER -> decodeOtherFault(normalizedCode)
+
         DiagnosticFaultCategory.MOTOR_A,
         DiagnosticFaultCategory.MOTOR_B,
         -> decodeMotorFault(normalizedCode)
@@ -38,11 +40,9 @@ fun decodeDiagnosticFault(category: DiagnosticFaultCategory, code: Int): Diagnos
     return DiagnosticFault(category = category, code = normalizedCode, label = label)
 }
 
-fun formatDiagnosticFaultCode(code: Int): String =
-    "0x${(code and 0xFFFF).toString(16).uppercase().padStart(4, '0')}"
+fun formatDiagnosticFaultCode(code: Int): String = "0x${(code and 0xFFFF).toString(16).uppercase().padStart(4, '0')}"
 
-fun formatDiagnosticUInt32(value: Long): String =
-    "0x${(value and 0xFFFF_FFFFL).toString(16).uppercase().padStart(8, '0')}"
+fun formatDiagnosticUInt32(value: Long): String = "0x${(value and 0xFFFF_FFFFL).toString(16).uppercase().padStart(8, '0')}"
 
 private fun decodeVitruvianFault(code: Int): String = decodeFlaggedFault(
     code = code,

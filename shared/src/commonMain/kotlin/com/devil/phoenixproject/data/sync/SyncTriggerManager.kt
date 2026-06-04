@@ -129,15 +129,13 @@ class SyncTriggerManager(private val syncManager: SyncManager, private val conne
     /**
      * Gets the current throttle delay in milliseconds, accounting for backoff.
      */
-    private fun getCurrentThrottleMillis(): Long {
-        return if (currentBackoffIndex == 0) {
-            DEFAULT_THROTTLE_MILLIS
-        } else {
-            val delayMinutes = BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) {
-                BACKOFF_SCHEDULE_MINUTES.last()
-            }
-            delayMinutes * 60 * 1000L
+    private fun getCurrentThrottleMillis(): Long = if (currentBackoffIndex == 0) {
+        DEFAULT_THROTTLE_MILLIS
+    } else {
+        val delayMinutes = BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) {
+            BACKOFF_SCHEDULE_MINUTES.last()
         }
+        delayMinutes * 60 * 1000L
     }
 
     /**

@@ -7,13 +7,13 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
-import org.junit.Test
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import org.junit.Test
 
 // =============================================================================
 // Part 1: BackupJsonNavigator unit tests
@@ -36,12 +36,12 @@ class BackupJsonNavigatorTest {
         }
 
         override fun close() {
-            reader?.close(); reader = null
+            reader?.close()
+            reader = null
         }
 
         override fun read(): Int = reader?.read() ?: -1
-        override fun read(buffer: CharArray, offset: Int, length: Int): Int =
-            reader?.read(buffer, offset, length) ?: -1
+        override fun read(buffer: CharArray, offset: Int, length: Int): Int = reader?.read(buffer, offset, length) ?: -1
     }
 
     private fun navigatorFor(json: String): BackupJsonNavigator {
@@ -321,8 +321,11 @@ class BackupJsonNavigatorTest {
         while (nav.hasNextInObject()) {
             when (nav.nextName()) {
                 "version" -> version = nav.nextInt()
+
                 "exportedAt" -> nav.skipValue()
+
                 "appVersion" -> nav.skipValue()
+
                 "data" -> {
                     nav.beginObject()
                     while (nav.hasNextInObject()) {
@@ -391,12 +394,12 @@ class StreamingImportRoundTripTest {
         }
 
         override fun close() {
-            reader?.close(); reader = null
+            reader?.close()
+            reader = null
         }
 
         override fun read(): Int = reader?.read() ?: -1
-        override fun read(buffer: CharArray, offset: Int, length: Int): Int =
-            reader?.read(buffer, offset, length) ?: -1
+        override fun read(buffer: CharArray, offset: Int, length: Int): Int = reader?.read(buffer, offset, length) ?: -1
     }
 
     private class TestDataBackupManager(
@@ -408,8 +411,7 @@ class StreamingImportRoundTripTest {
             return BackupJsonWriter(tempFile.absolutePath)
         }
 
-        override suspend fun finalizeExport(tempFilePath: String): Result<String> =
-            Result.success(tempFilePath)
+        override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
 
         override suspend fun saveToFile(backup: BackupData): Result<String> {
             error("Not needed for tests")
@@ -439,8 +441,7 @@ class StreamingImportRoundTripTest {
         override fun pruneOldBackups(keepCount: Int) = Unit
 
         /** Public wrapper exposing the protected [importFromStream] for testing. */
-        fun importFromStreamPublic(source: BackupStreamSource): Result<ImportResult> =
-            importFromStream(source)
+        fun importFromStreamPublic(source: BackupStreamSource): Result<ImportResult> = importFromStream(source)
     }
 
     @Test

@@ -69,8 +69,14 @@ internal fun sha256(input: ByteArray): ByteArray {
         -0x6f410006, -0x5baf9315, -0x41065c09, -0x398e870e,
     )
     val h = intArrayOf(
-        0x6a09e667, -0x4498517b, 0x3c6ef372, -0x5ab00ac6,
-        0x510e527f, -0x64fa9774, 0x1f83d9ab, 0x5be0cd19,
+        0x6a09e667,
+        -0x4498517b,
+        0x3c6ef372,
+        -0x5ab00ac6,
+        0x510e527f,
+        -0x64fa9774,
+        0x1f83d9ab,
+        0x5be0cd19,
     )
     val bitLen = input.size.toLong() * 8L
     val padLen = ((56 - (input.size + 1) % 64) + 64) % 64
@@ -96,8 +102,14 @@ internal fun sha256(input: ByteArray): ByteArray {
             val s1 = w[i - 2].rotateRight(17) xor w[i - 2].rotateRight(19) xor (w[i - 2] ushr 10)
             w[i] = w[i - 16] + s0 + w[i - 7] + s1
         }
-        var a = h[0]; var b = h[1]; var c = h[2]; var d = h[3]
-        var e = h[4]; var f = h[5]; var g = h[6]; var hh = h[7]
+        var a = h[0]
+        var b = h[1]
+        var c = h[2]
+        var d = h[3]
+        var e = h[4]
+        var f = h[5]
+        var g = h[6]
+        var hh = h[7]
         for (i in 0 until 64) {
             val s1 = e.rotateRight(6) xor e.rotateRight(11) xor e.rotateRight(25)
             val ch = (e and f) xor (e.inv() and g)
@@ -105,11 +117,23 @@ internal fun sha256(input: ByteArray): ByteArray {
             val s0 = a.rotateRight(2) xor a.rotateRight(13) xor a.rotateRight(22)
             val maj = (a and b) xor (a and c) xor (b and c)
             val t2 = s0 + maj
-            hh = g; g = f; f = e; e = d + t1
-            d = c; c = b; b = a; a = t1 + t2
+            hh = g
+            g = f
+            f = e
+            e = d + t1
+            d = c
+            c = b
+            b = a
+            a = t1 + t2
         }
-        h[0] += a; h[1] += b; h[2] += c; h[3] += d
-        h[4] += e; h[5] += f; h[6] += g; h[7] += hh
+        h[0] += a
+        h[1] += b
+        h[2] += c
+        h[3] += d
+        h[4] += e
+        h[5] += f
+        h[6] += g
+        h[7] += hh
         chunkStart += 64
     }
 
@@ -128,8 +152,7 @@ internal fun sha256(input: ByteArray): ByteArray {
  * padding characters to be stripped.
  */
 @OptIn(ExperimentalEncodingApi::class)
-internal fun ByteArray.toBase64UrlNoPad(): String =
-    Base64.UrlSafe.encode(this).trimEnd('=')
+internal fun ByteArray.toBase64UrlNoPad(): String = Base64.UrlSafe.encode(this).trimEnd('=')
 
 /**
  * Generate a PKCE verifier + S256 challenge.

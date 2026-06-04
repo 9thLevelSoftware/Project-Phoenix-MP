@@ -319,7 +319,9 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                 Tab(
                     selected = pagerState.currentPage == 0,
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
-                    text = if (useCompactTabs) null else {
+                    text = if (useCompactTabs) {
+                        null
+                    } else {
                         {
                             Text(
                                 stringResource(Res.string.analytics_dashboard),
@@ -348,7 +350,9 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                 Tab(
                     selected = pagerState.currentPage == 1,
                     onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
-                    text = if (useCompactTabs) null else {
+                    text = if (useCompactTabs) {
+                        null
+                    } else {
                         {
                             Text(
                                 stringResource(Res.string.analytics_progress),
@@ -377,7 +381,9 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                 Tab(
                     selected = pagerState.currentPage == 2,
                     onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
-                    text = if (useCompactTabs) null else {
+                    text = if (useCompactTabs) {
+                        null
+                    } else {
                         {
                             Text(
                                 stringResource(Res.string.analytics_history),

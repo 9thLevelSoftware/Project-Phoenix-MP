@@ -302,7 +302,6 @@ fun WorkoutHud(
                         .padding(end = 4.dp),
                 )
             }
-
         }
     }
 }
@@ -1128,7 +1127,7 @@ private fun VelocityLossIndicator(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "${currentLossPercent.roundToInt()}% / ${thresholdPercent}%",
+                "${currentLossPercent.roundToInt()}% / $thresholdPercent%",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = if (shouldStopSet) FontWeight.Bold else FontWeight.Normal,
                 color = if (shouldStopSet) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurface,

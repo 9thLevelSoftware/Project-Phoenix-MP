@@ -156,8 +156,7 @@ class SyncManager(
             RegexOption.IGNORE_CASE,
         )
 
-        private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String =
-            "$exerciseId:$timestamp"
+        private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
     }
 
     /**
@@ -933,7 +932,7 @@ class SyncManager(
                                     "Manual retry required after investigating the issue. " +
                                     "Last error: ${error?.message}",
                                 null,
-                                (error as? PortalApiException)?.statusCode
+                                (error as? PortalApiException)?.statusCode,
                             )
                             return Result.failure(exhaustedError)
                         }
@@ -1069,17 +1068,16 @@ class SyncManager(
         val filteredBadgeIds = filterUuids(rawBadgeIds, "badgeIds")
         val filteredPrIds = filterUuids(rawPrIds, "personalRecordIds")
 
-        fun <T> capParity(list: List<T>, label: String): List<T> =
-            if (list.size <= SyncConfig.MAX_PARITY_IDS) {
-                list
-            } else {
-                Logger.w("SyncManager") {
-                    "Parity list '$label' has ${list.size} entries; truncating to last " +
-                        "${SyncConfig.MAX_PARITY_IDS} to stay within server cap. " +
-                        "Local dedupe will handle the older tail."
-                }
-                list.takeLast(SyncConfig.MAX_PARITY_IDS)
+        fun <T> capParity(list: List<T>, label: String): List<T> = if (list.size <= SyncConfig.MAX_PARITY_IDS) {
+            list
+        } else {
+            Logger.w("SyncManager") {
+                "Parity list '$label' has ${list.size} entries; truncating to last " +
+                    "${SyncConfig.MAX_PARITY_IDS} to stay within server cap. " +
+                    "Local dedupe will handle the older tail."
             }
+            list.takeLast(SyncConfig.MAX_PARITY_IDS)
+        }
 
         val knownEntityIds = KnownEntityIds(
             sessionIds = capParity(filteredSessionIds, "sessionIds"),
@@ -1343,6 +1341,21 @@ class SyncManager(
                     )
                 }
 
+        val syncInvariantViolations = SyncInvariantChecker.checkPullPage(
+            pullResponse = pullResponse,
+            mobileSessions = mobileSessions,
+            sessionNoteKeys = sessionNotesMap.keys,
+        )
+        if (syncInvariantViolations.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                val sample = syncInvariantViolations.take(8).joinToString("; ") { violation ->
+                    "${violation.code}:${violation.entityId ?: "n/a"}"
+                }
+                "Pull invariant warnings (${syncInvariantViolations.size}): $sample" +
+                    if (syncInvariantViolations.size > 8) " ..." else ""
+            }
+        }
+
         // Phase 3.3 (audit item #1): build per-session updatedAt map keyed
         // on the per-exercise WorkoutSession.id (== portal exercise id).
         // Each portal session's updatedAt applies to all child mobile rows.
@@ -1535,8 +1548,7 @@ internal data class PushPayloadDuplicateKeys(
     val table: String,
     val ids: List<String>,
 ) {
-    fun toExceptionMessage(): String =
-        "Duplicate IDs in local push payload: $table contains duplicate key(s): ${ids.joinToString()}"
+    fun toExceptionMessage(): String = "Duplicate IDs in local push payload: $table contains duplicate key(s): ${ids.joinToString()}"
 }
 
 internal fun findPushPayloadDuplicateKeys(

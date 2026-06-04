@@ -24,9 +24,9 @@ import com.devil.phoenixproject.domain.model.ExternalRoutine
 import com.devil.phoenixproject.domain.model.ExternalRoutineFolder
 import com.devil.phoenixproject.domain.model.IntegrationEntitlementState
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.IntegrationStatus
 import com.devil.phoenixproject.domain.model.IntegrationSyncProgress
 import com.devil.phoenixproject.domain.model.IntegrationSyncResult
-import com.devil.phoenixproject.domain.model.IntegrationStatus
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
 import kotlinx.coroutines.flow.MutableSharedFlow

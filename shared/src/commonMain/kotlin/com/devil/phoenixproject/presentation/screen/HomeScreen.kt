@@ -62,17 +62,17 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_streak
 import vitruvianprojectphoenix.shared.generated.resources.cd_start_workout
+import vitruvianprojectphoenix.shared.generated.resources.cd_streak
 import vitruvianprojectphoenix.shared.generated.resources.start_workout
-import kotlin.time.Clock
-import kotlin.time.Instant
 
 private const val HOME_CONTENT_MAX_WIDTH = 720
 

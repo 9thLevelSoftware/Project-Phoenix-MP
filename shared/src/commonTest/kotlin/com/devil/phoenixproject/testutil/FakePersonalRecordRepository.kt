@@ -351,7 +351,5 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         prType: PRType,
         phase: WorkoutPhase,
         profileId: String,
-    ): String {
-        return "$exerciseId-${normalizeWorkoutModeKey(workoutMode)}-$prType-$phase-$profileId"
-    }
+    ): String = "$exerciseId-${normalizeWorkoutModeKey(workoutMode)}-$prType-$phase-$profileId"
 }

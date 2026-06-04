@@ -18,8 +18,8 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.shared.R
 import com.devil.phoenixproject.util.DeviceInfo
-import kotlinx.coroutines.flow.SharedFlow
 import kotlin.random.Random
+import kotlinx.coroutines.flow.SharedFlow
 
 @Composable
 actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
@@ -96,13 +96,11 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     }
 }
 
-private fun loadSound(context: Context, soundPool: SoundPool, cue: AndroidCueResource): Int? {
-    return try {
-        soundPool.load(context, cue.rawResId, 1)
-    } catch (e: Exception) {
-        Logger.e(e) { "Failed to load sound '${cue.name}'" }
-        null
-    }
+private fun loadSound(context: Context, soundPool: SoundPool, cue: AndroidCueResource): Int? = try {
+    soundPool.load(context, cue.rawResId, 1)
+} catch (e: Exception) {
+    Logger.e(e) { "Failed to load sound '${cue.name}'" }
+    null
 }
 
 /**
@@ -208,11 +206,10 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     }
 }
 
-private fun buildCueAudioAttributes(): AudioAttributes =
-    AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_MEDIA)
-        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-        .build()
+private fun buildCueAudioAttributes(): AudioAttributes = AudioAttributes.Builder()
+    .setUsage(AudioAttributes.USAGE_MEDIA)
+    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+    .build()
 
 internal data class AndroidCueResource(
     val name: String,
@@ -321,15 +318,14 @@ internal object AndroidCueResources {
         .distinctBy { it.name }
         .sortedBy { it.name }
 
-    fun cueForEvent(event: HapticEvent): AndroidCueResource? =
-        when (event) {
-            is HapticEvent.BADGE_EARNED -> badgeCues[Random.nextInt(badgeCues.size)]
-            is HapticEvent.PERSONAL_RECORD -> prCues[Random.nextInt(prCues.size)]
-            is HapticEvent.REP_COUNT_ANNOUNCED -> repCountCues.getOrNull(event.repNumber - 1)
-            is HapticEvent.COUNTDOWN_TICK -> countdownTickCue
-            is HapticEvent.ERROR -> null
-            else -> eventCues[event]
-        }
+    fun cueForEvent(event: HapticEvent): AndroidCueResource? = when (event) {
+        is HapticEvent.BADGE_EARNED -> badgeCues[Random.nextInt(badgeCues.size)]
+        is HapticEvent.PERSONAL_RECORD -> prCues[Random.nextInt(prCues.size)]
+        is HapticEvent.REP_COUNT_ANNOUNCED -> repCountCues.getOrNull(event.repNumber - 1)
+        is HapticEvent.COUNTDOWN_TICK -> countdownTickCue
+        is HapticEvent.ERROR -> null
+        else -> eventCues[event]
+    }
 }
 
 @SuppressLint("MissingPermission")

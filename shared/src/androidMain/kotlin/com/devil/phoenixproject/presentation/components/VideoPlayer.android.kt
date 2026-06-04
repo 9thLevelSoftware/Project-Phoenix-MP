@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
 import android.view.ViewGroup
+import androidx.annotation.OptIn as AndroidOptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,7 +39,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import co.touchlab.kermit.Logger
-import androidx.annotation.OptIn as AndroidOptIn
 
 /**
  * Android video player implementation using Media3 ExoPlayer.

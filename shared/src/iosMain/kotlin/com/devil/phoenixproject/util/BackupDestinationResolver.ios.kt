@@ -93,29 +93,28 @@ class IosBackupDestinationResolver : BackupDestinationResolver {
         }
     }
 
-    override suspend fun isAccessible(destination: BackupDestination.Custom): Boolean =
-        withContext(Dispatchers.IO) {
-            val url = resolveBookmark(destination) ?: return@withContext false
+    override suspend fun isAccessible(destination: BackupDestination.Custom): Boolean = withContext(Dispatchers.IO) {
+        val url = resolveBookmark(destination) ?: return@withContext false
 
-            val accessing = url.startAccessingSecurityScopedResource()
-            try {
-                val path = url.path ?: return@withContext false
-                val fileManager = NSFileManager.defaultManager
-                val exists = fileManager.fileExistsAtPath(path)
-                val writable = fileManager.isWritableFileAtPath(path)
-                if (!exists || !writable) {
-                    log.w { "Directory check failed: exists=$exists, writable=$writable for ${destination.displayName}" }
-                }
-                exists && writable
-            } catch (e: Exception) {
-                log.e(e) { "isAccessible failed for ${destination.displayName}" }
-                false
-            } finally {
-                if (accessing) {
-                    url.stopAccessingSecurityScopedResource()
-                }
+        val accessing = url.startAccessingSecurityScopedResource()
+        try {
+            val path = url.path ?: return@withContext false
+            val fileManager = NSFileManager.defaultManager
+            val exists = fileManager.fileExistsAtPath(path)
+            val writable = fileManager.isWritableFileAtPath(path)
+            if (!exists || !writable) {
+                log.w { "Directory check failed: exists=$exists, writable=$writable for ${destination.displayName}" }
+            }
+            exists && writable
+        } catch (e: Exception) {
+            log.e(e) { "isAccessible failed for ${destination.displayName}" }
+            false
+        } finally {
+            if (accessing) {
+                url.stopAccessingSecurityScopedResource()
             }
         }
+    }
 
     override suspend fun writeFile(
         destination: BackupDestination.Custom,
@@ -159,27 +158,26 @@ class IosBackupDestinationResolver : BackupDestinationResolver {
         }
     }
 
-    override suspend fun listFiles(destination: BackupDestination.Custom): List<String> =
-        withContext(Dispatchers.IO) {
-            val url = resolveBookmark(destination) ?: return@withContext emptyList()
+    override suspend fun listFiles(destination: BackupDestination.Custom): List<String> = withContext(Dispatchers.IO) {
+        val url = resolveBookmark(destination) ?: return@withContext emptyList()
 
-            val accessing = url.startAccessingSecurityScopedResource()
-            try {
-                val dirPath = url.path ?: return@withContext emptyList()
-                val fileManager = NSFileManager.defaultManager
-                val contents = fileManager.contentsOfDirectoryAtPath(dirPath, error = null)
-                    ?: return@withContext emptyList()
+        val accessing = url.startAccessingSecurityScopedResource()
+        try {
+            val dirPath = url.path ?: return@withContext emptyList()
+            val fileManager = NSFileManager.defaultManager
+            val contents = fileManager.contentsOfDirectoryAtPath(dirPath, error = null)
+                ?: return@withContext emptyList()
 
-                contents
-                    .mapNotNull { it as? String }
-                    .filter { it.endsWith(".json") }
-            } catch (e: Exception) {
-                log.e(e) { "listFiles failed for ${destination.displayName}" }
-                emptyList()
-            } finally {
-                if (accessing) {
-                    url.stopAccessingSecurityScopedResource()
-                }
+            contents
+                .mapNotNull { it as? String }
+                .filter { it.endsWith(".json") }
+        } catch (e: Exception) {
+            log.e(e) { "listFiles failed for ${destination.displayName}" }
+            emptyList()
+        } finally {
+            if (accessing) {
+                url.stopAccessingSecurityScopedResource()
             }
         }
+    }
 }

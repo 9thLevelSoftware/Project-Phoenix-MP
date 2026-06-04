@@ -988,7 +988,9 @@ abstract class BaseDataBackupManager(
                     }
 
                     "exportedAt" -> nav.skipValue()
+
                     "appVersion" -> nav.skipValue()
+
                     "data" -> {
                         nav.beginObject()
                         while (nav.hasNextInObject()) {
@@ -1750,7 +1752,8 @@ abstract class BaseDataBackupManager(
         val exportNowMs = KmpUtils.currentTimeMillis()
         val exportedAt = KmpUtils.formatTimestamp(exportNowMs, "yyyy-MM-dd") + "T" +
             KmpUtils.formatTimestamp(exportNowMs, "HH:mm:ss") + "Z"
-        writer.write("""{"version":$CURRENT_BACKUP_VERSION,"exportedAt":"$exportedAt","appVersion":"${Constants.APP_VERSION}","data":{""")
+        val privacy = json.encodeToString(BackupPrivacyMetadata.serializer(), BackupPrivacyMetadata())
+        writer.write("""{"version":$CURRENT_BACKUP_VERSION,"exportedAt":"$exportedAt","appVersion":"${Constants.APP_VERSION}","privacy":$privacy,"data":{""")
 
         // Phase 2: Sessions
         onProgress(BackupProgress(BackupPhase.SESSIONS, 0, sessionCount))

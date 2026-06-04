@@ -763,16 +763,15 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
     // ==================== ROUTINE GROUP CRUD ====================
 
-    fun getAllRoutineGroups(profileId: String): Flow<List<RoutineGroup>> =
-        queries.selectAllRoutineGroups(profileId = profileId) { id, name, orderIndex, createdAt, profile_id ->
-            RoutineGroup(
-                id = id,
-                name = name,
-                orderIndex = orderIndex.toInt(),
-                createdAt = createdAt,
-                profileId = profile_id,
-            )
-        }.asFlow().mapToList(Dispatchers.IO)
+    fun getAllRoutineGroups(profileId: String): Flow<List<RoutineGroup>> = queries.selectAllRoutineGroups(profileId = profileId) { id, name, orderIndex, createdAt, profile_id ->
+        RoutineGroup(
+            id = id,
+            name = name,
+            orderIndex = orderIndex.toInt(),
+            createdAt = createdAt,
+            profileId = profile_id,
+        )
+    }.asFlow().mapToList(Dispatchers.IO)
 
     suspend fun saveRoutineGroup(group: RoutineGroup) {
         withContext(Dispatchers.IO) {

@@ -323,7 +323,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
 
         Logger.d {
             "PR_CHECK[$phaseName/VOLUME]: exercise=$exerciseId, mode=$canonicalWorkoutMode, profile=$effectiveProfileId — " +
-                "new=${volumeForVolumePR} vs current=${currentVolume} → ${if (isNewVolumePR) "NEW PR" else "no change"}"
+                "new=$volumeForVolumePR vs current=$currentVolume → ${if (isNewVolumePR) "NEW PR" else "no change"}"
         }
 
         // Issue #319/Codex review: Wrap all writes in a transaction so a partial failure
@@ -350,7 +350,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
             }
 
             if (isNewVolumePR) {
-                Logger.i { "PR_SAVE: Writing VOLUME PR for exercise=$exerciseId, volume=${volumeForVolumePR}, profile=$effectiveProfileId" }
+                Logger.i { "PR_SAVE: Writing VOLUME PR for exercise=$exerciseId, volume=$volumeForVolumePR, profile=$effectiveProfileId" }
                 queries.upsertPR(
                     exerciseId = exerciseId,
                     exerciseName = "",

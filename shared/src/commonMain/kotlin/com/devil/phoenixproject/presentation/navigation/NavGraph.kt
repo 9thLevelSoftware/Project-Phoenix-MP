@@ -25,13 +25,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.savedstate.read
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.presentation.screen.*
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.util.BackupDestination
 import org.koin.compose.koinInject
 
 /**

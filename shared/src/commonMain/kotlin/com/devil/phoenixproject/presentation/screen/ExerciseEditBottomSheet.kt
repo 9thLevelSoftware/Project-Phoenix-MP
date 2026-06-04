@@ -75,8 +75,8 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutMode
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.VideoPlayer
@@ -85,6 +85,7 @@ import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -96,7 +97,6 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_personal_record
 import vitruvianprojectphoenix.shared.generated.resources.label_duration
 import vitruvianprojectphoenix.shared.generated.resources.label_reps
 import vitruvianprojectphoenix.shared.generated.resources.percent_label
-import kotlin.math.roundToInt
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen
@@ -677,11 +677,9 @@ fun ExerciseEditBottomSheet(
     }
 }
 
-internal fun shouldShowCableOnlyExerciseControls(exerciseType: ExerciseType): Boolean =
-    exerciseType == ExerciseType.STANDARD
+internal fun shouldShowCableOnlyExerciseControls(exerciseType: ExerciseType): Boolean = exerciseType == ExerciseType.STANDARD
 
-internal fun shouldShowStopAtTopToggle(exerciseType: ExerciseType, sets: List<SetConfiguration>): Boolean =
-    shouldShowCableOnlyExerciseControls(exerciseType) && sets.any { it.reps != null }
+internal fun shouldShowStopAtTopToggle(exerciseType: ExerciseType, sets: List<SetConfiguration>): Boolean = shouldShowCableOnlyExerciseControls(exerciseType) && sets.any { it.reps != null }
 
 @Composable
 fun SetModeToggle(

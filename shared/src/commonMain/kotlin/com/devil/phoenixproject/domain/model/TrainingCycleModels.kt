@@ -1,9 +1,9 @@
 package com.devil.phoenixproject.domain.model
 
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 /**
  * Set types for workout tracking.

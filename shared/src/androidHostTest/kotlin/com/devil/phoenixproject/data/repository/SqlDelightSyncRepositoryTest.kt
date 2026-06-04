@@ -8,11 +8,11 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 
 class SqlDelightSyncRepositoryTest {
 

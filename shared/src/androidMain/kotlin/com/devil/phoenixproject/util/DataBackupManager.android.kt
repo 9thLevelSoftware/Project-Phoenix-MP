@@ -11,9 +11,9 @@ import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.database.VitruvianDatabase
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * Android implementation of DataBackupManager.
@@ -383,26 +383,28 @@ class AndroidDataBackupManager(
         }
     }
 
-    private fun getFileSizeOrNull(filePath: String): Long? {
-        return if (filePath.startsWith("content://")) {
-            try {
-                val uri = filePath.toUri()
-                context.contentResolver.query(
-                    uri,
-                    arrayOf(android.provider.OpenableColumns.SIZE),
-                    null, null, null,
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                        if (sizeIndex >= 0) cursor.getLong(sizeIndex) else null
-                    } else null
+    private fun getFileSizeOrNull(filePath: String): Long? = if (filePath.startsWith("content://")) {
+        try {
+            val uri = filePath.toUri()
+            context.contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.SIZE),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (sizeIndex >= 0) cursor.getLong(sizeIndex) else null
+                } else {
+                    null
                 }
-            } catch (_: Exception) {
-                null
             }
-        } else {
-            File(filePath).let { if (it.exists()) it.length() else null }
+        } catch (_: Exception) {
+            null
         }
+    } else {
+        File(filePath).let { if (it.exists()) it.length() else null }
     }
 
     /**

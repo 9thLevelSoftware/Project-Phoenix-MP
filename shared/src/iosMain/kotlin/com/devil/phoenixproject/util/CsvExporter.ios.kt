@@ -26,8 +26,7 @@ class IosCsvExporter : CsvExporter {
     /**
      * Calculate estimated 1RM using the canonical hybrid (OneRepMaxCalculator.estimate).
      */
-    private fun calculateOneRM(weight: Float, reps: Int): Float =
-        OneRepMaxCalculator.estimate(weight, reps)
+    private fun calculateOneRM(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)
 
     override fun exportPersonalRecords(
         personalRecords: List<PersonalRecord>,

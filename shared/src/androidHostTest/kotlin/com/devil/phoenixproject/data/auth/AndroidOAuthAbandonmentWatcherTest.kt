@@ -1,13 +1,13 @@
 package com.devil.phoenixproject.data.auth
 
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import kotlin.test.assertEquals
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
 
 class AndroidOAuthAbandonmentWatcherTest {
 

@@ -8,6 +8,7 @@ import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.HardwareDetection
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Advertisement
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
@@ -158,12 +159,54 @@ class KableBleConnectionManager(
     )
     val commandResponses: Flow<UByte> = _commandResponses.asSharedFlow()
 
+    internal enum class LifecycleJob { SCAN, STATE_OBSERVER }
+
+    internal fun isLifecycleJobActiveForTest(job: LifecycleJob): Boolean = when (job) {
+        LifecycleJob.SCAN -> scanJob?.isActive == true
+        LifecycleJob.STATE_OBSERVER -> stateObserverJob?.isActive == true
+    }
+
+    internal fun startFakeLifecycleJobsForTest() {
+        scanJob?.cancel()
+        scanJob = scope.launch {
+            delay(Long.MAX_VALUE)
+        }
+        stateObserverJob?.cancel()
+        stateObserverJob = scope.launch {
+            delay(Long.MAX_VALUE)
+        }
+        onScannedDevicesChanged(
+            listOf(
+                ScannedDevice(
+                    name = "Vee_Test",
+                    address = "AA:BB:CC:DD:EE:FF",
+                    rssi = -45,
+                ),
+            ),
+        )
+        discoveredAdvertisements.clear()
+        reportConnectionState(ConnectionState.Scanning)
+    }
+
     // -------------------------------------------------------------------------
     // Helper to update connection state via callback + local tracking
     // -------------------------------------------------------------------------
     private fun reportConnectionState(state: ConnectionState) {
         lastReportedState = state
         onConnectionStateChanged(state)
+    }
+
+    private fun clearConnectionState(clearScannedDevices: Boolean = false) {
+        peripheral = null
+        connectedDeviceName = ""
+        connectedDeviceAddress = ""
+        detectedFirmwareVersion = null
+        negotiatedMtu = null
+        wasEverConnected = false
+        if (clearScannedDevices) {
+            discoveredAdvertisements.clear()
+            onScannedDevicesChanged(emptyList())
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -322,6 +365,7 @@ class KableBleConnectionManager(
                                 onScannedDevicesChanged(sorted)
                             }
                             .catch { e ->
+                                e.rethrowIfCancellation()
                                 log.e { "Scan error: ${e.message}" }
                                 logRepo.error(LogEventType.ERROR, "BLE scan failed", details = e.message)
                                 // Return to Disconnected instead of Error for scan failures - user can retry
@@ -350,6 +394,7 @@ class KableBleConnectionManager(
 
             Result.success(Unit)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Failed to start scanning: ${e.message}" }
             reportConnectionState(ConnectionState.Disconnected)
             Result.failure(e)
@@ -372,6 +417,34 @@ class KableBleConnectionManager(
         if (lastReportedState == ConnectionState.Scanning) {
             reportConnectionState(ConnectionState.Disconnected)
         }
+    }
+
+    /**
+     * Terminal lifecycle cleanup for app/repository teardown.
+     * Cancels background lifecycle jobs and clears connection-facing state.
+     */
+    suspend fun shutdown() {
+        log.i { "Shutting down BLE connection manager" }
+        isExplicitDisconnect = true
+
+        scanJob?.cancel()
+        scanJob = null
+        stateObserverJob?.cancel()
+        stateObserverJob = null
+        pollingEngine.stopAll()
+        discoMode.shutdown()
+        handleDetector.disable()
+        handleDetector.reset()
+
+        try {
+            peripheral?.disconnect()
+        } catch (e: Exception) {
+            e.rethrowIfCancellation()
+            log.w { "Shutdown disconnect error (non-fatal): ${e.message}" }
+        }
+
+        clearConnectionState(clearScannedDevices = true)
+        reportConnectionState(ConnectionState.Disconnected)
     }
 
     // -------------------------------------------------------------------------
@@ -426,6 +499,7 @@ class KableBleConnectionManager(
             // Connect to it
             connect(device)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "scanAndConnect failed: ${e.message}" }
             reportConnectionState(ConnectionState.Disconnected)
             Result.failure(e)
@@ -616,6 +690,7 @@ class KableBleConnectionManager(
                         delay(BleConstants.Timing.CONNECTION_RETRY_DELAY_MS)
                     }
                 } catch (e: Exception) {
+                    e.rethrowIfCancellation()
                     lastException = e
                     log.w { "Connection attempt $attempt failed: ${e.message}" }
                     if (attempt < BleConstants.Timing.CONNECTION_RETRY_COUNT) {
@@ -630,6 +705,7 @@ class KableBleConnectionManager(
             reportConnectionState(ConnectionState.Disconnected)
             throw lastException ?: Exception("Connection failed after ${BleConstants.Timing.CONNECTION_RETRY_COUNT} attempts")
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Connection failed: ${e.message}" }
             logRepo.error(
                 LogEventType.CONNECT_FAIL,
@@ -753,6 +829,7 @@ class KableBleConnectionManager(
                 )
             }
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Failed to enumerate services: ${e.message}" }
             logRepo.warning(
                 LogEventType.SERVICE_DISCOVERED,
@@ -807,6 +884,7 @@ class KableBleConnectionManager(
                 log.i { "Starting REPS characteristic notifications (rep events)" }
                 p.observe(repsCharacteristic)
                     .catch { e ->
+                        e.rethrowIfCancellation()
                         log.e { "Reps observation error: ${e.message}" }
                         logRepo.error(
                             LogEventType.ERROR,
@@ -821,6 +899,7 @@ class KableBleConnectionManager(
                         onRepEventFromCharacteristic(data)
                     }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.e { "Failed to observe Reps: ${e.message}" }
                 logRepo.error(
                     LogEventType.ERROR,
@@ -837,13 +916,17 @@ class KableBleConnectionManager(
             try {
                 log.d { "Starting VERSION characteristic notifications" }
                 p.observe(versionCharacteristic)
-                    .catch { e -> log.w { "Version observation error (non-fatal): ${e.message}" } }
+                    .catch { e ->
+                        e.rethrowIfCancellation()
+                        log.w { "Version observation error (non-fatal): ${e.message}" }
+                    }
                     .collect { data ->
                         val hexString = data.joinToString(" ") { it.toHexString() }
                         log.i { "VERSION CHARACTERISTIC DATA RECEIVED" }
                         log.i { "  Size: ${data.size} bytes, Hex: $hexString" }
                     }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.d { "VERSION notifications not available (expected): ${e.message}" }
             }
         }
@@ -853,11 +936,15 @@ class KableBleConnectionManager(
             try {
                 log.d { "Starting MODE characteristic notifications" }
                 p.observe(modeCharacteristic)
-                    .catch { e -> log.w { "Mode observation error (non-fatal): ${e.message}" } }
+                    .catch { e ->
+                        e.rethrowIfCancellation()
+                        log.w { "Mode observation error (non-fatal): ${e.message}" }
+                    }
                     .collect { data ->
                         log.d { "MODE notification: ${data.size} bytes" }
                     }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.d { "MODE notifications not available (expected): ${e.message}" }
             }
         }
@@ -891,6 +978,7 @@ class KableBleConnectionManager(
                 )
             }
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.d { "Device Information Service not available (expected): ${e.message}" }
         }
     }
@@ -913,6 +1001,7 @@ class KableBleConnectionManager(
                 log.i { "Vitruvian VERSION characteristic: ${data.size} bytes - $hexString" }
             }
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.d { "Vitruvian VERSION characteristic not readable (expected): ${e.message}" }
         }
     }
@@ -931,9 +1020,10 @@ class KableBleConnectionManager(
         try {
             peripheral?.disconnect()
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Disconnect error: ${e.message}" }
         }
-        peripheral = null
+        clearConnectionState()
         reportConnectionState(ConnectionState.Disconnected)
     }
 
@@ -947,9 +1037,10 @@ class KableBleConnectionManager(
         try {
             peripheral?.disconnect()
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Cancel connection error: ${e.message}" }
         }
-        peripheral = null
+        clearConnectionState()
         reportConnectionState(ConnectionState.Disconnected)
     }
 
@@ -987,6 +1078,7 @@ class KableBleConnectionManager(
             isExplicitDisconnect = true
             existingPeripheral.disconnect()
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.w { "Cleanup disconnect error (non-fatal): ${e.message}" }
         }
 
@@ -1043,6 +1135,7 @@ class KableBleConnectionManager(
                             log.d { "Post-CONFIG diagnostic read timed out" }
                         }
                     } catch (e: Exception) {
+                        e.rethrowIfCancellation()
                         log.w { "Post-CONFIG diagnostic read failed: ${e.message}" }
                     }
                 }
@@ -1152,6 +1245,7 @@ class KableBleConnectionManager(
             false
         }
     } catch (e: Exception) {
+        e.rethrowIfCancellation()
         val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
         log.e { "Error waiting for response opcode 0x$opcodeHex: ${e.message}" }
         false

@@ -24,11 +24,10 @@ class HapticFeedbackAudioRoutingGuardTest {
     private val rawCueDir: File
         get() = File(projectRoot, "shared/src/androidMain/res/raw")
 
-    private fun registeredCueNames(source: String): Set<String> =
-        Regex("""AndroidCueResource\("([^"]+)",\s*R\.raw\.\w+\)""")
-            .findAll(source)
-            .map { it.groupValues[1] }
-            .toSet()
+    private fun registeredCueNames(source: String): Set<String> = Regex("""AndroidCueResource\("([^"]+)",\s*R\.raw\.\w+\)""")
+        .findAll(source)
+        .map { it.groupValues[1] }
+        .toSet()
 
     @Test
     fun hapticFeedbackCueAudio_routesThroughMediaUsageOnly() {

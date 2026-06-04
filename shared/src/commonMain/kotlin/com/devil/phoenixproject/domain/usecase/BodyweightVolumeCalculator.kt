@@ -104,9 +104,8 @@ object BodyweightVolumeCalculator {
      * Default selectable variant for an exercise. Falls back to the name-derived percentage when
      * the exercise does not have a dedicated picker list.
      */
-    fun getDefaultVariantForExercise(exerciseName: String): BodyweightVariantOption =
-        getVariantsForExercise(exerciseName)?.first()
-            ?: BodyweightVariantOption(exerciseName, getPercentageForExercise(exerciseName))
+    fun getDefaultVariantForExercise(exerciseName: String): BodyweightVariantOption = getVariantsForExercise(exerciseName)?.first()
+        ?: BodyweightVariantOption(exerciseName, getPercentageForExercise(exerciseName))
 
     /**
      * Get the estimated body weight percentage for an exercise.

@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.BleCriticalEventType
+import com.devil.phoenixproject.data.ble.BleEventDeliverySnapshot
+import com.devil.phoenixproject.data.ble.BleEventDeliveryTracker
 import com.devil.phoenixproject.data.ble.BleOperationQueue
 import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.data.ble.DiscoMode
@@ -18,6 +21,7 @@ import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BlePacketFactory
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,20 +43,19 @@ import kotlinx.coroutines.launch
  * ## Lifecycle Management
  * This repository is a **singleton** scoped to the application lifetime via Koin DI.
  * The internal [CoroutineScope] uses [SupervisorJob] for proper structured concurrency and
- * lives for the duration of the app process. No explicit cleanup is needed since BLE
- * operations should remain available for the entire app session.
+ * lives for the duration of the app process unless [shutdown] is called during app/test teardown.
  *
- * For app-lifetime singletons managing hardware resources (BLE), the scope leak risk is
- * acceptable since the scope lives as long as the process and BLE state should persist
- * across navigation events.
+ * [disconnect] remains the normal user-facing action. [shutdown] is terminal and cancels
+ * repository-owned jobs, scanning, observers, polling, and transient connection-facing state.
  */
 class KableBleRepository : BleRepository {
 
     private val log = Logger.withTag("KableBleRepository")
     private val logRepo = ConnectionLogRepository.instance
 
-    // Singleton-scoped: lives for app lifetime, no explicit cleanup needed
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val repositoryJob = SupervisorJob()
+    private val scope = CoroutineScope(repositoryJob + Dispatchers.Default)
+    internal val isRepositoryScopeActiveForTest: Boolean get() = repositoryJob.isActive
 
     // ===== State flows =====
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -71,26 +74,22 @@ class KableBleRepository : BleRepository {
     private val _repEvents = MutableSharedFlow<RepNotification>(
         replay = 0,
         extraBufferCapacity = 64,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val repEvents: Flow<RepNotification> = _repEvents.asSharedFlow()
     private val _deloadOccurredEvents = MutableSharedFlow<Unit>(
         replay = 0,
         extraBufferCapacity = 8,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val deloadOccurredEvents: Flow<Unit> = _deloadOccurredEvents.asSharedFlow()
     enum class RomViolationType { OUTSIDE_HIGH, OUTSIDE_LOW }
     private val _romViolationEvents = MutableSharedFlow<RomViolationType>(
         replay = 0,
         extraBufferCapacity = 8,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val romViolationEvents: Flow<RomViolationType> = _romViolationEvents.asSharedFlow()
     private val _reconnectionRequested = MutableSharedFlow<ReconnectionRequest>(
         replay = 0,
         extraBufferCapacity = 4,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val reconnectionRequested: Flow<ReconnectionRequest> = _reconnectionRequested.asSharedFlow()
     private val _heuristicData = MutableStateFlow<HeuristicStatistics?>(null)
@@ -99,6 +98,8 @@ class KableBleRepository : BleRepository {
     override val diagnostics: StateFlow<DiagnosticPacket?> = _diagnostics.asStateFlow()
     override val discoModeActive: StateFlow<Boolean> get() = discoMode.isActive
     private var lastDiagnosticFaultWords: List<Int>? = null
+    private val eventDeliveryTracker = BleEventDeliveryTracker()
+    internal val eventDeliverySnapshotForTest: StateFlow<BleEventDeliverySnapshot> = eventDeliveryTracker.snapshot
 
     // ===== Extracted modules (6 modules) =====
     private val bleQueue = BleOperationQueue()
@@ -172,12 +173,22 @@ class KableBleRepository : BleRepository {
     override suspend fun cancelConnection(): Unit = connectionManager.cancelConnection()
     override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> = connectionManager.sendWorkoutCommand(command)
 
+    override suspend fun shutdown() {
+        log.i { "Shutting down BLE repository" }
+        connectionManager.shutdown()
+        _scannedDevices.value = emptyList()
+        _heuristicData.value = null
+        clearDiagnostics()
+        repositoryJob.cancel()
+    }
+
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
         log.d { "Setting color scheme: $schemeIndex" }
         return try {
             val command = BlePacketFactory.createColorSchemeCommand(schemeIndex)
             connectionManager.sendWorkoutCommand(command)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Failed to set color scheme: ${e.message}" }
             Result.failure(e)
         }
@@ -190,6 +201,7 @@ class KableBleRepository : BleRepository {
             val initCmd = byteArrayOf(0x01, 0x00, 0x00, 0x00)
             sendWorkoutCommand(initCmd)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Failed to send init sequence: ${e.message}" }
             Result.failure(e)
         }
@@ -214,6 +226,7 @@ class KableBleRepository : BleRepository {
 
             result
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Failed to start workout: ${e.message}" }
             Result.failure(e)
         }
@@ -232,6 +245,7 @@ class KableBleRepository : BleRepository {
 
             Result.success(Unit)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Failed to stop workout: ${e.message}" }
             Result.failure(e)
         }
@@ -244,6 +258,7 @@ class KableBleRepository : BleRepository {
             log.d { "Sending StopPacket (0x50)..." }
             sendWorkoutCommand(stopPacket)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.e { "Failed to send stop command: ${e.message}" }
             Result.failure(e)
         }
@@ -348,7 +363,7 @@ class KableBleRepository : BleRepository {
                 log.d { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
             }
 
-            val emitted = _repEvents.tryEmit(notification)
+            val emitted = publishRepEvent(notification, source = "rx")
             log.d { "Emitted rep event (RX): success=$emitted, legacy=${notification.isLegacyFormat}" }
 
             logRepo.debug(
@@ -386,7 +401,7 @@ class KableBleRepository : BleRepository {
                 log.i { "  rangeTop=${notification.rangeTop}, rangeBottom=${notification.rangeBottom}" }
             }
 
-            val emitted = _repEvents.tryEmit(notification)
+            val emitted = publishRepEvent(notification, source = "reps-characteristic")
             log.i { "Emitted rep event (REPS char): success=$emitted, legacy=${notification.isLegacyFormat}, repsSetCount=${notification.repsSetCount}" }
 
             logRepo.debug(
@@ -440,6 +455,19 @@ class KableBleRepository : BleRepository {
         _diagnostics.value = null
         lastDiagnosticFaultWords = null
     }
+
+    private fun publishRepEvent(notification: RepNotification, source: String): Boolean {
+        val emitted = _repEvents.tryEmit(notification)
+        if (!emitted) {
+            eventDeliveryTracker.recordDropped(BleCriticalEventType.REP)
+            val details = "source=$source, legacy=${notification.isLegacyFormat}, setCount=${notification.repsSetCount}"
+            log.w { "Dropped critical BLE rep event because subscriber buffer is full: $details" }
+            logRepo.warning(LogEventType.REP_RECEIVED, "Dropped BLE rep event", details = details)
+        }
+        return emitted
+    }
+
+    internal fun publishRepEventForTest(notification: RepNotification, source: String = "test"): Boolean = publishRepEvent(notification, source)
 
     private fun currentTimeMillis(): Long = Clock.System.now().toEpochMilliseconds()
 

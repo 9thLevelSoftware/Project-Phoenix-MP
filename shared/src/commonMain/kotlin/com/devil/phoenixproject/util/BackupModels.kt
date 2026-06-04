@@ -427,7 +427,30 @@ enum class BackupPhase(val displayName: String) {
  * - v3: adds RoutineGroup table and Routine.groupId field for routine grouping.
  */
 @Serializable
-data class BackupData(val version: Int = CURRENT_BACKUP_VERSION, val exportedAt: String, val appVersion: String, val data: BackupContent)
+data class BackupData(
+    val version: Int = CURRENT_BACKUP_VERSION,
+    val exportedAt: String,
+    val appVersion: String,
+    val data: BackupContent,
+    val privacy: BackupPrivacyMetadata = BackupPrivacyMetadata(),
+)
+
+@Serializable
+enum class BackupDataClassification {
+    FULL_PERSONAL_DATA,
+    REDACTED_DIAGNOSTICS,
+}
+
+@Serializable
+data class BackupPrivacyMetadata(
+    val classification: BackupDataClassification = BackupDataClassification.FULL_PERSONAL_DATA,
+    val containsWorkoutHistory: Boolean = true,
+    val containsUserProfiles: Boolean = true,
+    val containsSessionNotes: Boolean = true,
+    val containsAuthTokens: Boolean = false,
+    val containsRuntimeSecrets: Boolean = false,
+    val userFacingSummary: String = "Full personal-data export: includes workout history, routines, profiles, personal records, and notes. Does not include auth tokens or runtime secrets.",
+)
 
 /**
  * Highest backup schema version this build can produce.

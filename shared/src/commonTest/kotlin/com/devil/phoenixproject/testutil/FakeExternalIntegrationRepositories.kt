@@ -103,19 +103,17 @@ class FakeExternalProgramRepository : ExternalProgramRepository {
         rows.firstOrNull { it.profileId == profileId && it.provider == provider && it.isCurrent }
     }
 
-    override fun observeProgramStats(profileId: String, provider: IntegrationProvider?): Flow<Map<String, ExternalProgramStats>> =
-        combine(programsFlow, statsFlow) { programs, stats ->
-            val visibleProgramIds = programs
-                .filter { it.profileId == profileId && (provider == null || it.provider == provider) }
-                .map { it.id }
-                .toSet()
-            stats
-                .filter { it.externalProgramId in visibleProgramIds }
-                .associateBy { it.externalProgramId }
-        }
+    override fun observeProgramStats(profileId: String, provider: IntegrationProvider?): Flow<Map<String, ExternalProgramStats>> = combine(programsFlow, statsFlow) { programs, stats ->
+        val visibleProgramIds = programs
+            .filter { it.profileId == profileId && (provider == null || it.provider == provider) }
+            .map { it.id }
+            .toSet()
+        stats
+            .filter { it.externalProgramId in visibleProgramIds }
+            .associateBy { it.externalProgramId }
+    }
 
-    override suspend fun findProgram(provider: IntegrationProvider, externalId: String, profileId: String): ExternalProgram? =
-        programs.firstOrNull { it.provider == provider && it.externalId == externalId && it.profileId == profileId }
+    override suspend fun findProgram(provider: IntegrationProvider, externalId: String, profileId: String): ExternalProgram? = programs.firstOrNull { it.provider == provider && it.externalId == externalId && it.profileId == profileId }
 
     override suspend fun findPrograms(provider: IntegrationProvider, externalIds: List<String>, profileId: String): List<ExternalProgram> {
         val externalIdSet = externalIds.toSet()
@@ -230,8 +228,7 @@ class FakeExternalExerciseTemplateRepository : ExternalExerciseTemplateRepositor
         publishTemplates()
     }
 
-    override suspend fun findTemplate(provider: IntegrationProvider, externalId: String, profileId: String): ExternalExerciseTemplate? =
-        templates.firstOrNull { it.provider == provider && it.externalId == externalId && it.profileId == profileId }
+    override suspend fun findTemplate(provider: IntegrationProvider, externalId: String, profileId: String): ExternalExerciseTemplate? = templates.firstOrNull { it.provider == provider && it.externalId == externalId && it.profileId == profileId }
 
     override suspend fun upsertMapping(mapping: ExternalExerciseTemplateMapping) {
         mappings.removeAll {
@@ -262,10 +259,9 @@ class FakeExternalExerciseTemplateRepository : ExternalExerciseTemplateRepositor
 class FakeIntegrationSyncCursorRepository : IntegrationSyncCursorRepository {
     val cursors = mutableListOf<IntegrationSyncCursor>()
 
-    override suspend fun getCursor(provider: IntegrationProvider, profileId: String, cursorType: String): IntegrationSyncCursor? =
-        cursors.firstOrNull {
-            it.provider == provider && it.profileId == profileId && it.cursorType == cursorType
-        }
+    override suspend fun getCursor(provider: IntegrationProvider, profileId: String, cursorType: String): IntegrationSyncCursor? = cursors.firstOrNull {
+        it.provider == provider && it.profileId == profileId && it.cursorType == cursorType
+    }
 
     override suspend fun upsertCursor(cursor: IntegrationSyncCursor) {
         cursors.removeAll {

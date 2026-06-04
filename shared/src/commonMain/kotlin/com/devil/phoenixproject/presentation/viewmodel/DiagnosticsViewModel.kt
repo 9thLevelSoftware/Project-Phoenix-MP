@@ -71,6 +71,8 @@ fun buildDiagnosticsExportText(
     appendLine("=== Vitruvian Machine Diagnostics ===")
     appendLine("App version: ${Constants.APP_VERSION}")
     appendLine("Exported: ${formatTimestamp(exportedAtMillis)}")
+    appendLine("Classification: REDACTED_DIAGNOSTICS")
+    appendLine("Privacy: redacted troubleshooting snapshot; no workout history, profiles, auth/session tokens, Supabase config, or keystore data.")
     appendLine("Connection: $connectionLabel")
 
     if (packet == null) {

@@ -10,14 +10,14 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 
 /**
  * Characterization tests for DefaultWorkoutSessionManager routine flow.
