@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.repository.PhasePRBackfillResult
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
@@ -25,8 +26,14 @@ class FakeSyncRepository : SyncRepository {
 
     // === Configurable return values for push ===
 
+    val callLog: MutableList<String> = mutableListOf()
     var workoutSessionsToReturn: List<WorkoutSession> = emptyList()
     var prsToReturn: List<PersonalRecordSyncDto> = emptyList()
+    var fullPRsToReturn: List<PersonalRecord> = emptyList()
+    var phaseBackfillResultToReturn: PhasePRBackfillResult = PhasePRBackfillResult(changedRows = 0)
+    var lastPhaseBackfillFromTimestamp: Long? = null
+    var sessionIdsForPersonalRecordsToReturn: Map<String, String> = emptyMap()
+    var lastSessionIdPersonalRecords: List<PersonalRecord> = emptyList()
     var routinesToReturn: List<Routine> = emptyList()
     var gamificationStatsToReturn: GamificationStatsSyncDto? = null
 
@@ -161,7 +168,28 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = cyclesToReturn
 
-    override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> = emptyList()
+    override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> {
+        callLog += "getFullPRsModifiedSince"
+        return fullPRsToReturn
+    }
+
+    override suspend fun backfillPhaseSpecificPRs(
+        profileId: String,
+        fromSessionTimestamp: Long,
+    ): PhasePRBackfillResult {
+        callLog += "backfillPhaseSpecificPRs"
+        lastPhaseBackfillFromTimestamp = fromSessionTimestamp
+        return phaseBackfillResultToReturn
+    }
+
+    override suspend fun findSessionIdsForPersonalRecords(
+        records: List<PersonalRecord>,
+        profileId: String,
+    ): Map<String, String> {
+        callLog += "findSessionIdsForPersonalRecords"
+        lastSessionIdPersonalRecords = records
+        return sessionIdsForPersonalRecordsToReturn
+    }
 
     override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
 

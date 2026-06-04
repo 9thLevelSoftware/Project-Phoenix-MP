@@ -36,14 +36,14 @@ class IosCsvExporter : CsvExporter {
         formatWeight: (Float, WeightUnit) -> String,
     ): Result<String> = try {
         val csv = buildString {
-            appendLine("Exercise,Weight (${weightUnit.name}),Reps,1RM,Date")
+            appendLine("Exercise,Phase,Weight (${weightUnit.name}),Reps,1RM,Date")
             personalRecords.forEach { pr ->
                 val exerciseName = exerciseNames[pr.exerciseId] ?: pr.exerciseId
                 val formattedWeight = formatWeight(pr.weightPerCableKg, weightUnit)
                 val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
                 val formattedOneRM = formatWeight(oneRM, weightUnit)
                 val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
-                appendLine("\"$exerciseName\",$formattedWeight,${pr.reps},$formattedOneRM,$date")
+                appendLine("\"$exerciseName\",${pr.phase.name},$formattedWeight,${pr.reps},$formattedOneRM,$date")
             }
         }
 
@@ -101,7 +101,7 @@ class IosCsvExporter : CsvExporter {
         val grouped = personalRecords.groupBy { it.exerciseId }
 
         val csv = buildString {
-            appendLine("Exercise,Date,Weight (${weightUnit.name}),Reps,1RM,Improvement")
+            appendLine("Exercise,Phase,Date,Weight (${weightUnit.name}),Reps,1RM,Improvement")
 
             grouped.forEach { (exerciseId, prs) ->
                 val exerciseName = exerciseNames[exerciseId] ?: exerciseId
@@ -122,7 +122,7 @@ class IosCsvExporter : CsvExporter {
                     }
                     previousOneRM = oneRM
 
-                    appendLine("\"$exerciseName\",$date,$formattedWeight,${pr.reps},$formattedOneRM,$improvement")
+                    appendLine("\"$exerciseName\",${pr.phase.name},$date,$formattedWeight,${pr.reps},$formattedOneRM,$improvement")
                 }
             }
         }

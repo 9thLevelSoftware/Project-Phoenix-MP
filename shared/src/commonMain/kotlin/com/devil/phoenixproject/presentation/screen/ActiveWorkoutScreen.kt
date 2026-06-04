@@ -562,6 +562,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                 weightUnit,
             )} × ${event.reps} reps",
             workoutMode = event.workoutMode,
+            phaseLabel = event.phaseLabel,
             onDismiss = { prCelebrationEvent = null },
             onSoundTrigger = { viewModel.emitPRSound() },
         )

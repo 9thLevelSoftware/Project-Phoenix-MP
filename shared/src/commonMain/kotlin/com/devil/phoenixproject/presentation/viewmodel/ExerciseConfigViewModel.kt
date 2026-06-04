@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PRType
@@ -265,7 +266,7 @@ class ExerciseConfigViewModel constructor(
         }
         viewModelScope.launch {
             try {
-                val pr = personalRecordRepository.getBestWeightPR(exerciseId, workoutMode, activeProfileId)
+                val pr = personalRecordRepository.getBestWeightPRForWorkoutMode(exerciseId, workoutMode, activeProfileId)
                 _currentExercisePR.value = pr
                 syncSetWeightsToPercentOfPR()
                 logDebug("Loaded PR for exercise=$exerciseId, mode=$workoutMode, profile=$activeProfileId: ${pr?.weightPerCableKg ?: "none"}")

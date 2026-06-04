@@ -39,7 +39,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
 
         FileWriter(file).use { writer ->
             // Header
-            writer.appendLine("Exercise,Weight,Reps,Date,Mode,1RM")
+            writer.appendLine("Exercise,Phase,Weight,Reps,Date,Mode,1RM")
 
             // Data rows
             personalRecords.sortedByDescending { it.timestamp }.forEach { pr ->
@@ -49,7 +49,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                 val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
 
                 writer.appendLine(
-                    "${escapeCsv(exerciseName)},$weight,${pr.reps},$date,${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)}",
+                    "${escapeCsv(exerciseName)},${pr.phase.name},$weight,${pr.reps},$date,${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)}",
                 )
             }
         }
@@ -126,7 +126,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
 
         FileWriter(file).use { writer ->
             // Header
-            writer.appendLine("Exercise,Date,Weight,Reps,Mode,1RM,Progress From Previous")
+            writer.appendLine("Exercise,Phase,Date,Weight,Reps,Mode,1RM,Progress From Previous")
 
             grouped.forEach { (exerciseId, records) ->
                 val exerciseName = exerciseNames[exerciseId] ?: "Unknown"
@@ -144,7 +144,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                     writer.appendLine(
                         "${escapeCsv(
                             exerciseName,
-                        )},$date,$weight,${pr.reps},${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)},$progress",
+                        )},${pr.phase.name},$date,$weight,${pr.reps},${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)},$progress",
                     )
 
                     previousWeight = pr.weightPerCableKg

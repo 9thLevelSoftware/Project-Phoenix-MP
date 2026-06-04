@@ -1,11 +1,15 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.repository.PhasePRBackfillResult
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -170,6 +174,64 @@ class SyncManagerTest {
     }
 
     @Test
+    fun syncBackfillsPhaseSpecificPRsBeforeCollectingPushRecords() = runTest {
+        setupAuthenticated()
+        fakeSyncRepo.phaseBackfillResultToReturn = PhasePRBackfillResult(
+            changedRows = 2,
+            maxScannedSessionTimestamp = 1_700_000_000_000L,
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            listOf("backfillPhaseSpecificPRs", "getFullPRsModifiedSince"),
+            fakeSyncRepo.callLog.filter {
+                it == "backfillPhaseSpecificPRs" || it == "getFullPRsModifiedSince"
+            },
+            "Historical phase PR backfill must run before building the dedicated PR payload",
+        )
+        assertEquals(0L, fakeSyncRepo.lastPhaseBackfillFromTimestamp)
+        assertEquals(
+            1_700_000_000_000L,
+            tokenStorage.getPhasePRBackfillCheckpoint("default"),
+            "Successful backfill progress should be checkpointed by profile",
+        )
+    }
+
+    @Test
+    fun syncUsesStoredPhasePRBackfillCheckpoint() = runTest {
+        setupAuthenticated()
+        tokenStorage.setPhasePRBackfillCheckpoint("default", 1_700_000_000_000L)
+        fakeSyncRepo.phaseBackfillResultToReturn = PhasePRBackfillResult(
+            changedRows = 0,
+            maxScannedSessionTimestamp = 1_700_000_100_000L,
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            1_700_000_000_000L,
+            fakeSyncRepo.lastPhaseBackfillFromTimestamp,
+            "Backfill should resume from the stored checkpoint instead of scanning from zero",
+        )
+        assertEquals(
+            1_700_000_100_000L,
+            tokenStorage.getPhasePRBackfillCheckpoint("default"),
+            "Backfill checkpoint should advance to the newest scanned session",
+        )
+    }
+
+    @Test
     fun syncSendsCorrectPayloadWithDeviceIdAndPlatform() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
@@ -283,6 +345,122 @@ class SyncManagerTest {
             fakeSyncRepo.updateSessionTimestampCalls,
             "Post-push timestamp stamping should run once for the deduped session",
         )
+    }
+
+    @Test
+    fun syncPushesAllPhaseSpecificPersonalRecordsForSameExerciseTimestamp() = runTest {
+        setupAuthenticated()
+        val exerciseId = "bicep-curl"
+        val timestamp = 1_740_916_800_000L
+        fakeSyncRepo.workoutSessionsToReturn = listOf(
+            makeWorkoutSession(
+                id = "session-phase-pr",
+                timestamp = timestamp,
+                reps = 8,
+                totalReps = 8,
+                exerciseId = exerciseId,
+                exerciseName = "Bicep Curl",
+            ),
+        )
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            makePersonalRecord(
+                id = 1,
+                exerciseId = exerciseId,
+                exerciseName = "Bicep Curl",
+                weightPerCableKg = 20f,
+                reps = 8,
+                timestamp = timestamp,
+                prType = PRType.MAX_WEIGHT,
+                phase = WorkoutPhase.CONCENTRIC,
+            ),
+            makePersonalRecord(
+                id = 2,
+                exerciseId = exerciseId,
+                exerciseName = "Bicep Curl",
+                weightPerCableKg = 42f,
+                reps = 8,
+                timestamp = timestamp,
+                prType = PRType.MAX_WEIGHT,
+                phase = WorkoutPhase.ECCENTRIC,
+            ),
+            makePersonalRecord(
+                id = 3,
+                exerciseId = exerciseId,
+                exerciseName = "Bicep Curl",
+                weightPerCableKg = 20f,
+                reps = 8,
+                timestamp = timestamp,
+                prType = PRType.MAX_VOLUME,
+                phase = WorkoutPhase.CONCENTRIC,
+                volume = 160f,
+            ),
+            makePersonalRecord(
+                id = 4,
+                exerciseId = exerciseId,
+                exerciseName = "Bicep Curl",
+                weightPerCableKg = 42f,
+                reps = 8,
+                timestamp = timestamp,
+                prType = PRType.MAX_VOLUME,
+                phase = WorkoutPhase.ECCENTRIC,
+                volume = 336f,
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertEquals(
+            setOf(
+                WorkoutPhase.CONCENTRIC.name to PRType.MAX_WEIGHT.name,
+                WorkoutPhase.ECCENTRIC.name to PRType.MAX_WEIGHT.name,
+                WorkoutPhase.CONCENTRIC.name to PRType.MAX_VOLUME.name,
+                WorkoutPhase.ECCENTRIC.name to PRType.MAX_VOLUME.name,
+            ),
+            payload.personalRecords.map { it.workoutPhase to it.recordType }.toSet(),
+            "Dedicated PR payload rows should preserve phase and PR type instead of collapsing by timestamp",
+        )
+        assertEquals(
+            WorkoutPhase.CONCENTRIC.name,
+            payload.sessions.single().exercises.single().sets.single().prPhase,
+            "Legacy set-level hint should prefer the normal concentric weight PR when present",
+        )
+    }
+
+    @Test
+    fun syncResolvesSessionIdForDedicatedPROutsideDeltaSessionBatch() = runTest {
+        setupAuthenticated()
+        val exerciseId = "bicep-curl"
+        val timestamp = 1_740_916_800_000L
+        val sessionKey = "$exerciseId:$timestamp"
+        val pr = makePersonalRecord(
+            id = 42,
+            exerciseId = exerciseId,
+            exerciseName = "Bicep Curl",
+            weightPerCableKg = 42f,
+            reps = 8,
+            timestamp = timestamp,
+            prType = PRType.MAX_WEIGHT,
+            phase = WorkoutPhase.ECCENTRIC,
+        )
+        fakeSyncRepo.fullPRsToReturn = listOf(pr)
+        fakeSyncRepo.sessionIdsForPersonalRecordsToReturn = mapOf(sessionKey to "historical-session")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertEquals("historical-session", payload.personalRecords.single().sessionId)
+        assertEquals(listOf(pr), fakeSyncRepo.lastSessionIdPersonalRecords)
     }
 
     @Test
@@ -1156,6 +1334,7 @@ class SyncManagerTest {
         timestamp: Long,
         reps: Int = 10,
         totalReps: Int = 10,
+        exerciseId: String = "exercise-$id",
         exerciseName: String = "Test Exercise",
         routineSessionId: String? = null,
     ) = WorkoutSession(
@@ -1166,10 +1345,36 @@ class SyncManagerTest {
         weightPerCableKg = 20f,
         duration = 60_000L,
         totalReps = totalReps,
-        exerciseId = "exercise-$id",
+        exerciseId = exerciseId,
         exerciseName = exerciseName,
         routineSessionId = routineSessionId,
         profileId = "default",
+    )
+
+    private fun makePersonalRecord(
+        id: Long,
+        exerciseId: String,
+        exerciseName: String,
+        weightPerCableKg: Float,
+        reps: Int,
+        timestamp: Long,
+        prType: PRType,
+        phase: WorkoutPhase,
+        volume: Float = weightPerCableKg * reps,
+    ) = PersonalRecord(
+        id = id,
+        exerciseId = exerciseId,
+        exerciseName = exerciseName,
+        weightPerCableKg = weightPerCableKg,
+        reps = reps,
+        oneRepMax = weightPerCableKg,
+        timestamp = timestamp,
+        workoutMode = "OldSchool",
+        prType = prType,
+        volume = volume,
+        phase = phase,
+        profileId = "default",
+        cableCount = 2,
     )
 
     private fun makeRoutine(

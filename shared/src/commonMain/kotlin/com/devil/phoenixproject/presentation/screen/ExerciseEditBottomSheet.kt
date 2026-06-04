@@ -75,6 +75,7 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
@@ -292,7 +293,7 @@ fun ExerciseEditBottomSheet(
                                 )
                                 Column {
                                     Text(
-                                        "Personal Record",
+                                        "${pr.phase.displayLabel()} Personal Record",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1243,9 +1244,9 @@ fun WeightConfigurationCard(
                         color = if (usePercentOfPR) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = if (currentExercisePR != null) {
-                            "Scale weight based on your personal record"
-                        } else {
+                        text = currentExercisePR?.let { pr ->
+                            "Scale weight based on your ${pr.phase.displayLabel().lowercase()} personal record"
+                        } ?: run {
                             "No PR set for this exercise"
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -1260,11 +1261,12 @@ fun WeightConfigurationCard(
             }
 
             // Show percentage controls when toggle is ON and PR exists
-            if (usePercentOfPR && currentExercisePR != null) {
+            val prForScaling = currentExercisePR
+            if (usePercentOfPR && prForScaling != null) {
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
                 // Calculate resolved weight
-                val resolvedWeight = (currentExercisePR.weightPerCableKg * weightPercentOfPR / 100f)
+                val resolvedWeight = (prForScaling.weightPerCableKg * weightPercentOfPR / 100f)
                     .let { (it * 2).roundToInt() / 2f } // Round to 0.5kg
 
                 // Display current percentage and resolved weight
@@ -1274,7 +1276,7 @@ fun WeightConfigurationCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "$weightPercentOfPR% of PR",
+                        text = "$weightPercentOfPR% of ${prForScaling.phase.displayLabel()} PR",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -1633,4 +1635,10 @@ private fun WarmupSetRow(
             }
         }
     }
+}
+
+private fun WorkoutPhase.displayLabel(): String = when (this) {
+    WorkoutPhase.CONCENTRIC -> "Concentric"
+    WorkoutPhase.ECCENTRIC -> "Eccentric"
+    WorkoutPhase.COMBINED -> "Combined"
 }

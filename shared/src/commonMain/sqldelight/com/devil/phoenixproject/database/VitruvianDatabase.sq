@@ -554,6 +554,39 @@ SELECT id FROM WorkoutSession;
 selectRecentSessions:
 SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC LIMIT :limit;
 
+selectSessionsForPhasePRBackfill:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND timestamp >= :fromSessionTimestamp
+AND deletedAt IS NULL
+AND exerciseId IS NOT NULL
+AND exerciseId != ''
+AND (workingReps > 0 OR totalReps > 0)
+AND (
+    COALESCE(peakForceConcentricA, 0) > 0
+    OR COALESCE(peakForceConcentricB, 0) > 0
+    OR COALESCE(peakForceEccentricA, 0) > 0
+    OR COALESCE(peakForceEccentricB, 0) > 0
+)
+ORDER BY timestamp ASC;
+
+selectLatestSessionForPhasePRBackfill:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND timestamp >= :fromSessionTimestamp
+AND deletedAt IS NULL
+ORDER BY timestamp DESC
+LIMIT 1;
+
+selectSessionIdForPersonalRecord:
+SELECT id FROM WorkoutSession
+WHERE exerciseId = :exerciseId
+AND timestamp = :timestamp
+AND profile_id = :profileId
+AND deletedAt IS NULL
+ORDER BY updatedAt DESC, id ASC
+LIMIT 1;
+
 insertSession:
 INSERT INTO WorkoutSession (
     id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,

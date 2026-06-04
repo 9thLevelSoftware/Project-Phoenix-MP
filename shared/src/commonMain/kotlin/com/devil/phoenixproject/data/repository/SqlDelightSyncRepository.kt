@@ -48,6 +48,9 @@ class SqlDelightSyncRepository(
     private val queries = db.vitruvianDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
 
+    private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String =
+        "$exerciseId:$timestamp"
+
     // === Push Operations ===
 
     override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> = withContext(Dispatchers.IO) {
@@ -1363,8 +1366,99 @@ class SqlDelightSyncRepository(
                     "ECCENTRIC" -> WorkoutPhase.ECCENTRIC
                     else -> WorkoutPhase.COMBINED
                 },
+                profileId = row.profile_id,
+                cableCount = row.cable_count?.toInt(),
             )
         }
+    }
+
+    override suspend fun backfillPhaseSpecificPRs(
+        profileId: String,
+        fromSessionTimestamp: Long,
+    ): PhasePRBackfillResult = withContext(Dispatchers.IO) {
+        val prRepository = SqlDelightPersonalRecordRepository(db)
+        val sessions = queries.selectSessionsForPhasePRBackfill(
+            fromSessionTimestamp = fromSessionTimestamp,
+            profileId = profileId,
+            mapper = ::mapToWorkoutSession,
+        ).executeAsList()
+        var changedRows = 0
+        var maxScannedSessionTimestamp: Long? = null
+        var hadFailure = false
+
+        for (session in sessions) {
+            maxScannedSessionTimestamp = maxOf(
+                maxScannedSessionTimestamp ?: session.timestamp,
+                session.timestamp,
+            )
+            val exerciseId = session.exerciseId?.takeIf { it.isNotBlank() } ?: continue
+            val reps = when {
+                session.workingReps > 0 -> session.workingReps
+                session.totalReps > 0 -> session.totalReps
+                else -> 0
+            }
+            if (reps <= 0) continue
+
+            val peakConcentric = maxOf(
+                session.peakForceConcentricA ?: 0f,
+                session.peakForceConcentricB ?: 0f,
+            )
+            val peakEccentric = maxOf(
+                session.peakForceEccentricA ?: 0f,
+                session.peakForceEccentricB ?: 0f,
+            )
+            if (peakConcentric <= 0f && peakEccentric <= 0f) continue
+
+            val result = prRepository.updatePhaseSpecificPRs(
+                exerciseId = exerciseId,
+                workoutMode = session.mode,
+                timestamp = session.timestamp,
+                reps = reps,
+                peakConcentricForceKg = peakConcentric,
+                peakEccentricForceKg = peakEccentric,
+                profileId = session.profileId,
+                cableCount = session.displayMultiplier ?: session.cableCount,
+            )
+            changedRows += result.getOrElse { error ->
+                hadFailure = true
+                Logger.e(error) {
+                    "Phase PR backfill failed for session=${session.id}, exercise=$exerciseId, profile=${session.profileId}"
+                }
+                emptyList()
+            }.size
+        }
+
+        val checkpointTimestamp = maxScannedSessionTimestamp
+            ?: queries.selectLatestSessionForPhasePRBackfill(
+                fromSessionTimestamp = fromSessionTimestamp,
+                profileId = profileId,
+                mapper = ::mapToWorkoutSession,
+            ).executeAsOneOrNull()
+                ?.timestamp
+
+        PhasePRBackfillResult(
+            changedRows = changedRows,
+            maxScannedSessionTimestamp = checkpointTimestamp.takeUnless { hadFailure },
+        )
+    }
+
+    override suspend fun findSessionIdsForPersonalRecords(
+        records: List<PersonalRecord>,
+        profileId: String,
+    ): Map<String, String> = withContext(Dispatchers.IO) {
+        if (records.isEmpty()) return@withContext emptyMap()
+
+        records
+            .distinctBy { record -> personalRecordSessionKey(record.exerciseId, record.timestamp) }
+            .mapNotNull { record ->
+                val sessionId = queries.selectSessionIdForPersonalRecord(
+                    exerciseId = record.exerciseId,
+                    timestamp = record.timestamp,
+                    profileId = profileId,
+                ).executeAsOneOrNull()
+                sessionId?.let { personalRecordSessionKey(record.exerciseId, record.timestamp) to it }
+            }
+            .toMap()
     }
 
     override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<com.devil.phoenixproject.database.PhaseStatistics> {

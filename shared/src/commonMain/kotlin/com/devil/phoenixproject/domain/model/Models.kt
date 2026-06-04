@@ -654,6 +654,7 @@ data class PRCelebrationEvent(
     val workoutMode: String,
     val brokenPRTypes: List<PRType> = listOf(PRType.MAX_WEIGHT),
     val cableCount: Int? = null,
+    val phaseLabel: String = "Combined",
 ) {
     val isWeightPR: Boolean get() = PRType.MAX_WEIGHT in brokenPRTypes
     val isVolumePR: Boolean get() = PRType.MAX_VOLUME in brokenPRTypes

@@ -480,6 +480,33 @@ data class ExternalActivityAckDto(
     val updatedAt: String? = null,
 )
 
+/**
+ * Dedicated mobile -> portal personal record row.
+ *
+ * The portal treats this top-level list as authoritative when present and
+ * falls back to set-level `isPr` hints only for older clients. Mobile does not
+ * send its local Long primary key because the portal schema accepts only UUIDs
+ * for `id`; dedupe is by exercise, achievedAt, recordType, workoutPhase, and
+ * localProfileId.
+ */
+@Serializable
+data class PortalPersonalRecordDto(
+    val exerciseName: String,
+    val exerciseId: String? = null,
+    val muscleGroup: String = "General",
+    val recordType: String,
+    val value: Float? = null,
+    val volume: Float? = null,
+    val weightKg: Float? = null,
+    val reps: Int? = null,
+    val workoutPhase: String,
+    val sessionId: String? = null,
+    val achievedAt: String,
+    val updatedAt: String? = null,
+    val localProfileId: String? = null,
+    val workoutMode: String? = null,
+)
+
 // ─── Composite Sync Payload ─────────────────────────────────────────
 
 /**
@@ -511,6 +538,8 @@ data class PortalSyncPayload(
     val allProfiles: List<LocalProfileDto>? = null,
     // External integration activities (paid users only)
     val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
+    // Dedicated personal_records rows; authoritative over legacy set PR hints.
+    val personalRecords: List<PortalPersonalRecordDto> = emptyList(),
 )
 
 // ─── External Activities (Integration sync) ──────────────────────────
