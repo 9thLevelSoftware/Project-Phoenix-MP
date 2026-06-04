@@ -445,6 +445,38 @@ class StreamingImportRoundTripTest {
     }
 
     @Test
+    fun `streaming import skips privacy metadata before data`() {
+        val freshDb = createTestDatabase()
+        val freshManager = TestDataBackupManager(freshDb)
+        val backupJson = """
+            {
+              "version": 3,
+              "exportedAt": "2026-06-04T12:00:00Z",
+              "appVersion": "test",
+              "privacy": {
+                "classification": "FULL_PERSONAL_DATA",
+                "containsAuthTokens": false,
+                "nested": {
+                  "ignored": true,
+                  "values": [1, 2, 3]
+                }
+              },
+              "data": {
+                "workoutSessions": []
+              }
+            }
+        """.trimIndent()
+
+        val source = StringBackupStreamSource(backupJson)
+        source.open()
+        val importResult = freshManager.importFromStreamPublic(source)
+        source.close()
+
+        assertTrue(importResult.isSuccess, "Streaming import must skip top-level privacy metadata")
+        assertEquals(0, importResult.getOrThrow().sessionsImported)
+    }
+
+    @Test
     fun `streaming import round-trip preserves all entities`() = runTest {
         // 1. Create original database and populate
         val originalDb = createTestDatabase()

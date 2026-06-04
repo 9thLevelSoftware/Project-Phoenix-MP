@@ -991,6 +991,8 @@ abstract class BaseDataBackupManager(
 
                     "appVersion" -> nav.skipValue()
 
+                    "privacy" -> nav.skipValue()
+
                     "data" -> {
                         nav.beginObject()
                         while (nav.hasNextInObject()) {
