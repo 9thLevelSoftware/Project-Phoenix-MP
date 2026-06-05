@@ -3,692 +3,920 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Phoenix</title>
+    <title>Project Phoenix — Keep Your Vitruvian Trainer Alive</title>
+    <meta name="description" content="Project Phoenix is a free, community-built app that restores full Bluetooth control to Vitruvian V-Form and Trainer+ machines after the company's closure. 572 exercises, 7 ways to train, real-time velocity-based training, and optional cloud sync. Android & iOS.">
+    <meta name="theme-color" content="#0b0e14">
+    <link rel="icon" type="image/png" href="vitphoe_logo.png">
+
+    <!-- Open Graph / social -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Project Phoenix — Keep Your Vitruvian Trainer Alive">
+    <meta property="og:description" content="A free, community rescue project that restores full control to Vitruvian Trainer machines. 572 exercises, real-time training, optional cloud sync. Android & iOS.">
+    <meta property="og:image" content="vitphoe_logo.png">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <style>
-        @import url("https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap");
+        @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 
         :root {
-            --bg: #0b1118;
-            --panel: #151f2c;
-            --panel-alt: #101826;
-            --text: #f4f7fb;
-            --muted: #a6b3c3;
-            --accent: #ff7a3d;
-            --accent-2: #39d2a4;
-            --accent-3: #f2c14e;
-            --border: rgba(255, 255, 255, 0.08);
-            --shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+            --bg: #0b0e14;
+            --bg-2: #0e131c;
+            --panel: #141b27;
+            --panel-2: #19212f;
+            --text: #f5f8fc;
+            --muted: #a3b1c4;
+            --muted-2: #7d8ba0;
+            --ember: #ff7a3d;
+            --ember-soft: #ff9460;
+            --gold: #f5c451;
+            --teal: #3ad6a6;
+            --border: rgba(255, 255, 255, 0.09);
+            --border-strong: rgba(255, 255, 255, 0.18);
+            --shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+            --radius: 18px;
+            --maxw: 1160px;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html { scroll-behavior: smooth; }
+        @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
         body {
-            font-family: "Space Grotesk", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            font-family: "Space Grotesk", "Segoe UI", Tahoma, sans-serif;
             color: var(--text);
             background-color: var(--bg);
-            min-height: 100vh;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
         }
 
-        body::before {
-            content: "";
+        /* Background atmosphere — ember glow + obsidian gradient */
+        .bg-atmos {
             position: fixed;
             inset: 0;
+            z-index: -3;
             background:
-                radial-gradient(700px circle at 12% 10%, rgba(255, 122, 61, 0.25), transparent 60%),
-                radial-gradient(600px circle at 85% 16%, rgba(57, 210, 164, 0.2), transparent 62%),
-                linear-gradient(120deg, #0a1017 0%, #0d1520 52%, #121c2a 100%);
-            z-index: -2;
+                radial-gradient(900px circle at 10% -5%, rgba(255, 122, 61, 0.20), transparent 55%),
+                radial-gradient(820px circle at 92% 4%, rgba(245, 196, 81, 0.12), transparent 55%),
+                radial-gradient(700px circle at 78% 88%, rgba(58, 214, 166, 0.10), transparent 55%),
+                linear-gradient(160deg, #090c12 0%, #0b0e14 45%, #0d1320 100%);
         }
-
-        body::after {
-            content: "";
+        .bg-grid {
             position: fixed;
             inset: 0;
+            z-index: -2;
             background-image:
-                repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 8px),
-                repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.02) 0, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 10px);
-            opacity: 0.5;
-            z-index: -1;
-            pointer-events: none;
+                linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+            background-size: 64px 64px;
+            mask-image: radial-gradient(circle at 50% 30%, #000 0%, transparent 75%);
+            opacity: 0.6;
+        }
+        #embers { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+        .ember {
+            position: absolute;
+            bottom: -10px;
+            width: 4px; height: 4px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--ember-soft), rgba(255, 122, 61, 0));
+            animation: rise linear infinite;
+            opacity: 0;
+        }
+        @keyframes rise {
+            0% { transform: translateY(0) translateX(0); opacity: 0; }
+            12% { opacity: 0.9; }
+            85% { opacity: 0.7; }
+            100% { transform: translateY(-105vh) translateX(40px); opacity: 0; }
         }
 
-        a {
-            color: inherit;
-        }
+        a { color: inherit; text-decoration: none; }
 
-        .page {
-            max-width: 1100px;
+        .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 22px; }
+
+        /* ---------- Nav ---------- */
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(14px);
+            background: rgba(11, 14, 20, 0.72);
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.3s ease, background 0.3s ease;
+        }
+        nav.scrolled { border-bottom-color: var(--border); }
+        .nav-inner {
+            max-width: var(--maxw);
             margin: 0 auto;
-            padding: 64px 20px 80px;
+            padding: 14px 22px;
             display: flex;
-            flex-direction: column;
-            gap: 48px;
-        }
-
-        .hero {
-            display: grid;
-            grid-template-columns: 1.2fr 0.8fr;
-            gap: 32px;
             align-items: center;
+            justify-content: space-between;
+            gap: 16px;
         }
+        .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 1.08rem; letter-spacing: 0.02em; }
+        .brand .mark {
+            width: 34px; height: 34px;
+            display: grid; place-items: center;
+            border-radius: 10px;
+            background: linear-gradient(135deg, rgba(255,122,61,0.22), rgba(245,196,81,0.14));
+            border: 1px solid var(--border);
+        }
+        .brand svg { width: 20px; height: 20px; }
+        .nav-links { display: flex; align-items: center; gap: 26px; }
+        .nav-links a.link { color: var(--muted); font-size: 0.93rem; font-weight: 500; transition: color 0.2s; }
+        .nav-links a.link:hover { color: var(--text); }
+        .nav-cta { display: flex; align-items: center; gap: 10px; }
 
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+            padding: 13px 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            font-weight: 600; font-size: 0.95rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.25s ease, border-color 0.2s ease, background 0.2s ease;
+        }
+        .btn svg { width: 18px; height: 18px; flex: none; }
+        .btn.primary {
+            background: linear-gradient(135deg, var(--ember), var(--gold));
+            border-color: transparent;
+            color: #2a1402;
+            box-shadow: 0 10px 30px rgba(255, 122, 61, 0.32);
+        }
+        .btn.primary:hover { transform: translateY(-2px); box-shadow: 0 16px 38px rgba(255, 122, 61, 0.45); }
+        .btn.ghost { background: rgba(255, 255, 255, 0.04); color: var(--text); }
+        .btn.ghost:hover { transform: translateY(-2px); border-color: var(--border-strong); background: rgba(255, 255, 255, 0.07); }
+        .btn.teal { background: rgba(58, 214, 166, 0.13); border-color: rgba(58, 214, 166, 0.45); color: #d6fff2; }
+        .btn.teal:hover { transform: translateY(-2px); background: rgba(58, 214, 166, 0.2); }
+        .btn.small { padding: 10px 15px; font-size: 0.88rem; }
+
+        /* ---------- Hero ---------- */
+        .hero { padding: 72px 0 40px; }
+        .hero-grid { display: grid; grid-template-columns: 1.12fr 0.88fr; gap: 48px; align-items: center; }
         .eyebrow {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 14px;
-            border-radius: 999px;
+            display: inline-flex; align-items: center; gap: 9px;
+            padding: 7px 15px; border-radius: 999px;
             border: 1px solid var(--border);
             background: rgba(255, 255, 255, 0.03);
             color: var(--muted);
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
+            font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.14em;
         }
-
+        .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 10px var(--teal); }
         h1 {
-            font-family: "Fraunces", "Times New Roman", serif;
-            font-size: clamp(2.6rem, 4vw, 3.8rem);
-            margin: 18px 0 12px;
-        }
-
-        .tagline {
-            font-size: 1.1rem;
-            color: var(--muted);
-            max-width: 600px;
-        }
-
-        .cta {
-            margin-top: 26px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            padding: 14px 20px;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            text-decoration: none;
+            font-family: "Fraunces", serif;
             font-weight: 600;
-            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+            font-size: clamp(2.7rem, 5.4vw, 4.6rem);
+            line-height: 1.04;
+            letter-spacing: -0.01em;
+            margin: 22px 0 18px;
         }
-
-        .btn.primary {
-            background: var(--accent);
-            border-color: var(--accent);
-            color: #1b0f0a;
+        .flame {
+            background: linear-gradient(120deg, var(--ember) 10%, var(--gold) 55%, var(--ember-soft) 90%);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent; color: transparent;
         }
-
-        .btn.secondary {
-            background: rgba(57, 210, 164, 0.12);
-            border-color: rgba(57, 210, 164, 0.5);
-            color: var(--text);
-        }
-
-        .btn.ghost {
-            background: transparent;
-        }
-
-        .btn.small {
-            padding: 10px 14px;
-            font-size: 0.9rem;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-
-        .meta {
-            margin-top: 22px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            font-family: "IBM Plex Mono", "Courier New", monospace;
-            font-size: 0.85rem;
-            color: var(--muted);
-        }
-
-        .meta span {
-            padding: 4px 10px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--border);
-        }
-
-        .card {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 24px;
-            box-shadow: var(--shadow);
-        }
-
-        .hero-card {
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-        }
-
-        .logo-wrap {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 12px;
+        .lead { font-size: 1.18rem; color: var(--muted); max-width: 560px; }
+        .lead strong { color: var(--text); font-weight: 600; }
+        .hero-cta { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 13px; }
+        .trust { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px; }
+        .chip {
+            display: inline-flex; align-items: center; gap: 7px;
+            padding: 6px 13px; border-radius: 999px;
             background: rgba(255, 255, 255, 0.04);
-            border-radius: 16px;
-        }
-
-        .logo-wrap img {
-            width: 100%;
-            max-width: 220px;
-            height: auto;
-        }
-
-        h2, h3 {
-            font-family: "Fraunces", "Times New Roman", serif;
-            margin-bottom: 12px;
-        }
-
-        .list {
-            list-style: none;
-            display: grid;
-            gap: 10px;
-            color: var(--muted);
-            line-height: 1.5;
-        }
-
-        .list li {
-            display: flex;
-            gap: 10px;
-        }
-
-        .list li::before {
-            content: "-";
-            color: var(--accent-2);
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(12, 1fr);
-            gap: 24px;
-        }
-
-        .grid .card {
-            grid-column: span 4;
-        }
-
-        .span-7 {
-            grid-column: span 7;
-        }
-
-        .span-5 {
-            grid-column: span 5;
-        }
-
-        .span-6 {
-            grid-column: span 6;
-        }
-
-        .callout {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 24px;
-            background: linear-gradient(120deg, rgba(255, 122, 61, 0.25), rgba(57, 210, 164, 0.1));
-        }
-
-        .callout p {
-            color: var(--muted);
-        }
-
-        .table {
-            display: grid;
-            gap: 10px;
-            margin-top: 12px;
-        }
-
-        .row {
-            display: grid;
-            grid-template-columns: 1.2fr 0.6fr 1.4fr;
-            gap: 10px;
-            padding: 10px 12px;
-            border-radius: 12px;
-            background: var(--panel-alt);
             border: 1px solid var(--border);
-            color: var(--muted);
+            font-size: 0.82rem; color: var(--muted);
+            font-family: "IBM Plex Mono", monospace;
         }
+        .chip .tick { color: var(--teal); }
 
-        .row.header {
-            background: transparent;
-            border: none;
-            padding: 0 4px;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            font-size: 0.7rem;
+        .hero-visual { position: relative; display: grid; place-items: center; }
+        .hero-orb {
+            position: absolute; width: 360px; height: 360px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(255, 148, 96, 0.4) 0%, rgba(255, 122, 61, 0.16) 40%, transparent 70%);
+            filter: blur(18px);
         }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 2px 8px;
-            border-radius: 999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text);
-        }
-
-        .badge.warning {
-            background: rgba(242, 193, 78, 0.18);
-            color: var(--accent-3);
-        }
-
-        .hardware {
-            display: grid;
-            gap: 16px;
-        }
-
-        .device {
-            padding: 14px;
-            border-radius: 14px;
+        .logo-card {
+            position: relative;
+            width: min(380px, 80vw);
+            padding: 34px;
+            border-radius: 26px;
+            background: linear-gradient(160deg, var(--panel), var(--bg-2));
             border: 1px solid var(--border);
-            background: rgba(255, 255, 255, 0.02);
-        }
-
-        .device-name {
-            font-weight: 600;
-        }
-
-        .device-meta {
-            margin-top: 6px;
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        .mono {
-            font-family: "IBM Plex Mono", "Courier New", monospace;
-            font-size: 0.9rem;
-        }
-
-        .link-list a {
-            text-decoration: none;
-            color: var(--accent-2);
-            font-weight: 600;
-        }
-
-        .link-list a:hover {
-            text-decoration: underline;
-        }
-
-        .legal {
-            border-left: 4px solid var(--accent);
-        }
-
-        footer {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            justify-content: space-between;
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        footer a {
-            color: var(--text);
-            text-decoration: none;
-        }
-
-        footer a:hover {
-            text-decoration: underline;
-        }
-
-        /* Beta signup section styles */
-        .beta-options {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            gap: 24px;
-            align-items: center;
-        }
-
-        .beta-option {
-            padding: 20px;
-            border-radius: 14px;
-            background: var(--panel-alt);
-            border: 1px solid var(--border);
-        }
-
-        .beta-option-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
-        .beta-option-header h3 {
-            margin: 0;
-            font-size: 1.2rem;
-        }
-
-        .platform-icon {
-            font-size: 1.5rem;
-        }
-
-        .beta-option p {
-            color: var(--muted);
-            font-size: 0.95rem;
-            margin-bottom: 16px;
-            line-height: 1.5;
-        }
-
-        .beta-divider {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        .beta-divider::before,
-        .beta-divider::after {
-            content: "";
-            width: 1px;
-            height: 40px;
-            background: var(--border);
-        }
-
-        .beta-divider span {
-            padding: 8px 0;
-        }
-
-        .beta-form {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .form-row-inline {
-            display: flex;
-            gap: 10px;
-        }
-
-        .form-row-inline input[type="email"] {
-            flex: 1;
-            padding: 12px 14px;
-            border-radius: 10px;
-            border: 1px solid var(--border);
-            background: var(--panel);
-            color: var(--text);
-            font-size: 1rem;
-            font-family: inherit;
-            transition: border-color 0.2s ease, background 0.2s ease;
-        }
-
-        .form-row-inline input:focus {
-            outline: none;
-            border-color: var(--accent);
-            background: rgba(255, 122, 61, 0.08);
-        }
-
-        .form-row-inline input::placeholder {
-            color: var(--muted);
-            opacity: 0.6;
-        }
-
-        .form-note {
-            font-size: 0.85rem;
-            color: var(--muted);
-            margin-top: 16px;
+            box-shadow: var(--shadow);
             text-align: center;
         }
+        .logo-card img { width: 100%; max-width: 230px; height: auto; filter: drop-shadow(0 0 34px rgba(255, 150, 80, 0.45)); }
+        .logo-card .ver { margin-top: 14px; font-family: "IBM Plex Mono", monospace; color: var(--muted-2); font-size: 0.82rem; }
+        .logo-card .quote { margin-top: 6px; font-family: "Fraunces", serif; font-style: italic; color: var(--gold); font-size: 1.05rem; }
 
-        .beta-form button[type="submit"] {
-            cursor: pointer;
-            border: none;
-            font-family: inherit;
-            white-space: nowrap;
+        /* ---------- Stats strip ---------- */
+        .stats {
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px;
+            margin: 26px 0 8px;
         }
-
-        @media (max-width: 768px) {
-            .beta-options {
-                grid-template-columns: 1fr;
-                gap: 16px;
-            }
-
-            .beta-divider {
-                flex-direction: row;
-                width: 100%;
-            }
-
-            .beta-divider::before,
-            .beta-divider::after {
-                width: 40%;
-                height: 1px;
-            }
-
-            .beta-divider span {
-                padding: 0 12px;
-            }
-
-            .form-row-inline {
-                flex-direction: column;
-            }
-
-            .form-row-inline button {
-                width: 100%;
-            }
+        .stat {
+            text-align: center; padding: 22px 12px;
+            background: linear-gradient(180deg, var(--panel), var(--bg-2));
+            border: 1px solid var(--border); border-radius: 16px;
         }
+        .stat .num { font-family: "Fraunces", serif; font-size: 2rem; font-weight: 700; line-height: 1; }
+        .stat .num.flame { font-weight: 700; }
+        .stat .lbl { margin-top: 8px; font-size: 0.82rem; color: var(--muted); letter-spacing: 0.02em; }
 
-        .reveal {
-            opacity: 0;
-            transform: translateY(16px);
-            animation: fadeUp 0.8s ease forwards;
+        /* ---------- Sections ---------- */
+        section { padding: 56px 0; }
+        .section-head { max-width: 720px; margin-bottom: 38px; }
+        .kicker { color: var(--teal); font-family: "IBM Plex Mono", monospace; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.18em; }
+        h2 { font-family: "Fraunces", serif; font-weight: 600; font-size: clamp(1.9rem, 3.4vw, 2.8rem); line-height: 1.1; margin: 12px 0 14px; letter-spacing: -0.01em; }
+        h2 + p { color: var(--muted); font-size: 1.08rem; }
+
+        .card {
+            background: linear-gradient(180deg, var(--panel), var(--bg-2));
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 26px;
+            transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
         }
-
-        .delay-1 { animation-delay: 0.1s; }
-        .delay-2 { animation-delay: 0.2s; }
-        .delay-3 { animation-delay: 0.3s; }
-        .delay-4 { animation-delay: 0.4s; }
-
-        @keyframes fadeUp {
-            from {
-                opacity: 0;
-                transform: translateY(16px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+        .card:hover { transform: translateY(-4px); border-color: var(--border-strong); box-shadow: var(--shadow); }
+        .card .ico {
+            width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 16px;
+            background: linear-gradient(135deg, rgba(255,122,61,0.18), rgba(245,196,81,0.10));
+            border: 1px solid var(--border);
         }
+        .card .ico svg { width: 24px; height: 24px; }
+        .card h3 { font-family: "Fraunces", serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 9px; }
+        .card p { color: var(--muted); font-size: 0.96rem; }
+        .card ul { list-style: none; margin-top: 12px; display: grid; gap: 8px; }
+        .card ul li { display: flex; gap: 9px; color: var(--muted); font-size: 0.92rem; }
+        .card ul li::before { content: "›"; color: var(--ember); font-weight: 700; }
 
+        .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+
+        /* Story / rescue band */
+        .story {
+            display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 40px; align-items: center;
+            background: linear-gradient(140deg, rgba(255, 122, 61, 0.12), rgba(58, 214, 166, 0.07));
+            border: 1px solid var(--border);
+            border-radius: 26px; padding: 42px;
+        }
+        .story h2 { margin-top: 6px; }
+        .story p { color: var(--muted); margin-bottom: 14px; }
+        .story .pill-list { display: grid; gap: 12px; }
+        .story .pill {
+            display: flex; gap: 13px; align-items: flex-start;
+            background: rgba(0,0,0,0.22); border: 1px solid var(--border); border-radius: 14px; padding: 15px 17px;
+        }
+        .story .pill .em { font-size: 1.3rem; }
+        .story .pill b { display: block; margin-bottom: 2px; }
+        .story .pill span { color: var(--muted); font-size: 0.9rem; }
+
+        /* Modes */
+        .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .mode {
+            position: relative; overflow: hidden;
+            background: linear-gradient(180deg, var(--panel), var(--bg-2));
+            border: 1px solid var(--border); border-radius: 16px; padding: 22px;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .mode:hover { transform: translateY(-3px); border-color: var(--border-strong); }
+        .mode::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--ember); }
+        .mode.m2::before { background: var(--gold); }
+        .mode.m3::before { background: var(--teal); }
+        .mode.m4::before { background: #c07cff; }
+        .mode h4 { font-family: "Fraunces", serif; font-size: 1.18rem; font-weight: 600; margin-bottom: 6px; }
+        .mode p { color: var(--muted); font-size: 0.9rem; }
+        .mode .tag { display: inline-block; margin-top: 12px; font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.08em; }
+
+        /* Highlight band (Safe Word) */
+        .highlight-band {
+            display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center;
+            background:
+                radial-gradient(500px circle at 0% 0%, rgba(255, 122, 61, 0.2), transparent 60%),
+                linear-gradient(160deg, var(--panel-2), var(--bg-2));
+            border: 1px solid var(--border-strong); border-radius: 24px; padding: 38px;
+        }
+        .highlight-band .big-ico { width: 84px; height: 84px; border-radius: 22px; display: grid; place-items: center; background: linear-gradient(135deg, rgba(255,122,61,0.25), rgba(245,196,81,0.12)); border: 1px solid var(--border); }
+        .highlight-band .big-ico svg { width: 42px; height: 42px; }
+        .highlight-band h3 { font-family: "Fraunces", serif; font-size: 1.6rem; font-weight: 600; margin-bottom: 8px; }
+        .highlight-band p { color: var(--muted); max-width: 720px; }
+        .highlight-band .said { font-family: "IBM Plex Mono", monospace; color: var(--gold); }
+
+        /* Portal split */
+        .portal { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 40px; align-items: center; }
+        .portal-visual {
+            border-radius: 22px; border: 1px solid var(--border); overflow: hidden;
+            background: linear-gradient(160deg, #0f1622, #0b1019);
+            box-shadow: var(--shadow); padding: 22px;
+        }
+        .mock-window { border-radius: 14px; border: 1px solid var(--border); background: #0a0f17; overflow: hidden; }
+        .mock-bar { display: flex; gap: 7px; padding: 11px 13px; border-bottom: 1px solid var(--border); }
+        .mock-bar i { width: 11px; height: 11px; border-radius: 50%; background: #2b3647; display: inline-block; }
+        .mock-bar i.r { background: #ff5f57; } .mock-bar i.y { background: #febc2e; } .mock-bar i.g { background: #28c840; }
+        .mock-body { padding: 18px; display: grid; gap: 14px; }
+        .mock-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .mock-tile { background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+        .mock-tile .k { font-size: 0.7rem; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.1em; }
+        .mock-tile .v { font-family: "Fraunces", serif; font-size: 1.5rem; font-weight: 700; margin-top: 4px; }
+        .spark { height: 64px; border-radius: 12px; border: 1px solid var(--border); background:
+            linear-gradient(180deg, rgba(58,214,166,0.16), transparent),
+            repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 26px);
+            position: relative; }
+        .spark svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+        /* Hardware table */
+        .hw { display: grid; gap: 14px; }
+        .hw-row {
+            display: grid; grid-template-columns: 1.5fr 1fr 1fr auto; gap: 14px; align-items: center;
+            padding: 18px 22px; border-radius: 16px;
+            background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--border);
+        }
+        .hw-row.head { background: transparent; border: none; padding: 0 22px; color: var(--muted-2); text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.12em; }
+        .hw-name { font-weight: 600; font-size: 1.05rem; }
+        .hw-name small { display: block; color: var(--muted); font-weight: 400; font-size: 0.82rem; }
+        .mono { font-family: "IBM Plex Mono", monospace; font-size: 0.9rem; color: var(--muted); }
+        .ok { display: inline-flex; align-items: center; gap: 7px; color: var(--teal); font-weight: 600; font-size: 0.9rem; }
+        .ok::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+
+        /* Download */
+        .dl { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .dl-card { text-align: left; }
+        .dl-card .os { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+        .dl-card .os .glyph { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 11px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); }
+        .dl-card .os .glyph svg { width: 22px; height: 22px; }
+        .dl-card .os h3 { font-family: "Fraunces", serif; font-size: 1.3rem; }
+        .dl-card .badge2 { font-size: 0.78rem; color: var(--teal); font-family: "IBM Plex Mono", monospace; }
+        .dl-card p { color: var(--muted); font-size: 0.94rem; margin: 8px 0 16px; }
+        .dl-card .row { display: flex; flex-wrap: wrap; gap: 10px; }
+
+        /* Honesty / privacy band */
+        .honesty { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .honesty .card h3 { display: flex; align-items: center; gap: 9px; }
+
+        /* Support */
+        .support {
+            text-align: center;
+            background:
+                radial-gradient(600px circle at 50% -20%, rgba(255, 122, 61, 0.22), transparent 60%),
+                linear-gradient(160deg, var(--panel-2), var(--bg-2));
+            border: 1px solid var(--border-strong); border-radius: 26px; padding: 54px 32px;
+        }
+        .support h2 { margin-bottom: 10px; }
+        .support p { color: var(--muted); max-width: 560px; margin: 0 auto 24px; }
+        .support .row { display: flex; justify-content: center; flex-wrap: wrap; gap: 13px; }
+
+        /* Dev / tech */
+        .tech-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+        .tag-list { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+        .tag-list span { font-family: "IBM Plex Mono", monospace; font-size: 0.8rem; color: var(--muted); padding: 6px 12px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--border); }
+
+        /* FAQ */
+        .faq { display: grid; gap: 12px; max-width: 860px; margin: 0 auto; }
+        details {
+            background: linear-gradient(180deg, var(--panel), var(--bg-2));
+            border: 1px solid var(--border); border-radius: 14px; padding: 4px 22px;
+        }
+        details[open] { border-color: var(--border-strong); }
+        summary { cursor: pointer; list-style: none; padding: 18px 0; font-weight: 600; font-size: 1.04rem; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+        summary::-webkit-details-marker { display: none; }
+        summary::after { content: "+"; color: var(--ember); font-size: 1.5rem; line-height: 1; transition: transform 0.2s; }
+        details[open] summary::after { transform: rotate(45deg); }
+        details p { color: var(--muted); padding: 0 0 20px; font-size: 0.96rem; }
+
+        /* Footer */
+        footer { border-top: 1px solid var(--border); padding: 46px 0 60px; margin-top: 30px; }
+        .foot-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 28px; }
+        .foot-grid h5 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted-2); margin-bottom: 14px; }
+        .foot-grid a { display: block; color: var(--muted); font-size: 0.92rem; margin-bottom: 9px; transition: color 0.2s; }
+        .foot-grid a:hover { color: var(--text); }
+        .foot-brand p { color: var(--muted); font-size: 0.92rem; margin-top: 12px; max-width: 320px; }
+        .legal { margin-top: 34px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted-2); font-size: 0.84rem; line-height: 1.7; }
+        .legal a { color: var(--muted); }
+
+        .reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.7s ease, transform 0.7s ease; }
+        .reveal.in { opacity: 1; transform: none; }
         @media (prefers-reduced-motion: reduce) {
-            .reveal {
-                animation: none;
-                opacity: 1;
-                transform: none;
-            }
+            .reveal { opacity: 1; transform: none; transition: none; }
+            .ember { display: none; }
         }
 
-        @media (max-width: 980px) {
-            .hero {
-                grid-template-columns: 1fr;
-            }
-
-            .grid {
-                grid-template-columns: 1fr;
-            }
-
-            .grid .card,
-            .span-7,
-            .span-6,
-            .span-5 {
-                grid-column: auto;
-            }
-
-            .callout {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .row {
-                grid-template-columns: 1fr;
-            }
+        /* Responsive */
+        @media (max-width: 1000px) {
+            .hero-grid { grid-template-columns: 1fr; gap: 36px; }
+            .hero-visual { order: -1; }
+            .features, .honesty { grid-template-columns: 1fr 1fr; }
+            .modes { grid-template-columns: 1fr 1fr; }
+            .story, .portal, .tech-grid { grid-template-columns: 1fr; }
+            .dl { grid-template-columns: 1fr; }
+            .stats { grid-template-columns: repeat(3, 1fr); }
+            .foot-grid { grid-template-columns: 1fr 1fr; }
+            .nav-links { display: none; }
+        }
+        @media (max-width: 620px) {
+            .features, .honesty, .modes, .stats { grid-template-columns: 1fr; }
+            .hw-row { grid-template-columns: 1fr; gap: 6px; text-align: left; }
+            .hw-row.head { display: none; }
+            .highlight-band { grid-template-columns: 1fr; text-align: left; }
+            .story, .support { padding: 30px 22px; }
+            .nav-cta .btn.ghost { display: none; }
+            .foot-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <div class="page">
-        <header class="hero reveal">
-            <div>
-                <span class="eyebrow">Community rescue project</span>
-                <h1>Project Phoenix</h1>
-                <p class="tagline">
-                    A Kotlin Multiplatform companion app for controlling Vitruvian Trainer workout machines via Bluetooth Low Energy.
-                    Built to keep equipment functional after the company's bankruptcy and avoid e-waste.
-                </p>
-                <div class="cta">
-                    <a class="btn secondary" href="#beta-signup">Join the Beta</a>
-                    <a class="btn primary" href="https://ko-fi.com/vitruvianredux" target="_blank" rel="noopener noreferrer">Donate on Ko-fi</a>
-                    <a class="btn ghost" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+    <div class="bg-atmos"></div>
+    <div class="bg-grid"></div>
+    <div id="embers"></div>
+
+    <!-- ============ NAV ============ -->
+    <nav id="nav">
+        <div class="nav-inner">
+            <a class="brand" href="#top" aria-label="Project Phoenix home">
+                <span class="mark">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2c1.4 2.8 1 5-.6 6.7 2.6-.3 4-1.9 4.6-3.7 1.6 2.7 1.3 6.2-1 8.4 2 .2 3.6-.6 4.7-1.8-.2 3.7-2.7 7-6.4 8.1.9.6 2 .9 3.2.8C18 20.4 15.2 22 12 22s-6-1.6-7.5-3.4c1.2.1 2.3-.2 3.2-.8C4 16.7 1.5 13.4 1.3 9.7c1.1 1.2 2.7 2 4.7 1.8-2.3-2.2-2.6-5.7-1-8.4.6 1.8 2 3.4 4.6 3.7C8 5 7.6 4.8 9 2c.8 1.2 2.2 1.2 3 0Z" fill="url(#ng)"/><defs><linearGradient id="ng" x1="2" y1="2" x2="22" y2="22"><stop stop-color="#ff7a3d"/><stop offset="1" stop-color="#f5c451"/></linearGradient></defs></svg>
+                </span>
+                Project Phoenix
+            </a>
+            <div class="nav-links">
+                <a class="link" href="#features">Features</a>
+                <a class="link" href="#modes">Modes</a>
+                <a class="link" href="#portal">Portal</a>
+                <a class="link" href="#hardware">Hardware</a>
+                <a class="link" href="#faq">FAQ</a>
+            </div>
+            <div class="nav-cta">
+                <a class="btn ghost small" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP" target="_blank" rel="noopener">GitHub</a>
+                <a class="btn primary small" href="#download">Get the app</a>
+            </div>
+        </div>
+    </nav>
+
+    <div id="top"></div>
+    <div class="wrap">
+
+        <!-- ============ HERO ============ -->
+        <header class="hero">
+            <div class="hero-grid">
+                <div class="reveal in">
+                    <span class="eyebrow"><span class="dot"></span> Community rescue project · Not affiliated with Vitruvian</span>
+                    <h1>Don't let it<br>become e-waste.<br><span class="flame">Rise from the ashes.</span></h1>
+                    <p class="lead">
+                        When Vitruvian closed its doors, thousands of trainers were left as expensive paperweights.
+                        <strong>Project Phoenix</strong> is a free, community-built app that restores <strong>full Bluetooth control</strong>
+                        to your V-Form and Trainer+ — and then goes far beyond what the original app ever did.
+                    </p>
+                    <div class="hero-cta">
+                        <a class="btn primary" href="https://play.google.com/store/apps/details?id=com.devil.phoenixproject" target="_blank" rel="noopener">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.6 2.3 13 12 3.6 21.7a1.5 1.5 0 0 1-.6-1.2V3.5c0-.5.2-.9.6-1.2Zm10.8 6.5 2.6 1.5c1.3.7 1.3 2.7 0 3.4l-2.6 1.5L11.5 12l2.9-3.2Zm-9-6.6 9 5.2L12 10.6 4.4 2.4c.3-.1.7-.2 1-.2ZM4.4 21.6 12 13.4l2.4 2.6-9 5.2c-.3 0-.7-.1-1-.2Z"/></svg>
+                            Google Play
+                        </a>
+                        <a class="btn teal" href="https://testflight.apple.com/join/TFw1m89R" target="_blank" rel="noopener">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 1.6c.1 1.2-.4 2.4-1.1 3.3-.8.9-2 1.6-3.2 1.5-.2-1.2.4-2.4 1.1-3.2.8-.9 2.1-1.5 3.2-1.6Zm3.5 16.7c-.6 1.3-.9 1.9-1.6 3-1.1 1.6-2.6 3.6-4.5 3.6-1.7 0-2.1-1.1-4.4-1.1s-2.8 1.1-4.4 1.1c-1.9 0-3.3-1.8-4.4-3.4C-.9 16.9-1.2 11 1.6 8c1-1.6 2.7-2.6 4.4-2.6 1.7 0 2.8 1.1 4.2 1.1 1.4 0 2.2-1.1 4.2-1.1 1.5 0 3 .8 4.1 2.2-3.6 2-3 7.1 1.4 8.7Z"/></svg>
+                            TestFlight (iOS)
+                        </a>
+                    </div>
+                    <div class="trust">
+                        <span class="chip"><span class="tick">✓</span> 100% free · no ads</span>
+                        <span class="chip"><span class="tick">✓</span> Android &amp; iOS</span>
+                        <span class="chip"><span class="tick">✓</span> Works fully offline</span>
+                        <span class="chip">v0.9.1 · May 2026</span>
+                    </div>
                 </div>
-                <div class="meta">
-                    <span>Android beta</span>
-                    <span>iOS beta</span>
+                <div class="hero-visual reveal in">
+                    <div class="hero-orb" aria-hidden="true"></div>
+                    <div class="logo-card">
+                        <img src="vitphoe_logo.png" alt="Project Phoenix — a rising phoenix logo">
+                        <div class="quote">"Rise from the ashes"</div>
+                        <div class="ver">Built by owners, for owners</div>
+                    </div>
                 </div>
             </div>
-            <div class="card hero-card">
-                <div class="logo-wrap">
-                    <img src="vitphoe_logo.png" alt="Project Phoenix logo">
-                </div>
-                <h2>Quick facts</h2>
-                <ul class="list">
-                    <li>Local BLE control for Vitruvian Trainer machines.</li>
-                    <li>Compose Multiplatform UI with shared Kotlin logic.</li>
-                    <li>SQLDelight storage, Koin DI, coroutines and flow.</li>
-                    <li>Community effort to keep your equipment functional.</li>
-                </ul>
+
+            <!-- Stats -->
+            <div class="stats reveal">
+                <div class="stat"><div class="num flame">572</div><div class="lbl">Exercises, with video</div></div>
+                <div class="stat"><div class="num flame">7</div><div class="lbl">Ways to train</div></div>
+                <div class="stat"><div class="num flame">2</div><div class="lbl">Machines supported</div></div>
+                <div class="stat"><div class="num flame">5</div><div class="lbl">Languages</div></div>
+                <div class="stat"><div class="num flame">$0</div><div class="lbl">Forever</div></div>
             </div>
         </header>
 
-        <section class="grid reveal delay-1">
-            <div class="card">
-                <h3>Get the app</h3>
-                <p class="tagline">Download the latest release and follow the install guides.</p>
-                <div class="cta">
-                    <a class="btn small primary" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases" target="_blank" rel="noopener noreferrer">Releases</a>
-                    <a class="btn small ghost" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/blob/main/ANDROID_INSTALL.md" target="_blank" rel="noopener noreferrer">Android install</a>
-                    <a class="btn small ghost" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/blob/main/iOS_INSTALL.md" target="_blank" rel="noopener noreferrer">iOS install</a>
+        <!-- ============ STORY ============ -->
+        <section id="story">
+            <div class="story reveal">
+                <div>
+                    <span class="kicker">The rescue</span>
+                    <h2>Your machine still works.<br>The company doesn't.</h2>
+                    <p>
+                        The Vitruvian Trainer was a brilliant piece of hardware crippled by a single point of failure: its app.
+                        When the company entered liquidation, owners were left without updates, without support, and without a way to use
+                        the equipment they paid thousands for.
+                    </p>
+                    <p>
+                        Project Phoenix reverse-engineered the Bluetooth protocol and rebuilt the experience from scratch as a
+                        free, open beta for Android and iOS. No account needed. No subscription. No servers required.
+                        Just you and your machine — exactly how it should have always been.
+                    </p>
+                </div>
+                <div class="pill-list">
+                    <div class="pill"><span class="em">🔌</span><div><b>Full local control</b><span>Connect over BLE and run every workout mode the machine supports.</span></div></div>
+                    <div class="pill"><span class="em">🛟</span><div><b>Keep your investment alive</b><span>Turn an orphaned machine back into the smart trainer you bought.</span></div></div>
+                    <div class="pill"><span class="em">🤝</span><div><b>By the community</b><span>Built and maintained by owners, funded entirely by donations.</span></div></div>
                 </div>
             </div>
-            <div class="card">
-                <h3>Planned features</h3>
-                <ul class="list">
-                    <li>BLE connectivity, workout modes, and real-time monitoring.</li>
-                    <li>Rep counting with visual feedback and auto-stop logic.</li>
-                    <li>Exercise library (200+ exercises), custom routines, program builder.</li>
-                    <li>Workout history, PR tracking, and analytics dashboards.</li>
-                </ul>
+        </section>
+
+        <!-- ============ FEATURES ============ -->
+        <section id="features">
+            <div class="section-head reveal">
+                <span class="kicker">Everything it does</span>
+                <h2>A complete trainer in your pocket</h2>
+                <p>Far more than a remote control — Project Phoenix is a full strength-training platform that just happens to also drive your hardware.</p>
             </div>
-            <div class="card">
-                <h3>Tech stack</h3>
-                <ul class="list mono">
-                    <li>Kotlin 2.0+ with Compose Multiplatform UI.</li>
-                    <li>MVVM + Clean Architecture with Koin.</li>
-                    <li>SQLDelight, Multiplatform Settings, coroutines.</li>
-                    <li>Platform BLE APIs and CoreBluetooth support.</li>
-                </ul>
+            <div class="features">
+                <div class="card reveal">
+                    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="url(#g1)" stroke-width="1.8"><defs><linearGradient id="g1" x1="0" y1="0" x2="24" y2="24"><stop stop-color="#ff7a3d"/><stop offset="1" stop-color="#f5c451"/></linearGradient></defs><path d="M6.5 6.5 17.5 17.5M4 9V6a2 2 0 0 1 2-2h3M15 4h3a2 2 0 0 1 2 2v3M20 15v3a2 2 0 0 1-2 2h-3M9 20H6a2 2 0 0 1-2-2v-3" stroke-linecap="round"/></svg></div>
+                    <h3>Full machine control</h3>
+                    <p>Rock-solid Bluetooth connection with a hardened, reliability-tuned BLE engine and built-in diagnostics.</p>
+                    <ul>
+                        <li>Set weight, mode &amp; configuration from your phone</li>
+                        <li>Motion-start detection — won't count until you move</li>
+                        <li>Stall detection &amp; automatic set end</li>
+                        <li>Live BLE diagnostics &amp; fault decoding</li>
+                    </ul>
+                </div>
+                <div class="card reveal">
+                    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="url(#g1)" stroke-width="1.8"><path d="M3 12h3l2-7 4 18 3-11 2 4h4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                    <h3>Real-time intelligence</h3>
+                    <p>Live load, velocity, position and power streamed straight from the machine, rep by rep.</p>
+                    <ul>
+                        <li>Velocity-Based Training with live zones</li>
+                        <li>Auto-end when bar speed drops off</li>
+                        <li>Automatic, machine-accurate rep counting</li>
+                        <li>Concentric / eccentric force breakdown</li>
+                    </ul>
+                </div>
+                <div class="card reveal">
+                    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="url(#g1)" stroke-width="1.8"><path d="M4 19V5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/><path d="M8 8h6M8 12h8M8 16h5" stroke-linecap="round"/></svg></div>
+                    <h3>Build &amp; program</h3>
+                    <p>A 572-exercise library and a routine builder powerful enough for real periodized programming.</p>
+                    <ul>
+                        <li>Supersets with drag-and-drop &amp; per-set rest</li>
+                        <li>% of PR scaling &amp; AMRAP sets</li>
+                        <li>Multi-week training cycles</li>
+                        <li>Routine folders &amp; bulk weight adjust</li>
+                    </ul>
+                </div>
+                <div class="card reveal">
+                    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="url(#g1)" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                    <h3>Track everything</h3>
+                    <p>Automatic PRs, estimated 1RM and Smart Insights that actually understand your training history.</p>
+                    <ul>
+                        <li>Phase- &amp; mode-specific personal records</li>
+                        <li>1RM estimates (Brzycki / Epley)</li>
+                        <li>Streaks, calendar &amp; achievement badges</li>
+                        <li>Smart Insights, trends &amp; activity replay</li>
+                    </ul>
+                </div>
+                <div class="card reveal">
+                    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="url(#g1)" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M21 3l-9 9" stroke-linecap="round"/><path d="M16 3h5v5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                    <h3>Your data, your way</h3>
+                    <p>Local-first by design. Turn on optional cloud sync only if you want it — across phones and the web.</p>
+                    <ul>
+                        <li>Optional Supabase cloud sync</li>
+                        <li>Multi-profile for shared households</li>
+                        <li>Apple Health &amp; Health Connect</li>
+                        <li>CSV import/export (Strong &amp; Hevy)</li>
+                    </ul>
+                </div>
+                <div class="card reveal">
+                    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="url(#g1)" stroke-width="1.8"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke-linecap="round"/></svg></div>
+                    <h3>The "Safe Word" stop</h3>
+                    <p>A safety feature the original app never had: <span class="said">just say the word</span> and the machine lets go.</p>
+                    <ul>
+                        <li>Voice-activated emergency stop</li>
+                        <li>Quick 3-rep calibration to your voice</li>
+                        <li>Hands-free when a lift goes wrong</li>
+                        <li>Works on Android &amp; iOS</li>
+                    </ul>
+                </div>
             </div>
         </section>
 
-        <section class="card callout reveal delay-3">
-            <div>
-                <h2>Support the project</h2>
-                <p>Every donation keeps the machines running and the code flowing.</p>
-                <p class="tagline">Alternate support option: <a href="https://buymeacoffee.com/vitruvianredux" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a></p>
+        <!-- ============ MODES ============ -->
+        <section id="modes">
+            <div class="section-head reveal">
+                <span class="kicker">Train your way</span>
+                <h2>Seven ways to move weight</h2>
+                <p>Every resistance profile the machine supports, plus a true grab-and-go freestyle mode.</p>
             </div>
-            <div class="cta">
-                <a class="btn primary" href="https://ko-fi.com/vitruvianredux" target="_blank" rel="noopener noreferrer">Donate on Ko-fi</a>
+            <div class="modes">
+                <div class="mode m1 reveal"><h4>Just Lift</h4><p>Grab the handles and go. Optional auto weight, built-in rest timer with pause and +30s.</p><span class="tag">Freestyle</span></div>
+                <div class="mode m2 reveal"><h4>Old School</h4><p>Classic constant resistance training — the dependable foundation for building strength.</p><span class="tag">Strength</span></div>
+                <div class="mode m3 reveal"><h4>Pump</h4><p>Higher-rep resistance tuned for muscle pump and hypertrophy-focused finishing work.</p><span class="tag">Hypertrophy</span></div>
+                <div class="mode m4 reveal"><h4>TUT</h4><p>Time Under Tension — controlled tempo that keeps the muscle loaded through the whole rep.</p><span class="tag">Tempo</span></div>
+                <div class="mode m1 reveal"><h4>TUT Beast</h4><p>An intensified Time Under Tension profile for when standard TUT stops being a challenge.</p><span class="tag">Tempo+</span></div>
+                <div class="mode m2 reveal"><h4>Eccentric Only</h4><p>Negative-focused overload that loads the lowering phase for serious eccentric stress.</p><span class="tag">Eccentric</span></div>
+                <div class="mode m3 reveal"><h4>Echo</h4><p>Adaptive progressive loading across four levels — Hard, Harder, Hardest and Epic — with 0–150% eccentric control.</p><span class="tag">Adaptive · 4 levels</span></div>
+                <div class="mode m4 reveal"><h4>+ Per-set control</h4><p>Mix modes, warm-ups and Echo levels per set inside a single routine for full programming freedom.</p><span class="tag">Routines</span></div>
             </div>
         </section>
 
-        <section class="card reveal delay-3" id="beta-signup">
-            <h2>Join the Beta</h2>
-            <p class="tagline" style="margin-bottom: 24px;">
-                Get early access to Project Phoenix and help shape its development.
-            </p>
-            <div class="beta-options">
-                <div class="beta-option">
-                    <div class="beta-option-header">
-                        <span class="platform-icon">🤖</span>
-                        <h3>Android (Open Testing)</h3>
+        <!-- ============ SAFE WORD HIGHLIGHT ============ -->
+        <section>
+            <div class="highlight-band reveal">
+                <div class="big-ico"><svg viewBox="0 0 24 24" fill="none" stroke="url(#g1)" stroke-width="1.6"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" stroke-linecap="round"/></svg></div>
+                <div>
+                    <h3>Heavy weight, hands full? Just say the word.</h3>
+                    <p>
+                        Born from a community feature request (<span class="said">"DAMN DEVIL STOP"</span>), Project Phoenix added a
+                        voice-activated emergency stop you calibrate to your own voice in three reps. If a lift goes sideways and you can't
+                        reach a button, your safe word drops the load. It's the kind of owner-driven safety touch that only a community project ships.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ PORTAL ============ -->
+        <section id="portal">
+            <div class="portal">
+                <div class="reveal">
+                    <span class="kicker">Phoenix Portal · public beta</span>
+                    <h2>Your training, on the big screen</h2>
+                    <p style="color:var(--muted);margin-bottom:18px;">
+                        Enable optional cloud sync and your workouts flow to <strong style="color:var(--text)">Phoenix Portal</strong>,
+                        a web companion for reviewing history, analytics and progress in a browser. Sign in with Google or Apple,
+                        sync across multiple phones, and keep household profiles cleanly separated.
+                    </p>
+                    <ul class="card" style="background:transparent;border:none;padding:0;">
+                        <li style="display:flex;gap:10px;color:var(--muted);margin-bottom:10px;"><span style="color:var(--teal)">✓</span> Bidirectional sync built for huge workout histories</li>
+                        <li style="display:flex;gap:10px;color:var(--muted);margin-bottom:10px;"><span style="color:var(--teal)">✓</span> Google &amp; Apple sign-in</li>
+                        <li style="display:flex;gap:10px;color:var(--muted);margin-bottom:10px;"><span style="color:var(--teal)">✓</span> Multi-profile households, each with their own data</li>
+                        <li style="display:flex;gap:10px;color:var(--muted);"><span style="color:var(--teal)">✓</span> Entirely optional — the app is 100% usable offline</li>
+                    </ul>
+                </div>
+                <div class="portal-visual reveal">
+                    <div class="mock-window" role="img" aria-label="Illustration of the Phoenix Portal analytics dashboard">
+                        <div class="mock-bar"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+                        <div class="mock-body">
+                            <div class="mock-row">
+                                <div class="mock-tile"><div class="k">Volume · 7d</div><div class="v flame">18.4k</div></div>
+                                <div class="mock-tile"><div class="k">Est. 1RM</div><div class="v">142<span style="font-size:0.9rem;color:var(--muted)">kg</span></div></div>
+                                <div class="mock-tile"><div class="k">Streak</div><div class="v" style="color:var(--teal)">23🔥</div></div>
+                            </div>
+                            <div class="spark" aria-hidden="true">
+                                <svg viewBox="0 0 300 64" preserveAspectRatio="none"><polyline points="0,52 40,46 80,48 120,34 160,30 200,20 240,24 300,8" fill="none" stroke="#3ad6a6" stroke-width="2.5"/><polyline points="0,58 40,54 80,50 120,44 160,40 200,36 240,30 300,22" fill="none" stroke="#ff7a3d" stroke-width="2" stroke-dasharray="4 4" opacity="0.7"/></svg>
+                            </div>
+                            <div class="mock-row">
+                                <div class="mock-tile"><div class="k">Chest</div><div class="v" style="font-size:1.1rem">PR ↑</div></div>
+                                <div class="mock-tile"><div class="k">Back</div><div class="v" style="font-size:1.1rem">+6%</div></div>
+                                <div class="mock-tile"><div class="k">Legs</div><div class="v" style="font-size:1.1rem">+3%</div></div>
+                            </div>
+                        </div>
                     </div>
-                    <p>Now available on Google Play! Download directly from the Play Store.</p>
-                    <a class="btn primary" href="https://play.google.com/store/apps/details?id=com.devil.phoenixproject" target="_blank" rel="noopener noreferrer">Get it on Google Play</a>
                 </div>
-                <div class="beta-divider">
-                    <span>or</span>
+            </div>
+        </section>
+
+        <!-- ============ HARDWARE ============ -->
+        <section id="hardware">
+            <div class="section-head reveal">
+                <span class="kicker">Compatibility</span>
+                <h2>Supported hardware</h2>
+                <p>Both generations of the Vitruvian Trainer are fully supported over Bluetooth Low Energy.</p>
+            </div>
+            <div class="hw reveal">
+                <div class="hw-row head">
+                    <div>Machine</div><div>Device name</div><div>Max resistance</div><div>Status</div>
                 </div>
-                <div class="beta-option">
-                    <div class="beta-option-header">
-                        <span class="platform-icon">🍎</span>
-                        <h3>iOS (TestFlight)</h3>
+                <div class="hw-row">
+                    <div class="hw-name">Vitruvian V-Form Trainer <small>VIT-200</small></div>
+                    <div class="mono">Vee_*</div>
+                    <div class="mono">200 kg · 440 lb</div>
+                    <div class="ok">Fully supported</div>
+                </div>
+                <div class="hw-row">
+                    <div class="hw-name">Vitruvian Trainer+ <small>110 kg per cable</small></div>
+                    <div class="mono">VIT*</div>
+                    <div class="mono">220 kg · 485 lb</div>
+                    <div class="ok">Fully supported</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ DOWNLOAD ============ -->
+        <section id="download">
+            <div class="section-head reveal">
+                <span class="kicker">Get started</span>
+                <h2>Install in two minutes</h2>
+                <p>Grab it from the store for your platform, pair your machine, and you're lifting. Step-by-step guides included.</p>
+            </div>
+            <div class="dl">
+                <div class="card dl-card reveal">
+                    <div class="os">
+                        <span class="glyph"><svg viewBox="0 0 24 24" fill="#3ddc84" aria-hidden="true"><path d="M17.6 9.5 19.4 6.4a.4.4 0 0 0-.7-.4l-1.8 3.2A11 11 0 0 0 12 8c-1.7 0-3.4.4-4.9 1.2L5.3 6a.4.4 0 1 0-.7.4l1.8 3.1A10.3 10.3 0 0 0 1.5 18h21a10.3 10.3 0 0 0-4.9-8.5ZM7.3 15a1.1 1.1 0 1 1 0-2.2 1.1 1.1 0 0 1 0 2.2Zm9.4 0a1.1 1.1 0 1 1 0-2.2 1.1 1.1 0 0 1 0 2.2Z"/></svg></span>
+                        <div><h3>Android</h3><span class="badge2">Open testing · Google Play</span></div>
                     </div>
-                    <p>Join instantly via TestFlight public link. No signup required.</p>
-                    <a class="btn primary" href="https://testflight.apple.com/join/TFw1m89R" target="_blank" rel="noopener noreferrer">Join iOS Beta</a>
+                    <p>Install straight from the Play Store, or sideload the latest signed APK from GitHub Releases.</p>
+                    <div class="row">
+                        <a class="btn primary small" href="https://play.google.com/store/apps/details?id=com.devil.phoenixproject" target="_blank" rel="noopener">Get it on Google Play</a>
+                        <a class="btn ghost small" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest" target="_blank" rel="noopener">Download APK</a>
+                        <a class="btn ghost small" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/blob/main/ANDROID_INSTALL.md" target="_blank" rel="noopener">Install guide</a>
+                    </div>
+                </div>
+                <div class="card dl-card reveal">
+                    <div class="os">
+                        <span class="glyph"><svg viewBox="0 0 24 24" fill="#f5f8fc" aria-hidden="true"><path d="M16.4 1.6c.1 1.2-.4 2.4-1.1 3.3-.8.9-2 1.6-3.2 1.5-.2-1.2.4-2.4 1.1-3.2.8-.9 2.1-1.5 3.2-1.6Zm3.5 16.7c-.6 1.3-.9 1.9-1.6 3-1.1 1.6-2.6 3.6-4.5 3.6-1.7 0-2.1-1.1-4.4-1.1s-2.8 1.1-4.4 1.1c-1.9 0-3.3-1.8-4.4-3.4C-.9 16.9-1.2 11 1.6 8c1-1.6 2.7-2.6 4.4-2.6 1.7 0 2.8 1.1 4.2 1.1 1.4 0 2.2-1.1 4.2-1.1 1.5 0 3 .8 4.1 2.2-3.6 2-3 7.1 1.4 8.7Z"/></svg></span>
+                        <div><h3>iOS</h3><span class="badge2">TestFlight beta</span></div>
+                    </div>
+                    <p>Join instantly through the public TestFlight link — no signup form, no waiting list.</p>
+                    <div class="row">
+                        <a class="btn teal small" href="https://testflight.apple.com/join/TFw1m89R" target="_blank" rel="noopener">Join the iOS beta</a>
+                        <a class="btn ghost small" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/blob/main/iOS_INSTALL.md" target="_blank" rel="noopener">Install guide</a>
+                    </div>
                 </div>
             </div>
         </section>
 
-        <section class="grid reveal delay-4">
-            <div class="card span-6">
-                <h3>Get involved</h3>
-                <ul class="list link-list">
-                    <li><a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a> for bug reports and feature requests.</li>
-                    <li><a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/wiki">Wiki</a> for user guides and documentation.</li>
-                    <li><a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/discussions">Discussions</a> for community Q&amp;A and announcements.</li>
-                    <li><a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP" target="_blank" rel="noopener noreferrer">Repository</a> for source code and contribution guides.</li>
-                </ul>
+        <!-- ============ HONESTY / PRIVACY ============ -->
+        <section id="privacy">
+            <div class="section-head reveal">
+                <span class="kicker">No tricks</span>
+                <h2>Local-first. Free. Honest.</h2>
+                <p>We rebuilt this for the community, not for a business model. Here's exactly how it works.</p>
             </div>
-            <div class="card span-6">
-                <h3>Project layout</h3>
-                <ul class="list mono">
-                    <li>shared/ - common Kotlin Multiplatform code.</li>
-                    <li>androidApp/ - Android application.</li>
-                    <li>iosApp/ - iOS application (Xcode project).</li>
-                    <li>gradle/ - Gradle wrapper and version catalog.</li>
-                </ul>
+            <div class="honesty">
+                <div class="card reveal">
+                    <h3>🔒 Private by default</h3>
+                    <p>Everything works offline with no account. Your workouts live on your device. Cloud sync is strictly opt-in, and only sends what you choose to sync.</p>
+                </div>
+                <div class="card reveal">
+                    <h3>🆓 Genuinely free</h3>
+                    <p>No subscriptions, no paywalls, no ads, no upsells. Earlier paid gates were stripped out — every feature is available to everyone.</p>
+                </div>
+                <div class="card reveal">
+                    <h3>🌍 Built in the open</h3>
+                    <p>Developed transparently on GitHub with public release notes and an open issue tracker. Translated into English, Dutch, German, Spanish and French.</p>
+                </div>
             </div>
         </section>
 
-        <section class="card legal reveal delay-4">
-            <h3>Legal notice</h3>
-            <p class="tagline">
-                Project Phoenix is an independent, community-developed application and is not affiliated with,
-                endorsed by, sponsored by, or supported by Vitruvian Investments Pty Ltd (in Liquidation),
-                managed by Merchants Advisory. Vitruvian and related marks are trademarks of their respective owners.
-            </p>
-            <p class="tagline" style="margin-top: 12px;">
-                By downloading or using Project Phoenix, you agree to our
-                <a href="terms-of-service.html">Terms of Service</a>, which includes important safety
-                warnings and liability disclaimers.
-            </p>
+        <!-- ============ SUPPORT ============ -->
+        <section id="support">
+            <div class="support reveal">
+                <span class="kicker">Keep the fire going</span>
+                <h2>Fuel the rescue</h2>
+                <p>Project Phoenix is a volunteer effort funded entirely by the people it helps. If it kept your machine out of a landfill, consider chipping in toward development and testing.</p>
+                <div class="row">
+                    <a class="btn primary" href="https://ko-fi.com/vitruvianredux" target="_blank" rel="noopener">☕ Support on Ko-fi</a>
+                    <a class="btn ghost" href="https://buymeacoffee.com/vitruvianredux" target="_blank" rel="noopener">Buy Me a Coffee</a>
+                </div>
+            </div>
         </section>
 
-        <footer>
-            <span>Community rescue project to keep Vitruvian machines functional.</span>
-            <span><a href="privacy-policy.html">Privacy Policy</a> | <a href="terms-of-service.html">Terms of Service</a></span>
-        </footer>
+        <!-- ============ DEVELOPERS ============ -->
+        <section id="developers">
+            <div class="section-head reveal">
+                <span class="kicker">Under the hood</span>
+                <h2>For the tinkerers</h2>
+                <p>One Kotlin Multiplatform codebase ships to both Android and iOS. Curious how it talks to the machine?</p>
+            </div>
+            <div class="tech-grid">
+                <div class="card reveal">
+                    <h3>Modern, shared stack</h3>
+                    <p>Native performance on both platforms from a single shared core — UI, business logic, database and BLE all written once.</p>
+                    <div class="tag-list">
+                        <span>Kotlin Multiplatform</span><span>Compose Multiplatform</span><span>MVVM + Clean Arch</span>
+                        <span>Koin DI</span><span>SQLDelight</span><span>Ktor</span><span>Kable BLE</span><span>Supabase</span>
+                    </div>
+                </div>
+                <div class="card reveal">
+                    <h3>Dig deeper</h3>
+                    <p>Read the source, browse the AI-generated architecture wiki, file an issue, or follow along with detailed release notes.</p>
+                    <div class="row" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;">
+                        <a class="btn ghost small" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP" target="_blank" rel="noopener">Source on GitHub</a>
+                        <a class="btn ghost small" href="https://deepwiki.com/9thLevelSoftware/Project-Phoenix-MP" target="_blank" rel="noopener">Architecture wiki</a>
+                        <a class="btn ghost small" href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases" target="_blank" rel="noopener">Release notes</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ FAQ ============ -->
+        <section id="faq">
+            <div class="section-head reveal" style="text-align:center;margin-left:auto;margin-right:auto;">
+                <span class="kicker">Questions</span>
+                <h2>Good to know</h2>
+            </div>
+            <div class="faq reveal">
+                <details>
+                    <summary>Is Project Phoenix really free?</summary>
+                    <p>Yes — completely. No subscriptions, no ads, no in-app purchases. It's a volunteer community project supported only by optional donations.</p>
+                </details>
+                <details>
+                    <summary>Which machines work with it?</summary>
+                    <p>The Vitruvian V-Form Trainer (VIT-200, 200&nbsp;kg) and the Vitruvian Trainer+ (220&nbsp;kg / 110&nbsp;kg per cable). The app connects to either over Bluetooth Low Energy.</p>
+                </details>
+                <details>
+                    <summary>Do I need an account or internet connection?</summary>
+                    <p>No. The app is fully functional offline with no account. Cloud sync, Phoenix Portal and sign-in (Google/Apple) are entirely optional and only used if you turn them on.</p>
+                </details>
+                <details>
+                    <summary>Is my workout data private?</summary>
+                    <p>By default all data stays on your device. If you opt into cloud sync, only the data you choose to sync is sent to your private account. See the <a href="privacy-policy.html">Privacy Policy</a> for details.</p>
+                </details>
+                <details>
+                    <summary>Can I bring my data over from another app?</summary>
+                    <p>Yes — you can import and export workout data in Strong and Hevy CSV formats, and sync sessions to Apple Health or Health Connect.</p>
+                </details>
+                <details>
+                    <summary>Is this made by Vitruvian?</summary>
+                    <p>No. Project Phoenix is an independent, community-built rescue project. It is not affiliated with, endorsed by, or supported by Vitruvian.</p>
+                </details>
+            </div>
+        </section>
     </div>
+
+    <!-- ============ FOOTER ============ -->
+    <footer>
+        <div class="wrap">
+            <div class="foot-grid">
+                <div class="foot-brand">
+                    <a class="brand" href="#top">
+                        <span class="mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2c1.4 2.8 1 5-.6 6.7 2.6-.3 4-1.9 4.6-3.7 1.6 2.7 1.3 6.2-1 8.4 2 .2 3.6-.6 4.7-1.8-.2 3.7-2.7 7-6.4 8.1.9.6 2 .9 3.2.8C18 20.4 15.2 22 12 22s-6-1.6-7.5-3.4c1.2.1 2.3-.2 3.2-.8C4 16.7 1.5 13.4 1.3 9.7c1.1 1.2 2.7 2 4.7 1.8-2.3-2.2-2.6-5.7-1-8.4.6 1.8 2 3.4 4.6 3.7C8 5 7.6 4.8 9 2c.8 1.2 2.2 1.2 3 0Z" fill="url(#ng2)"/><defs><linearGradient id="ng2" x1="2" y1="2" x2="22" y2="22"><stop stop-color="#ff7a3d"/><stop offset="1" stop-color="#f5c451"/></linearGradient></defs></svg></span>
+                        Project Phoenix
+                    </a>
+                    <p>A community rescue project keeping Vitruvian Trainer machines alive and lifting.</p>
+                </div>
+                <div>
+                    <h5>Get the app</h5>
+                    <a href="https://play.google.com/store/apps/details?id=com.devil.phoenixproject" target="_blank" rel="noopener">Google Play</a>
+                    <a href="https://testflight.apple.com/join/TFw1m89R" target="_blank" rel="noopener">iOS TestFlight</a>
+                    <a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest" target="_blank" rel="noopener">Latest release</a>
+                </div>
+                <div>
+                    <h5>Community</h5>
+                    <a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP" target="_blank" rel="noopener">GitHub repository</a>
+                    <a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues" target="_blank" rel="noopener">Report an issue</a>
+                    <a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP/discussions" target="_blank" rel="noopener">Discussions</a>
+                    <a href="https://ko-fi.com/vitruvianredux" target="_blank" rel="noopener">Support on Ko-fi</a>
+                </div>
+                <div>
+                    <h5>Legal</h5>
+                    <a href="privacy-policy.html">Privacy Policy</a>
+                    <a href="terms-of-service.html">Terms of Service</a>
+                </div>
+            </div>
+            <div class="legal">
+                Project Phoenix is an independent, community-developed application and is <strong>not affiliated with, endorsed by, sponsored by, or supported by</strong>
+                Vitruvian Investments Pty Ltd (in Liquidation) or its administrators. "Vitruvian" and related marks are trademarks of their respective owners,
+                used here only for compatibility reference. By downloading or using Project Phoenix you agree to our
+                <a href="terms-of-service.html">Terms of Service</a>, which include important safety warnings and liability disclaimers.
+                <br><br>
+                © 2025–2026 9th Level Software · Built by the community, for the community.
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Nav shadow on scroll
+        const nav = document.getElementById('nav');
+        const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 8);
+        onScroll();
+        window.addEventListener('scroll', onScroll, { passive: true });
+
+        // Scroll-reveal
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const reveals = document.querySelectorAll('.reveal');
+        if (reduce || !('IntersectionObserver' in window)) {
+            reveals.forEach(el => el.classList.add('in'));
+        } else {
+            const io = new IntersectionObserver((entries) => {
+                entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+            }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+            reveals.forEach(el => io.observe(el));
+        }
+
+        // Floating embers (decorative, skipped for reduced motion)
+        if (!reduce) {
+            const layer = document.getElementById('embers');
+            const N = Math.min(26, Math.floor(window.innerWidth / 48));
+            for (let i = 0; i < N; i++) {
+                const e = document.createElement('span');
+                e.className = 'ember';
+                const size = 2 + Math.random() * 4;
+                e.style.left = Math.random() * 100 + 'vw';
+                e.style.width = e.style.height = size + 'px';
+                e.style.animationDuration = (9 + Math.random() * 12) + 's';
+                e.style.animationDelay = (-Math.random() * 18) + 's';
+                e.style.opacity = (0.3 + Math.random() * 0.5).toFixed(2);
+                layer.appendChild(e);
+            }
+        }
+    </script>
 </body>
 </html>
