@@ -61,7 +61,7 @@
         <p class="effective-date"><strong>Effective Date:</strong> December 21, 2025 &nbsp;·&nbsp; <strong>Last Updated:</strong> June 5, 2026</p>
 
         <div class="highlight">
-            <p><strong>Summary:</strong> Project Phoenix is a privacy-focused, offline-first app. Everything works on your device with no account required. <strong>Cloud sync and online sign-in are optional</strong> — if you choose to enable them, only the workout data you decide to sync is sent to your own private account. We never sell your data, and we don't use ads, analytics, or tracking SDKs.</p>
+            <p><strong>Summary:</strong> Project Phoenix is a privacy-focused, offline-first app. Everything works on your device with no account required. <strong>Cloud sync and online sign-in are optional</strong> — if you choose to enable them, only the workout data you decide to sync is sent to your own private account. We never sell your data, and we don't use ads, analytics, or tracking SDKs. The optional voice "Safe Word" stop uses your microphone on-device only when you turn it on — it never records or uploads audio.</p>
         </div>
 
         <h2>1. Introduction</h2>
@@ -90,17 +90,27 @@
         </ul>
         <p>Bluetooth data is processed in real-time and relevant metrics are stored on your device. Bluetooth data is never transmitted to any external party.</p>
 
-        <h2>4. Optional Cloud Sync &amp; Accounts</h2>
+        <h2>4. Microphone &amp; Voice Recognition (Safe Word Feature)</h2>
+        <p>Project Phoenix includes an optional <strong>"Safe Word"</strong> feature — a hands-free, voice-activated emergency stop for your workouts. It is <strong>off by default</strong>, and the App requests microphone and speech-recognition permission only if you choose to enable it. When enabled:</p>
+        <ul>
+            <li><strong>On-device recognition:</strong> Speech is processed by your device's built-in speech recognizer (on Android, offline recognition is requested via <code>EXTRA_PREFER_OFFLINE</code>; on iOS, on-device speech recognition is used). Your audio is never sent to Project Phoenix's servers.</li>
+            <li><strong>Active only during workouts:</strong> The microphone is used only while the feature is enabled and a workout is in progress, listening for your configured safe word.</li>
+            <li><strong>Not recorded or stored:</strong> Audio is analyzed in real time to detect the safe word and is then discarded. We do not save recordings or transcripts.</li>
+            <li><strong>Your safe word stays private:</strong> The word or phrase you set is kept on your device and is deliberately excluded from diagnostic logs.</li>
+            <li><strong>Platform services:</strong> Because recognition relies on your operating system's speech features, the relevant platform provider's (Apple / Google) privacy terms may also apply to that on-device processing.</li>
+        </ul>
+
+        <h2>5. Optional Cloud Sync &amp; Accounts</h2>
         <p>Cloud Sync and the Phoenix Portal web companion (an optional <strong>premium</strong> service at <a href="https://phoenix-portal.com" target="_blank" rel="noopener">phoenix-portal.com</a>) are <strong>opt-in</strong>. The App is fully functional without them. If you choose to enable Cloud Sync:</p>
         <ul>
             <li><strong>Account required for sync only:</strong> You create an account (email/password) or sign in with Google or Apple. You can use the entire app without ever creating one.</li>
             <li><strong>What is synced:</strong> Your workout sessions, routines, personal records, and related training data are uploaded so they can be accessed across your devices and in the Phoenix Portal web companion.</li>
             <li><strong>Where it is stored:</strong> Synced data is stored in our backend infrastructure (Supabase) under your account, protected by per-user access controls so only you can read your data.</li>
             <li><strong>Secure tokens:</strong> Authentication tokens are stored securely on your device (Android Keystore-backed storage / iOS Keychain).</li>
-            <li><strong>You stay in control:</strong> You can use the app entirely offline, and you can request deletion of your synced data at any time (see Section 7).</li>
+            <li><strong>You stay in control:</strong> You can use the app entirely offline, and you can request deletion of your synced data at any time (see Section 8).</li>
         </ul>
 
-        <h2>5. Third-Party Services</h2>
+        <h2>6. Third-Party Services</h2>
         <p>The App does <strong>not</strong> use advertising networks, analytics SDKs, crash-reporting services, or social-media tracking SDKs. The only external services involved are ones that directly deliver features you choose to use:</p>
         <ul>
             <li><strong>Supabase</strong> — backend for optional Cloud Sync, accounts, and the Phoenix Portal. Only used if you enable Cloud Sync.</li>
@@ -109,28 +119,28 @@
             <li><strong>CSV Import/Export (Strong, Hevy formats)</strong> — file-based and fully under your control; no automatic transmission to those companies.</li>
         </ul>
 
-        <h2>6. Data Sharing</h2>
+        <h2>7. Data Sharing</h2>
         <p><strong>We do not sell your data, and we do not share it with third parties for advertising or marketing.</strong> Data you keep local stays local. Data you choose to sync is stored in your private account solely to provide the sync and Portal features to you. We only disclose data if required by law.</p>
 
-        <h2>7. Your Rights and Data Control</h2>
+        <h2>8. Your Rights and Data Control</h2>
         <p>You have complete control over your data:</p>
         <ul>
             <li><strong>Access:</strong> All your data is visible within the App's history and analytics screens</li>
             <li><strong>Deletion (local):</strong> Delete individual workouts and routines in-app, or clear all App data through your device settings</li>
-            <li><strong>Deletion (synced):</strong> If you use Cloud Sync, you can request deletion of your account and synced data via the contact methods in Section 11</li>
+            <li><strong>Deletion (synced):</strong> If you use Cloud Sync, you can request deletion of your account and synced data via the contact methods in Section 12</li>
             <li><strong>Portability:</strong> Export your workout data to CSV at any time, and back up locally using your device's standard backup mechanisms</li>
         </ul>
 
-        <h2>8. Children's Privacy</h2>
+        <h2>9. Children's Privacy</h2>
         <p>The App is not directed at children under the age of 13. We do not knowingly collect any information from children. The App is designed for adult fitness enthusiasts using Vitruvian Trainer equipment.</p>
 
-        <h2>9. Changes to This Privacy Policy</h2>
+        <h2>10. Changes to This Privacy Policy</h2>
         <p>We may update this Privacy Policy from time to time. Any changes will be reflected on this page with an updated effective date. We encourage you to review this Privacy Policy periodically.</p>
 
-        <h2>10. Community Project</h2>
+        <h2>11. Community Project</h2>
         <p>Project Phoenix is a community-driven project developed by 9th Level Software. We are committed to transparent privacy practices.</p>
 
-        <h2>11. Contact Us</h2>
+        <h2>12. Contact Us</h2>
         <p>If you have any questions about this Privacy Policy or the App's data practices, you can:</p>
         <ul>
             <li>Contact us through our <a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP" target="_blank" rel="noopener">GitHub repository</a></li>
