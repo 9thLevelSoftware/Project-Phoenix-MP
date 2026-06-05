@@ -64,7 +64,7 @@ Grounded in release notes for tags: `v0.1.0-beta1`, `v0.2.x`, `v0.3.0`–`v0.3.4
 **Platform & polish**
 - **Android + iOS** from one Kotlin Multiplatform / Compose Multiplatform codebase.
 - **5 languages**: English, Dutch, German, Spanish, French (v0.6.0). Tablet/responsive UI (v0.3.0). **Launch Pad** home screen (v0.9.1). Accessibility (screen-reader semantics, iOS dynamic type).
-- **Free mobile app** — in-app paywalls/RevenueCat removed in v0.6.0; the premium tier now lives in the web **Phoenix Portal** (cloud sync/dashboards), not the app. **Local-first**; cloud is opt-in.
+- **Completely free app** — every feature is free; in-app paywalls/RevenueCat were removed in v0.6.0. The only premium tier is the web **Phoenix Portal** (cloud sync/dashboards), never the app. **Local-first**; cloud is opt-in.
 
 ### Explicitly excluded (built then purged in v0.6.0 — never shipped to users)
 CV/MediaPipe **form check**, **ghost racing**, **RPG attributes / character classes**, **LED biofeedback**, color-blind mode, **HUD preset customization**, BLE simulator, **Isokinetic** mode, leaderboards/challenges. *The domain engines for some of these still exist in `domain/premium/`, but only VBT and Smart Insights/Suggestions are surfaced to users — so only those are marketed.*
