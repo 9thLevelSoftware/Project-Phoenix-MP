@@ -79,17 +79,20 @@ class KableBleRepository : BleRepository {
     private val _deloadOccurredEvents = MutableSharedFlow<Unit>(
         replay = 0,
         extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val deloadOccurredEvents: Flow<Unit> = _deloadOccurredEvents.asSharedFlow()
     enum class RomViolationType { OUTSIDE_HIGH, OUTSIDE_LOW }
     private val _romViolationEvents = MutableSharedFlow<RomViolationType>(
         replay = 0,
         extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val romViolationEvents: Flow<RomViolationType> = _romViolationEvents.asSharedFlow()
     private val _reconnectionRequested = MutableSharedFlow<ReconnectionRequest>(
         replay = 0,
         extraBufferCapacity = 4,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val reconnectionRequested: Flow<ReconnectionRequest> = _reconnectionRequested.asSharedFlow()
     private val _heuristicData = MutableStateFlow<HeuristicStatistics?>(null)
@@ -471,6 +474,18 @@ class KableBleRepository : BleRepository {
     }
 
     internal fun publishRepEventForTest(notification: RepNotification, source: String = "test"): Boolean = publishRepEvent(notification, source)
+
+    internal suspend fun publishDeloadOccurredForTest() {
+        _deloadOccurredEvents.emit(Unit)
+    }
+
+    internal suspend fun publishRomViolationForTest(type: RomViolationType) {
+        _romViolationEvents.emit(type)
+    }
+
+    internal suspend fun publishReconnectionRequestedForTest(request: ReconnectionRequest) {
+        _reconnectionRequested.emit(request)
+    }
 
     private fun currentTimeMillis(): Long = Clock.System.now().toEpochMilliseconds()
 

@@ -24,9 +24,10 @@ You need to add these secrets to your repository:
 ### Supabase Runtime Config
 
 The iOS workflows generate `iosApp/VitruvianPhoenix/Config/Supabase.xcconfig`
-from encrypted GitHub secrets before building. The real xcconfig file is
-ignored by git and must stay local; only
-`iosApp/VitruvianPhoenix/Config/Supabase.xcconfig.example` is tracked.
+from encrypted GitHub secrets before building. The Xcode project reads the
+tracked `iosApp/VitruvianPhoenix/Config/SupabaseBase.xcconfig`, which
+optionally includes that generated local file. The real xcconfig file is
+ignored by git and must stay local; only templates and base configs are tracked.
 
 | Secret Name | Description |
 |-------------|-------------|

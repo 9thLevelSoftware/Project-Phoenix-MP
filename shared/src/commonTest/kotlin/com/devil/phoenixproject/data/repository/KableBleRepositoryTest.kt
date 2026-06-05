@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 
 class KableBleRepositoryTest {
 
@@ -47,6 +48,53 @@ class KableBleRepositoryTest {
         )
 
         slowCollector.cancel()
+        repository.shutdown()
+    }
+
+    @Test
+    fun `slow critical lifecycle event collectors do not suspend producers`() = runTest {
+        val repository = KableBleRepository()
+        val slowDeloadCollector = launch {
+            repository.deloadOccurredEvents.collect {
+                delay(Long.MAX_VALUE)
+            }
+        }
+        val slowRomCollector = launch {
+            repository.romViolationEvents.collect {
+                delay(Long.MAX_VALUE)
+            }
+        }
+        val slowReconnectCollector = launch {
+            repository.reconnectionRequested.collect {
+                delay(Long.MAX_VALUE)
+            }
+        }
+        delay(50)
+
+        withTimeout(1_000) {
+            repeat(32) { index ->
+                repository.publishDeloadOccurredForTest()
+                repository.publishRomViolationForTest(
+                    if (index % 2 == 0) {
+                        KableBleRepository.RomViolationType.OUTSIDE_HIGH
+                    } else {
+                        KableBleRepository.RomViolationType.OUTSIDE_LOW
+                    },
+                )
+                repository.publishReconnectionRequestedForTest(
+                    ReconnectionRequest(
+                        deviceName = "Vee_Test",
+                        deviceAddress = "AA:BB:CC:DD:EE:FF",
+                        reason = "test",
+                        timestamp = index.toLong(),
+                    ),
+                )
+            }
+        }
+
+        slowDeloadCollector.cancel()
+        slowRomCollector.cancel()
+        slowReconnectCollector.cancel()
         repository.shutdown()
     }
 
