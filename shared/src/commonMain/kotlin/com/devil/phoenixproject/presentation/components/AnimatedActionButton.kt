@@ -56,9 +56,9 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
-import kotlinx.coroutines.isActive
 import kotlin.math.sin
 import kotlin.random.Random
+import kotlinx.coroutines.isActive
 
 /**
  * Icon animation types for AnimatedActionButton.

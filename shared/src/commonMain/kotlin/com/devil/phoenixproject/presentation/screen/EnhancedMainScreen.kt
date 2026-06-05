@@ -311,7 +311,7 @@ fun EnhancedMainScreen(
                                                     }
                                                 }
                                             }
-                                        }
+                                        },
                                     ) {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -860,9 +860,8 @@ private fun ConnectionStatusIndicator(
  * Get the screen title based on the current route.
  * Supports dynamic titles for routine, exercise, and cycle flows.
  */
-private fun isSingleExerciseRoute(route: String): Boolean =
-    route == NavigationRoutes.SingleExercise.route ||
-        route.startsWith("${NavigationRoutes.SingleExercise.route}/")
+private fun isSingleExerciseRoute(route: String): Boolean = route == NavigationRoutes.SingleExercise.route ||
+    route.startsWith("${NavigationRoutes.SingleExercise.route}/")
 
 private fun getScreenTitle(route: String, routineName: String = "", exerciseName: String = "", cycleName: String = ""): String = when {
     // Main tabs (static titles)

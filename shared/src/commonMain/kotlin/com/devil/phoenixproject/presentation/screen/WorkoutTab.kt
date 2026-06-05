@@ -128,9 +128,9 @@ import vitruvianprojectphoenix.shared.generated.resources.disconnect_title
 import vitruvianprojectphoenix.shared.generated.resources.label_per_cable
 import vitruvianprojectphoenix.shared.generated.resources.not_connected
 import vitruvianprojectphoenix.shared.generated.resources.reconnect
+import vitruvianprojectphoenix.shared.generated.resources.save_set
 import vitruvianprojectphoenix.shared.generated.resources.scan
 import vitruvianprojectphoenix.shared.generated.resources.scanning_for_devices
-import vitruvianprojectphoenix.shared.generated.resources.save_set
 import vitruvianprojectphoenix.shared.generated.resources.stop_workout
 import vitruvianprojectphoenix.shared.generated.resources.tag_lift_message
 import vitruvianprojectphoenix.shared.generated.resources.tag_lift_title
@@ -316,11 +316,9 @@ fun WorkoutTab(
                 repRanges = repRanges,
                 weightUnit = weightUnit,
                 connectionState = connectionState,
-                exerciseRepository = exerciseRepository,
                 loadedRoutine = loadedRoutine,
                 currentExerciseIndex = currentExerciseIndex,
                 currentSetIndex = currentSetIndex,
-                enableVideoPlayback = enableVideoPlayback,
                 onStopWorkout = onStopWorkout,
                 formatWeight = formatWeight,
                 onUpdateParameters = onUpdateParameters,

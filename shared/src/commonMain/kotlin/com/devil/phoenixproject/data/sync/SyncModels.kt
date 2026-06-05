@@ -113,7 +113,7 @@ data class CustomExerciseSyncDto(
     val clientId: String,
     val serverId: String? = null,
     val name: String,
-    val displayName: String? = null,  // Disambiguated name (#404)
+    val displayName: String? = null, // Disambiguated name (#404)
     val muscleGroup: String,
     val equipment: String,
     val defaultCableConfig: String,

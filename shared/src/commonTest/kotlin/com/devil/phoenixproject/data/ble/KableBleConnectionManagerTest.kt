@@ -6,11 +6,13 @@ import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -293,5 +295,25 @@ class KableBleConnectionManagerTest {
             tracker.connectionStates.last(),
             "Last state should be Disconnected",
         )
+    }
+
+    @Test
+    fun `shutdown cancels lifecycle jobs and clears scan state`() = runTest {
+        val (manager, tracker) = createTestManager()
+
+        manager.startFakeLifecycleJobsForTest()
+        delay(50)
+
+        assertTrue(manager.isLifecycleJobActiveForTest(KableBleConnectionManager.LifecycleJob.SCAN))
+        assertTrue(manager.isLifecycleJobActiveForTest(KableBleConnectionManager.LifecycleJob.STATE_OBSERVER))
+        assertTrue(tracker.scannedDevicesUpdates.last().isNotEmpty())
+
+        manager.shutdown()
+        delay(50)
+
+        assertFalse(manager.isLifecycleJobActiveForTest(KableBleConnectionManager.LifecycleJob.SCAN))
+        assertFalse(manager.isLifecycleJobActiveForTest(KableBleConnectionManager.LifecycleJob.STATE_OBSERVER))
+        assertEquals(emptyList(), tracker.scannedDevicesUpdates.last())
+        assertEquals(ConnectionState.Disconnected, tracker.connectionStates.last())
     }
 }

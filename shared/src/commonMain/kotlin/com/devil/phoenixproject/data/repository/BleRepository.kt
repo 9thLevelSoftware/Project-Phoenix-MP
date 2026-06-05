@@ -158,6 +158,14 @@ interface BleRepository {
     suspend fun disconnect()
 
     /**
+     * Terminal lifecycle cleanup for app/test teardown.
+     * Normal user disconnect flows should continue to call [disconnect].
+     */
+    suspend fun shutdown() {
+        disconnect()
+    }
+
+    /**
      * Scan for first Vitruvian device and connect to it immediately.
      * Matches parent repo behavior - no manual device selection needed.
      * @param timeoutMs Maximum time to scan before giving up (default 30 seconds)

@@ -118,7 +118,7 @@
     <string name="settings_language">Sprache</string>
     <string name="settings_language_description">Wähle deine bevorzugte Sprache</string>
     <string name="settings_language_help">Hilf, Übersetzungen zu verbessern</string>
-    <string name="settings_machine_diagnostics_description">Laufzeit, Fehlercodes, Temperaturen, Absturzdaten und Warnungen der Maschine anzeigen</string>
+    <string name="settings_machine_diagnostics_description">Einen redigierten Maschinendiagnose-Snapshot anzeigen: Laufzeit, Fehlercodes, Temperaturen, Absturzdaten und Warnungen. Dies ist kein vollständiges Backup.</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Maschinendiagnose</string>
@@ -149,7 +149,7 @@
 
     <!-- Backup -->
     <string name="backup_all_data">Alle Daten sichern</string>
-    <string name="backup_description">Dies exportiert deine gesamte Trainingshistorie, Routinen, Trainingszyklen, Erfolge und Einstellungen als JSON-Datei.\n\nDu kannst diese Datei verwenden, um deine Daten später wiederherzustellen oder auf ein anderes Gerät zu übertragen.</string>
+    <string name="backup_description">Dies ist ein vollständiger Export personenbezogener Daten: Trainingsverlauf, Routinen, Trainingszyklen, Erfolge, Profile, Notizen und Einstellungen.\n\nEr enthält keine Authentifizierungs-/Sitzungstokens, Supabase-Konfiguration oder Keystore-Daten. Maschinendiagnose-Exporte sind separate, redigierte Fehlerbehebungs-Snapshots und können deine Workouts nicht wiederherstellen.</string>
     <string name="restore_from_backup">Aus Backup wiederherstellen</string>
     <string name="restore_description">Wähle eine Backup-Datei, um deine Daten wiederherzustellen.\n\nVorhandene Daten werden NICHT überschrieben — nur neue Einträge werden importiert.</string>
     <string name="select_file">Datei auswählen</string>

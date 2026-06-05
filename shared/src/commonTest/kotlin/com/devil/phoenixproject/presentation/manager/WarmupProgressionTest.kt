@@ -37,8 +37,7 @@ class WarmupProgressionTest {
     }
 
     /** First activation (0x04) packet captured by the fake BLE repo. */
-    private fun DWSMTestHarness.firstActivationPacket(): ByteArray =
-        fakeBleRepo.commandsReceived.first { it.firstOrNull() == 0x04.toByte() }
+    private fun DWSMTestHarness.firstActivationPacket(): ByteArray = fakeBleRepo.commandsReceived.first { it.firstOrNull() == 0x04.toByte() }
 
     private fun warmupRoutine(): Routine {
         val exercise = RoutineExercise(

@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.ble
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.BlePacketFactory
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -54,6 +55,7 @@ class DiscoMode(private val scope: CoroutineScope, private val sendCommand: susp
                     colorIndex = (colorIndex + 1) % colorCount
                     delay(intervalMs)
                 } catch (e: Exception) {
+                    e.rethrowIfCancellation()
                     log.w { "Disco mode error: ${e.message}" }
                     break
                 }
@@ -81,10 +83,23 @@ class DiscoMode(private val scope: CoroutineScope, private val sendCommand: susp
                 val command = BlePacketFactory.createColorSchemeCommand(lastColorSchemeIndex)
                 sendCommand(command)
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.w { "Failed to restore color scheme: ${e.message}" }
             }
         }
     }
+
+    /**
+     * Terminal cleanup path. Unlike [stop], this does not send a restore command
+     * because the repository is shutting down and its BLE scope may be cancelled.
+     */
+    fun shutdown() {
+        discoJob?.cancel()
+        discoJob = null
+        _isActive.value = false
+    }
+
+    internal fun isJobActiveForTest(): Boolean = discoJob?.isActive == true
 
     /**
      * Update the stored color scheme index.

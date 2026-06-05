@@ -79,7 +79,7 @@ data class PortalWorkoutSessionDto(
 data class PortalExerciseDto(
     val id: String,
     val sessionId: String,
-    val exerciseId: String? = null,    // exercise_catalog.id for identity preservation (#404)
+    val exerciseId: String? = null, // exercise_catalog.id for identity preservation (#404)
     val name: String,
     val muscleGroup: String = "General",
     val orderIndex: Int = 0,
@@ -202,11 +202,11 @@ data class PortalRoutineSyncDto(
 data class PortalRoutineExerciseSyncDto(
     val id: String,
     val routineId: String,
-    val exerciseId: String? = null,          // exercise_catalog.id (#404)
+    val exerciseId: String? = null, // exercise_catalog.id (#404)
     val name: String,
-    val displayName: String? = null,         // Disambiguated name (#404)
+    val displayName: String? = null, // Disambiguated name (#404)
     val muscleGroup: String = "General",
-    val exerciseEquipment: String? = null,   // Equipment snapshot (#404)
+    val exerciseEquipment: String? = null, // Equipment snapshot (#404)
     val sets: Int = 3,
     val reps: Int = 10,
     val weight: Float = 0f, // per-cable kg
@@ -418,7 +418,7 @@ data class PortalSyncPushResponse(
      */
     @Deprecated(
         message = "Use externalActivityKeys which now carries full ack metadata",
-        replaceWith = ReplaceWith("externalActivityKeys")
+        replaceWith = ReplaceWith("externalActivityKeys"),
     )
     val externalActivityIds: List<String> = emptyList(),
     val externalActivityKeys: List<ExternalActivityAckDto> = emptyList(),
@@ -671,7 +671,7 @@ data class PullWorkoutSessionDto(
 data class PullExerciseDto(
     val id: String = "",
     val sessionId: String = "",
-    val exerciseId: String? = null,      // exercise_catalog.id from portal (#404)
+    val exerciseId: String? = null, // exercise_catalog.id from portal (#404)
     val name: String = "",
     val muscleGroup: String = "General",
     val orderIndex: Int = 0,
@@ -732,11 +732,11 @@ data class PullRoutineDto(
 data class PullRoutineExerciseDto(
     val id: String,
     val routineId: String = "",
-    val exerciseId: String? = null,          // exercise_catalog.id (#404)
+    val exerciseId: String? = null, // exercise_catalog.id (#404)
     val name: String = "",
-    val displayName: String? = null,         // Disambiguated name from catalog (#404)
+    val displayName: String? = null, // Disambiguated name from catalog (#404)
     val muscleGroup: String = "General",
-    val exerciseEquipment: String? = null,   // Equipment from catalog (#404)
+    val exerciseEquipment: String? = null, // Equipment from catalog (#404)
     val sets: Int = 3,
     val reps: Int = 10,
     val weight: Float = 0f,

@@ -201,6 +201,5 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         value
     }
 
-    private fun calculateOneRM(weight: Float, reps: Int): Float =
-        OneRepMaxCalculator.estimate(weight, reps)
+    private fun calculateOneRM(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)
 }

@@ -239,9 +239,8 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
 
         Spacer(modifier = Modifier.height(Spacing.medium))
 
-        // Video player - prefer tutorial video, else first available
-        val tutorialVideo = step.videos.firstOrNull { it.isTutorial }
-        val videoToShow = tutorialVideo ?: step.videos.firstOrNull()
+        // Video player - use the short looping demo, not instructional tutorial media.
+        val videoToShow = step.videos.firstOrNull { !it.isTutorial }
         if (videoToShow != null) {
             Card(
                 modifier = Modifier

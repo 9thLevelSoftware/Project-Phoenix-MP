@@ -4,16 +4,16 @@ import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Video entity for exercise demonstrations
- * Represents a video demonstration from different angles or tutorial content
+ * Video entity for exercise demonstrations.
+ * Instructional tutorial videos are intentionally excluded from repository reads.
  */
 data class ExerciseVideoEntity(
     val id: Long = 0,
     val exerciseId: String,
-    val angle: String, // FRONT, SIDE, ISOMETRIC, or TUTORIAL
+    val angle: String, // FRONT, SIDE, ISOMETRIC, or another demo angle
     val videoUrl: String,
     val thumbnailUrl: String,
-    val isTutorial: Boolean = false, // True for instructional videos, false for angle demonstrations
+    val isTutorial: Boolean = false,
 )
 
 /**

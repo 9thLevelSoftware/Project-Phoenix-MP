@@ -49,7 +49,7 @@ internal fun applyMigrationResilient(
  * Get the SQL statements for a specific migration version.
  *
  * These mirror the .sqm files exactly, split into individual statements so
- * the resilient executor can apply them one-by-one. Every version from 1-31
+ * the resilient executor can apply them one-by-one. Every version from 1-32
  * is covered. Version 18 is intentionally empty (NOOP).
  */
 internal fun getMigrationStatements(version: Int): List<String> = when (version) {
@@ -837,6 +837,11 @@ WHERE gs.rowid = (
             PRIMARY KEY(provider, profileId, cursorType)
         )""",
         "CREATE INDEX IF NOT EXISTS idx_integration_sync_cursor_profile_provider ON IntegrationSyncCursor(profileId, provider)",
+    )
+
+    // Migration 32: Remove instructional tutorial exercise videos.
+    32 -> listOf(
+        "DELETE FROM ExerciseVideo WHERE isTutorial = 1",
     )
 
     else -> emptyList()

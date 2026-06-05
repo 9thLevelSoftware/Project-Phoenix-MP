@@ -495,8 +495,10 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             val deltaText = if (kotlin.math.abs(deltaKg) > 0.01f) {
                                 val sign = if (deltaKg > 0) "+" else "-"
                                 val absDeltaFormatted = viewModel.formatWeight(kotlin.math.abs(deltaKg), weightUnit)
-                                "${sign}${absDeltaFormatted}"
-                            } else null
+                                "${sign}$absDeltaFormatted"
+                            } else {
+                                null
+                            }
 
                             SliderWithButtons(
                                 value = setReadyState.adjustedWeight,

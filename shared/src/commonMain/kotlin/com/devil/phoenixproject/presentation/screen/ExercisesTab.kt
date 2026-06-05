@@ -338,8 +338,7 @@ private fun formatRelativeTime(timestamp: Long): String {
 /**
  * Estimated one-rep max using canonical hybrid formula (Brzycki ≤10 reps, Epley >10 reps).
  */
-private fun calculateOneRepMax(weight: Float, reps: Int): Float =
-    OneRepMaxCalculator.estimate(weight, reps)
+private fun calculateOneRepMax(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)
 
 /**
  * Get best 1RM from a list of sessions

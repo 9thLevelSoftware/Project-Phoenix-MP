@@ -83,6 +83,7 @@ class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
                     if (result.isHistoryBased) historicalExerciseCount++
                     if (result.hasAmrap) hasAmrap = true
                 }
+
                 is RoutineItem.SupersetItem -> {
                     val superset = item.superset
                     val supersetExercises = superset.exercises

@@ -753,8 +753,7 @@ private enum class TimeRange(val label: String) {
     ALL("All"),
 }
 
-private fun calculateOneRepMax(weight: Float, reps: Int): Float =
-    OneRepMaxCalculator.estimate(weight, reps)
+private fun calculateOneRepMax(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)
 
 private fun formatDuration(durationMs: Long): String {
     val minutes = durationMs / 60000

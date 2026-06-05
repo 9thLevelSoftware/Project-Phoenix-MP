@@ -4,8 +4,8 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
-import com.devil.phoenixproject.data.repository.PhasePRBreak
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.PhasePRBreak
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeRequirement
 import com.devil.phoenixproject.domain.model.HapticEvent
@@ -316,8 +316,7 @@ class GamificationManager(
     }
 }
 
-private fun List<PhasePRBreak>.singlePhaseOrNull(): WorkoutPhase? =
-    map { it.phase }.distinct().singleOrNull()
+private fun List<PhasePRBreak>.singlePhaseOrNull(): WorkoutPhase? = map { it.phase }.distinct().singleOrNull()
 
 private fun List<PhasePRBreak>.celebrationPhaseLabel(): String = when {
     isEmpty() -> "Combined"

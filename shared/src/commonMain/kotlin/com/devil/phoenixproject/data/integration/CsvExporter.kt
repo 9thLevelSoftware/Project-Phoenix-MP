@@ -3,10 +3,10 @@ package com.devil.phoenixproject.data.integration
 import com.devil.phoenixproject.data.integration.CsvExporter.WEIGHT_MULTIPLIER
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 /**
  * Exports workout sessions to Strong-compatible CSV format.

@@ -26,11 +26,6 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.activeDWSM
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -38,6 +33,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 
 /**
  * Characterization tests for DefaultWorkoutSessionManager workout lifecycle.
@@ -1244,7 +1244,7 @@ class DWSMWorkoutLifecycleTest {
                     timestamp = 100L,
                     loadA = 80f,
                     loadB = 80f,
-                    positionA = 100f,  // Starting position
+                    positionA = 100f, // Starting position
                     positionB = 100f,
                     velocityA = 50.0,
                     velocityB = 50.0,
@@ -1253,7 +1253,7 @@ class DWSMWorkoutLifecycleTest {
                     timestamp = 200L,
                     loadA = 80f,
                     loadB = 80f,
-                    positionA = 600f,  // HUGE 500mm jump - should be capped to 20mm
+                    positionA = 600f, // HUGE 500mm jump - should be capped to 20mm
                     positionB = 600f,
                     velocityA = 50.0,
                     velocityB = 50.0,
@@ -1262,7 +1262,7 @@ class DWSMWorkoutLifecycleTest {
                     timestamp = 300L,
                     loadA = 80f,
                     loadB = 80f,
-                    positionA = 620f,  // Normal 20mm movement
+                    positionA = 620f, // Normal 20mm movement
                     positionB = 620f,
                     velocityA = -50.0,
                     velocityB = -50.0,

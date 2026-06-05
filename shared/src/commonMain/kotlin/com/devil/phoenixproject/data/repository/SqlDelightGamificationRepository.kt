@@ -13,6 +13,8 @@ import com.devil.phoenixproject.domain.model.GamificationStats
 import com.devil.phoenixproject.domain.model.RpgInput
 import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.StreakInfo
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -22,8 +24,6 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
-import kotlin.time.Instant
 
 /**
  * SQLDelight implementation of GamificationRepository.

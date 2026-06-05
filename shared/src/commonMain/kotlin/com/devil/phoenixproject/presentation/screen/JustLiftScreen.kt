@@ -360,16 +360,16 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         SingleChoiceSegmentedButtonRow(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                        modes.forEachIndexed { index, (label, mode) ->
-                            SegmentedButton(
-                                shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
-                                onClick = { selectedMode = mode },
-                                selected = selectedMode::class == mode::class,
-                                icon = {},
-                            ) {
-                                Text(label, maxLines = 1)
+                            modes.forEachIndexed { index, (label, mode) ->
+                                SegmentedButton(
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                                    onClick = { selectedMode = mode },
+                                    selected = selectedMode::class == mode::class,
+                                    icon = {},
+                                ) {
+                                    Text(label, maxLines = 1)
+                                }
                             }
-                        }
                         }
                     }
 
@@ -801,7 +801,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 onDismiss = { showAddProfileDialog = false },
             )
         }
-
     }
 }
 

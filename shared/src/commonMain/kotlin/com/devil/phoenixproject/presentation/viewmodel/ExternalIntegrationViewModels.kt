@@ -2,10 +2,10 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
 import com.devil.phoenixproject.data.integration.ExternalProgramRepository
 import com.devil.phoenixproject.data.integration.ExternalRoutineRepository
-import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.IntegrationManager
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.ExternalActivity

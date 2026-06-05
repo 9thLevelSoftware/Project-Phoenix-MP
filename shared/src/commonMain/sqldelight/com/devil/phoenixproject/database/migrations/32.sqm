@@ -1,0 +1,3 @@
+-- Migration 32: Remove instructional tutorial exercise videos.
+
+DELETE FROM ExerciseVideo WHERE isTutorial = 1;

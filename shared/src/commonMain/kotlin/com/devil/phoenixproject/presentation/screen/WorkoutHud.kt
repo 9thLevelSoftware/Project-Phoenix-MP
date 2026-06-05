@@ -21,8 +21,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.presentation.components.AnimatedRepCounter
@@ -31,7 +29,6 @@ import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
 import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
 import com.devil.phoenixproject.presentation.components.StableRepProgress
-import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -49,7 +46,7 @@ import vitruvianprojectphoenix.shared.generated.resources.*
  *
  * Slots:
  * - Top Bar: Connection Status (Left), Phase/Mode (Center), Stop Button (Right)
- * - Center: Horizontal Pager (Metrics | Video | Stats)
+ * - Center: Horizontal Pager (Metrics | Stats)
  * - Bottom Bar: Weight/Reps controls & Navigation
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -62,11 +59,9 @@ fun WorkoutHud(
     repRanges: com.devil.phoenixproject.domain.usecase.RepRanges?, // Full qualified to avoid conflict if any
     weightUnit: WeightUnit,
     connectionState: ConnectionState,
-    exerciseRepository: ExerciseRepository,
     loadedRoutine: Routine?,
     currentExerciseIndex: Int,
     currentSetIndex: Int,
-    enableVideoPlayback: Boolean,
     onStopWorkout: () -> Unit,
     formatWeight: (Float, WeightUnit) -> String,
     onUpdateParameters: (WorkoutParameters) -> Unit,
@@ -86,7 +81,7 @@ fun WorkoutHud(
 ) {
     // Determine if we're in Echo mode
     val isEchoMode = workoutParameters.isEchoMode
-    val pagerState = rememberPagerState(pageCount = { 3 })
+    val pagerState = rememberPagerState(pageCount = { 2 })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
     val currentRoutineExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
     val liveDisplayMultiplier = currentRoutineExercise?.exercise.liveUnifiedAccessoryDisplayMultiplier()
@@ -177,14 +172,7 @@ fun WorkoutHud(
                         )
                     }
 
-                    1 -> InstructionPage(
-                        loadedRoutine = loadedRoutine,
-                        currentExerciseIndex = currentExerciseIndex,
-                        exerciseRepository = exerciseRepository,
-                        enableVideoPlayback = enableVideoPlayback,
-                    )
-
-                    2 -> StatsPage(
+                    1 -> StatsPage(
                         metric = metric,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
@@ -302,7 +290,6 @@ fun WorkoutHud(
                         .padding(end = 4.dp),
                 )
             }
-
         }
     }
 }
@@ -682,123 +669,6 @@ private fun ExecutionPage(
 }
 
 @Composable
-private fun InstructionPage(
-    loadedRoutine: Routine?,
-    currentExerciseIndex: Int,
-    exerciseRepository: ExerciseRepository,
-    enableVideoPlayback: Boolean,
-) {
-    val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
-    val exerciseId = currentExercise?.exercise?.id
-
-    // Load video for exercise - key on exerciseIndex to reset when exercise changes
-    var videoEntity by remember(currentExerciseIndex) { mutableStateOf<ExerciseVideoEntity?>(null) }
-    var isLoading by remember(currentExerciseIndex) { mutableStateOf(true) }
-
-    LaunchedEffect(currentExerciseIndex, exerciseId) {
-        isLoading = true
-        videoEntity = null
-        if (exerciseId != null) {
-            try {
-                val videos = exerciseRepository.getVideos(exerciseId)
-                videoEntity = videos.firstOrNull()
-            } catch (_: Exception) {
-                // Video loading failed - videoEntity stays null
-            }
-        }
-        isLoading = false
-    }
-
-    Box(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        when {
-            !enableVideoPlayback -> {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        Icons.Default.VideocamOff,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
-                    Text(
-                        "Video Playback Disabled",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        "Enable in Settings",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    )
-                }
-            }
-
-            isLoading -> {
-                CircularProgressIndicator()
-            }
-
-            videoEntity != null -> {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    // Exercise name header
-                    currentExercise?.exercise?.name?.let { name ->
-                        Text(
-                            name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(bottom = 12.dp),
-                        )
-                    }
-
-                    // Video player - takes most of the space
-                    VideoPlayer(
-                        videoUrl = videoEntity?.videoUrl,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp)),
-                    )
-                }
-            }
-
-            else -> {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        Icons.Default.VideoLibrary,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
-                    Text(
-                        "No Video Available",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    currentExercise?.exercise?.name?.let { name ->
-                        Text(
-                            name,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun StatsPage(
     metric: WorkoutMetric?,
     weightUnit: WeightUnit,
@@ -1128,7 +998,7 @@ private fun VelocityLossIndicator(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "${currentLossPercent.roundToInt()}% / ${thresholdPercent}%",
+                "${currentLossPercent.roundToInt()}% / $thresholdPercent%",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = if (shouldStopSet) FontWeight.Bold else FontWeight.Normal,
                 color = if (shouldStopSet) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurface,

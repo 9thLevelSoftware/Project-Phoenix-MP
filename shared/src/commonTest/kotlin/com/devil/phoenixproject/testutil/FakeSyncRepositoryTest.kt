@@ -1,8 +1,8 @@
 package com.devil.phoenixproject.testutil
 
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.test.runTest
 
 class FakeSyncRepositoryTest {
 

@@ -160,16 +160,12 @@ class PortalAuthRepository(
             }
     }
 
-    private fun isExpectedOAuthCallback(callbackUrl: String): Boolean {
-        return isExpectedOAuthCallbackUrl(
-            callbackUrl = callbackUrl,
-            expectedScheme = OAUTH_CALLBACK_SCHEME,
-        )
-    }
+    private fun isExpectedOAuthCallback(callbackUrl: String): Boolean = isExpectedOAuthCallbackUrl(
+        callbackUrl = callbackUrl,
+        expectedScheme = OAUTH_CALLBACK_SCHEME,
+    )
 
-    private fun extractAuthCode(callbackUrl: String): String? {
-        return extractOAuthCallbackParam(callbackUrl, "code")
-    }
+    private fun extractAuthCode(callbackUrl: String): String? = extractOAuthCallbackParam(callbackUrl, "code")
 
     private fun extractErrorMessage(callbackUrl: String): String? {
         val description = extractOAuthCallbackParam(callbackUrl, "error_description")
@@ -293,6 +289,7 @@ internal fun urlEncodeOAuthValue(value: String): String = buildString {
     for (c in value) {
         when {
             c.isLetterOrDigit() || c == '-' || c == '_' || c == '.' || c == '~' -> append(c)
+
             else -> {
                 for (b in c.toString().encodeToByteArray()) {
                     append('%')

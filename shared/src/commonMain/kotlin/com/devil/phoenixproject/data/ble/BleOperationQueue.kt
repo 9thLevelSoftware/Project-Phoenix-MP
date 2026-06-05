@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.ble
 
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Characteristic
 import com.juul.kable.Peripheral
 import com.juul.kable.WriteType
@@ -56,6 +57,7 @@ class BleOperationQueue {
                 }
                 return Result.success(Unit)
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 lastException = e
                 val isBusyError = e.message?.contains("Busy", ignoreCase = true) == true ||
                     e.message?.contains("WriteRequestBusy", ignoreCase = true) == true

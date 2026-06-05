@@ -7,13 +7,13 @@ import com.devil.phoenixproject.domain.model.MuscleGroupVolume
 import com.devil.phoenixproject.domain.model.NeglectedExercise
 import com.devil.phoenixproject.domain.model.PlateauDetection
 import com.devil.phoenixproject.domain.model.SessionSummary
-import com.devil.phoenixproject.domain.model.cableMultiplier
 import com.devil.phoenixproject.domain.model.TimeOfDayAnalysis
 import com.devil.phoenixproject.domain.model.TimeWindow
 import com.devil.phoenixproject.domain.model.WeeklyVolumeReport
+import com.devil.phoenixproject.domain.model.cableMultiplier
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 /**
  * Pure computation engine for training insight suggestions.
@@ -321,9 +321,13 @@ object SmartSuggestionsEngine {
         val normalized = muscleGroup.lowercase().trim()
         return when (normalized) {
             "chest", "pecs", "pectorals", "shoulders", "triceps", "front delts", "anterior delts", "side delts", "lateral delts" -> MovementCategory.PUSH
+
             "back", "biceps", "lats", "latissimus", "traps", "trapezius", "rear delts", "posterior delts", "rhomboids" -> MovementCategory.PULL
+
             "legs", "glutes", "quads", "quadriceps", "hamstrings", "hams", "calves", "adductors", "abductors" -> MovementCategory.LEGS
+
             "core", "abs", "abdominals", "obliques", "lower back", "full body" -> MovementCategory.CORE
+
             else -> {
                 onUnknownGroup?.invoke(normalized)
                 MovementCategory.CORE

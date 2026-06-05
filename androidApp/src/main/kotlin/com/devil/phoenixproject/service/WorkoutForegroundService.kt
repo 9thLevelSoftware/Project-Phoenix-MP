@@ -149,6 +149,7 @@ class WorkoutForegroundService : Service() {
 
         when (notificationState.phase) {
             WorkoutServicePhase.INITIALIZING -> details += "Preparing ${notificationState.workoutMode}"
+
             WorkoutServicePhase.COUNTDOWN -> {
                 notificationState.exerciseName?.let(details::add)
                 notificationState.secondsRemaining?.let { details += "Starts in ${it}s" }
@@ -244,8 +245,7 @@ class WorkoutForegroundService : Service() {
         return if (value == Int.MIN_VALUE || value < 0) null else value
     }
 
-    private fun Intent.getNullableStringExtra(name: String): String? =
-        getStringExtra(name)?.takeIf { it.isNotBlank() }
+    private fun Intent.getNullableStringExtra(name: String): String? = getStringExtra(name)?.takeIf { it.isNotBlank() }
 
     override fun onDestroy() {
         super.onDestroy()

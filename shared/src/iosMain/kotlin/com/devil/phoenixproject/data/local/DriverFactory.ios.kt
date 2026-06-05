@@ -98,6 +98,7 @@ actual class DriverFactory {
     private fun getDatabasePath(): String {
         val fileManager = NSFileManager.defaultManager
         val urls = fileManager.URLsForDirectory(NSLibraryDirectory, NSUserDomainMask)
+
         @Suppress("UNCHECKED_CAST")
         val libraryUrl = (urls as List<NSURL>).firstOrNull()
         return "${libraryUrl?.path ?: ""}/$DATABASE_NAME"

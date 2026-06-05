@@ -1,11 +1,12 @@
 package com.devil.phoenixproject.util
 
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * Integration tests for backup serialization round-trips with v0.9.0 additions.
@@ -156,5 +157,81 @@ class BackupSerializationTest {
         assertEquals(2, grouped.size, "2 routines should be in group-A")
         val ungrouped = routines.filter { it.groupId == null }
         assertEquals(1, ungrouped.size, "1 routine should be ungrouped")
+    }
+
+    @Test
+    fun privacyMetadataDefaultsToFullPersonalDataExportWithoutSecrets() {
+        val backupData = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-06-04T12:00:00Z",
+            appVersion = "0.9.0",
+            data = BackupContent(),
+        )
+
+        assertEquals(BackupDataClassification.FULL_PERSONAL_DATA, backupData.privacy.classification)
+        assertTrue(backupData.privacy.containsWorkoutHistory)
+        assertTrue(backupData.privacy.containsUserProfiles)
+        assertTrue(backupData.privacy.containsSessionNotes)
+        assertFalse(backupData.privacy.containsAuthTokens)
+        assertFalse(backupData.privacy.containsRuntimeSecrets)
+    }
+
+    @Test
+    fun legacyBackupWithoutPrivacyMetadataDeserializesWithDefaults() {
+        val legacyJson = """{"version":3,"exportedAt":"2026-06-04T12:00:00Z","appVersion":"0.9.0","data":{}}"""
+
+        val deserialized = json.decodeFromString<BackupData>(legacyJson)
+
+        assertEquals(BackupDataClassification.FULL_PERSONAL_DATA, deserialized.privacy.classification)
+        assertFalse(deserialized.privacy.containsAuthTokens)
+        assertFalse(deserialized.privacy.containsRuntimeSecrets)
+    }
+
+    @Test
+    fun backupSerializationDoesNotIncludeAuthTokensOrRuntimeSecretFields() {
+        val backupData = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-06-04T12:00:00Z",
+            appVersion = "0.9.0",
+            data = BackupContent(
+                userProfiles = listOf(
+                    UserProfileBackup(
+                        id = "profile-1",
+                        name = "Primary",
+                        colorIndex = 2,
+                        createdAt = 1000L,
+                        isActive = true,
+                    ),
+                ),
+                sessionNotes = listOf(
+                    SessionNotesBackup(
+                        routineSessionId = "routine-session-1",
+                        notes = "Personal notes are exported; auth credentials are not.",
+                        updatedAt = 2000L,
+                    ),
+                ),
+            ),
+        )
+
+        val jsonString = json.encodeToString(backupData)
+        val forbidden = listOf(
+            "accessToken",
+            "refreshToken",
+            "access_token",
+            "refresh_token",
+            "providerAccessToken",
+            "providerRefreshToken",
+            "SUPABASE_ANON_KEY",
+            "supabaseUrl",
+            "keystorePassword",
+            "local.properties",
+        )
+
+        forbidden.forEach { tokenOrSecretField ->
+            assertFalse(
+                jsonString.contains(tokenOrSecretField),
+                "Backup JSON must not contain secret/auth field '$tokenOrSecretField'",
+            )
+        }
     }
 }

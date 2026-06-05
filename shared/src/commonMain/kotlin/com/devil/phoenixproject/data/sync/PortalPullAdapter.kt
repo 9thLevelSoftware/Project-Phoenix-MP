@@ -39,7 +39,7 @@ object PortalPullAdapter {
     suspend fun toWorkoutSessionsWithLookup(
         portalSession: PullWorkoutSessionDto,
         profileId: String,
-        exerciseLookup: suspend (name: String, muscleGroup: String?, exerciseId: String?) -> String?
+        exerciseLookup: suspend (name: String, muscleGroup: String?, exerciseId: String?) -> String?,
     ): List<WorkoutSession> {
         if (portalSession.exercises.isEmpty()) return emptyList()
 
@@ -226,7 +226,9 @@ object PortalPullAdapter {
             achievedAt = pr.achievedAt?.let {
                 try {
                     kotlinx.datetime.Instant.parse(it).toEpochMilliseconds()
-                } catch (_: Exception) { now }
+                } catch (_: Exception) {
+                    now
+                }
             } ?: now,
             workoutMode = pr.recordType,
             prType = pr.recordType,

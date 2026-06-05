@@ -105,13 +105,16 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
                 is AuthEvent.SessionExpired -> {
                     snackbarHostState.showSnackbar("Session expired: ${event.reason}")
                 }
+
                 is AuthEvent.RefreshFailed -> {
-                    val message = if (event.isRecoverable)
+                    val message = if (event.isRecoverable) {
                         "Connection issue. Please try again."
-                    else
+                    } else {
                         "Please sign in again."
+                    }
                     snackbarHostState.showSnackbar(message)
                 }
+
                 AuthEvent.LoggedOut -> {
                     // Navigation handled elsewhere
                 }

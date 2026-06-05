@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.auth
 
+import kotlin.coroutines.resume
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -16,7 +17,6 @@ import platform.UIKit.UIApplication
 import platform.UIKit.UIWindow
 import platform.UIKit.UIWindowScene
 import platform.darwin.NSObject
-import kotlin.coroutines.resume
 
 /**
  * Domain string for NSErrors emitted by ASWebAuthenticationSession. Kotlin/
@@ -51,73 +51,74 @@ actual class OAuthLauncher {
     private var presentationProvider: PresentationContextProvider? = null
 
     @OptIn(BetaInteropApi::class)
-    actual suspend fun launch(authorizeUrl: String, callbackScheme: String): Result<String> =
-        suspendCancellableCoroutine { cont ->
-            val url = NSURL.URLWithString(authorizeUrl)
-            if (url == null) {
-                cont.resume(Result.failure(IllegalArgumentException("Invalid authorize URL: $authorizeUrl")))
-                return@suspendCancellableCoroutine
-            }
-
-            val provider = PresentationContextProvider()
-            val webSession = ASWebAuthenticationSession(
-                uRL = url,
-                callbackURLScheme = callbackScheme,
-                completionHandler = { callbackURL: NSURL?, error: NSError? ->
-                    session = null
-                    presentationProvider = null
-                    val result: Result<String> = when {
-                        callbackURL != null -> {
-                            val urlString = callbackURL.absoluteString
-                            if (urlString != null) {
-                                Result.success(urlString)
-                            } else {
-                                Result.failure(Exception("OAuth callback URL had no absoluteString"))
-                            }
-                        }
-                        error != null -> {
-                            val message = error.localizedDescription
-                            // ASWebAuthenticationSessionErrorCodeCanceledLogin = 1 inside the
-                            // ASWebAuthenticationSessionErrorDomain when the user dismisses
-                            // the sheet. We gate on BOTH so we don't misclassify a code=1
-                            // error from an unrelated NSError domain as a user cancellation.
-                            // The domain string literal mirrors Apple's public extern symbol;
-                            // we hardcode it because Kotlin/Native does not always expose the
-                            // ASWebAuthenticationSessionErrorDomain constant as importable.
-                            val isCancel = error.code == 1L &&
-                                error.domain == ASWEB_AUTH_SESSION_ERROR_DOMAIN
-                            if (isCancel) {
-                                Result.failure(OAuthCancelledException(message))
-                            } else {
-                                Result.failure(Exception(message))
-                            }
-                        }
-                        else -> Result.failure(Exception("Unknown OAuth error"))
-                    }
-                    if (cont.isActive) cont.resume(result)
-                },
-            )
-            webSession.presentationContextProvider = provider
-            // Share Safari cookies so already-signed-in Google/Apple users
-            // don't have to type credentials every time.
-            webSession.prefersEphemeralWebBrowserSession = false
-
-            session = webSession
-            presentationProvider = provider
-
-            cont.invokeOnCancellation {
-                webSession.cancel()
-                session = null
-                presentationProvider = null
-            }
-
-            val started = webSession.start()
-            if (!started) {
-                session = null
-                presentationProvider = null
-                cont.resume(Result.failure(Exception("ASWebAuthenticationSession failed to start")))
-            }
+    actual suspend fun launch(authorizeUrl: String, callbackScheme: String): Result<String> = suspendCancellableCoroutine { cont ->
+        val url = NSURL.URLWithString(authorizeUrl)
+        if (url == null) {
+            cont.resume(Result.failure(IllegalArgumentException("Invalid authorize URL: $authorizeUrl")))
+            return@suspendCancellableCoroutine
         }
+
+        val provider = PresentationContextProvider()
+        val webSession = ASWebAuthenticationSession(
+            uRL = url,
+            callbackURLScheme = callbackScheme,
+            completionHandler = { callbackURL: NSURL?, error: NSError? ->
+                session = null
+                presentationProvider = null
+                val result: Result<String> = when {
+                    callbackURL != null -> {
+                        val urlString = callbackURL.absoluteString
+                        if (urlString != null) {
+                            Result.success(urlString)
+                        } else {
+                            Result.failure(Exception("OAuth callback URL had no absoluteString"))
+                        }
+                    }
+
+                    error != null -> {
+                        val message = error.localizedDescription
+                        // ASWebAuthenticationSessionErrorCodeCanceledLogin = 1 inside the
+                        // ASWebAuthenticationSessionErrorDomain when the user dismisses
+                        // the sheet. We gate on BOTH so we don't misclassify a code=1
+                        // error from an unrelated NSError domain as a user cancellation.
+                        // The domain string literal mirrors Apple's public extern symbol;
+                        // we hardcode it because Kotlin/Native does not always expose the
+                        // ASWebAuthenticationSessionErrorDomain constant as importable.
+                        val isCancel = error.code == 1L &&
+                            error.domain == ASWEB_AUTH_SESSION_ERROR_DOMAIN
+                        if (isCancel) {
+                            Result.failure(OAuthCancelledException(message))
+                        } else {
+                            Result.failure(Exception(message))
+                        }
+                    }
+
+                    else -> Result.failure(Exception("Unknown OAuth error"))
+                }
+                if (cont.isActive) cont.resume(result)
+            },
+        )
+        webSession.presentationContextProvider = provider
+        // Share Safari cookies so already-signed-in Google/Apple users
+        // don't have to type credentials every time.
+        webSession.prefersEphemeralWebBrowserSession = false
+
+        session = webSession
+        presentationProvider = provider
+
+        cont.invokeOnCancellation {
+            webSession.cancel()
+            session = null
+            presentationProvider = null
+        }
+
+        val started = webSession.start()
+        if (!started) {
+            session = null
+            presentationProvider = null
+            cont.resume(Result.failure(Exception("ASWebAuthenticationSession failed to start")))
+        }
+    }
 }
 
 @OptIn(ExperimentalForeignApi::class)

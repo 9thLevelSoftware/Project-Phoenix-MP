@@ -42,7 +42,9 @@ internal data class ReconciliationResult(
 
 internal class SchemaReconciliationReport {
     private val results = mutableListOf<ReconciliationResult>()
-    fun add(result: ReconciliationResult) { results.add(result) }
+    fun add(result: ReconciliationResult) {
+        results.add(result)
+    }
     val created: Int get() = results.count { it.status == ReconciliationStatus.CREATED }
     val alreadyPresent: Int get() = results.count { it.status == ReconciliationStatus.ALREADY_PRESENT }
     val tableMissing: Int get() = results.count { it.status == ReconciliationStatus.TABLE_MISSING }
@@ -127,37 +129,43 @@ internal fun applyColumnHeal(driver: SqlDriver, op: SchemaHealOperation): Reconc
     when {
         normalized.contains("duplicate column") || normalized.contains("already exists") ->
             ReconciliationResult("column", op.target, ReconciliationStatus.ALREADY_PRESENT, e.message)
+
         normalized.contains("no such table") ->
             ReconciliationResult("column", op.target, ReconciliationStatus.TABLE_MISSING, e.message)
+
         else ->
             ReconciliationResult("column", op.target, ReconciliationStatus.FAILED, e.message)
     }
 }
 
-internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): ReconciliationResult {
-    return try {
-        if (op.preDropSql != null) {
-            driver.execute(identifier = null, sql = op.preDropSql, parameters = 0)
-        }
-        val alreadyExists = indexExists(driver, op.name)
-        driver.execute(identifier = null, sql = op.createSql, parameters = 0)
-        if (alreadyExists && op.preDropSql == null) {
-            ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
-        } else {
-            ReconciliationResult("index", op.name, ReconciliationStatus.CREATED)
-        }
-    } catch (e: Exception) {
-        ReconciliationResult("index", op.name, ReconciliationStatus.FAILED, e.message)
+internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): ReconciliationResult = try {
+    if (op.preDropSql != null) {
+        driver.execute(identifier = null, sql = op.preDropSql, parameters = 0)
     }
+    val alreadyExists = indexExists(driver, op.name)
+    driver.execute(identifier = null, sql = op.createSql, parameters = 0)
+    if (alreadyExists && op.preDropSql == null) {
+        ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
+    } else {
+        ReconciliationResult("index", op.name, ReconciliationStatus.CREATED)
+    }
+} catch (e: Exception) {
+    ReconciliationResult("index", op.name, ReconciliationStatus.FAILED, e.message)
 }
 
 // ==================== ENTRY POINT ====================
 
 internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport {
     val report = SchemaReconciliationReport()
-    for (op in manifestTables) { report.add(applyTableCreate(driver, op)) }
-    for (op in manifestColumns) { report.add(applyColumnHeal(driver, op)) }
-    for (op in manifestIndexes) { report.add(applyIndexCreate(driver, op)) }
+    for (op in manifestTables) {
+        report.add(applyTableCreate(driver, op))
+    }
+    for (op in manifestColumns) {
+        report.add(applyColumnHeal(driver, op))
+    }
+    for (op in manifestIndexes) {
+        report.add(applyIndexCreate(driver, op))
+    }
     return report
 }
 

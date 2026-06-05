@@ -118,7 +118,7 @@
     <string name="settings_language">Langue</string>
     <string name="settings_language_description">Sélectionnez votre langue préférée</string>
     <string name="settings_language_help">Aidez à améliorer les traductions</string>
-    <string name="settings_machine_diagnostics_description">Afficher le temps de fonctionnement, les codes de défaut, les températures, les données de plantage et les avertissements de la machine</string>
+    <string name="settings_machine_diagnostics_description">Afficher un instantané expurgé des diagnostics machine : temps de fonctionnement, codes de défaut, températures, données de plantage et avertissements. Ce n\'est pas une sauvegarde complète.</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Diagnostics machine</string>
@@ -149,7 +149,7 @@
 
     <!-- Backup -->
     <string name="backup_all_data">Sauvegarder toutes les données</string>
-    <string name="backup_description">Cela exportera tout votre historique d\'entraînement, routines, cycles d\'entraînement, succès et paramètres dans un fichier JSON.\n\nVous pouvez utiliser ce fichier pour restaurer vos données plus tard ou les transférer sur un autre appareil.</string>
+    <string name="backup_description">Ceci est une exportation complète de données personnelles : historique d\'entraînement, routines, cycles d\'entraînement, succès, profils, notes et paramètres.\n\nElle n\'inclut pas les jetons d\'authentification/session, la configuration Supabase ni les données de keystore. Les exportations de diagnostics machine sont des instantanés de dépannage distincts et expurgés, et ne peuvent pas restaurer vos entraînements.</string>
     <string name="restore_from_backup">Restaurer depuis une sauvegarde</string>
     <string name="restore_description">Sélectionnez un fichier de sauvegarde pour restaurer vos données.\n\nLes données existantes ne seront PAS écrasées — seuls les nouveaux enregistrements seront importés.</string>
     <string name="select_file">Sélectionner un fichier</string>

@@ -113,7 +113,7 @@ class AssessmentViewModel(
 
     /**
      * Select an exercise and transition to the Instruction step.
-     * Loads exercise videos; if none found, skips to ProgressiveLoading.
+     * Loads exercise demo videos; if none found, skips to ProgressiveLoading.
      */
     fun selectExercise(exercise: Exercise) {
         selectedExercise = exercise
@@ -130,13 +130,15 @@ class AssessmentViewModel(
                 emptyList()
             }
 
-            if (videos.isEmpty()) {
+            val demoVideos = videos.filterNot { it.isTutorial }
+
+            if (demoVideos.isEmpty()) {
                 // No videos, skip instruction and go straight to loading
                 startAssessmentInternal()
             } else {
                 _currentStep.value = AssessmentStep.Instruction(
                     exercise = exercise,
-                    videos = videos,
+                    videos = demoVideos,
                 )
             }
         }

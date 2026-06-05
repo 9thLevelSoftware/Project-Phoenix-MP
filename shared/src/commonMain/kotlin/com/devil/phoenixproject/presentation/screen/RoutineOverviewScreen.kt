@@ -139,7 +139,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
             Logger.d("AutoStart") { "AutoStart: routine auto-start active but disconnected, initiating connection" }
             viewModel.ensureConnection(
                 onConnected = { /* Handled by the navigation LaunchedEffect */ },
-                onFailed = {}
+                onFailed = {},
             )
         }
     }
@@ -703,8 +703,10 @@ private fun ExerciseOverviewCard(
                                 val deltaText = if (kotlin.math.abs(deltaKg) > 0.01f) {
                                     val sign = if (deltaKg > 0) "+" else "-"
                                     val absDeltaFormatted = formatWeight(kotlin.math.abs(deltaKg), weightUnit)
-                                    "${sign}${absDeltaFormatted}"
-                                } else null
+                                    "${sign}$absDeltaFormatted"
+                                } else {
+                                    null
+                                }
 
                                 SliderWithButtons(
                                     value = adjustedWeight,

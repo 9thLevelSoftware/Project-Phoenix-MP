@@ -53,10 +53,13 @@ internal fun highestKnownTier(subscriptions: List<SubscriptionCheckDto>): String
 enum class SyncErrorCategory {
     /** Temporary server/network issues - retry with exponential backoff */
     TRANSIENT,
+
     /** Permanent errors (bad request, not found) - don't retry */
     PERMANENT,
+
     /** Authentication expired - trigger re-login */
     AUTH,
+
     /** Network connectivity issues - wait for connectivity */
     NETWORK,
 }
@@ -140,62 +143,60 @@ fun classifyByStatusCode(
     statusCode: Int?,
     message: String,
     cause: Throwable? = null,
-): ClassifiedSyncError {
-    return when (statusCode) {
-        // Auth errors - don't retry, trigger re-login
-        401 -> ClassifiedSyncError(
-            category = SyncErrorCategory.AUTH,
-            message = message,
-            statusCode = statusCode,
-            isRetryable = false,
-            cause = cause,
-        )
+): ClassifiedSyncError = when (statusCode) {
+    // Auth errors - don't retry, trigger re-login
+    401 -> ClassifiedSyncError(
+        category = SyncErrorCategory.AUTH,
+        message = message,
+        statusCode = statusCode,
+        isRetryable = false,
+        cause = cause,
+    )
 
-        // Forbidden (premium required) - permanent for this session
-        402, 403 -> ClassifiedSyncError(
-            category = SyncErrorCategory.PERMANENT,
-            message = message,
-            statusCode = statusCode,
-            isRetryable = false,
-            cause = cause,
-        )
+    // Forbidden (premium required) - permanent for this session
+    402, 403 -> ClassifiedSyncError(
+        category = SyncErrorCategory.PERMANENT,
+        message = message,
+        statusCode = statusCode,
+        isRetryable = false,
+        cause = cause,
+    )
 
-        // Bad request, not found - permanent errors, don't retry
-        400, 404 -> ClassifiedSyncError(
-            category = SyncErrorCategory.PERMANENT,
-            message = message,
-            statusCode = statusCode,
-            isRetryable = false,
-            cause = cause,
-        )
+    // Bad request, not found - permanent errors, don't retry
+    400, 404 -> ClassifiedSyncError(
+        category = SyncErrorCategory.PERMANENT,
+        message = message,
+        statusCode = statusCode,
+        isRetryable = false,
+        cause = cause,
+    )
 
-        // Rate limited - transient, retry with backoff
-        429 -> ClassifiedSyncError(
-            category = SyncErrorCategory.TRANSIENT,
-            message = message,
-            statusCode = statusCode,
-            isRetryable = true,
-            cause = cause,
-        )
+    // Rate limited - transient, retry with backoff
+    429 -> ClassifiedSyncError(
+        category = SyncErrorCategory.TRANSIENT,
+        message = message,
+        statusCode = statusCode,
+        isRetryable = true,
+        cause = cause,
+    )
 
-        // Server errors (500, 502, 503, 504) - transient
-        in 500..599 -> ClassifiedSyncError(
-            category = SyncErrorCategory.TRANSIENT,
-            message = message,
-            statusCode = statusCode,
-            isRetryable = true,
-            cause = cause,
-        )
+    // Server errors (500, 502, 503, 504) - transient
+    in 500..599 -> ClassifiedSyncError(
+        category = SyncErrorCategory.TRANSIENT,
+        message = message,
+        statusCode = statusCode,
+        isRetryable = true,
+        cause = cause,
+    )
 
-        // Unknown status - treat as transient
-        else -> ClassifiedSyncError(
-            category = SyncErrorCategory.TRANSIENT,
-            message = message,
-            statusCode = statusCode,
-            isRetryable = true,
-            cause = cause,
-        )
-    }
+    // Unknown status - treat as transient
+    else -> ClassifiedSyncError(
+        category = SyncErrorCategory.TRANSIENT,
+        message = message,
+        statusCode = statusCode,
+        isRetryable = true,
+        cause = cause,
+    )
 }
 
 open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private val tokenStorage: PortalTokenStorage) {

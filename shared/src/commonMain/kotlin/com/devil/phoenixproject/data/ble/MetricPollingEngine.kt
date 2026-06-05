@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.DeviceInfo
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Peripheral
 import com.juul.kable.WriteType
 import kotlinx.coroutines.CoroutineScope
@@ -265,6 +266,7 @@ class MetricPollingEngine(
                             log.w { "Monitor read timeout exception - consecutive: $consecutiveTimeouts" }
                             delay(50)
                         } catch (e: Exception) {
+                            e.rethrowIfCancellation()
                             failCount++
                             consecutiveTimeouts = 0
                             if (failCount <= 5 || failCount % 50 == 0) {
@@ -274,6 +276,7 @@ class MetricPollingEngine(
                         }
                     }
                 } catch (e: Exception) {
+                    e.rethrowIfCancellation()
                     log.e { "Monitor polling stopped: ${e.message}" }
                 }
                 log.i { "Monitor polling ended (reads: $successCount, failures: $failCount, timeouts: $consecutiveTimeouts)" }
@@ -312,6 +315,7 @@ class MetricPollingEngine(
 
                     delay(BleConstants.Timing.DIAGNOSTIC_POLL_INTERVAL_MS)
                 } catch (e: Exception) {
+                    e.rethrowIfCancellation()
                     failedReads++
                     if (failedReads <= 5 || failedReads % 20 == 0L) {
                         log.w { "Diagnostic poll failed #$failedReads: ${e.message}" }
@@ -354,6 +358,7 @@ class MetricPollingEngine(
 
                     delay(BleConstants.Timing.HEURISTIC_POLL_INTERVAL_MS)
                 } catch (e: Exception) {
+                    e.rethrowIfCancellation()
                     failedReads++
                     if (failedReads <= 5 || failedReads % 50 == 0L) {
                         log.w { "Heuristic poll failed #$failedReads: ${e.message}" }
@@ -384,6 +389,7 @@ class MetricPollingEngine(
                         performHeartbeatRead(peripheral)
                     } ?: false
                 } catch (e: Exception) {
+                    e.rethrowIfCancellation()
                     log.e { "Heartbeat read attempt crashed: ${e.message}" }
                     false
                 }
@@ -581,6 +587,7 @@ class MetricPollingEngine(
         log.v { "Heartbeat read succeeded (TX char)" }
         true
     } catch (e: Exception) {
+        e.rethrowIfCancellation()
         log.d { "Heartbeat read failed (expected): ${e.message}" }
         false
     }
@@ -594,6 +601,7 @@ class MetricPollingEngine(
             bleQueue.writeSimple(peripheral, txCharacteristic, BleConstants.HEARTBEAT_NO_OP, WriteType.WithResponse)
             log.v { "Heartbeat no-op write sent" }
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             log.w { "Heartbeat no-op write failed: ${e.message}" }
         }
     }

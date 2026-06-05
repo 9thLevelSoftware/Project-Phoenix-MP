@@ -111,6 +111,67 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `getVideos excludes instructional tutorial videos`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
+        database.vitruvianDatabaseQueries.insertVideo(
+            exerciseId = "ex-1",
+            angle = "front",
+            videoUrl = "https://example.com/demo.mp4",
+            thumbnailUrl = "https://example.com/demo.jpg",
+            isTutorial = 0L,
+        )
+        database.vitruvianDatabaseQueries.insertVideo(
+            exerciseId = "ex-1",
+            angle = "tutorial",
+            videoUrl = "https://example.com/tutorial.mp4",
+            thumbnailUrl = "https://example.com/tutorial.jpg",
+            isTutorial = 1L,
+        )
+
+        val videos = repository.getVideos("ex-1")
+
+        assertEquals(1, videos.size)
+        assertEquals("front", videos.single().angle)
+        assertEquals(false, videos.single().isTutorial)
+    }
+
+    @Test
+    fun `import ignores instructional tutorial videos`() = runTest {
+        val result = importer.importFromJsonString(
+            """
+            [
+              {
+                "id": "ex-1",
+                "name": "Bench Press",
+                "equipment": ["BAR"],
+                "muscleGroups": ["CHEST"],
+                "videos": [
+                  {
+                    "video": "https://example.com/demo.mp4",
+                    "thumbnail": "https://example.com/demo.jpg",
+                    "angle": "front"
+                  }
+                ],
+                "tutorial": {
+                  "video": "https://example.com/tutorial.mp4",
+                  "thumbnail": "https://example.com/tutorial.jpg"
+                }
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        assertTrue(result.isSuccess)
+        val videos = repository.getVideos("ex-1")
+        val rawVideoCount = database.vitruvianDatabaseQueries.countVideos().executeAsOne()
+
+        assertEquals(1, rawVideoCount)
+        assertEquals(1, videos.size)
+        assertEquals("front", videos.single().angle)
+        assertEquals(false, videos.single().isTutorial)
+    }
+
+    @Test
     fun `getExerciseById maps explicit cable intent conservatively`() = runTest {
         insertExercise(
             id = "dual-explicit",

@@ -129,9 +129,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
     /**
      * Throw a descriptive parse error including the approximate character position.
      */
-    private fun parseError(message: String): Nothing {
-        throw IllegalStateException("$message (at character position ~$charCount)")
-    }
+    private fun parseError(message: String): Nothing = throw IllegalStateException("$message (at character position ~$charCount)")
 
     // -- Navigation: structural tokens -------------------------------------------
 
@@ -184,6 +182,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
         if (!hasMore()) return false
         return when (peekChar()) {
             ']' -> false
+
             ',' -> {
                 nextChar() // consume comma
                 skipWhitespace()
@@ -207,6 +206,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
         if (!hasMore()) return false
         return when (peekChar()) {
             '}' -> false
+
             ',' -> {
                 nextChar() // consume comma
                 skipWhitespace()
@@ -486,7 +486,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
         for (i in literal.indices) {
             val c = nextChar()
             if (c != literal[i]) {
-                parseError("Expected '${literal}' but diverged at character '$c' (index $i)")
+                parseError("Expected '$literal' but diverged at character '$c' (index $i)")
             }
         }
     }
@@ -529,7 +529,9 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
             sink?.append(c)
             when (c) {
                 '{', '[' -> depth++
+
                 '}', ']' -> depth--
+
                 '"' -> {
                     // Read the rest of the string literal to avoid false brace/bracket matches
                     readRawStringBodyInto(sink)
@@ -563,7 +565,9 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
             val c = nextChar()
             sink?.append(c)
             when (c) {
-                '"' -> return // closing quote
+                '"' -> return
+
+                // closing quote
                 '\\' -> {
                     // Consume the escaped character so it cannot be mistaken for a closing quote
                     val escaped = nextChar()

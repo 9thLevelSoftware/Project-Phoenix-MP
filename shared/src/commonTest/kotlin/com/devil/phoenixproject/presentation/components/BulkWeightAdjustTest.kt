@@ -308,9 +308,9 @@ class BulkWeightAdjustTest {
             exercise(id = "normal2", weightKg = 60f),
         )
         val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
-        assertEquals(55f, result[0].weightPerCableKg)    // adjusted
-        assertEquals(50f, result[1].weightPerCableKg)    // skipped
-        assertEquals(65f, result[2].weightPerCableKg)    // adjusted
+        assertEquals(55f, result[0].weightPerCableKg) // adjusted
+        assertEquals(50f, result[1].weightPerCableKg) // skipped
+        assertEquals(65f, result[2].weightPerCableKg) // adjusted
     }
 
     @Test

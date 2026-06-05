@@ -31,8 +31,7 @@ interface ExternalProgramRepository {
     fun observeCurrentProgram(profileId: String, provider: IntegrationProvider): Flow<ExternalProgram?>
     fun observeProgramStats(profileId: String, provider: IntegrationProvider? = null): Flow<Map<String, ExternalProgramStats>>
     suspend fun findProgram(provider: IntegrationProvider, externalId: String, profileId: String): ExternalProgram?
-    suspend fun findPrograms(provider: IntegrationProvider, externalIds: List<String>, profileId: String): List<ExternalProgram> =
-        externalIds.mapNotNull { externalId -> findProgram(provider, externalId, profileId) }
+    suspend fun findPrograms(provider: IntegrationProvider, externalIds: List<String>, profileId: String): List<ExternalProgram> = externalIds.mapNotNull { externalId -> findProgram(provider, externalId, profileId) }
     suspend fun upsertPrograms(programs: List<ExternalProgram>)
     suspend fun upsertStats(stats: List<ExternalProgramStats>)
     suspend fun updateProgramText(programId: String, scriptText: String, markNeedsSync: Boolean)

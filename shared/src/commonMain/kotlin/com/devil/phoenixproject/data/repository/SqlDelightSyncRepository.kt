@@ -48,8 +48,7 @@ class SqlDelightSyncRepository(
     private val queries = db.vitruvianDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String =
-        "$exerciseId:$timestamp"
+    private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
 
     // === Push Operations ===
 
@@ -519,7 +518,7 @@ class SqlDelightSyncRepository(
                         val localUpdatedAt = existing.updatedAt ?: 0L
                         if (localUpdatedAt > lastSync) {
                             // Local version is newer — skip this portal routine (local wins)
-                            Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer (${localUpdatedAt} > ${lastSync})" }
+                            Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
                             continue
                         }
                     }
@@ -557,9 +556,9 @@ class SqlDelightSyncRepository(
                         // Must map back to index for local Superset entity.
                         val colorNameToIndex = mapOf(
                             "indigo" to 0L, // SupersetColors.INDIGO
-                            "pink" to 1L,   // SupersetColors.PINK
-                            "green" to 2L,  // SupersetColors.GREEN
-                            "amber" to 3L,  // SupersetColors.AMBER
+                            "pink" to 1L, // SupersetColors.PINK
+                            "green" to 2L, // SupersetColors.GREEN
+                            "amber" to 3L, // SupersetColors.AMBER
                         )
 
                         var supersetOrderIdx = 0
@@ -591,8 +590,11 @@ class SqlDelightSyncRepository(
                             } ?: run {
                                 // Fallback: reconstruct from scalar (old portal data without perSetReps)
                                 val repsList = List(exercise.sets) {
-                                    if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP"
-                                    else exercise.reps.toString()
+                                    if (exercise.isAmrap && it == exercise.sets - 1) {
+                                        "AMRAP"
+                                    } else {
+                                        exercise.reps.toString()
+                                    }
                                 }
                                 repsList.joinToString(",")
                             }
@@ -1645,9 +1647,9 @@ class SqlDelightSyncRepository(
                         // Portal sends color as name (e.g., "pink") from push adapter.
                         val colorNameToIndex = mapOf(
                             "indigo" to 0L, // SupersetColors.INDIGO
-                            "pink" to 1L,   // SupersetColors.PINK
-                            "green" to 2L,  // SupersetColors.GREEN
-                            "amber" to 3L,  // SupersetColors.AMBER
+                            "pink" to 1L, // SupersetColors.PINK
+                            "green" to 2L, // SupersetColors.GREEN
+                            "amber" to 3L, // SupersetColors.AMBER
                         )
 
                         var supersetOrderIdx = 0
@@ -1688,7 +1690,9 @@ class SqlDelightSyncRepository(
                                 try {
                                     val parsed = Json.decodeFromString<List<Float>>(jsonStr)
                                     parsed.joinToString(",") { it.toString() }
-                                } catch (_: Exception) { "" }
+                                } catch (_: Exception) {
+                                    ""
+                                }
                             } ?: ""
 
                             val setRestSeconds = exercise.perSetRest ?: "[]"
@@ -1699,7 +1703,9 @@ class SqlDelightSyncRepository(
                                     val names = Json.decodeFromString<List<String?>>(jsonStr)
                                     val ordinals = names.map { name -> name?.let { PortalPullAdapter.parseEchoLevel(it).toInt() } }
                                     Json.encodeToString(ordinals)
-                                } catch (_: Exception) { "" }
+                                } catch (_: Exception) {
+                                    ""
+                                }
                             } ?: ""
 
                             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
@@ -1952,6 +1958,7 @@ class SqlDelightSyncRepository(
      * either INSERT OR REPLACE or skip. Wrapped in a single transaction so
      * the read+write pair is atomic per row.
      */
+
     /**
      * Phase 3.3 (audit item #1): replace the legacy INSERT OR IGNORE pull
      * merge with `updatedAt`-gated LWW. SQLite 3.18 does not support

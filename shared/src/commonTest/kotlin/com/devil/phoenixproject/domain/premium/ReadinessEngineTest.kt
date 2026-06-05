@@ -39,8 +39,7 @@ class ReadinessEngineTest {
         cableCount = cableCount,
     )
 
-    private fun volume(session: SessionSummary): Float =
-        (session.weightPerCableKg * session.cableMultiplier * session.workingReps)
+    private fun volume(session: SessionSummary): Float = (session.weightPerCableKg * session.cableMultiplier * session.workingReps)
 
     /**
      * Creates a set of sessions spread over the given number of days,

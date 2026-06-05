@@ -272,11 +272,10 @@ class SqlDelightExternalProgramRepository(db: VitruvianDatabase) : ExternalProgr
         return query.asFlow().mapToList(Dispatchers.IO).map { rows -> rows.map { it.toDomain() } }
     }
 
-    override fun observeCurrentProgram(profileId: String, provider: IntegrationProvider): Flow<ExternalProgram?> =
-        queries.getCurrentExternalProgram(profileId, provider.key)
-            .asFlow()
-            .mapToOneOrNull(Dispatchers.IO)
-            .map { it?.toDomain() }
+    override fun observeCurrentProgram(profileId: String, provider: IntegrationProvider): Flow<ExternalProgram?> = queries.getCurrentExternalProgram(profileId, provider.key)
+        .asFlow()
+        .mapToOneOrNull(Dispatchers.IO)
+        .map { it?.toDomain() }
 
     override fun observeProgramStats(profileId: String, provider: IntegrationProvider?): Flow<Map<String, ExternalProgramStats>> {
         val query = if (provider == null) {
@@ -401,11 +400,10 @@ class SqlDelightExternalMeasurementRepository(db: VitruvianDatabase) : ExternalM
         return query.asFlow().mapToList(Dispatchers.IO).map { rows -> rows.map { it.toDomain() } }
     }
 
-    override fun observeMeasurementsByType(profileId: String, measurementType: String): Flow<List<ExternalBodyMeasurement>> =
-        queries.getExternalBodyMeasurementsByType(profileId, measurementType)
-            .asFlow()
-            .mapToList(Dispatchers.IO)
-            .map { rows -> rows.map { it.toDomain() } }
+    override fun observeMeasurementsByType(profileId: String, measurementType: String): Flow<List<ExternalBodyMeasurement>> = queries.getExternalBodyMeasurementsByType(profileId, measurementType)
+        .asFlow()
+        .mapToList(Dispatchers.IO)
+        .map { rows -> rows.map { it.toDomain() } }
 
     override suspend fun upsertMeasurements(measurements: List<ExternalBodyMeasurement>) {
         if (measurements.isEmpty()) return
@@ -472,17 +470,16 @@ class SqlDelightExternalExerciseTemplateRepository(db: VitruvianDatabase) : Exte
         return query.asFlow().mapToList(Dispatchers.IO).map { rows -> rows.map { it.toDomain() } }
     }
 
-    override fun observeTemplateCounts(profileId: String): Flow<Map<IntegrationProvider, Int>> =
-        queries.countExternalExerciseTemplatesByProvider(profileId)
-            .asFlow()
-            .mapToList(Dispatchers.IO)
-            .map { rows ->
-                rows.mapNotNull { row ->
-                    IntegrationProvider.fromKey(row.provider)?.let { provider ->
-                        provider to row.templateCount.toInt()
-                    }
-                }.toMap()
-            }
+    override fun observeTemplateCounts(profileId: String): Flow<Map<IntegrationProvider, Int>> = queries.countExternalExerciseTemplatesByProvider(profileId)
+        .asFlow()
+        .mapToList(Dispatchers.IO)
+        .map { rows ->
+            rows.mapNotNull { row ->
+                IntegrationProvider.fromKey(row.provider)?.let { provider ->
+                    provider to row.templateCount.toInt()
+                }
+            }.toMap()
+        }
 
     override suspend fun upsertTemplates(templates: List<ExternalExerciseTemplate>) {
         if (templates.isEmpty()) return

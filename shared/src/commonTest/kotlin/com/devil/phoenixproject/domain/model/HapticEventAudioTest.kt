@@ -118,9 +118,7 @@ class FinalRepDetectionLogicTest {
         isAMRAP: Boolean,
         targetReps: Int,
         currentRep: Int,
-    ): Boolean {
-        return !isJustLift && !isAMRAP && targetReps > 0 && currentRep >= targetReps
-    }
+    ): Boolean = !isJustLift && !isAMRAP && targetReps > 0 && currentRep >= targetReps
 
     @Test
     fun `final rep detected when currentRep equals targetReps`() {
@@ -185,16 +183,14 @@ class AudioPreferenceGateTest {
         repSoundEnabled: Boolean,
         repNumber: Int,
         isFinalRep: Boolean,
-    ): HapticEvent? {
-        return if (audioRepCountEnabled && repNumber in 1..25) {
-            HapticEvent.REP_COUNT_ANNOUNCED(repNumber)
-        } else if (repSoundEnabled && isFinalRep) {
-            HapticEvent.FINAL_REP
-        } else if (repSoundEnabled) {
-            HapticEvent.REP_COMPLETED
-        } else {
-            null
-        }
+    ): HapticEvent? = if (audioRepCountEnabled && repNumber in 1..25) {
+        HapticEvent.REP_COUNT_ANNOUNCED(repNumber)
+    } else if (repSoundEnabled && isFinalRep) {
+        HapticEvent.FINAL_REP
+    } else if (repSoundEnabled) {
+        HapticEvent.REP_COMPLETED
+    } else {
+        null
     }
 
     @Test

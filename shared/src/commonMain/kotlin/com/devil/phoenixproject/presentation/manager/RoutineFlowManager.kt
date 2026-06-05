@@ -134,7 +134,7 @@ class RoutineFlowManager(
                     // for a SQLDelight reactive query), so break if it does.
                     break
                 } catch (e: Exception) {
-                    if (e is CancellationException) throw e  // Never suppress coroutine cancellation
+                    if (e is CancellationException) throw e // Never suppress coroutine cancellation
                     retryCount++
                     Logger.e(e) { "ROUTINE_LOAD: Error loading routines (attempt $retryCount/$maxRetries)" }
                     if (retryCount <= maxRetries) {
@@ -291,6 +291,7 @@ class RoutineFlowManager(
                 for (i in (currentSupersetItemIdx + 1) until items.size) {
                     val nextExercises = when (val item = items[i]) {
                         is RoutineItem.Single -> listOf(item.exercise)
+
                         is RoutineItem.SupersetItem ->
                             item.superset.exercises.sortedBy { it.orderInSuperset }
                     }
@@ -356,6 +357,7 @@ class RoutineFlowManager(
                 for (i in (currentSupersetItemIdx + 1) until items.size) {
                     val nextExercises = when (val item = items[i]) {
                         is RoutineItem.Single -> listOf(item.exercise)
+
                         is RoutineItem.SupersetItem ->
                             item.superset.exercises.sortedBy { it.orderInSuperset }
                     }
@@ -432,6 +434,7 @@ class RoutineFlowManager(
                 for (i in (currentSupersetItemIdx - 1) downTo 0) {
                     val prevExercises = when (val item = items[i]) {
                         is RoutineItem.Single -> listOf(item.exercise)
+
                         is RoutineItem.SupersetItem ->
                             item.superset.exercises.sortedBy { it.orderInSuperset }
                     }
@@ -692,6 +695,7 @@ class RoutineFlowManager(
         val reordered = routine.getItems().flatMap { item ->
             when (item) {
                 is RoutineItem.Single -> listOf(item.exercise)
+
                 is RoutineItem.SupersetItem ->
                     item.superset.exercises.sortedBy { it.orderInSuperset }
             }
@@ -1321,6 +1325,7 @@ class RoutineFlowManager(
         val displayOrder = routine.getItems().flatMap { item ->
             when (item) {
                 is RoutineItem.Single -> listOf(item.exercise)
+
                 is RoutineItem.SupersetItem ->
                     item.superset.exercises.sortedBy { it.orderInSuperset }
             }

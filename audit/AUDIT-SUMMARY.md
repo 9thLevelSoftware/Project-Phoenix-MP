@@ -6,6 +6,13 @@
 **Scope:** Full codebase - shared KMP module, Android app, iOS platform code, Supabase sync layer  
 **Type:** Audit-only (no fixes applied)
 
+## Remediation Status Update
+
+**Reviewed:** 2026-06-04
+**Baseline:** `main` commit `b16731ef`
+**Remediation branch:** `codex/battle-hardening-pre-launch`
+**Status:** Partial remediation in progress. Security/config hygiene, BLE lifecycle/cancellation/event-delivery guardrails, command validation, sync invariant warning checks, backup privacy metadata, and local quality-gate scripts are being implemented against the June 2026 audit remediation plan. Historical Supabase anon keys, if exposed before this update, must still be rotated outside the repository.
+
 ---
 
 ## Audit Reports

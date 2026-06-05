@@ -118,7 +118,7 @@
     <string name="settings_language">Idioma</string>
     <string name="settings_language_description">Selecciona tu idioma preferido</string>
     <string name="settings_language_help">Ayuda a mejorar las traducciones</string>
-    <string name="settings_machine_diagnostics_description">Ver tiempo de actividad, códigos de error, temperaturas, datos de fallos y advertencias de la máquina</string>
+    <string name="settings_machine_diagnostics_description">Ver una captura redactada de diagnóstico de la máquina: tiempo de actividad, códigos de error, temperaturas, datos de fallos y advertencias. No es una copia de seguridad completa.</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Diagnóstico de la máquina</string>
@@ -149,7 +149,7 @@
 
     <!-- Backup -->
     <string name="backup_all_data">Respaldar todos los datos</string>
-    <string name="backup_description">Esto exportará todo tu historial de entrenamientos, rutinas, ciclos de entrenamiento, logros y configuraciones a un archivo JSON.\n\nPuedes usar este archivo para restaurar tus datos más tarde o transferirlos a otro dispositivo.</string>
+    <string name="backup_description">Esta es una exportación completa de datos personales: historial de entrenamientos, rutinas, ciclos de entrenamiento, logros, perfiles, notas y ajustes.\n\nNo incluye tokens de autenticación/sesión, configuración de Supabase ni datos de keystore. Las exportaciones de diagnóstico de la máquina son capturas separadas y redactadas para solución de problemas, y no pueden restaurar tus entrenamientos.</string>
     <string name="restore_from_backup">Restaurar desde respaldo</string>
     <string name="restore_description">Selecciona un archivo de respaldo para restaurar tus datos.\n\nLos datos existentes NO se sobrescribirán — solo se importarán registros nuevos.</string>
     <string name="select_file">Seleccionar archivo</string>

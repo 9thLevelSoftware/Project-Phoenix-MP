@@ -220,17 +220,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             videoCount++
                         }
 
-                        // Insert tutorial video if present
-                        exerciseJson.tutorial?.let { tutorial ->
-                            queries.insertVideo(
-                                exerciseId = exerciseJson.id,
-                                angle = "TUTORIAL",
-                                videoUrl = tutorial.video,
-                                thumbnailUrl = tutorial.thumbnail,
-                                isTutorial = 1L,
-                            )
-                            videoCount++
-                        }
+                        // Tutorial videos are intentionally not imported; only short looping demos are retained.
                     } catch (e: Exception) {
                         Logger.w { "Failed to import exercise ${rawExerciseJson.name}: ${e.message}" }
                         // Continue with other exercises
@@ -373,20 +363,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         }
                     }
 
-                    // Insert tutorial if available
-                    exercise.tutorial?.let { tutorial ->
-                        try {
-                            queries.insertVideo(
-                                exerciseId = exercise.id,
-                                angle = "tutorial",
-                                videoUrl = tutorial.video,
-                                thumbnailUrl = tutorial.thumbnail,
-                                isTutorial = 1L,
-                            )
-                        } catch (e: Exception) {
-                            Logger.w(e) { "Failed to insert tutorial video: ${e.message}" }
-                        }
-                    }
+                    // Tutorial videos are intentionally not imported; only short looping demos are retained.
 
                     updatedCount++
                 } catch (e: Exception) {

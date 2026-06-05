@@ -23,10 +23,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  security-hygiene:
+    name: Security Hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Verify no secret-bearing local files are tracked
+        run: bash .github/scripts/forbid-tracked-secrets.sh
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: security-hygiene
 
     steps:
       - name: Checkout repository

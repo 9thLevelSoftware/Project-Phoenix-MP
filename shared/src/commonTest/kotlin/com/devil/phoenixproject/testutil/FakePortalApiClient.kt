@@ -1,10 +1,10 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.sync.GoTrueAuthResponse
-import com.devil.phoenixproject.data.sync.IntegrationSyncRequest
-import com.devil.phoenixproject.data.sync.IntegrationSyncResponse
 import com.devil.phoenixproject.data.sync.IntegrationPlaygroundSimulationRequest
 import com.devil.phoenixproject.data.sync.IntegrationPlaygroundSimulationResponse
+import com.devil.phoenixproject.data.sync.IntegrationSyncRequest
+import com.devil.phoenixproject.data.sync.IntegrationSyncResponse
 import com.devil.phoenixproject.data.sync.KnownEntityIds
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalApiException

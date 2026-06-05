@@ -130,6 +130,7 @@ actual class SafeWordListener(private val safeWord: String) {
         val session = AVAudioSession.sharedInstance()
         when (session.recordPermission) {
             AVAudioSessionRecordPermissionGranted -> dispatchStartRecognition()
+
             AVAudioSessionRecordPermissionUndetermined -> {
                 session.requestRecordPermission { granted ->
                     dispatch_async(dispatch_get_main_queue()) {
@@ -145,11 +146,13 @@ actual class SafeWordListener(private val safeWord: String) {
                     }
                 }
             }
+
             AVAudioSessionRecordPermissionDenied -> {
                 NSLog("$TAG: Microphone recording permission denied")
                 shouldBeListening = false
                 _isListening.value = false
             }
+
             else -> {
                 NSLog("$TAG: Microphone recording permission unavailable (status=${session.recordPermission})")
                 shouldBeListening = false

@@ -48,6 +48,9 @@ import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.WorkoutCommandValidator
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,8 +60,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.roundToInt
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -421,8 +422,7 @@ class ActiveSessionEngine(
 
     // ===== Calculation Helpers =====
 
-    private suspend fun resolveSelectedExercise(params: WorkoutParameters) =
-        params.selectedExerciseId?.let { exerciseId -> exerciseRepository.getExerciseById(exerciseId) }
+    private suspend fun resolveSelectedExercise(params: WorkoutParameters) = params.selectedExerciseId?.let { exerciseId -> exerciseRepository.getExerciseById(exerciseId) }
 
     private fun roundUpRemainingSeconds(seconds: Float): Int {
         val wholeSeconds = seconds.toInt()
@@ -743,8 +743,7 @@ class ActiveSessionEngine(
         )
     }
 
-    internal fun bodyweightVariantKey(exercise: RoutineExercise): String =
-        exercise.exercise.id?.takeIf { it.isNotBlank() } ?: exercise.exercise.name.lowercase()
+    internal fun bodyweightVariantKey(exercise: RoutineExercise): String = exercise.exercise.id?.takeIf { it.isNotBlank() } ?: exercise.exercise.name.lowercase()
 
     internal fun selectBodyweightVariant(exerciseKey: String, variant: BodyweightVariantOption) {
         coordinator._selectedBodyweightVariants.update { selections ->
@@ -969,7 +968,6 @@ class ActiveSessionEngine(
 
             // Segment metrics for this rep and process biomechanics (GATE-04: unconditional capture)
             processBiomechanicsForRep(repCountAfter, now)
-
         }
     }
 
@@ -1416,6 +1414,11 @@ class ActiveSessionEngine(
             val params = coordinator._workoutParameters.value
 
             val command = if (!params.isEchoMode) {
+                WorkoutCommandValidator.validateLegacyWorkoutCommand(
+                    params.programMode,
+                    weightKg,
+                    params.reps,
+                ).getOrThrow()
                 BlePacketFactory.createWorkoutCommand(
                     params.programMode,
                     weightKg,
@@ -1428,6 +1431,9 @@ class ActiveSessionEngine(
             bleRepository.sendWorkoutCommand(command).getOrThrow()
             Logger.d("Weight update sent to machine: $weightKg kg")
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            val errorPrefix = if (e is IllegalArgumentException) "Invalid BLE weight update" else "BLE weight update failed"
+            coordinator._bleErrorEvents.tryEmit("$errorPrefix: ${e.message}")
             Logger.e(e) { "Failed to send weight update: ${e.message}" }
         }
     }
@@ -2325,6 +2331,24 @@ class ActiveSessionEngine(
                     }
                 }
 
+                val commandValidation = if (bleParams.isEchoMode) {
+                    WorkoutCommandValidator.validateEchoControl(
+                        level = bleParams.echoLevel,
+                        warmupReps = bleParams.warmupReps,
+                        targetReps = bleParams.reps,
+                        isJustLift = isJustLiftMode || bleParams.isJustLift,
+                        isAMRAP = bleParams.isAMRAP,
+                        eccentricPct = bleParams.eccentricLoad.percentage,
+                    )
+                } else {
+                    WorkoutCommandValidator.validateProgramParams(bleParams)
+                }
+                commandValidation.onFailure { error ->
+                    Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
+                    coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
+                    return@launch
+                }
+
                 val command = if (bleParams.isEchoMode) {
                     BlePacketFactory.createEchoControl(
                         level = bleParams.echoLevel,
@@ -2397,6 +2421,7 @@ class ActiveSessionEngine(
                         val eccentricUpDump = command
                             .copyOfRange(0x48, 0x50)
                             .joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
+
                         // Issue #390: Decode the key float values from packet bytes for readability
                         fun readFloatLE(buf: ByteArray, off: Int): Float {
                             val bits = (buf[off].toInt() and 0xFF) or
@@ -2937,8 +2962,7 @@ class ActiveSessionEngine(
         return plannedSets.find { it.setNumber == setIndex }?.id
     }
 
-    private fun isValidCompletedSession(session: WorkoutSession): Boolean =
-        session.workingReps > 0 && session.duration > 0L
+    private fun isValidCompletedSession(session: WorkoutSession): Boolean = session.workingReps > 0 && session.duration > 0L
 
     private fun healthProviderForPlatform(): IntegrationProvider = if (getPlatform().name.startsWith("iOS")) {
         IntegrationProvider.APPLE_HEALTH

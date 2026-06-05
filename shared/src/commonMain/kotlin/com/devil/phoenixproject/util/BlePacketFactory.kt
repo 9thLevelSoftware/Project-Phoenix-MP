@@ -99,6 +99,8 @@ object BlePacketFactory {
      * For full protocol support, use createProgramParams() instead.
      */
     fun createWorkoutCommand(programMode: ProgramMode, weightPerCableKg: Float, targetReps: Int): ByteArray {
+        WorkoutCommandValidator.validateLegacyWorkoutCommand(programMode, weightPerCableKg, targetReps).getOrThrow()
+
         val buffer = ByteArray(25)
         buffer[0] = BleConstants.Commands.REGULAR_COMMAND
         buffer[1] = programMode.modeValue.toByte()
@@ -126,6 +128,8 @@ object BlePacketFactory {
      * behavior that overwrote 0x48/0x4C after copying the profile.
      */
     fun createProgramParams(params: WorkoutParameters, variant: ForceConfigVariant = defaultForceConfigVariant): ByteArray {
+        WorkoutCommandValidator.validateProgramParams(params).getOrThrow()
+
         // Resolve the profile up front so the variant decision can key off it.
         val profileMode = if (params.isJustLift || params.isEchoMode) {
             ProgramMode.OldSchool
@@ -330,6 +334,15 @@ object BlePacketFactory {
         isAMRAP: Boolean = false,
         eccentricPct: Int = 100,
     ): ByteArray {
+        WorkoutCommandValidator.validateEchoControl(
+            level = level,
+            warmupReps = warmupReps,
+            targetReps = targetReps,
+            isJustLift = isJustLift,
+            isAMRAP = isAMRAP,
+            eccentricPct = eccentricPct.coerceIn(0, 150),
+        ).getOrThrow()
+
         // Defensive clamping: Machine hardware limit is 150% eccentric load
         // Values > 150% can cause machine faults (yellow light)
         val safeEccentricPct = eccentricPct.coerceIn(0, 150)
@@ -372,7 +385,7 @@ object BlePacketFactory {
      * Build a 34-byte color scheme packet.
      */
     fun createColorScheme(brightness: Float, colors: List<RGBColor>): ByteArray {
-        require(colors.size == 3) { "Color scheme must have exactly 3 colors" }
+        WorkoutCommandValidator.validateColorScheme(brightness, colors).getOrThrow()
 
         val frame = ByteArray(34)
         putIntLE(frame, 0, 0x00000011)
