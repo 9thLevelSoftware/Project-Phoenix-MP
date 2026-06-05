@@ -53,8 +53,8 @@ Grounded in release notes for tags: `v0.1.0-beta1`, `v0.2.x`, `v0.3.0`–`v0.3.4
 - **Smart Insights & Smart Suggestions** (v0.9.1) — Snapshot/Trends/Diagnostics/Actions, weekly volume, time-of-day analysis, readiness; volume-trend charts, muscle balance, exercise variety; **Recent Activity replay** (v0.9.1); bodyweight volume integration.
 
 **Cloud, profiles & the Portal**
-- **Phoenix Portal** — web companion in public beta (v0.7.0).
-- **Optional** bidirectional **cloud sync** via Supabase (v0.6.0, rebuilt v0.6.5: pagination, retry/backoff, token refresh, conflict resolution).
+- **Phoenix Portal** — the **premium** web companion at **phoenix-portal.com** (public beta launched v0.7.0). Cloud sync and the web dashboards live here; the mobile app is free and fully usable without it.
+- **Optional** bidirectional **cloud sync** via Supabase, tied to the premium Portal (v0.6.0, rebuilt v0.6.5: pagination, retry/backoff, token refresh, conflict resolution).
 - **Google / Apple OAuth** sign-in (v0.7.0); **multi-profile** household support w/ isolation + move/copy routines (v0.6.5).
 
 **Integrations & data portability**
@@ -64,7 +64,7 @@ Grounded in release notes for tags: `v0.1.0-beta1`, `v0.2.x`, `v0.3.0`–`v0.3.4
 **Platform & polish**
 - **Android + iOS** from one Kotlin Multiplatform / Compose Multiplatform codebase.
 - **5 languages**: English, Dutch, German, Spanish, French (v0.6.0). Tablet/responsive UI (v0.3.0). **Launch Pad** home screen (v0.9.1). Accessibility (screen-reader semantics, iOS dynamic type).
-- **Free — no subscriptions** (RevenueCat + paywalls removed in v0.6.0). **Local-first**; cloud is opt-in.
+- **Free mobile app** — in-app paywalls/RevenueCat removed in v0.6.0; the premium tier now lives in the web **Phoenix Portal** (cloud sync/dashboards), not the app. **Local-first**; cloud is opt-in.
 
 ### Explicitly excluded (built then purged in v0.6.0 — never shipped to users)
 CV/MediaPipe **form check**, **ghost racing**, **RPG attributes / character classes**, **LED biofeedback**, color-blind mode, **HUD preset customization**, BLE simulator, **Isokinetic** mode, leaderboards/challenges. *The domain engines for some of these still exist in `domain/premium/`, but only VBT and Smart Insights/Suggestions are surfaced to users — so only those are marketed.*
