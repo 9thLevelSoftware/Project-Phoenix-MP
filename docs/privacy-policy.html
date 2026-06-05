@@ -4,156 +4,81 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Privacy Policy - Project Phoenix</title>
+    <link rel="icon" type="image/png" href="vitphoe_logo.png">
     <style>
         :root {
-            --bg-color: #0f0f0f;
-            --card-bg: #1a1a1a;
-            --text-primary: #ffffff;
-            --text-secondary: #a0a0a0;
-            --accent: #ff6b35;
-            --border: #2a2a2a;
+            --bg-color: #0b0e14;
+            --card-bg: #141b27;
+            --text-primary: #f5f8fc;
+            --text-secondary: #a3b1c4;
+            --accent: #ff7a3d;
+            --border: rgba(255,255,255,0.09);
         }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background-color: var(--bg-color);
+            background: radial-gradient(circle 800px at 12% -5%, rgba(255,122,61,0.14), transparent 55%), var(--bg-color);
             color: var(--text-primary);
-            line-height: 1.6;
-            padding: 20px;
+            line-height: 1.65;
+            padding: 24px;
+            min-height: 100vh;
         }
-
         .container {
             max-width: 800px;
             margin: 0 auto;
             background-color: var(--card-bg);
-            border-radius: 16px;
-            padding: 40px;
+            border-radius: 18px;
+            padding: 42px;
             border: 1px solid var(--border);
         }
-
-        h1 {
-            color: var(--accent);
-            font-size: 2rem;
-            margin-bottom: 8px;
-        }
-
-        .app-name {
-            color: var(--text-secondary);
-            font-size: 1rem;
-            margin-bottom: 24px;
-        }
-
-        .effective-date {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-            margin-bottom: 32px;
-            padding-bottom: 24px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        h2 {
-            color: var(--text-primary);
-            font-size: 1.3rem;
-            margin-top: 32px;
-            margin-bottom: 16px;
-        }
-
-        p {
-            color: var(--text-secondary);
-            margin-bottom: 16px;
-        }
-
-        ul {
-            color: var(--text-secondary);
-            margin-left: 24px;
-            margin-bottom: 16px;
-        }
-
-        li {
-            margin-bottom: 8px;
-        }
-
-        strong {
-            color: var(--text-primary);
-        }
-
-        a {
-            color: var(--accent);
-            text-decoration: none;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-
-        .highlight {
-            background-color: rgba(255, 107, 53, 0.1);
-            border-left: 3px solid var(--accent);
-            padding: 16px;
-            margin: 16px 0;
-            border-radius: 0 8px 8px 0;
-        }
-
-        .highlight p {
-            margin-bottom: 0;
-        }
-
-        footer {
-            margin-top: 40px;
-            padding-top: 24px;
-            border-top: 1px solid var(--border);
-            text-align: center;
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-        }
-
+        .back { display: inline-block; margin-bottom: 22px; color: var(--accent); text-decoration: none; font-size: 0.9rem; }
+        .back:hover { text-decoration: underline; }
+        h1 { color: var(--accent); font-size: 2rem; margin-bottom: 8px; }
+        .app-name { color: var(--text-secondary); font-size: 1rem; margin-bottom: 16px; }
+        .effective-date { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+        h2 { color: var(--text-primary); font-size: 1.3rem; margin-top: 32px; margin-bottom: 16px; }
+        p { color: var(--text-secondary); margin-bottom: 16px; }
+        ul { color: var(--text-secondary); margin-left: 24px; margin-bottom: 16px; }
+        li { margin-bottom: 8px; }
+        strong { color: var(--text-primary); }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .highlight { background-color: rgba(255, 122, 61, 0.1); border-left: 3px solid var(--accent); padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0; }
+        .highlight p { margin-bottom: 0; }
+        footer { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
         @media (max-width: 600px) {
-            .container {
-                padding: 24px;
-                border-radius: 12px;
-            }
-
-            h1 {
-                font-size: 1.5rem;
-            }
-
-            h2 {
-                font-size: 1.1rem;
-            }
+            .container { padding: 24px; border-radius: 12px; }
+            h1 { font-size: 1.5rem; }
+            h2 { font-size: 1.1rem; }
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <a class="back" href="index.html">← Back to Project Phoenix</a>
         <h1>Privacy Policy</h1>
         <p class="app-name">Project Phoenix - Vitruvian Trainer Companion App</p>
-        <p class="effective-date"><strong>Effective Date:</strong> December 21, 2025</p>
+        <p class="effective-date"><strong>Effective Date:</strong> December 21, 2025 &nbsp;·&nbsp; <strong>Last Updated:</strong> June 5, 2026</p>
 
         <div class="highlight">
-            <p><strong>Summary:</strong> Project Phoenix is a privacy-focused, offline-first app. Your workout data stays on your device. We do not collect, transmit, or sell your personal information.</p>
+            <p><strong>Summary:</strong> Project Phoenix is a privacy-focused, offline-first app. Everything works on your device with no account required. <strong>Cloud sync and online sign-in are optional</strong> — if you choose to enable them, only the workout data you decide to sync is sent to your own private account. We never sell your data, and we don't use ads, analytics, or tracking SDKs. The optional voice "Safe Word" stop uses your microphone on-device only when you turn it on — it never records or uploads audio.</p>
         </div>
 
         <h2>1. Introduction</h2>
         <p>Project Phoenix ("we," "our," or "the App") is a community-developed companion application for Vitruvian Trainer fitness equipment. We are committed to protecting your privacy and being transparent about our data practices.</p>
-        <p>This Privacy Policy explains what information the App accesses, how it is used, and your rights regarding your data.</p>
+        <p>This Privacy Policy explains what information the App accesses, how it is used, and your rights regarding your data. It covers both the mobile apps (Android and iOS) and the optional Phoenix Portal web companion.</p>
 
         <h2>2. Information We Collect</h2>
-        <p><strong>We do not collect any personal information.</strong> All data generated by the App is stored locally on your device and is never transmitted to external servers.</p>
-
-        <p>The App stores the following data locally on your device:</p>
+        <p><strong>By default, the App stores all data locally on your device.</strong> The App does not require an account and does not transmit your data anywhere unless you explicitly enable optional features such as Cloud Sync or third-party integrations (see Sections 5 and 6).</p>
+        <p>The App stores the following data, primarily on your device:</p>
         <ul>
             <li><strong>Workout Data:</strong> Exercise sessions, sets, reps, weights, and timestamps</li>
             <li><strong>Performance Metrics:</strong> Real-time machine data during workouts (position, velocity, load, power)</li>
             <li><strong>Personal Records:</strong> Your best lifts and calculated one-rep max estimates</li>
-            <li><strong>Custom Routines:</strong> Workout routines you create within the App</li>
-            <li><strong>App Preferences:</strong> Your settings such as weight unit preference (kg/lb), theme, and display options</li>
-            <li><strong>Gamification Data:</strong> Badges earned and achievement progress</li>
+            <li><strong>Custom Routines &amp; Cycles:</strong> Workout routines and training programs you create</li>
+            <li><strong>App Preferences:</strong> Settings such as weight unit (kg/lb), language, theme, and display options</li>
+            <li><strong>Gamification Data:</strong> Badges earned, streaks, and achievement progress</li>
+            <li><strong>Account Information (only if you sign in):</strong> If you enable Cloud Sync, an account is created using your email or a Google/Apple sign-in. We store the minimum needed to authenticate you and associate your synced data with your account.</li>
         </ul>
 
         <h2>3. Bluetooth Permissions</h2>
@@ -163,51 +88,63 @@
             <li>Sending workout commands (weight, mode settings)</li>
             <li>Receiving real-time workout metrics from the machine</li>
         </ul>
-        <p>Bluetooth data is processed in real-time and relevant metrics are stored locally. No Bluetooth data is transmitted to external parties.</p>
+        <p>Bluetooth data is processed in real-time and relevant metrics are stored on your device. Bluetooth data is never transmitted to any external party.</p>
 
-        <h2>4. Data Storage and Security</h2>
-        <p>All your data is stored locally on your device using secure, encrypted storage mechanisms provided by the operating system. Your data remains under your control at all times.</p>
+        <h2>4. Microphone &amp; Voice Recognition (Safe Word Feature)</h2>
+        <p>Project Phoenix includes an optional <strong>"Safe Word"</strong> feature — a hands-free, voice-activated emergency stop for your workouts. It is <strong>off by default</strong>, and the App requests microphone and speech-recognition permission only if you choose to enable it. When enabled:</p>
         <ul>
-            <li><strong>No Cloud Sync:</strong> Your data is not uploaded to any cloud service</li>
-            <li><strong>No Account Required:</strong> You do not need to create an account to use the App</li>
-            <li><strong>No External Servers:</strong> The App does not communicate with any external servers</li>
+            <li><strong>On-device recognition:</strong> Speech is processed by your device's built-in speech recognizer (on Android, offline recognition is requested via <code>EXTRA_PREFER_OFFLINE</code>; on iOS, on-device speech recognition is used). Your audio is never sent to Project Phoenix's servers.</li>
+            <li><strong>Active only during workouts:</strong> The microphone is used only while the feature is enabled and a workout is in progress, listening for your configured safe word.</li>
+            <li><strong>Not recorded or stored:</strong> Audio is analyzed in real time to detect the safe word and is then discarded. We do not save recordings or transcripts.</li>
+            <li><strong>Your safe word stays private:</strong> The word or phrase you set is kept on your device and is deliberately excluded from diagnostic logs.</li>
+            <li><strong>Platform services:</strong> Because recognition relies on your operating system's speech features, the relevant platform provider's (Apple / Google) privacy terms may also apply to that on-device processing.</li>
         </ul>
 
-        <h2>5. Third-Party Services</h2>
-        <p>The App does not integrate with any third-party analytics, advertising, or tracking services. We do not use:</p>
+        <h2>5. Optional Cloud Sync &amp; Accounts</h2>
+        <p>Cloud Sync and the Phoenix Portal web companion (an optional <strong>premium</strong> service at <a href="https://phoenix-portal.com" target="_blank" rel="noopener">phoenix-portal.com</a>) are <strong>opt-in</strong>. The App is fully functional without them. If you choose to enable Cloud Sync:</p>
         <ul>
-            <li>Google Analytics or Firebase Analytics</li>
-            <li>Crash reporting services (Crashlytics, Sentry, etc.)</li>
-            <li>Advertising networks</li>
-            <li>Social media SDKs</li>
+            <li><strong>Account required for sync only:</strong> You create an account (email/password) or sign in with Google or Apple. You can use the entire app without ever creating one.</li>
+            <li><strong>What is synced:</strong> Your workout sessions, routines, personal records, and related training data are uploaded so they can be accessed across your devices and in the Phoenix Portal web companion.</li>
+            <li><strong>Where it is stored:</strong> Synced data is stored in our backend infrastructure (Supabase) under your account, protected by per-user access controls so only you can read your data.</li>
+            <li><strong>Secure tokens:</strong> Authentication tokens are stored securely on your device (Android Keystore-backed storage / iOS Keychain).</li>
+            <li><strong>You stay in control:</strong> You can use the app entirely offline, and you can request deletion of your synced data at any time (see Section 8).</li>
         </ul>
 
-        <h2>6. Data Sharing</h2>
-        <p><strong>We do not share your data with anyone.</strong> Since all data is stored locally on your device and never transmitted externally, there is no data to share with third parties.</p>
+        <h2>6. Third-Party Services</h2>
+        <p>The App does <strong>not</strong> use advertising networks, analytics SDKs, crash-reporting services, or social-media tracking SDKs. The only external services involved are ones that directly deliver features you choose to use:</p>
+        <ul>
+            <li><strong>Supabase</strong> — backend for optional Cloud Sync, accounts, and the Phoenix Portal. Only used if you enable Cloud Sync.</li>
+            <li><strong>Google / Apple Sign-In</strong> — optional authentication providers, used only if you choose them to sign in.</li>
+            <li><strong>Apple Health / Health Connect</strong> — optional. If you enable it, completed workouts can be written to your device's health platform under permissions you grant.</li>
+            <li><strong>CSV Import/Export (Strong, Hevy formats)</strong> — file-based and fully under your control; no automatic transmission to those companies.</li>
+        </ul>
 
-        <h2>7. Your Rights and Data Control</h2>
+        <h2>7. Data Sharing</h2>
+        <p><strong>We do not sell your data, and we do not share it with third parties for advertising or marketing.</strong> Data you keep local stays local. Data you choose to sync is stored in your private account solely to provide the sync and Portal features to you. We only disclose data if required by law.</p>
+
+        <h2>8. Your Rights and Data Control</h2>
         <p>You have complete control over your data:</p>
         <ul>
             <li><strong>Access:</strong> All your data is visible within the App's history and analytics screens</li>
-            <li><strong>Deletion:</strong> You can delete individual workouts, routines, or clear all App data through your device settings</li>
-            <li><strong>Portability:</strong> Your data remains on your device and can be backed up using your device's standard backup mechanisms</li>
+            <li><strong>Deletion (local):</strong> Delete individual workouts and routines in-app, or clear all App data through your device settings</li>
+            <li><strong>Deletion (synced):</strong> If you use Cloud Sync, you can request deletion of your account and synced data via the contact methods in Section 12</li>
+            <li><strong>Portability:</strong> Export your workout data to CSV at any time, and back up locally using your device's standard backup mechanisms</li>
         </ul>
-        <p>To delete all App data, you can uninstall the App or clear the App's data through your device's application settings.</p>
 
-        <h2>8. Children's Privacy</h2>
+        <h2>9. Children's Privacy</h2>
         <p>The App is not directed at children under the age of 13. We do not knowingly collect any information from children. The App is designed for adult fitness enthusiasts using Vitruvian Trainer equipment.</p>
 
-        <h2>9. Changes to This Privacy Policy</h2>
+        <h2>10. Changes to This Privacy Policy</h2>
         <p>We may update this Privacy Policy from time to time. Any changes will be reflected on this page with an updated effective date. We encourage you to review this Privacy Policy periodically.</p>
 
-        <h2>10. Community Project</h2>
+        <h2>11. Community Project</h2>
         <p>Project Phoenix is a community-driven project developed by 9th Level Software. We are committed to transparent privacy practices.</p>
 
-        <h2>11. Contact Us</h2>
+        <h2>12. Contact Us</h2>
         <p>If you have any questions about this Privacy Policy or the App's data practices, you can:</p>
         <ul>
-            <li>Contact us through our <a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP" target="_blank">GitHub repository</a></li>
-            <li>Support the project: <a href="https://ko-fi.com/vitruvianredux" target="_blank">ko-fi.com/vitruvianredux</a></li>
+            <li>Contact us through our <a href="https://github.com/9thLevelSoftware/Project-Phoenix-MP" target="_blank" rel="noopener">GitHub repository</a></li>
+            <li>Support the project: <a href="https://ko-fi.com/vitruvianredux" target="_blank" rel="noopener">ko-fi.com/vitruvianredux</a></li>
         </ul>
 
         <footer>

@@ -4,125 +4,58 @@
     <meta charset="UTF-8">
     <title>Feature Graphic - 1024x500</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            width: 1024px;
-            height: 500px;
-            overflow: hidden;
-            background: #1a2332;
-        }
-
+        @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@400;500&display=swap");
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { width: 1024px; height: 500px; overflow: hidden; background: #0b0e14; }
         .container {
-            width: 1024px;
-            height: 500px;
-            background: radial-gradient(ellipse at center, #2a3a52 0%, #1a2332 50%, #141c28 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            overflow: hidden;
+            width: 1024px; height: 500px;
+            background:
+                radial-gradient(circle 700px at 50% 8%, rgba(255,180,100,0.30) 0%, rgba(255,140,60,0.10) 35%, transparent 65%),
+                radial-gradient(circle at center, #131b29 0%, #0d131e 55%, #090c12 100%);
+            display: flex; align-items: center; justify-content: center;
+            position: relative; overflow: hidden;
         }
-
-        /* Particles/stars */
-        .particle {
-            position: absolute;
-            border-radius: 50%;
-            animation: twinkle 3s infinite;
-        }
-
-        @keyframes twinkle {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 1; }
-        }
-
-        /* Center glow behind logo */
+        .particle { position: absolute; border-radius: 50%; animation: twinkle 3s infinite; }
+        @keyframes twinkle { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
         .glow {
-            position: absolute;
-            width: 400px;
-            height: 400px;
-            background: radial-gradient(circle, rgba(255,180,100,0.4) 0%, rgba(255,140,60,0.2) 30%, transparent 70%);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -60%);
-            filter: blur(20px);
+            position: absolute; width: 420px; height: 420px;
+            background: radial-gradient(circle, rgba(255,150,80,0.45) 0%, rgba(255,122,61,0.18) 30%, transparent 70%);
+            top: 50%; left: 50%; transform: translate(-50%, -62%); filter: blur(22px);
         }
-
-        .content {
-            text-align: center;
-            z-index: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        /* Logo placeholder - replace src with your actual logo */
-        .logo {
-            width: 220px;
-            height: 220px;
-            margin-bottom: 20px;
-            /* If using your logo image, uncomment below and set path */
-            /* background-image: url('your-logo.png'); */
-            /* background-size: contain; */
-            /* background-repeat: no-repeat; */
-            /* background-position: center; */
-        }
-
-        .logo img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            filter: drop-shadow(0 0 40px rgba(255,150,80,0.6));
-        }
-
+        .content { text-align: center; z-index: 1; display: flex; flex-direction: column; align-items: center; }
+        .logo { width: 210px; height: 210px; margin-bottom: 18px; }
+        .logo img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0 40px rgba(255,150,80,0.6)); }
         h1 {
-            font-family: 'Segoe UI', Roboto, sans-serif;
-            font-size: 52px;
-            font-weight: 700;
-            color: #ff7b3a;
-            letter-spacing: 8px;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-            text-shadow: 0 0 30px rgba(255,120,50,0.5);
+            font-family: 'Fraunces', serif; font-size: 56px; font-weight: 700;
+            background: linear-gradient(120deg, #ff7a3d 10%, #f5c451 60%, #ff9460 95%);
+            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+            letter-spacing: 2px; margin-bottom: 10px;
         }
-
-        .tagline {
-            font-family: 'Segoe UI', Roboto, sans-serif;
-            font-size: 22px;
-            font-weight: 300;
-            color: #c8d4e3;
-            letter-spacing: 1px;
-        }
+        .tagline { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 400; color: #c8d4e3; letter-spacing: 1px; }
+        .tagline b { color: #3ad6a6; font-weight: 500; }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Scattered particles matching your loading screen -->
         <div class="particle" style="width:4px;height:4px;background:#f4a460;top:8%;left:15%;animation-delay:0s;"></div>
-        <div class="particle" style="width:3px;height:3px;background:#7cfc00;top:12%;left:75%;animation-delay:0.5s;"></div>
-        <div class="particle" style="width:5px;height:5px;background:#ff6347;top:20%;left:85%;animation-delay:1s;"></div>
-        <div class="particle" style="width:3px;height:3px;background:#ffd700;top:15%;left:25%;animation-delay:1.5s;"></div>
-        <div class="particle" style="width:4px;height:4px;background:#90ee90;top:25%;left:10%;animation-delay:0.3s;"></div>
+        <div class="particle" style="width:3px;height:3px;background:#3ad6a6;top:12%;left:75%;animation-delay:0.5s;"></div>
+        <div class="particle" style="width:5px;height:5px;background:#ff7a3d;top:20%;left:85%;animation-delay:1s;"></div>
+        <div class="particle" style="width:3px;height:3px;background:#f5c451;top:15%;left:25%;animation-delay:1.5s;"></div>
+        <div class="particle" style="width:4px;height:4px;background:#ff9460;top:25%;left:10%;animation-delay:0.3s;"></div>
         <div class="particle" style="width:3px;height:3px;background:#ffb347;top:10%;left:60%;animation-delay:0.8s;"></div>
-        <div class="particle" style="width:5px;height:5px;background:#ff7f50;top:5%;left:45%;animation-delay:2s;"></div>
-        <div class="particle" style="width:3px;height:3px;background:#98fb98;top:30%;left:90%;animation-delay:1.2s;"></div>
-        <div class="particle" style="width:4px;height:4px;background:#ffa07a;top:18%;left:5%;animation-delay:0.7s;"></div>
-        <div class="particle" style="width:3px;height:3px;background:#f0e68c;top:8%;left:35%;animation-delay:1.8s;"></div>
-        <div class="particle" style="width:4px;height:4px;background:#ff6b35;top:22%;left:70%;animation-delay:0.4s;"></div>
-        <div class="particle" style="width:3px;height:3px;background:#adff2f;top:28%;left:40%;animation-delay:2.2s;"></div>
+        <div class="particle" style="width:5px;height:5px;background:#ff7f50;top:78%;left:45%;animation-delay:2s;"></div>
+        <div class="particle" style="width:3px;height:3px;background:#3ad6a6;top:82%;left:80%;animation-delay:1.2s;"></div>
+        <div class="particle" style="width:4px;height:4px;background:#ffa07a;top:70%;left:8%;animation-delay:0.7s;"></div>
+        <div class="particle" style="width:3px;height:3px;background:#f0e68c;top:85%;left:35%;animation-delay:1.8s;"></div>
+        <div class="particle" style="width:4px;height:4px;background:#ff6b35;top:74%;left:70%;animation-delay:0.4s;"></div>
+        <div class="particle" style="width:3px;height:3px;background:#f5c451;top:88%;left:55%;animation-delay:2.2s;"></div>
 
         <div class="glow"></div>
 
         <div class="content">
-            <div class="logo">
-                <img src="vitphoe_logo.png" alt="Project Phoenix Logo">
-            </div>
-            <h1>Project Phoenix</h1>
-            <p class="tagline">Rise from the ashes</p>
+            <div class="logo"><img src="vitphoe_logo.png" alt="Project Phoenix Logo"></div>
+            <h1>PROJECT PHOENIX</h1>
+            <p class="tagline">Keep your Vitruvian Trainer alive. <b>Rise from the ashes.</b></p>
         </div>
     </div>
 </body>
