@@ -4,8 +4,10 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 class SettingsPreferencesManagerTest {
 
@@ -29,5 +31,19 @@ class SettingsPreferencesManagerTest {
 
         assertEquals(0, defaults.echoLevelValue)
         assertEquals(EchoLevel.HARD, defaults.getEchoLevel())
+    }
+
+    @Test
+    fun `weight suggestions default to enabled and persist changes`() = runTest {
+        val settings = MapSettings()
+        val manager = SettingsPreferencesManager(settings)
+
+        assertTrue(manager.preferencesFlow.value.weightSuggestionsEnabled)
+
+        manager.setWeightSuggestionsEnabled(false)
+        assertFalse(manager.preferencesFlow.value.weightSuggestionsEnabled)
+
+        val reloaded = SettingsPreferencesManager(settings)
+        assertFalse(reloaded.preferencesFlow.value.weightSuggestionsEnabled)
     }
 }

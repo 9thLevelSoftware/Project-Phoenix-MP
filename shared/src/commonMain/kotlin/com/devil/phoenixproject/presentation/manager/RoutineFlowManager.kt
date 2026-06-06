@@ -725,6 +725,7 @@ class RoutineFlowManager(
         coordinator._skippedExercises.value = emptySet()
         coordinator._completedExercises.value = emptySet()
         coordinator._completedRoutineSetKeys.value = emptySet()
+        coordinator._weightAdjustmentRecommendation.value = null
 
         // Issue #222 diagnostic: Reset bodyweight counter for new routine
         coordinator.bodyweightSetsCompletedInRoutine = 0
@@ -833,6 +834,7 @@ class RoutineFlowManager(
             coordinator._skippedExercises.value = emptySet()
             coordinator._completedExercises.value = emptySet()
             coordinator._completedRoutineSetKeys.value = emptySet()
+            coordinator._weightAdjustmentRecommendation.value = null
             coordinator._workoutState.value = WorkoutState.Idle
             coordinator._routineFlowState.value = RoutineFlowState.Overview(
                 routine = normalized,
@@ -928,6 +930,7 @@ class RoutineFlowManager(
             isJustLift = false,
             useAutoStart = false,
         )
+        clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }
 
     /**
@@ -990,6 +993,7 @@ class RoutineFlowManager(
             isJustLift = false,
             useAutoStart = false,
         )
+        clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }
 
     /**
@@ -1050,6 +1054,7 @@ class RoutineFlowManager(
         if (state !is RoutineFlowState.SetReady) return
 
         // Full reset before starting to ensure no stale state
+        coordinator._weightAdjustmentRecommendation.value = null
         lifecycleDelegate.resetRepCounter()
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
@@ -1072,6 +1077,7 @@ class RoutineFlowManager(
      */
     fun returnToOverview() {
         val routine = coordinator._loadedRoutine.value ?: return
+        coordinator._weightAdjustmentRecommendation.value = null
         coordinator._routineFlowState.value = RoutineFlowState.Overview(
             routine = routine,
             selectedExerciseIndex = coordinator._currentExerciseIndex.value,
@@ -1085,6 +1091,7 @@ class RoutineFlowManager(
         coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
         coordinator._loadedRoutine.value = null
         coordinator._workoutState.value = WorkoutState.Idle
+        coordinator._weightAdjustmentRecommendation.value = null
         coordinator.routineStartTime = 0
         // Issue #392: Clear routine session context so next routine gets fresh ID
         coordinator.currentRoutineSessionId = null
@@ -1122,6 +1129,7 @@ class RoutineFlowManager(
         } else {
             0L
         }
+        coordinator._weightAdjustmentRecommendation.value = null
         coordinator._routineFlowState.value = RoutineFlowState.Complete(
             routineName = routine.name,
             totalSets = completedSetCount,
@@ -1133,6 +1141,7 @@ class RoutineFlowManager(
     fun clearLoadedRoutine() {
         coordinator._loadedRoutine.value = null
         clearCycleContext()
+        coordinator._weightAdjustmentRecommendation.value = null
         coordinator.routineStartTime = 0
         // Issue #392: Clear routine session context so next routine gets fresh ID
         coordinator.currentRoutineSessionId = null
@@ -1140,6 +1149,13 @@ class RoutineFlowManager(
         coordinator.currentRoutineId = null
         coordinator.routineAccumulatedCalories = 0f
         coordinator._completedRoutineSetKeys.value = emptySet()
+    }
+
+    private fun clearWeightRecommendationIfNotTarget(exerciseId: String?, setIndex: Int) {
+        val recommendation = coordinator._weightAdjustmentRecommendation.value ?: return
+        if (recommendation.targetExerciseId != exerciseId || recommendation.targetSetIndex != setIndex) {
+            coordinator._weightAdjustmentRecommendation.value = null
+        }
     }
 
     // ===== Exercise Navigation =====

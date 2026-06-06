@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.e2e
 
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.e2e.robot.WorkoutRobot
@@ -77,6 +78,7 @@ class WorkoutFlowE2ETest {
             repMetricRepository = fakeRepMetricRepository,
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
+            recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase(),
             dataBackupManager = FakeDataBackupManager(),
             userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
             workoutServiceController = NoOpWorkoutServiceController,

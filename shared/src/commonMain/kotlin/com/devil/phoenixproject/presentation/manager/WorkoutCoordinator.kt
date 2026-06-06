@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -246,6 +247,10 @@ class WorkoutCoordinator(
     // RPE tracking for current set (Phase 2: Training Cycles)
     internal val _currentSetRpe = MutableStateFlow<Int?>(null)
     val currentSetRpe: StateFlow<Int?> = _currentSetRpe.asStateFlow()
+
+    // Issue #424: Runtime-only suggestion for the next Set Ready screen.
+    internal val _weightAdjustmentRecommendation = MutableStateFlow<WeightAdjustmentRecommendation?>(null)
+    val weightAdjustmentRecommendation: StateFlow<WeightAdjustmentRecommendation?> = _weightAdjustmentRecommendation.asStateFlow()
 
     // ===== Variable Warm-up Sets (Phase 35C: Issue #30) =====
     // Tracks which variable warm-up set we're currently executing.

@@ -66,6 +66,7 @@ import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -94,6 +95,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     val weightUnit by viewModel.weightUnit.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+    val weightRecommendation by viewModel.weightAdjustmentRecommendation.collectAsState()
 
     // Get current state
     val setReadyState = routineFlowState as? RoutineFlowState.SetReady
@@ -116,6 +118,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
     // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
     val isBodyweight = !currentExercise.exercise.hasCableAccessory
+    val matchingWeightRecommendation = weightRecommendation?.takeIf { recommendation ->
+        !isBodyweight &&
+            recommendation.targetExerciseId == currentExercise.exercise.id &&
+            recommendation.targetSetIndex == setReadyState.setIndex
+    }
 
     // Issue #266/#410: Use configured weight increment from user preferences
     val userPreferences by viewModel.userPreferences.collectAsState()
@@ -426,6 +433,17 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             // Configuration card - matching RestTimerCard style
             // Issue #222: Hide for bodyweight exercises (no cable settings to configure)
             if (!isBodyweight) {
+                if (matchingWeightRecommendation != null) {
+                    WeightRecommendationCard(
+                        recommendation = matchingWeightRecommendation,
+                        weightUnit = weightUnit,
+                        formatWeight = viewModel::formatWeight,
+                        onApply = viewModel::applyWeightRecommendation,
+                        onDismiss = viewModel::dismissWeightRecommendation,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),

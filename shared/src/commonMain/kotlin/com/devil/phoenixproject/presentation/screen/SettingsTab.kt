@@ -210,6 +210,8 @@ fun SettingsTab(
     // Issue #190: Auto-start routine (skip overview)
     autoStartRoutine: Boolean = false,
     onAutoStartRoutineChange: (Boolean) -> Unit = {},
+    weightSuggestionsEnabled: Boolean = true,
+    onWeightSuggestionsEnabledChange: (Boolean) -> Unit = {},
     summaryCountdownSeconds: Int = 10,
     autoStartCountdownSeconds: Int = 5,
     selectedColorSchemeIndex: Int = 0,
@@ -1207,6 +1209,34 @@ fun SettingsTab(
                     Switch(
                         checked = autoStartRoutine,
                         onCheckedChange = onAutoStartRoutineChange,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Issue #424: Suggest-only next-set weight recommendations
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Weight Suggestions",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Show Apply or Dismiss recommendations after completed sets",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = weightSuggestionsEnabled,
+                        onCheckedChange = onWeightSuggestionsEnabledChange,
                     )
                 }
 
