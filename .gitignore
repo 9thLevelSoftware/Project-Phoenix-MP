@@ -101,3 +101,9 @@ bugreport-*.zip
 /.gradle-local/
 /.gradle-local-test/
 /code-review/
+
+# Local cleanup/archive artifacts
+/archive/
+/.hermes/
+/.serena/
+/.tmp-*.txt

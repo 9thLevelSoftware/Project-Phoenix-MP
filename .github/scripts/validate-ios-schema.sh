@@ -207,7 +207,7 @@ if errors:
     print("To fix: Update shared/src/commonMain/kotlin/.../SchemaManifest.kt")
     print("        to match shared/src/commonMain/sqldelight/.../VitruvianDatabase.sq")
     print("")
-    print("See: .planning/debug/resolved/issue-223-ios-fresh-install-sqlite-crash.md")
+    print("See archived planning notes for issue-223 iOS fresh-install SQLite crash if needed")
     sys.exit(1)
 
 print("SUCCESS: Schema manifest validation passed")
