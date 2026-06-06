@@ -1,9 +1,11 @@
 package com.devil.phoenixproject.presentation.util
 
+import androidx.compose.ui.input.key.KeyEventType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class DpadSliderSemanticsTest {
 
@@ -118,5 +120,48 @@ class DpadSliderSemanticsTest {
         assertEquals(true, downResult.consumed)
         assertNull(downResult.newValue)
         assertEquals(DpadSliderFocusMove.Down, downResult.focusMove)
+    }
+
+    @Test
+    fun leftAndRightFinishOnlyOnKeyUp() {
+        assertFalse(
+            shouldFinishDpadSliderValueChange(
+                command = DpadSliderCommand.Right,
+                eventType = KeyEventType.KeyDown,
+                enabled = true,
+            ),
+        )
+        assertTrue(
+            shouldFinishDpadSliderValueChange(
+                command = DpadSliderCommand.Right,
+                eventType = KeyEventType.KeyUp,
+                enabled = true,
+            ),
+        )
+        assertTrue(
+            shouldFinishDpadSliderValueChange(
+                command = DpadSliderCommand.Left,
+                eventType = KeyEventType.KeyUp,
+                enabled = true,
+            ),
+        )
+    }
+
+    @Test
+    fun focusMovesAndDisabledSliderDoNotFinishValueChange() {
+        assertFalse(
+            shouldFinishDpadSliderValueChange(
+                command = DpadSliderCommand.Up,
+                eventType = KeyEventType.KeyUp,
+                enabled = true,
+            ),
+        )
+        assertFalse(
+            shouldFinishDpadSliderValueChange(
+                command = DpadSliderCommand.Right,
+                eventType = KeyEventType.KeyUp,
+                enabled = false,
+            ),
+        )
     }
 }

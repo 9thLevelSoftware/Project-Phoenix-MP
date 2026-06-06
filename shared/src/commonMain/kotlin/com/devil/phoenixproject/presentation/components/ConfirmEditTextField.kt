@@ -24,8 +24,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.devil.phoenixproject.presentation.util.rememberIsTvRemoteInputMode
 
-class ConfirmEditTextFieldState(isTvRemoteInputMode: Boolean) {
-    var isTvRemoteInputMode by mutableStateOf(isTvRemoteInputMode)
+class ConfirmEditTextFieldState(val isTvRemoteInputMode: Boolean) {
     var isEditing by mutableStateOf(false)
         private set
 
@@ -70,8 +69,7 @@ fun ConfirmEditTextField(
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
 ) {
     val isTvRemoteInputMode = rememberIsTvRemoteInputMode()
-    val state = remember { ConfirmEditTextFieldState(isTvRemoteInputMode) }
-    state.isTvRemoteInputMode = isTvRemoteInputMode
+    val state = remember(isTvRemoteInputMode) { ConfirmEditTextFieldState(isTvRemoteInputMode) }
 
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -83,11 +81,17 @@ fun ConfirmEditTextField(
         }
     }
 
-    val effectiveModifier = if (isTvRemoteInputMode) {
-        modifier
-            .focusRequester(focusRequester)
-            .onFocusChanged { state.onFocusChanged(it.isFocused) }
-            .onPreviewKeyEvent { event ->
+    val effectiveModifier = modifier
+        .focusRequester(focusRequester)
+        .onFocusChanged {
+            if (isTvRemoteInputMode) {
+                state.onFocusChanged(it.isFocused)
+            }
+        }
+        .onPreviewKeyEvent { event ->
+            if (!isTvRemoteInputMode) {
+                false
+            } else {
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.Enter,
@@ -109,9 +113,7 @@ fun ConfirmEditTextField(
                     else -> false
                 }
             }
-    } else {
-        modifier
-    }
+        }
 
     OutlinedTextField(
         value = value,

@@ -27,6 +27,8 @@ import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
 
+internal const val WorkoutSetupTargetRepsRemoteStep = 1f
+
 /**
  * Workout Setup Dialog - Full configuration dialog for workout parameters
  */
@@ -278,6 +280,7 @@ fun WorkoutSetupDialog(
                                 },
                                 valueRange = 1f..50f,
                                 steps = 49,
+                                remoteStep = WorkoutSetupTargetRepsRemoteStep,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         } else {

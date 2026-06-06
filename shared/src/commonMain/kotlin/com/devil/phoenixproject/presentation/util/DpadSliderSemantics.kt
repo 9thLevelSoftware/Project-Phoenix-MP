@@ -78,8 +78,14 @@ fun Modifier.tvSliderKeys(
     } else {
         val focusManager = LocalFocusManager.current
         onPreviewKeyEvent { event ->
-            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
             val command = event.key.toDpadSliderCommand() ?: return@onPreviewKeyEvent false
+
+            if (shouldFinishDpadSliderValueChange(command = command, eventType = event.type, enabled = enabled)) {
+                onValueChangeFinished?.invoke()
+                return@onPreviewKeyEvent true
+            }
+
+            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
             val result = calculateDpadSliderKeyResult(
                 command = command,
                 value = value,
@@ -102,7 +108,6 @@ fun Modifier.tvSliderKeys(
             result.newValue?.let { newValue ->
                 if (newValue != value) {
                     onValueChange(newValue)
-                    onValueChangeFinished?.invoke()
                 }
             }
 
@@ -110,6 +115,14 @@ fun Modifier.tvSliderKeys(
         }
     }
 }
+
+internal fun shouldFinishDpadSliderValueChange(
+    command: DpadSliderCommand,
+    eventType: KeyEventType,
+    enabled: Boolean,
+): Boolean = enabled &&
+    eventType == KeyEventType.KeyUp &&
+    (command == DpadSliderCommand.Left || command == DpadSliderCommand.Right)
 
 private fun resolveSliderStep(
     valueRange: ClosedFloatingPointRange<Float>,
