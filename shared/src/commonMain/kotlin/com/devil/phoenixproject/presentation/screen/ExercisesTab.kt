@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.displayLoadMultiplier
+import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.OneRepMaxCalculator
@@ -99,7 +100,7 @@ fun ExercisesTab(
         // Search bar
         item {
             Spacer(Modifier.height(Spacing.medium))
-            OutlinedTextField(
+            ConfirmEditTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 modifier = Modifier.fillMaxWidth(),

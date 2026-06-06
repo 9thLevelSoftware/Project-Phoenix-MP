@@ -20,7 +20,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -332,7 +331,7 @@ private fun PercentageModeContent(
         Spacer(Modifier.height(8.dp))
 
         // Custom percentage input
-        OutlinedTextField(
+        ConfirmEditTextField(
             value = percentValue,
             onValueChange = onCustomValueChange,
             modifier = Modifier.fillMaxWidth(),
@@ -353,7 +352,7 @@ private fun AbsoluteModeContent(
     onValueChange: (String) -> Unit,
     unitLabel: String,
 ) {
-    OutlinedTextField(
+    ConfirmEditTextField(
         value = absoluteValue,
         onValueChange = onValueChange,
         modifier = Modifier.fillMaxWidth(),

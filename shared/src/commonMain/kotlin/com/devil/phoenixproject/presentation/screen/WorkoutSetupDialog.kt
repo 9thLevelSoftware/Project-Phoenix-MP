@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
+import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -235,7 +237,7 @@ fun WorkoutSetupDialog(
                                 color = MaterialTheme.colorScheme.primary,
                             )
 
-                            Slider(
+                            ExpressiveSlider(
                                 value = kgToDisplay(workoutParameters.weightPerCableKg, weightUnit),
                                 onValueChange = { displayValue ->
                                     val kg = displayToKg(displayValue, weightUnit)
@@ -269,7 +271,7 @@ fun WorkoutSetupDialog(
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(bottom = 8.dp),
                             )
-                            Slider(
+                            ExpressiveSlider(
                                 value = workoutParameters.reps.toFloat(),
                                 onValueChange = { reps ->
                                     onUpdateParameters(workoutParameters.copy(reps = reps.toInt()))
@@ -339,13 +341,14 @@ fun WorkoutSetupDialog(
                                 },
                             )
 
-                            Slider(
+                            ExpressiveSlider(
                                 value = currentProgression,
                                 onValueChange = { displayValue ->
                                     val kg = displayToKg(displayValue, weightUnit)
                                     onUpdateParameters(workoutParameters.copy(progressionRegressionKg = kg))
                                 },
                                 valueRange = -maxProgression..maxProgression,
+                                remoteStep = 0.1f,
                                 modifier = Modifier.fillMaxWidth(),
                             )
 
@@ -508,7 +511,7 @@ fun ExercisePickerDialog(exerciseRepository: ExerciseRepository, onDismiss: () -
                         .heightIn(max = maxSheetHeight),
                 ) {
                     // Search field
-                    OutlinedTextField(
+                    ConfirmEditTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         label = { Text(stringResource(Res.string.search_exercises_short)) },
