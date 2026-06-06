@@ -30,6 +30,14 @@ import com.devil.phoenixproject.domain.model.WeightAdjustmentDirection
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_apply
+import vitruvianprojectphoenix.shared.generated.resources.action_dismiss
+import vitruvianprojectphoenix.shared.generated.resources.weight_recommendation_decrease
+import vitruvianprojectphoenix.shared.generated.resources.weight_recommendation_increase
+import vitruvianprojectphoenix.shared.generated.resources.weight_recommendation_maintain
+import vitruvianprojectphoenix.shared.generated.resources.weight_recommendation_weight_change
 
 @Composable
 fun WeightRecommendationCard(
@@ -46,10 +54,17 @@ fun WeightRecommendationCard(
         WeightAdjustmentDirection.MAINTAIN -> Icons.Default.CheckCircle
     }
     val headline = when (recommendation.direction) {
-        WeightAdjustmentDirection.INCREASE -> "Increase next set"
-        WeightAdjustmentDirection.DECREASE -> "Reduce next set"
-        WeightAdjustmentDirection.MAINTAIN -> "Keep next set steady"
+        WeightAdjustmentDirection.INCREASE -> stringResource(Res.string.weight_recommendation_increase)
+        WeightAdjustmentDirection.DECREASE -> stringResource(Res.string.weight_recommendation_decrease)
+        WeightAdjustmentDirection.MAINTAIN -> stringResource(Res.string.weight_recommendation_maintain)
     }
+    val currentWeight = formatWeight(recommendation.currentWeightKgPerCable, weightUnit)
+    val recommendedWeight = formatWeight(recommendation.recommendedWeightKgPerCable, weightUnit)
+    val weightChangeText = stringResource(
+        Res.string.weight_recommendation_weight_change,
+        currentWeight,
+        recommendedWeight,
+    )
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -88,9 +103,7 @@ fun WeightRecommendationCard(
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                         Text(
-                            text = "${formatWeight(recommendation.currentWeightKgPerCable, weightUnit)} to ${
-                                formatWeight(recommendation.recommendedWeightKgPerCable, weightUnit)
-                            } per cable",
+                            text = weightChangeText,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
                         )
@@ -112,10 +125,10 @@ fun WeightRecommendationCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedButton(onClick = onDismiss) {
-                    Text("Dismiss")
+                    Text(stringResource(Res.string.action_dismiss))
                 }
                 Button(onClick = onApply) {
-                    Text("Apply")
+                    Text(stringResource(Res.string.action_apply))
                 }
             }
         }

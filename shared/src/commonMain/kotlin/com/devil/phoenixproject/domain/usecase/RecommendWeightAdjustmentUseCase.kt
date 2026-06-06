@@ -19,17 +19,29 @@ class RecommendWeightAdjustmentUseCase {
         if (input.isBodyweight || !input.hasNextSetTarget) return null
         if (input.currentWeightKgPerCable < Constants.MIN_WEIGHT_KG) return null
         if (input.weightIncrementKg <= 0f) return null
+        if (input.actualReps <= 0) return null
         if (input.qualitySummary == null && input.biomechanicsSummary == null) return null
 
         val severeVelocityLoss = input.biomechanicsSummary.hasSevereVelocityLoss()
         val quality = input.qualitySummary
         val completedTarget = input.targetReps > 0 && input.actualReps >= input.targetReps
+        val severeTargetMiss = input.targetReps > 0 &&
+            input.actualReps < input.targetReps * SEVERE_TARGET_MISS_RATIO
 
         if (severeVelocityLoss) {
             return buildDecrease(
                 input = input,
                 reasonCode = "VELOCITY_LOSS_LOAD_TOO_HIGH",
                 explanation = "Consider reducing weight next set - velocity loss suggests the load was too high.",
+                confidence = RecommendationConfidence.HIGH,
+            )
+        }
+
+        if (severeTargetMiss) {
+            return buildDecrease(
+                input = input,
+                reasonCode = "TARGET_MISSED_REPS_TOO_LOW",
+                explanation = "Consider reducing weight next set - completed reps were far below the target.",
                 confidence = RecommendationConfidence.HIGH,
             )
         }
@@ -176,6 +188,7 @@ class RecommendWeightAdjustmentUseCase {
         const val INCREASE_FINAL_REP_THRESHOLD = 75
         const val HIGH_CONFIDENCE_REP_COUNT = 4
         const val SEVERE_VELOCITY_LOSS_PERCENT = 25f
+        const val SEVERE_TARGET_MISS_RATIO = 0.5f
         const val EPSILON = 0.0001f
     }
 }

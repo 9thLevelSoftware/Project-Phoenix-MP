@@ -3715,15 +3715,20 @@ class ActiveSessionEngine(
         val isSameExercise = currentExerciseId != null && currentExerciseId == targetExerciseId
         val targetExerciseIsBodyweight = targetExercise?.exercise?.isBodyweight == true
         val completedSetHasTarget = params.reps > 0 && !params.isAMRAP
+        val targetWeightKgPerCable = targetExercise
+            ?.setWeightsPerCableKg
+            ?.getOrNull(nextStep.second)
+            ?: targetExercise?.weightPerCableKg
+            ?: params.weightPerCableKg
 
         val input = WeightAdjustmentInput(
             exerciseId = currentExerciseId,
-            exerciseName = currentExercise?.exercise?.name,
+            exerciseName = targetExercise?.exercise?.name ?: currentExercise?.exercise?.name,
             targetExerciseId = targetExerciseId,
             targetSetIndex = nextStep.second,
             targetReps = params.reps,
             actualReps = completedReps,
-            currentWeightKgPerCable = params.weightPerCableKg,
+            currentWeightKgPerCable = targetWeightKgPerCable,
             weightIncrementKg = prefs.effectiveWeightIncrementKg,
             qualitySummary = qualitySummary,
             biomechanicsSummary = biomechanicsSummary,

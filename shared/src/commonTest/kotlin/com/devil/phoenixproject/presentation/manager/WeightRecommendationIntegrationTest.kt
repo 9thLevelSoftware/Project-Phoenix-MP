@@ -44,6 +44,33 @@ class WeightRecommendationIntegrationTest {
     }
 
     @Test
+    fun setCompletionUsesNextSetProgrammedWeightAsRecommendationBaseline() = runTest {
+        val baseRoutine = testRoutine()
+        val routine = baseRoutine.copy(
+            exercises = listOf(
+                baseRoutine.exercises.first().copy(
+                    setWeightsPerCableKg = listOf(20f, 30f),
+                    weightPerCableKg = 20f,
+                ),
+            ),
+        )
+        val harness = readyActiveRoutineHarness(routine = routine)
+
+        seedCompletedSet(harness, actualReps = 10, qualityScores = listOf(95, 92, 90, 88))
+
+        harness.activeSessionEngine.handleSetCompletion()
+        advanceTimeBy(1_000)
+
+        val recommendation = harness.coordinator.weightAdjustmentRecommendation.value
+        assertEquals(WeightAdjustmentDirection.INCREASE, recommendation?.direction)
+        assertEquals(30f, recommendation?.currentWeightKgPerCable)
+        assertEquals(32.5f, recommendation?.recommendedWeightKgPerCable)
+        assertEquals(1, recommendation?.targetSetIndex)
+
+        harness.cleanup()
+    }
+
+    @Test
     fun applyRecommendationUpdatesSetReadyAdjustedWeightWithoutChangingRoutineDefault() = runTest {
         val harness = readyActiveRoutineHarness(
             preferences = UserPreferences(

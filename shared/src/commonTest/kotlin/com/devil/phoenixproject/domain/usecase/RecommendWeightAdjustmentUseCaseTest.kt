@@ -82,6 +82,37 @@ class RecommendWeightAdjustmentUseCaseTest {
     }
 
     @Test
+    fun zeroCompletedRepsSuppressesRecommendation() {
+        val recommendation = useCase(
+            input(
+                targetReps = 10,
+                actualReps = 0,
+                currentWeight = 20f,
+                quality = qualitySummary(scores = listOf(95, 92, 90)),
+            ),
+        )
+
+        assertNull(recommendation)
+    }
+
+    @Test
+    fun severeTargetMissWithHighQualityRecommendsDecrease() {
+        val recommendation = useCase(
+            input(
+                targetReps = 10,
+                actualReps = 4,
+                currentWeight = 20f,
+                increment = 2.5f,
+                quality = qualitySummary(scores = listOf(96, 94, 92, 90)),
+            ),
+        )
+
+        assertEquals(WeightAdjustmentDirection.DECREASE, recommendation?.direction)
+        assertEquals(17.5f, recommendation?.recommendedWeightKgPerCable)
+        assertEquals("TARGET_MISSED_REPS_TOO_LOW", recommendation?.reasonCode)
+    }
+
+    @Test
     fun missingQualityAndBiomechanicsSuppressesRecommendation() {
         val recommendation = useCase(
             input(

@@ -189,6 +189,8 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_version
 import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_weight_suggestions_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_weight_suggestions_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_weight_unit
 
 @Composable
@@ -1222,14 +1224,14 @@ fun SettingsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Weight Suggestions",
+                            stringResource(Res.string.settings_weight_suggestions_title),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Show Apply or Dismiss recommendations after completed sets",
+                            stringResource(Res.string.settings_weight_suggestions_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
