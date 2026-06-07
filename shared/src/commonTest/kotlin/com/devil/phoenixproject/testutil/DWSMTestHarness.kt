@@ -2,6 +2,7 @@ package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
@@ -60,6 +61,7 @@ class DWSMTestHarness(val testScope: TestScope) {
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeExerciseRepo)
+    val applyRoutineModifierUseCase = ApplyRoutineModifierUseCase(fakePRRepo, fakeExerciseRepo)
 
     // Child scope of testScope: shares TestCoroutineScheduler so advanceUntilIdle() works,
     // but can be cancelled independently via cleanup() to prevent UncompletedCoroutinesError.
@@ -90,6 +92,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         repMetricRepository = fakeRepMetricRepo,
         biomechanicsRepository = fakeBiomechanicsRepo,
         resolveWeightsUseCase = resolveWeightsUseCase,
+        applyRoutineModifierUseCase = applyRoutineModifierUseCase,
         settingsManager = settingsManager,
         userProfileRepository = FakeUserProfileRepository(),
         workoutServiceController = fakeWorkoutServiceController,

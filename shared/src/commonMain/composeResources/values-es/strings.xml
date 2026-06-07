@@ -617,4 +617,12 @@
     <string name="tag_exercise_hint">Etiqueta este levantamiento para registrarlo</string>
     <string name="tag_exercise_action">Etiquetar ejercicio</string>
     <string name="exercise_tagged">Ejercicio etiquetado</string>
+    <!-- Routine launch modifiers (Issue #495) -->
+    <string name="routine_modifier_active_recovery">Iniciar recuperación activa…</string>
+    <string name="routine_modifier_heavy_deload">Iniciar descarga pesada…</string>
+    <string name="routine_modifier_percent_label">Modificador</string>
+    <string name="routine_modifier_start">Iniciar</string>
+    <string name="routine_modifier_cancel">Cancelar</string>
+    <string name="routine_modifier_active_recovery_description">Los pesos se reducen al porcentaje de 1RM seleccionado; las repeticiones de trabajo no cambian; los calentamientos se simplifican.</string>
+    <string name="routine_modifier_heavy_deload_description">Las repeticiones se reducen al porcentaje de volumen seleccionado; los pesos no cambian.</string>
 </resources>

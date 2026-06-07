@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
+import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -24,6 +25,7 @@ val domainModule = module {
     single { RepCounterFromMachine() }
     single { ProgressionUseCase(get(), get()) }
     factory { ResolveRoutineWeightsUseCase(get(), get()) }
+    factory { ApplyRoutineModifierUseCase(get(), get()) }
     factory { RoutineTimeEstimator(get()) }
     single { TemplateConverter(get()) }
 

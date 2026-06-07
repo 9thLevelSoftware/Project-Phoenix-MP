@@ -86,6 +86,10 @@ fun DailyRoutinesScreen(
                     navController.navigate(NavigationRoutes.RoutineOverview.route)
                 }
             },
+            onStartWorkoutWithModifier = { routine, modifier ->
+                viewModel.enterRoutineOverview(routine, modifier)
+                navController.navigate(NavigationRoutes.RoutineOverview.route)
+            },
             onDeleteRoutine = { routineId -> viewModel.deleteRoutine(routineId) },
             onDeleteRoutines = { routineIds -> viewModel.deleteRoutines(routineIds) },
             onSaveRoutine = { routine -> viewModel.saveRoutine(routine) },

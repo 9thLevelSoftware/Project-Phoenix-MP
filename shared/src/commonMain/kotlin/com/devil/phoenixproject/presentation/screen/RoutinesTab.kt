@@ -80,7 +80,9 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfile
+import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineModifierType
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
@@ -88,6 +90,7 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ProfileColors
+import com.devil.phoenixproject.presentation.components.RoutineModifierDialog
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -120,6 +123,8 @@ import vitruvianprojectphoenix.shared.generated.resources.empty_no_routines_titl
 import vitruvianprojectphoenix.shared.generated.resources.move_routines_confirm
 import vitruvianprojectphoenix.shared.generated.resources.move_to_profile
 import vitruvianprojectphoenix.shared.generated.resources.no_other_profiles
+import vitruvianprojectphoenix.shared.generated.resources.routine_modifier_active_recovery
+import vitruvianprojectphoenix.shared.generated.resources.routine_modifier_heavy_deload
 import vitruvianprojectphoenix.shared.generated.resources.select_target_profile
 import vitruvianprojectphoenix.shared.generated.resources.start_workout
 
@@ -138,6 +143,7 @@ fun RoutinesTab(
     kgToDisplay: (Float, WeightUnit) -> Float,
     displayToKg: (Float, WeightUnit) -> Float,
     onStartWorkout: (Routine) -> Unit,
+    onStartWorkoutWithModifier: (Routine, AppliedRoutineModifier) -> Unit = { _, _ -> },
     onDeleteRoutine: (String) -> Unit,
     onDeleteRoutines: (Set<String>) -> Unit, // Batch delete for multi-select
     onSaveRoutine: (Routine) -> Unit,
@@ -160,6 +166,9 @@ fun RoutinesTab(
     // showRoutineBuilder and routineToEdit states removed
 
     Logger.d { "RoutinesTab: ${routines.size} routines loaded" }
+
+    var modifierDialogRoutine by remember { mutableStateOf<Routine?>(null) }
+    var modifierDialogType by remember { mutableStateOf<RoutineModifierType?>(null) }
 
     // Historical time estimates (Issue #225)
     val timeEstimator: RoutineTimeEstimator = koinInject()
@@ -288,6 +297,14 @@ fun RoutinesTab(
                             onSelectionModeActivate = { selectionMode = true },
                             onSelectionModeDeactivate = { selectionMode = false },
                             onStartWorkout = onStartWorkout,
+                            onStartActiveRecovery = { routine ->
+                                modifierDialogRoutine = routine
+                                modifierDialogType = RoutineModifierType.ACTIVE_RECOVERY
+                            },
+                            onStartHeavyDeload = { routine ->
+                                modifierDialogRoutine = routine
+                                modifierDialogType = RoutineModifierType.HEAVY_DELOAD
+                            },
                             onEditRoutine = onEditRoutine,
                             onDeleteRoutine = onDeleteRoutine,
                             onSaveRoutine = onSaveRoutine,
@@ -331,6 +348,14 @@ fun RoutinesTab(
                                     onSelectionModeActivate = { selectionMode = true },
                                     onSelectionModeDeactivate = { selectionMode = false },
                                     onStartWorkout = onStartWorkout,
+                                    onStartActiveRecovery = { selectedRoutine ->
+                                        modifierDialogRoutine = selectedRoutine
+                                        modifierDialogType = RoutineModifierType.ACTIVE_RECOVERY
+                                    },
+                                    onStartHeavyDeload = { selectedRoutine ->
+                                        modifierDialogRoutine = selectedRoutine
+                                        modifierDialogType = RoutineModifierType.HEAVY_DELOAD
+                                    },
                                     onEditRoutine = onEditRoutine,
                                     onDeleteRoutine = onDeleteRoutine,
                                     onSaveRoutine = onSaveRoutine,
@@ -763,6 +788,24 @@ fun RoutinesTab(
             },
         )
     }
+
+
+    val pendingModifierType = modifierDialogType
+    val pendingModifierRoutine = modifierDialogRoutine
+    if (pendingModifierType != null && pendingModifierRoutine != null) {
+        RoutineModifierDialog(
+            type = pendingModifierType,
+            onDismiss = {
+                modifierDialogType = null
+                modifierDialogRoutine = null
+            },
+            onConfirm = { modifier ->
+                modifierDialogType = null
+                modifierDialogRoutine = null
+                onStartWorkoutWithModifier(pendingModifierRoutine, modifier)
+            },
+        )
+    }
 }
 
 /**
@@ -779,6 +822,8 @@ private fun RoutineCardWithActions(
     onSelectionModeActivate: () -> Unit,
     onSelectionModeDeactivate: () -> Unit,
     onStartWorkout: (Routine) -> Unit,
+    onStartActiveRecovery: (Routine) -> Unit,
+    onStartHeavyDeload: (Routine) -> Unit,
     onEditRoutine: (String) -> Unit,
     onDeleteRoutine: (String) -> Unit,
     onSaveRoutine: (Routine) -> Unit,
@@ -805,6 +850,8 @@ private fun RoutineCardWithActions(
             }
         },
         onStartWorkout = { onStartWorkout(routine) },
+        onStartActiveRecovery = { onStartActiveRecovery(routine) },
+        onStartHeavyDeload = { onStartHeavyDeload(routine) },
         onEdit = { onEditRoutine(routine.id) },
         onDelete = { onDeleteRoutine(routine.id) },
         onMoveToProfile = {
@@ -1005,6 +1052,8 @@ fun RoutineCard(
     onLongPress: () -> Unit,
     onSelectionToggle: () -> Unit,
     onStartWorkout: () -> Unit,
+    onStartActiveRecovery: () -> Unit = {},
+    onStartHeavyDeload: () -> Unit = {},
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onDuplicate: () -> Unit,
@@ -1258,11 +1307,10 @@ fun RoutineCard(
                             )
                         }
 
-                        // Overflow menu for Move/Copy to Profile and Move to Group
-                        if (hasOtherProfiles || hasGroups) {
-                            var showOverflow by remember { mutableStateOf(false) }
-                            Spacer(Modifier.width(2.dp))
-                            Box {
+                        // Overflow menu for routine launch modifiers, Move/Copy to Profile, and Move to Group
+                        var showOverflow by remember { mutableStateOf(false) }
+                        Spacer(Modifier.width(2.dp))
+                        Box {
                                 IconButton(
                                     onClick = { showOverflow = true },
                                     modifier = Modifier.size(36.dp),
@@ -1278,21 +1326,42 @@ fun RoutineCard(
                                     expanded = showOverflow,
                                     onDismissRequest = { showOverflow = false },
                                 ) {
-                                    // Move to Group option
                                     DropdownMenuItem(
-                                        text = { Text("Move to Group") },
+                                        text = { Text(stringResource(Res.string.routine_modifier_active_recovery)) },
                                         onClick = {
                                             showOverflow = false
-                                            onMoveToGroup()
+                                            onStartActiveRecovery()
                                         },
                                         leadingIcon = {
-                                            Icon(
-                                                Icons.Default.FolderOpen,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(20.dp),
-                                            )
+                                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
                                         },
                                     )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(Res.string.routine_modifier_heavy_deload)) },
+                                        onClick = {
+                                            showOverflow = false
+                                            onStartHeavyDeload()
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                                        },
+                                    )
+                                    if (hasGroups) {
+                                        DropdownMenuItem(
+                                            text = { Text("Move to Group") },
+                                            onClick = {
+                                                showOverflow = false
+                                                onMoveToGroup()
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Default.FolderOpen,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            },
+                                        )
+                                    }
                                     if (hasOtherProfiles) {
                                         DropdownMenuItem(
                                             text = { Text(stringResource(Res.string.move_to_profile)) },
@@ -1325,7 +1394,6 @@ fun RoutineCard(
                                     }
                                 }
                             }
-                        }
                     }
                 }
             }
