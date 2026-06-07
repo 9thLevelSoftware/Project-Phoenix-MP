@@ -534,7 +534,12 @@ class SyncManager(
         val deviceId = tokenStorage.getDeviceId()
         val lastSync = tokenStorage.getLastSyncTimestamp()
         val platform = getPlatformName()
-        val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+        userProfileRepository.ensureDefaultProfile()
+        val allProfiles = userProfileRepository.allProfiles.value
+        val activeProfile = userProfileRepository.activeProfile.value
+            ?: allProfiles.firstOrNull { it.isActive }
+            ?: allProfiles.firstOrNull { it.id == "default" }
+        val activeProfileId = activeProfile?.id ?: "default"
 
         val phaseBackfillCheckpoint = tokenStorage.getPhasePRBackfillCheckpoint(activeProfileId)
         val phaseBackfillResult = syncRepository.backfillPhaseSpecificPRs(
@@ -711,9 +716,7 @@ class SyncManager(
         }
 
         // 5b. External activities (paid users only)
-        val localPaid =
-            userProfileRepository.activeProfile.value?.subscriptionStatus ==
-                SubscriptionStatus.ACTIVE
+        val localPaid = activeProfile?.subscriptionStatus == SubscriptionStatus.ACTIVE
         val portalPaid = tokenStorage.currentUser.value?.isPremium == true
         val isPremium = localPaid || portalPaid
         val externalActivityDtos = if (isPremium) {
@@ -793,13 +796,30 @@ class SyncManager(
         val telemetryBySetId = effectiveTelemetry.groupBy { it.setId }
 
         // 7b. Profile data for portal tagging and profile-scoped filtering
-        val activeProfile = userProfileRepository.activeProfile.value
-        val allProfiles = userProfileRepository.allProfiles.value
         val routineDtos = routines.map { PortalSyncAdapter.toPortalRoutine(it, userId) }
         val cycleDtos = cyclesWithContext.map {
             PortalSyncAdapter.toPortalTrainingCycle(it, userId)
         }
-        val profileDtos = allProfiles.map { LocalProfileDto(it.id, it.name, it.colorIndex) }
+        val payloadProfileId = activeProfile?.id ?: "default"
+        val payloadProfileName = activeProfile?.name ?: "Default"
+        val profileDtos = allProfiles
+            .map { LocalProfileDto(it.id, it.name, it.colorIndex) }
+            .let { dtos ->
+                if (activeProfile != null && dtos.none { it.id == activeProfile.id }) {
+                    dtos + LocalProfileDto(activeProfile.id, activeProfile.name, activeProfile.colorIndex)
+                } else {
+                    dtos
+                }
+            }
+            .ifEmpty {
+                listOf(
+                    LocalProfileDto(
+                        id = payloadProfileId,
+                        name = payloadProfileName,
+                        colorIndex = activeProfile?.colorIndex ?: 0,
+                    ),
+                )
+            }
 
         // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB)
         //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH).
@@ -848,8 +868,8 @@ class SyncManager(
                 phaseStatistics = phaseStatsBySessionId.values.flatten(),
                 assessments = assessmentDtos,
                 customExercises = customExerciseDtos,
-                profileId = activeProfile?.id,
-                profileName = activeProfile?.name,
+                profileId = payloadProfileId,
+                profileName = payloadProfileName,
                 allProfiles = profileDtos,
                 externalActivities = externalActivityDtos,
                 personalRecords = personalRecordDtos,
@@ -899,8 +919,8 @@ class SyncManager(
                     phaseStatistics = batchPhaseStats,
                     assessments = if (isLastBatch) assessmentDtos else emptyList(),
                     customExercises = if (isLastBatch) customExerciseDtos else emptyList(),
-                    profileId = activeProfile?.id,
-                    profileName = activeProfile?.name,
+                    profileId = payloadProfileId,
+                    profileName = payloadProfileName,
                     allProfiles = if (isLastBatch) profileDtos else null,
                     externalActivities = if (isLastBatch) externalActivityDtos else emptyList(),
                     personalRecords = if (isLastBatch) personalRecordDtos else emptyList(),
