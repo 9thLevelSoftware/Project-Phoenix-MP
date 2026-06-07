@@ -168,7 +168,13 @@ fun AnimatedActionButton(
     supportingText: String? = null,
     heightOverride: Dp? = null,
     allowTwoLineLabel: Boolean = false,
-    enabled: Boolean = true,
+            .clickable(
+                interactionSource = interactionSource,
+                indication = indication,
+                role = Role.Button,
+                enabled = enabled,
+                onClick = onClick,
+            )
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
