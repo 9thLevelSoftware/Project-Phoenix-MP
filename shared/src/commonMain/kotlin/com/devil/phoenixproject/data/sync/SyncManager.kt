@@ -804,6 +804,13 @@ class SyncManager(
         val payloadProfileName = activeProfile?.name ?: "Default"
         val profileDtos = allProfiles
             .map { LocalProfileDto(it.id, it.name, it.colorIndex) }
+            .let { dtos ->
+                if (activeProfile != null && dtos.none { it.id == activeProfile.id }) {
+                    dtos + LocalProfileDto(activeProfile.id, activeProfile.name, activeProfile.colorIndex)
+                } else {
+                    dtos
+                }
+            }
             .ifEmpty {
                 listOf(
                     LocalProfileDto(
