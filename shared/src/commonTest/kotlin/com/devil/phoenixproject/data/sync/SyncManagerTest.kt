@@ -433,6 +433,43 @@ class SyncManagerTest {
     }
 
     @Test
+    fun syncEnsuresDefaultProfileBeforeSendingDefaultScopedPersonalRecords() = runTest {
+        setupAuthenticated()
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            makePersonalRecord(
+                id = 42,
+                exerciseId = "squat",
+                exerciseName = "Squat",
+                weightPerCableKg = 100f,
+                reps = 1,
+                timestamp = 1_740_916_800_000L,
+                prType = PRType.MAX_WEIGHT,
+                phase = WorkoutPhase.COMBINED,
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertEquals(
+            "default",
+            payload.profileId,
+            "Default-scoped PR rows must not be pushed without matching top-level profile context",
+        )
+        assertEquals(
+            listOf(LocalProfileDto(id = "default", name = "Default", colorIndex = 0)),
+            payload.allProfiles,
+            "The payload must include the local_profiles row required by the portal FK",
+        )
+        assertEquals("default", payload.personalRecords.single().localProfileId)
+    }
+
+    @Test
     fun syncResolvesSessionIdForDedicatedPROutsideDeltaSessionBatch() = runTest {
         setupAuthenticated()
         val exerciseId = "bicep-curl"

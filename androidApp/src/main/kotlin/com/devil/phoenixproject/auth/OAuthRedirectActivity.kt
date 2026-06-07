@@ -104,15 +104,14 @@ class OAuthRedirectActivity : ComponentActivity() {
      * can assert on the flag combination without needing to spin up an
      * actual [android.app.Activity].
      */
-    internal fun buildReturnToAppIntent(): Intent =
-        Intent(Intent.ACTION_MAIN).apply {
-            component = ComponentName(this@OAuthRedirectActivity, MainActivity::class.java)
-            addCategory(Intent.CATEGORY_LAUNCHER)
-            // See kdoc on [routeBackToApp] for why each flag is set.
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP,
-            )
-        }
+    internal fun buildReturnToAppIntent(): Intent = Intent(Intent.ACTION_MAIN).apply {
+        component = ComponentName(this@OAuthRedirectActivity, MainActivity::class.java)
+        addCategory(Intent.CATEGORY_LAUNCHER)
+        // See kdoc on [routeBackToApp] for why each flag is set.
+        addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP,
+        )
+    }
 }
