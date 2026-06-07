@@ -51,6 +51,11 @@ interface CompletedSetRepository {
     suspend fun getCompletedSets(sessionId: String): List<CompletedSet>
 
     /**
+     * Get completed sets for multiple workout sessions, ordered by session and set number.
+     */
+    suspend fun getCompletedSetsForSessions(sessionIds: List<String>): List<CompletedSet>
+
+    /**
      * Get completed sets as a Flow for reactive updates.
      */
     fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>>

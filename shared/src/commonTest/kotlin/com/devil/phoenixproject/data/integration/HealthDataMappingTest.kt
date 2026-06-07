@@ -121,12 +121,12 @@ class HealthDataMappingTest {
         assertEquals(true, shouldIncludeCalories(250f))
     }
 
-    // ---- Issue #395: RoutineHealthData construction ----
+    // ---- Issue #395 / #513: HealthWorkoutData construction ----
 
     @Test
-    fun routineHealthDataHasCorrectTitle() {
+    fun healthWorkoutDataHasCorrectTitle() {
         val data = buildRoutineHealthData(routineName = "Push Day", totalCalories = 150f)
-        assertEquals("Push Day", data.routineName)
+        assertEquals("Push Day", data.title)
     }
 
     @Test
@@ -159,7 +159,7 @@ class HealthDataMappingTest {
             durationMs = durationMs,
             totalCalories = 300f,
         )
-        assertEquals(3600000L, data.durationMs)
+        assertEquals(endMs, data.endTimeMs)
         assertEquals(startMs, data.startTimeMs)
     }
 
@@ -186,18 +186,19 @@ class HealthDataMappingTest {
 
     private fun shouldIncludeCalories(estimatedCalories: Float?): Boolean = estimatedCalories != null && estimatedCalories > 0f
 
-    /** Mirrors the routine health data construction in writeRoutineHealthData() */
+    /** Mirrors the aggregate health workout data construction in writeRoutineHealthData() */
     private fun buildRoutineHealthData(
         routineName: String,
         startTimeMs: Long = 1700000000000L,
         durationMs: Long = 60000L,
         totalCalories: Float?,
-    ): RoutineHealthData = RoutineHealthData(
-        routineName = routineName,
+    ): HealthWorkoutData = HealthWorkoutData(
+        title = routineName,
+        externalId = HealthWorkoutExportBuilder.routineClientRecordId("test-routine-session-id"),
         startTimeMs = startTimeMs,
-        durationMs = durationMs,
+        endTimeMs = startTimeMs + durationMs.coerceAtLeast(1000L),
         totalCalories = totalCalories?.takeIf { it > 0f },
-        externalId = "test-routine-session-id",
+        segments = emptyList(),
     )
 
     /** Mirrors calorie accumulation logic in saveWorkoutSession() */

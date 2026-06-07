@@ -40,6 +40,16 @@ interface WorkoutRepository {
      */
     suspend fun getSession(sessionId: String): WorkoutSession?
 
+    /**
+     * Get completed workout sessions belonging to a routine session.
+     */
+    suspend fun getSessionsForRoutineSession(profileId: String, routineSessionId: String): List<WorkoutSession>
+
+    /**
+     * Get completed local sessions that can be exported to platform health stores.
+     */
+    suspend fun getCompletedHealthExportCandidates(profileId: String): List<WorkoutSession>
+
     // Routines
     fun getAllRoutines(profileId: String): Flow<List<Routine>>
     suspend fun saveRoutine(routine: Routine)

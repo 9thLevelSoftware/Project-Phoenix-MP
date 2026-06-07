@@ -558,6 +558,21 @@ SELECT id FROM WorkoutSession;
 selectRecentSessions:
 SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC LIMIT :limit;
 
+selectSessionsByRoutineSessionId:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND routineSessionId = :routineSessionId
+AND deletedAt IS NULL
+AND (workingReps > 0 OR totalReps > 0)
+ORDER BY timestamp ASC;
+
+selectCompletedHealthExportCandidates:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL
+AND (workingReps > 0 OR totalReps > 0)
+ORDER BY timestamp ASC;
+
 selectSessionsForPhasePRBackfill:
 SELECT * FROM WorkoutSession
 WHERE profile_id = :profileId
@@ -1624,6 +1639,11 @@ DELETE FROM PlannedSet WHERE routine_exercise_id = ?;
 -- CompletedSet Queries
 selectCompletedSetsBySession:
 SELECT * FROM CompletedSet WHERE session_id = ? ORDER BY set_number ASC;
+
+selectCompletedSetsBySessionIds:
+SELECT * FROM CompletedSet
+WHERE session_id IN :sessionIds
+ORDER BY session_id ASC, set_number ASC, completed_at ASC;
 
 selectCompletedSetById:
 SELECT * FROM CompletedSet WHERE id = ?;

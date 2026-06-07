@@ -255,18 +255,52 @@ fun IntegrationsScreen(
             val healthProvider = if (isIosPlatform) IntegrationProvider.APPLE_HEALTH else IntegrationProvider.GOOGLE_HEALTH
             val healthStatus = uiState.integrationStatuses[healthProvider]
             val healthConnected = healthStatus?.status == ConnectionStatus.CONNECTED
+            val healthError = healthStatus?.status == ConnectionStatus.ERROR
+            val healthBusy = uiState.operationLoading.any { it.startsWith("${healthProvider.key}:") }
 
             IntegrationCard(
                 title = if (isIosPlatform) "Apple Health" else "Google Health Connect",
-                subtitle = if (healthConnected) "Connected" else "Not connected",
+                subtitle = when {
+                    healthConnected -> "Connected"
+                    healthError -> healthStatus.errorMessage ?: "Permissions need attention"
+                    else -> "Not connected"
+                },
                 statusConnected = healthConnected,
                 trailingContent = {
-                    Switch(
-                        checked = healthConnected,
-                        onCheckedChange = { enabled ->
-                            viewModel.toggleHealthIntegration(enabled)
-                        },
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Switch(
+                            checked = healthConnected,
+                            onCheckedChange = { enabled ->
+                                viewModel.toggleHealthIntegration(enabled)
+                            },
+                        )
+                        if (healthError) {
+                            TextButton(
+                                onClick = { viewModel.retryHealthPermissions() },
+                                enabled = !healthBusy,
+                                modifier = Modifier.height(32.dp),
+                            ) {
+                                Text("Retry permissions", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                        if (healthConnected || healthError) {
+                            OutlinedButton(
+                                onClick = { viewModel.syncPreviousHealthWorkouts() },
+                                enabled = !healthBusy,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.height(36.dp),
+                            ) {
+                                if (healthBusy) {
+                                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Text("Sync previous", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
                 },
             )
 
