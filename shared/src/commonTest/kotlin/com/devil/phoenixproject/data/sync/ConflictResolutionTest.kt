@@ -235,6 +235,7 @@ class ConflictResolutionTest {
             repCountTiming = "TOP",
             setEchoLevels = "",
             warmupSets = "",
+            defaultRackItemIds = "[]",
         )
 
         // Verify exercise exists

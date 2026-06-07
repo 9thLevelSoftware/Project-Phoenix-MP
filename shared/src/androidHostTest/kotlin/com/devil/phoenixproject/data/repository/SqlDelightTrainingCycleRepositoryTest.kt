@@ -237,6 +237,7 @@ class SqlDelightTrainingCycleRepositoryTest {
             repCountTiming = "TOP",
             setEchoLevels = "",
             warmupSets = "",
+            defaultRackItemIds = "[]",
         )
     }
 }

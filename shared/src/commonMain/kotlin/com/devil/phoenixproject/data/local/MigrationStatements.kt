@@ -851,5 +851,10 @@ WHERE gs.rowid = (
         "ALTER TABLE WorkoutSession ADD COLUMN rackItemsJson TEXT NOT NULL DEFAULT '[]'",
     )
 
+    // Migration 34: Persist routine exercise equipment rack defaults.
+    34 -> listOf(
+        "ALTER TABLE RoutineExercise ADD COLUMN defaultRackItemIds TEXT NOT NULL DEFAULT '[]'",
+    )
+
     else -> emptyList()
 }

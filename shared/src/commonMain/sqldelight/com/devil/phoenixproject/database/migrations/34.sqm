@@ -1,0 +1,2 @@
+-- Migration 34: Persist routine exercise equipment rack defaults.
+ALTER TABLE RoutineExercise ADD COLUMN defaultRackItemIds TEXT NOT NULL DEFAULT '[]';

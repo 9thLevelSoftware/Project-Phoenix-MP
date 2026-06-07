@@ -29,6 +29,7 @@ data class SingleExerciseDefaults(
     val duration: Int,
     val isAMRAP: Boolean,
     val perSetRestTime: Boolean,
+    val defaultRackItemIds: List<String> = emptyList(),
 ) {
     fun getEccentricLoad(): com.devil.phoenixproject.domain.model.EccentricLoad {
         // Handle legacy 125% -> fall back to 120%

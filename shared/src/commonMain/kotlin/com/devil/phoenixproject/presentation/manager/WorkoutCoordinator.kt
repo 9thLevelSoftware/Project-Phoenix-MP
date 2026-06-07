@@ -195,12 +195,17 @@ class WorkoutCoordinator(
 
     internal var currentRackItemsJson: String = "[]"
 
+    internal fun setActiveRackSelection(itemIds: List<String>) {
+        val distinctIds = itemIds.filter { it.isNotBlank() }.distinct()
+        _activeRackItemIds.value = distinctIds
+        _workoutParameters.value = _workoutParameters.value.copy(activeRackItemIds = distinctIds)
+    }
+
     internal fun clearActiveRackSelection() {
-        _activeRackItemIds.value = emptyList()
+        setActiveRackSelection(emptyList())
         _currentRackLoadAdjustment.value = RackLoadAdjustment()
         currentRackItemsJson = "[]"
         _workoutParameters.value = _workoutParameters.value.copy(
-            activeRackItemIds = emptyList(),
             externalAddedLoadKg = 0f,
             counterweightKg = 0f,
         )

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.Routine
@@ -7,6 +8,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.russhwolf.settings.MapSettings
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -404,7 +406,10 @@ class StreamingImportRoundTripTest {
 
     private class TestDataBackupManager(
         database: com.devil.phoenixproject.database.VitruvianDatabase,
-    ) : BaseDataBackupManager(database) {
+    ) : BaseDataBackupManager(
+        database,
+        SettingsEquipmentRackRepository(MapSettings()),
+    ) {
 
         override fun createBackupWriter(): BackupJsonWriter {
             val tempFile = File.createTempFile("backup-roundtrip-", ".json")
@@ -441,11 +446,11 @@ class StreamingImportRoundTripTest {
         override fun pruneOldBackups(keepCount: Int) = Unit
 
         /** Public wrapper exposing the protected [importFromStream] for testing. */
-        fun importFromStreamPublic(source: BackupStreamSource): Result<ImportResult> = importFromStream(source)
+        suspend fun importFromStreamPublic(source: BackupStreamSource): Result<ImportResult> = importFromStream(source)
     }
 
     @Test
-    fun `streaming import skips privacy metadata before data`() {
+    fun `streaming import skips privacy metadata before data`() = runTest {
         val freshDb = createTestDatabase()
         val freshManager = TestDataBackupManager(freshDb)
         val backupJson = """

@@ -71,6 +71,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WarmupSet
@@ -78,6 +79,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
+import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
@@ -112,6 +114,7 @@ fun ExerciseEditBottomSheet(
     exerciseRepository: ExerciseRepository,
     personalRecordRepository: PersonalRecordRepository,
     formatWeight: (Float, WeightUnit) -> String,
+    rackItems: List<RackItem> = emptyList(),
     onSave: (RoutineExercise) -> Unit,
     onDismiss: () -> Unit,
     buttonText: String = "Save",
@@ -154,6 +157,7 @@ fun ExerciseEditBottomSheet(
     val stallDetectionEnabled by viewModel.stallDetectionEnabled.collectAsState()
     val repCountTiming by viewModel.repCountTiming.collectAsState()
     val stopAtTop by viewModel.stopAtTop.collectAsState()
+    val defaultRackItemIds by viewModel.defaultRackItemIds.collectAsState()
 
     // Warm-up sets state (Issue #30)
     val warmupSets by viewModel.warmupSets.collectAsState()
@@ -178,6 +182,14 @@ fun ExerciseEditBottomSheet(
     val isTutMode = showCableOnlyExerciseControls &&
         (selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast)
     val isEchoMode = showCableOnlyExerciseControls && selectedMode is WorkoutMode.Echo
+
+    LaunchedEffect(rackItems, defaultRackItemIds) {
+        val enabledRackIds = rackItems.filter { it.enabled }.map { it.id }.toSet()
+        val filtered = defaultRackItemIds.filter { it in enabledRackIds }
+        if (filtered != defaultRackItemIds) {
+            viewModel.onDefaultRackItemIdsChange(filtered)
+        }
+    }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -309,6 +321,14 @@ fun ExerciseEditBottomSheet(
                         }
                     }
                 }
+
+                EquipmentRackSelectionCard(
+                    rackItems = rackItems,
+                    activeRackItemIds = defaultRackItemIds,
+                    weightUnit = weightUnit,
+                    formatWeight = formatWeight,
+                    onSelectionChange = viewModel::onDefaultRackItemIdsChange,
+                )
 
                 // Weight Configuration Section (PR Percentage Scaling - Issue #57)
                 // Only show for standard exercises (not bodyweight)

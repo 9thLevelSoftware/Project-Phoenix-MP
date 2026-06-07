@@ -64,6 +64,7 @@ fun SingleExerciseScreen(
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
+    val rackItems by viewModel.rackItems.collectAsState()
 
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
@@ -345,6 +346,7 @@ fun SingleExerciseScreen(
                         exerciseRepository = exerciseRepository,
                         personalRecordRepository = viewModel.personalRecordRepository,
                         formatWeight = viewModel::formatWeight,
+                        rackItems = rackItems,
                         buttonText = "Start Workout",
                         weightStepOverride = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
                         onSave = { configuredExercise ->
@@ -365,6 +367,7 @@ fun SingleExerciseScreen(
                                     Logger.e { "SingleExercise: Failed to load routine" }
                                     return@launch
                                 }
+                                viewModel.updateActiveRackSelection(configuredExercise.defaultRackItemIds)
                                 Logger.d { "SingleExercise: Routine loaded, calling ensureConnection" }
 
                                 viewModel.ensureConnection(
@@ -429,6 +432,7 @@ private fun buildSingleExerciseRoutineExercise(
         duration = savedDefaults.duration.takeIf { it > 0 },
         isAMRAP = savedDefaults.isAMRAP,
         perSetRestTime = savedDefaults.perSetRestTime,
+        defaultRackItemIds = savedDefaults.defaultRackItemIds,
     )
 } else {
     RoutineExercise(

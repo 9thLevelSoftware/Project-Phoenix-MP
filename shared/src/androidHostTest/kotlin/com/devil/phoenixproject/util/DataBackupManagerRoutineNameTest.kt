@@ -1,12 +1,17 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackItemCategory
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.russhwolf.settings.MapSettings
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -847,6 +852,52 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `v4 round-trip restores equipment rack items and routine rack defaults`() = runTest {
+        val sourceRackRepository = SettingsEquipmentRackRepository(MapSettings())
+        val sourceManager = TestDataBackupManager(database, sourceRackRepository)
+        sourceRackRepository.saveItems(
+            listOf(
+                RackItem(
+                    id = "vest",
+                    name = "Weighted Vest",
+                    category = RackItemCategory.WEIGHTED_VEST,
+                    weightKg = 10f,
+                    behavior = RackItemBehavior.ADDED_RESISTANCE,
+                ),
+            ),
+        )
+        workoutRepository.saveRoutine(
+            buildRoutine(
+                routineId = "routine-rack-backup",
+                routineName = "Rack Backup",
+                exerciseId = "exercise-rack-backup",
+                exerciseName = "Weighted Pull Up",
+            ).let { routine ->
+                routine.copy(
+                    exercises = routine.exercises.map { exercise ->
+                        exercise.copy(defaultRackItemIds = listOf("vest"))
+                    },
+                )
+            },
+        )
+
+        val backupJson = sourceManager.exportToJson()
+        val targetDatabase = createTestDatabase()
+        val targetRackRepository = SettingsEquipmentRackRepository(MapSettings())
+        val targetManager = TestDataBackupManager(targetDatabase, targetRackRepository)
+
+        val importResult = targetManager.importFromJson(backupJson)
+
+        assertTrue(importResult.isSuccess, "v4 backup import must succeed: ${importResult.exceptionOrNull()?.message}")
+        assertEquals("vest", targetRackRepository.getItems().single().id)
+        val importedExercise = targetDatabase.vitruvianDatabaseQueries
+            .selectAllRoutineExercisesSync()
+            .executeAsList()
+            .single()
+        assertEquals("""["vest"]""", importedExercise.defaultRackItemIds)
+    }
+
+    @Test
     fun `malformed top-level JSON surfaces specific error instead of crashing`() = runTest {
         // Deliberately malformed: trailing comma, missing required fields.
         val junk = """{ "version": 2, "exportedAt": "x", "appVersion": "x", "data": { "workoutSessions": [{}] } }"""
@@ -865,7 +916,13 @@ class DataBackupManagerRoutineNameTest {
         )
     }
 
-    private class TestDataBackupManager(database: com.devil.phoenixproject.database.VitruvianDatabase) : BaseDataBackupManager(database) {
+    private class TestDataBackupManager(
+        database: com.devil.phoenixproject.database.VitruvianDatabase,
+        equipmentRackRepository: SettingsEquipmentRackRepository = SettingsEquipmentRackRepository(MapSettings()),
+    ) : BaseDataBackupManager(
+        database,
+        equipmentRackRepository,
+    ) {
 
         override fun createBackupWriter(): BackupJsonWriter {
             val tempFile = File.createTempFile("backup-test-", ".json")

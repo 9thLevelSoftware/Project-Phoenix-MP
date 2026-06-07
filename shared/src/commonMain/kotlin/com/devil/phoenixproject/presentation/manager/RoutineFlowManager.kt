@@ -868,6 +868,7 @@ class RoutineFlowManager(
 
         coordinator._currentExerciseIndex.value = exerciseIndex
         coordinator._currentSetIndex.value = setIndex
+        coordinator.setActiveRackSelection(exercise.defaultRackItemIds)
 
         // Get weight for this set
         val setWeight = exercise.setWeightsPerCableKg.getOrNull(setIndex)
@@ -943,6 +944,7 @@ class RoutineFlowManager(
 
         coordinator._currentExerciseIndex.value = exerciseIndex
         coordinator._currentSetIndex.value = setIndex
+        coordinator.setActiveRackSelection(exercise.defaultRackItemIds)
 
         coordinator._routineFlowState.value = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,

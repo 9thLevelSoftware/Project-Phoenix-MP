@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
+import com.devil.phoenixproject.data.sync.PullRoutineDto
+import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PRType
@@ -374,6 +376,85 @@ class SqlDelightSyncRepositoryTest {
 
         assertNotNull(routine)
         assertEquals("active-profile", routine.profile_id)
+    }
+
+    @Test
+    fun `mergePortalRoutines preserves local rack defaults for matching routine exercises`() = runTest {
+        database.vitruvianDatabaseQueries.insertRoutine(
+            id = "routine-rack-defaults",
+            name = "Rack Defaults",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 0,
+            profile_id = "active-profile",
+            groupId = null,
+        )
+        database.vitruvianDatabaseQueries.insertRoutineExercise(
+            id = "rex-rack-defaults",
+            routineId = "routine-rack-defaults",
+            exerciseName = "Bench Press",
+            exerciseMuscleGroup = "Chest",
+            exerciseEquipment = "Cable",
+            exerciseDefaultCableConfig = "DOUBLE",
+            exerciseId = null,
+            cableConfig = "DOUBLE",
+            orderIndex = 0,
+            setReps = "8",
+            weightPerCableKg = 20.0,
+            setWeights = "",
+            mode = "OldSchool",
+            eccentricLoad = 100,
+            echoLevel = 1,
+            progressionKg = 0.0,
+            restSeconds = 60,
+            duration = null,
+            setRestSeconds = "[]",
+            perSetRestTime = 0,
+            isAMRAP = 0,
+            supersetId = null,
+            orderInSuperset = 0,
+            usePercentOfPR = 0,
+            weightPercentOfPR = 80,
+            prTypeForScaling = "MAX_WEIGHT",
+            setWeightsPercentOfPR = null,
+            stallDetectionEnabled = 1,
+            stopAtTop = 0,
+            repCountTiming = "TOP",
+            setEchoLevels = "",
+            warmupSets = "",
+            defaultRackItemIds = """["vest"]""",
+        )
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-rack-defaults",
+                    userId = "user",
+                    name = "Rack Defaults Remote",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-rack-defaults",
+                            routineId = "routine-rack-defaults",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 8,
+                            weight = 25f,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val exercise = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("routine-rack-defaults")
+            .executeAsList()
+            .single()
+        assertEquals("""["vest"]""", exercise.defaultRackItemIds)
     }
 
     private fun insertHistoricalSession(

@@ -64,7 +64,7 @@ actual val platformModule: Module = module {
     single<CsvExporter> { AndroidCsvExporter(androidContext()) }
     single<CsvImporter> { AndroidCsvImporter(androidContext(), get()) }
     single<BackupDestinationResolver> { AndroidBackupDestinationResolver(androidContext()) }
-    single<DataBackupManager> { AndroidDataBackupManager(androidContext(), get(), get(), get()) }
+    single<DataBackupManager> { AndroidDataBackupManager(androidContext(), get(), get(), get(), get()) }
     single { ConnectivityChecker(androidContext()) }
     single<SafeWordListenerFactory> { AndroidSafeWordListenerFactory(androidContext()) }
     single { HealthIntegration(androidContext()) }

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.database.CompletedSet
 import com.devil.phoenixproject.database.CycleDay
 import com.devil.phoenixproject.database.CycleProgress
@@ -21,6 +22,7 @@ import com.devil.phoenixproject.database.TrainingCycle
 import com.devil.phoenixproject.database.UserProfile
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.database.WorkoutSession
+import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.util.BaseDataBackupManager.Companion.IMPORT_BATCH_SIZE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -102,6 +104,7 @@ interface DataBackupManager {
  */
 abstract class BaseDataBackupManager(
     private val database: VitruvianDatabase,
+    private val equipmentRackRepository: EquipmentRackRepository,
 ) : DataBackupManager {
 
     protected val json = Json {
@@ -178,7 +181,7 @@ abstract class BaseDataBackupManager(
      * Stream export to a cache/temp file. Returns the file path.
      * Used by both exportToFile() and shareBackup().
      */
-    protected fun exportToCache(onProgress: (BackupProgress) -> Unit = {}): String {
+    protected suspend fun exportToCache(onProgress: (BackupProgress) -> Unit = {}): String {
         val writer = createBackupWriter()
         try {
             writer.open()
@@ -238,6 +241,7 @@ abstract class BaseDataBackupManager(
         val sessionNotes = runCatching { queries.selectAllSessionNotesSync().executeAsList() }.getOrElse { emptyList() }
         // Migration 27 added RoutineGroup. Same defensive pattern.
         val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }.getOrElse { emptyList() }
+        val equipmentRackItems = equipmentRackRepository.getItems()
 
         val nowMs = KmpUtils.currentTimeMillis()
         BackupData(
@@ -263,6 +267,7 @@ abstract class BaseDataBackupManager(
                 streakHistory = streakHistory.map { mapStreakHistoryToBackup(it) },
                 gamificationStats = gamificationStats?.let { mapGamificationStatsToBackup(it) },
                 userProfiles = userProfiles.map { mapUserProfileToBackup(it) },
+                equipmentRackItems = equipmentRackItems,
                 sessionNotes = sessionNotes.map { mapSessionNotesToBackup(it) },
                 routineGroups = routineGroups.map { mapRoutineGroupToBackup(it) },
             ),
@@ -368,6 +373,8 @@ abstract class BaseDataBackupManager(
                 }
                 null
             }
+
+            importEquipmentRackItems(backup.data.equipmentRackItems)
 
             // Wrap all imports in a transaction for atomicity
             database.transaction {
@@ -593,6 +600,7 @@ abstract class BaseDataBackupManager(
                                 repCountTiming = exercise.repCountTiming,
                                 setEchoLevels = exercise.setEchoLevels,
                                 warmupSets = exercise.warmupSets,
+                                defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
                             )
                         }
                         if (inserted != null) routineExercisesImported++
@@ -910,7 +918,7 @@ abstract class BaseDataBackupManager(
      * `session.routineName` directly because the full routine list may not yet have been
      * parsed when sessions arrive (field order is not guaranteed).
      */
-    protected fun importFromStream(
+    protected suspend fun importFromStream(
         source: BackupStreamSource,
         onProgress: (BackupProgress) -> Unit = {},
     ): Result<ImportResult> {
@@ -1001,6 +1009,21 @@ abstract class BaseDataBackupManager(
                         while (nav.hasNextInObject()) {
                             val fieldName = nav.nextName()
                             when (fieldName) {
+                                // --- equipmentRackItems ---
+                                "equipmentRackItems" -> {
+                                    val rackItems = mutableListOf<RackItem>()
+                                    nav.beginArray()
+                                    while (nav.hasNextInArray()) {
+                                        val rawJson = nav.nextValueAsString()
+                                        val item = tryImport("equipmentRackItem-parse", null) {
+                                            json.decodeFromString<RackItem>(rawJson)
+                                        } ?: continue
+                                        rackItems += item
+                                    }
+                                    nav.endArray()
+                                    importEquipmentRackItems(rackItems)
+                                }
+
                                 // --- workoutSessions ---
                                 "workoutSessions" -> {
                                     onProgress(BackupProgress(BackupPhase.SESSIONS, 0, 0))
@@ -1294,6 +1317,7 @@ abstract class BaseDataBackupManager(
                                                         repCountTiming = exercise.repCountTiming,
                                                         setEchoLevels = exercise.setEchoLevels,
                                                         warmupSets = exercise.warmupSets,
+                                                        defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
                                                     )
                                                 }
                                                 if (inserted != null) {
@@ -1744,7 +1768,7 @@ abstract class BaseDataBackupManager(
 
     // -- Streaming JSON writer --
 
-    private fun streamExportToWriter(
+    private suspend fun streamExportToWriter(
         writer: BackupJsonWriter,
         onProgress: (BackupProgress) -> Unit,
     ) {
@@ -1754,6 +1778,7 @@ abstract class BaseDataBackupManager(
         val metricCount = runCatching { queries.countAllMetricSamples().executeAsOne() }.getOrElse { 0L }
         val routines = queries.selectAllRoutinesSync().executeAsList()
         val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
+        val equipmentRackItems = equipmentRackRepository.getItems()
         val routineNameResolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
 
         // JSON header
@@ -1803,6 +1828,8 @@ abstract class BaseDataBackupManager(
         writeJsonArray(writer, "routines", routines.map { json.encodeToString(RoutineBackup.serializer(), mapRoutineToBackup(it)) })
         writer.write(",")
         writeJsonArray(writer, "routineExercises", routineExercises.map { json.encodeToString(RoutineExerciseBackup.serializer(), mapRoutineExerciseToBackup(it)) })
+        writer.write(",")
+        writeJsonArray(writer, "equipmentRackItems", equipmentRackItems.map { json.encodeToString(RackItem.serializer(), it) })
         writer.write(",")
 
         // Phase 5: Remaining tables (small, bulk-load is safe)
@@ -2283,7 +2310,37 @@ abstract class BaseDataBackupManager(
         stopAtTop = exercise.stopAtTop != 0L,
         repCountTiming = exercise.repCountTiming,
         warmupSets = exercise.warmupSets,
+        defaultRackItemIds = decodeRackItemIds(exercise.defaultRackItemIds),
     )
+
+    private fun decodeRackItemIds(encoded: String): List<String> = runCatching {
+        if (encoded.isBlank()) {
+            emptyList()
+        } else {
+            json.decodeFromString<List<String>>(encoded)
+                .filter { it.isNotBlank() }
+                .distinct()
+        }
+    }.getOrElse { emptyList() }
+
+    private fun sanitizeRackItemIds(itemIds: List<String>): String = json.encodeToString(
+        itemIds.filter { it.isNotBlank() }.distinct(),
+    )
+
+    private suspend fun importEquipmentRackItems(items: List<RackItem>) {
+        val importedById = items
+            .filter { it.id.isNotBlank() }
+            .distinctBy { it.id }
+            .associateBy { it.id }
+        if (importedById.isEmpty()) return
+
+        val existing = equipmentRackRepository.getItems()
+        val existingIds = existing.map { it.id }.toSet()
+        val merged = existing.map { item -> importedById[item.id] ?: item } +
+            importedById.values.filterNot { it.id in existingIds }
+
+        equipmentRackRepository.saveItems(merged)
+    }
 
     private fun mapSupersetToBackup(superset: Superset): SupersetBackup = SupersetBackup(
         id = superset.id,

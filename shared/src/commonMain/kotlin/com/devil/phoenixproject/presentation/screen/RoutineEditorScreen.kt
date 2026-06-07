@@ -131,6 +131,7 @@ fun RoutineEditorScreen(
 ) {
     // Issue #266/#410: Get user preferences for weight increment
     val userPreferences by viewModel.userPreferences.collectAsState()
+    val rackItems by viewModel.rackItems.collectAsState()
 
     // 1. Initialize State
     var state by remember { mutableStateOf(RoutineEditorState()) }
@@ -809,6 +810,7 @@ fun RoutineEditorScreen(
                 val displayWeight = kgToDisplay(weight, unit)
                 if (unit == WeightUnit.LB) "${UnitConverter.formatDecimal(displayWeight)} lbs" else "${UnitConverter.formatDecimal(displayWeight)} kg"
             },
+            rackItems = rackItems,
             weightStepOverride = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
             onSave = { configuredExercise ->
                 if (isNewExercise) {
