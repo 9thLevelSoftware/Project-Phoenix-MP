@@ -44,6 +44,7 @@
     <!-- Health Connect permissions (Android 14+ requires manifest declarations) -->
     <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
     <uses-permission android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
 
     <!-- Camera feature (not required - app works without camera) -->
     <uses-feature

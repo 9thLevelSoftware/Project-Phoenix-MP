@@ -8,6 +8,20 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.displayLoadMultiplier
 
 /**
+ * Latest eligible body-weight sample imported from a platform health store.
+ *
+ * Phoenix stores body weight in kg and keeps this one-way: platform health store -> Phoenix.
+ */
+data class HealthBodyWeightSample(
+    val weightKg: Float,
+    val measuredAtMs: Long,
+    val externalId: String,
+    val sourceName: String? = null,
+    val deviceMetadata: Map<String, String> = emptyMap(),
+    val rawMetadataJson: String? = null,
+)
+
+/**
  * Rich workout data for platform health stores.
  *
  * Android Health Connect can persist [segments] as exercise sets. Apple HealthKit's
@@ -221,13 +235,16 @@ object HealthExportMarkers {
  * Android: Google Health Connect
  * iOS: Apple HealthKit
  *
- * Write-only: pushes Phoenix workout data to the platform health store
- * after each completed workout.
+ * Workout export pushes Phoenix workout data to the platform health store
+ * after each completed workout. Body-weight read support is one-way from
+ * the platform health store into Phoenix.
  */
 expect class HealthIntegration : HealthWorkoutWriter {
     override suspend fun isAvailable(): Boolean
     suspend fun requestPermissions(): Boolean
     override suspend fun hasPermissions(): Boolean
+    suspend fun hasBodyWeightReadPermission(): Boolean
+    suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?>
 
     /** Write a single set/exercise session (used for Just Lift / non-routine workouts). */
     suspend fun writeWorkout(session: WorkoutSession): Result<Unit>
@@ -237,4 +254,20 @@ expect class HealthIntegration : HealthWorkoutWriter {
      * Android stores set-level [HealthWorkoutData.segments]; iOS stores the aggregate workout only.
      */
     override suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit>
+}
+
+interface HealthBodyWeightReader {
+    suspend fun isAvailable(): Boolean
+    suspend fun hasBodyWeightReadPermission(): Boolean
+    suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?>
+}
+
+class HealthIntegrationBodyWeightReader(
+    private val healthIntegration: HealthIntegration,
+) : HealthBodyWeightReader {
+    override suspend fun isAvailable(): Boolean = healthIntegration.isAvailable()
+
+    override suspend fun hasBodyWeightReadPermission(): Boolean = healthIntegration.hasBodyWeightReadPermission()
+
+    override suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?> = healthIntegration.readLatestScaleBodyWeight()
 }

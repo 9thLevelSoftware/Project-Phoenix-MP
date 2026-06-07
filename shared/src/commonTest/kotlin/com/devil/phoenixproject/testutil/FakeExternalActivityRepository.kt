@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.IntegrationStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 
 class FakeExternalActivityRepository : ExternalActivityRepository {
 
@@ -25,6 +26,7 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
         val errorMessage: String?,
     )
     val statusUpdates = mutableListOf<StatusUpdate>()
+    private val statusesFlow = MutableStateFlow<List<IntegrationStatus>>(emptyList())
 
     override fun getAll(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalActivity>> = MutableStateFlow(
         activities.filter {
@@ -91,9 +93,13 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
         activities.removeAll { it.provider == provider && it.profileId == profileId }
     }
 
-    override fun getIntegrationStatus(provider: IntegrationProvider, profileId: String): Flow<IntegrationStatus?> = MutableStateFlow(null)
+    override fun getIntegrationStatus(provider: IntegrationProvider, profileId: String): Flow<IntegrationStatus?> = statusesFlow.map { statuses ->
+        statuses.firstOrNull { it.provider == provider && it.profileId == profileId }
+    }
 
-    override fun getAllIntegrationStatuses(profileId: String): Flow<List<IntegrationStatus>> = MutableStateFlow(emptyList())
+    override fun getAllIntegrationStatuses(profileId: String): Flow<List<IntegrationStatus>> = statusesFlow.map { statuses ->
+        statuses.filter { it.profileId == profileId }
+    }
 
     override suspend fun updateIntegrationStatus(
         provider: IntegrationProvider,
@@ -103,5 +109,14 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
         errorMessage: String?,
     ) {
         statusUpdates += StatusUpdate(provider, status, profileId, lastSyncAt, errorMessage)
+        statusesFlow.value = statusesFlow.value
+            .filterNot { it.provider == provider && it.profileId == profileId } +
+            IntegrationStatus(
+                provider = provider,
+                status = status,
+                lastSyncAt = lastSyncAt,
+                errorMessage = errorMessage,
+                profileId = profileId,
+            )
     }
 }

@@ -27,6 +27,7 @@ import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.readUriContent
 import com.devil.phoenixproject.util.rememberFilePicker
 import com.devil.phoenixproject.util.rememberHealthPermissionRequester
@@ -257,15 +258,28 @@ fun IntegrationsScreen(
             val healthConnected = healthStatus?.status == ConnectionStatus.CONNECTED
             val healthError = healthStatus?.status == ConnectionStatus.ERROR
             val healthBusy = uiState.operationLoading.any { it.startsWith("${healthProvider.key}:") }
+            val latestHealthBodyWeight = uiState.latestHealthBodyWeight
+            val latestHealthBodyWeightLabel = latestHealthBodyWeight?.let { measurement ->
+                if (weightUnit == WeightUnit.KG) {
+                    "${UnitConverter.formatDecimal(measurement.value.toFloat())} kg"
+                } else {
+                    "${UnitConverter.formatDecimal(UnitConverter.kgToLb(measurement.value.toFloat()))} lb"
+                }
+            }
 
             IntegrationCard(
                 title = if (isIosPlatform) "Apple Health" else "Google Health Connect",
                 subtitle = when {
-                    healthConnected -> "Connected"
                     healthError -> healthStatus.errorMessage ?: "Permissions need attention"
+                    healthConnected && latestHealthBodyWeightLabel != null -> "Connected • latest scale weight $latestHealthBodyWeightLabel"
+                    healthConnected -> "Connected"
                     else -> "Not connected"
                 },
                 statusConnected = healthConnected,
+                badges = buildList {
+                    latestHealthBodyWeightLabel?.let { add("Body weight: $it") }
+                    healthStatus?.lastSyncAt?.let { add("Last sync: ${KmpUtils.formatTimestamp(it)}") }
+                },
                 trailingContent = {
                     Column(
                         horizontalAlignment = Alignment.End,

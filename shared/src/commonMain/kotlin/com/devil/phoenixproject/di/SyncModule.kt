@@ -1,5 +1,8 @@
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.data.integration.HealthBodyWeightReader
+import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
+import com.devil.phoenixproject.data.integration.HealthIntegrationBodyWeightReader
 import com.devil.phoenixproject.data.integration.IntegrationManager
 import com.devil.phoenixproject.data.repository.*
 import com.devil.phoenixproject.data.sync.PortalApiClient
@@ -30,7 +33,9 @@ val syncModule = module {
             externalActivityRepository = get(),
         )
     }
-    single { SyncTriggerManager(get(), get()) }
+    single<HealthBodyWeightReader> { HealthIntegrationBodyWeightReader(get()) }
+    single { HealthBodyWeightSyncManager(get(), get(), get(), get(), get()) }
+    single { SyncTriggerManager(get(), get(), get()) }
     single { IntegrationManager(get(), get(), get(), get(), get(), get(), get()) }
 
     // Auth (using Supabase GoTrue)

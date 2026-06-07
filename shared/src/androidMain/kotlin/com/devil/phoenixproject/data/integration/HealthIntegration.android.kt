@@ -4,17 +4,21 @@ import android.annotation.SuppressLint
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.records.ExerciseSegment
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Mass
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import java.time.Instant
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 private val log = Logger.withTag("HealthIntegration.Android")
 
@@ -26,6 +30,7 @@ private val VITRUVIAN_DEVICE = Device(
 
 internal val requiredHealthPermissions = setOf(
     HealthPermission.getWritePermission(ExerciseSessionRecord::class),
+    HealthPermission.getReadPermission(WeightRecord::class),
 )
 
 internal val optionalHealthPermissions = setOf(
@@ -33,6 +38,20 @@ internal val optionalHealthPermissions = setOf(
 )
 
 internal val requestedHealthPermissions = requiredHealthPermissions + optionalHealthPermissions
+
+internal val workoutWriteHealthPermissions = setOf(
+    HealthPermission.getWritePermission(ExerciseSessionRecord::class),
+)
+
+internal val bodyWeightReadHealthPermissions = setOf(
+    HealthPermission.getReadPermission(WeightRecord::class),
+)
+
+internal val workoutExportRequestedHealthPermissions = workoutWriteHealthPermissions + optionalHealthPermissions
+
+private const val BODY_WEIGHT_LOOKBACK_DAYS = 3650L
+private const val BODY_WEIGHT_READ_PAGE_SIZE = 100
+private const val BODY_WEIGHT_READ_MAX_PAGES = 10
 
 /**
  * Android implementation of HealthIntegration using Google Health Connect.
@@ -72,6 +91,8 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
 
     actual override suspend fun hasPermissions(): Boolean = hasGrantedPermissions(requiredHealthPermissions)
 
+    actual suspend fun hasBodyWeightReadPermission(): Boolean = hasGrantedPermissions(bodyWeightReadHealthPermissions)
+
     private suspend fun hasCalorieWritePermission(): Boolean = hasGrantedPermissions(optionalHealthPermissions)
 
     private suspend fun hasGrantedPermissions(permissions: Set<String>): Boolean {
@@ -82,6 +103,48 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
         } catch (e: Exception) {
             log.w(e) { "Error checking Health Connect permissions" }
             false
+        }
+    }
+
+    actual suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?> {
+        val c = client ?: return Result.failure(
+            IllegalStateException("Health Connect is not available on this device"),
+        )
+
+        if (!hasBodyWeightReadPermission()) {
+            return Result.failure(SecurityException("Health Connect body weight read permission not granted"))
+        }
+
+        return try {
+            val end = Instant.now()
+            val start = end.minus(BODY_WEIGHT_LOOKBACK_DAYS, ChronoUnit.DAYS)
+            var pageToken: String? = null
+            var pagesRead = 0
+
+            do {
+                val response = c.readRecords(
+                    ReadRecordsRequest(
+                        recordType = WeightRecord::class,
+                        timeRangeFilter = TimeRangeFilter.between(start, end),
+                        ascendingOrder = false,
+                        pageSize = BODY_WEIGHT_READ_PAGE_SIZE,
+                        pageToken = pageToken,
+                    ),
+                )
+                response.records.firstNotNullOfOrNull { record ->
+                    record.toEligibleBodyWeightSampleOrNull()
+                }?.let { sample ->
+                    return Result.success(sample)
+                }
+
+                pageToken = response.pageToken
+                pagesRead++
+            } while (pageToken != null && pagesRead < BODY_WEIGHT_READ_MAX_PAGES)
+
+            Result.success(null)
+        } catch (e: Exception) {
+            log.e(e) { "Failed to read latest Health Connect scale body weight" }
+            Result.failure(e)
         }
     }
 
@@ -208,6 +271,85 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
             "shoulder press" in normalized || "overhead press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_SHOULDER_PRESS
             "tricep" in normalized || "triceps" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DOUBLE_ARM_TRICEPS_EXTENSION
             else -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
+        }
+    }
+
+    private fun WeightRecord.toEligibleBodyWeightSampleOrNull(): HealthBodyWeightSample? {
+        val recordMetadata = this.metadata
+        val device = recordMetadata.device
+        val evidence = HealthBodyWeightSourceEvidence(
+            platform = HealthBodyWeightSourcePlatform.ANDROID,
+            wasUserEntered = recordMetadata.recordingMethod == Metadata.RECORDING_METHOD_MANUAL_ENTRY,
+            deviceType = when (device?.type) {
+                Device.TYPE_SCALE -> HealthBodyWeightDeviceType.SCALE
+                Device.TYPE_UNKNOWN, null -> HealthBodyWeightDeviceType.UNKNOWN
+                else -> HealthBodyWeightDeviceType.OTHER
+            },
+            sourceName = recordMetadata.dataOrigin.packageName,
+            sourceBundleIdentifier = recordMetadata.dataOrigin.packageName,
+            deviceManufacturer = device?.manufacturer,
+            deviceModel = device?.model,
+        )
+
+        if (!HealthBodyWeightSourceClassifier.isEligibleScaleSource(evidence)) {
+            return null
+        }
+
+        return HealthBodyWeightSample(
+            weightKg = weight.inKilograms.toFloat(),
+            measuredAtMs = time.toEpochMilli(),
+            externalId = recordMetadata.clientRecordId?.takeIf { it.isNotBlank() }
+                ?: recordMetadata.id.takeIf { it.isNotBlank() }
+                ?: "healthconnect-weight-${time.toEpochMilli()}-${weight.inKilograms}",
+            sourceName = recordMetadata.dataOrigin.packageName.takeIf { it.isNotBlank() },
+            deviceMetadata = buildAndroidWeightDeviceMetadata(recordMetadata),
+            rawMetadataJson = buildAndroidWeightRawMetadataJson(this),
+        )
+    }
+
+    private fun buildAndroidWeightDeviceMetadata(metadata: Metadata): Map<String, String> = buildMap {
+        put("recordingMethod", metadata.recordingMethod.toString())
+        metadata.dataOrigin.packageName.takeIf { it.isNotBlank() }?.let { put("dataOriginPackage", it) }
+        metadata.device?.let { device ->
+            put("deviceType", device.type.toString())
+            device.manufacturer?.takeIf { it.isNotBlank() }?.let { put("deviceManufacturer", it) }
+            device.model?.takeIf { it.isNotBlank() }?.let { put("deviceModel", it) }
+        }
+    }
+
+    private fun buildAndroidWeightRawMetadataJson(record: WeightRecord): String {
+        val metadata = record.metadata
+        val device = metadata.device
+        return buildString {
+            append("{")
+            append("\"platform\":\"android\",")
+            append("\"recordId\":\"${metadata.id.escapeJson()}\",")
+            append("\"clientRecordId\":")
+            append(metadata.clientRecordId?.let { "\"${it.escapeJson()}\"" } ?: "null")
+            append(",\"dataOriginPackage\":\"${metadata.dataOrigin.packageName.escapeJson()}\",")
+            append("\"recordingMethod\":${metadata.recordingMethod},")
+            append("\"lastModifiedTimeMs\":${metadata.lastModifiedTime.toEpochMilli()},")
+            append("\"device\":{")
+            append("\"type\":${device?.type ?: Device.TYPE_UNKNOWN},")
+            append("\"manufacturer\":")
+            append(device?.manufacturer?.let { "\"${it.escapeJson()}\"" } ?: "null")
+            append(",\"model\":")
+            append(device?.model?.let { "\"${it.escapeJson()}\"" } ?: "null")
+            append("}")
+            append("}")
+        }
+    }
+
+    private fun String.escapeJson(): String = buildString {
+        this@escapeJson.forEach { char ->
+            when (char) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(char)
+            }
         }
     }
 }
