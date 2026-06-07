@@ -548,6 +548,49 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `rest timer emits countdown ticks through six seconds then rest ending at five seconds`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        val events = mutableListOf<HapticEvent>()
+        val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.dwsm.coordinator.hapticEvents.collect { event ->
+                events.add(event)
+            }
+        }
+
+        try {
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+
+            harness.activeSessionEngine.startRestTimer()
+            advanceTimeBy(55_000)
+            runCurrent()
+
+            assertEquals(
+                (10 downTo 6).toList(),
+                events.filterIsInstance<HapticEvent.COUNTDOWN_TICK>().map { it.secondsRemaining },
+            )
+            assertEquals(1, events.filterIsInstance<HapticEvent.REST_ENDING>().size)
+            val state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
+            assertEquals(5, state.restSecondsRemaining)
+
+            advanceTimeBy(10_000)
+            runCurrent()
+
+            assertEquals(
+                (10 downTo 6).toList(),
+                events.filterIsInstance<HapticEvent.COUNTDOWN_TICK>().map { it.secondsRemaining },
+            )
+            assertEquals(1, events.filterIsInstance<HapticEvent.REST_ENDING>().size)
+        } finally {
+            hapticJob.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `rest timer pause resume preserves remaining time across elapsed time`() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)

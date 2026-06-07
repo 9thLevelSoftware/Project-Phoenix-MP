@@ -328,7 +328,7 @@ class AudioPreferenceGateTest {
 
     @Test
     fun `REST_ENDING gated by beepsEnabled only`() {
-        // REST_ENDING fires when rest timer completes (reaches 0).
+        // REST_ENDING fires when the rest timer reaches five seconds remaining.
         // Gated by beepsEnabled (the general audio cue toggle), NOT countdownBeepsEnabled.
         data class GateState(val beepsEnabled: Boolean)
 

@@ -3825,6 +3825,7 @@ class ActiveSessionEngine(
 
             var lastRenderedSecond = restDuration + 1
             var lastTickedSecond = -1
+            var restEndingEmitted = false
 
             try {
                 // Issue #339: Deadline-based loop so timers catch up after background suspension.
@@ -3836,13 +3837,28 @@ class ActiveSessionEngine(
                     }
 
                     if (!coordinator._isRestPaused.value &&
-                        remainingSeconds in 1..10 &&
+                        remainingSeconds in 6..10 &&
                         remainingSeconds != lastTickedSecond
                     ) {
                         lastTickedSecond = remainingSeconds
                         val prefs = settingsManager.userPreferences.value
                         if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
                             coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remainingSeconds))
+                        }
+                    }
+
+                    if (remainingSeconds > 5) {
+                        restEndingEmitted = false
+                    }
+
+                    if (!coordinator._isRestPaused.value &&
+                        remainingSeconds == 5 &&
+                        !restEndingEmitted
+                    ) {
+                        restEndingEmitted = true
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.beepsEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
                         }
                     }
 
@@ -3859,15 +3875,6 @@ class ActiveSessionEngine(
                             isSupersetTransition = isSupersetTransition,
                             supersetLabel = supersetLabel,
                         )
-                    }
-
-                    // Emit REST_ENDING when timer completes (gated by beepsEnabled)
-                    if (remainingSeconds <= 0 && lastTickedSecond != 0) {
-                        lastTickedSecond = 0
-                        val prefs = settingsManager.userPreferences.value
-                        if (prefs.beepsEnabled) {
-                            coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
-                        }
                     }
 
                     if (remainingSeconds <= 0 && autoplay && !coordinator._isRestPaused.value) break
