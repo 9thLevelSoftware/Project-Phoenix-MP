@@ -14,6 +14,9 @@ import com.devil.phoenixproject.ui.theme.VitruvianTheme as SharedVitruvianTheme
  * Delegates to shared theme and configures status bar appearance.
  * Note: enableEdgeToEdge() in MainActivity handles status bar coloring.
  */
+@Deprecated(
+    message = "Use the shared VitruvianTheme(themeMode = ..., dynamicColorEnabled = ...) overload so ThemeMode.SYSTEM is preserved.",
+)
 @Composable
 fun VitruvianTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),

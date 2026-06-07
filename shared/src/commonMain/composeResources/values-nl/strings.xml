@@ -108,8 +108,11 @@
     <string name="settings_cloud_sync">Cloud Sync</string>
     <string name="settings_weight_unit">Gewichtseenheid</string>
     <string name="settings_appearance">Uiterlijk</string>
-    <string name="settings_dark_mode">Donkere modus</string>
-    <string name="settings_dark_mode_description">Gebruik donker thema voor de app</string>
+    <string name="settings_theme_mode">Theme</string>
+    <string name="settings_theme_mode_description">Follow the system theme or keep the app in light or dark mode</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
     <string name="settings_dynamic_color">Material You-kleuren</string>
     <string name="settings_dynamic_color_description">Gebruik kleuren van je Android-achtergrond wanneer beschikbaar</string>
     <string name="settings_link_portal">Koppel Portal-account</string>
@@ -560,7 +563,7 @@
     <string name="cd_above_pr">Boven PR</string>
     <string name="cd_below_pr">Onder PR</string>
     <string name="cd_delete_workout">Training verwijderen</string>
-    <string name="cd_toggle_theme">Thema wisselen (huidig: %1$s)</string>
+    <string name="cd_toggle_theme_cycle">Toggle theme (current: %1$s, next: %2$s)</string>
     <string name="cd_workouts">Trainingen</string>
     <string name="cd_disconnect">Verbinding verbreken</string>
 

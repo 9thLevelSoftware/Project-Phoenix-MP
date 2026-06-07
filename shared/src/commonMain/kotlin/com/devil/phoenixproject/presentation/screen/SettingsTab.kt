@@ -73,6 +73,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -176,8 +179,6 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_p
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_prompt
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_cloud_sync
-import vitruvianprojectphoenix.shared.generated.resources.settings_dark_mode
-import vitruvianprojectphoenix.shared.generated.resources.settings_dark_mode_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color
 import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_language
@@ -185,17 +186,66 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_language_help
 import vitruvianprojectphoenix.shared.generated.resources.settings_machine_diagnostics_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_hint
 import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_label
+import vitruvianprojectphoenix.shared.generated.resources.settings_theme_dark
+import vitruvianprojectphoenix.shared.generated.resources.settings_theme_light
+import vitruvianprojectphoenix.shared.generated.resources.settings_theme_mode
+import vitruvianprojectphoenix.shared.generated.resources.settings_theme_mode_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_theme_system
 import vitruvianprojectphoenix.shared.generated.resources.settings_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_version
 import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_weight_unit
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ThemeModeSelector(
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+) {
+    val options = listOf(
+        ThemeMode.SYSTEM to stringResource(Res.string.settings_theme_system),
+        ThemeMode.LIGHT to stringResource(Res.string.settings_theme_light),
+        ThemeMode.DARK to stringResource(Res.string.settings_theme_dark),
+    )
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            stringResource(Res.string.settings_theme_mode),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            stringResource(Res.string.settings_theme_mode_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(Spacing.small))
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            options.forEachIndexed { index, (mode, label) ->
+                SegmentedButton(
+                    selected = themeMode == mode,
+                    onClick = { onThemeModeChange(mode) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                ) {
+                    Text(label, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun SettingsTab(
     weightUnit: WeightUnit,
     enableVideoPlayback: Boolean,
-    darkModeEnabled: Boolean,
+    themeMode: ThemeMode,
     dynamicColorAvailable: Boolean = false,
     dynamicColorEnabled: Boolean = false,
     audioRepCountEnabled: Boolean = false,
@@ -215,7 +265,7 @@ fun SettingsTab(
     selectedColorSchemeIndex: Int = 0,
     onWeightUnitChange: (WeightUnit) -> Unit,
     onEnableVideoPlaybackChange: (Boolean) -> Unit,
-    onDarkModeChange: (Boolean) -> Unit,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onDynamicColorEnabledChange: (Boolean) -> Unit = {},
     onAudioRepCountChange: (Boolean) -> Unit,
     onSummaryCountdownChange: (Int) -> Unit = {},
@@ -889,33 +939,10 @@ fun SettingsTab(
                 }
                 Spacer(modifier = Modifier.height(Spacing.small))
 
-                // Dark Mode toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(
-                            stringResource(Res.string.settings_dark_mode),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            stringResource(Res.string.settings_dark_mode_description),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = darkModeEnabled,
-                        onCheckedChange = onDarkModeChange,
-                    )
-                }
+                ThemeModeSelector(
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                )
 
                 if (dynamicColorAvailable) {
                     HorizontalDivider(

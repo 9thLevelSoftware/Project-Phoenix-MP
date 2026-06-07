@@ -112,8 +112,11 @@
     <string name="settings_cloud_sync">Cloud Sync</string>
     <string name="settings_weight_unit">Weight Unit</string>
     <string name="settings_appearance">Appearance</string>
-    <string name="settings_dark_mode">Dark Mode</string>
-    <string name="settings_dark_mode_description">Use dark theme for the app interface</string>
+    <string name="settings_theme_mode">Theme</string>
+    <string name="settings_theme_mode_description">Follow the system theme or keep the app in light or dark mode</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
     <string name="settings_dynamic_color">Material You colors</string>
     <string name="settings_dynamic_color_description">Use colors from your Android wallpaper when available</string>
     <string name="settings_link_portal">Link Portal Account</string>
@@ -633,7 +636,7 @@
     <string name="cd_above_pr">Above PR</string>
     <string name="cd_below_pr">Below PR</string>
     <string name="cd_delete_workout">Delete workout</string>
-    <string name="cd_toggle_theme">Toggle theme (current: %1$s)</string>
+    <string name="cd_toggle_theme_cycle">Toggle theme (current: %1$s, next: %2$s)</string>
     <string name="cd_workouts">Workouts</string>
     <string name="cd_disconnect">Disconnect</string>
     <string name="single_exercise_unavailable">Exercise is no longer available</string>

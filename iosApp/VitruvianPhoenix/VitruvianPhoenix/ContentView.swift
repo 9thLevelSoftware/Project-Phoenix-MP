@@ -3,8 +3,11 @@ import shared
 
 /// Main ContentView that hosts the Compose Multiplatform UI
 struct ContentView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         ComposeView()
+            .id(colorScheme)
             .ignoresSafeArea(.all)
     }
 }

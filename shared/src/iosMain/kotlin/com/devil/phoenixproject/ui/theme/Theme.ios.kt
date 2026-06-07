@@ -14,6 +14,9 @@ import com.devil.phoenixproject.ui.theme.VitruvianTheme as SharedVitruvianTheme
  * and status bar styling is typically handled at the SwiftUI level.
  * This wrapper exists for parity with Android and future iOS-specific theming needs.
  */
+@Deprecated(
+    message = "Use the common VitruvianTheme(themeMode = ...) overload so ThemeMode.SYSTEM is preserved.",
+)
 @Composable
 fun VitruvianTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val themeMode = if (darkTheme) SharedThemeMode.DARK else SharedThemeMode.LIGHT

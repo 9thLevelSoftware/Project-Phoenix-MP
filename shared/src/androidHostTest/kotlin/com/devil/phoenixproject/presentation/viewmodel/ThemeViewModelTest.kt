@@ -15,6 +15,13 @@ class ThemeViewModelTest {
     val testCoroutineRule = TestCoroutineRule()
 
     @Test
+    fun `theme mode enum names are stable persisted values`() {
+        assertEquals("SYSTEM", ThemeMode.SYSTEM.name)
+        assertEquals("LIGHT", ThemeMode.LIGHT.name)
+        assertEquals("DARK", ThemeMode.DARK.name)
+    }
+
+    @Test
     fun `defaults to system theme when no preference saved`() = runTest {
         val viewModel = ThemeViewModel(MapSettings())
 
@@ -23,15 +30,39 @@ class ThemeViewModelTest {
     }
 
     @Test
-    fun `setThemeMode updates state and persists`() = runTest {
+    fun `invalid saved theme defaults to system theme`() = runTest {
+        val settings = MapSettings()
+        settings.putString("theme_mode", "not-a-theme")
+
+        val viewModel = ThemeViewModel(settings)
+
+        assertEquals(ThemeMode.SYSTEM, viewModel.themeMode.value)
+    }
+
+    @Test
+    fun `stored theme mode values restore from settings`() = runTest {
+        ThemeMode.entries.forEach { mode ->
+            val settings = MapSettings()
+            settings.putString("theme_mode", mode.name)
+
+            val viewModel = ThemeViewModel(settings)
+
+            assertEquals(mode, viewModel.themeMode.value)
+        }
+    }
+
+    @Test
+    fun `setThemeMode updates state and persists every mode`() = runTest {
         val settings = MapSettings()
         val viewModel = ThemeViewModel(settings)
 
-        viewModel.setThemeMode(ThemeMode.DARK)
-        advanceUntilIdle()
+        ThemeMode.entries.forEach { mode ->
+            viewModel.setThemeMode(mode)
+            advanceUntilIdle()
 
-        assertEquals(ThemeMode.DARK, viewModel.themeMode.value)
-        assertEquals(ThemeMode.DARK.name, settings.getStringOrNull("theme_mode"))
+            assertEquals(mode, viewModel.themeMode.value)
+            assertEquals(mode.name, settings.getStringOrNull("theme_mode"))
+        }
     }
 
     @Test
