@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateReposit
 import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
 import com.devil.phoenixproject.data.integration.ExternalProgramRepository
 import com.devil.phoenixproject.data.integration.ExternalRoutineRepository
+import com.devil.phoenixproject.data.integration.HealthBackfillManager
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.integration.SqlDelightExternalActivityRepository
 import com.devil.phoenixproject.data.integration.SqlDelightExternalExerciseTemplateRepository
@@ -44,6 +45,7 @@ val dataModule = module {
     single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
     single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
     single<ProgressionRepository> { SqlDelightProgressionRepository(get()) }
+    single<EquipmentRackRepository> { SettingsEquipmentRackRepository(get()) }
 
     // Smart Suggestions Repository
     single<SmartSuggestionsRepository> { SqlDelightSmartSuggestionsRepository(get()) }
@@ -58,4 +60,5 @@ val dataModule = module {
     single<ExternalMeasurementRepository> { SqlDelightExternalMeasurementRepository(get()) }
     single<ExternalExerciseTemplateRepository> { SqlDelightExternalExerciseTemplateRepository(get()) }
     single<IntegrationSyncCursorRepository> { SqlDelightIntegrationSyncCursorRepository(get()) }
+    single { HealthBackfillManager(get(), get(), get(), get()) }
 }

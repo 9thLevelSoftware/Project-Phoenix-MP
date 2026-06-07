@@ -318,7 +318,7 @@ fun NavGraph(
                 SettingsTab(
                     weightUnit = weightUnit,
                     enableVideoPlayback = userPreferences.enableVideoPlayback,
-                    darkModeEnabled = themeMode == ThemeMode.DARK,
+                    themeMode = themeMode,
                     dynamicColorAvailable = dynamicColorAvailable,
                     dynamicColorEnabled = dynamicColorEnabled,
                     audioRepCountEnabled = userPreferences.audioRepCountEnabled,
@@ -330,12 +330,14 @@ fun NavGraph(
                     onMotionStartChange = { viewModel.setMotionStartEnabled(it) },
                     autoStartRoutine = userPreferences.autoStartRoutine,
                     onAutoStartRoutineChange = { viewModel.setAutoStartRoutine(it) },
+                    weightSuggestionsEnabled = userPreferences.weightSuggestionsEnabled,
+                    onWeightSuggestionsEnabledChange = { viewModel.setWeightSuggestionsEnabled(it) },
                     summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
                     autoStartCountdownSeconds = userPreferences.autoStartCountdownSeconds,
                     selectedColorSchemeIndex = userPreferences.colorScheme,
                     onWeightUnitChange = { viewModel.setWeightUnit(it) },
                     onEnableVideoPlaybackChange = { viewModel.setEnableVideoPlayback(it) },
-                    onDarkModeChange = { enabled -> onThemeModeChange(if (enabled) ThemeMode.DARK else ThemeMode.LIGHT) },
+                    onThemeModeChange = onThemeModeChange,
                     onDynamicColorEnabledChange = onDynamicColorEnabledChange,
                     onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
                     onSummaryCountdownChange = { viewModel.setSummaryCountdownSeconds(it) },
@@ -347,6 +349,7 @@ fun NavGraph(
                     onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) },
                     onNavigateToLinkAccount = { navController.navigate(NavigationRoutes.LinkAccount.route) },
                     onNavigateToIntegrations = { navController.navigate(NavigationRoutes.Integrations.route) },
+                    onNavigateToEquipmentRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
                     isAutoConnecting = isAutoConnecting,
                     connectionError = connectionError,
                     onClearConnectionError = { viewModel.clearConnectionError() },
@@ -394,6 +397,11 @@ fun NavGraph(
                     onAutoEndOnVelocityLossChange = { viewModel.setAutoEndOnVelocityLoss(it) },
                     stallDetectionEnabled = userPreferences.stallDetectionEnabled,
                 )
+            }
+
+            // Equipment Rack screen - local accessories and active load context
+            composable(NavigationRoutes.EquipmentRack.route) {
+                EquipmentRackScreen(viewModel = viewModel)
             }
 
             // Connection Logs screen - debug BLE connections

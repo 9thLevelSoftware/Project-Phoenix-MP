@@ -877,6 +877,8 @@ private fun getScreenTitle(route: String, routineName: String = "", exerciseName
 
     route == NavigationRoutes.Settings.route -> "Settings"
 
+    route == NavigationRoutes.EquipmentRack.route -> "Equipment Rack"
+
     route == NavigationRoutes.JustLift.route -> "Just Lift"
 
     isSingleExerciseRoute(route) -> "Single Exercise"
@@ -918,6 +920,7 @@ private fun getCompactScreenTitle(route: String, title: String): String = when {
     route == NavigationRoutes.DailyRoutines.route -> "Routines"
     route == NavigationRoutes.TrainingCycles.route -> "Cycles"
     route == NavigationRoutes.SmartInsights.route -> "Insights"
+    route == NavigationRoutes.EquipmentRack.route -> "Rack"
     isSingleExerciseRoute(route) -> "Exercise"
     route.startsWith("cycle_editor") -> "Cycle"
     route.startsWith("cycleReview") -> "Review"

@@ -91,6 +91,10 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         profileId: String,
         // Equipment-aware weight display (migration 29)
         displayMultiplier: Long?,
+        // Equipment rack context (migration 33)
+        externalAddedLoadKg: Double,
+        counterweightKg: Double,
+        rackItemsJson: String,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -145,6 +149,9 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         profileId = profileId,
         // Equipment-aware weight display
         displayMultiplier = displayMultiplier?.toInt(),
+        externalAddedLoadKg = externalAddedLoadKg.toFloat(),
+        counterweightKg = counterweightKg.toFloat(),
+        rackItemsJson = rackItemsJson,
     )
 
     private fun mapToRoutineBasic(
@@ -533,6 +540,9 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 profile_id = session.profileId,
                 // Equipment-aware weight display
                 display_multiplier = session.displayMultiplier?.toLong(),
+                externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+                counterweightKg = session.counterweightKg.toDouble(),
+                rackItemsJson = session.rackItemsJson,
             )
         }
     }
@@ -969,6 +979,24 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
     override suspend fun getSession(sessionId: String): WorkoutSession? = withContext(Dispatchers.IO) {
         queries.selectSessionById(sessionId, ::mapToSession).executeAsOneOrNull()
+    }
+
+    override suspend fun getSessionsForRoutineSession(
+        profileId: String,
+        routineSessionId: String,
+    ): List<WorkoutSession> = withContext(Dispatchers.IO) {
+        queries.selectSessionsByRoutineSessionId(
+            profileId = profileId,
+            routineSessionId = routineSessionId,
+            mapper = ::mapToSession,
+        ).executeAsList()
+    }
+
+    override suspend fun getCompletedHealthExportCandidates(profileId: String): List<WorkoutSession> = withContext(Dispatchers.IO) {
+        queries.selectCompletedHealthExportCandidates(
+            profileId = profileId,
+            mapper = ::mapToSession,
+        ).executeAsList()
     }
 
     override suspend fun markRoutineUsed(routineId: String) {

@@ -6,12 +6,14 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -186,6 +188,25 @@ class WorkoutCoordinator(
     )
     val workoutParameters: StateFlow<WorkoutParameters> = _workoutParameters.asStateFlow()
 
+    internal val _activeRackItemIds = MutableStateFlow<List<String>>(emptyList())
+    val activeRackItemIds: StateFlow<List<String>> = _activeRackItemIds.asStateFlow()
+
+    internal val _currentRackLoadAdjustment = MutableStateFlow(RackLoadAdjustment())
+    val currentRackLoadAdjustment: StateFlow<RackLoadAdjustment> = _currentRackLoadAdjustment.asStateFlow()
+
+    internal var currentRackItemsJson: String = "[]"
+
+    internal fun clearActiveRackSelection() {
+        _activeRackItemIds.value = emptyList()
+        _currentRackLoadAdjustment.value = RackLoadAdjustment()
+        currentRackItemsJson = "[]"
+        _workoutParameters.value = _workoutParameters.value.copy(
+            activeRackItemIds = emptyList(),
+            externalAddedLoadKg = 0f,
+            counterweightKg = 0f,
+        )
+    }
+
     // Issue #108: Track if user manually adjusted weight during rest period
     // When true, preserve user's weight instead of reloading from exercise preset
     internal var _userAdjustedWeightDuringRest = false
@@ -246,6 +267,10 @@ class WorkoutCoordinator(
     // RPE tracking for current set (Phase 2: Training Cycles)
     internal val _currentSetRpe = MutableStateFlow<Int?>(null)
     val currentSetRpe: StateFlow<Int?> = _currentSetRpe.asStateFlow()
+
+    // Issue #424: Runtime-only suggestion for the next Set Ready screen.
+    internal val _weightAdjustmentRecommendation = MutableStateFlow<WeightAdjustmentRecommendation?>(null)
+    val weightAdjustmentRecommendation: StateFlow<WeightAdjustmentRecommendation?> = _weightAdjustmentRecommendation.asStateFlow()
 
     // ===== Variable Warm-up Sets (Phase 35C: Issue #30) =====
     // Tracks which variable warm-up set we're currently executing.

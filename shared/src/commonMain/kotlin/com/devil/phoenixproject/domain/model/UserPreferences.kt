@@ -45,6 +45,8 @@ data class UserPreferences(
     // Issue #313: Velocity-Based Training (VBT) power loss threshold
     val velocityLossThresholdPercent: Int = 20,
     val autoEndOnVelocityLoss: Boolean = false,
+    // Issue #424: Suggestion-only next-set weight recommendations
+    val weightSuggestionsEnabled: Boolean = true,
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

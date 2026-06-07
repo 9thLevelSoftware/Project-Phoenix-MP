@@ -10,6 +10,7 @@ import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateReposit
 import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
 import com.devil.phoenixproject.data.integration.ExternalProgramRepository
 import com.devil.phoenixproject.data.integration.ExternalRoutineRepository
+import com.devil.phoenixproject.data.integration.HealthBackfillManager
 import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
 import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncResult
 import com.devil.phoenixproject.data.integration.HealthIntegration
@@ -30,6 +31,7 @@ import com.devil.phoenixproject.domain.model.IntegrationStatus
 import com.devil.phoenixproject.domain.model.IntegrationSyncProgress
 import com.devil.phoenixproject.domain.model.IntegrationSyncResult
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.isIosPlatform
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,6 +85,7 @@ class IntegrationsViewModel(
     private val integrationManager: IntegrationManager,
     private val workoutRepository: WorkoutRepository,
     private val healthIntegration: HealthIntegration,
+    private val healthBackfillManager: HealthBackfillManager,
     private val healthBodyWeightSyncManager: HealthBodyWeightSyncManager,
     private val userProfileRepository: UserProfileRepository,
     private val portalTokenStorage: PortalTokenStorage,
@@ -436,6 +439,62 @@ class IntegrationsViewModel(
             val profileId = activeProfileId.value
             val provider = platformHealthProvider()
             applyHealthPermissionResult(provider, profileId, granted)
+        }
+    }
+
+    fun retryHealthPermissions() {
+        toggleHealthIntegration(enable = true)
+    }
+
+    fun syncPreviousHealthWorkouts() {
+        viewModelScope.launch {
+            val profileId = activeProfileId.value
+            val provider = platformHealthProvider()
+            setOperationLoading(provider, "health_backfill", true)
+            try {
+                healthBackfillManager.syncPreviousWorkouts(
+                    provider = provider,
+                    profileId = profileId,
+                )
+                    .onSuccess { result ->
+                        externalActivityRepo.updateIntegrationStatus(
+                            provider = provider,
+                            status = com.devil.phoenixproject.domain.model.ConnectionStatus.CONNECTED,
+                            profileId = profileId,
+                            lastSyncAt = currentTimeMillis(),
+                        )
+                        _uiState.value = _uiState.value.copy(
+                            successMessage = "Synced ${result.writtenWorkouts} previous health workout(s)",
+                        )
+                        log.i {
+                            "Health backfill complete for ${provider.key}: " +
+                                "eligible=${result.eligibleWorkouts}, written=${result.writtenWorkouts}, skipped=${result.skippedWorkouts}"
+                        }
+                    }
+                    .onFailure { error ->
+                        externalActivityRepo.updateIntegrationStatus(
+                            provider = provider,
+                            status = com.devil.phoenixproject.domain.model.ConnectionStatus.ERROR,
+                            profileId = profileId,
+                            errorMessage = error.message,
+                        )
+                        _uiState.value = _uiState.value.copy(
+                            errorMessage = "Health sync failed: ${error.message}",
+                        )
+                        log.w(error) { "Health backfill failed for ${provider.key}" }
+                    }
+            } catch (e: Exception) {
+                log.e(e) { "Unexpected error syncing previous health workouts" }
+                externalActivityRepo.updateIntegrationStatus(
+                    provider = provider,
+                    status = com.devil.phoenixproject.domain.model.ConnectionStatus.ERROR,
+                    profileId = profileId,
+                    errorMessage = e.message,
+                )
+                _uiState.value = _uiState.value.copy(errorMessage = "Health sync failed: ${e.message}")
+            } finally {
+                setOperationLoading(provider, "health_backfill", false)
+            }
         }
     }
 

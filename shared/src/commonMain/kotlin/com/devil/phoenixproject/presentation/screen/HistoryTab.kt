@@ -58,6 +58,8 @@ import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -82,6 +84,9 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -91,6 +96,10 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_workout_session_ico
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_all
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_period
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_title
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_inline_context
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_title
+
+private val historyRackJson = Json { ignoreUnknownKeys = true }
 
 @Composable
 fun HistoryTab(
@@ -389,6 +398,12 @@ fun WorkoutHistoryCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
+
+            RackContextRow(
+                session = session,
+                weightUnit = weightUnit,
+                formatWeight = formatWeight,
+            )
 
             // Expandable summary section
             AnimatedVisibility(
@@ -1001,6 +1016,12 @@ fun GroupedRoutineCard(
                         )
                         Spacer(modifier = Modifier.height(Spacing.small))
 
+                        RackContextRow(
+                            session = session,
+                            weightUnit = weightUnit,
+                            formatWeight = formatWeight,
+                        )
+
                         val canTagJustLift = session.isJustLift && session.exerciseId.isNullOrBlank()
 
                         if (summary != null) {
@@ -1224,6 +1245,13 @@ fun WorkoutSessionCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                session.rackContextText(weightUnit, formatWeight)?.let { rackText ->
+                    Text(
+                        stringResource(Res.string.equipment_rack_inline_context, rackText),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Text(
                 formatDuration(session.duration),
@@ -1231,6 +1259,70 @@ fun WorkoutSessionCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun RackContextRow(
+    session: WorkoutSession,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+) {
+    val rackContext = session.rackContextText(weightUnit, formatWeight) ?: return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            stringResource(Res.string.equipment_rack_title),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            rackContext,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+private fun WorkoutSession.rackContextText(
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+): String? {
+    val snapshotItems = decodeRackSnapshotItems()
+    if (snapshotItems.isNotEmpty()) {
+        val visibleItems = snapshotItems.take(2).map { item ->
+            when (item.behavior) {
+                RackItemBehavior.ADDED_RESISTANCE -> "${item.name} +${formatWeight(item.weightKg, weightUnit)}"
+                RackItemBehavior.COUNTERWEIGHT -> "${item.name} -${formatWeight(item.weightKg, weightUnit)}"
+                RackItemBehavior.DISPLAY_ONLY -> item.name
+            }
+        }
+        val hiddenCount = snapshotItems.size - visibleItems.size
+        return if (hiddenCount > 0) {
+            visibleItems.joinToString(", ") + " +$hiddenCount"
+        } else {
+            visibleItems.joinToString(", ")
+        }
+    }
+
+    val fallbackParts = buildList {
+        if (externalAddedLoadKg > 0f) add("+${formatWeight(externalAddedLoadKg, weightUnit)}")
+        if (counterweightKg > 0f) add("-${formatWeight(counterweightKg, weightUnit)}")
+    }
+    return fallbackParts.takeIf { it.isNotEmpty() }?.joinToString(" / ")
+}
+
+private fun WorkoutSession.decodeRackSnapshotItems(): List<RackItem> {
+    if (rackItemsJson.isBlank() || rackItemsJson == "[]") return emptyList()
+    return try {
+        historyRackJson.decodeFromString<List<RackItem>>(rackItemsJson)
+    } catch (_: SerializationException) {
+        emptyList()
+    } catch (_: IllegalArgumentException) {
+        emptyList()
     }
 }
 

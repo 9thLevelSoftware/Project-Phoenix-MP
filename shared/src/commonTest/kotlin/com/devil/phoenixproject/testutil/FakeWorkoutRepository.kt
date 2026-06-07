@@ -105,6 +105,21 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override suspend fun getSession(sessionId: String): WorkoutSession? = sessions[sessionId]
 
+    override suspend fun getSessionsForRoutineSession(
+        profileId: String,
+        routineSessionId: String,
+    ): List<WorkoutSession> = sessions.values
+        .filter {
+            it.profileId == profileId &&
+                it.routineSessionId == routineSessionId &&
+                (it.workingReps > 0 || it.totalReps > 0)
+        }
+        .sortedBy { it.timestamp }
+
+    override suspend fun getCompletedHealthExportCandidates(profileId: String): List<WorkoutSession> = sessions.values
+        .filter { it.profileId == profileId && (it.workingReps > 0 || it.totalReps > 0) }
+        .sortedBy { it.timestamp }
+
     override fun getAllRoutines(profileId: String): Flow<List<Routine>> = _routinesFlow
 
     override suspend fun saveRoutine(routine: Routine) {

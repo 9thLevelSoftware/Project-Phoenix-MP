@@ -142,6 +142,10 @@ class SettingsManager(
         scope.launch { preferencesManager.setAutoEndOnVelocityLoss(enabled) }
     }
 
+    fun setWeightSuggestionsEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setWeightSuggestionsEnabled(enabled) }
+    }
+
     fun setColorScheme(schemeIndex: Int) {
         scope.launch {
             bleRepository.setColorScheme(schemeIndex)

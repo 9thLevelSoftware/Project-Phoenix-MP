@@ -140,6 +140,14 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
         queries.selectCompletedSetsBySession(sessionId, ::mapToCompletedSet).executeAsList()
     }
 
+    override suspend fun getCompletedSetsForSessions(sessionIds: List<String>): List<CompletedSet> = withContext(Dispatchers.IO) {
+        if (sessionIds.isEmpty()) {
+            emptyList()
+        } else {
+            queries.selectCompletedSetsBySessionIds(sessionIds, ::mapToCompletedSet).executeAsList()
+        }
+    }
+
     override fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>> = queries.selectCompletedSetsBySession(sessionId, ::mapToCompletedSet)
         .asFlow().mapToList(Dispatchers.IO)
 

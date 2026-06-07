@@ -38,7 +38,7 @@ private const val BODY_MASS_QUERY_LIMIT = 50UL
  * Unlike Android Health Connect, no Activity Result contract is needed --
  * requestAuthorization can be called from any context.
  */
-actual class HealthIntegration {
+actual class HealthIntegration : HealthWorkoutWriter {
 
     companion object {
         /** Seconds between Unix epoch (1970-01-01) and Apple reference date (2001-01-01). */
@@ -77,7 +77,7 @@ actual class HealthIntegration {
      * Checks whether HealthKit is available on this device.
      * Returns false on iPad and devices without HealthKit support.
      */
-    actual suspend fun isAvailable(): Boolean = try {
+    actual override suspend fun isAvailable(): Boolean = try {
         HKHealthStore.isHealthDataAvailable()
     } catch (e: Exception) {
         log.w(e) { "Error checking HealthKit availability" }
@@ -91,7 +91,7 @@ actual class HealthIntegration {
      * Note: HealthKit's authorizationStatusForType only reflects *write* status.
      * A status of SharingAuthorized means the user explicitly granted write access.
      */
-    actual suspend fun hasPermissions(): Boolean {
+    actual override suspend fun hasPermissions(): Boolean {
         if (!isAvailable()) return false
 
         return try {
@@ -230,6 +230,18 @@ actual class HealthIntegration {
      * fall back to raw physical cableCount only for legacy sessions, then default to 1.
      */
     actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
+        val data = HealthWorkoutExportBuilder.buildStandaloneWorkout(session, completedSets = emptyList())
+            ?: return Result.failure(IllegalArgumentException("Workout session has no completed reps to write"))
+        return writeHealthWorkout(data)
+    }
+
+    /**
+     * Writes a completed Phoenix workout to HealthKit as one aggregate strength workout.
+     *
+     * HealthKit does not expose a public per-set strength segment model comparable to
+     * Android Health Connect ExerciseSegment, so [HealthWorkoutData.segments] are not persisted on iOS.
+     */
+    actual override suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit> {
         if (!isAvailable()) {
             return Result.failure(
                 IllegalStateException("HealthKit is not available on this device"),
@@ -246,15 +258,13 @@ actual class HealthIntegration {
             // Convert epoch millis to NSDate
             // NSDate uses "reference date" (2001-01-01), not Unix epoch (1970-01-01)
             // Offset: 978307200 seconds between the two reference points
-            val epochSeconds = session.timestamp / 1000.0
+            val epochSeconds = data.startTimeMs / 1000.0
             val startDate = NSDate(
                 timeIntervalSinceReferenceDate =
                     epochSeconds - UNIX_TO_APPLE_EPOCH_OFFSET,
             )
 
-            // session.duration is stored in MILLISECONDS (from currentTimeMillis() - startTime)
-            // Issue #362: Convert to seconds for HealthKit; minimum 1 second
-            val durationMs = session.duration.coerceAtLeast(1000L)
+            val durationMs = (data.endTimeMs - data.startTimeMs).coerceAtLeast(1000L)
             val durationSeconds = (durationMs / 1000L).toDouble()
             val endDate = NSDate(
                 timeIntervalSinceReferenceDate =
@@ -263,7 +273,7 @@ actual class HealthIntegration {
 
             // Build optional calorie quantity. Active energy permission is optional; do not block workout sync.
             val canWriteCalories = canWriteActiveEnergy()
-            val calorieQuantity: HKQuantity? = session.estimatedCalories?.let { cal ->
+            val calorieQuantity: HKQuantity? = data.totalCalories?.let { cal ->
                 if (cal > 0f && canWriteCalories) {
                     HKQuantity.quantityWithUnit(
                         unit = HKUnit.unitFromString("kcal"),
@@ -273,18 +283,15 @@ actual class HealthIntegration {
                     null
                 }
             }
-            if ((session.estimatedCalories ?: 0f) > 0f && !canWriteCalories) {
-                log.i { "Skipping HealthKit calorie value for session ${session.id}: optional active energy permission not granted" }
+            if ((data.totalCalories ?: 0f) > 0f && !canWriteCalories) {
+                log.i { "Skipping HealthKit calorie value for ${data.externalId}: optional active energy permission not granted" }
             }
-
-            // Build exercise title with Android-parity persisted display semantics
-            val title = buildExerciseTitle(session)
 
             // Build metadata for deduplication and display
             val metadata = mutableMapOf<Any?, Any?>(
-                "HKExternalUUID" to session.id,
+                "HKExternalUUID" to data.externalId,
             )
-            metadata["title"] = title
+            metadata["title"] = data.title
 
             // Create the HKWorkout object
             @Suppress("DEPRECATION")
@@ -318,124 +325,14 @@ actual class HealthIntegration {
                             ),
                         )
                     } else {
-                        log.d { "Wrote HealthKit workout for session ${session.id}" }
+                        log.d { "Wrote HealthKit workout for ${data.externalId}" }
                         continuation.resume(Result.success(Unit))
                     }
                 }
             }
         } catch (e: Exception) {
-            log.e(e) { "Failed to write workout to HealthKit for session ${session.id}" }
+            log.e(e) { "Failed to write workout to HealthKit for ${data.externalId}" }
             Result.failure(e)
-        }
-    }
-
-    /**
-     * Issue #395: Write a single aggregate HealthKit workout for an entire routine.
-     * Called once at routine completion instead of per-set.
-     */
-    actual suspend fun writeRoutineWorkout(data: RoutineHealthData): Result<Unit> {
-        if (!isAvailable()) {
-            return Result.failure(
-                IllegalStateException("HealthKit is not available on this device"),
-            )
-        }
-
-        if (!hasPermissions()) {
-            return Result.failure(
-                IllegalStateException("HealthKit write permissions not granted"),
-            )
-        }
-
-        return try {
-            val epochSeconds = data.startTimeMs / 1000.0
-            val startDate = NSDate(
-                timeIntervalSinceReferenceDate =
-                    epochSeconds - UNIX_TO_APPLE_EPOCH_OFFSET,
-            )
-
-            val durationMs = data.durationMs.coerceAtLeast(1000L)
-            val durationSeconds = (durationMs / 1000L).toDouble()
-            val endDate = NSDate(
-                timeIntervalSinceReferenceDate =
-                    (epochSeconds + durationSeconds) - UNIX_TO_APPLE_EPOCH_OFFSET,
-            )
-
-            val canWriteCalories = canWriteActiveEnergy()
-            val calorieQuantity: HKQuantity? = data.totalCalories?.let { cal ->
-                if (cal > 0f && canWriteCalories) {
-                    HKQuantity.quantityWithUnit(
-                        unit = HKUnit.unitFromString("kcal"),
-                        doubleValue = cal.toDouble(),
-                    )
-                } else {
-                    null
-                }
-            }
-            if ((data.totalCalories ?: 0f) > 0f && !canWriteCalories) {
-                log.i { "Skipping HealthKit calorie value for routine ${data.externalId}: optional active energy permission not granted" }
-            }
-
-            val metadata = mutableMapOf<Any?, Any?>(
-                "HKExternalUUID" to data.externalId,
-            )
-            metadata["title"] = data.routineName
-
-            @Suppress("DEPRECATION")
-            val workout = HKWorkout.workoutWithActivityType(
-                workoutActivityType = HKWorkoutActivityTypeTraditionalStrengthTraining,
-                startDate = startDate,
-                endDate = endDate,
-                duration = durationSeconds,
-                totalEnergyBurned = calorieQuantity,
-                totalDistance = null,
-                metadata = metadata,
-            )
-
-            suspendCancellableCoroutine { continuation ->
-                healthStore.saveObject(workout) { success: Boolean, error: NSError? ->
-                    if (error != null) {
-                        log.e { "HealthKit routine save error: ${error.localizedDescription}" }
-                        continuation.resume(
-                            Result.failure<Unit>(
-                                RuntimeException(
-                                    "HealthKit routine save failed: ${error.localizedDescription}",
-                                ),
-                            ),
-                        )
-                    } else if (!success) {
-                        log.e { "HealthKit routine save returned false without error" }
-                        continuation.resume(
-                            Result.failure<Unit>(
-                                RuntimeException("HealthKit routine save failed without error details"),
-                            ),
-                        )
-                    } else {
-                        log.d { "Wrote HealthKit routine workout: ${data.routineName} (${data.externalId})" }
-                        continuation.resume(Result.success(Unit))
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            log.e(e) { "Failed to write routine workout to HealthKit: ${data.externalId}" }
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Builds a human-readable title for the exercise session.
-     * Total weight shown is per-cable x persisted displayMultiplier when available.
-     *
-     * Falls back to raw physical cableCount only for legacy sessions without displayMultiplier,
-     * then defaults to 1. This preserves Android/iOS Health title parity (Issue #358).
-     */
-    private fun buildExerciseTitle(session: WorkoutSession): String {
-        val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        val totalWeightKg = session.weightPerCableKg *
-            (session.displayMultiplier ?: session.cableCount ?: 1).toFloat()
-        return if (totalWeightKg > 0f) {
-            "$exerciseName — ${totalWeightKg.toInt()}kg"
-        } else {
-            exerciseName
         }
     }
 

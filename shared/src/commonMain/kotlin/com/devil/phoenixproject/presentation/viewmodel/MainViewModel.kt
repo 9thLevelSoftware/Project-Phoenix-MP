@@ -6,11 +6,13 @@ import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
+import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
@@ -28,6 +30,8 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
@@ -41,6 +45,8 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
+import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
@@ -84,11 +90,15 @@ class MainViewModel constructor(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
+    private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
+    private val equipmentRackRepository: EquipmentRackRepository,
+    private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val dataBackupManager: DataBackupManager,
     private val userProfileRepository: UserProfileRepository,
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
     private val workoutServiceController: WorkoutServiceController,
+    private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -128,11 +138,15 @@ class MainViewModel constructor(
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
+        recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,
+        equipmentRackRepository = equipmentRackRepository,
+        applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         settingsManager = settingsManager,
         dataBackupManager = dataBackupManager,
         userProfileRepository = userProfileRepository,
         healthIntegration = healthIntegration,
         externalActivityRepository = externalActivityRepository,
+        healthExportCursorRepository = healthExportCursorRepository,
         workoutServiceController = workoutServiceController,
         scope = viewModelScope,
         _hapticEvents = _hapticEvents,
@@ -162,6 +176,9 @@ class MainViewModel constructor(
     val loadBaselineA: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineA
     val loadBaselineB: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineB
     val workoutParameters: StateFlow<WorkoutParameters> get() = workoutSessionManager.coordinator.workoutParameters
+    val rackItems get() = equipmentRackRepository.rackItems
+    val activeRackItemIds: StateFlow<List<String>> get() = workoutSessionManager.coordinator.activeRackItemIds
+    val currentRackLoadAdjustment: StateFlow<RackLoadAdjustment> get() = workoutSessionManager.coordinator.currentRackLoadAdjustment
     val repCount: StateFlow<RepCount> get() = workoutSessionManager.coordinator.repCount
     val timedExerciseRemainingSeconds: StateFlow<Int?> get() = workoutSessionManager.coordinator.timedExerciseRemainingSeconds
     val repRanges: StateFlow<com.devil.phoenixproject.domain.usecase.RepRanges?> get() = workoutSessionManager.coordinator.repRanges
@@ -272,6 +289,7 @@ class MainViewModel constructor(
     fun setSafeWordCalibrated(calibrated: Boolean) = settingsManager.setSafeWordCalibrated(calibrated)
     fun setVelocityLossThreshold(percent: Int) = settingsManager.setVelocityLossThreshold(percent)
     fun setAutoEndOnVelocityLoss(enabled: Boolean) = settingsManager.setAutoEndOnVelocityLoss(enabled)
+    fun setWeightSuggestionsEnabled(enabled: Boolean) = settingsManager.setWeightSuggestionsEnabled(enabled)
 
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
@@ -301,6 +319,25 @@ class MainViewModel constructor(
     // ===== Workout Lifecycle Delegation =====
 
     fun updateWorkoutParameters(params: WorkoutParameters) = workoutSessionManager.updateWorkoutParameters(params)
+    fun updateActiveRackSelection(itemIds: List<String>) = workoutSessionManager.updateActiveRackSelection(itemIds)
+    fun clearActiveRackSelection() = workoutSessionManager.clearActiveRackSelection()
+    fun saveRackItem(item: RackItem) {
+        viewModelScope.launch {
+            equipmentRackRepository.upsert(item)
+        }
+    }
+
+    fun deleteRackItem(id: String) {
+        viewModelScope.launch {
+            equipmentRackRepository.delete(id)
+            val activeIds = activeRackItemIds.value
+            val remainingActiveIds = activeIds.filterNot { it == id }
+            if (remainingActiveIds.size != activeIds.size) {
+                updateActiveRackSelection(remainingActiveIds)
+            }
+        }
+    }
+
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)
     fun stopAndReturnToSetReady() = workoutSessionManager.stopAndReturnToSetReady()
@@ -327,6 +364,7 @@ class MainViewModel constructor(
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentWarmupSetIndex
     val totalWarmupSets: StateFlow<Int> get() = workoutSessionManager.coordinator.totalWarmupSets
+    val weightAdjustmentRecommendation get() = workoutSessionManager.coordinator.weightAdjustmentRecommendation
     fun startNextSet() = workoutSessionManager.startNextSet()
     fun logRpeForCurrentSet(rpe: Int) = workoutSessionManager.logRpeForCurrentSet(rpe)
 
@@ -360,6 +398,8 @@ class MainViewModel constructor(
     fun updateSetReadyEchoLevel(level: EchoLevel) = workoutSessionManager.updateSetReadyEchoLevel(level)
     fun updateSetReadyEccentricLoad(percent: Int) = workoutSessionManager.updateSetReadyEccentricLoad(percent)
     fun startSetFromReady() = workoutSessionManager.startSetFromReady()
+    fun applyWeightRecommendation() = workoutSessionManager.applyWeightRecommendation()
+    fun dismissWeightRecommendation() = workoutSessionManager.dismissWeightRecommendation()
     fun bodyweightVariantKey(exercise: RoutineExercise): String = workoutSessionManager.bodyweightVariantKey(exercise)
     fun selectBodyweightVariant(exerciseKey: String, variant: BodyweightVariantOption) = workoutSessionManager.selectBodyweightVariant(exerciseKey, variant)
     fun confirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) = workoutSessionManager.confirmBodyweightSetResult(reps, variant)

@@ -157,4 +157,8 @@ class FakePreferencesManager : PreferencesManager {
     override suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(autoEndOnVelocityLoss = enabled)
     }
+
+    override suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(weightSuggestionsEnabled = enabled)
+    }
 }

@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -95,6 +96,7 @@ data class WorkoutUiState(
     val velocityLossThresholdPercent: Int = 20,
     // Issue #266/#410: Configurable weight step from user preferences (kg)
     val weightStepKg: Float = 0.25f,
+    val rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
 ) {
     /** True when currently executing a variable warm-up set (for HUD label) */
     val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0

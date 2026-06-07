@@ -256,6 +256,8 @@ fun IntegrationsScreen(
             val healthProvider = if (isIosPlatform) IntegrationProvider.APPLE_HEALTH else IntegrationProvider.GOOGLE_HEALTH
             val healthStatus = uiState.integrationStatuses[healthProvider]
             val healthConnected = healthStatus?.status == ConnectionStatus.CONNECTED
+            val healthError = healthStatus?.status == ConnectionStatus.ERROR
+            val healthBusy = uiState.operationLoading.any { it.startsWith("${healthProvider.key}:") }
             val latestHealthBodyWeight = uiState.latestHealthBodyWeight
             val latestHealthBodyWeightLabel = latestHealthBodyWeight?.let { measurement ->
                 if (weightUnit == WeightUnit.KG) {
@@ -264,28 +266,55 @@ fun IntegrationsScreen(
                     "${UnitConverter.formatDecimal(UnitConverter.kgToLb(measurement.value.toFloat()))} lb"
                 }
             }
-            val healthSubtitle = when {
-                healthStatus?.errorMessage != null -> healthStatus.errorMessage
-                healthConnected && latestHealthBodyWeightLabel != null -> "Connected • latest scale weight $latestHealthBodyWeightLabel"
-                healthConnected -> "Connected"
-                else -> "Not connected"
-            }
 
             IntegrationCard(
                 title = if (isIosPlatform) "Apple Health" else "Google Health Connect",
-                subtitle = healthSubtitle,
+                subtitle = when {
+                    healthError -> healthStatus.errorMessage ?: "Permissions need attention"
+                    healthConnected && latestHealthBodyWeightLabel != null -> "Connected • latest scale weight $latestHealthBodyWeightLabel"
+                    healthConnected -> "Connected"
+                    else -> "Not connected"
+                },
                 statusConnected = healthConnected,
                 badges = buildList {
                     latestHealthBodyWeightLabel?.let { add("Body weight: $it") }
                     healthStatus?.lastSyncAt?.let { add("Last sync: ${KmpUtils.formatTimestamp(it)}") }
                 },
                 trailingContent = {
-                    Switch(
-                        checked = healthConnected,
-                        onCheckedChange = { enabled ->
-                            viewModel.toggleHealthIntegration(enabled)
-                        },
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Switch(
+                            checked = healthConnected,
+                            onCheckedChange = { enabled ->
+                                viewModel.toggleHealthIntegration(enabled)
+                            },
+                        )
+                        if (healthError) {
+                            TextButton(
+                                onClick = { viewModel.retryHealthPermissions() },
+                                enabled = !healthBusy,
+                                modifier = Modifier.height(32.dp),
+                            ) {
+                                Text("Retry permissions", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                        if (healthConnected || healthError) {
+                            OutlinedButton(
+                                onClick = { viewModel.syncPreviousHealthWorkouts() },
+                                enabled = !healthBusy,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.height(36.dp),
+                            ) {
+                                if (healthBusy) {
+                                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Text("Sync previous", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
                 },
             )
 

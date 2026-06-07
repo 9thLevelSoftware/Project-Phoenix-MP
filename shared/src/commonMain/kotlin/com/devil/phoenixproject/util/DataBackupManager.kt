@@ -425,6 +425,9 @@ abstract class BaseDataBackupManager(
                                 totalVolumeKg = session.totalVolumeKg?.toDouble(),
                                 cableCount = session.cableCount?.toLong(),
                                 display_multiplier = session.displayMultiplier?.toLong(),
+                                externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+                                counterweightKg = session.counterweightKg.toDouble(),
+                                rackItemsJson = session.rackItemsJson,
                                 estimatedCalories = session.estimatedCalories?.toDouble(),
                                 warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
                                 workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
@@ -1054,6 +1057,10 @@ abstract class BaseDataBackupManager(
                                                         heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
                                                         totalVolumeKg = session.totalVolumeKg?.toDouble(),
                                                         cableCount = session.cableCount?.toLong(),
+                                                        display_multiplier = session.displayMultiplier?.toLong(),
+                                                        externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+                                                        counterweightKg = session.counterweightKg.toDouble(),
+                                                        rackItemsJson = session.rackItemsJson,
                                                         estimatedCalories = session.estimatedCalories?.toDouble(),
                                                         warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
                                                         workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
@@ -1067,7 +1074,6 @@ abstract class BaseDataBackupManager(
                                                         strengthProfile = session.strengthProfile,
                                                         formScore = session.formScore,
                                                         profile_id = session.profileId ?: "default",
-                                                        display_multiplier = null,
                                                     )
                                                 }
                                                 if (inserted != null) {
@@ -2200,6 +2206,9 @@ abstract class BaseDataBackupManager(
             totalVolumeKg = session.totalVolumeKg?.toFloat(),
             cableCount = session.cableCount?.toInt(),
             displayMultiplier = session.display_multiplier?.toInt(),
+            externalAddedLoadKg = session.externalAddedLoadKg.toFloat(),
+            counterweightKg = session.counterweightKg.toFloat(),
+            rackItemsJson = session.rackItemsJson,
             estimatedCalories = session.estimatedCalories?.toFloat(),
             warmupAvgWeightKg = session.warmupAvgWeightKg?.toFloat(),
             workingAvgWeightKg = session.workingAvgWeightKg?.toFloat(),

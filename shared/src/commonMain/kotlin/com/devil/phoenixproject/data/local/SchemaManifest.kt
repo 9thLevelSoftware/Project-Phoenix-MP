@@ -739,7 +739,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // WorkoutSession -- initial schema, full current shape
     // Columns added by later migrations: set summary metrics (m5), sync fields (m11),
     // biomechanics summary (m15), formScore (m16), safety tracking (no migration),
-    // cableCount (m13), profile_id (m21)
+    // cableCount (m13), profile_id (m21), display_multiplier (m29), rack context (m33)
     SchemaTableOperation(
         table = "WorkoutSession",
         createSql = """
@@ -794,7 +794,10 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 serverId TEXT,
                 deletedAt INTEGER,
                 profile_id TEXT NOT NULL DEFAULT 'default',
-                display_multiplier INTEGER
+                display_multiplier INTEGER,
+                externalAddedLoadKg REAL NOT NULL DEFAULT 0,
+                counterweightKg REAL NOT NULL DEFAULT 0,
+                rackItemsJson TEXT NOT NULL DEFAULT '[]'
             )
         """.trimIndent(),
     ),
@@ -1173,6 +1176,10 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("WorkoutSession", "profile_id", "ALTER TABLE WorkoutSession ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
     // Migration 29: display_multiplier for equipment-aware weight display
     SchemaHealOperation("WorkoutSession", "display_multiplier", "ALTER TABLE WorkoutSession ADD COLUMN display_multiplier INTEGER"),
+    // Migration 33: local equipment rack context
+    SchemaHealOperation("WorkoutSession", "externalAddedLoadKg", "ALTER TABLE WorkoutSession ADD COLUMN externalAddedLoadKg REAL NOT NULL DEFAULT 0"),
+    SchemaHealOperation("WorkoutSession", "counterweightKg", "ALTER TABLE WorkoutSession ADD COLUMN counterweightKg REAL NOT NULL DEFAULT 0"),
+    SchemaHealOperation("WorkoutSession", "rackItemsJson", "ALTER TABLE WorkoutSession ADD COLUMN rackItemsJson TEXT NOT NULL DEFAULT '[]'"),
 
     // ── PersonalRecord (6 columns) ──────────────────────────────────────
 

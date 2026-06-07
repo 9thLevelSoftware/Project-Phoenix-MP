@@ -34,6 +34,7 @@ class PreferencesIsolationTest {
         assertFalse(prefs.autoBackupEnabled, "autoBackupEnabled should default to false")
         assertEquals(5, prefs.autoStartCountdownSeconds, "autoStartCountdownSeconds should default to 5")
         assertEquals(-1f, prefs.weightIncrement, "weightIncrement should default to -1 (use unit default)")
+        assertTrue(prefs.weightSuggestionsEnabled, "weightSuggestionsEnabled should default to true")
     }
 
     @Test
@@ -48,6 +49,7 @@ class PreferencesIsolationTest {
         assertEquals(20, prefs.velocityLossThresholdPercent, "VBT threshold unchanged after setting autoStart")
         assertFalse(prefs.autoEndOnVelocityLoss, "autoEndOnVelocityLoss unchanged after setting autoStart")
         assertEquals(0f, prefs.bodyWeightKg, "bodyWeightKg unchanged after setting autoStart")
+        assertTrue(prefs.weightSuggestionsEnabled, "weightSuggestionsEnabled unchanged after setting autoStart")
 
         // Set autoBackupEnabled — verify bodyWeightKg unchanged
         manager.setAutoBackupEnabled(true)
@@ -56,6 +58,7 @@ class PreferencesIsolationTest {
         assertTrue(prefs.autoBackupEnabled, "autoBackupEnabled should be true")
         assertEquals(0f, prefs.bodyWeightKg, "bodyWeightKg unchanged after setting autoBackup")
         assertTrue(prefs.autoStartRoutine, "autoStartRoutine still true after setting autoBackup")
+        assertTrue(prefs.weightSuggestionsEnabled, "weightSuggestionsEnabled unchanged after setting autoBackup")
 
         // Set VBT threshold — verify auto-start prefs unchanged
         manager.setVelocityLossThreshold(30)
@@ -65,6 +68,15 @@ class PreferencesIsolationTest {
         assertTrue(prefs.autoStartRoutine, "autoStartRoutine still true after setting VBT threshold")
         assertTrue(prefs.autoBackupEnabled, "autoBackupEnabled still true after setting VBT threshold")
         assertEquals(5, prefs.autoStartCountdownSeconds, "countdown unchanged after setting VBT threshold")
+        assertTrue(prefs.weightSuggestionsEnabled, "weightSuggestionsEnabled unchanged after setting VBT threshold")
+
+        manager.setWeightSuggestionsEnabled(false)
+        prefs = manager.preferencesFlow.value
+
+        assertFalse(prefs.weightSuggestionsEnabled, "weightSuggestionsEnabled should now be false")
+        assertTrue(prefs.autoStartRoutine, "autoStartRoutine unchanged after setting weight suggestions")
+        assertTrue(prefs.autoBackupEnabled, "autoBackupEnabled unchanged after setting weight suggestions")
+        assertEquals(30, prefs.velocityLossThresholdPercent, "VBT threshold unchanged after setting weight suggestions")
     }
 
     @Test
@@ -107,6 +119,7 @@ class PreferencesIsolationTest {
                 autoBackupEnabled = true,
                 autoStartCountdownSeconds = 8,
                 weightIncrement = 2.5f,
+                weightSuggestionsEnabled = false,
                 // Also set a pre-existing field to verify no interference
                 weightUnit = WeightUnit.KG,
             ),
@@ -121,6 +134,7 @@ class PreferencesIsolationTest {
         assertTrue(prefs.autoBackupEnabled, "autoBackupEnabled = true")
         assertEquals(8, prefs.autoStartCountdownSeconds, "autoStartCountdownSeconds = 8")
         assertEquals(2.5f, prefs.weightIncrement, "weightIncrement = 2.5")
+        assertFalse(prefs.weightSuggestionsEnabled, "weightSuggestionsEnabled = false")
         assertEquals(WeightUnit.KG, prefs.weightUnit, "weightUnit unchanged = KG")
     }
 }
