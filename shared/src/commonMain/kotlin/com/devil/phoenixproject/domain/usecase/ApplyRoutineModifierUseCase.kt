@@ -55,6 +55,7 @@ class ApplyRoutineModifierUseCase(
         exercises = routine.exercises.map { exercise ->
             exercise.copy(
                 setReps = exercise.setReps.map { reps -> reps?.let { scaleReps(it, percent) } },
+                duration = exercise.duration?.let { scaleDurationSeconds(it, percent) },
                 warmupSets = exercise.warmupSets.map { it.copy(reps = scaleReps(it.reps, percent)) },
             )
         },
@@ -83,6 +84,12 @@ class ApplyRoutineModifierUseCase(
         ?: emptyList()
 
     private fun scaleReps(reps: Int, percent: Int): Int = (reps * percent / 100f).roundToInt().coerceAtLeast(1)
+
+    private fun scaleDurationSeconds(duration: Int, percent: Int): Int = if (duration > 0) {
+        scaleReps(duration, percent)
+    } else {
+        duration
+    }
 
     private fun roundToHalfKg(value: Float): Float = (value * 2f).roundToInt() / 2f
 

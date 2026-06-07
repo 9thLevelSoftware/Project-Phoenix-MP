@@ -97,6 +97,19 @@ class ApplyRoutineModifierUseCaseTest {
     }
 
     @Test
+    fun `heavy deload scales timed exercise duration`() = runTest {
+        val routine = routineWith(
+            routineExercise(duration = 45, reps = listOf(null)),
+            routineExercise(duration = 0, reps = listOf(10)),
+        )
+
+        val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 50))
+
+        assertEquals(23, adjusted.exercises[0].duration)
+        assertEquals(0, adjusted.exercises[1].duration)
+    }
+
+    @Test
     fun `bodyweight exercise weight is not modified by active recovery`() = runTest {
         val routine = routineWith(
             routineExercise(exercise = bodyweightExercise, weight = 0f, reps = listOf(15, 12)),
@@ -231,6 +244,7 @@ class ApplyRoutineModifierUseCaseTest {
         setWeights: List<Float> = emptyList(),
         reps: List<Int?> = listOf(10, 10, 10),
         warmups: List<WarmupSet> = emptyList(),
+        duration: Int? = null,
         supersetId: String? = null,
         orderInSuperset: Int = 0,
     ): RoutineExercise = RoutineExercise(
@@ -242,6 +256,7 @@ class ApplyRoutineModifierUseCaseTest {
         setWeightsPerCableKg = setWeights,
         programMode = ProgramMode.OldSchool,
         warmupSets = warmups,
+        duration = duration,
         supersetId = supersetId,
         orderInSuperset = orderInSuperset,
     )
