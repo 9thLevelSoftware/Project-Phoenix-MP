@@ -91,6 +91,10 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         profileId: String,
         // Equipment-aware weight display (migration 29)
         displayMultiplier: Long?,
+        // Equipment rack context (migration 33)
+        externalAddedLoadKg: Double,
+        counterweightKg: Double,
+        rackItemsJson: String,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -145,6 +149,9 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         profileId = profileId,
         // Equipment-aware weight display
         displayMultiplier = displayMultiplier?.toInt(),
+        externalAddedLoadKg = externalAddedLoadKg.toFloat(),
+        counterweightKg = counterweightKg.toFloat(),
+        rackItemsJson = rackItemsJson,
     )
 
     private fun mapToRoutineBasic(
@@ -167,6 +174,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         name = name,
         exercises = emptyList(),
         createdAt = createdAt,
+        updatedAt = updatedAt,
         lastUsed = lastUsed,
         useCount = useCount.toInt(),
         profileId = profileId,
@@ -181,6 +189,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         useCount: Int = 0,
         profileId: String = "default",
         groupId: String? = null,
+        updatedAt: Long? = null,
     ): Routine {
         val exerciseRows = queries.selectExercisesByRoutine(routineId).executeAsList()
         val supersetRows = queries.selectSupersetsByRoutine(routineId).executeAsList()
@@ -390,6 +399,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             useCount = useCount,
             profileId = profileId,
             groupId = groupId,
+            updatedAt = updatedAt,
         )
     }
 
@@ -530,6 +540,9 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 profile_id = session.profileId,
                 // Equipment-aware weight display
                 display_multiplier = session.displayMultiplier?.toLong(),
+                externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+                counterweightKg = session.counterweightKg.toDouble(),
+                rackItemsJson = session.rackItemsJson,
             )
         }
     }
@@ -572,6 +585,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                         routine.useCount,
                         routine.profileId,
                         routine.groupId,
+                        updatedAt = routine.updatedAt,
                     )
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
@@ -757,6 +771,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 basicRoutine.useCount,
                 basicRoutine.profileId,
                 basicRoutine.groupId,
+                updatedAt = basicRoutine.updatedAt,
             )
         }
     }

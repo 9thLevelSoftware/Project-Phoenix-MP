@@ -46,6 +46,7 @@ data class Routine(
     val useCount: Int = 0,
     val profileId: String = "default",
     val groupId: String? = null, // Routine group assignment (local-only, v1)
+    val updatedAt: Long? = null,
 ) {
     /**
      * Get all items (supersets + standalone exercises) in display order.

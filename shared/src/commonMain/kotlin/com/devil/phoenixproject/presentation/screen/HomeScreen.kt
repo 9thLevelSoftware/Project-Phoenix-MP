@@ -26,10 +26,12 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -75,6 +77,7 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_streak
 import vitruvianprojectphoenix.shared.generated.resources.start_workout
 
 private const val HOME_CONTENT_MAX_WIDTH = 720
+internal const val ONE_REP_MAX_COMING_SOON_TITLE = "Coming Soon!"
 
 @Composable
 fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
@@ -92,6 +95,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     var cycleProgress by remember { mutableStateOf<CycleProgress?>(null) }
     var showResumeDialog by remember { mutableStateOf(false) }
     var pendingCycleStart by remember { mutableStateOf<CycleStartRequest?>(null) }
+    var showOneRepMaxComingSoonDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(activeCycle) {
         cycleProgress = activeCycle?.let { cycle -> cycleRepository.getCycleProgress(cycle.id) }
@@ -172,7 +176,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                     onSingleExercise = { navController.navigate(NavigationRoutes.SingleExercise.route) },
                     onRoutines = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
                     onCycles = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
-                    onAssessOneRepMax = { navController.navigate(NavigationRoutes.StrengthAssessmentPicker.route) },
+                    onAssessOneRepMaxComingSoon = { showOneRepMaxComingSoonDialog = true },
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(max = HOME_CONTENT_MAX_WIDTH.dp),
@@ -218,6 +222,18 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
             ConnectionErrorDialog(
                 message = error,
                 onDismiss = { viewModel.clearConnectionError() },
+            )
+        }
+
+        if (showOneRepMaxComingSoonDialog) {
+            AlertDialog(
+                onDismissRequest = { showOneRepMaxComingSoonDialog = false },
+                title = { Text(ONE_REP_MAX_COMING_SOON_TITLE) },
+                confirmButton = {
+                    TextButton(onClick = { showOneRepMaxComingSoonDialog = false }) {
+                        Text("OK")
+                    }
+                },
             )
         }
 
@@ -270,7 +286,7 @@ private fun HomeLaunchPad(
     onSingleExercise: () -> Unit,
     onRoutines: () -> Unit,
     onCycles: () -> Unit,
-    onAssessOneRepMax: () -> Unit,
+    onAssessOneRepMaxComingSoon: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cycleStatus = activeCycle?.let { cycle ->
@@ -308,32 +324,11 @@ private fun HomeLaunchPad(
         }
 
         ShortcutActions(
-            actions = listOf(
-                HomeActionSpec(
-                    label = "Single Exercise",
-                    contentDescription = "Open Single Exercise workout",
-                    icon = Icons.Outlined.FitnessCenter,
-                    onClick = onSingleExercise,
-                ),
-                HomeActionSpec(
-                    label = "Routines",
-                    contentDescription = "Open Routines",
-                    icon = Icons.AutoMirrored.Filled.FormatListBulleted,
-                    onClick = onRoutines,
-                ),
-                HomeActionSpec(
-                    label = "Cycles",
-                    contentDescription = "Open Training Cycles",
-                    icon = Icons.Default.Loop,
-                    onClick = onCycles,
-                    iconAnimation = IconAnimation.ROTATE,
-                ),
-                HomeActionSpec(
-                    label = "Assess 1RM",
-                    contentDescription = "Open one rep max assessment",
-                    icon = Icons.Default.FitnessCenter,
-                    onClick = onAssessOneRepMax,
-                ),
+            actions = buildHomeShortcutActions(
+                onSingleExercise = onSingleExercise,
+                onRoutines = onRoutines,
+                onCycles = onCycles,
+                onAssessOneRepMaxComingSoon = onAssessOneRepMaxComingSoon,
             ),
             stacked = stackedShortcuts,
             buttonHeight = shortcutHeight,
@@ -377,6 +372,7 @@ private fun ShortcutActions(actions: List<HomeActionSpec>, stacked: Boolean, but
                     contentDescription = action.contentDescription,
                     heightOverride = buttonHeight,
                     allowTwoLineLabel = true,
+                    enabled = action.enabled,
                 )
             }
         }
@@ -396,6 +392,7 @@ private fun ShortcutActions(actions: List<HomeActionSpec>, stacked: Boolean, but
                             iconAnimation = action.iconAnimation,
                             contentDescription = action.contentDescription,
                             heightOverride = buttonHeight,
+                            enabled = action.enabled,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -641,10 +638,45 @@ private data class CycleStartRequest(
     val dayNumber: Int,
 )
 
-private data class HomeActionSpec(
+internal fun buildHomeShortcutActions(
+    onSingleExercise: () -> Unit,
+    onRoutines: () -> Unit,
+    onCycles: () -> Unit,
+    onAssessOneRepMaxComingSoon: () -> Unit,
+): List<HomeActionSpec> = listOf(
+    HomeActionSpec(
+        label = "Single Exercise",
+        contentDescription = "Open Single Exercise workout",
+        icon = Icons.Outlined.FitnessCenter,
+        onClick = onSingleExercise,
+    ),
+    HomeActionSpec(
+        label = "Routines",
+        contentDescription = "Open Routines",
+        icon = Icons.AutoMirrored.Filled.FormatListBulleted,
+        onClick = onRoutines,
+    ),
+    HomeActionSpec(
+        label = "Cycles",
+        contentDescription = "Open Training Cycles",
+        icon = Icons.Default.Loop,
+        onClick = onCycles,
+        iconAnimation = IconAnimation.ROTATE,
+    ),
+    HomeActionSpec(
+        label = "Assess 1RM",
+        contentDescription = "Assess 1RM coming soon",
+        icon = Icons.Default.FitnessCenter,
+        onClick = onAssessOneRepMaxComingSoon,
+        enabled = false,
+    ),
+)
+
+internal data class HomeActionSpec(
     val label: String,
     val contentDescription: String,
     val icon: ImageVector,
     val onClick: () -> Unit,
     val iconAnimation: IconAnimation = IconAnimation.NONE,
+    val enabled: Boolean = true,
 )

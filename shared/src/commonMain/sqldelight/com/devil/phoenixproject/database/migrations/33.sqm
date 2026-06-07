@@ -1,0 +1,3 @@
+ALTER TABLE WorkoutSession ADD COLUMN externalAddedLoadKg REAL NOT NULL DEFAULT 0;
+ALTER TABLE WorkoutSession ADD COLUMN counterweightKg REAL NOT NULL DEFAULT 0;
+ALTER TABLE WorkoutSession ADD COLUMN rackItemsJson TEXT NOT NULL DEFAULT '[]';
