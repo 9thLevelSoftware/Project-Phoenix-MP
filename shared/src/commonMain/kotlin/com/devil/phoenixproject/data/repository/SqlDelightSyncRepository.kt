@@ -278,6 +278,9 @@ class SqlDelightSyncRepository(
                         deletedAt = dto.deletedAt,
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
                         display_multiplier = null,
+                        externalAddedLoadKg = 0.0,
+                        counterweightKg = 0.0,
+                        rackItemsJson = "[]",
                     )
                 }
             }
@@ -876,6 +879,9 @@ class SqlDelightSyncRepository(
                         updatedAt = session.timestamp, // Mark as already-synced to prevent re-push
                         profile_id = session.profileId,
                         display_multiplier = session.displayMultiplier?.toLong(),
+                        externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+                        counterweightKg = session.counterweightKg.toDouble(),
+                        rackItemsJson = session.rackItemsJson,
                     )
                 }
             }
@@ -1240,6 +1246,10 @@ class SqlDelightSyncRepository(
         profileId: String,
         // Equipment-aware weight display (migration 29)
         displayMultiplier: Long?,
+        // Equipment rack context (migration 33)
+        externalAddedLoadKg: Double,
+        counterweightKg: Double,
+        rackItemsJson: String,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -1276,6 +1286,9 @@ class SqlDelightSyncRepository(
         totalVolumeKg = totalVolumeKg?.toFloat(),
         cableCount = cableCount?.toInt(),
         displayMultiplier = displayMultiplier?.toInt(),
+        externalAddedLoadKg = externalAddedLoadKg.toFloat(),
+        counterweightKg = counterweightKg.toFloat(),
+        rackItemsJson = rackItemsJson,
         estimatedCalories = estimatedCalories?.toFloat(),
         warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
         workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
@@ -1607,6 +1620,9 @@ class SqlDelightSyncRepository(
                         updatedAt = session.timestamp, // Mark as already-synced
                         profile_id = profileId,
                         display_multiplier = session.displayMultiplier?.toLong(),
+                        externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+                        counterweightKg = session.counterweightKg.toDouble(),
+                        rackItemsJson = session.rackItemsJson,
                     )
                 }
 
@@ -2036,6 +2052,9 @@ class SqlDelightSyncRepository(
                     updatedAt = incomingTs,
                     profile_id = session.profileId,
                     display_multiplier = session.displayMultiplier?.toLong(),
+                    externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+                    counterweightKg = session.counterweightKg.toDouble(),
+                    rackItemsJson = session.rackItemsJson,
                 )
             }
         }

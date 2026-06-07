@@ -388,6 +388,9 @@ class SqlDelightSyncRepositoryTest {
             formScore = null,
             profile_id = profileId,
             display_multiplier = 2L,
+            externalAddedLoadKg = 0.0,
+            counterweightKg = 0.0,
+            rackItemsJson = "[]",
         )
     }
 }

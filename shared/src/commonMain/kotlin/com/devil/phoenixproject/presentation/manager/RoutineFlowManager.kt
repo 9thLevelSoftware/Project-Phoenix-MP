@@ -719,6 +719,7 @@ class RoutineFlowManager(
      */
     private fun loadRoutineInternal(routine: Routine) {
         val normalized = normalizeExerciseOrder(routine)
+        coordinator.clearActiveRackSelection()
         coordinator._loadedRoutine.value = normalized
         coordinator._currentExerciseIndex.value = 0
         coordinator._currentSetIndex.value = 0
@@ -1085,6 +1086,7 @@ class RoutineFlowManager(
         coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
         coordinator._loadedRoutine.value = null
         coordinator._workoutState.value = WorkoutState.Idle
+        coordinator.clearActiveRackSelection()
         coordinator.routineStartTime = 0
         // Issue #392: Clear routine session context so next routine gets fresh ID
         coordinator.currentRoutineSessionId = null
@@ -1132,6 +1134,7 @@ class RoutineFlowManager(
 
     fun clearLoadedRoutine() {
         coordinator._loadedRoutine.value = null
+        coordinator.clearActiveRackSelection()
         clearCycleContext()
         coordinator.routineStartTime = 0
         // Issue #392: Clear routine session context so next routine gets fresh ID

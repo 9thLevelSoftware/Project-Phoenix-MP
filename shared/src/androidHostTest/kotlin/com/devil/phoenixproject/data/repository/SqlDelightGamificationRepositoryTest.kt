@@ -171,6 +171,9 @@ class SqlDelightGamificationRepositoryTest {
             formScore = null,
             profile_id = "default",
             display_multiplier = null,
+            externalAddedLoadKg = 0.0,
+            counterweightKg = 0.0,
+            rackItemsJson = "[]",
         )
     }
 }

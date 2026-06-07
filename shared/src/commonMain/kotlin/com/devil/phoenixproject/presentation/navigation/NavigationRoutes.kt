@@ -22,6 +22,7 @@ sealed class NavigationRoutes(val route: String) {
         fun createRoute(exerciseId: String) = "exercise_detail/$exerciseId"
     }
     object Settings : NavigationRoutes("settings")
+    object EquipmentRack : NavigationRoutes("equipment_rack")
     object ConnectionLogs : NavigationRoutes("connection_logs")
     object Diagnostics : NavigationRoutes("diagnostics")
     object Badges : NavigationRoutes("badges")
