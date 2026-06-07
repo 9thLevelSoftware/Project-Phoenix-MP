@@ -152,7 +152,7 @@ android {
         targetSdk = 37
         // Fail fast if CI injects an invalid version code instead of silently shipping a default.
         versionCode = injectedVersionCode ?: 5
-        versionName = "0.9.1"
+        versionName = "0.9.2"
 
         // Supabase config injected from local.properties
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
