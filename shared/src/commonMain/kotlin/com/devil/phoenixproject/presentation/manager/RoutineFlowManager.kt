@@ -741,6 +741,11 @@ class RoutineFlowManager(
 
         // Load parameters from first exercise (matching parent repo behavior)
         val firstExercise = normalized.exercises[0]
+
+        // Pre-seed rack defaults for the first exercise so direct-start paths (e.g. cycle workouts
+        // that bypass enterSetReady) capture the correct rack snapshot from set 1.
+        coordinator.setActiveRackSelection(firstExercise.defaultRackItemIds)
+
         val firstSetReps = firstExercise.setReps.firstOrNull() // Can be null for AMRAP sets
         // Get per-set weight for first set, falling back to exercise default
         val firstSetWeight = firstExercise.setWeightsPerCableKg.getOrNull(0)

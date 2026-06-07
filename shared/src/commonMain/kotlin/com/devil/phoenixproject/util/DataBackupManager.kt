@@ -374,8 +374,6 @@ abstract class BaseDataBackupManager(
                 null
             }
 
-            importEquipmentRackItems(backup.data.equipmentRackItems)
-
             // Wrap all imports in a transaction for atomicity
             database.transaction {
                 // Import workout sessions
@@ -856,6 +854,10 @@ abstract class BaseDataBackupManager(
                     if (inserted != null) sessionNotesImported++ else sessionNotesSkipped++
                 }
             }
+
+            // Import settings-backed equipment rack items only after the database transaction
+            // succeeds to preserve atomicity — a DB failure must not leave rack items modified.
+            importEquipmentRackItems(backup.data.equipmentRackItems)
 
             if (sessionsAdopted > 0 || routinesAdopted > 0) {
                 Logger.i { "Import adopted $sessionsAdopted session(s) and $routinesAdopted routine(s) into active profile" }
