@@ -37,7 +37,7 @@ class ApplyRoutineModifierUseCase(
                 val baseline = resolveBaselineOneRepMax(exercise, profileId)
                 val adjustedWeight = roundToHalfKg(baseline * percent / 100f).coerceAtLeast(MIN_WEIGHT_KG)
                 val adjustedSetWeights = if (exercise.setWeightsPerCableKg.isNotEmpty()) {
-                    List(exercise.sets) { adjustedWeight }
+                    List(exercise.setWeightsPerCableKg.size) { adjustedWeight }
                 } else {
                     emptyList()
                 }
