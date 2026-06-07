@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -10,6 +12,7 @@ import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceSnapshot
+import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -58,10 +61,12 @@ class DWSMTestHarness(val testScope: TestScope) {
     val fakeRepMetricRepo = FakeRepMetricRepository()
     val fakeBiomechanicsRepo = FakeBiomechanicsRepository()
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
+    val fakeEquipmentRackRepo = SettingsEquipmentRackRepository(MapSettings())
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeExerciseRepo)
     val recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase()
+    val applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase()
 
     // Child scope of testScope: shares TestCoroutineScheduler so advanceUntilIdle() works,
     // but can be cancelled independently via cleanup() to prevent UncompletedCoroutinesError.
@@ -93,6 +98,8 @@ class DWSMTestHarness(val testScope: TestScope) {
         biomechanicsRepository = fakeBiomechanicsRepo,
         resolveWeightsUseCase = resolveWeightsUseCase,
         recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,
+        equipmentRackRepository = fakeEquipmentRackRepo,
+        applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         settingsManager = settingsManager,
         userProfileRepository = FakeUserProfileRepository(),
         workoutServiceController = fakeWorkoutServiceController,

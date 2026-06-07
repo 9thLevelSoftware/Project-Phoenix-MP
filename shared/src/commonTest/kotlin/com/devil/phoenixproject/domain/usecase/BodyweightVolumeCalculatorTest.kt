@@ -208,4 +208,29 @@ class BodyweightVolumeCalculatorTest {
         val weight = BodyweightVolumeCalculator.effectiveWeight(80f, 0.73f)
         assertTrue(abs(weight - 58.4f) < 0.1f, "Expected ~58.4, got $weight")
     }
+
+    @Test
+    fun effectiveWeight_explicitVariantPercentage_withRackLoadAdjustments() {
+        val weight = BodyweightVolumeCalculator.effectiveWeight(
+            bodyWeightKg = 100f,
+            percentage = 0.95f,
+            externalAddedLoadKg = 10f,
+            counterweightKg = 25f,
+        )
+
+        assertTrue(abs(weight - 80f) < 0.1f, "Expected 80, got $weight")
+    }
+
+    @Test
+    fun calculateVolume_explicitVariantPercentage_withCounterweightClampsAtZero() {
+        val volume = BodyweightVolumeCalculator.calculateVolume(
+            bodyWeightKg = 50f,
+            reps = 10,
+            percentage = 0.50f,
+            externalAddedLoadKg = 0f,
+            counterweightKg = 100f,
+        )
+
+        assertEquals(0f, volume)
+    }
 }

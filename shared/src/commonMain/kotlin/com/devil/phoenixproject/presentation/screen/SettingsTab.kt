@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
@@ -139,6 +140,7 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_connection_logs
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_workouts
 import vitruvianprojectphoenix.shared.generated.resources.cd_developer_tools
 import vitruvianprojectphoenix.shared.generated.resources.cd_dynamic_color
+import vitruvianprojectphoenix.shared.generated.resources.cd_equipment_rack
 import vitruvianprojectphoenix.shared.generated.resources.cd_led_scheme
 import vitruvianprojectphoenix.shared.generated.resources.cd_leds_off
 import vitruvianprojectphoenix.shared.generated.resources.cd_link_portal
@@ -150,6 +152,8 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_test_sounds
 import vitruvianprojectphoenix.shared.generated.resources.cd_view_badges
 import vitruvianprojectphoenix.shared.generated.resources.cd_weight_unit
 import vitruvianprojectphoenix.shared.generated.resources.diagnostics_title
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_description
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_title
 import vitruvianprojectphoenix.shared.generated.resources.import_completed
 import vitruvianprojectphoenix.shared.generated.resources.import_records_imported
 import vitruvianprojectphoenix.shared.generated.resources.import_records_skipped
@@ -231,6 +235,7 @@ fun SettingsTab(
     onNavigateToBadges: () -> Unit = {},
     onNavigateToLinkAccount: () -> Unit = {},
     onNavigateToIntegrations: () -> Unit = {},
+    onNavigateToEquipmentRack: () -> Unit = {},
     @Suppress("UNUSED_PARAMETER") // Reserved for future connecting overlay
     isAutoConnecting: Boolean = false,
     connectionError: String? = null,
@@ -775,6 +780,48 @@ fun SettingsTab(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToEquipmentRack() }
+                        .padding(vertical = Spacing.small),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FitnessCenter,
+                            contentDescription = stringResource(Res.string.cd_equipment_rack),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Column {
+                            Text(
+                                text = stringResource(Res.string.equipment_rack_title),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = stringResource(Res.string.equipment_rack_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                     Icon(
                         imageVector = Icons.Default.ChevronRight,

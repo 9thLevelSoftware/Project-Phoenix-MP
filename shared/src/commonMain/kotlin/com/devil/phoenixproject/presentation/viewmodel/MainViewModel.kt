@@ -11,6 +11,7 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
@@ -28,6 +29,8 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
@@ -41,6 +44,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -86,6 +90,8 @@ class MainViewModel constructor(
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
+    private val equipmentRackRepository: EquipmentRackRepository,
+    private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val dataBackupManager: DataBackupManager,
     private val userProfileRepository: UserProfileRepository,
     private val healthIntegration: HealthIntegration? = null,
@@ -131,6 +137,8 @@ class MainViewModel constructor(
         biomechanicsRepository = biomechanicsRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
         recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,
+        equipmentRackRepository = equipmentRackRepository,
+        applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         settingsManager = settingsManager,
         dataBackupManager = dataBackupManager,
         userProfileRepository = userProfileRepository,
@@ -165,6 +173,9 @@ class MainViewModel constructor(
     val loadBaselineA: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineA
     val loadBaselineB: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineB
     val workoutParameters: StateFlow<WorkoutParameters> get() = workoutSessionManager.coordinator.workoutParameters
+    val rackItems get() = equipmentRackRepository.rackItems
+    val activeRackItemIds: StateFlow<List<String>> get() = workoutSessionManager.coordinator.activeRackItemIds
+    val currentRackLoadAdjustment: StateFlow<RackLoadAdjustment> get() = workoutSessionManager.coordinator.currentRackLoadAdjustment
     val repCount: StateFlow<RepCount> get() = workoutSessionManager.coordinator.repCount
     val timedExerciseRemainingSeconds: StateFlow<Int?> get() = workoutSessionManager.coordinator.timedExerciseRemainingSeconds
     val repRanges: StateFlow<com.devil.phoenixproject.domain.usecase.RepRanges?> get() = workoutSessionManager.coordinator.repRanges
@@ -305,6 +316,25 @@ class MainViewModel constructor(
     // ===== Workout Lifecycle Delegation =====
 
     fun updateWorkoutParameters(params: WorkoutParameters) = workoutSessionManager.updateWorkoutParameters(params)
+    fun updateActiveRackSelection(itemIds: List<String>) = workoutSessionManager.updateActiveRackSelection(itemIds)
+    fun clearActiveRackSelection() = workoutSessionManager.clearActiveRackSelection()
+    fun saveRackItem(item: RackItem) {
+        viewModelScope.launch {
+            equipmentRackRepository.upsert(item)
+        }
+    }
+
+    fun deleteRackItem(id: String) {
+        viewModelScope.launch {
+            equipmentRackRepository.delete(id)
+            val activeIds = activeRackItemIds.value
+            val remainingActiveIds = activeIds.filterNot { it == id }
+            if (remainingActiveIds.size != activeIds.size) {
+                updateActiveRackSelection(remainingActiveIds)
+            }
+        }
+    }
+
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)
     fun stopAndReturnToSetReady() = workoutSessionManager.stopAndReturnToSetReady()

@@ -4,6 +4,7 @@ import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.ScannedDevice
+import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -14,6 +15,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -30,6 +32,7 @@ import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import com.russhwolf.settings.MapSettings
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -93,6 +96,8 @@ class MainViewModelTest {
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
             recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase(),
+            equipmentRackRepository = SettingsEquipmentRackRepository(MapSettings()),
+            applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase(),
             dataBackupManager = FakeDataBackupManager(),
             userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
             workoutServiceController = NoOpWorkoutServiceController,

@@ -1096,9 +1096,6 @@ class SyncManager(
         var totalEntitiesFetched = 0
         var currentCursor: String? = null
         var finalSyncTime: Long = 0
-        // Track returned entity IDs across pages for parity reconciliation
-        val returnedRoutineIds = mutableSetOf<String>()
-        val returnedCycleIds = mutableSetOf<String>()
 
         // Pagination loop: fetch pages until hasMore is false
         while (true) {
@@ -1190,14 +1187,6 @@ class SyncManager(
                 }
             }
 
-            // Track returned entity IDs for parity reconciliation
-            for (routine in pullResponse.routines) {
-                returnedRoutineIds.add(routine.id)
-            }
-            for (cycle in pullResponse.cycles) {
-                returnedCycleIds.add(cycle.id)
-            }
-
             // Merge this page atomically
             val mergeResult = mergePullPage(pullResponse, lastSync, mergeProfileId)
             if (mergeResult.isFailure) {
@@ -1227,49 +1216,10 @@ class SyncManager(
             }
         }
 
-        // ──────────────────────────────────────────────────────────────
-        // PARITY RECONCILIATION: Delete local entities that were deleted
-        // on server. We sent knownEntityIds; server returned everything
-        // it still has. Any ID we sent that server didn't return was
-        // deleted server-side -> hard-delete locally.
-        //
-        // Guards:
-        //   - Only reconcile if we sent the full parity list (not
-        //     truncated by MAX_PARITY_IDS cap). If truncated, the tail
-        //     IDs weren't sent, so we can't determine if they're missing.
-        //   - Only reconcile after ALL pages are fetched (partial pages
-        //     may not include all entity types yet).
-        // ──────────────────────────────────────────────────────────────
-
-        // Cycles -- portal-authoritative, so server deletion is common
-        if (filteredCycleIds.size <= SyncConfig.MAX_PARITY_IDS) {
-            val serverDeletedCycleIds = filteredCycleIds.filter { it !in returnedCycleIds }
-            if (serverDeletedCycleIds.isNotEmpty()) {
-                Logger.i("SyncManager") {
-                    "Parity reconciliation: ${serverDeletedCycleIds.size} cycle(s) deleted on server, removing locally"
-                }
-                try {
-                    syncRepository.hardDeleteCyclesByIds(serverDeletedCycleIds)
-                } catch (e: Exception) {
-                    Logger.w(e) { "Parity reconciliation failed for cycles; non-fatal" }
-                }
-            }
-        }
-
-        // Routines -- shared-authority, same pattern
-        if (filteredRoutineIds.size <= SyncConfig.MAX_PARITY_IDS) {
-            val serverDeletedRoutineIds = filteredRoutineIds.filter { it !in returnedRoutineIds }
-            if (serverDeletedRoutineIds.isNotEmpty()) {
-                Logger.i("SyncManager") {
-                    "Parity reconciliation: ${serverDeletedRoutineIds.size} routine(s) deleted on server, removing locally"
-                }
-                try {
-                    syncRepository.hardDeleteRoutinesByIds(serverDeletedRoutineIds)
-                } catch (e: Exception) {
-                    Logger.w(e) { "Parity reconciliation failed for routines; non-fatal" }
-                }
-            }
-        }
+        // The portal pull response is a delta: it returns entities that are new
+        // to the client or updated since lastSync. Missing known IDs therefore
+        // do not prove deletion. Server-side routine/cycle deletes need an
+        // explicit tombstone channel before local hard-delete is safe.
 
         return Result.success(finalSyncTime)
     }
