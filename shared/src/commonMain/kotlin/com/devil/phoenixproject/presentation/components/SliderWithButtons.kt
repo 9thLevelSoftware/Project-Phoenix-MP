@@ -160,6 +160,8 @@ fun SliderWithButtons(
                 },
                 valueRange = valueRange,
                 steps = sliderSteps,
+                enabled = enabled,
+                remoteStep = step,
                 modifier = Modifier.weight(1f),
             )
 

@@ -768,6 +768,16 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `toPortalRoutine uses persisted routine updatedAt for LWW`() {
+        val updatedAt = 1_700_000_000_000L
+        val routine = makeRoutine(updatedAt = updatedAt)
+
+        val result = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+
+        assertEquals("2023-11-14T22:13:20Z", result.updatedAt)
+    }
+
+    @Test
     fun `toPortalRoutine estimates duration based on sets and rest`() {
         val exercises = listOf(
             makeRoutineExercise(
@@ -1140,6 +1150,7 @@ class PortalSyncAdapterTest {
         name: String = "Test Routine",
         description: String = "",
         useCount: Int = 0,
+        updatedAt: Long? = null,
         exerciseCount: Int = -1, // -1 means auto-detect from exercises list
         exercises: List<RoutineExercise> = if (exerciseCount > 0) {
             (0 until exerciseCount).map { makeRoutineExercise(orderIndex = it) }
@@ -1154,6 +1165,7 @@ class PortalSyncAdapterTest {
         exercises = exercises,
         supersets = supersets,
         useCount = useCount,
+        updatedAt = updatedAt,
     )
 
     private fun assertFloatEquals(expected: Float, actual: Float, tolerance: Float = 0.01f) {

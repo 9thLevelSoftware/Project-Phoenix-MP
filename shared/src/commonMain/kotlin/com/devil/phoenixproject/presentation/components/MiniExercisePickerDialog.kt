@@ -21,7 +21,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -81,7 +80,7 @@ fun MiniExercisePickerDialog(
                     .fillMaxWidth()
                     .heightIn(max = 520.dp),
             ) {
-                OutlinedTextField(
+                ConfirmEditTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     label = { Text(stringResource(Res.string.search_exercises_short)) },

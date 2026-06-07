@@ -7,6 +7,7 @@ import androidx.security.crypto.MasterKeys
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.integration.HealthIntegration
+import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
@@ -68,6 +69,7 @@ actual val platformModule: Module = module {
     single { ConnectivityChecker(androidContext()) }
     single<SafeWordListenerFactory> { AndroidSafeWordListenerFactory(androidContext()) }
     single { HealthIntegration(androidContext()) }
+    single<HealthWorkoutWriter> { get<HealthIntegration>() }
     single<WorkoutServiceController> { AndroidWorkoutServiceController(androidContext()) }
     viewModel {
         MainViewModel(
@@ -84,6 +86,7 @@ actual val platformModule: Module = module {
             repMetricRepository = get(),
             biomechanicsRepository = get(),
             resolveWeightsUseCase = get(),
+            recommendWeightAdjustmentUseCase = get(),
             equipmentRackRepository = get(),
             applyEquipmentRackLoadUseCase = get(),
             dataBackupManager = get(),
@@ -91,6 +94,7 @@ actual val platformModule: Module = module {
             healthIntegration = get(),
             externalActivityRepository = get(),
             workoutServiceController = get(),
+            healthExportCursorRepository = get(),
         )
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleProgression
+import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -104,7 +105,7 @@ fun ProgressionSettingsSheet(
                         .padding(start = 48.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Slider(
+                    ExpressiveSlider(
                         value = weightPercent,
                         onValueChange = { weightPercent = it },
                         valueRange = 0.5f..10f,
@@ -167,11 +168,12 @@ fun ProgressionSettingsSheet(
                         .padding(start = 48.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Slider(
+                    ExpressiveSlider(
                         value = eccentricPercent.toFloat(),
                         onValueChange = { eccentricPercent = it.toInt() },
                         valueRange = 1f..20f,
                         steps = 18,
+                        remoteStep = 1f,
                         modifier = Modifier.weight(1f),
                     )
                     Text(

@@ -84,6 +84,10 @@
     <string name="bodyweight_effective_load">Effective load: %1$s</string>
     <string name="bodyweight_volume">Volume: %1$s</string>
     <string name="bodyweight_no_weight_volume">Body weight is not set, so volume will be saved as 0.</string>
+    <string name="weight_recommendation_increase">Increase next set</string>
+    <string name="weight_recommendation_decrease">Reduce next set</string>
+    <string name="weight_recommendation_maintain">Keep next set steady</string>
+    <string name="weight_recommendation_weight_change">%1$s to %2$s per cable</string>
 
     <!-- Stop set dialog -->
     <string name="stop_current_set_title">Stop Current Set?</string>
@@ -112,8 +116,11 @@
     <string name="settings_cloud_sync">Cloud Sync</string>
     <string name="settings_weight_unit">Weight Unit</string>
     <string name="settings_appearance">Appearance</string>
-    <string name="settings_dark_mode">Dark Mode</string>
-    <string name="settings_dark_mode_description">Use dark theme for the app interface</string>
+    <string name="settings_theme_mode">Theme</string>
+    <string name="settings_theme_mode_description">Follow the system theme or keep the app in light or dark mode</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
     <string name="settings_dynamic_color">Material You colors</string>
     <string name="settings_dynamic_color_description">Use colors from your Android wallpaper when available</string>
     <string name="settings_link_portal">Link Portal Account</string>
@@ -123,6 +130,8 @@
     <string name="settings_language_description">Select your preferred language</string>
     <string name="settings_language_help">Help improve translations</string>
     <string name="settings_machine_diagnostics_description">View a redacted machine diagnostics snapshot: uptime, fault codes, temperatures, crash data, and warnings. This is not a full backup.</string>
+    <string name="settings_weight_suggestions_title">Weight Suggestions</string>
+    <string name="settings_weight_suggestions_description">Show Apply or Dismiss recommendations after completed sets</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Machine Diagnostics</string>
@@ -633,7 +642,7 @@
     <string name="cd_above_pr">Above PR</string>
     <string name="cd_below_pr">Below PR</string>
     <string name="cd_delete_workout">Delete workout</string>
-    <string name="cd_toggle_theme">Toggle theme (current: %1$s)</string>
+    <string name="cd_toggle_theme_cycle">Toggle theme (current: %1$s, next: %2$s)</string>
     <string name="cd_workouts">Workouts</string>
     <string name="cd_disconnect">Disconnect</string>
     <string name="single_exercise_unavailable">Exercise is no longer available</string>

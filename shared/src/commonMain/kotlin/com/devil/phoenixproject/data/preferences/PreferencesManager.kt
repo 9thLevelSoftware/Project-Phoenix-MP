@@ -147,6 +147,9 @@ interface PreferencesManager {
     suspend fun setVelocityLossThreshold(percent: Int)
     suspend fun setAutoEndOnVelocityLoss(enabled: Boolean)
 
+    // Issue #424: Suggestion-only next-set weight recommendations
+    suspend fun setWeightSuggestionsEnabled(enabled: Boolean)
+
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
     suspend fun clearAllSingleExerciseDefaults()
@@ -202,6 +205,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"
         private const val KEY_VELOCITY_LOSS_THRESHOLD = "velocity_loss_threshold_percent"
         private const val KEY_AUTO_END_VELOCITY_LOSS = "auto_end_on_velocity_loss"
+        private const val KEY_WEIGHT_SUGGESTIONS_ENABLED = "weight_suggestions_enabled"
 
         // Permissions onboarding (health + microphone)
         private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
@@ -250,6 +254,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             safeWordCalibrated = settings.getBoolean(KEY_SAFE_WORD_CALIBRATED, false),
             velocityLossThresholdPercent = settings.getInt(KEY_VELOCITY_LOSS_THRESHOLD, 20).coerceIn(10, 50),
             autoEndOnVelocityLoss = settings.getBoolean(KEY_AUTO_END_VELOCITY_LOSS, false),
+            weightSuggestionsEnabled = settings.getBoolean(KEY_WEIGHT_SUGGESTIONS_ENABLED, true),
         )
     }
 
@@ -456,5 +461,10 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     override suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
         settings.putBoolean(KEY_AUTO_END_VELOCITY_LOSS, enabled)
         updateAndEmit { copy(autoEndOnVelocityLoss = enabled) }
+    }
+
+    override suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_WEIGHT_SUGGESTIONS_ENABLED, enabled)
+        updateAndEmit { copy(weightSuggestionsEnabled = enabled) }
     }
 }

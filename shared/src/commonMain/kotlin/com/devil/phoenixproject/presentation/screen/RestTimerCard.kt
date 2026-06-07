@@ -34,7 +34,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.Constants
@@ -730,7 +730,7 @@ private fun RestTimerEccentricLoadSlider(percent: Int, onPercentChange: (Int) ->
         Spacer(modifier = Modifier.height(Spacing.small))
 
         // Fine-grained slider (5% increments) - callback snaps to nearest valid EccentricLoad enum
-        Slider(
+        ExpressiveSlider(
             value = percent.toFloat(),
             onValueChange = { onPercentChange(it.toInt()) },
             valueRange = 0f..150f,

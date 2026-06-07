@@ -45,7 +45,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -80,6 +79,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
+import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
@@ -638,7 +638,7 @@ fun ExerciseEditBottomSheet(
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(bottom = Spacing.extraSmall),
                             )
-                            Slider(
+                            ExpressiveSlider(
                                 value = rest.toFloat(),
                                 onValueChange = { viewModel.onRestChange(it.toInt()) },
                                 valueRange = 0f..300f,
@@ -1014,7 +1014,7 @@ fun SetRow(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = Spacing.extraSmall),
                 )
-                Slider(
+                ExpressiveSlider(
                     value = setConfig.restSeconds.toFloat(),
                     onValueChange = { onRestChange(it.toInt()) },
                     valueRange = 0f..300f,
@@ -1310,7 +1310,7 @@ fun WeightConfigurationCard(
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 // Percentage slider (50% - 120%, 5% increments)
-                Slider(
+                ExpressiveSlider(
                     value = weightPercentOfPR.toFloat(),
                     onValueChange = { onWeightPercentOfPRChange(it.toInt()) },
                     valueRange = 50f..120f,

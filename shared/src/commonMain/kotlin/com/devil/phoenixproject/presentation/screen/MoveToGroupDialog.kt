@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 
 /**
  * Dialog for moving routine(s) to a group.
@@ -172,7 +173,7 @@ fun GroupNameDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
+            ConfirmEditTextField(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("Group name") },

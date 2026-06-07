@@ -29,12 +29,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,14 +59,18 @@ import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
+import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -78,6 +82,13 @@ import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.cd_next
 import vitruvianprojectphoenix.shared.generated.resources.cd_previous
 import vitruvianprojectphoenix.shared.generated.resources.cd_stop
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_active_selection
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_display_only_count
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_manage
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_no_enabled_items
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_none_selected
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_selected_count
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_selected_summary
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
 import vitruvianprojectphoenix.shared.generated.resources.target_reps
@@ -95,6 +106,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     val weightUnit by viewModel.weightUnit.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+    val weightRecommendation by viewModel.weightAdjustmentRecommendation.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
     val activeRackItemIds by viewModel.activeRackItemIds.collectAsState()
 
@@ -119,6 +131,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
     // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
     val isBodyweight = !currentExercise.exercise.hasCableAccessory
+    val matchingWeightRecommendation = weightRecommendation?.takeIf { recommendation ->
+        !isBodyweight &&
+            recommendation.targetExerciseId == currentExercise.exercise.id &&
+            recommendation.targetSetIndex == setReadyState.setIndex
+    }
 
     // Issue #266/#410: Use configured weight increment from user preferences
     val userPreferences by viewModel.userPreferences.collectAsState()
@@ -440,6 +457,17 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             // Configuration card - matching RestTimerCard style
             // Issue #222: Hide for bodyweight exercises (no cable settings to configure)
             if (!isBodyweight) {
+                if (matchingWeightRecommendation != null) {
+                    WeightRecommendationCard(
+                        recommendation = matchingWeightRecommendation,
+                        weightUnit = weightUnit,
+                        formatWeight = viewModel::formatWeight,
+                        onApply = viewModel::applyWeightRecommendation,
+                        onDismiss = viewModel::dismissWeightRecommendation,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
@@ -588,6 +616,130 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     }
 }
 
+@Composable
+private fun SetReadyRackSelectionCard(
+    rackItems: List<RackItem>,
+    activeRackItemIds: List<String>,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+    onSelectionChange: (List<String>) -> Unit,
+    onManageRack: () -> Unit,
+) {
+    val enabledItems = remember(rackItems) {
+        rackItems
+            .filter { it.enabled }
+            .sortedWith(compareBy<RackItem> { it.sortOrder }.thenBy { it.name.lowercase() })
+    }
+    val activeIdSet = remember(activeRackItemIds) { activeRackItemIds.toSet() }
+    val selectedItems = remember(enabledItems, activeIdSet) { enabledItems.filter { it.id in activeIdSet } }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(Res.string.equipment_rack_active_selection),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 1.sp,
+                )
+                TextButton(onClick = onManageRack) {
+                    Text(stringResource(Res.string.equipment_rack_manage))
+                }
+            }
+
+            if (enabledItems.isEmpty()) {
+                Text(
+                    stringResource(Res.string.equipment_rack_no_enabled_items),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                enabledItems.forEach { item ->
+                    val selected = item.id in activeIdSet
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            val updated = if (selected) {
+                                activeRackItemIds.filterNot { it == item.id }
+                            } else {
+                                activeRackItemIds + item.id
+                            }
+                            onSelectionChange(updated)
+                        },
+                        label = {
+                            Text(
+                                "${item.name} - ${formatRackChipDetail(item, weightUnit, formatWeight)}",
+                                maxLines = 1,
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                Text(
+                    if (selectedItems.isEmpty()) {
+                        stringResource(Res.string.equipment_rack_none_selected)
+                    } else {
+                        stringResource(
+                            Res.string.equipment_rack_selected_summary,
+                            rackSelectionSummary(selectedItems, weightUnit, formatWeight),
+                        )
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private fun formatRackChipDetail(
+    item: RackItem,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+): String = when (item.behavior) {
+    RackItemBehavior.ADDED_RESISTANCE -> "+${formatWeight(item.weightKg, weightUnit)}"
+    RackItemBehavior.COUNTERWEIGHT -> "-${formatWeight(item.weightKg, weightUnit)}"
+    RackItemBehavior.DISPLAY_ONLY -> formatWeight(item.weightKg, weightUnit)
+}
+
+@Composable
+private fun rackSelectionSummary(
+    items: List<RackItem>,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+): String {
+    val addedKg = items.filter { it.behavior == RackItemBehavior.ADDED_RESISTANCE }.sumOf { it.weightKg.toDouble() }.toFloat()
+    val counterweightKg = items.filter { it.behavior == RackItemBehavior.COUNTERWEIGHT }.sumOf { it.weightKg.toDouble() }.toFloat()
+    val displayOnlyCount = items.count { it.behavior == RackItemBehavior.DISPLAY_ONLY }
+    val displayOnlyLabel = if (displayOnlyCount > 0) {
+        stringResource(Res.string.equipment_rack_display_only_count, displayOnlyCount)
+    } else {
+        null
+    }
+    val selectedCountLabel = stringResource(Res.string.equipment_rack_selected_count, items.size)
+    val parts = buildList {
+        if (addedKg > 0f) add("+${formatWeight(addedKg, weightUnit)}")
+        if (counterweightKg > 0f) add("-${formatWeight(counterweightKg, weightUnit)}")
+        displayOnlyLabel?.let(::add)
+    }
+    return parts.ifEmpty { listOf(selectedCountLabel) }.joinToString(" / ")
+}
+
 /**
  * Echo Level selector - Row of 4 buttons matching RestTimerCard style
  */
@@ -673,7 +825,7 @@ private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
 
         Spacer(modifier = Modifier.height(Spacing.small))
 
-        Slider(
+        ExpressiveSlider(
             value = percent.toFloat(),
             onValueChange = { onPercentChange(it.toInt()) },
             valueRange = 0f..150f,

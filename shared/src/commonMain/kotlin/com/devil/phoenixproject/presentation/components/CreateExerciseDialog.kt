@@ -100,7 +100,7 @@ fun CreateExerciseDialog(
                     Spacer(modifier = Modifier.height(Spacing.medium))
 
                     // Exercise Name
-                    OutlinedTextField(
+                    ConfirmEditTextField(
                         value = name,
                         onValueChange = {
                             name = it

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.di
 
 import com.devil.phoenixproject.data.integration.HealthIntegration
+import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
@@ -35,6 +36,7 @@ class KoinModuleVerifyTest {
                 SafeWordListenerFactory::class,
                 // Platform-provided health integration (Android: HealthIntegration(context), iOS: HealthIntegration())
                 HealthIntegration::class,
+                HealthWorkoutWriter::class,
                 WorkoutServiceController::class,
                 // Lambda types used in constructor injection (e.g. PortalApiClient tokenProvider)
                 Function0::class,

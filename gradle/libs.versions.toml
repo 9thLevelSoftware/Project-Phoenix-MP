@@ -29,7 +29,7 @@ androidx-savedstate = "1.4.0"
 androidx-security-crypto = "1.1.0"
 androidx-browser = "1.10.0"
 androidx-documentfile = "1.1.0"
-androidx-health-connect = "1.1.0"
+androidx-health-connect = "1.2.0-alpha04"
 
 # Dependency Injection - Koin (Multiplatform alternative to Hilt)
 koin = "4.2.1"

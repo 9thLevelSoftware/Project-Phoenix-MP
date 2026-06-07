@@ -2,8 +2,10 @@ package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.HealthExportMarkers
 import com.devil.phoenixproject.data.integration.HealthIntegration
-import com.devil.phoenixproject.data.integration.RoutineHealthData
+import com.devil.phoenixproject.data.integration.HealthWorkoutExportBuilder
+import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
@@ -20,6 +22,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.ActiveRackSelection
+import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ConnectionStatus
@@ -34,7 +37,9 @@ import com.devil.phoenixproject.domain.model.RepType
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WeightAdjustmentInput
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -45,6 +50,7 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
+import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BleConstants
@@ -53,8 +59,6 @@ import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -66,6 +70,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.roundToInt
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -95,6 +101,7 @@ class ActiveSessionEngine(
     private val syncTriggerManager: SyncTriggerManager?,
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
+    private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val settingsManager: SettingsManager,
@@ -103,6 +110,7 @@ class ActiveSessionEngine(
     private val dataBackupManager: DataBackupManager? = null,
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
+    private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
 ) {
     private val rackJson = Json {
@@ -1815,6 +1823,7 @@ class ActiveSessionEngine(
         coordinator._restOriginalDuration.value = 0
         coordinator._isRestPaused.value = false
         coordinator._workoutState.value = WorkoutState.Idle
+        coordinator._weightAdjustmentRecommendation.value = null
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
         coordinator.setRepMetrics.value = emptyList()
@@ -2186,6 +2195,7 @@ class ActiveSessionEngine(
         cancelJustLiftEggTimer()
         coordinator.stopWorkoutInProgress.value = false
         coordinator.setCompletionInProgress.value = false
+        coordinator._weightAdjustmentRecommendation.value = null
         resetAutoStopState()
         coordinator.skipCountdownRequested = skipCountdown
 
@@ -2272,6 +2282,11 @@ class ActiveSessionEngine(
                     coordinator._isExerciseTimerPaused.value = false
                     coordinator.bodyweightTimerJob = scope.launch {
                         coordinator._timedExerciseRemainingSeconds.value = effectiveDuration
+                        var lastObservedRemaining = effectiveDuration
+                        var lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                            remainingSeconds = effectiveDuration,
+                            lastTickedSecond = -1,
+                        )
                         while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
                             if (coordinator._isExerciseTimerPaused.value) {
                                 delay(100L)
@@ -2280,8 +2295,21 @@ class ActiveSessionEngine(
                             delay(1000L)
                             // Re-check pause after delay — if paused during the 1s wait, don't decrement
                             if (!coordinator._isExerciseTimerPaused.value) {
-                                val current = coordinator._timedExerciseRemainingSeconds.value ?: 0
-                                coordinator._timedExerciseRemainingSeconds.value = (current - 1).coerceAtLeast(0)
+                                var remaining = 0
+                                coordinator._timedExerciseRemainingSeconds.update { current ->
+                                    remaining = ((current ?: 0) - 1).coerceAtLeast(0)
+                                    remaining
+                                }
+                                lastTickedSecond = ExerciseCountdownCuePolicy.lastTickedSecondAfterRemainingChange(
+                                    previousRemainingSeconds = lastObservedRemaining,
+                                    currentRemainingSeconds = remaining,
+                                    lastTickedSecond = lastTickedSecond,
+                                )
+                                lastObservedRemaining = remaining
+                                lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                                    remainingSeconds = remaining,
+                                    lastTickedSecond = lastTickedSecond,
+                                )
                             }
                         }
                         coordinator._timedExerciseRemainingSeconds.value = 0
@@ -2557,17 +2585,23 @@ class ActiveSessionEngine(
                 // but required for Kotlin smart-cast so exerciseDuration can be used as non-null below
                 @Suppress("SENSELESS_COMPARISON")
                 if (isTimedCableExercise && exerciseDuration != null) {
+                    val timedExerciseDuration: Int = requireNotNull(exerciseDuration)
                     coordinator.bodyweightTimerJob?.cancel()
-                    coordinator.exerciseTimerOriginalDuration = exerciseDuration
+                    coordinator.exerciseTimerOriginalDuration = timedExerciseDuration
                     coordinator._isExerciseTimerPaused.value = false
                     coordinator.bodyweightTimerJob = scope.launch {
                         if (effectiveParams.warmupReps > 0) {
-                            Logger.d { "Duration cable: waiting for ${effectiveParams.warmupReps} warmup reps before starting ${exerciseDuration}s timer" }
+                            Logger.d { "Duration cable: waiting for ${effectiveParams.warmupReps} warmup reps before starting ${timedExerciseDuration}s timer" }
                             coordinator._repCount.first { it.isWarmupComplete }
-                            Logger.d { "Duration cable: warmup complete, starting ${exerciseDuration}s duration timer" }
+                            Logger.d { "Duration cable: warmup complete, starting ${timedExerciseDuration}s duration timer" }
                         }
 
-                        coordinator._timedExerciseRemainingSeconds.value = exerciseDuration
+                        coordinator._timedExerciseRemainingSeconds.value = timedExerciseDuration
+                        var lastObservedRemaining = timedExerciseDuration
+                        var lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                            remainingSeconds = timedExerciseDuration,
+                            lastTickedSecond = -1,
+                        )
                         while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
                             if (coordinator._isExerciseTimerPaused.value) {
                                 delay(100L)
@@ -2575,8 +2609,21 @@ class ActiveSessionEngine(
                             }
                             delay(1000L)
                             if (!coordinator._isExerciseTimerPaused.value) {
-                                val current = coordinator._timedExerciseRemainingSeconds.value ?: 0
-                                coordinator._timedExerciseRemainingSeconds.value = (current - 1).coerceAtLeast(0)
+                                var remaining = 0
+                                coordinator._timedExerciseRemainingSeconds.update { current ->
+                                    remaining = ((current ?: 0) - 1).coerceAtLeast(0)
+                                    remaining
+                                }
+                                lastTickedSecond = ExerciseCountdownCuePolicy.lastTickedSecondAfterRemainingChange(
+                                    previousRemainingSeconds = lastObservedRemaining,
+                                    currentRemainingSeconds = remaining,
+                                    lastTickedSecond = lastTickedSecond,
+                                )
+                                lastObservedRemaining = remaining
+                                lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                                    remainingSeconds = remaining,
+                                    lastTickedSecond = lastTickedSecond,
+                                )
                             }
                         }
                         coordinator._timedExerciseRemainingSeconds.value = 0
@@ -2704,6 +2751,7 @@ class ActiveSessionEngine(
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
         val shouldExitToIdle = exitingWorkout
+        coordinator._weightAdjustmentRecommendation.value = null
 
         coordinator.workoutJob?.cancel()
         coordinator.workoutJob = null
@@ -2817,8 +2865,6 @@ class ActiveSessionEngine(
                 coordinator._completedRoutineSetKeys.update {
                     it + (coordinator._currentExerciseIndex.value to coordinator._currentSetIndex.value)
                 }
-            } else if (!isRoutineSet) {
-                enqueueWorkoutHealthPush(session)
             }
             val persistedSummary = summary.copy(
                 sessionId = session.id,
@@ -2865,6 +2911,10 @@ class ActiveSessionEngine(
             if (hasPR && completedSetId != null) {
                 completedSetRepository.markAsPr(completedSetId)
                 Logger.d("Marked CompletedSet $completedSetId as PR (manual stop)")
+            }
+
+            if (!isRoutineSet) {
+                enqueueWorkoutHealthPush(session)
             }
 
             scope.launch {
@@ -3103,8 +3153,30 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                healthIntegration.writeWorkout(session)
+                val completedSets = completedSetRepository.getCompletedSets(session.id)
+                val data = HealthWorkoutExportBuilder.buildStandaloneWorkout(
+                    session = session,
+                    completedSets = completedSets,
+                )
+                if (data == null) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Health auto-push skipped: no exportable segments for sessionId=${session.id}"
+                    }
+                    return@launch
+                }
+                val cursorRepository = healthExportCursorRepository
+                if (cursorRepository != null && HealthExportMarkers.isExported(cursorRepository, provider, profileId, data.externalId)) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Health auto-push skipped: ${data.externalId} is already marked exported"
+                    }
+                    return@launch
+                }
+
+                healthIntegration.writeHealthWorkout(data)
                     .onSuccess {
+                        if (cursorRepository != null) {
+                            HealthExportMarkers.markExported(cursorRepository, provider, profileId, data.externalId)
+                        }
                         Logger.i("ActiveSessionEngine") { "Auto-pushed workout to ${provider.displayName}: sessionId=${session.id}" }
                     }
                     .onFailure { e ->
@@ -3165,17 +3237,39 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                val data = RoutineHealthData(
-                    routineName = routineName,
-                    startTimeMs = startTime,
-                    durationMs = durationMs,
-                    totalCalories = totalCalories,
-                    externalId = routineSessionId,
+                val sessions = workoutRepository.getSessionsForRoutineSession(
+                    profileId = profileId,
+                    routineSessionId = routineSessionId,
                 )
-                healthIntegration.writeRoutineWorkout(data)
+                val completedSetsBySessionId = completedSetRepository
+                    .getCompletedSetsForSessions(sessions.map { it.id })
+                    .groupBy { it.sessionId }
+                val data = HealthWorkoutExportBuilder.buildRoutineWorkout(
+                    routineSessionId = routineSessionId,
+                    sessions = sessions,
+                    completedSetsBySessionId = completedSetsBySessionId,
+                )
+                if (data == null) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Routine health push skipped: no persisted exportable segments for routineSessionId=$routineSessionId"
+                    }
+                    return@launch
+                }
+                val cursorRepository = healthExportCursorRepository
+                if (cursorRepository != null && HealthExportMarkers.isExported(cursorRepository, provider, profileId, data.externalId)) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Routine health push skipped: ${data.externalId} is already marked exported"
+                    }
+                    return@launch
+                }
+
+                healthIntegration.writeHealthWorkout(data)
                     .onSuccess {
+                        if (cursorRepository != null) {
+                            HealthExportMarkers.markExported(cursorRepository, provider, profileId, data.externalId)
+                        }
                         Logger.i("ActiveSessionEngine") {
-                            "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s)"
+                            "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s, segments=${data.segments.size})"
                         }
                     }
                     .onFailure { e ->
@@ -3330,13 +3424,6 @@ class ActiveSessionEngine(
             }
         }
 
-        // Fire-and-forget health push: auto-push to Health Connect (Android) or HealthKit (iOS)
-        // after the session is persisted. Failure is non-fatal and never blocks workout completion.
-        // Issue #395: Skip per-set writes for routine sets — aggregate written at routine completion.
-        if (!isRoutineSet) {
-            enqueueWorkoutHealthPush(session)
-        }
-
         if (metricsSnapshot.isNotEmpty()) {
             workoutRepository.saveMetrics(sessionId, metricsSnapshot)
         }
@@ -3381,6 +3468,12 @@ class ActiveSessionEngine(
         if (hasPR && completedSetId != null) {
             completedSetRepository.markAsPr(completedSetId)
             Logger.d("Marked CompletedSet $completedSetId as PR")
+        }
+
+        // Fire-and-forget health push after session, metrics, CompletedSet, and PR persistence.
+        // Issue #395: Skip per-set writes for routine sets; aggregate is written at routine completion.
+        if (!isRoutineSet) {
+            enqueueWorkoutHealthPush(session)
         }
 
         // Sync trigger AFTER all persistence (session, metrics, CompletedSet, PR marking)
@@ -3612,6 +3705,14 @@ class ActiveSessionEngine(
             )
             coordinator.bodyweightCompletionVariantOverride = null
 
+            updateWeightRecommendationForCompletedSet(
+                params = params,
+                currentExercise = currentExercise,
+                completedReps = completedReps,
+                qualitySummary = qualitySummary,
+                biomechanicsSummary = biomechanicsSummary,
+            )
+
             // Process quality event for Form Master badge tracking
             qualitySummary?.let { qs ->
                 gamificationManager.processSetQualityEvent(qs.averageScore, userProfileRepository.activeProfile.value?.id ?: "default")
@@ -3773,6 +3874,65 @@ class ActiveSessionEngine(
         return computeRemainingSeconds(deadline)
     }
 
+    private fun updateWeightRecommendationForCompletedSet(
+        params: WorkoutParameters,
+        currentExercise: RoutineExercise?,
+        completedReps: Int,
+        qualitySummary: SetQualitySummary?,
+        biomechanicsSummary: BiomechanicsSetSummary?,
+    ) {
+        val prefs = settingsManager.userPreferences.value
+        if (!prefs.weightSuggestionsEnabled) {
+            coordinator._weightAdjustmentRecommendation.value = null
+            return
+        }
+
+        val routine = coordinator._loadedRoutine.value
+        if (routine == null || params.isJustLift) {
+            coordinator._weightAdjustmentRecommendation.value = null
+            return
+        }
+
+        val currentExerciseIndex = coordinator._currentExerciseIndex.value
+        val currentSetIndex = coordinator._currentSetIndex.value
+        val nextStep = flowDelegate?.getNextStep(routine, currentExerciseIndex, currentSetIndex)
+        if (nextStep == null) {
+            coordinator._weightAdjustmentRecommendation.value = null
+            return
+        }
+
+        val targetExercise = routine.exercises.getOrNull(nextStep.first)
+        val currentExerciseId = currentExercise?.exercise?.id ?: params.selectedExerciseId
+        val targetExerciseId = targetExercise?.exercise?.id
+        val isSameExercise = currentExerciseId != null && currentExerciseId == targetExerciseId
+        val targetExerciseIsBodyweight = targetExercise?.exercise?.isBodyweight == true
+        val completedSetHasTarget = params.reps > 0 && !params.isAMRAP
+        val targetWeightKgPerCable = targetExercise
+            ?.setWeightsPerCableKg
+            ?.getOrNull(nextStep.second)
+            ?: targetExercise?.weightPerCableKg
+            ?: params.weightPerCableKg
+
+        val input = WeightAdjustmentInput(
+            exerciseId = currentExerciseId,
+            exerciseName = targetExercise?.exercise?.name ?: currentExercise?.exercise?.name,
+            targetExerciseId = targetExerciseId,
+            targetSetIndex = nextStep.second,
+            targetReps = params.reps,
+            actualReps = completedReps,
+            currentWeightKgPerCable = targetWeightKgPerCable,
+            weightIncrementKg = prefs.effectiveWeightIncrementKg,
+            qualitySummary = qualitySummary,
+            biomechanicsSummary = biomechanicsSummary,
+            isBodyweight = currentExercise?.exercise?.isBodyweight == true,
+            hasNextSetTarget = isSameExercise &&
+                !targetExerciseIsBodyweight &&
+                completedSetHasTarget,
+        )
+
+        coordinator._weightAdjustmentRecommendation.value = recommendWeightAdjustmentUseCase(input)
+    }
+
     /**
      * Start the rest timer between sets.
      */
@@ -3905,6 +4065,7 @@ class ActiveSessionEngine(
 
             var lastRenderedSecond = restDuration + 1
             var lastTickedSecond = -1
+            var restEndingEmitted = false
 
             try {
                 // Issue #339: Deadline-based loop so timers catch up after background suspension.
@@ -3915,14 +4076,30 @@ class ActiveSessionEngine(
                         coordinator._restSecondsRemaining.value = remainingSeconds
                     }
 
+                    // The five-second rest warning has its own cue; avoid overlapping it with per-second ticks.
                     if (!coordinator._isRestPaused.value &&
-                        remainingSeconds in 1..10 &&
+                        remainingSeconds in 6..10 &&
                         remainingSeconds != lastTickedSecond
                     ) {
                         lastTickedSecond = remainingSeconds
                         val prefs = settingsManager.userPreferences.value
                         if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
                             coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remainingSeconds))
+                        }
+                    }
+
+                    if (remainingSeconds > 5) {
+                        restEndingEmitted = false
+                    }
+
+                    if (!coordinator._isRestPaused.value &&
+                        remainingSeconds == 5 &&
+                        !restEndingEmitted
+                    ) {
+                        restEndingEmitted = true
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
                         }
                     }
 
@@ -3939,15 +4116,6 @@ class ActiveSessionEngine(
                             isSupersetTransition = isSupersetTransition,
                             supersetLabel = supersetLabel,
                         )
-                    }
-
-                    // Emit REST_ENDING when timer completes (gated by beepsEnabled)
-                    if (remainingSeconds <= 0 && lastTickedSecond != 0) {
-                        lastTickedSecond = 0
-                        val prefs = settingsManager.userPreferences.value
-                        if (prefs.beepsEnabled) {
-                            coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
-                        }
                     }
 
                     if (remainingSeconds <= 0 && autoplay && !coordinator._isRestPaused.value) break
@@ -4299,6 +4467,25 @@ class ActiveSessionEngine(
         Logger.d("ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
     }
 
+    private suspend fun emitExerciseCountdownTickIfNeeded(
+        remainingSeconds: Int,
+        lastTickedSecond: Int,
+    ): Int {
+        val prefs = settingsManager.userPreferences.value
+        if (ExerciseCountdownCuePolicy.shouldEmitTick(
+                remainingSeconds = remainingSeconds,
+                isPaused = coordinator._isExerciseTimerPaused.value,
+                lastTickedSecond = lastTickedSecond,
+                beepsEnabled = prefs.beepsEnabled,
+                countdownBeepsEnabled = prefs.countdownBeepsEnabled,
+            )
+        ) {
+            coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remainingSeconds))
+            return remainingSeconds
+        }
+        return lastTickedSecond
+    }
+
     // ===== Exercise Timer Controls (Issue #190: Pause/Resume/Reset for timed exercises) =====
 
     /**
@@ -4406,6 +4593,7 @@ class ActiveSessionEngine(
     // ===== Cleanup =====
 
     fun cleanup() {
+        coordinator._weightAdjustmentRecommendation.value = null
         coordinator.monitorDataCollectionJob?.cancel()
         coordinator.autoStartJob?.cancel()
         coordinator.restTimerJob?.cancel()

@@ -168,6 +168,7 @@ fun AnimatedActionButton(
     supportingText: String? = null,
     heightOverride: Dp? = null,
     allowTwoLineLabel: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -224,17 +225,20 @@ fun AnimatedActionButton(
     )
 
     val containerColor = when {
+        !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
         isFireButton -> Color.Transparent
         isPrimary -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
     val contentColor = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
         isFireButton -> Color.White
         isPrimary -> MaterialTheme.colorScheme.onPrimary
         else -> MaterialTheme.colorScheme.onSurface
     }
     val border = if (!isPrimary && !isFireButton) {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+        val borderAlpha = if (enabled) 0.65f else 0.35f
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha))
     } else {
         null
     }
@@ -260,8 +264,14 @@ fun AnimatedActionButton(
         shape = shape,
         color = containerColor,
         contentColor = contentColor,
-        tonalElevation = if (isPrimary || isFireButton) 0.dp else 2.dp,
-        shadowElevation = if (isPrimary || isFireButton) 3.dp else 0.dp,
+        tonalElevation = if (!enabled || isPrimary || isFireButton) 0.dp else 2.dp,
+        shadowElevation = if (!enabled) {
+            0.dp
+        } else if (isPrimary || isFireButton) {
+            3.dp
+        } else {
+            0.dp
+        },
         border = border,
     ) {
         Box(

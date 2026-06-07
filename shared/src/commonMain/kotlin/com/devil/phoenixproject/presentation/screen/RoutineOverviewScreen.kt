@@ -38,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -74,6 +73,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -861,7 +861,7 @@ private fun OverviewEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
 
         Spacer(modifier = Modifier.height(Spacing.small))
 
-        Slider(
+        ExpressiveSlider(
             value = percent.toFloat(),
             onValueChange = { onPercentChange(it.toInt()) },
             valueRange = 0f..150f,
