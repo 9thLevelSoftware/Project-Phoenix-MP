@@ -62,19 +62,19 @@ class ApplyRoutineModifierUseCase(
 
     private suspend fun resolveBaselineOneRepMax(exercise: RoutineExercise, profileId: String): Float {
         val exerciseId = exercise.exercise.id
-        val storedOneRepMax = exerciseId
-            ?.let { exerciseRepository.getExerciseById(it)?.oneRepMaxKg }
-            ?.takeIf { it > 0 }
-            ?: exercise.exercise.oneRepMaxKg?.takeIf { it > 0 }
-
-        if (storedOneRepMax != null) return storedOneRepMax
-
         val weightPrOneRepMax = exerciseId
             ?.let { prRepository.getBestWeightPRForWorkoutMode(it, exercise.programMode.displayName, profileId) }
             ?.oneRepMax
             ?.takeIf { it > 0 }
 
-        return weightPrOneRepMax ?: exercise.weightPerCableKg.takeIf { it > 0 } ?: MIN_WEIGHT_KG
+        if (weightPrOneRepMax != null) return weightPrOneRepMax
+
+        val storedOneRepMax = exerciseId
+            ?.let { exerciseRepository.getExerciseById(it)?.oneRepMaxKg }
+            ?.takeIf { it > 0 }
+            ?: exercise.exercise.oneRepMaxKg?.takeIf { it > 0 }
+
+        return storedOneRepMax ?: exercise.weightPerCableKg.takeIf { it > 0 } ?: MIN_WEIGHT_KG
     }
 
     private fun scaleFirstWarmupOnly(warmupSets: List<WarmupSet>, percent: Int): List<WarmupSet> = warmupSets
