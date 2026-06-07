@@ -1,8 +1,10 @@
 package com.devil.phoenixproject.data.integration
 
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.displayLoadMultiplier
 
 /**
@@ -96,21 +98,34 @@ object HealthWorkoutExportBuilder {
     private fun buildSegments(
         sessions: List<WorkoutSession>,
         completedSetsBySessionId: Map<String, List<CompletedSet>>,
-    ): List<HealthWorkoutSegment> = sessions
-        .sortedBy { it.timestamp }
-        .flatMap { session ->
-            val completedSets = completedSetsBySessionId[session.id]
-                .orEmpty()
-                .sortedWith(compareBy<CompletedSet> { it.setNumber }.thenBy { it.completedAt })
+    ): List<HealthWorkoutSegment> {
+        val rawSegments = sessions
+            .sortedBy { it.timestamp }
+            .flatMap { session ->
+                val completedSets = completedSetsBySessionId[session.id]
+                    .orEmpty()
+                    .sortedWith(compareBy<CompletedSet> { it.setNumber }.thenBy { it.completedAt })
 
-            if (completedSets.isNotEmpty()) {
-                completedSets.mapNotNull { completedSet ->
-                    buildSegment(session, completedSet)
+                if (completedSets.isNotEmpty()) {
+                    completedSets.mapNotNull { completedSet ->
+                        buildSegment(session, completedSet)
+                    }
+                } else {
+                    buildSegment(session, completedSet = null)?.let(::listOf).orEmpty()
                 }
-            } else {
-                buildSegment(session, completedSet = null)?.let(::listOf).orEmpty()
             }
+
+        var lastEndTimeMs = 0L
+        return rawSegments.map { segment ->
+            val adjustedStartMs = segment.startTimeMs.coerceAtLeast(lastEndTimeMs)
+            val adjustedEndMs = segment.endTimeMs.coerceAtLeast(adjustedStartMs + 1000L)
+            lastEndTimeMs = adjustedEndMs
+            segment.copy(
+                startTimeMs = adjustedStartMs,
+                endTimeMs = adjustedEndMs,
+            )
         }
+    }
 
     private fun buildSegment(
         session: WorkoutSession,
@@ -162,6 +177,45 @@ object HealthWorkoutExportBuilder {
     }
 }
 
+interface HealthWorkoutWriter {
+    suspend fun isAvailable(): Boolean
+    suspend fun hasPermissions(): Boolean
+    suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit>
+}
+
+object HealthExportMarkers {
+    fun cursorType(externalId: String): String = "health_export:$externalId"
+
+    suspend fun isExported(
+        cursorRepository: IntegrationSyncCursorRepository,
+        provider: IntegrationProvider,
+        profileId: String,
+        externalId: String,
+    ): Boolean = cursorRepository.getCursor(
+        provider = provider,
+        profileId = profileId,
+        cursorType = cursorType(externalId),
+    ) != null
+
+    suspend fun markExported(
+        cursorRepository: IntegrationSyncCursorRepository,
+        provider: IntegrationProvider,
+        profileId: String,
+        externalId: String,
+    ) {
+        val now = currentTimeMillis()
+        cursorRepository.upsertCursor(
+            IntegrationSyncCursor(
+                provider = provider,
+                profileId = profileId,
+                cursorType = cursorType(externalId),
+                cursorValue = now.toString(),
+                updatedAt = now,
+            ),
+        )
+    }
+}
+
 /**
  * Platform-specific health integration.
  * Android: Google Health Connect
@@ -170,10 +224,10 @@ object HealthWorkoutExportBuilder {
  * Write-only: pushes Phoenix workout data to the platform health store
  * after each completed workout.
  */
-expect class HealthIntegration {
-    suspend fun isAvailable(): Boolean
+expect class HealthIntegration : HealthWorkoutWriter {
+    override suspend fun isAvailable(): Boolean
     suspend fun requestPermissions(): Boolean
-    suspend fun hasPermissions(): Boolean
+    override suspend fun hasPermissions(): Boolean
 
     /** Write a single set/exercise session (used for Just Lift / non-routine workouts). */
     suspend fun writeWorkout(session: WorkoutSession): Result<Unit>
@@ -182,5 +236,5 @@ expect class HealthIntegration {
      * Write a health workout derived from Phoenix sessions and completed sets.
      * Android stores set-level [HealthWorkoutData.segments]; iOS stores the aggregate workout only.
      */
-    suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit>
+    override suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit>
 }

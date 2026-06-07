@@ -59,5 +59,5 @@ val dataModule = module {
     single<ExternalMeasurementRepository> { SqlDelightExternalMeasurementRepository(get()) }
     single<ExternalExerciseTemplateRepository> { SqlDelightExternalExerciseTemplateRepository(get()) }
     single<IntegrationSyncCursorRepository> { SqlDelightIntegrationSyncCursorRepository(get()) }
-    single { HealthBackfillManager(get(), get(), get()) }
+    single { HealthBackfillManager(get(), get(), get(), get()) }
 }

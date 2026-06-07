@@ -3,6 +3,7 @@ package com.devil.phoenixproject.di
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.integration.HealthIntegration
+import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
@@ -92,6 +93,7 @@ actual val platformModule: Module = module {
     single { ConnectivityChecker() }
     single<SafeWordListenerFactory> { IosSafeWordListenerFactory() }
     single { HealthIntegration() }
+    single<HealthWorkoutWriter> { get<HealthIntegration>() }
     single<WorkoutServiceController> { NoOpWorkoutServiceController }
     single {
         MainViewModel(
@@ -113,6 +115,7 @@ actual val platformModule: Module = module {
             healthIntegration = get(),
             externalActivityRepository = get(),
             workoutServiceController = get(),
+            healthExportCursorRepository = get(),
         )
     }
 }

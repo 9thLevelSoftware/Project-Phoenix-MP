@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
+import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
@@ -89,6 +90,7 @@ class MainViewModel constructor(
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
     private val workoutServiceController: WorkoutServiceController,
+    private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -133,6 +135,7 @@ class MainViewModel constructor(
         userProfileRepository = userProfileRepository,
         healthIntegration = healthIntegration,
         externalActivityRepository = externalActivityRepository,
+        healthExportCursorRepository = healthExportCursorRepository,
         workoutServiceController = workoutServiceController,
         scope = viewModelScope,
         _hapticEvents = _hapticEvents,

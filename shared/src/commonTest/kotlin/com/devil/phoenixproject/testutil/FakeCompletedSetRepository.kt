@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Fake CompletedSetRepository for testing.
  * Stores planned and completed sets in memory with basic filtering support.
  */
-class FakeCompletedSetRepository : CompletedSetRepository {
+open class FakeCompletedSetRepository : CompletedSetRepository {
 
     private val plannedSets = mutableMapOf<String, PlannedSet>()
     private val completedSets = mutableMapOf<String, CompletedSet>()
@@ -77,7 +77,7 @@ class FakeCompletedSetRepository : CompletedSetRepository {
         ?.sortedBy { it.setNumber }
         ?: emptyList()
 
-    override suspend fun getCompletedSetsForSessions(sessionIds: List<String>): List<CompletedSet> = sessionIds
+    open override suspend fun getCompletedSetsForSessions(sessionIds: List<String>): List<CompletedSet> = sessionIds
         .flatMap { sessionId -> getCompletedSets(sessionId) }
 
     override fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>> {

@@ -440,7 +440,10 @@ class IntegrationsViewModel(
             val provider = platformHealthProvider()
             setOperationLoading(provider, "health_backfill", true)
             try {
-                healthBackfillManager.syncPreviousWorkouts(profileId)
+                healthBackfillManager.syncPreviousWorkouts(
+                    provider = provider,
+                    profileId = profileId,
+                )
                     .onSuccess { result ->
                         externalActivityRepo.updateIntegrationStatus(
                             provider = provider,

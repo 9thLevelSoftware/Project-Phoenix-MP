@@ -2,8 +2,10 @@ package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.HealthExportMarkers
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutExportBuilder
+import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
@@ -95,6 +97,7 @@ class ActiveSessionEngine(
     private val dataBackupManager: DataBackupManager? = null,
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
+    private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
 ) {
 
@@ -3013,9 +3016,19 @@ class ActiveSessionEngine(
                     }
                     return@launch
                 }
+                val cursorRepository = healthExportCursorRepository
+                if (cursorRepository != null && HealthExportMarkers.isExported(cursorRepository, provider, profileId, data.externalId)) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Health auto-push skipped: ${data.externalId} is already marked exported"
+                    }
+                    return@launch
+                }
 
                 healthIntegration.writeHealthWorkout(data)
                     .onSuccess {
+                        if (cursorRepository != null) {
+                            HealthExportMarkers.markExported(cursorRepository, provider, profileId, data.externalId)
+                        }
                         Logger.i("ActiveSessionEngine") { "Auto-pushed workout to ${provider.displayName}: sessionId=${session.id}" }
                     }
                     .onFailure { e ->
@@ -3094,9 +3107,19 @@ class ActiveSessionEngine(
                     }
                     return@launch
                 }
+                val cursorRepository = healthExportCursorRepository
+                if (cursorRepository != null && HealthExportMarkers.isExported(cursorRepository, provider, profileId, data.externalId)) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Routine health push skipped: ${data.externalId} is already marked exported"
+                    }
+                    return@launch
+                }
 
                 healthIntegration.writeHealthWorkout(data)
                     .onSuccess {
+                        if (cursorRepository != null) {
+                            HealthExportMarkers.markExported(cursorRepository, provider, profileId, data.externalId)
+                        }
                         Logger.i("ActiveSessionEngine") {
                             "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s, segments=${data.segments.size})"
                         }

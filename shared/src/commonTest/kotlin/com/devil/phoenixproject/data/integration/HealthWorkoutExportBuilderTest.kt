@@ -158,6 +158,47 @@ class HealthWorkoutExportBuilderTest {
         assertNull(export)
     }
 
+    @Test
+    fun multipleSetsInOneSessionAreAdjustedToNonOverlappingSegments() {
+        val session = workoutSession(
+            id = "session-overlap",
+            timestamp = 10_000L,
+            duration = 30_000L,
+            workingReps = 8,
+        )
+        val export = HealthWorkoutExportBuilder.buildStandaloneWorkout(
+            session = session,
+            completedSets = listOf(
+                completedSet(
+                    id = "set-1",
+                    sessionId = session.id,
+                    setNumber = 0,
+                    actualReps = 8,
+                    actualWeightKg = 20f,
+                    loggedRpe = null,
+                    completedAt = 40_000L,
+                ),
+                completedSet(
+                    id = "set-2",
+                    sessionId = session.id,
+                    setNumber = 1,
+                    actualReps = 8,
+                    actualWeightKg = 20f,
+                    loggedRpe = null,
+                    completedAt = 45_000L,
+                ),
+            ),
+        )
+
+        assertNotNull(export)
+        val first = export.segments[0]
+        val second = export.segments[1]
+        assertEquals(10_000L, first.startTimeMs)
+        assertEquals(40_000L, first.endTimeMs)
+        assertEquals(40_000L, second.startTimeMs)
+        assertEquals(45_000L, second.endTimeMs)
+    }
+
     private fun workoutSession(
         id: String,
         timestamp: Long = 1_000L,

@@ -42,7 +42,7 @@ internal val requestedHealthPermissions = requiredHealthPermissions + optionalHe
  * the Compose/Activity layer via [HealthConnectClient.getOrCreate] and the
  * Health Connect permission contract.
  */
-actual class HealthIntegration(private val context: Context) {
+actual class HealthIntegration(private val context: Context) : HealthWorkoutWriter {
 
     private val client: HealthConnectClient? by lazy {
         try {
@@ -57,7 +57,7 @@ actual class HealthIntegration(private val context: Context) {
         }
     }
 
-    actual suspend fun isAvailable(): Boolean = try {
+    actual override suspend fun isAvailable(): Boolean = try {
         HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
     } catch (e: Exception) {
         log.w(e) { "Error checking Health Connect availability" }
@@ -70,7 +70,7 @@ actual class HealthIntegration(private val context: Context) {
      */
     actual suspend fun requestPermissions(): Boolean = hasPermissions()
 
-    actual suspend fun hasPermissions(): Boolean = hasGrantedPermissions(requiredHealthPermissions)
+    actual override suspend fun hasPermissions(): Boolean = hasGrantedPermissions(requiredHealthPermissions)
 
     private suspend fun hasCalorieWritePermission(): Boolean = hasGrantedPermissions(optionalHealthPermissions)
 
@@ -92,7 +92,7 @@ actual class HealthIntegration(private val context: Context) {
     }
 
     @SuppressLint("RestrictedApi")
-    actual suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit> {
+    actual override suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit> {
         val c = client ?: return Result.failure(
             IllegalStateException("Health Connect is not available on this device"),
         )

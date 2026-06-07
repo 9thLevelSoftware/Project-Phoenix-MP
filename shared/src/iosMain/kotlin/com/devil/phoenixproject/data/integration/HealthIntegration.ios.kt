@@ -28,7 +28,7 @@ private val log = Logger.withTag("HealthIntegration.iOS")
  * Unlike Android Health Connect, no Activity Result contract is needed --
  * requestAuthorization can be called from any context.
  */
-actual class HealthIntegration {
+actual class HealthIntegration : HealthWorkoutWriter {
 
     companion object {
         /** Seconds between Unix epoch (1970-01-01) and Apple reference date (2001-01-01). */
@@ -58,7 +58,7 @@ actual class HealthIntegration {
      * Checks whether HealthKit is available on this device.
      * Returns false on iPad and devices without HealthKit support.
      */
-    actual suspend fun isAvailable(): Boolean = try {
+    actual override suspend fun isAvailable(): Boolean = try {
         HKHealthStore.isHealthDataAvailable()
     } catch (e: Exception) {
         log.w(e) { "Error checking HealthKit availability" }
@@ -72,7 +72,7 @@ actual class HealthIntegration {
      * Note: HealthKit's authorizationStatusForType only reflects *write* status.
      * A status of SharingAuthorized means the user explicitly granted write access.
      */
-    actual suspend fun hasPermissions(): Boolean {
+    actual override suspend fun hasPermissions(): Boolean {
         if (!isAvailable()) return false
 
         return try {
@@ -166,7 +166,7 @@ actual class HealthIntegration {
      * HealthKit does not expose a public per-set strength segment model comparable to
      * Android Health Connect ExerciseSegment, so [HealthWorkoutData.segments] are not persisted on iOS.
      */
-    actual suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit> {
+    actual override suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit> {
         if (!isAvailable()) {
             return Result.failure(
                 IllegalStateException("HealthKit is not available on this device"),
