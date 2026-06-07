@@ -663,7 +663,7 @@ class RoutineFlowManager(
     private suspend fun resolveRoutineWeights(routine: Routine): Routine {
         val resolvedExercises = routine.exercises.map { exercise ->
             if (exercise.usePercentOfPR) {
-                val resolved = resolveWeightsUseCase(exercise, exercise.programMode)
+                val resolved = resolveWeightsUseCase(exercise, exercise.programMode, routine.profileId)
                 if (resolved.fallbackReason != null) {
                     Logger.w { "PR weight fallback for ${exercise.exercise.name}: ${resolved.fallbackReason}" }
                 } else if (resolved.isFromPR) {
@@ -838,7 +838,7 @@ class RoutineFlowManager(
     fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) {
         scope.launch {
             val resolvedRoutine = resolveRoutineWeights(routine)
-            val adjustedRoutine = applyRoutineModifierUseCase(resolvedRoutine, modifier)
+            val adjustedRoutine = applyRoutineModifierUseCase(resolvedRoutine, modifier, resolvedRoutine.profileId)
             enterRoutineOverviewInternal(adjustedRoutine)
         }
     }

@@ -147,6 +147,49 @@ class ApplyRoutineModifierUseCaseTest {
         assertEquals(44.5f, adjusted.exercises.single().weightPerCableKg)
     }
 
+    @Test
+    fun `active recovery uses supplied profile when falling back to PR one rep max`() = runTest {
+        prRepository.addRecord(
+            PersonalRecord(
+                exerciseId = "bench",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 120f,
+                reps = 1,
+                oneRepMax = 120f,
+                timestamp = 1L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 120f,
+                phase = WorkoutPhase.CONCENTRIC,
+                profileId = "default",
+            ),
+        )
+        prRepository.addRecord(
+            PersonalRecord(
+                exerciseId = "bench",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 80f,
+                reps = 1,
+                oneRepMax = 80f,
+                timestamp = 2L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 80f,
+                phase = WorkoutPhase.CONCENTRIC,
+                profileId = "profile-b",
+            ),
+        )
+        val routine = routineWith(routineExercise(weight = 40f))
+
+        val adjusted = useCase(
+            routine = routine,
+            modifier = AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 50),
+            profileId = "profile-b",
+        )
+
+        assertEquals(40f, adjusted.exercises.single().weightPerCableKg)
+    }
+
     private fun routineWith(vararg exercises: RoutineExercise): Routine = Routine(
         id = "routine-1",
         name = "Routine",

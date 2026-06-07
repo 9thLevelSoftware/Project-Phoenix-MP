@@ -82,8 +82,8 @@ import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.Routine
-import com.devil.phoenixproject.domain.model.RoutineModifierType
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.RoutineModifierType
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -789,7 +789,6 @@ fun RoutinesTab(
         )
     }
 
-
     val pendingModifierType = modifierDialogType
     val pendingModifierRoutine = modifierDialogRoutine
     if (pendingModifierType != null && pendingModifierRoutine != null) {
@@ -1227,6 +1226,52 @@ fun RoutineCard(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = onStartActiveRecovery,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            stringResource(Res.string.routine_modifier_active_recovery),
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = onStartHeavyDeload,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            stringResource(Res.string.routine_modifier_heavy_deload),
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
@@ -1307,10 +1352,11 @@ fun RoutineCard(
                             )
                         }
 
-                        // Overflow menu for routine launch modifiers, Move/Copy to Profile, and Move to Group
-                        var showOverflow by remember { mutableStateOf(false) }
-                        Spacer(Modifier.width(2.dp))
-                        Box {
+                        // Overflow menu for Move/Copy to Profile and Move to Group
+                        if (hasGroups || hasOtherProfiles) {
+                            var showOverflow by remember { mutableStateOf(false) }
+                            Spacer(Modifier.width(2.dp))
+                            Box {
                                 IconButton(
                                     onClick = { showOverflow = true },
                                     modifier = Modifier.size(36.dp),
@@ -1326,26 +1372,6 @@ fun RoutineCard(
                                     expanded = showOverflow,
                                     onDismissRequest = { showOverflow = false },
                                 ) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(Res.string.routine_modifier_active_recovery)) },
-                                        onClick = {
-                                            showOverflow = false
-                                            onStartActiveRecovery()
-                                        },
-                                        leadingIcon = {
-                                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(Res.string.routine_modifier_heavy_deload)) },
-                                        onClick = {
-                                            showOverflow = false
-                                            onStartHeavyDeload()
-                                        },
-                                        leadingIcon = {
-                                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                                        },
-                                    )
                                     if (hasGroups) {
                                         DropdownMenuItem(
                                             text = { Text("Move to Group") },
@@ -1394,6 +1420,7 @@ fun RoutineCard(
                                     }
                                 }
                             }
+                        }
                     }
                 }
             }
