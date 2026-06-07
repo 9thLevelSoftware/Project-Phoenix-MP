@@ -318,7 +318,7 @@ fun NavGraph(
                 SettingsTab(
                     weightUnit = weightUnit,
                     enableVideoPlayback = userPreferences.enableVideoPlayback,
-                    darkModeEnabled = themeMode == ThemeMode.DARK,
+                    themeMode = themeMode,
                     dynamicColorAvailable = dynamicColorAvailable,
                     dynamicColorEnabled = dynamicColorEnabled,
                     audioRepCountEnabled = userPreferences.audioRepCountEnabled,
@@ -335,7 +335,7 @@ fun NavGraph(
                     selectedColorSchemeIndex = userPreferences.colorScheme,
                     onWeightUnitChange = { viewModel.setWeightUnit(it) },
                     onEnableVideoPlaybackChange = { viewModel.setEnableVideoPlayback(it) },
-                    onDarkModeChange = { enabled -> onThemeModeChange(if (enabled) ThemeMode.DARK else ThemeMode.LIGHT) },
+                    onThemeModeChange = onThemeModeChange,
                     onDynamicColorEnabledChange = onDynamicColorEnabledChange,
                     onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
                     onSummaryCountdownChange = { viewModel.setSummaryCountdownSeconds(it) },
