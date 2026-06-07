@@ -21,7 +21,7 @@ val presentationModule = module {
     factory { DiagnosticsViewModel(get()) }
     factory { CycleEditorViewModel(get(), get()) }
     factory { GamificationViewModel(get(), get()) }
-    factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     factory { ExternalActivitiesViewModel(get(), get()) }
     factory { ExternalRoutinesViewModel(get(), get()) }
     factory { ExternalProgramsViewModel(get(), get(), get()) }

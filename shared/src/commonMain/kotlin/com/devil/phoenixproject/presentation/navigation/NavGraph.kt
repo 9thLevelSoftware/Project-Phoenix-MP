@@ -330,6 +330,8 @@ fun NavGraph(
                     onMotionStartChange = { viewModel.setMotionStartEnabled(it) },
                     autoStartRoutine = userPreferences.autoStartRoutine,
                     onAutoStartRoutineChange = { viewModel.setAutoStartRoutine(it) },
+                    weightSuggestionsEnabled = userPreferences.weightSuggestionsEnabled,
+                    onWeightSuggestionsEnabledChange = { viewModel.setWeightSuggestionsEnabled(it) },
                     summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
                     autoStartCountdownSeconds = userPreferences.autoStartCountdownSeconds,
                     selectedColorSchemeIndex = userPreferences.colorScheme,

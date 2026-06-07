@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.media.PlaybackParams
 import android.media.SoundPool
 import android.os.Build
 import android.os.VibrationEffect
@@ -16,10 +17,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.presentation.manager.ExerciseCountdownCuePolicy
 import com.devil.phoenixproject.shared.R
 import com.devil.phoenixproject.util.DeviceInfo
-import kotlin.random.Random
 import kotlinx.coroutines.flow.SharedFlow
+import kotlin.random.Random
 
 @Composable
 actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
@@ -164,13 +166,18 @@ private fun playSound(
     }
 
     try {
+        val playbackRate = if (event is HapticEvent.COUNTDOWN_TICK) {
+            ExerciseCountdownCuePolicy.playbackRate(event.secondsRemaining)
+        } else {
+            1.0f
+        }
         val streamId = soundPool.play(
             soundId,
             1.0f, // Left volume (full)
             1.0f, // Right volume (full)
             1, // Priority
             0, // Loop (0 = no loop)
-            1.0f, // Playback rate
+            playbackRate,
         )
         // If SoundPool fails, try MediaPlayer fallback
         if (streamId == 0) {
@@ -194,6 +201,13 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
         mediaPlayer = MediaPlayer.create(context, cue.rawResId, buildCueAudioAttributes(), 0) ?: return
 
         mediaPlayer.setVolume(1.0f, 1.0f)
+        if (event is HapticEvent.COUNTDOWN_TICK && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            runCatching {
+                mediaPlayer.setPlaybackParams(
+                    PlaybackParams().setSpeed(ExerciseCountdownCuePolicy.playbackRate(event.secondsRemaining)),
+                )
+            }
+        }
         mediaPlayer.setOnCompletionListener { it.release() }
         mediaPlayer.setOnErrorListener { player, _, _ ->
             player.release()
@@ -222,10 +236,11 @@ internal object AndroidCueResources {
     private val boopBeepBeep = AndroidCueResource("boopbeepbeep", R.raw.boopbeepbeep)
     private val chirpChirp = AndroidCueResource("chirpchirp", R.raw.chirpchirp)
     private val discoMode = AndroidCueResource("discomode", R.raw.discomode)
+    private val repCompleteStrong = AndroidCueResource("rep_complete_strong", R.raw.rep_complete_strong)
     private val restOver = AndroidCueResource("restover", R.raw.restover)
 
     val eventCues: Map<HapticEvent, AndroidCueResource> = mapOf(
-        HapticEvent.REP_COMPLETED to chirpChirp,
+        HapticEvent.REP_COMPLETED to repCompleteStrong,
         HapticEvent.FINAL_REP to boopBeepBeep,
         HapticEvent.WARMUP_COMPLETE to beepBoop,
         HapticEvent.WORKOUT_COMPLETE to boopBeepBeep,

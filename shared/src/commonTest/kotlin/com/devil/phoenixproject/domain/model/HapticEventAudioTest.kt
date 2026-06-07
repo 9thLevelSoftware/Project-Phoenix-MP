@@ -43,12 +43,13 @@ class HapticEventAudioTest {
     @Test
     fun `FINAL_REP can be used as map key`() {
         val soundMap = mapOf<HapticEvent, String>(
-            HapticEvent.REP_COMPLETED to "chirpchirp",
+            HapticEvent.REP_COMPLETED to "rep_complete_strong",
             HapticEvent.FINAL_REP to "boopbeepbeep",
             HapticEvent.WORKOUT_COMPLETE to "boopbeepbeep",
         )
         assertEquals("boopbeepbeep", soundMap[HapticEvent.FINAL_REP])
-        assertEquals("chirpchirp", soundMap[HapticEvent.REP_COMPLETED])
+        assertEquals("rep_complete_strong", soundMap[HapticEvent.REP_COMPLETED])
+        assertNotEquals(soundMap[HapticEvent.FINAL_REP], soundMap[HapticEvent.REP_COMPLETED])
     }
 
     @Test
@@ -326,22 +327,24 @@ class AudioPreferenceGateTest {
     }
 
     @Test
-    fun `REST_ENDING gated by beepsEnabled only`() {
-        // REST_ENDING fires when rest timer completes (reaches 0).
-        // Gated by beepsEnabled (the general audio cue toggle), NOT countdownBeepsEnabled.
-        data class GateState(val beepsEnabled: Boolean)
+    fun `REST_ENDING countdown warning gated by beep toggles`() {
+        // REST_ENDING fires when the rest timer reaches five seconds remaining.
+        // It is part of the countdown window, so both the general and countdown toggles apply.
+        data class GateState(val beepsEnabled: Boolean, val countdownBeepsEnabled: Boolean)
 
         val cases = listOf(
-            GateState(true) to true,
-            GateState(false) to false,
+            GateState(beepsEnabled = true, countdownBeepsEnabled = true) to true,
+            GateState(beepsEnabled = true, countdownBeepsEnabled = false) to false,
+            GateState(beepsEnabled = false, countdownBeepsEnabled = true) to false,
+            GateState(beepsEnabled = false, countdownBeepsEnabled = false) to false,
         )
 
         for ((state, expected) in cases) {
-            val shouldEmit = state.beepsEnabled
+            val shouldEmit = state.beepsEnabled && state.countdownBeepsEnabled
             assertEquals(
                 expected,
                 shouldEmit,
-                "beepsEnabled=${state.beepsEnabled}",
+                "beepsEnabled=${state.beepsEnabled}, countdownBeepsEnabled=${state.countdownBeepsEnabled}",
             )
         }
     }

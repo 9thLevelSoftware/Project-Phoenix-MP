@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
+import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -26,6 +27,7 @@ import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -33,6 +35,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
+import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.getPlatform
@@ -150,6 +153,7 @@ class DefaultWorkoutSessionManager(
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase,
+    private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val settingsManager: SettingsManager,
@@ -158,6 +162,7 @@ class DefaultWorkoutSessionManager(
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
     private val workoutServiceController: WorkoutServiceController,
+    private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val scope: CoroutineScope,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
@@ -232,6 +237,7 @@ class DefaultWorkoutSessionManager(
         syncTriggerManager = syncTriggerManager,
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
+        recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,
         equipmentRackRepository = equipmentRackRepository,
         applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         settingsManager = settingsManager,
@@ -240,6 +246,7 @@ class DefaultWorkoutSessionManager(
         dataBackupManager = dataBackupManager,
         healthIntegration = healthIntegration,
         externalActivityRepository = externalActivityRepository,
+        healthExportCursorRepository = healthExportCursorRepository,
         elapsedRealtimeProvider = elapsedRealtimeProvider,
     )
 
@@ -603,6 +610,36 @@ class DefaultWorkoutSessionManager(
 
     fun hasNextStep(exerciseIndex: Int, setIndex: Int): Boolean = routineFlowManager.hasNextStep(exerciseIndex, setIndex)
     fun hasPreviousStep(exerciseIndex: Int, setIndex: Int): Boolean = routineFlowManager.hasPreviousStep(exerciseIndex, setIndex)
+
+    fun applyWeightRecommendation() {
+        val recommendation = coordinator._weightAdjustmentRecommendation.value ?: return
+        if (coordinator._workoutState.value is WorkoutState.Active ||
+            coordinator._workoutState.value is WorkoutState.Countdown ||
+            coordinator._workoutState.value is WorkoutState.Initializing
+        ) {
+            Logger.w { "applyWeightRecommendation: rejected while workout state is ${coordinator._workoutState.value}" }
+            return
+        }
+
+        val setReady = coordinator._routineFlowState.value as? RoutineFlowState.SetReady ?: return
+        val routine = coordinator._loadedRoutine.value ?: return
+        val targetExercise = routine.exercises.getOrNull(setReady.exerciseIndex)
+        val matchesTarget =
+            targetExercise?.exercise?.id == recommendation.targetExerciseId &&
+                setReady.setIndex == recommendation.targetSetIndex
+
+        if (!matchesTarget) {
+            coordinator._weightAdjustmentRecommendation.value = null
+            return
+        }
+
+        routineFlowManager.updateSetReadyWeight(recommendation.recommendedWeightKgPerCable)
+        coordinator._weightAdjustmentRecommendation.value = null
+    }
+
+    fun dismissWeightRecommendation() {
+        coordinator._weightAdjustmentRecommendation.value = null
+    }
 
     // ===== Superset CRUD — delegated to RoutineFlowManager =====
 

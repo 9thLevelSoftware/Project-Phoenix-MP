@@ -199,6 +199,8 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_version
 import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_weight_suggestions_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_weight_suggestions_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_weight_unit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -264,6 +266,8 @@ fun SettingsTab(
     // Issue #190: Auto-start routine (skip overview)
     autoStartRoutine: Boolean = false,
     onAutoStartRoutineChange: (Boolean) -> Unit = {},
+    weightSuggestionsEnabled: Boolean = true,
+    onWeightSuggestionsEnabledChange: (Boolean) -> Unit = {},
     summaryCountdownSeconds: Int = 10,
     autoStartCountdownSeconds: Int = 5,
     selectedColorSchemeIndex: Int = 0,
@@ -1286,6 +1290,34 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
+                // Issue #424: Suggest-only next-set weight recommendations
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(Res.string.settings_weight_suggestions_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            stringResource(Res.string.settings_weight_suggestions_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = weightSuggestionsEnabled,
+                        onCheckedChange = onWeightSuggestionsEnabledChange,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
                 // Enable Video Playback toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1363,7 +1395,7 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Beep during last 10 seconds of rest timer",
+                            "Beep during the last 10 seconds of rest timers and timed sets",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
