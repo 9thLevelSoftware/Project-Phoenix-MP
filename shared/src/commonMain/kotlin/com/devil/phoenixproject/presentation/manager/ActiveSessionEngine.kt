@@ -2184,7 +2184,10 @@ class ActiveSessionEngine(
                     coordinator.bodyweightTimerJob = scope.launch {
                         coordinator._timedExerciseRemainingSeconds.value = effectiveDuration
                         var lastObservedRemaining = effectiveDuration
-                        var lastTickedSecond = -1
+                        var lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                            remainingSeconds = effectiveDuration,
+                            lastTickedSecond = -1,
+                        )
                         while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
                             if (coordinator._isExerciseTimerPaused.value) {
                                 delay(100L)
@@ -2193,9 +2196,11 @@ class ActiveSessionEngine(
                             delay(1000L)
                             // Re-check pause after delay — if paused during the 1s wait, don't decrement
                             if (!coordinator._isExerciseTimerPaused.value) {
-                                val current = coordinator._timedExerciseRemainingSeconds.value ?: 0
-                                val remaining = (current - 1).coerceAtLeast(0)
-                                coordinator._timedExerciseRemainingSeconds.value = remaining
+                                var remaining = 0
+                                coordinator._timedExerciseRemainingSeconds.update { current ->
+                                    remaining = ((current ?: 0) - 1).coerceAtLeast(0)
+                                    remaining
+                                }
                                 lastTickedSecond = ExerciseCountdownCuePolicy.lastTickedSecondAfterRemainingChange(
                                     previousRemainingSeconds = lastObservedRemaining,
                                     currentRemainingSeconds = remaining,
@@ -2484,7 +2489,10 @@ class ActiveSessionEngine(
 
                         coordinator._timedExerciseRemainingSeconds.value = timedExerciseDuration
                         var lastObservedRemaining = timedExerciseDuration
-                        var lastTickedSecond = -1
+                        var lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                            remainingSeconds = timedExerciseDuration,
+                            lastTickedSecond = -1,
+                        )
                         while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
                             if (coordinator._isExerciseTimerPaused.value) {
                                 delay(100L)
@@ -2492,9 +2500,11 @@ class ActiveSessionEngine(
                             }
                             delay(1000L)
                             if (!coordinator._isExerciseTimerPaused.value) {
-                                val current = coordinator._timedExerciseRemainingSeconds.value ?: 0
-                                val remaining = (current - 1).coerceAtLeast(0)
-                                coordinator._timedExerciseRemainingSeconds.value = remaining
+                                var remaining = 0
+                                coordinator._timedExerciseRemainingSeconds.update { current ->
+                                    remaining = ((current ?: 0) - 1).coerceAtLeast(0)
+                                    remaining
+                                }
                                 lastTickedSecond = ExerciseCountdownCuePolicy.lastTickedSecondAfterRemainingChange(
                                     previousRemainingSeconds = lastObservedRemaining,
                                     currentRemainingSeconds = remaining,
@@ -3857,7 +3867,7 @@ class ActiveSessionEngine(
                     ) {
                         restEndingEmitted = true
                         val prefs = settingsManager.userPreferences.value
-                        if (prefs.beepsEnabled) {
+                        if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
                             coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
                         }
                     }

@@ -327,22 +327,24 @@ class AudioPreferenceGateTest {
     }
 
     @Test
-    fun `REST_ENDING gated by beepsEnabled only`() {
+    fun `REST_ENDING countdown warning gated by beep toggles`() {
         // REST_ENDING fires when the rest timer reaches five seconds remaining.
-        // Gated by beepsEnabled (the general audio cue toggle), NOT countdownBeepsEnabled.
-        data class GateState(val beepsEnabled: Boolean)
+        // It is part of the countdown window, so both the general and countdown toggles apply.
+        data class GateState(val beepsEnabled: Boolean, val countdownBeepsEnabled: Boolean)
 
         val cases = listOf(
-            GateState(true) to true,
-            GateState(false) to false,
+            GateState(beepsEnabled = true, countdownBeepsEnabled = true) to true,
+            GateState(beepsEnabled = true, countdownBeepsEnabled = false) to false,
+            GateState(beepsEnabled = false, countdownBeepsEnabled = true) to false,
+            GateState(beepsEnabled = false, countdownBeepsEnabled = false) to false,
         )
 
         for ((state, expected) in cases) {
-            val shouldEmit = state.beepsEnabled
+            val shouldEmit = state.beepsEnabled && state.countdownBeepsEnabled
             assertEquals(
                 expected,
                 shouldEmit,
-                "beepsEnabled=${state.beepsEnabled}",
+                "beepsEnabled=${state.beepsEnabled}, countdownBeepsEnabled=${state.countdownBeepsEnabled}",
             )
         }
     }
