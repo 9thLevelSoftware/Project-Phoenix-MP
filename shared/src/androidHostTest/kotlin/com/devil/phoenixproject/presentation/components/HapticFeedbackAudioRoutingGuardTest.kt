@@ -86,6 +86,18 @@ class HapticFeedbackAudioRoutingGuardTest {
     }
 
     @Test
+    fun mediaPlayerFallback_appliesCountdownPlaybackRate() {
+        val source = hapticFeedbackSource.readText()
+        val fallbackSource = source
+            .substringAfter("private fun playWithMediaPlayer")
+            .substringBefore("private fun buildCueAudioAttributes")
+
+        assertTrue(fallbackSource.contains("event is HapticEvent.COUNTDOWN_TICK"))
+        assertTrue(fallbackSource.contains("ExerciseCountdownCuePolicy.playbackRate(event.secondsRemaining)"))
+        assertTrue(fallbackSource.contains("mediaPlayer.setPlaybackParams"))
+    }
+
+    @Test
     fun releaseVerificationSentinelCues_areRegistered() {
         val registeredCueNames = registeredCueNames(hapticFeedbackSource.readText())
 

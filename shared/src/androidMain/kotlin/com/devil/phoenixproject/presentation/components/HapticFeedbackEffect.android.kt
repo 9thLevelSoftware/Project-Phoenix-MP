@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.media.PlaybackParams
 import android.media.SoundPool
 import android.os.Build
 import android.os.VibrationEffect
@@ -19,8 +20,8 @@ import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.presentation.manager.ExerciseCountdownCuePolicy
 import com.devil.phoenixproject.shared.R
 import com.devil.phoenixproject.util.DeviceInfo
-import kotlin.random.Random
 import kotlinx.coroutines.flow.SharedFlow
+import kotlin.random.Random
 
 @Composable
 actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
@@ -200,6 +201,13 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
         mediaPlayer = MediaPlayer.create(context, cue.rawResId, buildCueAudioAttributes(), 0) ?: return
 
         mediaPlayer.setVolume(1.0f, 1.0f)
+        if (event is HapticEvent.COUNTDOWN_TICK && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            runCatching {
+                mediaPlayer.setPlaybackParams(
+                    PlaybackParams().setSpeed(ExerciseCountdownCuePolicy.playbackRate(event.secondsRemaining)),
+                )
+            }
+        }
         mediaPlayer.setOnCompletionListener { it.release() }
         mediaPlayer.setOnErrorListener { player, _, _ ->
             player.release()
