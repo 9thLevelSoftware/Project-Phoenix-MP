@@ -167,6 +167,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         name = name,
         exercises = emptyList(),
         createdAt = createdAt,
+        updatedAt = updatedAt,
         lastUsed = lastUsed,
         useCount = useCount.toInt(),
         profileId = profileId,
@@ -181,6 +182,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         useCount: Int = 0,
         profileId: String = "default",
         groupId: String? = null,
+        updatedAt: Long? = null,
     ): Routine {
         val exerciseRows = queries.selectExercisesByRoutine(routineId).executeAsList()
         val supersetRows = queries.selectSupersetsByRoutine(routineId).executeAsList()
@@ -390,6 +392,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             useCount = useCount,
             profileId = profileId,
             groupId = groupId,
+            updatedAt = updatedAt,
         )
     }
 
@@ -572,6 +575,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                         routine.useCount,
                         routine.profileId,
                         routine.groupId,
+                        updatedAt = routine.updatedAt,
                     )
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
@@ -757,6 +761,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 basicRoutine.useCount,
                 basicRoutine.profileId,
                 basicRoutine.groupId,
+                updatedAt = basicRoutine.updatedAt,
             )
         }
     }

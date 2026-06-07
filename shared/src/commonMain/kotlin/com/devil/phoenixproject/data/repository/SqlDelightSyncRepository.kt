@@ -1108,8 +1108,11 @@ class SqlDelightSyncRepository(
                 exercises = exercises,
                 supersets = supersets,
                 createdAt = row.createdAt,
+                updatedAt = row.updatedAt,
                 lastUsed = row.lastUsed,
                 useCount = row.useCount.toInt(),
+                profileId = row.profile_id,
+                groupId = row.groupId,
             )
         }
     }

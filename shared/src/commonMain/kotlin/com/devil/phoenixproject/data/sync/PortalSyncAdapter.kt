@@ -567,8 +567,9 @@ object PortalSyncAdapter {
             estimatedDuration = estimateRoutineDuration(routine),
             timesCompleted = routine.useCount,
             isFavorite = false,
-            // LWW gate (Phase 3.2); see PortalWorkoutSessionDto build path.
-            updatedAt = epochToIso8601(currentTimeMillis()),
+            // Preserve the persisted routine timestamp so stale local copies do
+            // not masquerade as newer than portal edits during LWW upsert.
+            updatedAt = epochToIso8601(routine.updatedAt ?: routine.createdAt),
             exercises = exercises,
         )
     }

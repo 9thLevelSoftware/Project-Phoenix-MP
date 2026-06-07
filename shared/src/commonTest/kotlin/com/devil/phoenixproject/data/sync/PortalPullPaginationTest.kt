@@ -347,6 +347,37 @@ class PortalPullPaginationTest {
     }
 
     @Test
+    fun deltaPullDoesNotHardDeleteKnownRoutinesOrCyclesOmittedFromResponse() = runTest {
+        authenticate()
+        val routineId = "99999999-9999-4999-a999-999999999999"
+        val cycleId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+        fakeSyncRepo.routineIds = listOf(routineId)
+        fakeSyncRepo.cycleIds = listOf(cycleId)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_740_916_800_000L,
+                routines = emptyList(),
+                cycles = emptyList(),
+                hasMore = false,
+            ),
+        )
+
+        createManager().sync()
+
+        assertEquals(
+            emptyList(),
+            fakeSyncRepo.hardDeletedRoutineIds,
+            "A delta pull omits unchanged known routines; omission is not a deletion signal",
+        )
+        assertEquals(
+            emptyList(),
+            fakeSyncRepo.hardDeletedCycleIds,
+            "A delta pull omits unchanged known cycles; omission is not a deletion signal",
+        )
+    }
+
+    @Test
     fun pullCapsLargeKnownSessionIdsToMaxParityIds() = runTest {
         authenticate()
         // Simulate a user with deep history whose parity list exceeds the
