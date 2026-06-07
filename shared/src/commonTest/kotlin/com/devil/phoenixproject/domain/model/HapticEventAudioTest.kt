@@ -43,12 +43,13 @@ class HapticEventAudioTest {
     @Test
     fun `FINAL_REP can be used as map key`() {
         val soundMap = mapOf<HapticEvent, String>(
-            HapticEvent.REP_COMPLETED to "chirpchirp",
+            HapticEvent.REP_COMPLETED to "rep_complete_strong",
             HapticEvent.FINAL_REP to "boopbeepbeep",
             HapticEvent.WORKOUT_COMPLETE to "boopbeepbeep",
         )
         assertEquals("boopbeepbeep", soundMap[HapticEvent.FINAL_REP])
-        assertEquals("chirpchirp", soundMap[HapticEvent.REP_COMPLETED])
+        assertEquals("rep_complete_strong", soundMap[HapticEvent.REP_COMPLETED])
+        assertNotEquals(soundMap[HapticEvent.FINAL_REP], soundMap[HapticEvent.REP_COMPLETED])
     }
 
     @Test

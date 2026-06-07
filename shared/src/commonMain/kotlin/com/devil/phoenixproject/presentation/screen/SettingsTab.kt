@@ -1289,7 +1289,7 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Beep during last 10 seconds of rest timer",
+                            "Beep during the last 10 seconds of rest timers and timed sets",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

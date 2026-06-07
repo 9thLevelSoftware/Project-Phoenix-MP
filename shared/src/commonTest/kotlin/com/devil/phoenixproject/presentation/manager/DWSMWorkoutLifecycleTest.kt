@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.BadgeTier
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
+import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -34,6 +35,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -1856,6 +1859,71 @@ class DWSMWorkoutLifecycleTest {
         assertEquals("Decline 18\"", secondEntry.selectedVariant.label)
         assertEquals(0.73f, secondEntry.selectedVariant.percentage)
 
+        harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 490 - timed bodyweight set emits final countdown ticks`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakePrefsManager.setBodyWeightKg(80f)
+        val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 12)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        val ticks = mutableListOf<Int>()
+        val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.dwsm.coordinator.hapticEvents.collect { event ->
+                if (event is HapticEvent.COUNTDOWN_TICK) {
+                    ticks.add(event.secondsRemaining)
+                }
+            }
+        }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        runCurrent()
+
+        advanceTimeBy(12_100)
+        runCurrent()
+
+        assertEquals((10 downTo 1).toList(), ticks)
+
+        hapticJob.cancel()
+        harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 490 - disabled countdown beeps suppress timed bodyweight ticks`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.fakePrefsManager.setCountdownBeepsEnabled(false)
+        val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 12)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        val ticks = mutableListOf<Int>()
+        val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.dwsm.coordinator.hapticEvents.collect { event ->
+                if (event is HapticEvent.COUNTDOWN_TICK) {
+                    ticks.add(event.secondsRemaining)
+                }
+            }
+        }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        runCurrent()
+
+        advanceTimeBy(12_100)
+        runCurrent()
+
+        assertEquals(emptyList(), ticks)
+
+        hapticJob.cancel()
         harness.cleanup()
     }
 

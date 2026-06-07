@@ -69,7 +69,7 @@ class HapticFeedbackAudioRoutingGuardTest {
     fun cueResourceRegistry_preservesWorkoutEventMappings() {
         val source = hapticFeedbackSource.readText()
 
-        assertTrue(source.contains("HapticEvent.REP_COMPLETED to chirpChirp"))
+        assertTrue(source.contains("HapticEvent.REP_COMPLETED to repCompleteStrong"))
         assertTrue(source.contains("HapticEvent.FINAL_REP to boopBeepBeep"))
         assertTrue(source.contains("HapticEvent.WARMUP_COMPLETE to beepBoop"))
         assertTrue(source.contains("HapticEvent.WORKOUT_COMPLETE to boopBeepBeep"))
@@ -82,6 +82,7 @@ class HapticFeedbackAudioRoutingGuardTest {
         assertTrue(source.contains("is HapticEvent.REP_COUNT_ANNOUNCED -> repCountCues.getOrNull(event.repNumber - 1)"))
         assertTrue(source.contains("is HapticEvent.COUNTDOWN_TICK -> countdownTickCue"))
         assertTrue(source.contains("val countdownTickCue: AndroidCueResource = beep"))
+        assertTrue(source.contains("""AndroidCueResource("rep_complete_strong", R.raw.rep_complete_strong)"""))
     }
 
     @Test
@@ -90,6 +91,7 @@ class HapticFeedbackAudioRoutingGuardTest {
 
         assertTrue("beep" in registeredCueNames)
         assertTrue("chirpchirp" in registeredCueNames)
+        assertTrue("rep_complete_strong" in registeredCueNames)
         assertTrue("rep_05" in registeredCueNames)
         assertTrue("boopbeepbeep" in registeredCueNames)
     }
