@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.rememberIsTvRemoteInputMode
+import com.devil.phoenixproject.presentation.util.tvSliderKeys
 
 /**
  * A Material 3 Expressive Card wrapper.
@@ -72,14 +74,28 @@ fun ExpressiveSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     modifier: Modifier = Modifier,
     steps: Int = 0,
+    enabled: Boolean = true,
+    remoteStep: Float? = null,
     onValueChangeFinished: (() -> Unit)? = null,
     trackColor: Color = MaterialTheme.colorScheme.onSurface,
     thumbColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
+    val isTvRemoteInputMode = rememberIsTvRemoteInputMode()
+
     Slider(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        modifier = modifier.tvSliderKeys(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps,
+            explicitStep = remoteStep,
+            enabled = enabled,
+            isTvRemoteInputMode = isTvRemoteInputMode,
+            onValueChangeFinished = onValueChangeFinished,
+        ),
+        enabled = enabled,
         valueRange = valueRange,
         steps = steps,
         onValueChangeFinished = onValueChangeFinished,

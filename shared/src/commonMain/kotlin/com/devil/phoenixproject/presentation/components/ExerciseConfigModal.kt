@@ -424,11 +424,12 @@ private fun EccentricSlider(percent: Int, onPercentChange: (Int) -> Unit, label:
 
         Spacer(modifier = Modifier.height(Spacing.small))
 
-        Slider(
+        ExpressiveSlider(
             value = percent.toFloat(),
             onValueChange = { onPercentChange(it.toInt()) },
             valueRange = 100f..150f,
             steps = 9,
+            remoteStep = 1f,
             modifier = Modifier.fillMaxWidth(),
         )
 

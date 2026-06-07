@@ -212,15 +212,13 @@ fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss: () -> U
             Spacer(Modifier.height(Spacing.medium))
 
             // Slider
-            Slider(
+            ExpressiveSlider(
                 value = sliderValue,
                 onValueChange = { sliderValue = it },
                 valueRange = 6f..10f,
                 steps = 3,
-                colors = SliderDefaults.colors(
-                    thumbColor = getRpeColor(sliderValue.roundToInt()),
-                    activeTrackColor = getRpeColor(sliderValue.roundToInt()),
-                ),
+                thumbColor = getRpeColor(sliderValue.roundToInt()),
+                trackColor = getRpeColor(sliderValue.roundToInt()),
                 modifier = Modifier.fillMaxWidth(),
             )
 

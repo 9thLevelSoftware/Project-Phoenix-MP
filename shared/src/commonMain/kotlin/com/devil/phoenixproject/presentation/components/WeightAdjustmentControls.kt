@@ -391,7 +391,7 @@ private fun WeightPickerDialog(
 
                 // Slider for weight selection (operates in display units for better UX)
                 val displayWeight = if (isLbs) UnitConverter.kgToLb(selectedWeightKg) else selectedWeightKg
-                Slider(
+                ExpressiveSlider(
                     value = displayWeight,
                     onValueChange = { displayValue ->
                         // Convert back to kg and round to machine increment (0.5kg)

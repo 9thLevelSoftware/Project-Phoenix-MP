@@ -107,7 +107,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
+import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupProgress
@@ -894,7 +896,7 @@ fun SettingsTab(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                                OutlinedTextField(
+                                ConfirmEditTextField(
                                     value = bodyWeightInput,
                                     onValueChange = { input ->
                                         // Allow only valid numeric input
@@ -1532,7 +1534,7 @@ fun SettingsTab(
                 if (voiceStopEnabled) {
                     Spacer(modifier = Modifier.height(Spacing.medium))
 
-                    OutlinedTextField(
+                    ConfirmEditTextField(
                         value = localSafeWord,
                         onValueChange = { newValue ->
                             localSafeWord = newValue.uppercase().trim()
@@ -1874,7 +1876,7 @@ fun SettingsTab(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Slider(
+                        ExpressiveSlider(
                             value = velocityLossThresholdPercent.toFloat(),
                             onValueChange = { onVelocityLossThresholdChange(it.roundToInt()) },
                             valueRange = 10f..50f,
