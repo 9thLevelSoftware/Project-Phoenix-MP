@@ -46,6 +46,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
+import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
@@ -89,6 +90,7 @@ class MainViewModel constructor(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
+    private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val dataBackupManager: DataBackupManager,
@@ -136,6 +138,7 @@ class MainViewModel constructor(
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
+        recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,
         equipmentRackRepository = equipmentRackRepository,
         applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         settingsManager = settingsManager,
@@ -286,6 +289,7 @@ class MainViewModel constructor(
     fun setSafeWordCalibrated(calibrated: Boolean) = settingsManager.setSafeWordCalibrated(calibrated)
     fun setVelocityLossThreshold(percent: Int) = settingsManager.setVelocityLossThreshold(percent)
     fun setAutoEndOnVelocityLoss(enabled: Boolean) = settingsManager.setAutoEndOnVelocityLoss(enabled)
+    fun setWeightSuggestionsEnabled(enabled: Boolean) = settingsManager.setWeightSuggestionsEnabled(enabled)
 
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
@@ -360,6 +364,7 @@ class MainViewModel constructor(
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentWarmupSetIndex
     val totalWarmupSets: StateFlow<Int> get() = workoutSessionManager.coordinator.totalWarmupSets
+    val weightAdjustmentRecommendation get() = workoutSessionManager.coordinator.weightAdjustmentRecommendation
     fun startNextSet() = workoutSessionManager.startNextSet()
     fun logRpeForCurrentSet(rpe: Int) = workoutSessionManager.logRpeForCurrentSet(rpe)
 
@@ -393,6 +398,8 @@ class MainViewModel constructor(
     fun updateSetReadyEchoLevel(level: EchoLevel) = workoutSessionManager.updateSetReadyEchoLevel(level)
     fun updateSetReadyEccentricLoad(percent: Int) = workoutSessionManager.updateSetReadyEccentricLoad(percent)
     fun startSetFromReady() = workoutSessionManager.startSetFromReady()
+    fun applyWeightRecommendation() = workoutSessionManager.applyWeightRecommendation()
+    fun dismissWeightRecommendation() = workoutSessionManager.dismissWeightRecommendation()
     fun bodyweightVariantKey(exercise: RoutineExercise): String = workoutSessionManager.bodyweightVariantKey(exercise)
     fun selectBodyweightVariant(exerciseKey: String, variant: BodyweightVariantOption) = workoutSessionManager.selectBodyweightVariant(exerciseKey, variant)
     fun confirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) = workoutSessionManager.confirmBodyweightSetResult(reps, variant)

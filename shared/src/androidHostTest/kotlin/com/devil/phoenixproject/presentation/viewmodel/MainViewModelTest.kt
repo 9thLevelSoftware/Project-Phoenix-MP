@@ -16,6 +16,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
+import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
@@ -94,6 +95,7 @@ class MainViewModelTest {
             repMetricRepository = fakeRepMetricRepository,
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
+            recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase(),
             equipmentRackRepository = SettingsEquipmentRackRepository(MapSettings()),
             applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase(),
             dataBackupManager = FakeDataBackupManager(),

@@ -110,6 +110,7 @@ actual val platformModule: Module = module {
             repMetricRepository = get(),
             biomechanicsRepository = get(),
             resolveWeightsUseCase = get(),
+            recommendWeightAdjustmentUseCase = get(),
             equipmentRackRepository = get(),
             applyEquipmentRackLoadUseCase = get(),
             dataBackupManager = get(),

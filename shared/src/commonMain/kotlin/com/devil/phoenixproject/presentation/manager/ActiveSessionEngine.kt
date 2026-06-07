@@ -22,6 +22,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.ActiveRackSelection
+import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ConnectionStatus
@@ -36,7 +37,9 @@ import com.devil.phoenixproject.domain.model.RepType
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WeightAdjustmentInput
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -47,6 +50,7 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
+import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BleConstants
@@ -97,6 +101,7 @@ class ActiveSessionEngine(
     private val syncTriggerManager: SyncTriggerManager?,
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
+    private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val settingsManager: SettingsManager,
@@ -1817,6 +1822,7 @@ class ActiveSessionEngine(
         coordinator._restOriginalDuration.value = 0
         coordinator._isRestPaused.value = false
         coordinator._workoutState.value = WorkoutState.Idle
+        coordinator._weightAdjustmentRecommendation.value = null
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
         coordinator.setRepMetrics.value = emptyList()
@@ -2192,6 +2198,7 @@ class ActiveSessionEngine(
         cancelJustLiftEggTimer()
         coordinator.stopWorkoutInProgress.value = false
         coordinator.setCompletionInProgress.value = false
+        coordinator._weightAdjustmentRecommendation.value = null
         resetAutoStopState()
         coordinator.skipCountdownRequested = skipCountdown
 
@@ -2710,6 +2717,7 @@ class ActiveSessionEngine(
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
         val shouldExitToIdle = exitingWorkout
+        coordinator._weightAdjustmentRecommendation.value = null
 
         coordinator.workoutJob?.cancel()
         coordinator.workoutJob = null
@@ -3663,6 +3671,14 @@ class ActiveSessionEngine(
             )
             coordinator.bodyweightCompletionVariantOverride = null
 
+            updateWeightRecommendationForCompletedSet(
+                params = params,
+                currentExercise = currentExercise,
+                completedReps = completedReps,
+                qualitySummary = qualitySummary,
+                biomechanicsSummary = biomechanicsSummary,
+            )
+
             // Process quality event for Form Master badge tracking
             qualitySummary?.let { qs ->
                 gamificationManager.processSetQualityEvent(qs.averageScore, userProfileRepository.activeProfile.value?.id ?: "default")
@@ -3822,6 +3838,65 @@ class ActiveSessionEngine(
         val deadline = coordinator.justLiftRestDeadlineElapsedRealtimeMs
             ?: return coordinator._justLiftRestCountdown.value?.coerceAtLeast(0) ?: 0
         return computeRemainingSeconds(deadline)
+    }
+
+    private fun updateWeightRecommendationForCompletedSet(
+        params: WorkoutParameters,
+        currentExercise: RoutineExercise?,
+        completedReps: Int,
+        qualitySummary: SetQualitySummary?,
+        biomechanicsSummary: BiomechanicsSetSummary?,
+    ) {
+        val prefs = settingsManager.userPreferences.value
+        if (!prefs.weightSuggestionsEnabled) {
+            coordinator._weightAdjustmentRecommendation.value = null
+            return
+        }
+
+        val routine = coordinator._loadedRoutine.value
+        if (routine == null || params.isJustLift) {
+            coordinator._weightAdjustmentRecommendation.value = null
+            return
+        }
+
+        val currentExerciseIndex = coordinator._currentExerciseIndex.value
+        val currentSetIndex = coordinator._currentSetIndex.value
+        val nextStep = flowDelegate?.getNextStep(routine, currentExerciseIndex, currentSetIndex)
+        if (nextStep == null) {
+            coordinator._weightAdjustmentRecommendation.value = null
+            return
+        }
+
+        val targetExercise = routine.exercises.getOrNull(nextStep.first)
+        val currentExerciseId = currentExercise?.exercise?.id ?: params.selectedExerciseId
+        val targetExerciseId = targetExercise?.exercise?.id
+        val isSameExercise = currentExerciseId != null && currentExerciseId == targetExerciseId
+        val targetExerciseIsBodyweight = targetExercise?.exercise?.isBodyweight == true
+        val completedSetHasTarget = params.reps > 0 && !params.isAMRAP
+        val targetWeightKgPerCable = targetExercise
+            ?.setWeightsPerCableKg
+            ?.getOrNull(nextStep.second)
+            ?: targetExercise?.weightPerCableKg
+            ?: params.weightPerCableKg
+
+        val input = WeightAdjustmentInput(
+            exerciseId = currentExerciseId,
+            exerciseName = targetExercise?.exercise?.name ?: currentExercise?.exercise?.name,
+            targetExerciseId = targetExerciseId,
+            targetSetIndex = nextStep.second,
+            targetReps = params.reps,
+            actualReps = completedReps,
+            currentWeightKgPerCable = targetWeightKgPerCable,
+            weightIncrementKg = prefs.effectiveWeightIncrementKg,
+            qualitySummary = qualitySummary,
+            biomechanicsSummary = biomechanicsSummary,
+            isBodyweight = currentExercise?.exercise?.isBodyweight == true,
+            hasNextSetTarget = isSameExercise &&
+                !targetExerciseIsBodyweight &&
+                completedSetHasTarget,
+        )
+
+        coordinator._weightAdjustmentRecommendation.value = recommendWeightAdjustmentUseCase(input)
     }
 
     /**
@@ -4457,6 +4532,7 @@ class ActiveSessionEngine(
     // ===== Cleanup =====
 
     fun cleanup() {
+        coordinator._weightAdjustmentRecommendation.value = null
         coordinator.monitorDataCollectionJob?.cancel()
         coordinator.autoStartJob?.cancel()
         coordinator.restTimerJob?.cancel()

@@ -84,6 +84,10 @@
     <string name="bodyweight_effective_load">Effective load: %1$s</string>
     <string name="bodyweight_volume">Volume: %1$s</string>
     <string name="bodyweight_no_weight_volume">Body weight is not set, so volume will be saved as 0.</string>
+    <string name="weight_recommendation_increase">Increase next set</string>
+    <string name="weight_recommendation_decrease">Reduce next set</string>
+    <string name="weight_recommendation_maintain">Keep next set steady</string>
+    <string name="weight_recommendation_weight_change">%1$s to %2$s per cable</string>
 
     <!-- Stop set dialog -->
     <string name="stop_current_set_title">Stop Current Set?</string>
@@ -126,6 +130,8 @@
     <string name="settings_language_description">Select your preferred language</string>
     <string name="settings_language_help">Help improve translations</string>
     <string name="settings_machine_diagnostics_description">View a redacted machine diagnostics snapshot: uptime, fault codes, temperatures, crash data, and warnings. This is not a full backup.</string>
+    <string name="settings_weight_suggestions_title">Weight Suggestions</string>
+    <string name="settings_weight_suggestions_description">Show Apply or Dismiss recommendations after completed sets</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Machine Diagnostics</string>
