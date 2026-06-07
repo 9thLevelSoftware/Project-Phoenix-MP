@@ -1,11 +1,14 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineModifierType
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
@@ -151,6 +154,76 @@ class DWSMRoutineFlowTest {
         assertNotNull(
             harness.dwsm.coordinator.loadedRoutine.value,
             "loadedRoutine should be set after advanceUntilIdle",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun loadRoutine_percentOfPRUsesRoutineProfile() = runTest {
+        val harness = DWSMTestHarness(this)
+        val exercise = TestFixtures.benchPress
+        val routine = Routine(
+            id = "routine-pr-profile",
+            name = "PR Profile Routine",
+            profileId = "profile-b",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-pr-profile",
+                    exercise = exercise,
+                    orderIndex = 0,
+                    setReps = listOf(10, 10),
+                    weightPerCableKg = 5f,
+                    setWeightsPerCableKg = listOf(5f, 5f),
+                    programMode = ProgramMode.OldSchool,
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 50,
+                    setWeightsPercentOfPR = listOf(50, 50),
+                ),
+            ),
+        )
+        harness.fakeExerciseRepo.addExercise(exercise)
+        harness.fakePRRepo.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = exercise.id!!,
+                exerciseName = exercise.name,
+                weightPerCableKg = 120f,
+                reps = 1,
+                oneRepMax = 120f,
+                timestamp = 1_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 120f,
+                phase = WorkoutPhase.CONCENTRIC,
+                profileId = "default",
+            ),
+        )
+        harness.fakePRRepo.addRecord(
+            PersonalRecord(
+                id = 2,
+                exerciseId = exercise.id!!,
+                exerciseName = exercise.name,
+                weightPerCableKg = 80f,
+                reps = 1,
+                oneRepMax = 80f,
+                timestamp = 2_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 80f,
+                phase = WorkoutPhase.CONCENTRIC,
+                profileId = "profile-b",
+            ),
+        )
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        val params = harness.dwsm.coordinator.workoutParameters.value
+        assertEquals(
+            40f,
+            params.weightPerCableKg,
+            "PR percentage resolution should use the routine profile, not the default profile",
         )
         harness.cleanup()
     }
@@ -619,6 +692,78 @@ class DWSMRoutineFlowTest {
             state.selectedExerciseIndex,
             "Overview should start with first exercise selected",
         )
+        harness.cleanup()
+    }
+
+    @Test
+    fun enterRoutineOverview_withActiveRecoveryUsesRoutineProfilePR() = runTest {
+        val harness = DWSMTestHarness(this)
+        val exercise = TestFixtures.benchPress
+        val routine = Routine(
+            id = "routine-modifier-profile",
+            name = "Modifier Profile Routine",
+            profileId = "profile-b",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-modifier-profile",
+                    exercise = exercise,
+                    orderIndex = 0,
+                    setReps = listOf(10, 10),
+                    weightPerCableKg = 20f,
+                    setWeightsPerCableKg = listOf(20f, 20f),
+                    programMode = ProgramMode.OldSchool,
+                ),
+            ),
+        )
+        harness.fakeExerciseRepo.addExercise(exercise)
+        harness.fakePRRepo.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = exercise.id!!,
+                exerciseName = exercise.name,
+                weightPerCableKg = 120f,
+                reps = 1,
+                oneRepMax = 120f,
+                timestamp = 1_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 120f,
+                phase = WorkoutPhase.CONCENTRIC,
+                profileId = "default",
+            ),
+        )
+        harness.fakePRRepo.addRecord(
+            PersonalRecord(
+                id = 2,
+                exerciseId = exercise.id!!,
+                exerciseName = exercise.name,
+                weightPerCableKg = 80f,
+                reps = 1,
+                oneRepMax = 80f,
+                timestamp = 2_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 80f,
+                phase = WorkoutPhase.CONCENTRIC,
+                profileId = "profile-b",
+            ),
+        )
+        advanceUntilIdle()
+
+        harness.dwsm.enterRoutineOverview(
+            routine,
+            AppliedRoutineModifier(RoutineModifierType.ACTIVE_RECOVERY, 50),
+        )
+        advanceUntilIdle()
+
+        val state = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.Overview>(state)
+        assertEquals(
+            40f,
+            state.routine.exercises.single().weightPerCableKg,
+            "Active Recovery should derive launch weights from the routine profile PR",
+        )
+        assertEquals(listOf(40f, 40f), state.routine.exercises.single().setWeightsPerCableKg)
         harness.cleanup()
     }
 

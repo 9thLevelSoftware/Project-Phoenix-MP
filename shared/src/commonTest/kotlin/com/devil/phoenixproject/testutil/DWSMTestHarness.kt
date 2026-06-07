@@ -3,6 +3,7 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
+import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -65,6 +66,7 @@ class DWSMTestHarness(val testScope: TestScope) {
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeExerciseRepo)
+    val applyRoutineModifierUseCase = ApplyRoutineModifierUseCase(fakePRRepo, fakeExerciseRepo)
     val recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase()
     val applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase()
 
@@ -97,6 +99,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         repMetricRepository = fakeRepMetricRepo,
         biomechanicsRepository = fakeBiomechanicsRepo,
         resolveWeightsUseCase = resolveWeightsUseCase,
+        applyRoutineModifierUseCase = applyRoutineModifierUseCase,
         recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,
         equipmentRackRepository = fakeEquipmentRackRepo,
         applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,

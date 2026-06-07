@@ -22,6 +22,7 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
@@ -46,6 +47,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
+import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -90,6 +92,7 @@ class MainViewModel constructor(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
+    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase = ApplyRoutineModifierUseCase(personalRecordRepository, exerciseRepository),
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
@@ -138,6 +141,7 @@ class MainViewModel constructor(
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
+        applyRoutineModifierUseCase = applyRoutineModifierUseCase,
         recommendWeightAdjustmentUseCase = recommendWeightAdjustmentUseCase,
         equipmentRackRepository = equipmentRackRepository,
         applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
@@ -390,6 +394,7 @@ class MainViewModel constructor(
     suspend fun loadRoutineAsync(routine: Routine) = workoutSessionManager.loadRoutineAsync(routine)
     fun loadRoutineById(routineId: String) = workoutSessionManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = workoutSessionManager.enterRoutineOverview(routine)
+    fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) = workoutSessionManager.enterRoutineOverview(routine, modifier)
     fun selectExerciseInOverview(index: Int) = workoutSessionManager.selectExerciseInOverview(index)
     fun enterSetReady(exerciseIndex: Int, setIndex: Int) = workoutSessionManager.enterSetReady(exerciseIndex, setIndex)
     fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = workoutSessionManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)

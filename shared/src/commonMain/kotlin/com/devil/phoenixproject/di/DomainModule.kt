@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
+import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -28,6 +29,7 @@ val domainModule = module {
     single { RecommendWeightAdjustmentUseCase() }
     single { ApplyEquipmentRackLoadUseCase() }
     factory { ResolveRoutineWeightsUseCase(get(), get()) }
+    factory { ApplyRoutineModifierUseCase(get(), get()) }
     factory { RoutineTimeEstimator(get()) }
     single { TemplateConverter(get()) }
 

@@ -620,6 +620,14 @@
     <string name="tag_exercise_hint">Ordne diesen Lift zu, um ihn zu verfolgen</string>
     <string name="tag_exercise_action">Übung zuordnen</string>
     <string name="exercise_tagged">Übung zugeordnet</string>
+    <!-- Routine launch modifiers (Issue #495) -->
+    <string name="routine_modifier_active_recovery">Aktive Erholung starten…</string>
+    <string name="routine_modifier_heavy_deload">Schweren Deload starten…</string>
+    <string name="routine_modifier_percent_label">Modifikator</string>
+    <string name="routine_modifier_start">Starten</string>
+    <string name="routine_modifier_cancel">Abbrechen</string>
+    <string name="routine_modifier_active_recovery_description">Gewichte werden auf den gewählten 1RM-Prozentsatz reduziert; Arbeitswiederholungen bleiben gleich; Aufwärmen wird vereinfacht.</string>
+    <string name="routine_modifier_heavy_deload_description">Wiederholungen werden auf den gewählten Volumen-Prozentsatz reduziert; Gewichte bleiben gleich.</string>
 
     <!-- ==================== Equipment Rack (Issue #448) ==================== -->
     <string name="equipment_rack_title">Equipment Rack</string>

@@ -620,6 +620,14 @@
     <string name="tag_exercise_hint">Associez ce mouvement pour le suivre</string>
     <string name="tag_exercise_action">Associer l\'exercice</string>
     <string name="exercise_tagged">Exercice associé</string>
+    <!-- Routine launch modifiers (Issue #495) -->
+    <string name="routine_modifier_active_recovery">Démarrer récupération active…</string>
+    <string name="routine_modifier_heavy_deload">Démarrer deload lourd…</string>
+    <string name="routine_modifier_percent_label">Modificateur</string>
+    <string name="routine_modifier_start">Démarrer</string>
+    <string name="routine_modifier_cancel">Annuler</string>
+    <string name="routine_modifier_active_recovery_description">Les charges sont réduites au pourcentage de 1RM sélectionné ; les répétitions de travail restent identiques ; les échauffements sont simplifiés.</string>
+    <string name="routine_modifier_heavy_deload_description">Les répétitions sont réduites au pourcentage de volume sélectionné ; les charges restent identiques.</string>
 
     <!-- ==================== Equipment Rack (Issue #448) ==================== -->
     <string name="equipment_rack_title">Equipment Rack</string>

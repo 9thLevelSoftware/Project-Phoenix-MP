@@ -16,6 +16,7 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
@@ -33,6 +34,7 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
+import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -150,6 +152,7 @@ class DefaultWorkoutSessionManager(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
+    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase,
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
@@ -194,6 +197,7 @@ class DefaultWorkoutSessionManager(
         workoutRepository = workoutRepository,
         exerciseRepository = exerciseRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
+        applyRoutineModifierUseCase = applyRoutineModifierUseCase,
         completedSetRepository = completedSetRepository,
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
@@ -569,6 +573,7 @@ class DefaultWorkoutSessionManager(
     suspend fun loadRoutineAsync(routine: Routine) = routineFlowManager.loadRoutineAsync(routine)
     fun loadRoutineById(routineId: String) = routineFlowManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = routineFlowManager.enterRoutineOverview(routine)
+    fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) = routineFlowManager.enterRoutineOverview(routine, modifier)
 
     // ===== SetReady Navigation — delegated to RoutineFlowManager =====
 

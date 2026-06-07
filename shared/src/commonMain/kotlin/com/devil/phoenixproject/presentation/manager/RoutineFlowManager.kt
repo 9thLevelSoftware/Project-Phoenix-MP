@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -23,6 +24,7 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CancellationException
@@ -49,6 +51,7 @@ class RoutineFlowManager(
     private val workoutRepository: WorkoutRepository,
     private val exerciseRepository: ExerciseRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
+    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase,
     private val completedSetRepository: CompletedSetRepository,
     private val settingsManager: SettingsManager,
     private val userProfileRepository: UserProfileRepository,
@@ -660,7 +663,7 @@ class RoutineFlowManager(
     private suspend fun resolveRoutineWeights(routine: Routine): Routine {
         val resolvedExercises = routine.exercises.map { exercise ->
             if (exercise.usePercentOfPR) {
-                val resolved = resolveWeightsUseCase(exercise, exercise.programMode)
+                val resolved = resolveWeightsUseCase(exercise, exercise.programMode, routine.profileId)
                 if (resolved.fallbackReason != null) {
                     Logger.w { "PR weight fallback for ${exercise.exercise.name}: ${resolved.fallbackReason}" }
                 } else if (resolved.isFromPR) {
@@ -827,32 +830,46 @@ class RoutineFlowManager(
      */
     fun enterRoutineOverview(routine: Routine) {
         scope.launch {
-            val resolvedRoutine = resolveRoutineWeights(routine)
-            val normalized = normalizeExerciseOrder(resolvedRoutine)
-            coordinator._loadedRoutine.value = normalized
-            coordinator._currentExerciseIndex.value = 0
-            coordinator._currentSetIndex.value = 0
-            coordinator._skippedExercises.value = emptySet()
-            coordinator._completedExercises.value = emptySet()
-            coordinator._completedRoutineSetKeys.value = emptySet()
-            coordinator._weightAdjustmentRecommendation.value = null
-            coordinator._workoutState.value = WorkoutState.Idle
-            coordinator._routineFlowState.value = RoutineFlowState.Overview(
-                routine = normalized,
-                selectedExerciseIndex = 0,
-            )
+            enterRoutineOverviewInternal(resolveRoutineWeights(routine))
+        }
+    }
 
-            // Issue #356: Initialize warm-up state for the first exercise
-            val firstExercise = normalized.exercises.firstOrNull()
-            val isFirstBodyweight = firstExercise?.exercise?.isBodyweight ?: false
-            if (firstExercise != null && firstExercise.warmupSets.isNotEmpty() && !isFirstBodyweight) {
-                coordinator._currentWarmupSetIndex.value = 0
-                coordinator._totalWarmupSets.value = firstExercise.warmupSets.size
-                Logger.d("RoutineFlowManager") { "Issue #356: Overview init warm-up for ${firstExercise.exercise.name}: ${firstExercise.warmupSets.size} sets" }
-            } else {
-                coordinator._currentWarmupSetIndex.value = -1
-                coordinator._totalWarmupSets.value = 0
-            }
+    /**
+     * Enter routine overview with a one-shot launch modifier applied after PR% weights resolve.
+     */
+    fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) {
+        scope.launch {
+            val resolvedRoutine = resolveRoutineWeights(routine)
+            val adjustedRoutine = applyRoutineModifierUseCase(resolvedRoutine, modifier, resolvedRoutine.profileId)
+            enterRoutineOverviewInternal(adjustedRoutine)
+        }
+    }
+
+    private fun enterRoutineOverviewInternal(routine: Routine) {
+        val normalized = normalizeExerciseOrder(routine)
+        coordinator._loadedRoutine.value = normalized
+        coordinator._currentExerciseIndex.value = 0
+        coordinator._currentSetIndex.value = 0
+        coordinator._skippedExercises.value = emptySet()
+        coordinator._completedExercises.value = emptySet()
+        coordinator._completedRoutineSetKeys.value = emptySet()
+        coordinator._weightAdjustmentRecommendation.value = null
+        coordinator._workoutState.value = WorkoutState.Idle
+        coordinator._routineFlowState.value = RoutineFlowState.Overview(
+            routine = normalized,
+            selectedExerciseIndex = 0,
+        )
+
+        // Issue #356: Initialize warm-up state for the first exercise
+        val firstExercise = normalized.exercises.firstOrNull()
+        val isFirstBodyweight = firstExercise?.exercise?.isBodyweight ?: false
+        if (firstExercise != null && firstExercise.warmupSets.isNotEmpty() && !isFirstBodyweight) {
+            coordinator._currentWarmupSetIndex.value = 0
+            coordinator._totalWarmupSets.value = firstExercise.warmupSets.size
+            Logger.d("RoutineFlowManager") { "Issue #356: Overview init warm-up for ${firstExercise.exercise.name}: ${firstExercise.warmupSets.size} sets" }
+        } else {
+            coordinator._currentWarmupSetIndex.value = -1
+            coordinator._totalWarmupSets.value = 0
         }
     }
 
