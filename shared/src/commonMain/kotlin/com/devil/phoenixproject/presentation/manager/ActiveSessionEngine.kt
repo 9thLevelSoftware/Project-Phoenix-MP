@@ -3,7 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
-import com.devil.phoenixproject.data.integration.RoutineHealthData
+import com.devil.phoenixproject.data.integration.HealthWorkoutExportBuilder
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
@@ -2714,8 +2714,6 @@ class ActiveSessionEngine(
                 coordinator._completedRoutineSetKeys.update {
                     it + (coordinator._currentExerciseIndex.value to coordinator._currentSetIndex.value)
                 }
-            } else if (!isRoutineSet) {
-                enqueueWorkoutHealthPush(session)
             }
             val persistedSummary = summary.copy(
                 sessionId = session.id,
@@ -2762,6 +2760,10 @@ class ActiveSessionEngine(
             if (hasPR && completedSetId != null) {
                 completedSetRepository.markAsPr(completedSetId)
                 Logger.d("Marked CompletedSet $completedSetId as PR (manual stop)")
+            }
+
+            if (!isRoutineSet) {
+                enqueueWorkoutHealthPush(session)
             }
 
             scope.launch {
@@ -3000,7 +3002,19 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                healthIntegration.writeWorkout(session)
+                val completedSets = completedSetRepository.getCompletedSets(session.id)
+                val data = HealthWorkoutExportBuilder.buildStandaloneWorkout(
+                    session = session,
+                    completedSets = completedSets,
+                )
+                if (data == null) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Health auto-push skipped: no exportable segments for sessionId=${session.id}"
+                    }
+                    return@launch
+                }
+
+                healthIntegration.writeHealthWorkout(data)
                     .onSuccess {
                         Logger.i("ActiveSessionEngine") { "Auto-pushed workout to ${provider.displayName}: sessionId=${session.id}" }
                     }
@@ -3062,17 +3076,29 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                val data = RoutineHealthData(
-                    routineName = routineName,
-                    startTimeMs = startTime,
-                    durationMs = durationMs,
-                    totalCalories = totalCalories,
-                    externalId = routineSessionId,
+                val sessions = workoutRepository.getSessionsForRoutineSession(
+                    profileId = profileId,
+                    routineSessionId = routineSessionId,
                 )
-                healthIntegration.writeRoutineWorkout(data)
+                val completedSetsBySessionId = completedSetRepository
+                    .getCompletedSetsForSessions(sessions.map { it.id })
+                    .groupBy { it.sessionId }
+                val data = HealthWorkoutExportBuilder.buildRoutineWorkout(
+                    routineSessionId = routineSessionId,
+                    sessions = sessions,
+                    completedSetsBySessionId = completedSetsBySessionId,
+                )
+                if (data == null) {
+                    Logger.i("ActiveSessionEngine") {
+                        "Routine health push skipped: no persisted exportable segments for routineSessionId=$routineSessionId"
+                    }
+                    return@launch
+                }
+
+                healthIntegration.writeHealthWorkout(data)
                     .onSuccess {
                         Logger.i("ActiveSessionEngine") {
-                            "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s)"
+                            "Auto-pushed routine workout to ${provider.displayName}: $routineName (${durationMs / 1000}s, segments=${data.segments.size})"
                         }
                     }
                     .onFailure { e ->
@@ -3223,13 +3249,6 @@ class ActiveSessionEngine(
             }
         }
 
-        // Fire-and-forget health push: auto-push to Health Connect (Android) or HealthKit (iOS)
-        // after the session is persisted. Failure is non-fatal and never blocks workout completion.
-        // Issue #395: Skip per-set writes for routine sets — aggregate written at routine completion.
-        if (!isRoutineSet) {
-            enqueueWorkoutHealthPush(session)
-        }
-
         if (metricsSnapshot.isNotEmpty()) {
             workoutRepository.saveMetrics(sessionId, metricsSnapshot)
         }
@@ -3274,6 +3293,12 @@ class ActiveSessionEngine(
         if (hasPR && completedSetId != null) {
             completedSetRepository.markAsPr(completedSetId)
             Logger.d("Marked CompletedSet $completedSetId as PR")
+        }
+
+        // Fire-and-forget health push after session, metrics, CompletedSet, and PR persistence.
+        // Issue #395: Skip per-set writes for routine sets; aggregate is written at routine completion.
+        if (!isRoutineSet) {
+            enqueueWorkoutHealthPush(session)
         }
 
         // Sync trigger AFTER all persistence (session, metrics, CompletedSet, PR marking)

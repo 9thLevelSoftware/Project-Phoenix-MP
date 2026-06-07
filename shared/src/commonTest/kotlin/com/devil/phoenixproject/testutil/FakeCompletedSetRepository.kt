@@ -77,6 +77,9 @@ class FakeCompletedSetRepository : CompletedSetRepository {
         ?.sortedBy { it.setNumber }
         ?: emptyList()
 
+    override suspend fun getCompletedSetsForSessions(sessionIds: List<String>): List<CompletedSet> = sessionIds
+        .flatMap { sessionId -> getCompletedSets(sessionId) }
+
     override fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>> {
         val flow = completedSetsFlows.getOrPut(sessionId) {
             MutableStateFlow(emptyList())

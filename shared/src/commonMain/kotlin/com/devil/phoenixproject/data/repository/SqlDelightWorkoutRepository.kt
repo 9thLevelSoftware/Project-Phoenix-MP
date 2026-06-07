@@ -971,6 +971,24 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         queries.selectSessionById(sessionId, ::mapToSession).executeAsOneOrNull()
     }
 
+    override suspend fun getSessionsForRoutineSession(
+        profileId: String,
+        routineSessionId: String,
+    ): List<WorkoutSession> = withContext(Dispatchers.IO) {
+        queries.selectSessionsByRoutineSessionId(
+            profileId = profileId,
+            routineSessionId = routineSessionId,
+            mapper = ::mapToSession,
+        ).executeAsList()
+    }
+
+    override suspend fun getCompletedHealthExportCandidates(profileId: String): List<WorkoutSession> = withContext(Dispatchers.IO) {
+        queries.selectCompletedHealthExportCandidates(
+            profileId = profileId,
+            mapper = ::mapToSession,
+        ).executeAsList()
+    }
+
     override suspend fun markRoutineUsed(routineId: String) {
         withContext(Dispatchers.IO) {
             if (routineId.isBlank()) return@withContext

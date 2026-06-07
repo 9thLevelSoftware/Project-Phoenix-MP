@@ -4,11 +4,13 @@ import android.annotation.SuppressLint
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.ExerciseSegment
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Energy
+import androidx.health.connect.client.units.Mass
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import java.time.Instant
@@ -83,86 +85,14 @@ actual class HealthIntegration(private val context: Context) {
         }
     }
 
-    @SuppressLint("RestrictedApi") // ExerciseSessionRecord constructor restricted in alpha; fixed in stable 1.1.0
     actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
-        val c = client ?: return Result.failure(
-            IllegalStateException("Health Connect is not available on this device"),
-        )
-
-        if (!hasPermissions()) {
-            return Result.failure(
-                SecurityException("Health Connect write permissions not granted"),
-            )
-        }
-
-        return try {
-            val startInstant = Instant.ofEpochMilli(session.timestamp)
-            // session.duration is stored in MILLISECONDS (from currentTimeMillis() - startTime)
-            // Issue #362: Convert to seconds for Health Connect; minimum 1 second
-            val durationMs = session.duration.coerceAtLeast(1000L)
-            val durationSeconds = durationMs / 1000L
-            val endInstant = startInstant.plusSeconds(durationSeconds)
-            val zoneOffset = ZoneId.systemDefault().rules.getOffset(startInstant)
-            val title = buildExerciseTitle(session)
-            val canWriteCalories = hasCalorieWritePermission()
-
-            log.i {
-                "HEALTH_DEBUG_ANDROID_WRITE: sessionId=${session.id}, " +
-                    "exercise=${session.exerciseName ?: "NULL"}, " +
-                    "weightPerCableKg=${session.weightPerCableKg}, cableCount=${session.cableCount ?: -1}, " +
-                    "displayMultiplier=${session.displayMultiplier ?: -1}, " +
-                    "builtTitle=$title, estimatedCalories=${session.estimatedCalories ?: -1f}, " +
-                    "canWriteCalories=$canWriteCalories, " +
-                    "durationMs=${session.duration}, durationSeconds=$durationSeconds"
-            }
-
-            val records = buildList {
-                add(
-                    ExerciseSessionRecord(
-                        startTime = startInstant,
-                        startZoneOffset = zoneOffset,
-                        endTime = endInstant,
-                        endZoneOffset = zoneOffset,
-                        exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING,
-                        title = title,
-                        metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
-                    ),
-                )
-
-                val calories = session.estimatedCalories
-                if (calories != null && calories > 0f) {
-                    if (canWriteCalories) {
-                        add(
-                            TotalCaloriesBurnedRecord(
-                                startTime = startInstant,
-                                startZoneOffset = zoneOffset,
-                                endTime = endInstant,
-                                endZoneOffset = zoneOffset,
-                                energy = Energy.kilocalories(calories.toDouble()),
-                                metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
-                            ),
-                        )
-                    } else {
-                        log.i { "Skipping Health Connect calorie record for session ${session.id}: optional calorie write permission not granted" }
-                    }
-                }
-            }
-
-            c.insertRecords(records)
-            log.d { "Wrote ${records.size} Health Connect record(s) for session ${session.id}" }
-            Result.success(Unit)
-        } catch (e: Exception) {
-            log.e(e) { "Failed to write workout to Health Connect for session ${session.id}" }
-            Result.failure(e)
-        }
+        val data = HealthWorkoutExportBuilder.buildStandaloneWorkout(session, completedSets = emptyList())
+            ?: return Result.failure(IllegalArgumentException("Workout session has no completed reps to write"))
+        return writeHealthWorkout(data)
     }
 
-    /**
-     * Issue #395: Write a single aggregate Health Connect workout for an entire routine.
-     * Called once at routine completion instead of per-set.
-     */
     @SuppressLint("RestrictedApi")
-    actual suspend fun writeRoutineWorkout(data: RoutineHealthData): Result<Unit> {
+    actual suspend fun writeHealthWorkout(data: HealthWorkoutData): Result<Unit> {
         val c = client ?: return Result.failure(
             IllegalStateException("Health Connect is not available on this device"),
         )
@@ -175,17 +105,21 @@ actual class HealthIntegration(private val context: Context) {
 
         return try {
             val startInstant = Instant.ofEpochMilli(data.startTimeMs)
-            val durationMs = data.durationMs.coerceAtLeast(1000L)
-            val durationSeconds = durationMs / 1000L
-            val endInstant = startInstant.plusSeconds(durationSeconds)
+            val endInstant = Instant.ofEpochMilli(data.endTimeMs.coerceAtLeast(data.startTimeMs + 1000L))
             val zoneOffset = ZoneId.systemDefault().rules.getOffset(startInstant)
             val canWriteCalories = hasCalorieWritePermission()
+            val exerciseSegments = data.segments.map { segment -> segment.toHealthConnectSegment() }
+            val sessionRpe = data.segments
+                .mapNotNull { it.rpe }
+                .takeIf { it.isNotEmpty() }
+                ?.average()
+                ?.toFloat()
 
             log.i {
-                "HEALTH_DEBUG_ANDROID_ROUTINE: externalId=${data.externalId}, " +
-                    "routineName=${data.routineName}, durationMs=${data.durationMs}, " +
-                    "durationSeconds=$durationSeconds, totalCalories=${data.totalCalories ?: -1f}, " +
-                    "canWriteCalories=$canWriteCalories"
+                "HEALTH_DEBUG_ANDROID_WRITE: externalId=${data.externalId}, title=${data.title}, " +
+                    "segments=${data.segments.size}, totalCalories=${data.totalCalories ?: -1f}, " +
+                    "canWriteCalories=$canWriteCalories, " +
+                    "durationMs=${data.endTimeMs - data.startTimeMs}"
             }
 
             val records = buildList {
@@ -195,9 +129,15 @@ actual class HealthIntegration(private val context: Context) {
                         startZoneOffset = zoneOffset,
                         endTime = endInstant,
                         endZoneOffset = zoneOffset,
-                        exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING,
-                        title = data.routineName,
-                        metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
+                        metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE, data.externalId, 0L),
+                        exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING,
+                        title = data.title,
+                        notes = null,
+                        segments = exerciseSegments,
+                        laps = emptyList(),
+                        exerciseRoute = null,
+                        plannedExerciseSessionId = null,
+                        rateOfPerceivedExertion = sessionRpe,
                     ),
                 )
 
@@ -211,44 +151,63 @@ actual class HealthIntegration(private val context: Context) {
                                 endTime = endInstant,
                                 endZoneOffset = zoneOffset,
                                 energy = Energy.kilocalories(calories.toDouble()),
-                                metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE),
+                                metadata = Metadata.activelyRecorded(
+                                    VITRUVIAN_DEVICE,
+                                    HealthWorkoutExportBuilder.calorieClientRecordId(data.externalId),
+                                    0L,
+                                ),
                             ),
                         )
                     } else {
-                        log.i { "Skipping Health Connect calorie record for routine ${data.externalId}: optional calorie write permission not granted" }
+                        log.i { "Skipping Health Connect calorie record for ${data.externalId}: optional calorie write permission not granted" }
                     }
                 }
             }
 
             c.insertRecords(records)
-            log.d { "Wrote ${records.size} Health Connect record(s) for routine: ${data.routineName}" }
+            log.d { "Wrote ${records.size} Health Connect record(s) for ${data.externalId}" }
             Result.success(Unit)
         } catch (e: Exception) {
-            log.e(e) { "Failed to write routine workout to Health Connect: ${data.externalId}" }
+            log.e(e) { "Failed to write workout to Health Connect for ${data.externalId}" }
             Result.failure(e)
         }
     }
 
-    /**
-     * Builds a human-readable title for the exercise session.
-     *
-     * Weight display logic:
-     * - Prefer persisted displayMultiplier when present (established display semantics)
-     * - Fall back to raw physical cableCount only for legacy sessions without displayMultiplier
-     * - If both are null, default to 1 (per-cable weight shown as-is)
-     *
-     * This keeps Health titles aligned with persisted WorkoutSession display semantics.
-     */
-    private fun buildExerciseTitle(session: WorkoutSession): String {
-        val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        // Prefer displayMultiplier; raw physical cableCount is only the legacy fallback.
-        // This prevents incorrect bilateral handle inflation (Issue #358: 80kg showing as 160kg).
-        val totalWeightKg = session.weightPerCableKg *
-            (session.displayMultiplier ?: session.cableCount ?: 1).toFloat()
-        return if (totalWeightKg > 0f) {
-            "$exerciseName — ${totalWeightKg.toInt()}kg"
-        } else {
-            exerciseName
+    private fun HealthWorkoutSegment.toHealthConnectSegment(): ExerciseSegment {
+        val sessionType = ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING
+        val preferredType = segmentTypeForExercise(exerciseName)
+        val fallbackType = ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
+        val segmentType = when {
+            ExerciseSegment.isSegmentTypeCompatibleWithSessionType(preferredType, sessionType) -> preferredType
+            ExerciseSegment.isSegmentTypeCompatibleWithSessionType(fallbackType, sessionType) -> fallbackType
+            else -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_UNKNOWN
+        }
+
+        return ExerciseSegment(
+            startTime = Instant.ofEpochMilli(startTimeMs),
+            endTime = Instant.ofEpochMilli(endTimeMs.coerceAtLeast(startTimeMs + 1000L)),
+            segmentType = segmentType,
+            repetitions = reps.coerceAtLeast(0),
+            weight = Mass.kilograms(weightKg.toDouble().coerceAtLeast(0.0)),
+            setIndex = setIndex.coerceAtLeast(0),
+            rateOfPerceivedExertion = rpe?.toFloat(),
+        )
+    }
+
+    private fun segmentTypeForExercise(name: String): Int {
+        val normalized = name.lowercase()
+        return when {
+            "bench" in normalized && "press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_BENCH_PRESS
+            "deadlift" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DEADLIFT
+            "squat" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_SQUAT
+            "curl" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_ARM_CURL
+            "row" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
+            "pulldown" in normalized || "pull down" in normalized || "lat pull" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
+            "pull-up" in normalized || "pull up" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_PULL_UP
+            "lunge" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_LUNGE
+            "shoulder press" in normalized || "overhead press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_SHOULDER_PRESS
+            "tricep" in normalized || "triceps" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DOUBLE_ARM_TRICEPS_EXTENSION
+            else -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
         }
     }
 }
