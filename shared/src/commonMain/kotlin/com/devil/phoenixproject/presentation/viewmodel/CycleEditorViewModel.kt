@@ -179,6 +179,7 @@ class CycleEditorViewModel(
 
     fun deleteItem(index: Int) {
         _uiState.update { state ->
+            if (index !in state.items.indices) return@update state
             val item = state.items[index]
             val newList = state.items.toMutableList().apply { removeAt(index) }
             val renumbered = renumberItems(newList)
@@ -205,6 +206,7 @@ class CycleEditorViewModel(
 
     fun duplicateItem(index: Int) {
         _uiState.update { state ->
+            if (index !in state.items.indices) return@update state
             val item = state.items[index]
             val duplicate = when (item) {
                 is CycleItem.Workout -> item.copy(id = generateUUID(), dayNumber = index + 2)
@@ -218,6 +220,7 @@ class CycleEditorViewModel(
 
     fun reorderItems(from: Int, to: Int) {
         _uiState.update { state ->
+            if (from !in state.items.indices || to !in state.items.indices) return@update state
             val list = state.items.toMutableList()
             val moved = list.removeAt(from)
             list.add(to, moved)
@@ -228,6 +231,7 @@ class CycleEditorViewModel(
 
     fun convertToWorkout(index: Int, routine: Routine) {
         _uiState.update { state ->
+            if (index !in state.items.indices) return@update state
             val item = state.items[index]
             if (item is CycleItem.Rest) {
                 val workout = CycleItem.Workout(
@@ -248,6 +252,7 @@ class CycleEditorViewModel(
 
     fun convertToRest(index: Int) {
         _uiState.update { state ->
+            if (index !in state.items.indices) return@update state
             val item = state.items[index]
             if (item is CycleItem.Workout) {
                 val rest = CycleItem.Rest(
@@ -265,6 +270,7 @@ class CycleEditorViewModel(
 
     fun changeRoutine(index: Int, routine: Routine) {
         _uiState.update { state ->
+            if (index !in state.items.indices) return@update state
             val item = state.items[index]
             if (item is CycleItem.Workout) {
                 val updated = item.copy(
