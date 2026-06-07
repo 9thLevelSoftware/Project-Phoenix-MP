@@ -223,7 +223,8 @@ class SqlDelightSyncRepository(
                         queries.selectSessionByServerId(it).executeAsOneOrNull()
                     }
 
-                    val localId = existingByServer?.id ?: dto.clientId
+                    val existingLocalSession = existingByServer ?: queries.selectSessionById(dto.clientId).executeAsOneOrNull()
+                    val localId = existingLocalSession?.id ?: dto.clientId
 
                     // Server wins for initial population (upsert pattern)
                     queries.upsertSyncSession(
@@ -277,10 +278,10 @@ class SqlDelightSyncRepository(
                         serverId = dto.serverId,
                         deletedAt = dto.deletedAt,
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
-                        display_multiplier = null,
-                        externalAddedLoadKg = 0.0,
-                        counterweightKg = 0.0,
-                        rackItemsJson = "[]",
+                        display_multiplier = existingLocalSession?.display_multiplier,
+                        externalAddedLoadKg = existingLocalSession?.externalAddedLoadKg ?: 0.0,
+                        counterweightKg = existingLocalSession?.counterweightKg ?: 0.0,
+                        rackItemsJson = existingLocalSession?.rackItemsJson ?: "[]",
                     )
                 }
             }

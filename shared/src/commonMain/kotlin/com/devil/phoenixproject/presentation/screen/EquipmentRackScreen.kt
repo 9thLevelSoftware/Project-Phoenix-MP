@@ -91,6 +91,9 @@ fun EquipmentRackScreen(viewModel: MainViewModel) {
     val rackItems by viewModel.rackItems.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val title = stringResource(Res.string.equipment_rack_title)
+    val sortedRackItems = remember(rackItems) {
+        rackItems.sortedWith(compareBy<RackItem> { it.sortOrder }.thenBy { it.name.lowercase() })
+    }
     var showEditor by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<RackItem?>(null) }
 
@@ -152,23 +155,21 @@ fun EquipmentRackScreen(viewModel: MainViewModel) {
                     }
                 }
             } else {
-                rackItems
-                    .sortedWith(compareBy<RackItem> { it.sortOrder }.thenBy { it.name.lowercase() })
-                    .forEach { item ->
-                        EquipmentRackItemCard(
-                            item = item,
-                            weightUnit = weightUnit,
-                            formatWeight = viewModel::formatWeight,
-                            onEdit = {
-                                editingItem = item
-                                showEditor = true
-                            },
-                            onDelete = { viewModel.deleteRackItem(item.id) },
-                            onEnabledChange = { enabled ->
-                                viewModel.saveRackItem(item.copy(enabled = enabled, updatedAt = currentTimeMillis()))
-                            },
-                        )
-                    }
+                sortedRackItems.forEach { item ->
+                    EquipmentRackItemCard(
+                        item = item,
+                        weightUnit = weightUnit,
+                        formatWeight = viewModel::formatWeight,
+                        onEdit = {
+                            editingItem = item
+                            showEditor = true
+                        },
+                        onDelete = { viewModel.deleteRackItem(item.id) },
+                        onEnabledChange = { enabled ->
+                            viewModel.saveRackItem(item.copy(enabled = enabled, updatedAt = currentTimeMillis()))
+                        },
+                    )
+                }
             }
         }
     }
@@ -268,7 +269,15 @@ private fun EquipmentRackEditorDialog(
 ) {
     var name by remember(item?.id) { mutableStateOf(item?.name.orEmpty()) }
     var weightText by remember(item?.id, weightUnit) {
-        mutableStateOf(item?.let { kgToDisplay(it.weightKg, weightUnit).toString() }.orEmpty())
+        mutableStateOf(
+            item?.let {
+                val displayWeight = kgToDisplay(it.weightKg, weightUnit)
+                val rounded = (displayWeight * 100f).let { value ->
+                    if (value.isFinite()) kotlin.math.round(value) / 100f else displayWeight
+                }
+                rounded.toString()
+            }.orEmpty(),
+        )
     }
     var category by remember(item?.id) { mutableStateOf(item?.category ?: RackItemCategory.OTHER) }
     var behavior by remember(item?.id) { mutableStateOf(item?.behavior ?: RackItemBehavior.ADDED_RESISTANCE) }
@@ -276,7 +285,8 @@ private fun EquipmentRackEditorDialog(
     var categoryExpanded by remember { mutableStateOf(false) }
     var behaviorExpanded by remember { mutableStateOf(false) }
 
-    val parsedWeight = weightText.toFloatOrNull()
+    val normalizedWeightText = weightText.trim().replace(',', '.')
+    val parsedWeight = normalizedWeightText.toFloatOrNull()
     val hasValidName = name.isNotBlank()
     val hasValidWeight = parsedWeight != null && parsedWeight.isFinite() && parsedWeight >= 0f
 

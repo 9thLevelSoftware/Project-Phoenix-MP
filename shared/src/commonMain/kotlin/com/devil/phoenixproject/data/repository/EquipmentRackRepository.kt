@@ -6,6 +6,8 @@ import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -28,29 +30,40 @@ class SettingsEquipmentRackRepository(
         encodeDefaults = true
     }
 
+    private val mutex = Mutex()
     private val _rackItems = MutableStateFlow(loadItems())
     override val rackItems: StateFlow<List<RackItem>> = _rackItems.asStateFlow()
 
-    override suspend fun getItems(): List<RackItem> = _rackItems.value
+    override suspend fun getItems(): List<RackItem> = mutex.withLock { _rackItems.value }
 
     override suspend fun saveItems(items: List<RackItem>) {
+        mutex.withLock {
+            saveItemsInternal(items)
+        }
+    }
+
+    private fun saveItemsInternal(items: List<RackItem>) {
         settings.putString(KEY_RACK_ITEMS, json.encodeToString(items))
         _rackItems.value = items
     }
 
     override suspend fun upsert(item: RackItem) {
-        val items = getItems().toMutableList()
-        val existingIndex = items.indexOfFirst { it.id == item.id }
-        if (existingIndex >= 0) {
-            items[existingIndex] = item
-        } else {
-            items += item
+        mutex.withLock {
+            val items = _rackItems.value.toMutableList()
+            val existingIndex = items.indexOfFirst { it.id == item.id }
+            if (existingIndex >= 0) {
+                items[existingIndex] = item
+            } else {
+                items += item
+            }
+            saveItemsInternal(items)
         }
-        saveItems(items)
     }
 
     override suspend fun delete(id: String) {
-        saveItems(getItems().filterNot { it.id == id })
+        mutex.withLock {
+            saveItemsInternal(_rackItems.value.filterNot { it.id == id })
+        }
     }
 
     override suspend fun resolveActiveItems(selection: ActiveRackSelection): List<RackItem> {

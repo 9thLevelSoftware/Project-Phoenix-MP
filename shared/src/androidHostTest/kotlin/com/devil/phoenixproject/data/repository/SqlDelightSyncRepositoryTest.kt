@@ -58,6 +58,55 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `mergeSessions preserves local rack context for existing legacy server session`() = runTest {
+        val rackItemsJson = """[{"id":"vest","name":"Weighted vest"}]"""
+        insertHistoricalSession(
+            id = "local-rack-session",
+            timestamp = 1_700_000_000_000,
+            exerciseId = "pull-up",
+            exerciseName = "Pull Up",
+            workingReps = 8,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+            externalAddedLoadKg = 12.5,
+            counterweightKg = 3.0,
+            rackItemsJson = rackItemsJson,
+        )
+        database.vitruvianDatabaseQueries.updateSessionServerId("server-rack-session", "local-rack-session")
+
+        repository.mergeSessions(
+            sessions = listOf(
+                WorkoutSessionSyncDto(
+                    clientId = "remote-rack-session",
+                    serverId = "server-rack-session",
+                    timestamp = 1_700_000_000_100,
+                    mode = "Old School",
+                    targetReps = 10,
+                    weightPerCableKg = 30f,
+                    duration = 90,
+                    totalReps = 10,
+                    exerciseId = "pull-up",
+                    exerciseName = "Pull Up",
+                    createdAt = 1_700_000_000_100,
+                    updatedAt = 1_700_000_000_200,
+                ),
+            ),
+        )
+
+        val session = database.vitruvianDatabaseQueries
+            .selectSessionById("local-rack-session")
+            .executeAsOne()
+
+        assertEquals(12.5, session.externalAddedLoadKg)
+        assertEquals(3.0, session.counterweightKg)
+        assertEquals(rackItemsJson, session.rackItemsJson)
+        assertEquals(2L, session.display_multiplier)
+    }
+
+    @Test
     fun `mergePRs uses active profile id`() = runTest {
         repository.mergePRs(
             records = listOf(
@@ -338,6 +387,9 @@ class SqlDelightSyncRepositoryTest {
         peakEccentricA: Double?,
         peakEccentricB: Double?,
         profileId: String,
+        externalAddedLoadKg: Double = 0.0,
+        counterweightKg: Double = 0.0,
+        rackItemsJson: String = "[]",
     ) {
         database.vitruvianDatabaseQueries.insertSession(
             id = id,
@@ -388,9 +440,9 @@ class SqlDelightSyncRepositoryTest {
             formScore = null,
             profile_id = profileId,
             display_multiplier = 2L,
-            externalAddedLoadKg = 0.0,
-            counterweightKg = 0.0,
-            rackItemsJson = "[]",
+            externalAddedLoadKg = externalAddedLoadKg,
+            counterweightKg = counterweightKg,
+            rackItemsJson = rackItemsJson,
         )
     }
 }

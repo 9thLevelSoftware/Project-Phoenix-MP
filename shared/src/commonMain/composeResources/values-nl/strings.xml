@@ -615,6 +615,8 @@
     <string name="equipment_rack_no_enabled_items">No enabled rack items.</string>
     <string name="equipment_rack_none_selected">No rack items selected.</string>
     <string name="equipment_rack_selected_summary">Selected: %1$s</string>
+    <string name="equipment_rack_display_only_count">%1$d display-only</string>
+    <string name="equipment_rack_selected_count">%1$d selected</string>
     <string name="equipment_rack_inline_context">Rack: %1$s</string>
     <string name="equipment_rack_category_weighted_vest">Weighted vest</string>
     <string name="equipment_rack_category_dip_belt">Dip belt</string>

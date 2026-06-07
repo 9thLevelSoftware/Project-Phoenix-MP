@@ -81,9 +81,11 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_next
 import vitruvianprojectphoenix.shared.generated.resources.cd_previous
 import vitruvianprojectphoenix.shared.generated.resources.cd_stop
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_active_selection
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_display_only_count
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_manage
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_no_enabled_items
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_none_selected
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_selected_count
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_selected_summary
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
@@ -604,11 +606,13 @@ private fun SetReadyRackSelectionCard(
     onSelectionChange: (List<String>) -> Unit,
     onManageRack: () -> Unit,
 ) {
-    val enabledItems = rackItems
-        .filter { it.enabled }
-        .sortedWith(compareBy<RackItem> { it.sortOrder }.thenBy { it.name.lowercase() })
-    val activeIdSet = activeRackItemIds.toSet()
-    val selectedItems = enabledItems.filter { it.id in activeIdSet }
+    val enabledItems = remember(rackItems) {
+        rackItems
+            .filter { it.enabled }
+            .sortedWith(compareBy<RackItem> { it.sortOrder }.thenBy { it.name.lowercase() })
+    }
+    val activeIdSet = remember(activeRackItemIds) { activeRackItemIds.toSet() }
+    val selectedItems = remember(enabledItems, activeIdSet) { enabledItems.filter { it.id in activeIdSet } }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -694,6 +698,7 @@ private fun formatRackChipDetail(
     RackItemBehavior.DISPLAY_ONLY -> formatWeight(item.weightKg, weightUnit)
 }
 
+@Composable
 private fun rackSelectionSummary(
     items: List<RackItem>,
     weightUnit: WeightUnit,
@@ -702,12 +707,18 @@ private fun rackSelectionSummary(
     val addedKg = items.filter { it.behavior == RackItemBehavior.ADDED_RESISTANCE }.sumOf { it.weightKg.toDouble() }.toFloat()
     val counterweightKg = items.filter { it.behavior == RackItemBehavior.COUNTERWEIGHT }.sumOf { it.weightKg.toDouble() }.toFloat()
     val displayOnlyCount = items.count { it.behavior == RackItemBehavior.DISPLAY_ONLY }
+    val displayOnlyLabel = if (displayOnlyCount > 0) {
+        stringResource(Res.string.equipment_rack_display_only_count, displayOnlyCount)
+    } else {
+        null
+    }
+    val selectedCountLabel = stringResource(Res.string.equipment_rack_selected_count, items.size)
     val parts = buildList {
         if (addedKg > 0f) add("+${formatWeight(addedKg, weightUnit)}")
         if (counterweightKg > 0f) add("-${formatWeight(counterweightKg, weightUnit)}")
-        if (displayOnlyCount > 0) add("$displayOnlyCount display-only")
+        displayOnlyLabel?.let(::add)
     }
-    return parts.ifEmpty { listOf("${items.size} selected") }.joinToString(" / ")
+    return parts.ifEmpty { listOf(selectedCountLabel) }.joinToString(" / ")
 }
 
 /**
