@@ -220,7 +220,7 @@ class CycleEditorViewModel(
 
     fun reorderItems(from: Int, to: Int) {
         _uiState.update { state ->
-            if (from !in state.items.indices || to !in state.items.indices) return@update state
+            if (from == to || from !in state.items.indices || to !in state.items.indices) return@update state
             val list = state.items.toMutableList()
             val moved = list.removeAt(from)
             list.add(to, moved)
