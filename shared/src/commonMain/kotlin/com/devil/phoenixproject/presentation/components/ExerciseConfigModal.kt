@@ -429,6 +429,7 @@ private fun EccentricSlider(percent: Int, onPercentChange: (Int) -> Unit, label:
             onValueChange = { onPercentChange(it.toInt()) },
             valueRange = 100f..150f,
             steps = 9,
+            remoteStep = 1f,
             modifier = Modifier.fillMaxWidth(),
         )
 

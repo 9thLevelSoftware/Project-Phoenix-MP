@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
@@ -29,6 +30,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
+import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.getPlatform
@@ -145,6 +147,8 @@ class DefaultWorkoutSessionManager(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
+    private val equipmentRackRepository: EquipmentRackRepository,
+    private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val settingsManager: SettingsManager,
     private val dataBackupManager: DataBackupManager? = null,
     private val userProfileRepository: UserProfileRepository,
@@ -224,6 +228,8 @@ class DefaultWorkoutSessionManager(
         syncTriggerManager = syncTriggerManager,
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
+        equipmentRackRepository = equipmentRackRepository,
+        applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
         scope = scope,
@@ -609,6 +615,8 @@ class DefaultWorkoutSessionManager(
     fun resetLoadBaseline() = activeSessionEngine.resetLoadBaseline()
     fun updateWorkoutParameters(params: WorkoutParameters) = activeSessionEngine.updateWorkoutParameters(params)
     fun setWorkoutParametersInternal(params: WorkoutParameters) = activeSessionEngine.setWorkoutParametersInternal(params)
+    fun updateActiveRackSelection(itemIds: List<String>) = activeSessionEngine.updateActiveRackSelection(itemIds)
+    fun clearActiveRackSelection() = activeSessionEngine.clearActiveRackSelection()
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)

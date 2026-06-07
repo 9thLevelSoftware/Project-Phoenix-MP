@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
@@ -18,12 +19,14 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.domain.model.ActiveRackSelection
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RepMetricData
@@ -40,6 +43,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
+import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
@@ -60,6 +64,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -89,6 +95,8 @@ class ActiveSessionEngine(
     private val syncTriggerManager: SyncTriggerManager?,
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
+    private val equipmentRackRepository: EquipmentRackRepository,
+    private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val settingsManager: SettingsManager,
     private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope,
@@ -97,6 +105,10 @@ class ActiveSessionEngine(
     private val externalActivityRepository: ExternalActivityRepository? = null,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
 ) {
+    private val rackJson = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
 
     /**
      * Delegate interface for operations that require routine navigation or
@@ -424,6 +436,64 @@ class ActiveSessionEngine(
 
     private suspend fun resolveSelectedExercise(params: WorkoutParameters) = params.selectedExerciseId?.let { exerciseId -> exerciseRepository.getExerciseById(exerciseId) }
 
+    private suspend fun captureRackLoadSnapshot(
+        params: WorkoutParameters,
+        currentExercise: RoutineExercise?,
+    ): WorkoutParameters {
+        val selectedItems = equipmentRackRepository.resolveActiveItems(
+            ActiveRackSelection(coordinator._activeRackItemIds.value),
+        )
+        val displayMultiplier = currentExercise?.exercise?.displayMultiplier
+            ?: resolveSelectedExercise(params)?.displayMultiplier
+            ?: 1
+        val adjustment = applyEquipmentRackLoadUseCase.calculate(
+            programmedWeightPerCableKg = params.weightPerCableKg,
+            displayMultiplier = displayMultiplier,
+            selectedItems = selectedItems,
+            isEchoMode = params.isEchoMode,
+            validatorMinimumPerCableKg = validatorSafeMinimum(params),
+        )
+        coordinator._currentRackLoadAdjustment.value = adjustment
+        coordinator.currentRackItemsJson = rackJson.encodeToString(selectedItems)
+        val paramsWithRack = params.copy(
+            activeRackItemIds = coordinator._activeRackItemIds.value,
+            externalAddedLoadKg = adjustment.externalAddedLoadKg,
+            counterweightKg = adjustment.counterweightKg,
+        )
+        coordinator._workoutParameters.value = paramsWithRack
+        return paramsWithRack
+    }
+
+    private fun applyRackToBleParams(
+        params: WorkoutParameters,
+        displayMultiplier: Int,
+        selectedItems: List<RackItem>,
+    ): WorkoutParameters {
+        val adjustment = applyEquipmentRackLoadUseCase.calculate(
+            programmedWeightPerCableKg = params.weightPerCableKg,
+            displayMultiplier = displayMultiplier,
+            selectedItems = selectedItems,
+            isEchoMode = params.isEchoMode,
+            validatorMinimumPerCableKg = validatorSafeMinimum(params),
+        )
+        return params.copy(
+            weightPerCableKg = if (params.isEchoMode) {
+                params.weightPerCableKg
+            } else {
+                adjustment.adjustedMachineWeightPerCableKg
+            },
+            activeRackItemIds = coordinator._activeRackItemIds.value,
+            externalAddedLoadKg = adjustment.externalAddedLoadKg,
+            counterweightKg = adjustment.counterweightKg,
+        )
+    }
+
+    private fun validatorSafeMinimum(params: WorkoutParameters): Float = when {
+        params.isJustLift -> Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG
+        params.isEchoMode -> Constants.MIN_WEIGHT_KG
+        else -> Constants.DEFAULT_WEIGHT_INCREMENT_KG
+    }
+
     private fun roundUpRemainingSeconds(seconds: Float): Int {
         val wholeSeconds = seconds.toInt()
         return if (seconds > wholeSeconds.toFloat()) wholeSeconds + 1 else wholeSeconds
@@ -715,20 +785,26 @@ class ActiveSessionEngine(
         val resolvedVariant = selectedVariant
             ?: coordinator._selectedBodyweightVariants.value[bodyweightVariantKey(currentExercise)]
         val percentage = resolvedVariant?.percentage
-        val volume = if (percentage != null) {
-            BodyweightVolumeCalculator.calculateVolume(bodyWeightKg, repCount, percentage)
-        } else {
-            BodyweightVolumeCalculator.calculateVolume(exerciseName, bodyWeightKg, repCount)
-        }
-        val effectiveWeight = if (percentage != null) {
-            BodyweightVolumeCalculator.effectiveWeight(bodyWeightKg, percentage)
-        } else {
-            BodyweightVolumeCalculator.effectiveWeight(exerciseName, bodyWeightKg)
-        }
+        val resolvedPercentage = percentage ?: BodyweightVolumeCalculator.getPercentageForExercise(exerciseName)
+        val rackAdjustment = coordinator._currentRackLoadAdjustment.value
+        val volume = BodyweightVolumeCalculator.calculateVolume(
+            bodyWeightKg = bodyWeightKg,
+            reps = repCount,
+            percentage = resolvedPercentage,
+            externalAddedLoadKg = rackAdjustment.externalAddedLoadKg,
+            counterweightKg = rackAdjustment.counterweightKg,
+        )
+        val effectiveWeight = BodyweightVolumeCalculator.effectiveWeight(
+            bodyWeightKg = bodyWeightKg,
+            percentage = resolvedPercentage,
+            externalAddedLoadKg = rackAdjustment.externalAddedLoadKg,
+            counterweightKg = rackAdjustment.counterweightKg,
+        )
 
         Logger.d("ActiveSessionEngine") {
             "applyBodyweightVolume: exercise=$exerciseName, bodyWeight=${bodyWeightKg}kg, " +
                 "variant=${resolvedVariant?.label ?: "name-match"}, reps=$repCount, " +
+                "externalAddedLoad=${rackAdjustment.externalAddedLoadKg}kg, counterweight=${rackAdjustment.counterweightKg}kg, " +
                 "volume=${volume}kg, effectiveWeight=${effectiveWeight}kg"
         }
 
@@ -1540,6 +1616,8 @@ class ActiveSessionEngine(
                 Logger.d("Just Lift already in Idle state, ensuring auto-start is enabled")
             }
 
+            coordinator.clearActiveRackSelection()
+
             coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
                 isJustLift = true,
                 useAutoStart = true,
@@ -1750,6 +1828,7 @@ class ActiveSessionEngine(
         coordinator._totalWarmupSets.value = 0
         coordinator._selectedBodyweightVariants.value = emptyMap()
         coordinator.bodyweightCompletionVariantOverride = null
+        coordinator.clearActiveRackSelection()
     }
 
     fun recaptureLoadBaseline() {
@@ -1793,6 +1872,18 @@ class ActiveSessionEngine(
             Logger.d("updateWorkoutParameters: User edited params in ${currentState::class.simpleName} - will preserve on transition")
         }
         coordinator._workoutParameters.value = safeParams
+    }
+
+    fun updateActiveRackSelection(itemIds: List<String>) {
+        val distinctIds = itemIds.distinct()
+        coordinator._activeRackItemIds.value = distinctIds
+        coordinator._workoutParameters.update { params ->
+            params.copy(activeRackItemIds = distinctIds)
+        }
+    }
+
+    fun clearActiveRackSelection() {
+        coordinator.clearActiveRackSelection()
     }
 
     /**
@@ -2121,9 +2212,10 @@ class ActiveSessionEngine(
                 if (startOverride != null) {
                     coordinator._workoutParameters.value = startOverride.params
                 }
-                val params = startOverride?.params ?: coordinator._workoutParameters.value
+                val baseParams = startOverride?.params ?: coordinator._workoutParameters.value
 
                 val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+                val params = captureRackLoadSnapshot(baseParams, currentExercise)
                 val isBodyweight = isBodyweightExercise(currentExercise)
                 val exerciseDuration = currentExercise?.duration?.takeIf { it > 0 }
                 val bodyweightDuration = if (isBodyweight) exerciseDuration else null
@@ -2267,6 +2359,10 @@ class ActiveSessionEngine(
                     coordinator._workoutParameters.value = warmupOverrideParams
                 }
 
+                val rackDisplayMultiplier = currentExercise?.exercise?.displayMultiplier
+                    ?: resolveSelectedExercise(effectiveParams)?.displayMultiplier
+                    ?: 1
+                val rackSnapshotItems = coordinator._currentRackLoadAdjustment.value.selectedItems
                 val bleParams = run {
                     val base = if (isTimedCableExercise) {
                         Logger.d { "Duration cable: overriding isAMRAP=true for BLE command (prevents machine rep limit)" }
@@ -2291,6 +2387,12 @@ class ActiveSessionEngine(
                     } else {
                         base
                     }
+                }.let { paramsForBle ->
+                    applyRackToBleParams(
+                        params = paramsForBle,
+                        displayMultiplier = rackDisplayMultiplier,
+                        selectedItems = rackSnapshotItems,
+                    )
                 }
 
                 // Issue #390: Diagnostic logging for weight tracing from routine → BLE
@@ -2666,6 +2768,7 @@ class ActiveSessionEngine(
                 val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
                 applyBodyweightVolume(baseSummary, currentExercise, bodyWeightKg)
             }
+            val rackAdjustment = coordinator._currentRackLoadAdjustment.value
 
             // Issue #252: Exclude warmup time from session duration
             val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
@@ -2696,6 +2799,9 @@ class ActiveSessionEngine(
                 totalVolumeKg = summary.totalVolumeKg,
                 cableCount = summary.cableCount,
                 displayMultiplier = summary.displayMultiplier,
+                externalAddedLoadKg = rackAdjustment.externalAddedLoadKg,
+                counterweightKg = rackAdjustment.counterweightKg,
+                rackItemsJson = coordinator.currentRackItemsJson,
                 estimatedCalories = summary.estimatedCalories,
                 warmupAvgWeightKg = if (params.isEchoMode) summary.warmupAvgWeightKg else null,
                 workingAvgWeightKg = if (params.isEchoMode) summary.workingAvgWeightKg else null,
@@ -3146,6 +3252,7 @@ class ActiveSessionEngine(
         } else {
             params.weightPerCableKg
         }
+        val rackAdjustment = coordinator._currentRackLoadAdjustment.value
 
         // Capture biomechanics summary for WorkoutSession fields.
         // Safe to call here: runs BEFORE biomechanicsEngine.reset() in handleSetCompletion.
@@ -3182,6 +3289,9 @@ class ActiveSessionEngine(
             totalVolumeKg = summary.totalVolumeKg,
             cableCount = summary.cableCount,
             displayMultiplier = summary.displayMultiplier,
+            externalAddedLoadKg = rackAdjustment.externalAddedLoadKg,
+            counterweightKg = rackAdjustment.counterweightKg,
+            rackItemsJson = coordinator.currentRackItemsJson,
             estimatedCalories = summary.estimatedCalories,
             warmupAvgWeightKg = if (params.isEchoMode) summary.warmupAvgWeightKg else null,
             workingAvgWeightKg = if (params.isEchoMode) summary.workingAvgWeightKg else null,

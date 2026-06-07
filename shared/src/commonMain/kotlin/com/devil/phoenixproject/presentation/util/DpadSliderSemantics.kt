@@ -102,7 +102,7 @@ fun Modifier.tvSliderKeys(
                         DpadSliderFocusMove.Down -> FocusDirection.Down
                     },
                 )
-                return@onPreviewKeyEvent result.consumed || moved
+                return@onPreviewKeyEvent moved
             }
 
             result.newValue?.let { newValue ->

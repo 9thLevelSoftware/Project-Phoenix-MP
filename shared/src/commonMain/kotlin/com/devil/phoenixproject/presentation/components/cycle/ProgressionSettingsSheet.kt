@@ -173,6 +173,7 @@ fun ProgressionSettingsSheet(
                         onValueChange = { eccentricPercent = it.toInt() },
                         valueRange = 1f..20f,
                         steps = 18,
+                        remoteStep = 1f,
                         modifier = Modifier.weight(1f),
                     )
                     Text(

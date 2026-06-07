@@ -305,6 +305,9 @@ class DataBackupManagerRoutineNameTest {
             formScore = null,
             profile_id = "default",
             display_multiplier = null,
+            externalAddedLoadKg = 0.0,
+            counterweightKg = 0.0,
+            rackItemsJson = "[]",
         )
 
         val backup = backupManager.exportAllData()
@@ -537,6 +540,9 @@ class DataBackupManagerRoutineNameTest {
             formScore = null,
             profile_id = "userA",
             display_multiplier = null,
+            externalAddedLoadKg = 0.0,
+            counterweightKg = 0.0,
+            rackItemsJson = "[]",
         )
         queries.insertRoutine(
             id = "routine-existing",
@@ -633,6 +639,9 @@ class DataBackupManagerRoutineNameTest {
             dominantSide = null, strengthProfile = null, formScore = null,
             profile_id = "userB",
             display_multiplier = null,
+            externalAddedLoadKg = 0.0,
+            counterweightKg = 0.0,
+            rackItemsJson = "[]",
         )
         queries.insertRoutine(
             id = "routine-b",

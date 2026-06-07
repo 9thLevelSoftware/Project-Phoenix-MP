@@ -146,6 +146,25 @@ object BodyweightVolumeCalculator {
     }
 
     /**
+     * Calculate bodyweight volume with external rack load context.
+     */
+    fun calculateVolume(
+        bodyWeightKg: Float,
+        reps: Int,
+        percentage: Float,
+        externalAddedLoadKg: Float,
+        counterweightKg: Float,
+    ): Float {
+        if (reps <= 0) return 0f
+        return effectiveWeight(
+            bodyWeightKg = bodyWeightKg,
+            percentage = percentage,
+            externalAddedLoadKg = externalAddedLoadKg,
+            counterweightKg = counterweightKg,
+        ) * reps
+    }
+
+    /**
      * Calculate the effective "weight per rep" for display purposes.
      *
      * @param exerciseName The exercise name
@@ -163,5 +182,19 @@ object BodyweightVolumeCalculator {
     fun effectiveWeight(bodyWeightKg: Float, percentage: Float): Float {
         if (bodyWeightKg <= 0f || percentage <= 0f) return 0f
         return bodyWeightKg * percentage
+    }
+
+    /**
+     * Calculate effective "weight per rep" from an explicit selected variant percentage plus
+     * equipment rack load context.
+     */
+    fun effectiveWeight(
+        bodyWeightKg: Float,
+        percentage: Float,
+        externalAddedLoadKg: Float,
+        counterweightKg: Float,
+    ): Float {
+        if (bodyWeightKg <= 0f || percentage <= 0f) return 0f
+        return (bodyWeightKg * percentage + externalAddedLoadKg - counterweightKg).coerceAtLeast(0f)
     }
 }

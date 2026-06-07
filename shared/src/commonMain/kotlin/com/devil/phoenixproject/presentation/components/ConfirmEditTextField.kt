@@ -115,6 +115,41 @@ fun ConfirmEditTextField(
             }
         }
 
+    val wrappedKeyboardActions = remember(keyboardActions, state, keyboardController) {
+        KeyboardActions(
+            onDone = {
+                state.onDismissEditing()
+                keyboardController?.hide()
+                keyboardActions.onDone?.invoke(this)
+            },
+            onGo = {
+                state.onDismissEditing()
+                keyboardController?.hide()
+                keyboardActions.onGo?.invoke(this)
+            },
+            onNext = {
+                state.onDismissEditing()
+                keyboardController?.hide()
+                keyboardActions.onNext?.invoke(this)
+            },
+            onPrevious = {
+                state.onDismissEditing()
+                keyboardController?.hide()
+                keyboardActions.onPrevious?.invoke(this)
+            },
+            onSearch = {
+                state.onDismissEditing()
+                keyboardController?.hide()
+                keyboardActions.onSearch?.invoke(this)
+            },
+            onSend = {
+                state.onDismissEditing()
+                keyboardController?.hide()
+                keyboardActions.onSend?.invoke(this)
+            },
+        )
+    }
+
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -129,7 +164,7 @@ fun ConfirmEditTextField(
         isError = isError,
         singleLine = singleLine,
         keyboardOptions = keyboardOptions,
-        keyboardActions = keyboardActions,
+        keyboardActions = wrappedKeyboardActions,
         shape = shape,
         colors = colors,
     )
