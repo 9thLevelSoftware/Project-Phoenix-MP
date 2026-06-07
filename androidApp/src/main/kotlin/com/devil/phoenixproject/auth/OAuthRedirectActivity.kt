@@ -67,10 +67,10 @@ class OAuthRedirectActivity : ComponentActivity() {
      *    task. Without this flag, the system would try to launch
      *    [MainActivity] into that same empty-affinity task, which is not
      *    what we want — we want the original app task.
-     *  - `FLAG_ACTIVITY_CLEAR_TOP`: if the app task is still around (the
-     *    common case), clear any activities that may have been pushed on
-     *    top of [MainActivity] (rare, but defensive) so we land on a
-     *    predictable state.
+     *  - `FLAG_ACTIVITY_REORDER_TO_FRONT`: if the existing [MainActivity]
+     *    instance is still in the app task, bring it forward without clearing
+     *    other app state. This preserves the user's link-account context while
+     *    still replacing the browser/redirect surface.
      *  - `FLAG_ACTIVITY_SINGLE_TOP`: if [MainActivity] is already at the
      *    top of its task, reuse that instance instead of creating a new
      *    one. This avoids a duplicate stack and any side effects of a
@@ -84,6 +84,8 @@ class OAuthRedirectActivity : ComponentActivity() {
         val launchIntent = buildReturnToAppIntent()
         try {
             startActivity(launchIntent)
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
         } catch (e: Exception) {
             // Defensive: if for some reason the explicit intent can't be
             // resolved (e.g. MainActivity was renamed / removed in a future
@@ -109,7 +111,7 @@ class OAuthRedirectActivity : ComponentActivity() {
             // See kdoc on [routeBackToApp] for why each flag is set.
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP,
             )
         }
