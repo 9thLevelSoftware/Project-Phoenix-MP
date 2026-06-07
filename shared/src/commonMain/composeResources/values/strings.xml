@@ -670,4 +670,37 @@
     <string name="tag_exercise_hint">Label this lift to track it</string>
     <string name="tag_exercise_action">Tag exercise</string>
     <string name="exercise_tagged">Exercise tagged</string>
+
+    <!-- ==================== Equipment Rack (Issue #448) ==================== -->
+    <string name="equipment_rack_title">Equipment Rack</string>
+    <string name="equipment_rack_description">Manage local accessories and added load for workout sessions.</string>
+    <string name="equipment_rack_empty">No rack items yet.</string>
+    <string name="equipment_rack_add_item">Add rack item</string>
+    <string name="equipment_rack_edit_item">Edit rack item</string>
+    <string name="equipment_rack_name_label">Item name</string>
+    <string name="equipment_rack_weight_label">Weight (%1$s)</string>
+    <string name="equipment_rack_category_label">Category</string>
+    <string name="equipment_rack_behavior_label">Load behavior</string>
+    <string name="equipment_rack_enabled">Enabled</string>
+    <string name="equipment_rack_invalid_name">Name is required.</string>
+    <string name="equipment_rack_invalid_weight">Enter a non-negative finite weight.</string>
+    <string name="equipment_rack_active_selection">Equipment rack</string>
+    <string name="equipment_rack_manage">Manage</string>
+    <string name="equipment_rack_no_enabled_items">No enabled rack items.</string>
+    <string name="equipment_rack_none_selected">No rack items selected.</string>
+    <string name="equipment_rack_selected_summary">Selected: %1$s</string>
+    <string name="equipment_rack_display_only_count">%1$d display-only</string>
+    <string name="equipment_rack_selected_count">%1$d selected</string>
+    <string name="equipment_rack_inline_context">Rack: %1$s</string>
+    <string name="equipment_rack_category_weighted_vest">Weighted vest</string>
+    <string name="equipment_rack_category_dip_belt">Dip belt</string>
+    <string name="equipment_rack_category_chains">Chains</string>
+    <string name="equipment_rack_category_band">Band</string>
+    <string name="equipment_rack_category_assistance">Assistance</string>
+    <string name="equipment_rack_category_attachment">Attachment</string>
+    <string name="equipment_rack_category_other">Other</string>
+    <string name="equipment_rack_behavior_added">Added resistance</string>
+    <string name="equipment_rack_behavior_counterweight">Counterweight</string>
+    <string name="equipment_rack_behavior_display_only">Display only</string>
+    <string name="cd_equipment_rack">Equipment rack</string>
 </resources>

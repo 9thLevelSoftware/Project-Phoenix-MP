@@ -80,6 +80,7 @@ import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -218,6 +219,7 @@ fun WorkoutTab(
         onConfirmBodyweightSetResult = actions::onConfirmBodyweightSetResult,
         velocityLossThresholdPercent = state.velocityLossThresholdPercent,
         weightStepKg = state.weightStepKg,
+        rackLoadAdjustment = state.rackLoadAdjustment,
     )
 }
 
@@ -298,6 +300,7 @@ fun WorkoutTab(
     velocityLossThresholdPercent: Int = 20,
     // Issue #266/#410: Configurable weight step from user preferences (kg)
     weightStepKg: Float = 0.25f,
+    rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -334,6 +337,7 @@ fun WorkoutTab(
                 onResumeExerciseTimer = onResumeExerciseTimer,
                 onResetExerciseTimer = onResetExerciseTimer,
                 velocityLossThresholdPercent = velocityLossThresholdPercent,
+                rackLoadAdjustment = rackLoadAdjustment,
                 modifier = Modifier.fillMaxSize(),
             )
 

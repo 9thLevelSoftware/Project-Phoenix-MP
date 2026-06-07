@@ -96,6 +96,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
     // Issue #190: Exercise timer pause state
     val isExerciseTimerPaused by viewModel.isExerciseTimerPaused.collectAsState()
+    val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
 
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
@@ -359,6 +360,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         justLiftRestCountdown, isExerciseTimerPaused,
         userPreferences.velocityLossThresholdPercent,
         userPreferences.effectiveWeightIncrementKg,
+        currentRackLoadAdjustment,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -397,6 +399,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             isExerciseTimerPaused = isExerciseTimerPaused,
             velocityLossThresholdPercent = userPreferences.velocityLossThresholdPercent,
             weightStepKg = userPreferences.effectiveWeightIncrementKg,
+            rackLoadAdjustment = currentRackLoadAdjustment,
         )
     }
 

@@ -347,6 +347,7 @@ fun NavGraph(
                     onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) },
                     onNavigateToLinkAccount = { navController.navigate(NavigationRoutes.LinkAccount.route) },
                     onNavigateToIntegrations = { navController.navigate(NavigationRoutes.Integrations.route) },
+                    onNavigateToEquipmentRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
                     isAutoConnecting = isAutoConnecting,
                     connectionError = connectionError,
                     onClearConnectionError = { viewModel.clearConnectionError() },
@@ -394,6 +395,11 @@ fun NavGraph(
                     onAutoEndOnVelocityLossChange = { viewModel.setAutoEndOnVelocityLoss(it) },
                     stallDetectionEnabled = userPreferences.stallDetectionEnabled,
                 )
+            }
+
+            // Equipment Rack screen - local accessories and active load context
+            composable(NavigationRoutes.EquipmentRack.route) {
+                EquipmentRackScreen(viewModel = viewModel)
             }
 
             // Connection Logs screen - debug BLE connections

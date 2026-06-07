@@ -77,6 +77,7 @@ fun WorkoutHud(
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
     velocityLossThresholdPercent: Int = 20,
+    rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
     modifier: Modifier = Modifier,
 ) {
     // Determine if we're in Echo mode
@@ -129,6 +130,7 @@ fun WorkoutHud(
                 showNextButton = false,
                 isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                 liveDisplayMultiplier = liveDisplayMultiplier,
+                rackLoadAdjustment = rackLoadAdjustment,
             )
         },
         containerColor = MaterialTheme.colorScheme.surface,
@@ -356,6 +358,7 @@ private fun HudBottomBar(
     showNextButton: Boolean,
     isCurrentExerciseBodyweight: Boolean,
     liveDisplayMultiplier: Int,
+    rackLoadAdjustment: RackLoadAdjustment,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -373,6 +376,7 @@ private fun HudBottomBar(
             // Weight Controls - Echo mode shows "Adaptive" since weight is dynamic
             val isUnifiedAccessoryDisplay = liveDisplayMultiplier == 2
             val selectedDisplayKg = workoutParameters.weightPerCableKg * liveDisplayMultiplier
+            val rackContext = rackLoadAdjustment.toHudText(formatWeight, weightUnit)
             Column {
                 if (isCurrentExerciseBodyweight) {
                     Text(
@@ -401,6 +405,13 @@ private fun HudBottomBar(
                         fontWeight = FontWeight.Bold,
                     )
                 }
+                if (rackContext != null) {
+                    Text(
+                        stringResource(Res.string.equipment_rack_inline_context, rackContext),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             // Next Exercise Button (if applicable)
@@ -413,6 +424,26 @@ private fun HudBottomBar(
                 }
             }
         }
+    }
+}
+
+private fun RackLoadAdjustment.toHudText(
+    formatWeight: (Float, WeightUnit) -> String,
+    weightUnit: WeightUnit,
+): String? {
+    if (selectedItems.isEmpty()) return null
+    val visibleItems = selectedItems.take(2).map { item ->
+        when (item.behavior) {
+            RackItemBehavior.ADDED_RESISTANCE -> "${item.name} +${formatWeight(item.weightKg, weightUnit)}"
+            RackItemBehavior.COUNTERWEIGHT -> "${item.name} -${formatWeight(item.weightKg, weightUnit)}"
+            RackItemBehavior.DISPLAY_ONLY -> item.name
+        }
+    }
+    val hiddenCount = selectedItems.size - visibleItems.size
+    return if (hiddenCount > 0) {
+        visibleItems.joinToString(", ") + " +$hiddenCount"
+    } else {
+        visibleItems.joinToString(", ")
     }
 }
 

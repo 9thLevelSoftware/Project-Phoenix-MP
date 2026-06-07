@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
@@ -185,6 +186,25 @@ class WorkoutCoordinator(
         ),
     )
     val workoutParameters: StateFlow<WorkoutParameters> = _workoutParameters.asStateFlow()
+
+    internal val _activeRackItemIds = MutableStateFlow<List<String>>(emptyList())
+    val activeRackItemIds: StateFlow<List<String>> = _activeRackItemIds.asStateFlow()
+
+    internal val _currentRackLoadAdjustment = MutableStateFlow(RackLoadAdjustment())
+    val currentRackLoadAdjustment: StateFlow<RackLoadAdjustment> = _currentRackLoadAdjustment.asStateFlow()
+
+    internal var currentRackItemsJson: String = "[]"
+
+    internal fun clearActiveRackSelection() {
+        _activeRackItemIds.value = emptyList()
+        _currentRackLoadAdjustment.value = RackLoadAdjustment()
+        currentRackItemsJson = "[]"
+        _workoutParameters.value = _workoutParameters.value.copy(
+            activeRackItemIds = emptyList(),
+            externalAddedLoadKg = 0f,
+            counterweightKg = 0f,
+        )
+    }
 
     // Issue #108: Track if user manually adjusted weight during rest period
     // When true, preserve user's weight instead of reloading from exercise preset
