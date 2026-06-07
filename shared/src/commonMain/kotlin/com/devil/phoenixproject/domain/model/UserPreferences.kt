@@ -28,7 +28,7 @@ data class UserPreferences(
     // Issue #229: Body weight for volume calculations on bodyweight exercises
     val bodyWeightKg: Float = 0f, // 0 = not set
     // Issue #100: Per-sound toggles
-    val countdownBeepsEnabled: Boolean = true, // Beeps during last 10s of rest timer
+    val countdownBeepsEnabled: Boolean = true, // Beeps during last 10s of rest timers and timed sets
     val repSoundEnabled: Boolean = true, // Sound on rep completion
     // Issue #237: Motion-triggered set start (opt-in alternative to 5-second countdown)
     val motionStartEnabled: Boolean = false, // Start sets by holding cables instead of countdown

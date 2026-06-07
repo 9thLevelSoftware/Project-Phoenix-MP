@@ -59,8 +59,6 @@ import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -72,6 +70,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.roundToInt
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -2285,6 +2285,11 @@ class ActiveSessionEngine(
                     coordinator._isExerciseTimerPaused.value = false
                     coordinator.bodyweightTimerJob = scope.launch {
                         coordinator._timedExerciseRemainingSeconds.value = effectiveDuration
+                        var lastObservedRemaining = effectiveDuration
+                        var lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                            remainingSeconds = effectiveDuration,
+                            lastTickedSecond = -1,
+                        )
                         while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
                             if (coordinator._isExerciseTimerPaused.value) {
                                 delay(100L)
@@ -2293,8 +2298,21 @@ class ActiveSessionEngine(
                             delay(1000L)
                             // Re-check pause after delay — if paused during the 1s wait, don't decrement
                             if (!coordinator._isExerciseTimerPaused.value) {
-                                val current = coordinator._timedExerciseRemainingSeconds.value ?: 0
-                                coordinator._timedExerciseRemainingSeconds.value = (current - 1).coerceAtLeast(0)
+                                var remaining = 0
+                                coordinator._timedExerciseRemainingSeconds.update { current ->
+                                    remaining = ((current ?: 0) - 1).coerceAtLeast(0)
+                                    remaining
+                                }
+                                lastTickedSecond = ExerciseCountdownCuePolicy.lastTickedSecondAfterRemainingChange(
+                                    previousRemainingSeconds = lastObservedRemaining,
+                                    currentRemainingSeconds = remaining,
+                                    lastTickedSecond = lastTickedSecond,
+                                )
+                                lastObservedRemaining = remaining
+                                lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                                    remainingSeconds = remaining,
+                                    lastTickedSecond = lastTickedSecond,
+                                )
                             }
                         }
                         coordinator._timedExerciseRemainingSeconds.value = 0
@@ -2570,17 +2588,23 @@ class ActiveSessionEngine(
                 // but required for Kotlin smart-cast so exerciseDuration can be used as non-null below
                 @Suppress("SENSELESS_COMPARISON")
                 if (isTimedCableExercise && exerciseDuration != null) {
+                    val timedExerciseDuration: Int = requireNotNull(exerciseDuration)
                     coordinator.bodyweightTimerJob?.cancel()
-                    coordinator.exerciseTimerOriginalDuration = exerciseDuration
+                    coordinator.exerciseTimerOriginalDuration = timedExerciseDuration
                     coordinator._isExerciseTimerPaused.value = false
                     coordinator.bodyweightTimerJob = scope.launch {
                         if (effectiveParams.warmupReps > 0) {
-                            Logger.d { "Duration cable: waiting for ${effectiveParams.warmupReps} warmup reps before starting ${exerciseDuration}s timer" }
+                            Logger.d { "Duration cable: waiting for ${effectiveParams.warmupReps} warmup reps before starting ${timedExerciseDuration}s timer" }
                             coordinator._repCount.first { it.isWarmupComplete }
-                            Logger.d { "Duration cable: warmup complete, starting ${exerciseDuration}s duration timer" }
+                            Logger.d { "Duration cable: warmup complete, starting ${timedExerciseDuration}s duration timer" }
                         }
 
-                        coordinator._timedExerciseRemainingSeconds.value = exerciseDuration
+                        coordinator._timedExerciseRemainingSeconds.value = timedExerciseDuration
+                        var lastObservedRemaining = timedExerciseDuration
+                        var lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                            remainingSeconds = timedExerciseDuration,
+                            lastTickedSecond = -1,
+                        )
                         while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
                             if (coordinator._isExerciseTimerPaused.value) {
                                 delay(100L)
@@ -2588,8 +2612,21 @@ class ActiveSessionEngine(
                             }
                             delay(1000L)
                             if (!coordinator._isExerciseTimerPaused.value) {
-                                val current = coordinator._timedExerciseRemainingSeconds.value ?: 0
-                                coordinator._timedExerciseRemainingSeconds.value = (current - 1).coerceAtLeast(0)
+                                var remaining = 0
+                                coordinator._timedExerciseRemainingSeconds.update { current ->
+                                    remaining = ((current ?: 0) - 1).coerceAtLeast(0)
+                                    remaining
+                                }
+                                lastTickedSecond = ExerciseCountdownCuePolicy.lastTickedSecondAfterRemainingChange(
+                                    previousRemainingSeconds = lastObservedRemaining,
+                                    currentRemainingSeconds = remaining,
+                                    lastTickedSecond = lastTickedSecond,
+                                )
+                                lastObservedRemaining = remaining
+                                lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                                    remainingSeconds = remaining,
+                                    lastTickedSecond = lastTickedSecond,
+                                )
                             }
                         }
                         coordinator._timedExerciseRemainingSeconds.value = 0
@@ -4031,6 +4068,7 @@ class ActiveSessionEngine(
 
             var lastRenderedSecond = restDuration + 1
             var lastTickedSecond = -1
+            var restEndingEmitted = false
 
             try {
                 // Issue #339: Deadline-based loop so timers catch up after background suspension.
@@ -4041,14 +4079,30 @@ class ActiveSessionEngine(
                         coordinator._restSecondsRemaining.value = remainingSeconds
                     }
 
+                    // The five-second rest warning has its own cue; avoid overlapping it with per-second ticks.
                     if (!coordinator._isRestPaused.value &&
-                        remainingSeconds in 1..10 &&
+                        remainingSeconds in 6..10 &&
                         remainingSeconds != lastTickedSecond
                     ) {
                         lastTickedSecond = remainingSeconds
                         val prefs = settingsManager.userPreferences.value
                         if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
                             coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remainingSeconds))
+                        }
+                    }
+
+                    if (remainingSeconds > 5) {
+                        restEndingEmitted = false
+                    }
+
+                    if (!coordinator._isRestPaused.value &&
+                        remainingSeconds == 5 &&
+                        !restEndingEmitted
+                    ) {
+                        restEndingEmitted = true
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
                         }
                     }
 
@@ -4065,15 +4119,6 @@ class ActiveSessionEngine(
                             isSupersetTransition = isSupersetTransition,
                             supersetLabel = supersetLabel,
                         )
-                    }
-
-                    // Emit REST_ENDING when timer completes (gated by beepsEnabled)
-                    if (remainingSeconds <= 0 && lastTickedSecond != 0) {
-                        lastTickedSecond = 0
-                        val prefs = settingsManager.userPreferences.value
-                        if (prefs.beepsEnabled) {
-                            coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
-                        }
                     }
 
                     if (remainingSeconds <= 0 && autoplay && !coordinator._isRestPaused.value) break
@@ -4423,6 +4468,25 @@ class ActiveSessionEngine(
         coordinator._restSecondsRemaining.value = coordinator._restOriginalDuration.value
         armRestDeadline(coordinator._restOriginalDuration.value)
         Logger.d("ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
+    }
+
+    private suspend fun emitExerciseCountdownTickIfNeeded(
+        remainingSeconds: Int,
+        lastTickedSecond: Int,
+    ): Int {
+        val prefs = settingsManager.userPreferences.value
+        if (ExerciseCountdownCuePolicy.shouldEmitTick(
+                remainingSeconds = remainingSeconds,
+                isPaused = coordinator._isExerciseTimerPaused.value,
+                lastTickedSecond = lastTickedSecond,
+                beepsEnabled = prefs.beepsEnabled,
+                countdownBeepsEnabled = prefs.countdownBeepsEnabled,
+            )
+        ) {
+            coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remainingSeconds))
+            return remainingSeconds
+        }
+        return lastTickedSecond
     }
 
     // ===== Exercise Timer Controls (Issue #190: Pause/Resume/Reset for timed exercises) =====

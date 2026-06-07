@@ -8,6 +8,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.presentation.manager.ExerciseCountdownCuePolicy
 import kotlinx.coroutines.flow.SharedFlow
 import platform.AVFAudio.AVAudioPlayer
 import platform.AVFAudio.AVAudioSession
@@ -93,7 +94,7 @@ private class IosSoundManager {
         // Note: Using sealed class data objects as map keys (they have proper equals/hashCode)
         // Issue #100: Sound files converted from .ogg → .caf via iosApp/convert_sounds.sh
         val soundFiles: Map<HapticEvent, String> = mapOf(
-            HapticEvent.REP_COMPLETED to "chirpchirp", // Issue #100: More audible than beep
+            HapticEvent.REP_COMPLETED to "rep_complete_strong", // Issue #490: distinct regular rep cue
             HapticEvent.FINAL_REP to "boopbeepbeep", // Issue #100: Distinct final rep sound
             HapticEvent.WARMUP_COMPLETE to "beepboop",
             HapticEvent.WORKOUT_COMPLETE to "boopbeepbeep",
@@ -251,6 +252,10 @@ private class IosSoundManager {
             try {
                 // Reset to beginning if already playing
                 player.currentTime = 0.0
+                if (event is HapticEvent.COUNTDOWN_TICK) {
+                    player.enableRate = true
+                    player.rate = ExerciseCountdownCuePolicy.playbackRate(event.secondsRemaining)
+                }
                 player.play()
             } catch (e: Exception) {
                 log.w { "Sound playback failed for $event: ${e.message}" }
