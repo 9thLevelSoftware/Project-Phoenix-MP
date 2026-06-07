@@ -545,6 +545,11 @@ class SqlDelightSyncRepository(
                     // partial response, or deserialization issue). Deleting local exercises
                     // when we have nothing to replace them with causes permanent data loss.
                     if (portalRoutine.exercises.isNotEmpty()) {
+                        val localRackDefaultsByExerciseId = queries
+                            .selectExercisesByRoutine(portalRoutine.id)
+                            .executeAsList()
+                            .associate { it.id to it.defaultRackItemIds }
+
                         // Replace routine exercises and supersets: delete existing then insert portal versions
                         queries.deleteRoutineExercises(portalRoutine.id)
                         queries.deleteSupersetsByRoutine(portalRoutine.id)
@@ -675,6 +680,7 @@ class SqlDelightSyncRepository(
                                 repCountTiming = exercise.repCountTiming ?: "TOP",
                                 setEchoLevels = setEchoLevels,
                                 warmupSets = exercise.warmupSets ?: "",
+                                defaultRackItemIds = localRackDefaultsByExerciseId[exercise.id] ?: "[]",
                             )
                         }
                     } else {
@@ -1069,6 +1075,18 @@ class SqlDelightSyncRepository(
                         emptyList()
                     }
 
+                    val defaultRackItemIds: List<String> = try {
+                        if (exRow.defaultRackItemIds.isBlank()) {
+                            emptyList()
+                        } else {
+                            json.decodeFromString<List<String>>(exRow.defaultRackItemIds)
+                                .filter { it.isNotBlank() }
+                                .distinct()
+                        }
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+
                     RoutineExercise(
                         id = exRow.id,
                         exercise = exercise,
@@ -1101,6 +1119,7 @@ class SqlDelightSyncRepository(
                         prTypeForScaling = prTypeForScaling,
                         setWeightsPercentOfPR = setWeightsPercentOfPR,
                         warmupSets = warmupSets,
+                        defaultRackItemIds = defaultRackItemIds,
                     )
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to map routine exercise: ${exRow.exerciseId}" }
@@ -1656,6 +1675,11 @@ class SqlDelightSyncRepository(
 
                     // Replace exercises if portal provided them (non-empty list)
                     if (portalRoutine.exercises.isNotEmpty()) {
+                        val localRackDefaultsByExerciseId = queries
+                            .selectExercisesByRoutine(portalRoutine.id)
+                            .executeAsList()
+                            .associate { it.id to it.defaultRackItemIds }
+
                         queries.deleteRoutineExercises(portalRoutine.id)
                         queries.deleteSupersetsByRoutine(portalRoutine.id)
 
@@ -1773,6 +1797,7 @@ class SqlDelightSyncRepository(
                                 repCountTiming = exercise.repCountTiming ?: "TOP",
                                 setEchoLevels = setEchoLevels,
                                 warmupSets = exercise.warmupSets ?: "",
+                                defaultRackItemIds = localRackDefaultsByExerciseId[exercise.id] ?: "[]",
                             )
                         }
                     }

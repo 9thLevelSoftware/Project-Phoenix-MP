@@ -66,6 +66,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
@@ -442,7 +443,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 }
             }
 
-            SetReadyRackSelectionCard(
+            EquipmentRackSelectionCard(
                 rackItems = rackItems,
                 activeRackItemIds = activeRackItemIds,
                 weightUnit = weightUnit,

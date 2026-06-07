@@ -1,5 +1,8 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackItemCategory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -157,6 +160,46 @@ class BackupSerializationTest {
         assertEquals(2, grouped.size, "2 routines should be in group-A")
         val ungrouped = routines.filter { it.groupId == null }
         assertEquals(1, ungrouped.size, "1 routine should be ungrouped")
+    }
+
+    @Test
+    fun equipmentRackItemsAndRoutineDefaultIdsRoundTrip() {
+        val original = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-06-07T12:00:00Z",
+            appVersion = "0.9.0",
+            data = BackupContent(
+                equipmentRackItems = listOf(
+                    RackItem(
+                        id = "vest",
+                        name = "Weighted vest",
+                        category = RackItemCategory.WEIGHTED_VEST,
+                        weightKg = 10f,
+                        behavior = RackItemBehavior.ADDED_RESISTANCE,
+                    ),
+                ),
+                routineExercises = listOf(
+                    RoutineExerciseBackup(
+                        id = "rex-rack",
+                        routineId = "routine-rack",
+                        exerciseName = "Pull Up",
+                        exerciseMuscleGroup = "Back",
+                        exerciseDefaultCableConfig = "DOUBLE",
+                        cableConfig = "DOUBLE",
+                        orderIndex = 0,
+                        setReps = "8",
+                        weightPerCableKg = 0f,
+                        defaultRackItemIds = listOf("vest"),
+                    ),
+                ),
+            ),
+        )
+
+        val jsonString = json.encodeToString(original)
+        val deserialized = json.decodeFromString<BackupData>(jsonString)
+
+        assertEquals("vest", deserialized.data.equipmentRackItems.single().id)
+        assertEquals(listOf("vest"), deserialized.data.routineExercises.single().defaultRackItemIds)
     }
 
     @Test

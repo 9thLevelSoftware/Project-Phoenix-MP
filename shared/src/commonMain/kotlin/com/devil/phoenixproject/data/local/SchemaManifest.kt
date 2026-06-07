@@ -909,6 +909,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 repCountTiming TEXT NOT NULL DEFAULT 'TOP',
                 setEchoLevels TEXT NOT NULL DEFAULT '',
                 warmupSets TEXT NOT NULL DEFAULT '',
+                defaultRackItemIds TEXT NOT NULL DEFAULT '[]',
                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
                 FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -1216,6 +1217,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 18 (healed outside .sqm): routine programming
     SchemaHealOperation("RoutineExercise", "setEchoLevels", "ALTER TABLE RoutineExercise ADD COLUMN setEchoLevels TEXT NOT NULL DEFAULT ''"),
     SchemaHealOperation("RoutineExercise", "warmupSets", "ALTER TABLE RoutineExercise ADD COLUMN warmupSets TEXT NOT NULL DEFAULT ''"),
+    // Migration 34: equipment rack routine defaults
+    SchemaHealOperation("RoutineExercise", "defaultRackItemIds", "ALTER TABLE RoutineExercise ADD COLUMN defaultRackItemIds TEXT NOT NULL DEFAULT '[]'"),
     // Migration 20 (healed outside .sqm): per-exercise behavior overrides
     SchemaHealOperation("RoutineExercise", "stallDetectionEnabled", "ALTER TABLE RoutineExercise ADD COLUMN stallDetectionEnabled INTEGER NOT NULL DEFAULT 1"),
     SchemaHealOperation("RoutineExercise", "stopAtTop", "ALTER TABLE RoutineExercise ADD COLUMN stopAtTop INTEGER NOT NULL DEFAULT 0"),

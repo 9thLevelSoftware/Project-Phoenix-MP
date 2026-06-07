@@ -322,6 +322,21 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     emptyList()
                 }
 
+                val defaultRackItemIds: List<String> = try {
+                    if (row.defaultRackItemIds.isBlank()) {
+                        emptyList()
+                    } else {
+                        json.decodeFromString<List<String>>(row.defaultRackItemIds)
+                            .filter { it.isNotBlank() }
+                            .distinct()
+                    }
+                } catch (e: Exception) {
+                    Logger.w(e) {
+                        "Failed to parse defaultRackItemIds '${row.defaultRackItemIds}' for exercise ${row.exerciseName}, using empty list"
+                    }
+                    emptyList()
+                }
+
                 val eccentricLoad = mapEccentricLoadFromDb(row.eccentricLoad)
                 val echoLevel = EchoLevel.entries.getOrNull(row.echoLevel.toInt()) ?: EchoLevel.HARD
 
@@ -382,6 +397,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     prTypeForScaling = prTypeForScaling,
                     setWeightsPercentOfPR = setWeightsPercentOfPR,
                     warmupSets = warmupSets,
+                    defaultRackItemIds = defaultRackItemIds,
                 )
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
@@ -687,6 +703,9 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             } else {
                 json.encodeToString(exercise.warmupSets)
             },
+            defaultRackItemIds = json.encodeToString(
+                exercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct(),
+            ),
         )
     }
 

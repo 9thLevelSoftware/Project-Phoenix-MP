@@ -318,6 +318,34 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `initialize and save preserve default rack item ids`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = benchRoutineExercise(
+            id = "rex-rack-defaults",
+            setReps = listOf(10),
+            weightPerCableKg = 20f,
+            defaultRackItemIds = listOf("vest", "assist"),
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        assertEquals(listOf("vest", "assist"), viewModel.defaultRackItemIds.value)
+
+        viewModel.onDefaultRackItemIdsChange(listOf("assist"))
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertEquals(listOf("assist"), saved.defaultRackItemIds)
+    }
+
+    @Test
     fun `initialize reloads PR lookup when active profile changes`() = runTest {
         val database = createTestDatabase()
         val queries = database.vitruvianDatabaseQueries
@@ -434,6 +462,7 @@ class ExerciseConfigViewModelTest {
         usePercentOfPR: Boolean = false,
         weightPercentOfPR: Int = 80,
         setWeightsPercentOfPR: List<Int> = emptyList(),
+        defaultRackItemIds: List<String> = emptyList(),
     ) = RoutineExercise(
         id = id,
         exercise = Exercise(
@@ -453,6 +482,7 @@ class ExerciseConfigViewModelTest {
         usePercentOfPR = usePercentOfPR,
         weightPercentOfPR = weightPercentOfPR,
         setWeightsPercentOfPR = setWeightsPercentOfPR,
+        defaultRackItemIds = defaultRackItemIds,
     )
 
     private fun weightPR(weight: Float) = PersonalRecord(

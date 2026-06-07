@@ -117,6 +117,8 @@ data class RoutineExercise(
     // Each WarmupSet defines reps and a percentage of working weight.
     // Executed before working sets as separate BLE stop/start cycles.
     val warmupSets: List<WarmupSet> = emptyList(),
+    // Local equipment rack defaults to preselect when this exercise opens Set Ready.
+    val defaultRackItemIds: List<String> = emptyList(),
 ) {
     /** Returns true if this exercise is part of a superset */
     val isInSuperset: Boolean get() = supersetId != null

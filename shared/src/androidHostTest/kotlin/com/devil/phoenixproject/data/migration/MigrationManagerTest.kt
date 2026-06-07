@@ -560,6 +560,7 @@ class MigrationManagerTest {
             repCountTiming = "TOP",
             setEchoLevels = "",
             warmupSets = "",
+            defaultRackItemIds = "[]",
         )
     }
 

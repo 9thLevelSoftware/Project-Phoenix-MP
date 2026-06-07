@@ -1745,6 +1745,7 @@ class ActiveSessionEngine(
                 duration = currentExercise.duration?.takeIf { it > 0 } ?: 0,
                 isAMRAP = currentExercise.isAMRAP,
                 perSetRestTime = currentExercise.perSetRestTime,
+                defaultRackItemIds = currentExercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct(),
             )
             preferencesManager.saveSingleExerciseDefaults(defaults)
             Logger.d { "Saved Single Exercise defaults for ${currentExercise.exercise.name}" }
@@ -1884,11 +1885,7 @@ class ActiveSessionEngine(
     }
 
     fun updateActiveRackSelection(itemIds: List<String>) {
-        val distinctIds = itemIds.distinct()
-        coordinator._activeRackItemIds.value = distinctIds
-        coordinator._workoutParameters.update { params ->
-            params.copy(activeRackItemIds = distinctIds)
-        }
+        coordinator.setActiveRackSelection(itemIds)
     }
 
     fun clearActiveRackSelection() {

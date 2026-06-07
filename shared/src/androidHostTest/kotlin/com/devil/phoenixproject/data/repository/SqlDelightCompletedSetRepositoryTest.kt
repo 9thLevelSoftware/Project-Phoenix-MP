@@ -149,6 +149,7 @@ class SqlDelightCompletedSetRepositoryTest {
             repCountTiming = "TOP",
             setEchoLevels = "",
             warmupSets = "",
+            defaultRackItemIds = "[]",
         )
     }
 

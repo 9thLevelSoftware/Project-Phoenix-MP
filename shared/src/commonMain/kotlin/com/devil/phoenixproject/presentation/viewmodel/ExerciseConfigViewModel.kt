@@ -118,6 +118,9 @@ class ExerciseConfigViewModel constructor(
     private val _warmupSets = MutableStateFlow<List<WarmupSet>>(emptyList())
     val warmupSets: StateFlow<List<WarmupSet>> = _warmupSets.asStateFlow()
 
+    private val _defaultRackItemIds = MutableStateFlow<List<String>>(emptyList())
+    val defaultRackItemIds: StateFlow<List<String>> = _defaultRackItemIds.asStateFlow()
+
     init {
     }
 
@@ -227,6 +230,7 @@ class ExerciseConfigViewModel constructor(
 
         // Warm-up sets (Issue #30)
         _warmupSets.value = exercise.warmupSets
+        _defaultRackItemIds.value = exercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct()
 
         // Load PR for the current exercise and mode
         exercise.exercise.id?.let { exerciseId ->
@@ -403,6 +407,10 @@ class ExerciseConfigViewModel constructor(
      */
     fun clearWarmupSets() {
         _warmupSets.value = emptyList()
+    }
+
+    fun onDefaultRackItemIdsChange(itemIds: List<String>) {
+        _defaultRackItemIds.value = itemIds.filter { it.isNotBlank() }.distinct()
     }
 
     /**
@@ -637,6 +645,7 @@ class ExerciseConfigViewModel constructor(
             setWeightsPercentOfPR = resolvedSetWeightsPercentOfPR,
             // Warm-up sets (Issue #30)
             warmupSets = _warmupSets.value,
+            defaultRackItemIds = _defaultRackItemIds.value,
         )
 
         logDebug("Updated exercise to save:")

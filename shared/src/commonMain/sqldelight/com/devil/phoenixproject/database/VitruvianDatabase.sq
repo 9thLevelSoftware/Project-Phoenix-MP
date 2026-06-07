@@ -245,6 +245,7 @@ CREATE TABLE RoutineExercise (
     -- Phase 4 Routine Programming (migration 18)
     setEchoLevels TEXT NOT NULL DEFAULT '',
     warmupSets TEXT NOT NULL DEFAULT '',
+    defaultRackItemIds TEXT NOT NULL DEFAULT '[]',
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
     FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -917,9 +918,9 @@ INSERT INTO RoutineExercise (
     eccentricLoad, echoLevel, progressionKg, restSeconds, duration, setRestSeconds,
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
-    stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets
+    stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert with IGNORE for import (won't overwrite existing)
 insertRoutineExerciseIgnore:
@@ -929,9 +930,9 @@ INSERT OR IGNORE INTO RoutineExercise (
     eccentricLoad, echoLevel, progressionKg, restSeconds, duration, setRestSeconds,
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
-    stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets
+    stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;

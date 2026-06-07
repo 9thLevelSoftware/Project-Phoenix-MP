@@ -249,10 +249,51 @@ class SchemaParityTest {
         assertEquals("[]", rackItemsJson)
     }
 
+    @Test
+    fun `migration 34 adds routine exercise rack default ids`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 34)
+
+        assertEquals(false, columnExistsInDriver(driver, "RoutineExercise", "defaultRackItemIds"))
+        driver.execute(
+            null,
+            "INSERT INTO Routine (id, name, createdAt) VALUES ('routine-rack-defaults', 'Rack Defaults', 1)",
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-rack-defaults', 'routine-rack-defaults', 'Bench Press', 'Chest', 0, 20.0
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 34, 35)
+
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "defaultRackItemIds"))
+        var defaultRackItemIds = ""
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT defaultRackItemIds FROM RoutineExercise WHERE id = 'rex-rack-defaults'",
+            mapper = { cursor ->
+                if (cursor.next().value) {
+                    defaultRackItemIds = cursor.getString(0).orEmpty()
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        assertEquals("[]", defaultRackItemIds)
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 34L
+        private const val CURRENT_VERSION = 35L
 
         /**
          * Transient tables are intermediate artifacts of table-rebuild migrations
