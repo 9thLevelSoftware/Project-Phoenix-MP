@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.withPlatformLock
 import kotlin.time.Clock
@@ -43,7 +44,11 @@ data class RetryState(
  * - Max 3 consecutive retries before requiring manual intervention
  * - Backoff resets on successful sync
  */
-class SyncTriggerManager(private val syncManager: SyncManager, private val connectivityChecker: ConnectivityChecker) {
+class SyncTriggerManager(
+    private val syncManager: SyncManager,
+    private val connectivityChecker: ConnectivityChecker,
+    private val healthBodyWeightSyncManager: HealthBodyWeightSyncManager? = null,
+) {
     companion object {
         private const val DEFAULT_THROTTLE_MILLIS = 5 * 60 * 1000L // 5 minutes
         private const val MAX_CONSECUTIVE_FAILURES = 3
@@ -85,10 +90,19 @@ class SyncTriggerManager(private val syncManager: SyncManager, private val conne
      */
     suspend fun onAppForeground() {
         Logger.d { "SyncTrigger: App foreground, checking if sync needed" }
+        syncHealthBodyWeightFromConnectedPlatform()
         if (syncManager.isAuthenticated.value) {
             syncManager.refreshPremiumStatusFromServer()
         }
         attemptSync(bypassThrottle = false)
+    }
+
+    private suspend fun syncHealthBodyWeightFromConnectedPlatform() {
+        try {
+            healthBodyWeightSyncManager?.syncLatestFromConnectedPlatform()
+        } catch (e: Exception) {
+            Logger.w(e) { "SyncTrigger: Health body-weight sync failed without blocking portal sync" }
+        }
     }
 
     /**

@@ -6,17 +6,27 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
+import platform.Foundation.NSNumber
+import platform.Foundation.NSSortDescriptor
 import platform.HealthKit.HKAuthorizationStatusSharingAuthorized
+import platform.HealthKit.HKDevice
 import platform.HealthKit.HKHealthStore
+import platform.HealthKit.HKMetadataKeyWasUserEntered
 import platform.HealthKit.HKObjectType
 import platform.HealthKit.HKQuantity
+import platform.HealthKit.HKQuantitySample
 import platform.HealthKit.HKQuantityType
 import platform.HealthKit.HKQuantityTypeIdentifierActiveEnergyBurned
+import platform.HealthKit.HKQuantityTypeIdentifierBodyMass
+import platform.HealthKit.HKSampleQuery
+import platform.HealthKit.HKSampleSortIdentifierEndDate
 import platform.HealthKit.HKUnit
 import platform.HealthKit.HKWorkout
 import platform.HealthKit.HKWorkoutActivityTypeTraditionalStrengthTraining
 
 private val log = Logger.withTag("HealthIntegration.iOS")
+
+private const val BODY_MASS_QUERY_LIMIT = 50UL
 
 /**
  * iOS implementation of HealthIntegration using Apple HealthKit.
@@ -43,6 +53,10 @@ actual class HealthIntegration {
         HKQuantityType.quantityTypeForIdentifier(HKQuantityTypeIdentifierActiveEnergyBurned)
     }
 
+    private val bodyMassType: HKQuantityType? by lazy {
+        HKQuantityTypeIdentifierBodyMass?.let { HKQuantityType.quantityTypeForIdentifier(it) }
+    }
+
     /** Required HealthKit write types. Calories are optional so disabling them does not block workout sync. */
     private val requiredWriteTypes: Set<HKObjectType> by lazy { setOf(workoutType) }
 
@@ -53,6 +67,11 @@ actual class HealthIntegration {
 
     /** The full set requested from HealthKit when presenting authorization UI. */
     private val writeTypes: Set<HKObjectType> by lazy { requiredWriteTypes + optionalWriteTypes }
+
+    /** Read types requested for one-way body-weight import. */
+    private val readTypes: Set<HKObjectType> by lazy {
+        buildSet { bodyMassType?.let { add(it) } }
+    }
 
     /**
      * Checks whether HealthKit is available on this device.
@@ -98,6 +117,62 @@ actual class HealthIntegration {
     }
 
     /**
+     * HealthKit does not expose per-type read authorization status. If HealthKit and the body mass
+     * type are available, the query path is the only reliable read-permission check.
+     */
+    actual suspend fun hasBodyWeightReadPermission(): Boolean = isAvailable() && bodyMassType != null
+
+    actual suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?> {
+        if (!isAvailable()) {
+            return Result.failure(IllegalStateException("HealthKit is not available on this device"))
+        }
+
+        val sampleType = bodyMassType ?: return Result.success(null)
+
+        return try {
+            suspendCancellableCoroutine { continuation ->
+                val sortDescriptors = listOf(
+                    NSSortDescriptor.sortDescriptorWithKey(
+                        key = HKSampleSortIdentifierEndDate,
+                        ascending = false,
+                    ),
+                )
+                val query = HKSampleQuery(
+                    sampleType = sampleType,
+                    predicate = null,
+                    limit = BODY_MASS_QUERY_LIMIT,
+                    sortDescriptors = sortDescriptors,
+                ) { _, samples, error ->
+                    if (error != null) {
+                        log.e { "HealthKit body mass query error: ${error.localizedDescription}" }
+                        continuation.resume(
+                            Result.failure(
+                                RuntimeException("HealthKit body mass query failed: ${error.localizedDescription}"),
+                            ),
+                        )
+                        return@HKSampleQuery
+                    }
+
+                    val latest = samples.orEmpty()
+                        .filterIsInstance<HKQuantitySample>()
+                        .firstNotNullOfOrNull { sample ->
+                            sample.toEligibleBodyWeightSampleOrNull()
+                        }
+                    continuation.resume(Result.success(latest))
+                }
+
+                continuation.invokeOnCancellation {
+                    healthStore.stopQuery(query)
+                }
+                healthStore.executeQuery(query)
+            }
+        } catch (e: Exception) {
+            log.e(e) { "Failed to read latest HealthKit scale body weight" }
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Requests HealthKit write authorization for workout and active energy types.
      *
      * The completion handler's `success` boolean only indicates whether the
@@ -115,7 +190,7 @@ actual class HealthIntegration {
             val dialogShown = suspendCancellableCoroutine { continuation ->
                 healthStore.requestAuthorizationToShareTypes(
                     typesToShare = writeTypes,
-                    readTypes = null,
+                    readTypes = readTypes,
                     completion = { success: Boolean, error: NSError? ->
                         if (error != null) {
                             log.e {
@@ -361,6 +436,100 @@ actual class HealthIntegration {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {
             exerciseName
+        }
+    }
+
+    private fun HKQuantitySample.toEligibleBodyWeightSampleOrNull(): HealthBodyWeightSample? {
+        val metadata = metadata
+        val source = sourceRevision.source
+        val wasUserEntered = metadata?.get(HKMetadataKeyWasUserEntered).asBoolean()
+        val device = device
+        val evidence = HealthBodyWeightSourceEvidence(
+            platform = HealthBodyWeightSourcePlatform.IOS,
+            wasUserEntered = wasUserEntered,
+            sourceName = source.name,
+            sourceBundleIdentifier = source.bundleIdentifier,
+            deviceManufacturer = device?.manufacturer,
+            deviceModel = device?.model,
+            deviceName = device?.name,
+        )
+
+        if (!HealthBodyWeightSourceClassifier.isEligibleScaleSource(evidence)) {
+            return null
+        }
+
+        val weightKg = quantity.doubleValueForUnit(HKUnit.unitFromString("kg")).toFloat()
+        return HealthBodyWeightSample(
+            weightKg = weightKg,
+            measuredAtMs = endDate.toEpochMillis(),
+            externalId = UUID.UUIDString,
+            sourceName = source.name,
+            deviceMetadata = buildIosBodyWeightDeviceMetadata(source.name, source.bundleIdentifier, device),
+            rawMetadataJson = buildIosBodyWeightRawMetadataJson(this),
+        )
+    }
+
+    private fun buildIosBodyWeightDeviceMetadata(
+        sourceName: String,
+        sourceBundleIdentifier: String,
+        device: HKDevice?,
+    ): Map<String, String> = buildMap {
+        put("sourceName", sourceName)
+        put("sourceBundleIdentifier", sourceBundleIdentifier)
+        device?.name?.takeIf { it.isNotBlank() }?.let { put("deviceName", it) }
+        device?.manufacturer?.takeIf { it.isNotBlank() }?.let { put("deviceManufacturer", it) }
+        device?.model?.takeIf { it.isNotBlank() }?.let { put("deviceModel", it) }
+        device?.hardwareVersion?.takeIf { it.isNotBlank() }?.let { put("deviceHardwareVersion", it) }
+        device?.softwareVersion?.takeIf { it.isNotBlank() }?.let { put("deviceSoftwareVersion", it) }
+        device?.localIdentifier?.takeIf { it.isNotBlank() }?.let { put("deviceLocalIdentifier", it) }
+    }
+
+    private fun buildIosBodyWeightRawMetadataJson(sample: HKQuantitySample): String {
+        val source = sample.sourceRevision.source
+        val device = sample.device
+        val wasUserEntered = sample.metadata?.get(HKMetadataKeyWasUserEntered).asBoolean()
+        return buildString {
+            append("{")
+            append("\"platform\":\"ios\",")
+            append("\"uuid\":\"${sample.UUID.UUIDString.escapeJson()}\",")
+            append("\"sourceName\":\"${source.name.escapeJson()}\",")
+            append("\"sourceBundleIdentifier\":\"${source.bundleIdentifier.escapeJson()}\",")
+            append("\"wasUserEntered\":${wasUserEntered ?: false},")
+            append("\"device\":{")
+            append("\"name\":")
+            append(device?.name?.let { "\"${it.escapeJson()}\"" } ?: "null")
+            append(",\"manufacturer\":")
+            append(device?.manufacturer?.let { "\"${it.escapeJson()}\"" } ?: "null")
+            append(",\"model\":")
+            append(device?.model?.let { "\"${it.escapeJson()}\"" } ?: "null")
+            append(",\"hardwareVersion\":")
+            append(device?.hardwareVersion?.let { "\"${it.escapeJson()}\"" } ?: "null")
+            append(",\"softwareVersion\":")
+            append(device?.softwareVersion?.let { "\"${it.escapeJson()}\"" } ?: "null")
+            append("}")
+            append("}")
+        }
+    }
+
+    private fun NSDate.toEpochMillis(): Long =
+        ((timeIntervalSinceReferenceDate + UNIX_TO_APPLE_EPOCH_OFFSET) * 1000.0).toLong()
+
+    private fun Any?.asBoolean(): Boolean? = when (this) {
+        is Boolean -> this
+        is NSNumber -> boolValue
+        else -> null
+    }
+
+    private fun String.escapeJson(): String = buildString {
+        this@escapeJson.forEach { char ->
+            when (char) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(char)
+            }
         }
     }
 }

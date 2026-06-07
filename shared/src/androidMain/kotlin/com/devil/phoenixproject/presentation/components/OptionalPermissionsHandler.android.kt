@@ -39,8 +39,8 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.optionalHealthPermissions
-import com.devil.phoenixproject.data.integration.requestedHealthPermissions
-import com.devil.phoenixproject.data.integration.requiredHealthPermissions
+import com.devil.phoenixproject.data.integration.workoutExportRequestedHealthPermissions
+import com.devil.phoenixproject.data.integration.workoutWriteHealthPermissions
 import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import org.koin.compose.koinInject
 
@@ -108,7 +108,7 @@ fun RequireOptionalPermissions(content: @Composable () -> Unit) {
     val healthPermissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract(),
     ) { grantedPermissions ->
-        val granted = grantedPermissions.containsAll(requiredHealthPermissions)
+        val granted = grantedPermissions.containsAll(workoutWriteHealthPermissions)
         val optionalCaloriesGranted = grantedPermissions.containsAll(optionalHealthPermissions)
         log.d {
             "Health Connect permission result: required=$granted, optionalCalories=$optionalCaloriesGranted " +
@@ -127,7 +127,7 @@ fun RequireOptionalPermissions(content: @Composable () -> Unit) {
         // Mic done, now launch health if available
         if (healthAvailable) {
             phase = "HEALTH_REQUESTED"
-            healthPermissionLauncher.launch(requestedHealthPermissions)
+            healthPermissionLauncher.launch(workoutExportRequestedHealthPermissions)
         } else {
             // No health to request, we're done
             prefsManager.setPermissionsOnboardingShown(true)

@@ -27,6 +27,7 @@ import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.readUriContent
 import com.devil.phoenixproject.util.rememberFilePicker
 import com.devil.phoenixproject.util.rememberHealthPermissionRequester
@@ -255,11 +256,29 @@ fun IntegrationsScreen(
             val healthProvider = if (isIosPlatform) IntegrationProvider.APPLE_HEALTH else IntegrationProvider.GOOGLE_HEALTH
             val healthStatus = uiState.integrationStatuses[healthProvider]
             val healthConnected = healthStatus?.status == ConnectionStatus.CONNECTED
+            val latestHealthBodyWeight = uiState.latestHealthBodyWeight
+            val latestHealthBodyWeightLabel = latestHealthBodyWeight?.let { measurement ->
+                if (weightUnit == WeightUnit.KG) {
+                    "${UnitConverter.formatDecimal(measurement.value.toFloat())} kg"
+                } else {
+                    "${UnitConverter.formatDecimal(UnitConverter.kgToLb(measurement.value.toFloat()))} lb"
+                }
+            }
+            val healthSubtitle = when {
+                healthStatus?.errorMessage != null -> healthStatus.errorMessage
+                healthConnected && latestHealthBodyWeightLabel != null -> "Connected • latest scale weight $latestHealthBodyWeightLabel"
+                healthConnected -> "Connected"
+                else -> "Not connected"
+            }
 
             IntegrationCard(
                 title = if (isIosPlatform) "Apple Health" else "Google Health Connect",
-                subtitle = if (healthConnected) "Connected" else "Not connected",
+                subtitle = healthSubtitle,
                 statusConnected = healthConnected,
+                badges = buildList {
+                    latestHealthBodyWeightLabel?.let { add("Body weight: $it") }
+                    healthStatus?.lastSyncAt?.let { add("Last sync: ${KmpUtils.formatTimestamp(it)}") }
+                },
                 trailingContent = {
                     Switch(
                         checked = healthConnected,

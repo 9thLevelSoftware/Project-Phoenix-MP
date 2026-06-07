@@ -101,7 +101,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
+import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
 import com.devil.phoenixproject.ui.theme.*
@@ -116,6 +120,7 @@ import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.rememberBackupLocationPicker
 import com.devil.phoenixproject.util.rememberFilePicker
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -277,6 +282,23 @@ fun SettingsTab(
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
+    val userProfileRepository = koinInject<UserProfileRepository>()
+    val externalMeasurementRepository = koinInject<ExternalMeasurementRepository>()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val activeProfileId = activeProfile?.id ?: "default"
+    val healthBodyWeightMeasurements by remember(activeProfileId) {
+        externalMeasurementRepository.observeMeasurementsByType(
+            profileId = activeProfileId,
+            measurementType = HealthBodyWeightSyncManager.MEASUREMENT_TYPE_WEIGHT,
+        )
+    }.collectAsState(initial = emptyList())
+    val latestMatchingHealthBodyWeight = healthBodyWeightMeasurements
+        .filter { measurement ->
+            measurement.unit == HealthBodyWeightSyncManager.UNIT_KG &&
+                measurement.provider in setOf(IntegrationProvider.APPLE_HEALTH, IntegrationProvider.GOOGLE_HEALTH) &&
+                abs(measurement.value.toFloat() - bodyWeightKg) < 0.05f
+        }
+        .maxByOrNull { it.measuredAt }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     // Backup/Restore state
     var showBackupDialog by remember { mutableStateOf(false) }
@@ -751,6 +773,9 @@ fun SettingsTab(
                 } else {
                     "Not set"
                 }
+                val bodyWeightDescription = latestMatchingHealthBodyWeight?.let { measurement ->
+                    "$displayBodyWeight - synced from ${measurement.provider.displayName}"
+                } ?: "$displayBodyWeight — for bodyweight exercise volume"
 
                 Row(
                     modifier = Modifier
@@ -767,7 +792,7 @@ fun SettingsTab(
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            text = "$displayBodyWeight — for bodyweight exercise volume",
+                            text = bodyWeightDescription,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

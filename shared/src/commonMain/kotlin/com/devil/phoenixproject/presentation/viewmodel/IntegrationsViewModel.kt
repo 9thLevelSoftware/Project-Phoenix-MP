@@ -10,6 +10,8 @@ import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateReposit
 import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
 import com.devil.phoenixproject.data.integration.ExternalProgramRepository
 import com.devil.phoenixproject.data.integration.ExternalRoutineRepository
+import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
+import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncResult
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationManager
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
@@ -56,6 +58,7 @@ data class IntegrationsUiState(
     val externalRoutineFolders: List<ExternalRoutineFolder> = emptyList(),
     val externalPrograms: List<ExternalProgram> = emptyList(),
     val externalMeasurements: List<ExternalBodyMeasurement> = emptyList(),
+    val latestHealthBodyWeight: ExternalBodyMeasurement? = null,
     val externalProgramStatsByProgramId: Map<String, ExternalProgramStats> = emptyMap(),
     val externalExerciseTemplateCountByProvider: Map<IntegrationProvider, Int> = emptyMap(),
     val activeProgram: ExternalProgram? = null,
@@ -80,6 +83,7 @@ class IntegrationsViewModel(
     private val integrationManager: IntegrationManager,
     private val workoutRepository: WorkoutRepository,
     private val healthIntegration: HealthIntegration,
+    private val healthBodyWeightSyncManager: HealthBodyWeightSyncManager,
     private val userProfileRepository: UserProfileRepository,
     private val portalTokenStorage: PortalTokenStorage,
 ) : ViewModel() {
@@ -176,7 +180,15 @@ class IntegrationsViewModel(
             activeProfileId.flatMapLatest { profileId ->
                 externalMeasurementRepo.observeMeasurements(profileId = profileId)
             }.collect { measurements ->
-                _uiState.value = _uiState.value.copy(externalMeasurements = measurements)
+                _uiState.value = _uiState.value.copy(
+                    externalMeasurements = measurements,
+                    latestHealthBodyWeight = measurements
+                        .filter { measurement ->
+                            measurement.measurementType == HealthBodyWeightSyncManager.MEASUREMENT_TYPE_WEIGHT &&
+                                measurement.provider in setOf(IntegrationProvider.APPLE_HEALTH, IntegrationProvider.GOOGLE_HEALTH)
+                        }
+                        .maxByOrNull { it.measuredAt },
+                )
             }
         }
 
@@ -400,7 +412,7 @@ class IntegrationsViewModel(
                     return@launch
                 }
 
-                if (healthIntegration.hasPermissions()) {
+                if (healthIntegration.hasPermissions() && healthIntegration.hasBodyWeightReadPermission()) {
                     markHealthIntegrationConnected(provider, profileId)
                     return@launch
                 }
@@ -477,21 +489,34 @@ class IntegrationsViewModel(
         profileId: String,
         granted: Boolean,
     ) {
-        val hasPerms = healthIntegration.hasPermissions()
-        log.d { "Health permission result: granted=$granted, hasPermissions=$hasPerms for ${provider.key}" }
-        if (granted && hasPerms) {
+        val hasWorkoutWritePermission = healthIntegration.hasPermissions()
+        val hasBodyWeightReadPermission = healthIntegration.hasBodyWeightReadPermission()
+        log.d {
+            "Health permission result: granted=$granted, " +
+                "hasWorkoutWritePermission=$hasWorkoutWritePermission, " +
+                "hasBodyWeightReadPermission=$hasBodyWeightReadPermission for ${provider.key}"
+        }
+        if (granted && hasWorkoutWritePermission && hasBodyWeightReadPermission) {
             markHealthIntegrationConnected(provider, profileId)
         } else {
+            val missingMessage = when {
+                !hasWorkoutWritePermission -> "Workout write permission was not granted"
+                !hasBodyWeightReadPermission -> "Body weight read permission was not granted"
+                else -> "Permission not granted"
+            }
             externalActivityRepo.updateIntegrationStatus(
                 provider = provider,
                 status = com.devil.phoenixproject.domain.model.ConnectionStatus.ERROR,
                 profileId = profileId,
-                errorMessage = "Permission not granted",
+                errorMessage = missingMessage,
             )
             _uiState.value = _uiState.value.copy(
-                errorMessage = "Health permissions were not granted. Please enable Health Connect permissions in your device's Health Connect settings.",
+                errorMessage = "Health permissions were not granted. $missingMessage.",
             )
-            log.w { "Health permissions not granted for ${provider.key} (granted=$granted, hasPerms=$hasPerms)" }
+            log.w {
+                "Health permissions not granted for ${provider.key} " +
+                    "(granted=$granted, workout=$hasWorkoutWritePermission, bodyWeight=$hasBodyWeightReadPermission)"
+            }
         }
     }
 
@@ -504,10 +529,43 @@ class IntegrationsViewModel(
             status = com.devil.phoenixproject.domain.model.ConnectionStatus.CONNECTED,
             profileId = profileId,
         )
+        val bodyWeightSyncMessage = syncHealthBodyWeightAfterConnect()
         _uiState.value = _uiState.value.copy(
-            successMessage = "Health integration enabled",
+            successMessage = bodyWeightSyncMessage,
         )
         log.i { "Health integration enabled for ${provider.key}" }
+    }
+
+    private suspend fun syncHealthBodyWeightAfterConnect(): String {
+        return when (val result = healthBodyWeightSyncManager.syncLatestFromConnectedPlatform()) {
+            is HealthBodyWeightSyncResult.Synced -> {
+                "Health integration enabled; body weight updated to ${result.sample.weightKg} kg"
+            }
+
+            HealthBodyWeightSyncResult.NoEligibleSample -> {
+                "Health integration enabled; no eligible scale body weight found"
+            }
+
+            HealthBodyWeightSyncResult.PermissionMissing -> {
+                "Health integration enabled; body weight read permission is missing"
+            }
+
+            is HealthBodyWeightSyncResult.RejectedOutOfRange -> {
+                "Health integration enabled; latest body weight is outside Phoenix's 20-300 kg range"
+            }
+
+            HealthBodyWeightSyncResult.Unavailable -> {
+                "Health integration enabled; body weight sync is unavailable on this device"
+            }
+
+            is HealthBodyWeightSyncResult.Failed -> {
+                "Health integration enabled; body weight sync failed"
+            }
+
+            HealthBodyWeightSyncResult.NotConnected -> {
+                "Health integration enabled"
+            }
+        }
     }
 
     /**
