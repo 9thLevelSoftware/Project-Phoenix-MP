@@ -108,11 +108,11 @@
     <string name="settings_cloud_sync">Sincronización en la nube</string>
     <string name="settings_weight_unit">Unidad de peso</string>
     <string name="settings_appearance">Apariencia</string>
-    <string name="settings_theme_mode">Theme</string>
-    <string name="settings_theme_mode_description">Follow the system theme or keep the app in light or dark mode</string>
-    <string name="settings_theme_system">System</string>
-    <string name="settings_theme_light">Light</string>
-    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_mode">Tema</string>
+    <string name="settings_theme_mode_description">Seguir el tema del sistema o mantener la aplicación en modo claro u oscuro</string>
+    <string name="settings_theme_system">Sistema</string>
+    <string name="settings_theme_light">Claro</string>
+    <string name="settings_theme_dark">Oscuro</string>
     <string name="settings_dynamic_color">Colores de Material You</string>
     <string name="settings_dynamic_color_description">Usar los colores de tu fondo de pantalla de Android cuando estén disponibles</string>
     <string name="settings_link_portal">Vincular cuenta del Portal</string>
@@ -584,7 +584,7 @@
     <string name="cd_above_pr">Above PR</string>
     <string name="cd_below_pr">Below PR</string>
     <string name="cd_delete_workout">Delete workout</string>
-    <string name="cd_toggle_theme_cycle">Toggle theme (current: %1$s, next: %2$s)</string>
+    <string name="cd_toggle_theme_cycle">Cambiar tema (actual: %1$s, siguiente: %2$s)</string>
     <string name="cd_workouts">Workouts</string>
     <string name="cd_disconnect">Desconectar</string>
 

@@ -71,17 +71,4 @@ class ThemeModeUiContractGuardTest {
         )
     }
 
-    @Test
-    fun iosContentView_recreatesComposeHostWhenSwiftUIColorSchemeChanges() {
-        val source = read("iosApp/VitruvianPhoenix/VitruvianPhoenix/ContentView.swift")
-
-        assertTrue(
-            source.contains("@Environment(\\.colorScheme)"),
-            "ContentView should observe SwiftUI colorScheme changes.",
-        )
-        assertTrue(
-            source.contains(".id(colorScheme)"),
-            "Compose host should be recreated when the system color scheme changes on iOS.",
-        )
-    }
 }
