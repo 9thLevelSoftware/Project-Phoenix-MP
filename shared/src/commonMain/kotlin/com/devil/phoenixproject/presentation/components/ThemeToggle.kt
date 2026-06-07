@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -17,18 +18,13 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Compact icon-only theme toggle.
- * Toggles between Light and Dark modes only.
+ * Cycles through System, Light, and Dark modes.
  */
 @Composable
 fun ThemeToggle(mode: ThemeMode, onModeChange: (ThemeMode) -> Unit, modifier: Modifier = Modifier) {
+    val nextMode = nextThemeModeAfterToggle(mode)
     IconButton(
         onClick = {
-            // Toggle between Light and Dark only
-            val nextMode = when (mode) {
-                ThemeMode.LIGHT -> ThemeMode.DARK
-                ThemeMode.DARK -> ThemeMode.LIGHT
-                ThemeMode.SYSTEM -> ThemeMode.LIGHT // If somehow in SYSTEM, go to LIGHT
-            }
             onModeChange(nextMode)
         },
         modifier = modifier,
@@ -37,11 +33,21 @@ fun ThemeToggle(mode: ThemeMode, onModeChange: (ThemeMode) -> Unit, modifier: Mo
             imageVector = when (mode) {
                 ThemeMode.LIGHT -> Icons.Default.LightMode
                 ThemeMode.DARK -> Icons.Default.DarkMode
-                ThemeMode.SYSTEM -> Icons.Default.LightMode // Fallback
+                ThemeMode.SYSTEM -> Icons.Default.Settings
             },
-            contentDescription = stringResource(Res.string.cd_toggle_theme, mode.name.lowercase()),
+            contentDescription = stringResource(
+                Res.string.cd_toggle_theme_cycle,
+                mode.name.lowercase(),
+                nextMode.name.lowercase(),
+            ),
             modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.onSurface,
         )
     }
+}
+
+internal fun nextThemeModeAfterToggle(mode: ThemeMode): ThemeMode = when (mode) {
+    ThemeMode.SYSTEM -> ThemeMode.LIGHT
+    ThemeMode.LIGHT -> ThemeMode.DARK
+    ThemeMode.DARK -> ThemeMode.SYSTEM
 }

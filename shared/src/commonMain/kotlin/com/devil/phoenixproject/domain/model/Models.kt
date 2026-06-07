@@ -327,6 +327,9 @@ data class WorkoutParameters(
     val programMode: ProgramMode,
     val reps: Int,
     val weightPerCableKg: Float = 0f, // Only used for Program modes
+    val activeRackItemIds: List<String> = emptyList(),
+    val externalAddedLoadKg: Float = 0f,
+    val counterweightKg: Float = 0f,
     val progressionRegressionKg: Float = 0f, // Positive = progression, negative = regression
     val isJustLift: Boolean = false,
     val useAutoStart: Boolean = false, // true for Just Lift, false for others
@@ -520,6 +523,9 @@ data class WorkoutSession(
     val totalVolumeKg: Float? = null,
     val cableCount: Int? = null,
     val displayMultiplier: Int? = null,
+    val externalAddedLoadKg: Float = 0f,
+    val counterweightKg: Float = 0f,
+    val rackItemsJson: String = "[]",
     val estimatedCalories: Float? = null,
     val warmupAvgWeightKg: Float? = null,
     val workingAvgWeightKg: Float? = null,

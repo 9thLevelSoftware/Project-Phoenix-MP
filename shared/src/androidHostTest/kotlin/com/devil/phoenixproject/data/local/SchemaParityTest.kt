@@ -193,10 +193,66 @@ class SchemaParityTest {
         assertEquals(0L, countExerciseVideos(driver, isTutorial = true))
     }
 
+    @Test
+    fun `migration 33 adds equipment rack session context defaults`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 33)
+
+        assertEquals(false, columnExistsInDriver(driver, "WorkoutSession", "externalAddedLoadKg"))
+        assertEquals(false, columnExistsInDriver(driver, "WorkoutSession", "counterweightKg"))
+        assertEquals(false, columnExistsInDriver(driver, "WorkoutSession", "rackItemsJson"))
+
+        driver.execute(
+            null,
+            """
+            INSERT INTO WorkoutSession (
+                id, timestamp, mode, targetReps, weightPerCableKg
+            ) VALUES (
+                'session-rack-defaults', 1, 'Old School', 10, 20.0
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 33, 34)
+
+        assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "externalAddedLoadKg"))
+        assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "counterweightKg"))
+        assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "rackItemsJson"))
+
+        var externalAddedLoadKg = ""
+        var counterweightKg = ""
+        var rackItemsJson = ""
+        driver.executeQuery(
+            identifier = null,
+            sql = """
+                SELECT
+                    CAST(externalAddedLoadKg AS TEXT),
+                    CAST(counterweightKg AS TEXT),
+                    rackItemsJson
+                FROM WorkoutSession
+                WHERE id = 'session-rack-defaults'
+            """.trimIndent(),
+            mapper = { cursor ->
+                if (cursor.next().value) {
+                    externalAddedLoadKg = cursor.getString(0).orEmpty()
+                    counterweightKg = cursor.getString(1).orEmpty()
+                    rackItemsJson = cursor.getString(2).orEmpty()
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+
+        assertEquals(0.0, externalAddedLoadKg.toDouble())
+        assertEquals(0.0, counterweightKg.toDouble())
+        assertEquals("[]", rackItemsJson)
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 33L
+        private const val CURRENT_VERSION = 34L
 
         /**
          * Transient tables are intermediate artifacts of table-rebuild migrations
