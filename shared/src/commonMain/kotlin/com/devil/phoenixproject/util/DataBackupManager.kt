@@ -86,6 +86,15 @@ interface DataBackupManager {
     suspend fun exportSession(sessionId: String): Result<String>
 
     /**
+     * Export every WorkoutSession row that shares the given [routineSessionId] (plus each
+     * session's metrics and completed sets) to a single JSON file on the device filesystem.
+     * Issue #525: routine workouts previously produced one backup file per set; this collapses
+     * them to one file per completed routine.
+     * Returns the file path of the written backup on success, or failure if no sessions match.
+     */
+    suspend fun exportRoutine(routineSessionId: String): Result<String>
+
+    /**
      * Returns file count and total size of session auto-backup files on disk.
      */
     suspend fun getBackupStats(): BackupStats
@@ -148,8 +157,11 @@ abstract class BaseDataBackupManager(
     protected abstract fun pruneOldBackups(keepCount: Int)
 
     companion object {
-        /** Maximum number of per-session auto-backup files to retain. */
-        const val MAX_SESSION_BACKUPS = 90
+        /**
+         * Maximum number of auto-backup files to retain. Shared between per-session
+         * (exportSession) and per-routine (exportRoutine) auto-backup flows.
+         */
+        const val MAX_ROUTINE_BACKUPS = 90
 
         /** Batch size for metric sample transactions in streaming import. */
         const val IMPORT_BATCH_SIZE = 5_000
@@ -2552,13 +2564,81 @@ abstract class BaseDataBackupManager(
 
             writeSessionBackupFile(filePath, jsonString)
 
-            // Retention policy: keep only the last MAX_SESSION_BACKUPS files
-            pruneOldBackups(MAX_SESSION_BACKUPS)
+            // Retention policy: keep only the last MAX_ROUTINE_BACKUPS files
+            pruneOldBackups(MAX_ROUTINE_BACKUPS)
 
             Logger.d { "Auto-backup saved: $filePath (${jsonString.length} bytes)" }
             Result.success(filePath)
         } catch (e: Exception) {
             Logger.e(e) { "Auto-backup failed for session $sessionId" }
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Issue #525: one backup file per completed routine.
+     *
+     * Looks up every WorkoutSession that shares [routineSessionId] for the active profile
+     * and writes a single BackupData containing all of them, their metrics, and their
+     * completed sets. Returns failure if no sessions are found. Filename uses the earliest
+     * session timestamp in the routine so consecutive routines sort cleanly.
+     */
+    override suspend fun exportRoutine(routineSessionId: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val activeProfileId = queries.getActiveProfile().executeAsOneOrNull()?.id ?: "default"
+            val sessions = queries.selectSessionsByRoutineSessionId(
+                profileId = activeProfileId,
+                routineSessionId = routineSessionId,
+            ).executeAsList()
+
+            if (sessions.isEmpty()) {
+                return@withContext Result.failure(
+                    Exception("No sessions found for routine: $routineSessionId"),
+                )
+            }
+
+            // Aggregate metrics and completed sets across all sessions in the routine.
+            // Done per-session to mirror exportSession()'s OOM-safe pattern.
+            val allMetrics = mutableListOf<MetricSample>()
+            val allCompletedSets = mutableListOf<CompletedSet>()
+            for (session in sessions) {
+                allMetrics.addAll(queries.selectMetricsBySession(session.id).executeAsList())
+                allCompletedSets.addAll(queries.selectCompletedSetsBySession(session.id).executeAsList())
+            }
+
+            val routineNowMs = KmpUtils.currentTimeMillis()
+            val backupData = BackupData(
+                version = CURRENT_BACKUP_VERSION,
+                exportedAt = KmpUtils.formatTimestamp(routineNowMs, "yyyy-MM-dd") + "T" +
+                    KmpUtils.formatTimestamp(routineNowMs, "HH:mm:ss") + "Z",
+                appVersion = Constants.APP_VERSION,
+                data = BackupContent(
+                    workoutSessions = sessions.map { mapSessionToBackup(it) },
+                    metricSamples = allMetrics.map { mapMetricToBackup(it) },
+                    completedSets = allCompletedSets.map { mapCompletedSetToBackup(it) },
+                ),
+            )
+
+            val jsonString = json.encodeToString(backupData)
+
+            // Filename: phoenix-routine-{yyyy-MM-dd}-{routineSessionId}.json
+            // Use the earliest session timestamp so consecutive routines sort by date.
+            val earliestTimestamp = sessions.minOf { it.timestamp }
+            val isoDate = KmpUtils.formatTimestamp(earliestTimestamp, "yyyy-MM-dd")
+            val fileName = "phoenix-routine-$isoDate-$routineSessionId.json"
+
+            val backupDir = getSessionBackupDirectory()
+            val filePath = "$backupDir/$fileName"
+
+            writeSessionBackupFile(filePath, jsonString)
+
+            // Retention policy: keep only the last MAX_ROUTINE_BACKUPS files
+            pruneOldBackups(MAX_ROUTINE_BACKUPS)
+
+            Logger.d { "Routine auto-backup saved: $filePath (${jsonString.length} bytes, ${sessions.size} sessions)" }
+            Result.success(filePath)
+        } catch (e: Exception) {
+            Logger.e(e) { "Routine auto-backup failed for routine $routineSessionId" }
             Result.failure(e)
         }
     }

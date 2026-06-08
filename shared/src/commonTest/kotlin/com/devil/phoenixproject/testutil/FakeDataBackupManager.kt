@@ -16,6 +16,9 @@ class FakeDataBackupManager : DataBackupManager {
     var lastExportedSessionId: String? = null
         private set
 
+    var lastExportedRoutineSessionId: String? = null
+        private set
+
     override suspend fun exportAllData(): BackupData = BackupData(
         version = 1,
         exportedAt = "2024-01-01T00:00:00Z",
@@ -51,6 +54,11 @@ class FakeDataBackupManager : DataBackupManager {
     override suspend fun exportSession(sessionId: String): Result<String> {
         lastExportedSessionId = sessionId
         return Result.success("/fake/phoenix-workout-2024-01-01-$sessionId.json")
+    }
+
+    override suspend fun exportRoutine(routineSessionId: String): Result<String> {
+        lastExportedRoutineSessionId = routineSessionId
+        return Result.success("/fake/phoenix-routine-2024-01-01-$routineSessionId.json")
     }
 
     override suspend fun getBackupStats(): BackupStats = BackupStats(fileCount = 0, totalBytes = 0)

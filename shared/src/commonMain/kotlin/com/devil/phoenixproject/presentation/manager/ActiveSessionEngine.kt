@@ -3484,7 +3484,9 @@ class ActiveSessionEngine(
 
         // Per-session auto-backup AFTER all persistence (including CompletedSet and PR).
         // Fire-and-forget, never blocks the save flow.
-        if (preferencesManager.preferencesFlow.value.autoBackupEnabled && dataBackupManager != null) {
+        // Issue #525: skip per-set backup for routine sets — exportRoutine handles the
+        // entire routine on routine exit. Preserves single-exercise / Just Lift auto-backup.
+        if (!isRoutineSet && preferencesManager.preferencesFlow.value.autoBackupEnabled && dataBackupManager != null) {
             scope.launch {
                 dataBackupManager.exportSession(sessionId)
                     .onFailure { e -> Logger.w(e) { "Auto-backup failed for session $sessionId" } }

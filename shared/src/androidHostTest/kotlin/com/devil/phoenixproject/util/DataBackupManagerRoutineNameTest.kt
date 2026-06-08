@@ -477,6 +477,120 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(result.exceptionOrNull()?.message?.contains("Session not found") == true)
     }
 
+    // --- Per-routine auto-backup (exportRoutine) tests — Issue #525 ---
+
+    @Test
+    fun `exportRoutine collapses multiple WorkoutSession rows sharing one routineSessionId into one backup`() = runTest {
+        val sharedRoutineSessionId = "routine-session-shared"
+        // Two sessions in the same routine: bench, then row
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "routine-bench",
+                exerciseId = "exercise-bench",
+                exerciseName = "Bench Press",
+                routineSessionId = sharedRoutineSessionId,
+                routineName = "Push Day",
+                timestamp = 1_700_000_000_000L,
+                mode = "OLD_SCHOOL",
+                reps = 10,
+                weightPerCableKg = 50f,
+                duration = 120_000L,
+                totalReps = 10,
+                workingReps = 10,
+            ),
+        )
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "routine-row",
+                exerciseId = "exercise-row",
+                exerciseName = "Row",
+                routineSessionId = sharedRoutineSessionId,
+                routineName = "Push Day",
+                timestamp = 1_700_000_100_000L,
+                mode = "OLD_SCHOOL",
+                reps = 10,
+                weightPerCableKg = 40f,
+                duration = 120_000L,
+                totalReps = 10,
+                workingReps = 10,
+            ),
+        )
+        // A control session NOT in this routine must NOT show up
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "routine-curl",
+                exerciseId = "exercise-curl",
+                exerciseName = "Curl",
+                routineSessionId = "different-routine-session",
+                routineName = "Arms Day",
+                timestamp = 1_700_000_200_000L,
+                mode = "OLD_SCHOOL",
+                reps = 10,
+                weightPerCableKg = 20f,
+                duration = 60_000L,
+                totalReps = 10,
+                workingReps = 10,
+            ),
+        )
+        // One completed set per routine session
+        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+            id = "cs-bench",
+            session_id = "routine-bench",
+            planned_set_id = null,
+            set_number = 1,
+            set_type = "STANDARD",
+            actual_reps = 10,
+            actual_weight_kg = 50.0,
+            logged_rpe = null,
+            is_pr = 0,
+            completed_at = 1_700_000_006_000L,
+        )
+        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+            id = "cs-row",
+            session_id = "routine-row",
+            planned_set_id = null,
+            set_number = 1,
+            set_type = "STANDARD",
+            actual_reps = 10,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0,
+            completed_at = 1_700_000_106_000L,
+        )
+
+        val result = backupManager.exportRoutine(sharedRoutineSessionId)
+        assertTrue(result.isSuccess, "exportRoutine should succeed: ${result.exceptionOrNull()?.message}")
+
+        val filePath = result.getOrThrow()
+        assertTrue(filePath.contains("phoenix-routine-"), "Filename should follow routine convention")
+        assertTrue(filePath.contains(sharedRoutineSessionId), "Filename should contain routineSessionId")
+
+        val fileContent = File(filePath).readText()
+        val backupData = testJson.decodeFromString<BackupData>(fileContent)
+
+        // Both routine sessions in, control session out
+        val sessionIds = backupData.data.workoutSessions.map { it.id }.toSet()
+        assertEquals(setOf("routine-bench", "routine-row"), sessionIds)
+        // Completed sets from BOTH sessions in the routine must be included
+        val completedSetIds = backupData.data.completedSets.map { it.id }.toSet()
+        assertEquals(setOf("cs-bench", "cs-row"), completedSetIds)
+        // completedSets.sessionId references must match the included sessions
+        val completedSetSessionIds = backupData.data.completedSets.map { it.sessionId }.toSet()
+        assertEquals(setOf("routine-bench", "routine-row"), completedSetSessionIds)
+
+        File(filePath).delete()
+    }
+
+    @Test
+    fun `exportRoutine returns failure when no sessions share the routineSessionId`() = runTest {
+        val result = backupManager.exportRoutine("non-existent-routine")
+        assertTrue(result.isFailure, "Should fail for unknown routineSessionId")
+        assertTrue(
+            result.exceptionOrNull()?.message?.contains("No sessions found for routine") == true,
+            "Error message should explain failure mode: ${result.exceptionOrNull()?.message}",
+        )
+    }
+
     /**
      * Regression test for #324: restoring a legacy backup (null profileId) while the active
      * profile is NOT "default" must adopt skipped records into the active profile, not
