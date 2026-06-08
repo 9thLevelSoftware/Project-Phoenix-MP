@@ -14,13 +14,24 @@ import platform.AVFAudio.AVAudioPlayer
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryAmbient
 import platform.AVFAudio.AVAudioSessionCategoryOptionMixWithOthers
+import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
+import platform.AVFAudio.AVAudioSessionInterruptionNotification
+import platform.AVFAudio.AVAudioSessionInterruptionOptionKey
+import platform.AVFAudio.AVAudioSessionInterruptionOptionShouldResume
+import platform.AVFAudio.AVAudioSessionInterruptionTypeEnded
+import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
 import platform.AVFAudio.AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
 import platform.AVFAudio.setActive
 import platform.Foundation.NSBundle
+import platform.Foundation.NSNumber
+import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSOperationQueue
+import platform.UIKit.UIApplicationDidBecomeActiveNotification
 import platform.UIKit.UIImpactFeedbackGenerator
 import platform.UIKit.UIImpactFeedbackStyle
 import platform.UIKit.UINotificationFeedbackGenerator
 import platform.UIKit.UINotificationFeedbackType
+import platform.darwin.NSObjectProtocol
 
 private val log = Logger.withTag("HapticFeedbackEffect.ios")
 
@@ -65,28 +76,106 @@ private class IosSoundManager {
     private val repCountSoundPlayers = mutableListOf<AVAudioPlayer?>()
     private var countdownTickPlayer: AVAudioPlayer? = null // Issue #100
 
+    // Issue #522: Observer tokens for foreground + AVAudioSession interruption
+    // notifications. Removed in release() to avoid leaking observers across
+    // recompositions of HapticFeedbackEffect.
+    private val lifecycleObservers = mutableListOf<NSObjectProtocol>()
+    private var released = false
+
     init {
         setupAudioSession()
         loadSounds()
         loadBadgeSounds()
         loadPRSounds()
         loadRepCountSounds()
+        installLifecycleObservers()
     }
 
     private fun setupAudioSession() {
         try {
             val session = AVAudioSession.sharedInstance()
-            // Use Ambient category with MixWithOthers to play alongside music
-            // This ensures our sounds don't interrupt user's music playback
-            session.setCategory(
-                AVAudioSessionCategoryAmbient,
-                AVAudioSessionCategoryOptionMixWithOthers,
-                null,
-            )
+            // Use Ambient category with MixWithOthers to play alongside music,
+            // but do not downgrade an active PlayAndRecord session owned by
+            // SafeWordListener. AVAudioSession is process-wide; switching back
+            // to Ambient during a workout would break microphone input.
+            if (session.category != AVAudioSessionCategoryPlayAndRecord) {
+                session.setCategory(
+                    AVAudioSessionCategoryAmbient,
+                    AVAudioSessionCategoryOptionMixWithOthers,
+                    null,
+                )
+            }
             session.setActive(true, null)
         } catch (e: Exception) {
             log.w { "Failed to setup audio session: ${e.message}" }
         }
+    }
+
+    /**
+     * Issue #522: Observe iOS app-foreground and AVAudioSession interruption
+     * notifications so that voice prompts and sound effects resume after the
+     * user backgrounds then foregrounds the app, or after a phone call /
+     * Siri / Alarm interruption ends. On either event we re-activate the
+     * session and re-prepare the cached AVAudioPlayer instances (which can
+     * become invalid when the underlying AVAudioSession tears itself down
+     * during backgrounding).
+     */
+    private fun installLifecycleObservers() {
+        if (released) return
+        val center = NSNotificationCenter.defaultCenter
+
+        val foregroundObserver = center.addObserverForName(
+            name = UIApplicationDidBecomeActiveNotification,
+            `object` = null,
+            queue = NSOperationQueue.mainQueue(),
+            usingBlock = { _ ->
+                recoverAudioSession()
+            },
+        )
+        val interruptionObserver = center.addObserverForName(
+            name = AVAudioSessionInterruptionNotification,
+            `object` = null,
+            queue = NSOperationQueue.mainQueue(),
+            usingBlock = { notification ->
+                val userInfo = notification?.userInfo
+                val typeValue = (userInfo?.get(AVAudioSessionInterruptionTypeKey) as? NSNumber)
+                    ?.unsignedLongLongValue
+                // Only react to "ended" — "began" means the system has already
+                // suspended playback, and we will be re-foregrounded / re-shown
+                // when the interruption ends.
+                if (typeValue == AVAudioSessionInterruptionTypeEnded) {
+                    val options = (userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)
+                        ?.unsignedLongLongValue
+                    val shouldResume = options == null ||
+                        (options and AVAudioSessionInterruptionOptionShouldResume) != 0uL
+                    if (shouldResume) {
+                        recoverAudioSession()
+                    }
+                }
+            },
+        )
+        lifecycleObservers += foregroundObserver
+        lifecycleObservers += interruptionObserver
+    }
+
+    private fun recoverAudioSession() {
+        if (released) return
+        setupAudioSession()
+        prepareAllPlayers()
+    }
+
+    /**
+     * Re-prepare every cached AVAudioPlayer. After long backgrounding or an
+     * AVAudioSession interruption the players' underlying audio files can be
+     * deallocated; calling prepareToPlay() makes them usable again before
+     * the next playSound() call.
+     */
+    private fun prepareAllPlayers() {
+        players.values.forEach { it?.prepareToPlay() }
+        badgeSoundPlayers.forEach { it?.prepareToPlay() }
+        prSoundPlayers.forEach { it?.prepareToPlay() }
+        repCountSoundPlayers.forEach { it?.prepareToPlay() }
+        countdownTickPlayer?.prepareToPlay()
     }
 
     private fun loadSounds() {
@@ -250,6 +339,12 @@ private class IosSoundManager {
 
         if (player != null) {
             try {
+                // Issue #522: Defensively re-prepare the chosen player. The
+                // lifecycle observers own session reactivation so this hot
+                // path does not repeatedly reconfigure the process-wide
+                // AVAudioSession or downgrade SafeWordListener's PlayAndRecord
+                // category during active workouts.
+                player.prepareToPlay()
                 // Reset to beginning if already playing
                 player.currentTime = 0.0
                 if (event is HapticEvent.COUNTDOWN_TICK) {
@@ -264,6 +359,19 @@ private class IosSoundManager {
     }
 
     fun release() {
+        // Issue #522: Prevent late-arriving foreground / interruption
+        // notifications from re-activating the session after we have already
+        // torn it down, and remove the observers we installed in init.
+        released = true
+        lifecycleObservers.forEach { observer ->
+            try {
+                NSNotificationCenter.defaultCenter.removeObserver(observer)
+            } catch (e: Exception) {
+                // Ignore cleanup errors
+            }
+        }
+        lifecycleObservers.clear()
+
         players.values.forEach { player ->
             try {
                 player?.stop()

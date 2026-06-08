@@ -78,4 +78,87 @@ class SafeWordListenerIosAudioTapGuardTest {
         assertTrue(source.contains("requestRecordPermission"))
         assertTrue(source.contains("Microphone and Speech Recognition"))
     }
+
+    // ---- Issue #522: foreground + AVAudioSession interruption recovery ----
+
+    @Test
+    fun iosSafeWordListener_observesForegroundAndInterruptionNotifications() {
+        val source = safeWordListenerSource.readText()
+
+        assertTrue(
+            source.contains("UIApplicationDidBecomeActiveNotification"),
+            "iOS safe-word listener must observe UIApplicationDidBecomeActiveNotification for foreground recovery.",
+        )
+        assertTrue(
+            source.contains("AVAudioSessionInterruptionNotification"),
+            "iOS safe-word listener must observe AVAudioSessionInterruptionNotification for call/Siri recovery.",
+        )
+        assertTrue(
+            source.contains("AVAudioSessionInterruptionTypeEnded"),
+            "iOS safe-word listener must only react to the *ended* half of an AVAudioSession interruption.",
+        )
+    }
+
+    @Test
+    fun iosSafeWordListener_reconfiguresAudioSessionAndRecognitionOnLifecycleRecovery() {
+        val source = safeWordListenerSource.readText()
+
+        // The recovery path must re-configure the shared AVAudioSession and
+        // re-enter startRecognition() so the AVAudioEngine + speech task get
+        // re-attached. The check looks for a single combined recovery block
+        // that both calls dispatchStartRecognition() and is gated by
+        // shouldBeListening.
+        val restartFromLifecycleIndex = source.indexOf("restartRecognitionFromLifecycle")
+        val dispatchStartIndex = source.indexOf("dispatchStartRecognition()", restartFromLifecycleIndex)
+        val shouldBeListeningGuardIndex = source.lastIndexOf("if (!shouldBeListening) return", restartFromLifecycleIndex)
+
+        assertTrue(
+            restartFromLifecycleIndex >= 0,
+            "iOS safe-word listener must define a lifecycle-recovery entry point.",
+        )
+        assertTrue(
+            dispatchStartIndex >= 0 && dispatchStartIndex > restartFromLifecycleIndex,
+            "Lifecycle recovery must re-dispatch startRecognition() so the audio engine re-attaches.",
+        )
+        assertTrue(
+            shouldBeListeningGuardIndex >= 0,
+            "Lifecycle recovery must be gated by shouldBeListening so it is a no-op after stopListening().",
+        )
+    }
+
+    @Test
+    fun iosSafeWordListener_installsAndRemovesLifecycleObservers() {
+        val source = safeWordListenerSource.readText()
+
+        // Both install and remove must exist, both must reference
+        // NSNotificationCenter.addObserverForName / removeObserver, and the
+        // remove path must be reachable from stopListening().
+        assertTrue(
+            source.contains("addObserverForName"),
+            "iOS safe-word listener must use NSNotificationCenter.addObserverForName to install lifecycle observers.",
+        )
+        assertTrue(
+            source.contains("installLifecycleObservers"),
+            "iOS safe-word listener must wrap observer installation in a dedicated helper.",
+        )
+        assertTrue(
+            source.contains("removeLifecycleObservers"),
+            "iOS safe-word listener must wrap observer removal in a dedicated helper to avoid leaks.",
+        )
+        assertTrue(
+            source.contains("removeObserver(observer)"),
+            "iOS safe-word listener must call NSNotificationCenter.removeObserver(observer) on cleanup.",
+        )
+
+        val stopListeningIndex = source.indexOf("actual fun stopListening()")
+        val removeCallIndex = source.indexOf("removeLifecycleObservers()", stopListeningIndex)
+        assertTrue(
+            stopListeningIndex >= 0,
+            "iOS safe-word listener must expose a stopListening() function.",
+        )
+        assertTrue(
+            removeCallIndex >= 0 && removeCallIndex > stopListeningIndex,
+            "stopListening() must call removeLifecycleObservers() to detach foreground / interruption observers.",
+        )
+    }
 }
