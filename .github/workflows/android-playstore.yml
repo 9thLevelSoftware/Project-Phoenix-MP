@@ -7,6 +7,11 @@ on:
         description: 'Optional version code override (must be > current Play max and <= 2100000000)'
         required: false
         type: string
+      submitForReview:
+        description: 'Submit the Play edit for review immediately. Leave false when staging new App content declarations.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -157,12 +162,24 @@ jobs:
             -Pversion.code=${{ steps.version.outputs.selected_version_code }}
           rm keystore.jks
 
-      - name: Upload to Play Store Open Testing and Submit for Review
+      - name: Verify packaged Health Connect permissions
+        run: |
+          set -euo pipefail
+          manifest="androidApp/build/intermediates/packaged_manifests/release/processReleaseManifestForPackage/AndroidManifest.xml"
+
+          echo "Health Connect permissions packaged in release manifest:"
+          grep -o 'android.permission.health\.[A-Z_]*' "$manifest" | sort -u
+
+          grep -q 'android.permission.health.READ_WEIGHT' "$manifest"
+
+      - name: Upload to Play Store Open Testing
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.devil.phoenixproject
           releaseFiles: androidApp/build/outputs/bundle/release/*.aab
           tracks: beta  # Open Testing track (use 'production' for full release)
-          status: completed
-          changesNotSentForReview: false  # Automatically submit for review
+          # Default to a draft edit so Play can ingest new Health Connect permissions
+          # before App content declarations are completed in Play Console.
+          status: ${{ inputs.submitForReview && 'completed' || 'draft' }}
+          changesNotSentForReview: ${{ inputs.submitForReview && 'false' || 'true' }}
