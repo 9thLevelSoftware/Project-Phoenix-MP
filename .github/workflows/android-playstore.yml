@@ -179,7 +179,8 @@ jobs:
           packageName: com.devil.phoenixproject
           releaseFiles: androidApp/build/outputs/bundle/release/*.aab
           tracks: beta  # Open Testing track (use 'production' for full release)
-          # Default to a draft edit so Play can ingest new Health Connect permissions
-          # before App content declarations are completed in Play Console.
+          # Default to a draft release so Play can ingest new Health Connect permissions
+          # before App content declarations are completed in Play Console. Do not set
+          # changesNotSentForReview here; Play rejects that commit flag on apps where
+          # changes are sent for review automatically.
           status: ${{ inputs.submitForReview && 'completed' || 'draft' }}
-          changesNotSentForReview: ${{ inputs.submitForReview && 'false' || 'true' }}
