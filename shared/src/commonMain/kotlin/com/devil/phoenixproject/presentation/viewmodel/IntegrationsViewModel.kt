@@ -51,6 +51,16 @@ private val log = Logger.withTag("IntegrationsViewModel")
 
 sealed class IntegrationUiEvent {
     data class Snackbar(val message: String) : IntegrationUiEvent()
+
+    /**
+     * Ask the platform UI layer to open Phoenix's Health Connect permission settings.
+     *
+     * Android can suppress repeated Health Connect permission requests after users
+     * disable/revoke access, leaving Phoenix in Health Connect's "Inactive apps" list.
+     * In that state the recovery path is the app-specific Health Connect settings
+     * screen rather than another permission-contract launch.
+     */
+    data object OpenHealthPermissionSettings : IntegrationUiEvent()
 }
 
 data class IntegrationsUiState(
@@ -570,8 +580,12 @@ class IntegrationsViewModel(
                 errorMessage = missingMessage,
             )
             _uiState.value = _uiState.value.copy(
-                errorMessage = "Health permissions were not granted. $missingMessage.",
+                errorMessage = "Health permissions were not granted. $missingMessage. Enable Project Phoenix in Health Connect settings, then return and retry.",
             )
+            if (!isIosPlatform) {
+                emitSnackbar("Opening Health Connect settings so you can re-enable Project Phoenix")
+                _uiEvents.emit(IntegrationUiEvent.OpenHealthPermissionSettings)
+            }
             log.w {
                 "Health permissions not granted for ${provider.key} " +
                     "(granted=$granted, workout=$hasWorkoutWritePermission, bodyWeight=$hasBodyWeightReadPermission)"

@@ -351,6 +351,7 @@ fun ExternalProgramPlaygroundScreen(
         viewModel.events.collect { event ->
             when (event) {
                 is IntegrationUiEvent.Snackbar -> snackbarHostState.showSnackbar(event.message)
+                IntegrationUiEvent.OpenHealthPermissionSettings -> Unit
             }
         }
     }

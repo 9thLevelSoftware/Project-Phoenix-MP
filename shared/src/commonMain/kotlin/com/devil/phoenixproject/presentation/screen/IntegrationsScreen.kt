@@ -31,6 +31,7 @@ import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.readUriContent
 import com.devil.phoenixproject.util.rememberFilePicker
 import com.devil.phoenixproject.util.rememberHealthPermissionRequester
+import com.devil.phoenixproject.util.rememberHealthPermissionSettingsLauncher
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
@@ -47,6 +48,7 @@ fun IntegrationsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
     val healthPermissionRequester = rememberHealthPermissionRequester()
+    val healthPermissionSettingsLauncher = rememberHealthPermissionSettingsLauncher()
     var triggerHealthPermissionRequest by remember { mutableStateOf(false) }
 
     // Set screen title
@@ -72,6 +74,7 @@ fun IntegrationsScreen(
         viewModel.uiEvents.collect { event ->
             when (event) {
                 is IntegrationUiEvent.Snackbar -> snackbarHostState.showSnackbar(event.message)
+                IntegrationUiEvent.OpenHealthPermissionSettings -> healthPermissionSettingsLauncher.openSettings()
             }
         }
     }
