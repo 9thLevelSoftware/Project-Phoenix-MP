@@ -16,8 +16,6 @@ import platform.AVFAudio.AVAudioSessionCategoryAmbient
 import platform.AVFAudio.AVAudioSessionCategoryOptionMixWithOthers
 import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
 import platform.AVFAudio.AVAudioSessionInterruptionNotification
-import platform.AVFAudio.AVAudioSessionInterruptionOptionKey
-import platform.AVFAudio.AVAudioSessionInterruptionOptionShouldResume
 import platform.AVFAudio.AVAudioSessionInterruptionTypeEnded
 import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
 import platform.AVFAudio.AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
@@ -144,13 +142,7 @@ private class IosSoundManager {
                 // suspended playback, and we will be re-foregrounded / re-shown
                 // when the interruption ends.
                 if (typeValue == AVAudioSessionInterruptionTypeEnded) {
-                    val options = (userInfo.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)
-                        ?.unsignedLongLongValue
-                    val shouldResume = options == null ||
-                        (options and AVAudioSessionInterruptionOptionShouldResume) != 0uL
-                    if (shouldResume) {
-                        recoverAudioSession()
-                    }
+                    recoverAudioSession()
                 }
             },
         )

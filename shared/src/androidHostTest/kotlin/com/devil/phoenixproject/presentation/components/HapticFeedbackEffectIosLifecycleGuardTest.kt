@@ -46,6 +46,32 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
     }
 
     @Test
+    fun iosHapticFeedbackEffect_recoversAfterEveryEndedInterruption() {
+        val source = iosHapticSource.readText()
+
+        val interruptionObserverIndex = source.indexOf("AVAudioSessionInterruptionNotification")
+        val endedCheckIndex = source.indexOf("typeValue == AVAudioSessionInterruptionTypeEnded", interruptionObserverIndex)
+        val recoverCallIndex = source.indexOf("recoverAudioSession()", endedCheckIndex)
+
+        assertTrue(
+            interruptionObserverIndex >= 0,
+            "iOS HapticFeedbackEffect must observe AVAudioSession interruption notifications.",
+        )
+        assertTrue(
+            endedCheckIndex >= 0,
+            "iOS HapticFeedbackEffect must branch on the ended interruption type.",
+        )
+        assertTrue(
+            recoverCallIndex >= 0 && recoverCallIndex > endedCheckIndex,
+            "Ended AVAudioSession interruptions must always re-activate and re-prepare haptic audio for future cues.",
+        )
+        assertTrue(
+            !source.contains("AVAudioSessionInterruptionOptionShouldResume"),
+            "Haptic audio recovery must not depend on ShouldResume, which only describes interrupted playback.",
+        )
+    }
+
+    @Test
     fun iosHapticFeedbackEffect_installsObserversOnInit() {
         val source = iosHapticSource.readText()
 
