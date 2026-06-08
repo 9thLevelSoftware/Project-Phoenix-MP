@@ -41,11 +41,6 @@
     <!-- Camera permission for Form Check feature -->
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- Health Connect permissions (Android 14+ requires manifest declarations) -->
-    <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
-    <uses-permission android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED" />
-    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
-
     <!-- Camera feature (not required - app works without camera) -->
     <uses-feature
         android:name="android.hardware.camera"
@@ -58,17 +53,6 @@
     <uses-feature
         android:name="android.hardware.bluetooth_le"
         android:required="true" />
-
-    <!-- Health Connect availability check (both Android 13 APK and Android 14+ platform) -->
-    <queries>
-        <package android:name="com.google.android.apps.healthdata" />
-        <intent>
-            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
-        </intent>
-    </queries>
 
     <application
         android:name=".VitruvianApp"
@@ -91,22 +75,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-            <!-- Health Connect: permissions rationale (pre-Android 14, Health Connect APK) -->
-            <intent-filter>
-                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-            </intent-filter>
-
-            <!-- Health Connect: permissions rationale (Android 14+, platform module) -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
-                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
-            </intent-filter>
-
-            <!-- Health Connect: onboarding (required by Play Store for HC-enabled apps) -->
-            <intent-filter>
-                <action android:name="androidx.health.ACTION_SHOW_ONBOARDING" />
             </intent-filter>
         </activity>
 
@@ -140,6 +108,11 @@
             android:name=".service.WorkoutForegroundService"
             android:foregroundServiceType="connectedDevice"
             android:exported="false" />
+
+        <!-- Remove Health Connect SDK service from release artifacts until Play Console health declarations are complete. -->
+        <service
+            android:name="androidx.health.platform.client.impl.sdkservice.HealthDataSdkService"
+            tools:node="remove" />
 
         <!-- FileProvider for sharing CSV exports -->
         <provider
