@@ -19,6 +19,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -50,6 +53,7 @@ fun IntegrationsScreen(
     val healthPermissionRequester = rememberHealthPermissionRequester()
     val healthPermissionSettingsLauncher = rememberHealthPermissionSettingsLauncher()
     var triggerHealthPermissionRequest by remember { mutableStateOf(false) }
+    var awaitingHealthPermissionSettingsReturn by remember { mutableStateOf(false) }
 
     // Set screen title
     LaunchedEffect(Unit) {
@@ -74,8 +78,24 @@ fun IntegrationsScreen(
         viewModel.uiEvents.collect { event ->
             when (event) {
                 is IntegrationUiEvent.Snackbar -> snackbarHostState.showSnackbar(event.message)
-                IntegrationUiEvent.OpenHealthPermissionSettings -> healthPermissionSettingsLauncher.openSettings()
+                IntegrationUiEvent.OpenHealthPermissionSettings -> {
+                    awaitingHealthPermissionSettingsReturn = true
+                    healthPermissionSettingsLauncher.openSettings()
+                }
             }
+        }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, awaitingHealthPermissionSettingsReturn) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && awaitingHealthPermissionSettingsReturn) {
+                awaitingHealthPermissionSettingsReturn = false
+                viewModel.checkHealthPermissionsAfterSettingsReturn()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
     LaunchedEffect(viewModel) {

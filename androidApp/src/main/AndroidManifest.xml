@@ -59,14 +59,24 @@
         android:name="android.hardware.bluetooth_le"
         android:required="true" />
 
-    <!-- Health Connect availability check (both Android 13 APK and Android 14+ platform) -->
+    <!-- Health Connect availability/settings checks (Android 13 APK and Android 14+ platform module) -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <package android:name="com.google.android.healthconnect.controller" />
         <intent>
             <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
         </intent>
         <intent>
             <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+        </intent>
+        <intent>
+            <action android:name="android.health.connect.action.MANAGE_HEALTH_PERMISSIONS" />
+        </intent>
+        <intent>
+            <action android:name="android.health.connect.action.HEALTH_HOME_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="androidx.health.ACTION_HEALTH_CONNECT_SETTINGS" />
         </intent>
     </queries>
 
