@@ -51,4 +51,65 @@ class HealthConnectReenableGuardTest {
             "Android launcher must pass Phoenix's package name so Health Connect opens this app's permission screen, not the generic app list.",
         )
     }
+
+    @Test
+    fun androidManifest_declaresHealthConnectSettingsDiscovery() {
+        val manifest = File(
+            projectRoot,
+            "androidApp/src/main/AndroidManifest.xml",
+        ).readText()
+
+        assertTrue(
+            manifest.contains("com.google.android.healthconnect.controller"),
+            "Android manifest queries must include the Android 14+ Health Connect controller package for settings and SDK visibility.",
+        )
+        assertTrue(
+            manifest.contains("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS"),
+            "Android manifest queries must include the app-specific Health Connect permission management action.",
+        )
+        assertTrue(
+            manifest.contains("android.health.connect.action.HEALTH_HOME_SETTINGS"),
+            "Android manifest queries must include the Health Connect home settings fallback action.",
+        )
+        assertTrue(
+            manifest.contains("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS"),
+            "Android manifest queries must include the AndroidX Health Connect settings fallback action.",
+        )
+    }
+
+    @Test
+    fun integrationsScreen_retriesAfterReturningFromHealthConnectSettings() {
+        val screen = File(
+            projectRoot,
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/IntegrationsScreen.kt",
+        ).readText()
+
+        assertTrue(
+            screen.contains("awaitingHealthPermissionSettingsReturn"),
+            "IntegrationsScreen must remember that it opened Health Connect settings.",
+        )
+        assertTrue(
+            screen.contains("Lifecycle.Event.ON_RESUME") && screen.contains("viewModel.checkHealthPermissionsAfterSettingsReturn()"),
+            "IntegrationsScreen must re-check Health Connect permissions when the user returns from settings.",
+        )
+    }
+
+    @Test
+    fun integrationsViewModel_rechecksPermissionsAfterSettingsReturn() {
+        val viewModel = File(
+            projectRoot,
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/IntegrationsViewModel.kt",
+        ).readText()
+
+        assertTrue(
+            viewModel.contains("fun checkHealthPermissionsAfterSettingsReturn()"),
+            "IntegrationsViewModel must expose a check-only path for returning from Health Connect settings.",
+        )
+        assertTrue(
+            viewModel.contains("healthIntegration.hasPermissions()") &&
+                viewModel.contains("healthIntegration.hasBodyWeightReadPermission()") &&
+                viewModel.contains("markHealthIntegrationConnected(provider, profileId)"),
+            "Returning from Health Connect settings must verify required permissions and mark the integration connected when granted.",
+        )
+    }
 }

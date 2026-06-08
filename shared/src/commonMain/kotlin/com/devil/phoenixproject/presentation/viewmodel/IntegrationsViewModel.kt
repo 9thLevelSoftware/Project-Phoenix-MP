@@ -456,6 +456,27 @@ class IntegrationsViewModel(
         toggleHealthIntegration(enable = true)
     }
 
+    fun checkHealthPermissionsAfterSettingsReturn() {
+        viewModelScope.launch {
+            val provider = platformHealthProvider()
+            val profileId = activeProfileId.value
+            val hasWorkoutWritePermission = healthIntegration.hasPermissions()
+            val hasBodyWeightReadPermission = healthIntegration.hasBodyWeightReadPermission()
+            if (hasWorkoutWritePermission && hasBodyWeightReadPermission) {
+                markHealthIntegrationConnected(provider, profileId)
+            } else {
+                val missingMessage = when {
+                    !hasWorkoutWritePermission -> "Workout write permission is still missing"
+                    !hasBodyWeightReadPermission -> "Body weight read permission is still missing"
+                    else -> "Health permissions are still missing"
+                }
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = "$missingMessage. Enable Project Phoenix in Health Connect settings, then retry.",
+                )
+            }
+        }
+    }
+
     fun syncPreviousHealthWorkouts() {
         viewModelScope.launch {
             val profileId = activeProfileId.value
