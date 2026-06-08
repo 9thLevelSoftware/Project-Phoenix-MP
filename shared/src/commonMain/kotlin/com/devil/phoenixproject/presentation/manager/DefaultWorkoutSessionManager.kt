@@ -791,6 +791,22 @@ class DefaultWorkoutSessionManager(
                         // the Complete navigation fires.
                         // Issue #395: Write aggregate health workout before clearing routine state
                         activeSessionEngine.writeRoutineHealthData()
+                        // Issue #525: Auto-backup completed routines once, after all per-set
+                        // WorkoutSession rows are persisted and before clearing routineSessionId.
+                        val completedRoutineSessionId = coordinator.currentRoutineSessionId
+                        if (completedRoutineSessionId != null &&
+                            preferencesManager.preferencesFlow.value.autoBackupEnabled &&
+                            dataBackupManager != null
+                        ) {
+                            scope.launch {
+                                dataBackupManager.exportRoutine(completedRoutineSessionId)
+                                    .onFailure { e ->
+                                        Logger.w(e) {
+                                            "Routine auto-backup failed for routine $completedRoutineSessionId"
+                                        }
+                                    }
+                            }
+                        }
                         coordinator._workoutState.value = WorkoutState.Idle
                         showRoutineComplete()
                         // Clear routine session context so stale IDs don't leak into next routine

@@ -2018,14 +2018,14 @@ fun SettingsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Auto-Backup Workouts",
+                            "Auto-Backup Workouts & Routines",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Automatically save each workout to a local backup file",
+                            "Automatically save single workouts and completed routines to local backup files",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

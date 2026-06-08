@@ -2153,6 +2153,7 @@ class ActiveSessionEngine(
                 Logger.w { "Interrupted workout already completed before reconnect; showing routine complete" }
                 // Issue #395: Write aggregate health workout before clearing routine state
                 writeRoutineHealthData()
+                autoBackupRoutineIfEnabled("interrupted-routine-complete")
                 interruptedSetRecovery = null
                 pendingStartOverride = null
                 resetInterruptedWorkoutTrackingState()
@@ -3037,6 +3038,7 @@ class ActiveSessionEngine(
                     if (!movedToNextStep) {
                         // Issue #395: Write aggregate health workout before completing routine
                         writeRoutineHealthData()
+                        autoBackupRoutineIfEnabled("skip-final-exercise")
                         flowDelegate?.showRoutineComplete()
                     }
                 }
@@ -3484,7 +3486,9 @@ class ActiveSessionEngine(
 
         // Per-session auto-backup AFTER all persistence (including CompletedSet and PR).
         // Fire-and-forget, never blocks the save flow.
-        if (preferencesManager.preferencesFlow.value.autoBackupEnabled && dataBackupManager != null) {
+        // Issue #525: skip per-set backup for routine sets — exportRoutine handles the
+        // entire routine on routine exit. Preserves single-exercise / Just Lift auto-backup.
+        if (!isRoutineSet && preferencesManager.preferencesFlow.value.autoBackupEnabled && dataBackupManager != null) {
             scope.launch {
                 dataBackupManager.exportSession(sessionId)
                     .onFailure { e -> Logger.w(e) { "Auto-backup failed for session $sessionId" } }
@@ -4283,6 +4287,22 @@ class ActiveSessionEngine(
     }
 
     /**
+     * Issue #525: write one backup for the completed routine instead of per-set files.
+     */
+    private fun autoBackupRoutineIfEnabled(context: String) {
+        val routineSessionId = coordinator.currentRoutineSessionId ?: return
+        val backupManager = dataBackupManager ?: return
+        if (!preferencesManager.preferencesFlow.value.autoBackupEnabled) return
+
+        scope.launch {
+            backupManager.exportRoutine(routineSessionId)
+                .onFailure { e ->
+                    Logger.w(e) { "Routine auto-backup failed for routine $routineSessionId ($context)" }
+                }
+        }
+    }
+
+    /**
      * Progress to the next set or exercise in a routine.
      */
     private fun startNextSetOrExercise() {
@@ -4379,6 +4399,7 @@ class ActiveSessionEngine(
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
             // Issue #395: Write aggregate health workout BEFORE clearing routine state
             writeRoutineHealthData()
+            autoBackupRoutineIfEnabled("routine-complete-autoplay")
             // Issue #393: Set Idle BEFORE showRoutineComplete() to prevent race where
             // routineFlowState=Complete + workoutState=SetSummary causes navigation ping-pong
             // between EnhancedMainScreen and ActiveWorkoutScreen.
