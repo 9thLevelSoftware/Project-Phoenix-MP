@@ -118,7 +118,7 @@ class IosDataBackupManager(
         val contents = fileManager.contentsOfDirectoryAtPath(dir, error = null) ?: return
         val backupFiles = contents
             .mapNotNull { it as? String }
-            .filter { it.startsWith("phoenix-workout-") && it.endsWith(".json") }
+            .filter { it.startsWith("phoenix-") && it.endsWith(".json") }
             .sorted() // Filename starts with date, so lexicographic sort = chronological
         val excess = backupFiles.size - keepCount
         if (excess > 0) {

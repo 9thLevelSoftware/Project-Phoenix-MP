@@ -124,7 +124,7 @@ class AndroidDataBackupManager(
             MediaStore.Downloads.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.Downloads.SIZE),
             "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
-            arrayOf("Download/PhoenixBackups/", "phoenix-workout-%.json"),
+            arrayOf("Download/PhoenixBackups/", "phoenix-%.json"),
             null,
         )?.use { cursor ->
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads.SIZE)
@@ -154,7 +154,7 @@ class AndroidDataBackupManager(
                 MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                 arrayOf(MediaStore.Downloads._ID),
                 "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
-                arrayOf("Download/PhoenixBackups/", "phoenix-workout-%.json"),
+                arrayOf("Download/PhoenixBackups/", "phoenix-%.json"),
                 "${MediaStore.Downloads.DATE_ADDED} ASC",
             )?.use { cursor ->
                 val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
@@ -183,7 +183,7 @@ class AndroidDataBackupManager(
                 "PhoenixBackups",
             )
             val files = dir.listFiles()
-                ?.filter { it.isFile && it.name.startsWith("phoenix-workout-") && it.name.endsWith(".json") }
+                ?.filter { it.isFile && it.name.startsWith("phoenix-") && it.name.endsWith(".json") }
                 ?.sortedBy { it.lastModified() }
                 ?: return
             val excess = files.size - keepCount
