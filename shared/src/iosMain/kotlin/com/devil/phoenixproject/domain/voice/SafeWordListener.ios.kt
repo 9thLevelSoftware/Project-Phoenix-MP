@@ -20,8 +20,8 @@ import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryOptionMixWithOthers
 import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
 import platform.AVFAudio.AVAudioSessionInterruptionNotification
-import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
 import platform.AVFAudio.AVAudioSessionInterruptionTypeEnded
+import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
 import platform.AVFAudio.AVAudioSessionModeDefault
 import platform.AVFAudio.AVAudioSessionRecordPermissionDenied
 import platform.AVFAudio.AVAudioSessionRecordPermissionGranted
@@ -31,8 +31,8 @@ import platform.AVFAudio.setActive
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
 import platform.Foundation.NSLog
-import platform.Foundation.NSNumber
 import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.timeIntervalSince1970
 import platform.Speech.SFSpeechAudioBufferRecognitionRequest
@@ -90,12 +90,12 @@ actual class SafeWordListener(private val safeWord: String) {
     private var isTearingDown = false
 
     /**
-     * Suppresses the cancellation callback emitted by lifecycle recovery itself.
-     * Foreground/interruption recovery intentionally tears down the stale task
-     * and immediately starts a fresh one; the cancelled stale task must not also
-     * schedule the normal delayed restart and tear down the fresh engine again.
+     * Identifies recognition callbacks so lifecycle recovery can suppress only
+     * the stale task it intentionally cancelled, without muting callbacks from
+     * the fresh recognizer started immediately afterward.
      */
-    private var suppressRestartUntilMs = 0L
+    private var recognitionCallbackGeneration = 0L
+    private var lifecycleRecoveryCancellationGeneration: Long? = null
 
     // Issue #522: Observer tokens for iOS app-foreground and AVAudioSession
     // interruption notifications. Installed on the first startListening() and
@@ -270,10 +270,11 @@ actual class SafeWordListener(private val safeWord: String) {
             }
 
             // Start recognition task
+            val callbackGeneration = ++recognitionCallbackGeneration
             recognitionTask = speechRecognizer.recognitionTaskWithRequest(
                 request,
             ) { result, error ->
-                handleRecognitionResult(result, error)
+                handleRecognitionResult(callbackGeneration, result, error)
             }
 
             _isListening.value = true
@@ -303,7 +304,7 @@ actual class SafeWordListener(private val safeWord: String) {
         }
     }
 
-    private fun handleRecognitionResult(result: SFSpeechRecognitionResult?, error: NSError?) {
+    private fun handleRecognitionResult(generation: Long, result: SFSpeechRecognitionResult?, error: NSError?) {
         if (result != null) {
             val text = result.bestTranscription.formattedString
             if (matchesSafeWord(text)) {
@@ -325,13 +326,16 @@ actual class SafeWordListener(private val safeWord: String) {
         val isFinal = result?.isFinal() ?: false
 
         if (isFinal || error != null) {
-            if (error != null) {
-                NSLog("$TAG: Recognition error: ${error.localizedDescription}")
-            }
-            val now = (NSDate().timeIntervalSince1970 * 1000).toLong()
-            if (now < suppressRestartUntilMs) {
+            if (generation == lifecycleRecoveryCancellationGeneration) {
                 NSLog("$TAG: Suppressing restart from lifecycle recovery cancellation")
                 return
+            }
+            if (generation != recognitionCallbackGeneration) {
+                NSLog("$TAG: Ignoring completion from stale recognition generation")
+                return
+            }
+            if (error != null) {
+                NSLog("$TAG: Recognition error: ${error.localizedDescription}")
             }
             // Recognition segment ended; restart for continuous listening
             scheduleRestart()
@@ -463,7 +467,7 @@ actual class SafeWordListener(private val safeWord: String) {
     private fun restartRecognitionFromLifecycle(reason: String) {
         if (!shouldBeListening) return
         NSLog("$TAG: Recovering speech recognition (reason=$reason)")
-        suppressRestartUntilMs = (NSDate().timeIntervalSince1970 * 1000).toLong() + DEBOUNCE_MS
+        lifecycleRecoveryCancellationGeneration = recognitionCallbackGeneration
         tearDown()
         dispatchStartRecognition()
     }

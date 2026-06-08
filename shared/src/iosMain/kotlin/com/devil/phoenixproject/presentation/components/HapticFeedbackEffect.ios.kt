@@ -23,8 +23,8 @@ import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
 import platform.AVFAudio.AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
 import platform.AVFAudio.setActive
 import platform.Foundation.NSBundle
-import platform.Foundation.NSNumber
 import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
 import platform.UIKit.UIApplicationDidBecomeActiveNotification
 import platform.UIKit.UIImpactFeedbackGenerator
@@ -144,7 +144,7 @@ private class IosSoundManager {
                 // suspended playback, and we will be re-foregrounded / re-shown
                 // when the interruption ends.
                 if (typeValue == AVAudioSessionInterruptionTypeEnded) {
-                    val options = (userInfo?.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)
+                    val options = (userInfo.get(AVAudioSessionInterruptionOptionKey) as? NSNumber)
                         ?.unsignedLongLongValue
                     val shouldResume = options == null ||
                         (options and AVAudioSessionInterruptionOptionShouldResume) != 0uL

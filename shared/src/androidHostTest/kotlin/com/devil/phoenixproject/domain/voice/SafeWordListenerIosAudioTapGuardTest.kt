@@ -127,6 +127,57 @@ class SafeWordListenerIosAudioTapGuardTest {
     }
 
     @Test
+    fun iosSafeWordListener_scopesLifecycleCancellationSuppressionToStaleRecognitionTask() {
+        val source = safeWordListenerSource.readText()
+
+        assertTrue(
+            !source.contains("suppressRestartUntilMs"),
+            "Lifecycle recovery must not use a global time window that can suppress callbacks from the fresh recognizer.",
+        )
+
+        val generationFieldIndex = source.indexOf("private var recognitionCallbackGeneration")
+        val suppressionFieldIndex = source.indexOf("private var lifecycleRecoveryCancellationGeneration")
+        assertTrue(
+            generationFieldIndex >= 0,
+            "iOS safe-word listener must track recognition callback generations.",
+        )
+        assertTrue(
+            suppressionFieldIndex >= 0,
+            "iOS safe-word listener must track only the lifecycle-cancelled stale generation.",
+        )
+
+        val startRecognitionIndex = source.indexOf("private fun startRecognition()")
+        val callbackGenerationIndex = source.indexOf("val callbackGeneration = ++recognitionCallbackGeneration", startRecognitionIndex)
+        val callbackHandlerPattern = Regex("""handleRecognitionResult\(\s*callbackGeneration\s*,""")
+        assertTrue(
+            callbackGenerationIndex >= 0,
+            "startRecognition() must assign a generation to each recognition callback.",
+        )
+        assertTrue(
+            callbackHandlerPattern.containsMatchIn(source.substring(callbackGenerationIndex)),
+            "recognition callbacks must pass their captured generation into handleRecognitionResult().",
+        )
+
+        val handleResultIndex = source.indexOf("private fun handleRecognitionResult(")
+        val scopedSuppressionIndex = source.indexOf("generation == lifecycleRecoveryCancellationGeneration", handleResultIndex)
+        assertTrue(
+            scopedSuppressionIndex >= 0,
+            "handleRecognitionResult() must suppress only the lifecycle-cancelled stale generation.",
+        )
+
+        val lifecycleRecoveryIndex = source.indexOf("private fun restartRecognitionFromLifecycle")
+        val setSuppressionIndex = source.indexOf(
+            "lifecycleRecoveryCancellationGeneration = recognitionCallbackGeneration",
+            lifecycleRecoveryIndex,
+        )
+        val tearDownIndex = source.indexOf("tearDown()", lifecycleRecoveryIndex)
+        assertTrue(
+            setSuppressionIndex >= 0 && setSuppressionIndex < tearDownIndex,
+            "Lifecycle recovery must capture the stale generation before tearDown() cancels that task.",
+        )
+    }
+
+    @Test
     fun iosSafeWordListener_installsAndRemovesLifecycleObservers() {
         val source = safeWordListenerSource.readText()
 

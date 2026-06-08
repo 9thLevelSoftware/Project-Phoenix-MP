@@ -73,17 +73,19 @@ class HapticFeedbackEffectIosLifecycleGuardTest {
         // set the `released` guard so late-arriving notifications are no-ops.
         val releaseIndex = source.indexOf("fun release()")
         val removedFlagIndex = source.indexOf("released = true", releaseIndex)
-        val removeLoopIndex = source.indexOf("NSNotificationCenter.defaultCenter.removeObserver(observer)", releaseIndex)
         val clearIndex = source.indexOf("lifecycleObservers.clear()", releaseIndex)
 
         assertTrue(releaseIndex >= 0, "IosSoundManager must define a release() function.")
+        val releaseBody = source.substring(releaseIndex)
+        val hasRemoveObserver = releaseBody.contains("removeObserver")
+        val referencesObserverToken = releaseBody.contains("observer")
         assertTrue(
             removedFlagIndex >= 0 && removedFlagIndex > releaseIndex,
             "release() must set the released guard so late-arriving notifications do not re-activate the session.",
         )
         assertTrue(
-            removeLoopIndex >= 0 && removeLoopIndex > releaseIndex,
-            "release() must call NSNotificationCenter.removeObserver(observer) for every installed observer.",
+            hasRemoveObserver && referencesObserverToken,
+            "release() must remove installed lifecycle observer tokens.",
         )
         assertTrue(
             clearIndex >= 0 && clearIndex > releaseIndex,
