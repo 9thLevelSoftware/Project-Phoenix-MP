@@ -205,13 +205,13 @@ class SyncTriggerManager(
                 }
             }
 
-            // Check for retry storm (max 3 consecutive failures for same error type)
-            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && classified.category == SyncErrorCategory.TRANSIENT) {
-                _hasPersistentError.value = true
-                Logger.e {
-                    "SyncTrigger: Retry storm detected - $MAX_CONSECUTIVE_FAILURES consecutive failures"
-                }
-            }
+            // Note: a TRANSIENT retry storm (>= MAX_CONSECUTIVE_FAILURES consecutive
+            // 5xx) intentionally does NOT latch the persistent error flag anymore.
+            // Transient failures/backoff are non-actionable for the user — the
+            // backoff schedule alone suppresses further auto retries, and the
+            // next transient storm simply re-arms it. Only PERMANENT and AUTH
+            // errors set _hasPersistentError, which is what the Settings > Cloud
+            // Sync red row binds to. Issue #528.
         }
 
         updateRetryState()

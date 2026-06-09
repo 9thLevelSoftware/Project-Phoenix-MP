@@ -106,6 +106,7 @@
     <!-- Settings -->
     <string name="settings_title">Instellingen</string>
     <string name="settings_cloud_sync">Cloud Sync</string>
+    <string name="settings_sync_error_tap_to_dismiss">Sync error — tap to dismiss</string>
     <string name="settings_weight_unit">Gewichtseenheid</string>
     <string name="settings_appearance">Uiterlijk</string>
     <string name="settings_theme_mode">Thema</string>

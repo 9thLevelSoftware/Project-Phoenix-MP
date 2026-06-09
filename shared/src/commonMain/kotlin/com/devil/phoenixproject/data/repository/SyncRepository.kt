@@ -176,6 +176,18 @@ interface SyncRepository {
      */
     suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long)
 
+    /**
+     * Stamp pushed personal records with the same timestamp used for
+     * [updateSessionTimestamp] so they are not re-sent on every subsequent
+     * push. PRs with NULL `updatedAt` would otherwise match every
+     * `getFullPRsModifiedSince(lastSync, ...)` delta query indefinitely.
+     *
+     * Issue #528: without this, pre-fix PRs that already exist on the
+     * portal are re-shipped on every sync because the push path only
+     * stamped WorkoutSession rows.
+     */
+    suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long)
+
     // === ID Mapping (after push) ===
 
     /**

@@ -176,11 +176,8 @@ class SyncBackoffTest {
                     _hasPersistentError.value = true
                 }
             }
-            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES &&
-                classified.category == SyncErrorCategory.TRANSIENT
-            ) {
-                _hasPersistentError.value = true
-            }
+            // Issue #528: TRANSIENT storms do NOT latch the persistent error flag
+            // anymore — only PERMANENT and AUTH do. Mirrors SyncTriggerManager.kt.
         }
 
         private fun onSyncSuccess() {

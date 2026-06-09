@@ -190,6 +190,7 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_p
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_prompt
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_cloud_sync
+import vitruvianprojectphoenix.shared.generated.resources.settings_sync_error_tap_to_dismiss
 import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color
 import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_language
@@ -564,7 +565,18 @@ fun SettingsTab(
                 if (hasSyncError) {
                     Spacer(modifier = Modifier.height(Spacing.small))
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                // Issue #528: allow the user to dismiss a stale
+                                // persistent error (e.g. PERMANENT/AUTH or pre-fix
+                                // backoff latch). The trigger manager resets its
+                                // backoff and consecutive-failure state so the
+                                // next foreground / workout-completed trigger can
+                                // run clean. The user is still able to retry by
+                                // tapping the Link Portal Account button above.
+                                syncTriggerManager.clearError()
+                            },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
@@ -575,7 +587,7 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
-                            "Sync error — tap above to retry",
+                            stringResource(Res.string.settings_sync_error_tap_to_dismiss),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )

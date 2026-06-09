@@ -10,14 +10,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
 
 /**
- * Tests for the 3-consecutive-failure retry-storm cap documented by SyncTriggerManager:
- *   - After 3 consecutive transient failures the trigger manager flips into a
- *     `hasPersistentError` state that blocks further automatic retries until a
- *     manual/bypass trigger (or clearError) clears it.
- *   - Manual retry (clearError / bypass) resets the failure count.
- *   - Mixed error categories: PERMANENT & TRANSIENT increment the counter, AUTH sets
- *     persistent error and emits a re-login signal, NETWORK keeps the trigger waiting
- *     for connectivity rather than counting toward the TRANSIENT retry-storm cap.
+ * Tests for SyncTriggerManager's failure classification and persistent-error
+ * contract. Issue #528 tightened this so TRANSIENT storms do NOT latch the
+ * user-visible persistent error anymore — only PERMANENT and AUTH do.
+ *
+ *   - A TRANSIENT storm still ratchets the exponential backoff, but the
+ *     `hasPersistentError` flag stays false (it backs the Settings > Cloud
+ *     Sync red row, which is meant for actionable errors, not backpressure).
+ *   - PERMANENT and AUTH errors still set the persistent error flag
+ *     immediately (they are the actionable categories the user can resolve).
+ *   - NETWORK errors do not increment the TRANSIENT counter; they switch the
+ *     trigger to waiting-for-connectivity.
+ *   - clearError() always resets the flag and the failure/backoff counters.
  */
 class SyncFailureCapTest {
 
@@ -140,11 +144,11 @@ class SyncFailureCapTest {
                     _hasPersistentError.value = true
                 }
             }
-            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES &&
-                classified.category == SyncErrorCategory.TRANSIENT
-            ) {
-                _hasPersistentError.value = true
-            }
+            // Issue #528: TRANSIENT storms do NOT latch the persistent error flag
+            // anymore — only PERMANENT and AUTH do. Transient errors are non-
+            // actionable for the user; the backoff schedule alone suppresses
+            // further auto retries, and the Settings > Cloud Sync red row would
+            // be misleading if it stayed red through a normal 5xx recovery.
         }
 
         private fun onSyncSuccess() {
@@ -159,7 +163,11 @@ class SyncFailureCapTest {
     // ==================== Retry-Storm Cap ====================
 
     @Test
-    fun threeTransientFailuresTripsPersistentErrorFlag() = runTest {
+    fun threeTransientFailuresStaysInBackoffWithoutTrippingPersistentErrorFlag() = runTest {
+        // Issue #528: TRANSIENT storms no longer latch the persistent error flag.
+        // The backoff schedule alone suppresses further auto retries; the
+        // Settings > Cloud Sync red row is meant for actionable errors
+        // (PERMANENT / AUTH), not for transient backpressure.
         val sm = TestSyncManager()
         val cc = TestConnectivityChecker()
         val trigger = TestableSyncTriggerManager(sm, cc)
@@ -170,20 +178,29 @@ class SyncFailureCapTest {
         trigger.onWorkoutCompleted()
         assertFalse(trigger.hasPersistentError.value, "2 failures is below cap")
         trigger.onWorkoutCompleted()
-        assertTrue(trigger.hasPersistentError.value, "3 failures trips the manual-intervention flag")
+        assertFalse(
+            trigger.hasPersistentError.value,
+            "3 TRANSIENT failures stay in backoff (no persistent latch — Issue #528)",
+        )
         assertEquals(3, trigger.consecutiveFailures())
     }
 
     @Test
     fun clearErrorResetsFailureCountAndPersistentFlag() = runTest {
+        // Issue #528: TRANSIENT storms no longer latch the flag, so use a
+        // PERMANENT error to exercise the clearError() reset path against a
+        // genuinely latched persistent error.
         val sm = TestSyncManager()
         val cc = TestConnectivityChecker()
         val trigger = TestableSyncTriggerManager(sm, cc)
-        sm.syncResult = Result.failure(PortalApiException("boom", null, 500))
+        sm.syncResult = Result.failure(PortalApiException("bad request", null, 400))
 
-        repeat(3) { trigger.onWorkoutCompleted() }
-        assertTrue(trigger.hasPersistentError.value)
-        assertEquals(3, trigger.consecutiveFailures())
+        trigger.onWorkoutCompleted()
+        assertTrue(
+            trigger.hasPersistentError.value,
+            "PERMANENT error latches the persistent error flag (clearError target)",
+        )
+        assertEquals(1, trigger.consecutiveFailures())
 
         trigger.clearError()
 

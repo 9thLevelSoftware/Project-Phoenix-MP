@@ -162,6 +162,15 @@ class SqlDelightSyncRepository(
         }
     }
 
+    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long) {
+        if (prIds.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            prIds.chunked(900).forEach { chunk ->
+                queries.updatePRTimestamp(timestamp, chunk)
+            }
+        }
+    }
+
     // === ID Mapping ===
 
     override suspend fun updateServerIds(mappings: IdMappings) {
