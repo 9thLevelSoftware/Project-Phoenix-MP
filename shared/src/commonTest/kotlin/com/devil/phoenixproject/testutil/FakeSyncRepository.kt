@@ -138,6 +138,18 @@ class FakeSyncRepository : SyncRepository {
         updatedSessionTimestamps[sessionId] = timestamp
     }
 
+    // Issue #528: capture PR stamp calls so SyncManagerTest can assert that
+    // pushed PRs are stamped the same way pushed sessions are.
+    var updatedPersonalRecordTimestamps: MutableMap<Long, Long> = mutableMapOf()
+    var updatePersonalRecordTimestampCalls: MutableList<List<Long>> = mutableListOf()
+    var lastUpdatePersonalRecordTimestamp: Long? = null
+
+    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long) {
+        updatePersonalRecordTimestampCalls += prIds
+        lastUpdatePersonalRecordTimestamp = timestamp
+        prIds.forEach { id -> updatedPersonalRecordTimestamps[id] = timestamp }
+    }
+
     // === Parity Sync: Entity ID lists (simulate local database content) ===
 
     var sessionIds: List<String> = emptyList()

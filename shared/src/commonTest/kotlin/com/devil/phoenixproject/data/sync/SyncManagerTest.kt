@@ -433,6 +433,114 @@ class SyncManagerTest {
     }
 
     @Test
+    fun syncStampsPushedPersonalRecordsToPreventResend() = runTest {
+        // Issue #528 regression: pushLocalChanges must stamp PersonalRecord.updatedAt
+        // the same way it stamps WorkoutSession.updatedAt, otherwise
+        // getFullPRsModifiedSince(lastSync, ...) keeps re-shipping the same PRs
+        // on every push.
+        setupAuthenticated()
+        val exerciseId = "squat"
+        val timestamp = 1_740_916_800_000L
+        val firstSession = makeWorkoutSession(
+            id = "session-pr-stamp",
+            timestamp = timestamp,
+            reps = 5,
+            totalReps = 5,
+            exerciseId = exerciseId,
+            exerciseName = "Squat",
+        )
+        val pushedPr = makePersonalRecord(
+            id = 7,
+            exerciseId = exerciseId,
+            exerciseName = "Squat",
+            weightPerCableKg = 100f,
+            reps = 5,
+            timestamp = timestamp,
+            prType = PRType.MAX_WEIGHT,
+            phase = WorkoutPhase.COMBINED,
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(firstSession)
+        fakeSyncRepo.fullPRsToReturn = listOf(pushedPr)
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            1,
+            fakeSyncRepo.updatePersonalRecordTimestampCalls.size,
+            "Pushed PRs are stamped exactly once per sync (Issue #528)",
+        )
+        assertEquals(
+            listOf(pushedPr.id),
+            fakeSyncRepo.updatePersonalRecordTimestampCalls.single(),
+            "The stamp call must carry the same PR id that was just pushed",
+        )
+        assertNotNull(
+            fakeSyncRepo.lastUpdatePersonalRecordTimestamp,
+            "PR stamping must use the same stampTime as session stamping so " +
+                "next-sync parity (lastSync) lines up across both tables",
+        )
+    }
+
+    @Test
+    fun syncDeduplicatesPersonalRecordIdsBeforeStamping() = runTest {
+        // Issue #528 dedupe guard: even if getFullPRsModifiedSince returns the
+        // same PR id twice (e.g. one row from the recent delta and one from the
+        // historical session-id resolution), the stamp call should carry each
+        // id exactly once.
+        setupAuthenticated()
+        val exerciseId = "bench"
+        val timestamp = 1_740_916_800_000L
+        fakeSyncRepo.workoutSessionsToReturn = listOf(
+            makeWorkoutSession(
+                id = "session-pr-dup",
+                timestamp = timestamp,
+                reps = 5,
+                totalReps = 5,
+                exerciseId = exerciseId,
+                exerciseName = "Bench",
+            ),
+        )
+        val prA = makePersonalRecord(
+            id = 11,
+            exerciseId = exerciseId,
+            exerciseName = "Bench",
+            weightPerCableKg = 80f,
+            reps = 5,
+            timestamp = timestamp,
+            prType = PRType.MAX_WEIGHT,
+            phase = WorkoutPhase.COMBINED,
+        )
+        // Simulate a duplicate local PR id in the recent-PRs query result while
+        // keeping distinct portal payload keys so push validation succeeds and
+        // this test isolates the post-push stamping behavior.
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            prA,
+            prA.copy(
+                prType = PRType.MAX_VOLUME,
+                volume = 640f,
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            listOf(prA.id),
+            fakeSyncRepo.updatePersonalRecordTimestampCalls.single(),
+            "Duplicate PR ids in the delta query result must be deduped before stamping",
+        )
+    }
+
+    @Test
     fun syncEnsuresDefaultProfileBeforeSendingDefaultScopedPersonalRecords() = runTest {
         setupAuthenticated()
         fakeSyncRepo.fullPRsToReturn = listOf(

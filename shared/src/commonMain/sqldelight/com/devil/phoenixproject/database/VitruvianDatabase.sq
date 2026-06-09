@@ -1976,6 +1976,11 @@ AND profile_id = :profileId;
 updatePRServerId:
 UPDATE PersonalRecord SET serverId = ? WHERE id = ?;
 
+-- Stamp pushed PRs with current updatedAt so they aren't re-sent on next sync
+-- (Issue #528). Matches the WorkoutSession.updateSessionTimestamp pattern.
+updatePRTimestamp:
+UPDATE PersonalRecord SET updatedAt = ? WHERE id IN ?;
+
 -- Get routines modified since last sync
 selectRoutinesModifiedSince:
 SELECT * FROM Routine

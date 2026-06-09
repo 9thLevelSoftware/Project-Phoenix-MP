@@ -1021,6 +1021,21 @@ class SyncManager(
             }
         }
 
+        // Stamp pushed PRs (Issue #528) so getFullPRsModifiedSince doesn't keep
+        // re-shipping the same rows on every push. Re-use the exact recentPRs
+        // collected for this payload, deduped by id, and stamp only after the
+        // server confirmed the push. This gives PersonalRecord rows the same
+        // post-confirmation resend protection that WorkoutSession rows get from
+        // the caller's post-push stamping block.
+        val pushedPrIds = recentPRs.map { it.id }.distinct()
+        if (pushedPrIds.isNotEmpty()) {
+            val prStampTime = currentTimeMillis()
+            syncRepository.updatePersonalRecordTimestamp(pushedPrIds, prStampTime)
+            Logger.d("SyncManager") {
+                "Stamped ${pushedPrIds.size} pushed personal records with updatedAt=$prStampTime"
+            }
+        }
+
         return Result.success(lastResponse!!)
         // No updateServerIds() -- portal uses client-provided UUIDs
     }

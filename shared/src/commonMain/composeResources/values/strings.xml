@@ -114,6 +114,7 @@
     <!-- ==================== Settings screen ==================== -->
     <string name="settings_title">Settings</string>
     <string name="settings_cloud_sync">Cloud Sync</string>
+    <string name="settings_sync_error_tap_to_dismiss">Sync error — tap to dismiss</string>
     <string name="settings_weight_unit">Weight Unit</string>
     <string name="settings_appearance">Appearance</string>
     <string name="settings_theme_mode">Theme</string>
