@@ -376,7 +376,7 @@
     <string name="insights_subtitle">Recommandations personnalisées</string>
     <string name="insights_locked_name">Analyses intelligentes</string>
     <string name="insights_locked_desc">Unlock with Elite tier to get personalized training insights</string>
-    <string name="insights_weekly_volume">This Week\'s Volume</string>
+    <string name="insights_weekly_volume">This Week's Volume</string>
     <string name="insights_training_balance">Équilibre d'entraînement</string>
     <string name="insights_exercise_variety">Variété des exercices</string>
     <string name="insights_plateau_alert">Alerte de plateau</string>
