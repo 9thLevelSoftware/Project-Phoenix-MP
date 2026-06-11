@@ -10,8 +10,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSData
+import platform.Foundation.NSDate
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileModificationDate
 import platform.Foundation.NSFileSize
 import platform.Foundation.NSNumber
 import platform.Foundation.NSSearchPathForDirectoriesInDomains
@@ -24,6 +26,7 @@ import platform.Foundation.create
 import platform.Foundation.dataUsingEncoding
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.setValue
+import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.valueForKey
 import platform.Foundation.writeToFile
 import platform.UIKit.UIActivityViewController
@@ -116,10 +119,24 @@ class IosDataBackupManager(
     override fun pruneOldBackups(keepCount: Int) {
         val dir = getSessionBackupDirectory()
         val contents = fileManager.contentsOfDirectoryAtPath(dir, error = null) ?: return
+        // Sort by file modification date so prune always deletes the genuinely oldest
+        // backups first. Filenames have two different prefixes (`phoenix-routine-` and
+        // `phoenix-workout-`), which means lexicographic sort no longer matches
+        // chronological order — sorting on filename would silently delete recent
+        // routine backups while keeping ancient workout backups.
         val backupFiles = contents
             .mapNotNull { it as? String }
             .filter { it.startsWith("phoenix-") && it.endsWith(".json") }
-            .sorted() // Filename starts with date, so lexicographic sort = chronological
+            .map { fileName ->
+                val filePath = "$dir/$fileName"
+                val attrs = fileManager.attributesOfItemAtPath(filePath, error = null)
+                val mtime = attrs?.get(NSFileModificationDate) as? NSDate
+                // Fall back to epoch so files with missing mtime are considered oldest
+                // and pruned first (defensive; should never happen for files we wrote).
+                fileName to (mtime?.timeIntervalSince1970 ?: 0.0)
+            }
+            .sortedBy { it.second }
+            .map { it.first }
         val excess = backupFiles.size - keepCount
         if (excess > 0) {
             backupFiles.take(excess).forEach { fileName ->
