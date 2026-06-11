@@ -163,6 +163,10 @@ class BodyweightRackLoadTest {
         // from confirmBodyweightSetResult) then reads the fresh adjustment and persists
         // the vest-aware volume.
         harness.dwsm.updateActiveRackSelection(listOf(v.id))
+        // Capture the adjustment right after the toggle, before confirmBodyweightSetResult
+        // triggers auto-advance to the next set (which would re-snapshot the empty
+        // defaultRackItemIds via startWorkout → captureRackLoadSnapshot).
+        val capturedAdjustment = harness.dwsm.coordinator._currentRackLoadAdjustment.value.externalAddedLoadKg
 
         val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.dwsm.coordinator.workoutState.value)
         val decline18 = entry.variants.first { it.label == "Decline 18\"" }
@@ -171,7 +175,7 @@ class BodyweightRackLoadTest {
         advanceTimeBy(1_000)
         runCurrent()
 
-        assertFloatEquals(3.62874f, harness.dwsm.coordinator._currentRackLoadAdjustment.value.externalAddedLoadKg)
+        assertFloatEquals(3.62874f, capturedAdjustment)
 
         val session = harness.fakeWorkoutRepo.getAllSessions("default").first().single()
         // If the body-weight fix regresses, this will be 584.0 (vest-less).

@@ -1886,7 +1886,6 @@ class ActiveSessionEngine(
     }
 
     fun updateActiveRackSelection(itemIds: List<String>) {
-        Logger.d("ActiveSessionEngine") { "Issue #534 DEBUG updateActiveRackSelection: itemIds=$itemIds, currentExerciseIndex=${coordinator._currentExerciseIndex.value}, loaded=${coordinator._loadedRoutine.value?.exercises?.size}" }
         // Issue #534: For body-weight exercises, recompute _currentRackLoadAdjustment
         // synchronously when the user toggles a vest / counterweight on the live-set
         // screen, so that applyBodyweightVolume (called from confirmBodyweightSetResult)
@@ -1903,7 +1902,6 @@ class ActiveSessionEngine(
             ?.exercises
             ?.getOrNull(coordinator._currentExerciseIndex.value)
         val isBodyweight = currentExercise?.exercise?.isBodyweight == true
-        Logger.d("ActiveSessionEngine") { "Issue #534 DEBUG: isBodyweight=$isBodyweight, currentExercise.exercise=${currentExercise?.exercise?.name}" }
         if (isBodyweight) {
             val resolvedItems = equipmentRackRepository.rackItems.value
                 .filter { it.enabled && it.id in distinctIds }
