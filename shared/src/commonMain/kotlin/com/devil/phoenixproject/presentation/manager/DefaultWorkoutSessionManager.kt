@@ -201,6 +201,8 @@ class DefaultWorkoutSessionManager(
         completedSetRepository = completedSetRepository,
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
+        equipmentRackRepository = equipmentRackRepository,
+        applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         scope = scope,
     ).also { rfm ->
         rfm.lifecycleDelegate = object : RoutineFlowManager.WorkoutLifecycleDelegate {

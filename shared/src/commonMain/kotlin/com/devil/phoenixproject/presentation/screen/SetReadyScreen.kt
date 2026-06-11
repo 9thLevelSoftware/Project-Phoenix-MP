@@ -61,6 +61,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -423,8 +424,14 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 }
                             }
                             val userPrefs by viewModel.userPreferences.collectAsState()
+                            val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
                             if (userPrefs.bodyWeightKg > 0f) {
-                                val effectiveKg = userPrefs.bodyWeightKg * selectedVariant.percentage
+                                val effectiveKg = if (selectedVariant.percentage > 0f) {
+                                    (userPrefs.bodyWeightKg * selectedVariant.percentage +
+                                        currentRackLoadAdjustment.externalAddedLoadKg -
+                                        currentRackLoadAdjustment.counterweightKg
+                                    ).coerceAtLeast(0f)
+                                } else 0f
                                 val displayWeight = if (weightUnit == WeightUnit.KG) {
                                     "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(effectiveKg)} kg"
                                 } else {

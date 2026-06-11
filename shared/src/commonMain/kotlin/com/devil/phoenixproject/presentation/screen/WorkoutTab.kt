@@ -533,6 +533,7 @@ fun WorkoutTab(
                         entry = workoutState,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
+                        rackLoadAdjustment = rackLoadAdjustment,
                         onConfirm = onConfirmBodyweightSetResult,
                     )
                 }
@@ -1195,6 +1196,7 @@ private fun BodyweightRepEntryDialog(
     entry: WorkoutState.BodyweightRepEntry,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
+    rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
     onConfirm: (Int, BodyweightVariantOption) -> Unit,
 ) {
     var repsText by remember(entry.exerciseKey, entry.currentSet) {
@@ -1206,8 +1208,11 @@ private fun BodyweightRepEntryDialog(
     var expanded by remember { mutableStateOf(false) }
 
     val reps = repsText.toIntOrNull()?.coerceAtLeast(0) ?: 0
-    val effectiveWeightKg = if (entry.bodyWeightKg > 0f) {
-        entry.bodyWeightKg * selectedVariant.percentage
+    val effectiveWeightKg = if (entry.bodyWeightKg > 0f && selectedVariant.percentage > 0f) {
+        (entry.bodyWeightKg * selectedVariant.percentage +
+            rackLoadAdjustment.externalAddedLoadKg -
+            rackLoadAdjustment.counterweightKg
+        ).coerceAtLeast(0f)
     } else {
         0f
     }
