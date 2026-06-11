@@ -8,10 +8,10 @@ on:
         required: false
         type: string
       submitForReview:
-        description: 'Submit the Play edit for review immediately. Leave false when staging new App content declarations.'
+        description: 'Submit the Play edit for review immediately. Disable only when deliberately staging Play Console declarations.'
         required: false
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -172,15 +172,14 @@ jobs:
 
           grep -q 'android.permission.health.READ_WEIGHT' "$manifest"
 
-      - name: Upload to Play Store Open Testing
+      - name: Upload to Play Store Open Testing and Submit for Review
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.devil.phoenixproject
           releaseFiles: androidApp/build/outputs/bundle/release/*.aab
           tracks: beta  # Open Testing track (use 'production' for full release)
-          # Default to a draft release so Play can ingest new Health Connect permissions
-          # before App content declarations are completed in Play Console. Do not set
-          # changesNotSentForReview here; Play rejects that commit flag on apps where
-          # changes are sent for review automatically.
+          # Normal releases must be completed so the new version is submitted
+          # and replaces older beta-track releases. Set submitForReview=false
+          # only when intentionally staging Play Console declarations.
           status: ${{ inputs.submitForReview && 'completed' || 'draft' }}

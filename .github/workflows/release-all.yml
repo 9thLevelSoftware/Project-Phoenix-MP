@@ -7,6 +7,11 @@ on:
                 description: 'Optional Android version code override (passed to both Android workflows)'
                 required: false
                 type: string
+            submit_android_playstore_for_review:
+                description: 'Submit Android Play Store edit for review immediately. Disable only when deliberately staging Play Console declarations.'
+                required: false
+                type: boolean
+                default: true
             skip_android_playstore:
                 description: 'Skip Android Play Store'
                 required: false
@@ -37,11 +42,11 @@ jobs:
                 env:
                     GH_TOKEN: ${{ secrets.RELEASE_PAT }}
                 run: |
-                    ARGS=""
+                    args=(-f "submitForReview=${{ inputs.submit_android_playstore_for_review }}")
                     if [ -n "${{ inputs.versionCodeOverride }}" ]; then
-                      ARGS="-f versionCodeOverride=${{ inputs.versionCodeOverride }}"
+                      args+=(-f "versionCodeOverride=${{ inputs.versionCodeOverride }}")
                     fi
-                    gh workflow run android-playstore.yml --repo ${{ github.repository }} $ARGS
+                    gh workflow run android-playstore.yml --repo ${{ github.repository }} "${args[@]}"
                     echo "Triggered Android Play Store"
 
             -   name: Trigger Android Release APK
