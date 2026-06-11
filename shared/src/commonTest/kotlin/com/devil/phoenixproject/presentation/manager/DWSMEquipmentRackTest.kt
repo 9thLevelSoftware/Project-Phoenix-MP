@@ -158,6 +158,81 @@ class DWSMEquipmentRackTest {
         harness.cleanup()
     }
 
+    /**
+     * Issue #536 regression guard: a Weighted Vest selected on exercise 0 via the SetReady
+     * mid-flow toggle must not leak into exercise 1's live HUD rack snapshot when the user
+     * advances via [RoutineFlowManager.jumpToExercise] / [RoutineFlowManager.advanceToNextExercise]
+     * (the [RoutineFlowManager.navigateToExerciseInternal] path, which is distinct from the
+     * `enterSetReady` path covered by the test above).
+     *
+     * The vest is added to the previous exercise's [WorkoutParameters.externalAddedLoadKg] /
+     * [WorkoutParameters.counterweightKg] / [WorkoutCoordinator._activeRackItemIds]; without
+     * a reset on the per-exercise-advance transition, the next exercise's
+     * [com.devil.phoenixproject.presentation.manager.ActiveSessionEngine.captureRackLoadSnapshot]
+     * resolves the leaked selection and the live HUD renders "Rack: <leaked item> +N lb".
+     */
+    @Test
+    fun `jumpToExercise clears rack selection so weighted vest does not leak to next exercise`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeEquipmentRackRepo.saveItems(
+            listOf(
+                rackItem("vest", 3.63f, RackItemBehavior.ADDED_RESISTANCE),
+                rackItem("assist", 10f, RackItemBehavior.COUNTERWEIGHT),
+            ),
+        )
+        val routine = Routine(
+            id = "routine-issue-536",
+            name = "Vest Leak Repro",
+            exercises = listOf(
+                // Exercise 0 has NO schema-level rack defaults — only the mid-flow toggle
+                // adds the vest. After advancing, exercise 1's defaults ([]) should win.
+                routineExercise("rex-1", "Bayesian Cable Row", emptyList()),
+                routineExercise("rex-2", "Bayesian Cable Curl", emptyList()),
+            ),
+        )
+
+        assertTrue(harness.dwsm.loadRoutineAsync(routine))
+        advanceUntilIdle()
+
+        // SetReady for exercise 0, then user mid-flow toggles a vest (the leak source).
+        harness.dwsm.enterSetReady(0, 0)
+        assertEquals(emptyList(), harness.dwsm.coordinator.activeRackItemIds.value)
+        harness.dwsm.updateActiveRackSelection(listOf("vest"))
+        assertEquals(listOf("vest"), harness.dwsm.coordinator.activeRackItemIds.value)
+        // For a non-bodyweight (cable) exercise the mid-flow toggle updates
+        // activeRackItemIds but leaves the load adjustment locked until the next
+        // captureRackLoadSnapshot (see ActiveSessionEngine.updateActiveRackSelection).
+        // The leak test below targets the rack-ids + workoutParameters.activeRackItemIds
+        // round-trip that the live HUD reads; the precomputed-load invariant is covered
+        // by the existing "set start snapshot" test.
+
+        // Advance to exercise 1 via the jumpToExercise / navigateToExerciseInternal path.
+        // Pre-fix: the previous selection leaked, and the live HUD rendered
+        // "Rack: Weighted Vest +8 lb" on exercise 1.
+        harness.routineFlowManager.jumpToExercise(1)
+        // jumpToExercise launches the rack reset inside its own coroutine
+        // (lifecycleDelegate.sendStopCommand + navigateToExerciseInternal); advance
+        // virtual time so the state writes land before we assert.
+        advanceUntilIdle()
+        assertEquals(
+            emptyList(),
+            harness.dwsm.coordinator.activeRackItemIds.value,
+        )
+        assertEquals(
+            0f,
+            harness.dwsm.coordinator._workoutParameters.value.externalAddedLoadKg,
+        )
+        assertEquals(
+            0f,
+            harness.dwsm.coordinator._workoutParameters.value.counterweightKg,
+        )
+        assertEquals(
+            emptyList(),
+            harness.dwsm.coordinator._workoutParameters.value.activeRackItemIds,
+        )
+        harness.cleanup()
+    }
+
     @Test
     fun `single exercise completion persists rack defaults`() = runTest {
         val harness = DWSMTestHarness(this)
