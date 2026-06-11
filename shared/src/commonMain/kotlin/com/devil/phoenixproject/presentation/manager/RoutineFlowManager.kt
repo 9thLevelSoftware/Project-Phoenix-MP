@@ -819,6 +819,13 @@ class RoutineFlowManager(
      * (previously only the active rack IDs were written, leaving the adjustment empty
      * and the body-weight effective load off by the vest mass).
      *
+     * Uses the exercise's own `weightPerCableKg` as the adjustment's
+     * `programmedWeightPerCableKg` input rather than the coordinator's currently stored
+     * workout parameters. The coordinator mirror can still hold the PREVIOUS set's or
+     * PREVIOUS routine's programmed weight during the SetReady-entry transition; passing
+     * the exercise's weight keeps the adjustment consistent with what will be sent to
+     * the BLE machine at `startWorkout` time.
+     *
      * Mirrors the work done by [ActiveSessionEngine.updateActiveRackSelection] on the
      * mid-flow toggle path; this one runs at SetReady entry for every routine-driven
      * navigation (loadRoutine, enterSetReady, enterSetReadyWithAdjustments).
@@ -829,18 +836,16 @@ class RoutineFlowManager(
             .distinct()
         val resolvedItems = equipmentRackRepository.rackItems.value
             .filter { it.enabled && it.id in distinctIds }
-        val currentParams = coordinator._workoutParameters.value
+        // Use the exercise's own weight — not the coordinator's currently-mirrored
+        // workout parameters, which may still reflect the previous set / routine.
+        val programmedWeightPerCableKg = exercise.weightPerCableKg
         val displayMultiplier = exercise.exercise.displayMultiplier ?: 1
         val adjustment = applyEquipmentRackLoadUseCase.calculate(
-            programmedWeightPerCableKg = currentParams.weightPerCableKg,
+            programmedWeightPerCableKg = programmedWeightPerCableKg,
             displayMultiplier = displayMultiplier,
             selectedItems = resolvedItems,
-            isEchoMode = currentParams.isEchoMode,
-            validatorMinimumPerCableKg = when {
-                currentParams.isJustLift -> Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG
-                currentParams.isEchoMode -> Constants.MIN_WEIGHT_KG
-                else -> Constants.DEFAULT_WEIGHT_INCREMENT_KG
-            },
+            isEchoMode = false,
+            validatorMinimumPerCableKg = Constants.DEFAULT_WEIGHT_INCREMENT_KG,
         )
         val itemsJson = rackJson.encodeToString(
             ListSerializer(serializer<RackItem>()),
