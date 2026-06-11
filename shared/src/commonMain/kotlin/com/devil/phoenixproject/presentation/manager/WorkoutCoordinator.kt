@@ -196,17 +196,48 @@ class WorkoutCoordinator(
 
     internal var currentRackItemsJson: String = "[]"
 
-    internal fun setActiveRackSelection(itemIds: List<String>) {
+    /**
+     * Update the active rack selection AND, when a precomputed adjustment is supplied,
+     * the [currentRackLoadAdjustment] + [WorkoutParameters.externalAddedLoadKg] /
+     * [WorkoutParameters.counterweightKg] mirror fields.
+     *
+     * Callers that already computed the adjustment (e.g. via
+     * [com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase.calculate])
+     * should pass it as [precomputedAdjustment] so that [ActiveSessionEngine.applyBodyweightVolume]
+     * and the live-set "Effective load" formulas see the vest/counterweight mass.
+     *
+     * [precomputedItemsJson] is the JSON-encoded list of resolved [com.devil.phoenixproject.domain.model.RackItem]s
+     * — the engine owns encoding (so it can reuse its existing `rackJson` instance) and passes
+     * the resulting string here. The coordinator does not need to know the JSON shape.
+     */
+    internal fun setActiveRackSelection(
+        itemIds: List<String>,
+        precomputedAdjustment: RackLoadAdjustment? = null,
+        precomputedItemsJson: String? = null,
+    ) {
         val distinctIds = itemIds.filter { it.isNotBlank() }.distinct()
         _activeRackItemIds.value = distinctIds
-        _workoutParameters.value = _workoutParameters.value.copy(activeRackItemIds = distinctIds)
+        val currentParams = _workoutParameters.value
+        val effectiveAdjustment = precomputedAdjustment ?: _currentRackLoadAdjustment.value
+        if (precomputedAdjustment != null) {
+            _currentRackLoadAdjustment.value = precomputedAdjustment
+        }
+        if (precomputedItemsJson != null) {
+            currentRackItemsJson = precomputedItemsJson
+        }
+        _workoutParameters.value = currentParams.copy(
+            activeRackItemIds = distinctIds,
+            externalAddedLoadKg = effectiveAdjustment.externalAddedLoadKg,
+            counterweightKg = effectiveAdjustment.counterweightKg,
+        )
     }
 
     internal fun clearActiveRackSelection() {
-        setActiveRackSelection(emptyList())
+        _activeRackItemIds.value = emptyList()
         _currentRackLoadAdjustment.value = RackLoadAdjustment()
         currentRackItemsJson = "[]"
         _workoutParameters.value = _workoutParameters.value.copy(
+            activeRackItemIds = emptyList(),
             externalAddedLoadKg = 0f,
             counterweightKg = 0f,
         )

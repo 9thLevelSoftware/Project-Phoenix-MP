@@ -3,14 +3,18 @@ package com.devil.phoenixproject.presentation.manager
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.ActiveRackSelection
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -24,6 +28,7 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.util.Constants
@@ -33,6 +38,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.serializer
 
 /**
  * Manages routine CRUD, exercise/set navigation, and superset navigation.
@@ -55,8 +63,17 @@ class RoutineFlowManager(
     private val completedSetRepository: CompletedSetRepository,
     private val settingsManager: SettingsManager,
     private val userProfileRepository: UserProfileRepository,
+    private val equipmentRackRepository: EquipmentRackRepository,
+    private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val scope: CoroutineScope,
 ) {
+
+    // Issue #534: Same JSON config as ActiveSessionEngine for serialising the resolved
+    // rack items so the coordinator's `currentRackItemsJson` mirror matches across flows.
+    private val rackJson = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
 
     /**
      * Delegate interface for operations that require BLE commands or workout lifecycle control.
@@ -747,7 +764,9 @@ class RoutineFlowManager(
 
         // Pre-seed rack defaults for the first exercise so direct-start paths (e.g. cycle workouts
         // that bypass enterSetReady) capture the correct rack snapshot from set 1.
-        coordinator.setActiveRackSelection(firstExercise.defaultRackItemIds)
+        // Issue #534: also recompute the rack load adjustment so the live-set "Effective load"
+        // formula sees the configured vest / counterweight mass.
+        applyDefaultRackSelectionForExercise(firstExercise)
 
         val firstSetReps = firstExercise.setReps.firstOrNull() // Can be null for AMRAP sets
         // Get per-set weight for first set, falling back to exercise default
@@ -790,6 +809,48 @@ class RoutineFlowManager(
         }
 
         lifecycleDelegate.setWorkoutParametersInternal(params)
+    }
+
+    /**
+     * Issue #534: Pre-seed the rack snapshot for a routine exercise that is about to
+     * enter the live-set (SetReady / PreSet) screen, AND recompute the
+     * `currentRackLoadAdjustment` so that the live-set "Effective load" formula and the
+     * `Enter bodyweight reps` modal both see the configured vest / counterweight mass
+     * (previously only the active rack IDs were written, leaving the adjustment empty
+     * and the body-weight effective load off by the vest mass).
+     *
+     * Mirrors the work done by [ActiveSessionEngine.updateActiveRackSelection] on the
+     * mid-flow toggle path; this one runs at SetReady entry for every routine-driven
+     * navigation (loadRoutine, enterSetReady, enterSetReadyWithAdjustments).
+     */
+    private fun applyDefaultRackSelectionForExercise(exercise: RoutineExercise) {
+        val distinctIds = exercise.defaultRackItemIds
+            .filter { it.isNotBlank() }
+            .distinct()
+        val resolvedItems = equipmentRackRepository.rackItems.value
+            .filter { it.enabled && it.id in distinctIds }
+        val currentParams = coordinator._workoutParameters.value
+        val displayMultiplier = exercise.exercise.displayMultiplier ?: 1
+        val adjustment = applyEquipmentRackLoadUseCase.calculate(
+            programmedWeightPerCableKg = currentParams.weightPerCableKg,
+            displayMultiplier = displayMultiplier,
+            selectedItems = resolvedItems,
+            isEchoMode = currentParams.isEchoMode,
+            validatorMinimumPerCableKg = when {
+                currentParams.isJustLift -> Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG
+                currentParams.isEchoMode -> Constants.MIN_WEIGHT_KG
+                else -> Constants.DEFAULT_WEIGHT_INCREMENT_KG
+            },
+        )
+        val itemsJson = rackJson.encodeToString(
+            ListSerializer(serializer<RackItem>()),
+            resolvedItems,
+        )
+        coordinator.setActiveRackSelection(
+            itemIds = distinctIds,
+            precomputedAdjustment = adjustment,
+            precomputedItemsJson = itemsJson,
+        )
     }
 
     fun loadRoutine(routine: Routine) {
@@ -892,7 +953,8 @@ class RoutineFlowManager(
 
         coordinator._currentExerciseIndex.value = exerciseIndex
         coordinator._currentSetIndex.value = setIndex
-        coordinator.setActiveRackSelection(exercise.defaultRackItemIds)
+        // Issue #534: recompute rack load adjustment for the body-weight effective load formula
+        applyDefaultRackSelectionForExercise(exercise)
 
         // Get weight for this set
         val setWeight = exercise.setWeightsPerCableKg.getOrNull(setIndex)
@@ -969,7 +1031,8 @@ class RoutineFlowManager(
 
         coordinator._currentExerciseIndex.value = exerciseIndex
         coordinator._currentSetIndex.value = setIndex
-        coordinator.setActiveRackSelection(exercise.defaultRackItemIds)
+        // Issue #534: recompute rack load adjustment for the body-weight effective load formula
+        applyDefaultRackSelectionForExercise(exercise)
 
         coordinator._routineFlowState.value = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,

@@ -69,6 +69,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
@@ -1885,7 +1886,48 @@ class ActiveSessionEngine(
     }
 
     fun updateActiveRackSelection(itemIds: List<String>) {
-        coordinator.setActiveRackSelection(itemIds)
+        Logger.d("ActiveSessionEngine") { "Issue #534 DEBUG updateActiveRackSelection: itemIds=$itemIds, currentExerciseIndex=${coordinator._currentExerciseIndex.value}, loaded=${coordinator._loadedRoutine.value?.exercises?.size}" }
+        // Issue #534: For body-weight exercises, recompute _currentRackLoadAdjustment
+        // synchronously when the user toggles a vest / counterweight on the live-set
+        // screen, so that applyBodyweightVolume (called from confirmBodyweightSetResult)
+        // sees the new mass on the body-weight post-timer path.
+        //
+        // For cable exercises the rack-load snapshot is locked at startWorkout time
+        // (see DWSMEquipmentRackTest "set start snapshot"): the BLE machine is already
+        // lifting at the set-start weight, so a mid-set chip toggle must NOT mutate
+        // the saved load fields on the session. We still update the active IDs
+        // (so the next set / chip UI shows the new state) but skip the adjustment
+        // recompute and skip the workoutParameters mirror copy.
+        val distinctIds = itemIds.filter { it.isNotBlank() }.distinct()
+        val currentExercise = coordinator._loadedRoutine.value
+            ?.exercises
+            ?.getOrNull(coordinator._currentExerciseIndex.value)
+        val isBodyweight = currentExercise?.exercise?.isBodyweight == true
+        Logger.d("ActiveSessionEngine") { "Issue #534 DEBUG: isBodyweight=$isBodyweight, currentExercise.exercise=${currentExercise?.exercise?.name}" }
+        if (isBodyweight) {
+            val resolvedItems = equipmentRackRepository.rackItems.value
+                .filter { it.enabled && it.id in distinctIds }
+            val currentParams = coordinator._workoutParameters.value
+            val displayMultiplier = currentExercise?.exercise?.displayMultiplier ?: 1
+            val adjustment = applyEquipmentRackLoadUseCase.calculate(
+                programmedWeightPerCableKg = currentParams.weightPerCableKg,
+                displayMultiplier = displayMultiplier,
+                selectedItems = resolvedItems,
+                isEchoMode = currentParams.isEchoMode,
+                validatorMinimumPerCableKg = validatorSafeMinimum(currentParams),
+            )
+            val itemsJson = rackJson.encodeToString(
+                ListSerializer(RackItem.serializer()),
+                resolvedItems,
+            )
+            coordinator.setActiveRackSelection(
+                itemIds = distinctIds,
+                precomputedAdjustment = adjustment,
+                precomputedItemsJson = itemsJson,
+            )
+        } else {
+            coordinator.setActiveRackSelection(distinctIds)
+        }
     }
 
     fun clearActiveRackSelection() {
