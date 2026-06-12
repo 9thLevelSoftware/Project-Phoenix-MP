@@ -1277,6 +1277,16 @@ class RoutineFlowManager(
         val setReps = exercise.setReps.getOrNull(0)
         val setWeight = exercise.setWeightsPerCableKg.getOrNull(0) ?: exercise.weightPerCableKg
 
+        // Issue #536: seed the new exercise's defaults (which clears any previous
+        // selection when the new exercise has no defaults; otherwise overwrites
+        // _workoutParameters.load fields with the new exercise's precomputed
+        // adjustment). Without this reset, a vest selected via the SetReady toggle
+        // on the previous exercise leaks into the live HUD for this exercise
+        // (captureRackLoadSnapshot reads _activeRackItemIds at set start). Mirrors
+        // the seeding done by enterSetReady / enterSetReadyWithAdjustments /
+        // loadRoutineInternal so every per-exercise-advance path is consistent.
+        applyDefaultRackSelectionForExercise(exercise)
+
         coordinator._workoutParameters.update { params ->
             params.copy(
                 programMode = exercise.programMode,
