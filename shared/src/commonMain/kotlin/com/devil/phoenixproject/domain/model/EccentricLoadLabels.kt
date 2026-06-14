@@ -80,7 +80,11 @@ fun eccentricLoadLabel(load: EccentricLoad): String {
  */
 @Composable
 fun eccentricLoadPercentLabel(percent: Int): String {
-    val language = androidx.compose.runtime.remember { currentLanguageCode() }
+@Composable
+fun eccentricLoadPercentLabel(percent: Int): String {
+    val language = currentLanguageCode()
+    return formatEccentricLoadPercent(percent, language)
+}
     return androidx.compose.runtime.remember(percent, language) { formatEccentricLoadPercent(percent, language) }
 }
 
