@@ -328,7 +328,7 @@ class AudioPreferenceGateTest {
 
     @Test
     fun `REST_ENDING countdown warning gated by beep toggles`() {
-        // REST_ENDING fires when the rest timer reaches five seconds remaining.
+        // REST_ENDING fires near the end of the rest timer.
         // It is part of the countdown window, so both the general and countdown toggles apply.
         data class GateState(val beepsEnabled: Boolean, val countdownBeepsEnabled: Boolean)
 

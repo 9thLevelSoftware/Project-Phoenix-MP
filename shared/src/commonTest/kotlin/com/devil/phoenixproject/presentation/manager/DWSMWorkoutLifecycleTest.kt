@@ -27,13 +27,6 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.activeDWSM
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
-import kotlin.math.abs
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -41,6 +34,13 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.math.abs
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * Characterization tests for DefaultWorkoutSessionManager workout lifecycle.
@@ -548,7 +548,7 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `rest timer emits countdown ticks through six seconds then rest ending at five seconds`() = runTest {
+    fun `rest timer emits countdown ticks through five seconds then rest ending at four seconds`() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
@@ -565,22 +565,22 @@ class DWSMWorkoutLifecycleTest {
             advanceUntilIdle()
 
             harness.activeSessionEngine.startRestTimer()
-            advanceTimeBy(55_000)
+            advanceTimeBy(56_000)
             runCurrent()
 
             assertEquals(
-                (10 downTo 6).toList(),
+                (10 downTo 5).toList(),
                 events.filterIsInstance<HapticEvent.COUNTDOWN_TICK>().map { it.secondsRemaining },
             )
             assertEquals(1, events.filterIsInstance<HapticEvent.REST_ENDING>().size)
             val state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
-            assertEquals(5, state.restSecondsRemaining)
+            assertEquals(4, state.restSecondsRemaining)
 
             advanceTimeBy(10_000)
             runCurrent()
 
             assertEquals(
-                (10 downTo 6).toList(),
+                (10 downTo 5).toList(),
                 events.filterIsInstance<HapticEvent.COUNTDOWN_TICK>().map { it.secondsRemaining },
             )
             assertEquals(1, events.filterIsInstance<HapticEvent.REST_ENDING>().size)
@@ -609,7 +609,7 @@ class DWSMWorkoutLifecycleTest {
             advanceUntilIdle()
 
             harness.activeSessionEngine.startRestTimer()
-            advanceTimeBy(55_000)
+            advanceTimeBy(56_000)
             runCurrent()
 
             assertEquals(emptyList(), events.filterIsInstance<HapticEvent.REST_ENDING>())
