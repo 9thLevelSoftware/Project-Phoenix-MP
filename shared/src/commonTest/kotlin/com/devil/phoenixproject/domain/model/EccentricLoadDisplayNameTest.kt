@@ -30,8 +30,9 @@ import kotlin.test.assertTrue
  * The bugfix:
  *   - Replaces the hard-coded English literals with `stringResource` lookups.
  *   - Routes the dropdown value through a new `formatEccentricLoad(load,
- *     language)` helper that emits `"110\u00A0%"` (with U+00A0 NBSP) for any
- *     `it-*` language and `"110%"` for every other locale.
+ *     language)` helper (and the Rest Timer integer-percent equivalent) that
+ *     emits `"110\u00A0%"` (with U+00A0 NBSP) for any `it-*` language and
+ *     `"110%"` for every other locale.
  *   - Adds `values-it/strings.xml` plus a `CFBundleLocalizations` entry in the
  *     iOS Info.plist so the system actually advertises Italian as a shipped
  *     locale.
@@ -85,6 +86,26 @@ class EccentricLoadDisplayNameTest {
     }
 
     // -------- Post-fix: locale-aware formatter (issue #540) --------
+
+    @Test
+    fun formatEccentricLoadPercentSupportsRestTimerFivePercentIncrements() {
+        // RestTimerEccentricLoadSlider stores the slider value as an Int rather
+        // than as an EccentricLoad enum entry, and can land on 5% increments
+        // such as 105. The integer helper must preserve the same locale policy.
+        assertEquals("105%", formatEccentricLoadPercent(105, "en"))
+        assertEquals("105\u00A0%", formatEccentricLoadPercent(105, "it"))
+    }
+
+    @Test
+    fun formatEccentricLoadDelegatesToIntegerPercentFormatter() {
+        EccentricLoad.entries.forEach { load ->
+            assertEquals(
+                formatEccentricLoadPercent(load.percentage, "it"),
+                formatEccentricLoad(load, "it"),
+                "enum helper should share the integer formatter for ${load.name}",
+            )
+        }
+    }
 
     @Test
     fun formatEccentricLoadEnglishKeepsAsciiPercentNoSeparator() {

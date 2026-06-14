@@ -47,12 +47,16 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  *                 `"en"`, `"it"`, `"de"`. Pass `""` or a non-`"it"` value to
  *                 get the ASCII form.
  */
-internal fun formatEccentricLoad(load: EccentricLoad, language: String): String {
+internal fun formatEccentricLoadPercent(percent: Int, language: String): String {
     return if (language.equals("it", ignoreCase = true)) {
-        "${load.percentage}\u00A0%"
+        "$percent\u00A0%"
     } else {
-        "${load.percentage}%"
+        "$percent%"
     }
+}
+
+internal fun formatEccentricLoad(load: EccentricLoad, language: String): String {
+    return formatEccentricLoadPercent(load.percentage, language)
 }
 
 /**
@@ -68,6 +72,15 @@ internal fun formatEccentricLoad(load: EccentricLoad, language: String): String 
 @Composable
 fun eccentricLoadLabel(load: EccentricLoad): String {
     return formatEccentricLoad(load, currentLanguageCode())
+}
+
+/**
+ * Composable wrapper for UI surfaces that store eccentric load as an integer
+ * percentage rather than as an [EccentricLoad] enum entry.
+ */
+@Composable
+fun eccentricLoadPercentLabel(percent: Int): String {
+    return formatEccentricLoadPercent(percent, currentLanguageCode())
 }
 
 /**

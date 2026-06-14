@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.eccentricLoadPercentLabel
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -720,7 +721,7 @@ private fun RestTimerEccentricLoadSlider(percent: Int, onPercentChange: (Int) ->
                 letterSpacing = 1.sp,
             )
             Text(
-                text = "$percent%",
+                text = eccentricLoadPercentLabel(percent),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
