@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.manager
 
 internal object ExerciseCountdownCuePolicy {
+    const val REST_ENDING_CUE_REMAINING_SECONDS = 4
+
     fun shouldEmitTick(
         remainingSeconds: Int,
         isPaused: Boolean,
@@ -22,6 +24,18 @@ internal object ExerciseCountdownCuePolicy {
     } else {
         lastTickedSecond
     }
+
+    fun shouldEmitRestEndingCue(
+        remainingSeconds: Int,
+        isPaused: Boolean,
+        restEndingEmitted: Boolean,
+        beepsEnabled: Boolean,
+        countdownBeepsEnabled: Boolean,
+    ): Boolean = !isPaused &&
+        !restEndingEmitted &&
+        remainingSeconds == REST_ENDING_CUE_REMAINING_SECONDS &&
+        beepsEnabled &&
+        countdownBeepsEnabled
 
     fun playbackRate(secondsRemaining: Int): Float = when (secondsRemaining) {
         in 1..2 -> 1.4f

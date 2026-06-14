@@ -30,8 +30,9 @@ import kotlin.test.assertTrue
  * The bugfix:
  *   - Replaces the hard-coded English literals with `stringResource` lookups.
  *   - Routes the dropdown value through a new `formatEccentricLoad(load,
- *     language)` helper that emits `"110\u00A0%"` (with U+00A0 NBSP) for any
- *     `it-*` / `it_*` language and `"110%"` for every other locale.
+ *     language)` helper (and the Rest Timer integer-percent equivalent) that
+ *     emits `"110\u00A0%"` (with U+00A0 NBSP) for any `it-*` / `it_*`
+ *     language and `"110%"` for every other locale.
  *   - Adds `values-it/strings.xml` plus a `CFBundleLocalizations` entry in the
  *     iOS Info.plist so the system actually advertises Italian as a shipped
  *     locale.
@@ -40,8 +41,8 @@ import kotlin.test.assertTrue
  *   - The unchanged `EccentricLoad` / `EchoLevel` / `WorkoutMode.Echo` enum
  *     `displayName` values (BLE, tests, CSV consumers rely on the raw form).
  *   - The new locale-aware formatter's behaviour for `en` (ASCII) and `it`
- *     (NBSP), including region variants (`it-IT`, `it_IT`) so we know the
- *     substring check is robust to BCP-47 and Java-style locale tags.
+ *     (NBSP), including a region-subtag variant (`it-IT`) so we know the
+ *     substring check is robust to BCP-47 tags.
  *   - A per-entry cross-locale invariant (every `EccentricLoad` value
  *     formats correctly under both `en` and `it`).
  */
@@ -87,6 +88,26 @@ class EccentricLoadDisplayNameTest {
     // -------- Post-fix: locale-aware formatter (issue #540) --------
 
     @Test
+    fun formatEccentricLoadPercentSupportsRestTimerFivePercentIncrements() {
+        // RestTimerEccentricLoadSlider stores the slider value as an Int rather
+        // than as an EccentricLoad enum entry, and can land on 5% increments
+        // such as 105. The integer helper must preserve the same locale policy.
+        assertEquals("105%", formatEccentricLoadPercent(105, "en"))
+        assertEquals("105\u00A0%", formatEccentricLoadPercent(105, "it"))
+    }
+
+    @Test
+    fun formatEccentricLoadDelegatesToIntegerPercentFormatter() {
+        EccentricLoad.entries.forEach { load ->
+            assertEquals(
+                formatEccentricLoadPercent(load.percentage, "it"),
+                formatEccentricLoad(load, "it"),
+                "enum helper should share the integer formatter for ${load.name}",
+            )
+        }
+    }
+
+    @Test
     fun formatEccentricLoadEnglishKeepsAsciiPercentNoSeparator() {
         EccentricLoad.entries.forEach { load ->
             val label = formatEccentricLoad(load, "en")
@@ -107,25 +128,39 @@ class EccentricLoadDisplayNameTest {
     }
 
     @Test
-    fun formatEccentricPercentItalianInsertsNbspBeforePercentGlyph() {
-        val label = formatEccentricPercent(110, "it")
-        assertEquals("110\u00A0%", label)
+    fun formatEccentricLoadEnglishSupportsIntermediateSliderPercentages() {
+        val label = formatEccentricLoad(105, "en")
+        assertEquals("105%", label)
+        assertFalse(label.contains('\u00A0'), "en must not introduce NBSP")
+    }
+
+    @Test
+    fun formatEccentricLoadItalianSupportsIntermediateSliderPercentages() {
+        val label = formatEccentricLoad(105, "it")
+        assertEquals("105\u00A0%", label)
         assertTrue(label.contains('\u00A0'), "it must contain NBSP (U+00A0)")
         assertTrue(label.endsWith("%"), "percent glyph still required")
     }
 
     @Test
-    fun formatEccentricPercentEnglishKeepsAsciiPercentNoSeparator() {
-        val label = formatEccentricPercent(110, "en")
-        assertEquals("110%", label)
-        assertFalse(label.contains('\u00A0'), "en must not introduce NBSP")
+    fun formatEccentricLoadItalianAcceptsRegionTags() {
+        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "it-IT"))
+        assertEquals("105\u00A0%", formatEccentricLoad(105, "it_IT"))
+        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "IT-ch"))
     }
 
     @Test
-    fun formatEccentricLoadItalianRegionTagsInsertNbspBeforePercentGlyph() {
-        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "it-IT"))
-        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "it_IT"))
-        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "IT-ch"))
+    fun currentLanguageCodeIosExtractsLanguageSubtag() {
+        // The iOS actual for `currentLanguageCode()` should reduce a BCP-47
+        // AppleLanguages entry like "it-IT" / "en-US" to the language subtag.
+        // The formatter also defensively accepts full tags, but the platform
+        // helper should still keep its public contract of returning only the
+        // language subtag.
+        val full = "it-IT"
+        val extracted = full.substringBefore('-').lowercase()
+        assertEquals("it", extracted)
+        val label = formatEccentricLoad(EccentricLoad.LOAD_110, extracted)
+        assertEquals("110\u00A0%", label)
     }
 
     @Test

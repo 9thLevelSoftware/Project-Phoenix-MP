@@ -70,7 +70,7 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.eccentricPercentLabel
+import com.devil.phoenixproject.domain.model.eccentricLoadPercentLabel
 import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
@@ -856,7 +856,7 @@ private fun OverviewEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
                 letterSpacing = 1.sp,
             )
             Text(
-                text = eccentricPercentLabel(percent),
+                text = eccentricLoadPercentLabel(percent),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
