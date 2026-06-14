@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleProgression
+import com.devil.phoenixproject.domain.model.integerPercentLabel
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -156,7 +157,7 @@ fun ProgressionSettingsSheet(
                     onCheckedChange = { eccentricEnabled = it },
                 )
                 Text(
-                    text = "Increase eccentric load by",
+                    text = stringResource(Res.string.progression_eccentric_load_increase_by),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -177,9 +178,9 @@ fun ProgressionSettingsSheet(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = "$eccentricPercent%",
+                        text = integerPercentLabel(eccentricPercent),
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.width(50.dp),
+                        modifier = Modifier.widthIn(min = 60.dp),
                     )
                 }
             }

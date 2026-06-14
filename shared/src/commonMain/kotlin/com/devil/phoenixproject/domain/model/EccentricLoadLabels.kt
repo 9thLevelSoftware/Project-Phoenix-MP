@@ -9,8 +9,9 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_harder
 import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
 
 /**
- * Locale-aware label helpers for the Echo-mode UI block in
- * [com.devil.phoenixproject.presentation.screen.JustLiftScreen].
+ * Locale-aware label helpers for eccentric-load percentage UI, including the
+ * Echo-mode block in [com.devil.phoenixproject.presentation.screen.JustLiftScreen]
+ * and cycle progression settings.
  *
  * Background (issue #540): on Italian iPhone the system font (SF Pro) renders
  * the literal sequence `110%` with effectively zero left-advance on the `%`
@@ -29,8 +30,8 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  */
 
 /**
- * Non-Composable pure formatter used by the `@Composable` [eccentricLoadLabel]
- * wrapper. Exposed as `internal` for unit testing.
+ * Non-Composable pure formatter for integer percentages. Exposed as `internal`
+ * for unit testing.
  *
  * Behaviour:
  *  * For Italian (the language code `it`, case-insensitive) this returns the
@@ -38,37 +39,43 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  *    the canonical Italian typographic form and resolves the iOS SF Pro
  *    `%`-glyph collision.
  *  * For every other locale this returns the digits followed by `%` — e.g.
- *    `"110%"` (byte-identical to the legacy `EccentricLoad.displayName` so
- *    the existing English UI is unchanged).
+ *    `"110%"`.
  *
- * @param load     the [EccentricLoad] enum entry whose
- *                 [EccentricLoad.percentage] is formatted.
- * @param language the lowercased language code of the active locale, e.g.
- *                 `"en"`, `"it"`, `"de"`. Pass `""` or a non-`"it"` value to
- *                 get the ASCII form.
+ * @param value the percentage value to render.
+ * @param language the language code or BCP-47 tag of the active locale, e.g.
+ *                 `"en"`, `"it"`, `"it-IT"`, `"de"`. Pass `""` or a non-Italian
+ *                 value to get the ASCII form.
  */
-internal fun formatEccentricLoad(load: EccentricLoad, language: String): String {
-    return if (language.equals("it", ignoreCase = true)) {
-        "${load.percentage}\u00A0%"
-    } else {
-        "${load.percentage}%"
-    }
+internal fun formatIntegerPercent(value: Int, language: String): String = if (language.isItalianLanguage()) {
+    "$value\u00A0%"
+} else {
+    "$value%"
 }
+
+private fun String.isItalianLanguage(): Boolean = equals("it", ignoreCase = true) ||
+    startsWith("it-", ignoreCase = true) ||
+    startsWith("it_", ignoreCase = true)
+
+/**
+ * Backwards-compatible formatter for [EccentricLoad] that delegates to the
+ * generic integer-percent formatter.
+ */
+internal fun formatEccentricLoad(load: EccentricLoad, language: String): String = formatIntegerPercent(load.percentage, language)
 
 /**
  * Composable wrapper that resolves the active language code via
- * [currentLanguageCode] and delegates to [formatEccentricLoad]. No
+ * [currentLanguageCode] and delegates to [formatIntegerPercent]. No
  * Compose-Multiplatform-specific locale API is required, so this helper
  * compiles cleanly for both the Android and iOS targets.
  *
- * Returns the locale-formatted percentage for the dropdown value cell in
- * [com.devil.phoenixproject.presentation.screen.JustLiftScreen] (line ~528)
- * and the matching dropdown item text (line ~544).
+ * Returns a locale-formatted percentage for both predefined eccentric-load
+ * dropdown values and arbitrary progression percentages.
  */
 @Composable
-fun eccentricLoadLabel(load: EccentricLoad): String {
-    return formatEccentricLoad(load, currentLanguageCode())
-}
+fun integerPercentLabel(value: Int): String = formatIntegerPercent(value, currentLanguageCode())
+
+@Composable
+fun eccentricLoadLabel(load: EccentricLoad): String = integerPercentLabel(load.percentage)
 
 /**
  * Returns the [EchoLevel] label via the [stringResource] lookup so the
