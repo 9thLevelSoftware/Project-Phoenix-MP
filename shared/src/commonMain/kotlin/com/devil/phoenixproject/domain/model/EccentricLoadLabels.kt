@@ -48,7 +48,7 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  *                 get the ASCII form.
  */
 internal fun formatEccentricLoad(load: EccentricLoad, language: String): String {
-    return formatEccentricLoad(load.percentage, language)
+    return formatEccentricLoadPercent(load.percentage, language)
 }
 
 /**
@@ -57,13 +57,17 @@ internal fun formatEccentricLoad(load: EccentricLoad, language: String): String 
  * such as `105`, so callers must not coerce through the enum and accidentally
  * relabel the selected percentage.
  */
-internal fun formatEccentricLoad(percentage: Int, language: String): String {
+internal fun formatEccentricLoadPercent(percentage: Int, language: String): String {
     val lang = language.substringBefore('-').substringBefore('_')
     return if (lang.equals("it", ignoreCase = true)) {
         "$percentage\u00A0%"
     } else {
         "$percentage%"
     }
+}
+
+internal fun formatEccentricLoad(percentage: Int, language: String): String {
+    return formatEccentricLoadPercent(percentage, language)
 }
 
 /**
@@ -83,6 +87,16 @@ fun eccentricLoadLabel(load: EccentricLoad): String {
 
 fun eccentricLoadLabel(percentage: Int): String {
     return formatEccentricLoad(percentage, currentLanguageCode())
+}
+
+/**
+ * Composable wrapper for UI surfaces that store eccentric load as an integer
+ * percentage rather than as an [EccentricLoad] enum entry.
+ */
+@Composable
+fun eccentricLoadPercentLabel(percent: Int): String {
+    val language = currentLanguageCode()
+    return formatEccentricLoadPercent(percent, language)
 }
 
 /**
