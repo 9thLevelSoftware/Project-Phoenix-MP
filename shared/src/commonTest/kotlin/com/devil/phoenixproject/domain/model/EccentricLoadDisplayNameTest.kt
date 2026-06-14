@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
  *   - Replaces the hard-coded English literals with `stringResource` lookups.
  *   - Routes the dropdown value through a new `formatEccentricLoad(load,
  *     language)` helper that emits `"110\u00A0%"` (with U+00A0 NBSP) for any
- *     `it-*` language and `"110%"` for every other locale.
+ *     `it-*` / `it_*` language and `"110%"` for every other locale.
  *   - Adds `values-it/strings.xml` plus a `CFBundleLocalizations` entry in the
  *     iOS Info.plist so the system actually advertises Italian as a shipped
  *     locale.
@@ -40,8 +40,8 @@ import kotlin.test.assertTrue
  *   - The unchanged `EccentricLoad` / `EchoLevel` / `WorkoutMode.Echo` enum
  *     `displayName` values (BLE, tests, CSV consumers rely on the raw form).
  *   - The new locale-aware formatter's behaviour for `en` (ASCII) and `it`
- *     (NBSP), including a region-subtag variant (`it-IT`) so we know the
- *     substring check is robust to BCP-47 tags.
+ *     (NBSP), including region variants (`it-IT`, `it_IT`) so we know the
+ *     substring check is robust to BCP-47 and Java-style locale tags.
  *   - A per-entry cross-locale invariant (every `EccentricLoad` value
  *     formats correctly under both `en` and `it`).
  */
@@ -122,21 +122,10 @@ class EccentricLoadDisplayNameTest {
     }
 
     @Test
-    fun currentLanguageCodeIosExtractsLanguageSubtag() {
-        // The iOS actual for `currentLanguageCode()` must reduce a BCP-47
-        // AppleLanguages entry like "it-IT" / "en-US" to the language subtag
-        // so the formatter's `equals("it", ignoreCase = true)` branch fires
-        // regardless of region. We can't directly test the iOS actual from
-        // androidHostTest (it's an iosMain source set), but we can pin the
-        // invariant by exercising the formatter with the already-extracted
-        // short code: passing the full tag would fail the equals check, so
-        // the iOS actual MUST strip the region before the call.
-        val full = "it-IT"
-        val extracted = full.substringBefore('-').lowercase()
-        assertEquals("it", extracted)
-        // And the formatter must accept the extracted form.
-        val label = formatEccentricLoad(EccentricLoad.LOAD_110, extracted)
-        assertEquals("110\u00A0%", label)
+    fun formatEccentricLoadItalianRegionTagsInsertNbspBeforePercentGlyph() {
+        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "it-IT"))
+        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "it_IT"))
+        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "IT-ch"))
     }
 
     @Test
@@ -149,8 +138,8 @@ class EccentricLoadDisplayNameTest {
 
     @Test
     fun formatEccentricLoadItCaseInsensitive() {
-        // The helper uses equals("it", ignoreCase = true); verify the
-        // uppercase / mixed-case form still routes to the Italian branch.
+        // The helper compares the extracted base language case-insensitively;
+        // verify the uppercase / mixed-case form still routes to the Italian branch.
         val label = formatEccentricLoad(EccentricLoad.LOAD_100, "IT")
         assertEquals("100\u00A0%", label)
     }

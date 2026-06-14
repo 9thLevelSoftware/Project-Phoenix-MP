@@ -15,7 +15,16 @@ class RoutineOverviewLocalizationGuardTest {
         dir
     }
 
-    private fun read(relativePath: String): String = File(projectRoot, relativePath).readText()
+    private fun read(relativePath: String): String {
+        val file = File(projectRoot, relativePath)
+        if (!file.exists()) {
+            throw IllegalStateException(
+                "Source file not found at ${file.absolutePath}. " +
+                    "This localization guard test requires project source files to be present on disk.",
+            )
+        }
+        return file.readText()
+    }
 
     @Test
     fun overviewEchoLevelSelectorUsesResourceLabelAndLocalizedChipText() {

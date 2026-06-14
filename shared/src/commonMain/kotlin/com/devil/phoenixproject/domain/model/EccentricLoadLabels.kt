@@ -18,7 +18,8 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  * Italian typography inserts a hard non-breaking space (U+00A0) between the
  * digits and the percent sign — `110 %` — and iOS SF Pro renders that form
  * without a glyph collision. This file emits that form for any `it-*`
- * language and the back-compat ASCII `110%` form for every other locale.
+ * language (including regional variants like `it-IT` / `it_IT`) and the
+ * back-compat ASCII `110%` form for every other locale.
  *
  * The pure formatter [formatEccentricPercent] is `internal` so the unit test
  * in `commonTest` can exercise the per-locale behaviour without needing a
@@ -33,7 +34,7 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  * Exposed as `internal` for unit testing.
  *
  * Behaviour:
- *  * For Italian (the language code `it`, case-insensitive) this returns the
+ *  * For Italian (the base language code `it`, case-insensitive) this returns the
  *    digits followed by U+00A0 NBSP and `%` — e.g. `"110\u00A0%"`. This is
  *    the canonical Italian typographic form and resolves the iOS SF Pro
  *    `%`-glyph collision.
@@ -42,15 +43,16 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  *    the existing English UI is unchanged).
  *
  * @param percent  the eccentric load percentage to format for display.
- * @param language the lowercased language code of the active locale, e.g.
- *                 `"en"`, `"it"`, `"de"`. Pass `""` or a non-`"it"` value to
- *                 get the ASCII form.
+ * @param language the language code or locale tag of the active locale, e.g.
+ *                 `"en"`, `"it"`, `"it-IT"`, `"it_IT"`, `"de"`. Pass `""`
+ *                 or a non-Italian value to get the ASCII form.
  */
-internal fun formatEccentricPercent(percent: Int, language: String): String = if (language.equals("it", ignoreCase = true)) {
-    "$percent\u00A0%"
-} else {
-    "$percent%"
-}
+internal fun formatEccentricPercent(percent: Int, language: String): String =
+    if (language.substringBefore('-').substringBefore('_').equals("it", ignoreCase = true)) {
+        "$percent\u00A0%"
+    } else {
+        "$percent%"
+    }
 
 /**
  * Formats an [EccentricLoad] enum entry while preserving the enum's raw
