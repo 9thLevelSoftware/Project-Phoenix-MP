@@ -58,7 +58,8 @@ internal fun formatEccentricLoad(load: EccentricLoad, language: String): String 
  * relabel the selected percentage.
  */
 internal fun formatEccentricLoad(percentage: Int, language: String): String {
-    return if (language.equals("it", ignoreCase = true)) {
+    val lang = language.substringBefore('-').substringBefore('_')
+    return if (lang.equals("it", ignoreCase = true)) {
         "$percentage\u00A0%"
     } else {
         "$percentage%"
@@ -66,7 +67,7 @@ internal fun formatEccentricLoad(percentage: Int, language: String): String {
 }
 
 /**
- * Composable wrapper that resolves the active language code via
+ * Convenience wrapper that resolves the active language code via
  * [currentLanguageCode] and delegates to [formatEccentricLoad]. No
  * Compose-Multiplatform-specific locale API is required, so this helper
  * compiles cleanly for both the Android and iOS targets.
@@ -76,12 +77,10 @@ internal fun formatEccentricLoad(percentage: Int, language: String): String {
  * the matching dropdown item text (line ~544), and slider value labels that
  * surface raw eccentric-load percentages.
  */
-@Composable
 fun eccentricLoadLabel(load: EccentricLoad): String {
     return formatEccentricLoad(load, currentLanguageCode())
 }
 
-@Composable
 fun eccentricLoadLabel(percentage: Int): String {
     return formatEccentricLoad(percentage, currentLanguageCode())
 }
