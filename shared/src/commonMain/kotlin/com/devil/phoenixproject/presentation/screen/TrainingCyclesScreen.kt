@@ -92,6 +92,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -308,11 +309,22 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                         showResumeDialog = true
                                     } else {
                                         // No progress - start fresh
+                                        // Issue #541: Route cycles through SetReadyScreen for parity
+                                        // with the routines flow. loadRoutineFromCycle is async (it
+                                        // launches a coroutine to resolve PR% weights via
+                                        // RoutineFlowManager.loadRoutine → resolveRoutineWeights), so
+                                        // we must wait for the engine's loadedRoutine flow to surface
+                                        // the expected routine id before calling enterSetReady —
+                                        // otherwise enterSetReady returns early because _loadedRoutine
+                                        // is still null and SetReadyScreen would render blank.
                                         viewModel.ensureConnection(
                                             onConnected = {
                                                 viewModel.loadRoutineFromCycle(rid, cycleId, dayNumber)
-                                                viewModel.startWorkout()
-                                                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                                scope.launch {
+                                                    viewModel.loadedRoutine.first { it?.id == rid }
+                                                    viewModel.enterSetReady(0, 0)
+                                                    navController.navigate(NavigationRoutes.SetReady.route)
+                                                }
                                             },
                                             onFailed = { /* Error shown via StateFlow */ },
                                         )
@@ -726,24 +738,38 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 progressInfo = info,
                 onResume = {
                     showResumeDialog = false
-                    // Resume: skip loadRoutine to keep existing progress, just navigate and start
+                    // Issue #541: Resume a cycle workout via SetReadyScreen (parity with fresh start).
+                    // Do not call loadRoutineFromCycle (we want to keep existing progress). The engine's
+                    // currentExerciseIndex / currentSetIndex carry the in-progress position from the prior
+                    // workout session; we route to SetReady at that (ex, set) so the user lands back
+                    // where they left off, not at (0, 0). See also the parent task RCA's set-jump note:
+                    // engine layer already supports arbitrary (ex, set) entry.
                     viewModel.ensureConnection(
                         onConnected = {
-                            viewModel.startWorkout()
-                            navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                            val exIdx = viewModel.currentExerciseIndex.value
+                            val setIdx = viewModel.currentSetIndex.value
+                            viewModel.enterSetReady(exIdx, setIdx)
+                            navController.navigate(NavigationRoutes.SetReady.route)
                         },
                         onFailed = { /* Error shown via StateFlow */ },
                     )
                 },
                 onRestart = {
                     showResumeDialog = false
-                    // Restart: call loadRoutineFromCycle to reset indices, then start
+                    // Issue #541: Restart resets the cycle's routine indices, then routes through
+                    // SetReadyScreen so the user lands on the parity path with the set picker.
+                    // Same race-condition guard as the fresh-start flow: loadRoutineFromCycle is
+                    // async, so we wait for the engine's loadedRoutine flow to surface the expected
+                    // id before calling enterSetReady.
                     pendingRoutineId?.let { rid ->
                         viewModel.ensureConnection(
                             onConnected = {
                                 viewModel.loadRoutineFromCycle(rid, pendingCycleId ?: "", pendingDayNumber)
-                                viewModel.startWorkout()
-                                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                scope.launch {
+                                    viewModel.loadedRoutine.first { it?.id == rid }
+                                    viewModel.enterSetReady(0, 0)
+                                    navController.navigate(NavigationRoutes.SetReady.route)
+                                }
                             },
                             onFailed = { /* Error shown via StateFlow */ },
                         )

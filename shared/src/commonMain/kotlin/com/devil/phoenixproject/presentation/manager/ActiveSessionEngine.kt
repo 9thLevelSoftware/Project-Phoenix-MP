@@ -68,7 +68,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlin.coroutines.cancellation.CancellationException
@@ -4120,9 +4119,9 @@ class ActiveSessionEngine(
                         coordinator._restSecondsRemaining.value = remainingSeconds
                     }
 
-                    // The five-second rest warning has its own cue; avoid overlapping it with per-second ticks.
+                    // The rest-ending warning has its own cue; avoid overlapping it with per-second ticks.
                     if (!coordinator._isRestPaused.value &&
-                        remainingSeconds in 6..10 &&
+                        remainingSeconds in (ExerciseCountdownCuePolicy.REST_ENDING_CUE_REMAINING_SECONDS + 1)..10 &&
                         remainingSeconds != lastTickedSecond
                     ) {
                         lastTickedSecond = remainingSeconds
@@ -4132,19 +4131,21 @@ class ActiveSessionEngine(
                         }
                     }
 
-                    if (remainingSeconds > 5) {
+                    if (remainingSeconds > ExerciseCountdownCuePolicy.REST_ENDING_CUE_REMAINING_SECONDS) {
                         restEndingEmitted = false
                     }
 
-                    if (!coordinator._isRestPaused.value &&
-                        remainingSeconds == 5 &&
-                        !restEndingEmitted
+                    val prefs = settingsManager.userPreferences.value
+                    if (ExerciseCountdownCuePolicy.shouldEmitRestEndingCue(
+                            remainingSeconds = remainingSeconds,
+                            isPaused = coordinator._isRestPaused.value,
+                            restEndingEmitted = restEndingEmitted,
+                            beepsEnabled = prefs.beepsEnabled,
+                            countdownBeepsEnabled = prefs.countdownBeepsEnabled,
+                        )
                     ) {
                         restEndingEmitted = true
-                        val prefs = settingsManager.userPreferences.value
-                        if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
-                            coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
-                        }
+                        coordinator._hapticEvents.emit(HapticEvent.REST_ENDING)
                     }
 
                     if (remainingSeconds != lastRenderedSecond) {

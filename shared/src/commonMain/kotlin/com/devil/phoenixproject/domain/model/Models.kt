@@ -447,7 +447,7 @@ sealed class HapticEvent {
     /** Light haptic + chirpchirp sound */
     data object WORKOUT_END : HapticEvent()
 
-    /** Strong haptic + restover sound (5 seconds left in rest timer) */
+    /** Strong haptic + restover sound near the end of the rest timer */
     data object REST_ENDING : HapticEvent()
 
     /** Strong haptic (no sound) */

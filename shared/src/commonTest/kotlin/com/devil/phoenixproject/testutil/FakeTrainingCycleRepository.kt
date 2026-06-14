@@ -24,6 +24,14 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     private val cycleProgressions = mutableMapOf<String, CycleProgression>()
     private var activeCycleId: String? = null
 
+    // Issue #549: ordered log of mutating/read methods invoked on this fake. Tests can inspect
+    // it to assert call order (e.g. that the Home path calls `checkAndAutoAdvance` before
+    // `getCycleProgress`). Public read-only List, mutated only inside the fake's overrides.
+    private val _callLog = mutableListOf<String>()
+    val callLog: List<String> get() = _callLog.toList()
+
+    fun resetCallLog() { _callLog.clear() }
+
     private val _cyclesFlow = MutableStateFlow<List<TrainingCycle>>(emptyList())
     private val _activeCycleFlow = MutableStateFlow<TrainingCycle?>(null)
 
@@ -126,7 +134,10 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         }
     }
 
-    override suspend fun getCycleProgress(cycleId: String): CycleProgress? = cycleProgress[cycleId]
+    override suspend fun getCycleProgress(cycleId: String): CycleProgress? {
+        _callLog.add("getCycleProgress")
+        return cycleProgress[cycleId]
+    }
 
     override suspend fun initializeProgress(cycleId: String): CycleProgress {
         val now = currentTimeMillis()
@@ -189,6 +200,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     }
 
     override suspend fun checkAndAutoAdvance(cycleId: String): CycleProgress? {
+        _callLog.add("checkAndAutoAdvance")
         val progress = cycleProgress[cycleId] ?: return null
         val totalDays = cycleDays[cycleId]?.size ?: return progress
         if (totalDays == 0) return progress

@@ -48,6 +48,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -150,6 +155,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     // Stop confirmation dialog
     var showStopConfirmation by remember { mutableStateOf(false) }
 
+    // Issue #541: Set picker dropdown state. Exposes a dropdown menu of all set indices so the
+    // user can jump directly to any set (parity with the routines flow's per-exercise selector
+    // and the reporter's request for "set selection in the middle of a workout"). Disabled when
+    // there is only one set (no point picking).
+    var setPickerExpanded by remember { mutableStateOf(false) }
+
     // Handle system back button
     BackHandler {
         viewModel.returnToOverview()
@@ -179,14 +190,18 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
         }
     }
 
-    // Watch for workout state changes to navigate to ActiveWorkout
-    // Use popUpTo(RoutineOverview) to maintain clean navigation stack:
-    // Stack is always: DailyRoutines -> RoutineOverview -> (SetReady OR ActiveWorkout)
+    // Watch for workout state changes to navigate to ActiveWorkout.
+    // Use popUpTo(SetReady.route) { inclusive = true } to replace SetReady on the back stack
+    // with ActiveWorkout, preserving the parent screen (RoutineOverview for routines, TrainingCycles
+    // for cycles) so system back from ActiveWorkout lands on the right place.
+    // Issue #541: this was previously popUpTo(RoutineOverview.route), which is not on the cycle back
+    // stack; the RCA explicitly recommends context-aware self-pop and the per-flow inclusive-pop
+    // pattern preserves both back stacks without regression.
     LaunchedEffect(workoutState) {
         when (workoutState) {
             is WorkoutState.Countdown, is WorkoutState.Active -> {
                 navController.navigate(NavigationRoutes.ActiveWorkout.route) {
-                    popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                    popUpTo(NavigationRoutes.SetReady.route) { inclusive = true }
                 }
             }
 
@@ -318,12 +333,78 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Set ${setReadyState.setIndex + 1} of ${currentExercise.setReps.size}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f),
-                    )
+                    // Issue #541: Make "Set X of Y" a tappable set picker. The label is the
+                    // dropdown anchor; tapping it opens a menu of every set index in the current
+                    // exercise. Selecting an entry calls viewModel.enterSetReady(ex, pickedSet) which
+                    // the engine layer already supports (RoutineFlowManager.kt:886). This is the
+                    // parity surface for the reporter's "no set selector" bug.
+                    //
+                    // a11y: the anchor Text is marked with Role.DropdownList so screen readers
+                    // announce it as an interactive picker rather than a static label. We avoid
+                    // OutlinedTextField(readOnly=true) here because the label lives inside a
+                    // primaryContainer card whose on-color doesn't match the OutlinedTextField's
+                    // default chrome; the existing in-file bodyweight variant picker uses that
+                    // pattern but lives in a surfaceContainerHighest card where it blends cleanly.
+                    ExposedDropdownMenuBox(
+                        expanded = setPickerExpanded && currentExercise.setReps.size > 1,
+                        onExpandedChange = { requested ->
+                            // Respect the requested state from the Material3 API (e.g. for
+                            // accessibility services or external state changes) but only honor
+                            // opens when there is more than one set to pick from.
+                            if (currentExercise.setReps.size > 1) {
+                                setPickerExpanded = requested
+                            } else {
+                                setPickerExpanded = false
+                            }
+                        },
+                    ) {
+                        Text(
+                            text = "Set ${setReadyState.setIndex + 1} of ${currentExercise.setReps.size}" +
+                                if (currentExercise.setReps.size > 1) "  \u25BE" else "",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f),
+                            modifier = Modifier
+                                .menuAnchor()
+                                .semantics {
+                                    role = Role.DropdownList
+                                    contentDescription = "Set selector, currently set " +
+                                        "${setReadyState.setIndex + 1} of " +
+                                        "${currentExercise.setReps.size}"
+                                    if (currentExercise.setReps.size > 1) {
+                                        stateDescription = "Tap to choose a different set"
+                                    }
+                                },
+                        )
+                        ExposedDropdownMenu(
+                            expanded = setPickerExpanded && currentExercise.setReps.size > 1,
+                            onDismissRequest = { setPickerExpanded = false },
+                        ) {
+                            currentExercise.setReps.indices.forEach { setIdx ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "Set ${setIdx + 1}" +
+                                                if (setIdx == setReadyState.setIndex) "  (current)" else "",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                    },
+                                    onClick = {
+                                        setPickerExpanded = false
+                                        if (setIdx != setReadyState.setIndex) {
+                                            // enterSetReady is the engine-level "jump to (ex, set)"
+                                            // API and updates routineFlowState, currentSetIndex, and
+                                            // warm-up state for the new set. No workout state change.
+                                            viewModel.enterSetReady(
+                                                setReadyState.exerciseIndex,
+                                                setIdx,
+                                            )
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
                     // Issue #222: Show "Bodyweight • XXs" for bodyweight, mode name for cable
                     if (isBodyweight) {
                         val durationText = currentExercise.duration?.let { "${it}s" } ?: "Timed"

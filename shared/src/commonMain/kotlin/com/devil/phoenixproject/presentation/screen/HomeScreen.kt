@@ -98,7 +98,13 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     var showOneRepMaxComingSoonDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(activeCycle) {
-        cycleProgress = activeCycle?.let { cycle -> cycleRepository.getCycleProgress(cycle.id) }
+        // Issue #549: route the Home banner through `checkAndAutoAdvance` so the cycle banner
+        // refreshes to the current day on initial Home load. Previously this called
+        // `getCycleProgress` directly, which is a pure read and never reconciles
+        // `lastAdvancedAt` against the current calendar day. `TrainingCyclesScreen` is the only
+        // other production caller of `checkAndAutoAdvance` — that is exactly why the reporter's
+        // tap-Cycles-then-back workaround refreshed the banner.
+        cycleProgress = activeCycle?.let { cycle -> loadHomeCycleProgress(cycleRepository, cycle) }
     }
 
     LaunchedEffect(Unit) {
@@ -637,6 +643,26 @@ private data class CycleStartRequest(
     val cycleId: String,
     val dayNumber: Int,
 )
+
+/**
+ * Issue #549: load the active cycle's progress for the Home cycle banner.
+ *
+ * Calls [TrainingCycleRepository.checkAndAutoAdvance] first so the banner reflects the current
+ * calendar day on initial Home load (the previous `getCycleProgress`-only path left the banner
+ * showing the prior day's workout until the user visited the Cycles tab, which is the only
+ * other production caller of `checkAndAutoAdvance`). Falls back to `getCycleProgress` when
+ * `checkAndAutoAdvance` returns null (e.g. no progress row exists for the active cycle) so
+ * the Home path still renders the persisted value if one is present.
+ *
+ * Exposed as an `internal` suspend function so it can be unit-tested with a fake repository
+ * without spinning up a Compose UI host.
+ */
+internal suspend fun loadHomeCycleProgress(
+    repository: TrainingCycleRepository,
+    cycle: TrainingCycle,
+): CycleProgress? {
+    return repository.checkAndAutoAdvance(cycle.id) ?: repository.getCycleProgress(cycle.id)
+}
 
 internal fun buildHomeShortcutActions(
     onSingleExercise: () -> Unit,
