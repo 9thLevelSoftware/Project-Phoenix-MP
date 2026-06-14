@@ -61,6 +61,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.util.parseLocalizedDecimal
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -279,8 +280,11 @@ actual fun CompactNumberPicker(
         }
 
         // Sanitize input: remove non-numeric chars except decimal point and minus
-        val sanitized = inputText.filter { it.isDigit() || it == '.' || it == '-' }
-        val parsed = sanitized.toFloatOrNull()
+        // Issue #539 Fix: locales like it-IT use ',' as the decimal separator and
+        // the iOS decimal-pad has no '.' for those users. Use the commonMain
+        // helper so the parse is locale-tolerant (comma, NBSP, narrow NBSP,
+        // apostrophe group separator) and matches the rest of the app.
+        val parsed = parseLocalizedDecimal(inputText)
 
         if (parsed != null) {
             val clamped = parsed.coerceIn(range)
