@@ -48,26 +48,41 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  *                 get the ASCII form.
  */
 internal fun formatEccentricLoad(load: EccentricLoad, language: String): String {
-    return if (language.equals("it", ignoreCase = true)) {
-        "${load.percentage}\u00A0%"
+    return formatEccentricLoad(load.percentage, language)
+}
+
+/**
+ * Non-Composable pure formatter for raw eccentric-load percentages surfaced by
+ * slider UIs. Unlike [EccentricLoad], sliders can land on intermediate values
+ * such as `105`, so callers must not coerce through the enum and accidentally
+ * relabel the selected percentage.
+ */
+internal fun formatEccentricLoad(percentage: Int, language: String): String {
+    val lang = language.substringBefore('-').substringBefore('_')
+    return if (lang.equals("it", ignoreCase = true)) {
+        "$percentage\u00A0%"
     } else {
-        "${load.percentage}%"
+        "$percentage%"
     }
 }
 
 /**
- * Composable wrapper that resolves the active language code via
+ * Convenience wrapper that resolves the active language code via
  * [currentLanguageCode] and delegates to [formatEccentricLoad]. No
  * Compose-Multiplatform-specific locale API is required, so this helper
  * compiles cleanly for both the Android and iOS targets.
  *
  * Returns the locale-formatted percentage for the dropdown value cell in
- * [com.devil.phoenixproject.presentation.screen.JustLiftScreen] (line ~528)
- * and the matching dropdown item text (line ~544).
+ * [com.devil.phoenixproject.presentation.screen.JustLiftScreen] (line ~528),
+ * the matching dropdown item text (line ~544), and slider value labels that
+ * surface raw eccentric-load percentages.
  */
-@Composable
 fun eccentricLoadLabel(load: EccentricLoad): String {
     return formatEccentricLoad(load, currentLanguageCode())
+}
+
+fun eccentricLoadLabel(percentage: Int): String {
+    return formatEccentricLoad(percentage, currentLanguageCode())
 }
 
 /**

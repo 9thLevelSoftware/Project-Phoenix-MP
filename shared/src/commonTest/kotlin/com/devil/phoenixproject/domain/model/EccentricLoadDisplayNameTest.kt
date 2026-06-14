@@ -107,19 +107,36 @@ class EccentricLoadDisplayNameTest {
     }
 
     @Test
+    fun formatEccentricLoadEnglishSupportsIntermediateSliderPercentages() {
+        val label = formatEccentricLoad(105, "en")
+        assertEquals("105%", label)
+        assertFalse(label.contains('\u00A0'), "en must not introduce NBSP")
+    }
+
+    @Test
+    fun formatEccentricLoadItalianSupportsIntermediateSliderPercentages() {
+        val label = formatEccentricLoad(105, "it")
+        assertEquals("105\u00A0%", label)
+        assertTrue(label.contains('\u00A0'), "it must contain NBSP (U+00A0)")
+        assertTrue(label.endsWith("%"), "percent glyph still required")
+    }
+
+    @Test
+    fun formatEccentricLoadItalianAcceptsRegionTags() {
+        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "it-IT"))
+        assertEquals("105\u00A0%", formatEccentricLoad(105, "it_IT"))
+    }
+
+    @Test
     fun currentLanguageCodeIosExtractsLanguageSubtag() {
-        // The iOS actual for `currentLanguageCode()` must reduce a BCP-47
-        // AppleLanguages entry like "it-IT" / "en-US" to the language subtag
-        // so the formatter's `equals("it", ignoreCase = true)` branch fires
-        // regardless of region. We can't directly test the iOS actual from
-        // androidHostTest (it's an iosMain source set), but we can pin the
-        // invariant by exercising the formatter with the already-extracted
-        // short code: passing the full tag would fail the equals check, so
-        // the iOS actual MUST strip the region before the call.
+        // The iOS actual for `currentLanguageCode()` should reduce a BCP-47
+        // AppleLanguages entry like "it-IT" / "en-US" to the language subtag.
+        // The formatter also defensively accepts full tags, but the platform
+        // helper should still keep its public contract of returning only the
+        // language subtag.
         val full = "it-IT"
         val extracted = full.substringBefore('-').lowercase()
         assertEquals("it", extracted)
-        // And the formatter must accept the extracted form.
         val label = formatEccentricLoad(EccentricLoad.LOAD_110, extracted)
         assertEquals("110\u00A0%", label)
     }
