@@ -107,6 +107,21 @@ class EccentricLoadDisplayNameTest {
     }
 
     @Test
+    fun formatEccentricPercentItalianInsertsNbspBeforePercentGlyph() {
+        val label = formatEccentricPercent(110, "it")
+        assertEquals("110\u00A0%", label)
+        assertTrue(label.contains('\u00A0'), "it must contain NBSP (U+00A0)")
+        assertTrue(label.endsWith("%"), "percent glyph still required")
+    }
+
+    @Test
+    fun formatEccentricPercentEnglishKeepsAsciiPercentNoSeparator() {
+        val label = formatEccentricPercent(110, "en")
+        assertEquals("110%", label)
+        assertFalse(label.contains('\u00A0'), "en must not introduce NBSP")
+    }
+
+    @Test
     fun currentLanguageCodeIosExtractsLanguageSubtag() {
         // The iOS actual for `currentLanguageCode()` must reduce a BCP-47
         // AppleLanguages entry like "it-IT" / "en-US" to the language subtag

@@ -20,17 +20,17 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  * without a glyph collision. This file emits that form for any `it-*`
  * language and the back-compat ASCII `110%` form for every other locale.
  *
- * The pure formatter [formatEccentricLoad] is `internal` so the unit test in
- * `commonTest` can exercise the per-locale behaviour without needing a
+ * The pure formatter [formatEccentricPercent] is `internal` so the unit test
+ * in `commonTest` can exercise the per-locale behaviour without needing a
  * Compose runtime or a platform-specific locale implementation. The
- * `@Composable` [eccentricLoadLabel] wrapper uses the expect/actual
- * [currentLanguageCode] helper to get the active app locale without pulling
- * in any Compose-Multiplatform-specific locale API.
+ * `@Composable` [eccentricLoadLabel] / [eccentricPercentLabel] wrappers use the
+ * expect/actual [currentLanguageCode] helper to get the active app locale
+ * without pulling in any Compose-Multiplatform-specific locale API.
  */
 
 /**
- * Non-Composable pure formatter used by the `@Composable` [eccentricLoadLabel]
- * wrapper. Exposed as `internal` for unit testing.
+ * Non-Composable pure formatter used by the `@Composable` label wrappers.
+ * Exposed as `internal` for unit testing.
  *
  * Behaviour:
  *  * For Italian (the language code `it`, case-insensitive) this returns the
@@ -41,19 +41,22 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  *    `"110%"` (byte-identical to the legacy `EccentricLoad.displayName` so
  *    the existing English UI is unchanged).
  *
- * @param load     the [EccentricLoad] enum entry whose
- *                 [EccentricLoad.percentage] is formatted.
+ * @param percent  the eccentric load percentage to format for display.
  * @param language the lowercased language code of the active locale, e.g.
  *                 `"en"`, `"it"`, `"de"`. Pass `""` or a non-`"it"` value to
  *                 get the ASCII form.
  */
-internal fun formatEccentricLoad(load: EccentricLoad, language: String): String {
-    return if (language.equals("it", ignoreCase = true)) {
-        "${load.percentage}\u00A0%"
-    } else {
-        "${load.percentage}%"
-    }
+internal fun formatEccentricPercent(percent: Int, language: String): String = if (language.equals("it", ignoreCase = true)) {
+    "$percent\u00A0%"
+} else {
+    "$percent%"
 }
+
+/**
+ * Formats an [EccentricLoad] enum entry while preserving the enum's raw
+ * [EccentricLoad.displayName] contract for non-Italian locales.
+ */
+internal fun formatEccentricLoad(load: EccentricLoad, language: String): String = formatEccentricPercent(load.percentage, language)
 
 /**
  * Composable wrapper that resolves the active language code via
@@ -66,9 +69,14 @@ internal fun formatEccentricLoad(load: EccentricLoad, language: String): String 
  * and the matching dropdown item text (line ~544).
  */
 @Composable
-fun eccentricLoadLabel(load: EccentricLoad): String {
-    return formatEccentricLoad(load, currentLanguageCode())
-}
+fun eccentricLoadLabel(load: EccentricLoad): String = formatEccentricLoad(load, currentLanguageCode())
+
+/**
+ * Composable wrapper for slider/readout surfaces that store eccentric load as
+ * a raw integer percentage instead of an [EccentricLoad] enum entry.
+ */
+@Composable
+fun eccentricPercentLabel(percent: Int): String = formatEccentricPercent(percent, currentLanguageCode())
 
 /**
  * Returns the [EchoLevel] label via the [stringResource] lookup so the
