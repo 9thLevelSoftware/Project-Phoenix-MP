@@ -199,7 +199,12 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                     viewModel.stopAndReturnToSetReady()
                     if (!hasCompletedReps) {
                         navController.navigate(NavigationRoutes.SetReady.route) {
-                            popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                            // Issue #541: popUpTo(ActiveWorkout) inclusive replaces ActiveWorkout
+                            // with SetReady on the back stack, preserving the parent screen
+                            // (RoutineOverview for routines, TrainingCycles for cycles) so system
+                            // back from SetReady lands on the right place. This was previously
+                            // popUpTo(RoutineOverview), which is not on the cycle back stack.
+                            popUpTo(NavigationRoutes.ActiveWorkout.route) { inclusive = true }
                         }
                     }
                 } else {
@@ -307,7 +312,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                     }
                     hasNavigatedAway = true
                     navController.navigate(NavigationRoutes.SetReady.route) {
-                        popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                        // Issue #541: see comment at the first SetReady nav site in this file.
+                        popUpTo(NavigationRoutes.ActiveWorkout.route) { inclusive = true }
                     }
                 }
             }
@@ -476,8 +482,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                             showExitConfirmation = false
                             if (!hasCompletedReps) {
                                 navController.navigate(NavigationRoutes.SetReady.route) {
-                                    popUpTo(NavigationRoutes.RoutineOverview.route) {
-                                        inclusive = false
+                                    // Issue #541: see comment at the first SetReady nav site in this file.
+                                    popUpTo(NavigationRoutes.ActiveWorkout.route) {
+                                        inclusive = true
                                     }
                                 }
                             }
