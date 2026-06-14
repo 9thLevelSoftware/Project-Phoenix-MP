@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Italian (italiano) — Beta AI-generated translation -->
+<!-- Fitness terminology context:
+     "set" = serie (un gruppo di ripetizioni)
+     "rep" = ripetizione (un singolo movimento)
+     "1RM" = 1RM (one-rep max, universale)
+     "AMRAP" = AMRAP (as many reps as possible, universale)
+     "TUT" = TUT (time under tension, universale)
+     "PR" = PR (record personale)
+     Technical terms like "Echo", "TUT", "AMRAP", "1RM" stay in English.
+-->
+<resources>
+    <string name="app_name">Phoenix</string>
+
+    <!-- ==================== Workout Modes ==================== -->
+    <string name="echo_level">Livello Echo</string>
+    <string name="echo_level_hard">Difficile</string>
+    <string name="echo_level_harder">Più difficile</string>
+    <string name="echo_level_hardest">Difficilissimo</string>
+    <string name="echo_level_epic">Epico</string>
+    <string name="eccentric_load">Carico eccentrico</string>
+    <string name="eccentric_load_helper">Carico durante la fase eccentrica (discesa)</string>
+    <string name="rep_count_timing">Tempismo conteggio ripetizioni</string>
+    <string name="rep_count_timing_top">Conta in cima (picco concentrico)</string>
+    <string name="rep_count_timing_bottom">Conta in basso (fase eccentrica)</string>
+
+    <!-- ==================== Rest Timer ==================== -->
+    <string name="rest_eccentric_load">CARICO ECCENTRICO</string>
+    <string name="rest_echo_level">LIVELLO ECHO</string>
+
+    <!-- ==================== Configuration ==================== -->
+    <string name="config_echo_level">LIVELLO ECHO</string>
+</resources>
