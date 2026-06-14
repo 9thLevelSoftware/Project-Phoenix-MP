@@ -28,6 +28,15 @@
 	</dict>
 	<key>CFBundleDisplayName</key>
 	<string>Project Phoenix</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>de</string>
+		<string>es</string>
+		<string>fr</string>
+		<string>nl</string>
+		<string>it</string>
+	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

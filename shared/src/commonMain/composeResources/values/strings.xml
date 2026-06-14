@@ -273,7 +273,15 @@
     <string name="echo_mode">Echo Mode</string>
     <string name="echo_mode_configuration">Echo Mode Configuration</string>
     <string name="echo_level">Echo Level</string>
+    <string name="echo_level_hard">Hard</string>
+    <string name="echo_level_harder">Harder</string>
+    <string name="echo_level_hardest">Hardest</string>
+    <string name="echo_level_epic">Epic</string>
     <string name="eccentric_load">Eccentric Load</string>
+    <string name="eccentric_load_helper">Load during eccentric (lowering) phase</string>
+    <string name="rep_count_timing">Rep Count Timing</string>
+    <string name="rep_count_timing_top">Count at top of lift (concentric peak)</string>
+    <string name="rep_count_timing_bottom">Count at bottom (eccentric valley)</string>
     <string name="select_tut_variant">Select TUT Variant</string>
 
     <!-- ==================== Workout Setup ==================== -->

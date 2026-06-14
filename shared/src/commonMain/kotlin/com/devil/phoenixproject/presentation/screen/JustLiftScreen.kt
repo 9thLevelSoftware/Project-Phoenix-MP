@@ -94,6 +94,8 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.eccentricLoadLabel
+import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.presentation.components.AddProfileDialog
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
@@ -110,7 +112,13 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.cd_close_workout
+import vitruvianprojectphoenix.shared.generated.resources.eccentric_load
+import vitruvianprojectphoenix.shared.generated.resources.eccentric_load_helper
+import vitruvianprojectphoenix.shared.generated.resources.echo_level
 import vitruvianprojectphoenix.shared.generated.resources.label_live
+import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing
+import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_bottom
+import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_top
 
 /**
  * Just Lift screen - quick workout configuration.
@@ -512,7 +520,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         },
                     ) {
                         Text(
-                            "Eccentric Load",
+                            stringResource(Res.string.eccentric_load),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -525,7 +533,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             onExpandedChange = { expanded = it },
                         ) {
                             OutlinedTextField(
-                                value = eccentricLoad.displayName,
+                                value = eccentricLoadLabel(eccentricLoad),
                                 onValueChange = {},
                                 readOnly = true,
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
@@ -541,7 +549,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             ) {
                                 EccentricLoad.entries.forEach { load ->
                                     DropdownMenuItem(
-                                        text = { Text(load.displayName) },
+                                        text = { Text(eccentricLoadLabel(load)) },
                                         onClick = {
                                             eccentricLoad = load
                                             expanded = false
@@ -553,7 +561,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         }
 
                         Text(
-                            "Load during eccentric (lowering) phase",
+                            stringResource(Res.string.eccentric_load_helper),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -581,7 +589,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         },
                     ) {
                         Text(
-                            "Echo Level",
+                            stringResource(Res.string.echo_level),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -600,7 +608,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                                             echoLevel = level
                                             selectedMode = WorkoutMode.Echo(level)
                                         },
-                                        label = { Text(level.displayName) },
+                                        label = { Text(echoLevelLabel(level)) },
                                     )
                                 }
                             }
@@ -617,7 +625,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                                         },
                                         selected = echoLevel == level,
                                     ) {
-                                        Text(level.displayName, maxLines = 1)
+                                        Text(echoLevelLabel(level), maxLines = 1)
                                     }
                                 }
                             }
@@ -642,16 +650,16 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Rep Count Timing",
+                            text = stringResource(Res.string.rep_count_timing),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
                             text = if (repCountTiming == RepCountTiming.TOP) {
-                                "Count at top of lift (concentric peak)"
+                                stringResource(Res.string.rep_count_timing_top)
                             } else {
-                                "Count at bottom (eccentric valley)"
+                                stringResource(Res.string.rep_count_timing_bottom)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
