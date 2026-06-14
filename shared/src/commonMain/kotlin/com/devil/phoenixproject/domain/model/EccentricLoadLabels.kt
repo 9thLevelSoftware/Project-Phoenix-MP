@@ -48,7 +48,7 @@ import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
  *                 get the ASCII form.
  */
 internal fun formatEccentricLoad(load: EccentricLoad, language: String): String {
-    return formatEccentricLoad(load.percentage, language)
+    return formatEccentricLoadPercent(load.percentage, language)
 }
 
 /**
@@ -57,7 +57,7 @@ internal fun formatEccentricLoad(load: EccentricLoad, language: String): String 
  * such as `105`, so callers must not coerce through the enum and accidentally
  * relabel the selected percentage.
  */
-internal fun formatEccentricLoad(percentage: Int, language: String): String {
+internal fun formatEccentricLoadPercent(percentage: Int, language: String): String {
     val lang = language.substringBefore('-').substringBefore('_')
     return if (lang.equals("it", ignoreCase = true)) {
         "$percentage\u00A0%"
@@ -66,8 +66,8 @@ internal fun formatEccentricLoad(percentage: Int, language: String): String {
     }
 }
 
-internal fun formatEccentricLoad(load: EccentricLoad, language: String): String {
-    return formatEccentricLoadPercent(load.percentage, language)
+internal fun formatEccentricLoad(percentage: Int, language: String): String {
+    return formatEccentricLoadPercent(percentage, language)
 }
 
 /**
@@ -95,12 +95,8 @@ fun eccentricLoadLabel(percentage: Int): String {
  */
 @Composable
 fun eccentricLoadPercentLabel(percent: Int): String {
-@Composable
-fun eccentricLoadPercentLabel(percent: Int): String {
     val language = currentLanguageCode()
     return formatEccentricLoadPercent(percent, language)
-}
-    return androidx.compose.runtime.remember(percent, language) { formatEccentricLoadPercent(percent, language) }
 }
 
 /**
