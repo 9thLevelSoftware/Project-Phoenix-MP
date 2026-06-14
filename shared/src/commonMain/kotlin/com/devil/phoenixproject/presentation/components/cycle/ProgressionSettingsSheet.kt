@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleProgression
-import com.devil.phoenixproject.domain.model.eccentricLoadLabel
+import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -114,7 +114,7 @@ fun ProgressionSettingsSheet(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = "${(kotlin.math.round(weightPercent * 10) / 10)}%",
+                        text = percentLabel(kotlin.math.round(weightPercent * 10) / 10),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.width(50.dp),
                     )
@@ -178,7 +178,7 @@ fun ProgressionSettingsSheet(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = eccentricLoadLabel(eccentricPercent),
+                        text = percentLabel(eccentricPercent),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.widthIn(min = 60.dp),
                     )

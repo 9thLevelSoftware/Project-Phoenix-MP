@@ -29,8 +29,8 @@ import kotlin.test.assertTrue
  *
  * The bugfix:
  *   - Replaces the hard-coded English literals with `stringResource` lookups.
- *   - Routes enum dropdown values and raw slider percentages through
- *     `formatEccentricLoad(...)`, which emits `"110\u00A0%"` (with U+00A0
+ *   - Routes enum dropdown values and raw integer/fractional percentages
+ *     through `formatPercent(...)`, which emits `"110\u00A0%"` (with U+00A0
  *     NBSP) for Italian language tags and `"110%"` for every other locale.
  *   - Adds `values-it/strings.xml` plus a `CFBundleLocalizations` entry in the
  *     iOS Info.plist so the system actually advertises Italian as a shipped
@@ -56,7 +56,7 @@ class EccentricLoadDisplayNameTest {
                 load.displayName.endsWith("%"),
                 "EccentricLoad.${load.name}.displayName should end with '%' but was '${load.displayName}'",
             )
-            // NBSP must NOT appear in the wire format — that would corrupt
+            // NBSP must NOT appear in the wire format - that would corrupt
             // BLE / CSV consumers.
             assertFalse(
                 load.displayName.contains('\u00A0'),
@@ -87,9 +87,32 @@ class EccentricLoadDisplayNameTest {
     // -------- Post-fix: locale-aware formatter (issue #540) --------
 
     @Test
-    fun formatEccentricLoadEnglishKeepsAsciiPercentNoSeparator() {
+    fun formatPercentSupportsRawIntegerPercentages() {
+        assertEquals("105%", formatPercent(105, "en"))
+        assertEquals("105\u00A0%", formatPercent(105, "it"))
+    }
+
+    @Test
+    fun formatPercentSupportsFractionalProgressionPercentages() {
+        assertEquals("2.5%", formatPercent(2.5f, "en"))
+        assertEquals("2.5\u00A0%", formatPercent(2.5f, "it"))
+    }
+
+    @Test
+    fun formatEccentricLoadDelegatesToGenericPercentFormatter() {
+        EccentricLoad.entries.forEach { load ->
+            assertEquals(
+                formatPercent(load.percentage, "it"),
+                formatEccentricLoad(load, "it"),
+                "enum helper should share the generic formatter for ${load.name}",
+            )
+        }
+    }
+
+    @Test
+    fun formatPercentEnglishKeepsAsciiPercentNoSeparator() {
         val enumLabel = formatEccentricLoad(EccentricLoad.LOAD_110, "en")
-        val rawLabel = formatEccentricLoad(105, "en")
+        val rawLabel = formatPercent(105, "en")
 
         assertEquals("110%", enumLabel)
         assertEquals("105%", rawLabel)
@@ -98,9 +121,9 @@ class EccentricLoadDisplayNameTest {
     }
 
     @Test
-    fun formatEccentricLoadItalianInsertsNbspBeforePercentGlyph() {
+    fun formatPercentItalianInsertsNbspBeforePercentGlyph() {
         val enumLabel = formatEccentricLoad(EccentricLoad.LOAD_110, "it")
-        val rawLabel = formatEccentricLoad(105, "it")
+        val rawLabel = formatPercent(105, "it")
 
         // Italian typography uses NBSP (U+00A0) between number and "%" so the
         // SF Pro "%" glyph no longer collides with the trailing digit on
@@ -113,9 +136,9 @@ class EccentricLoadDisplayNameTest {
     }
 
     @Test
-    fun formatEccentricLoadItalianAcceptsRegionTags() {
-        assertEquals("110\u00A0%", formatEccentricLoad(EccentricLoad.LOAD_110, "it-IT"))
-        assertEquals("105\u00A0%", formatEccentricLoad(105, "it_IT"))
+    fun formatPercentItalianAcceptsRegionTags() {
+        assertEquals("110\u00A0%", formatPercent(110, "it-IT"))
+        assertEquals("105\u00A0%", formatPercent(105, "it_IT"))
     }
 
     @Test
@@ -128,21 +151,21 @@ class EccentricLoadDisplayNameTest {
         val full = "it-IT"
         val extracted = full.substringBefore('-').lowercase()
         assertEquals("it", extracted)
-        val label = formatEccentricLoad(EccentricLoad.LOAD_110, extracted)
+        val label = formatPercent(110, extracted)
         assertEquals("110\u00A0%", label)
     }
 
     @Test
-    fun formatEccentricLoadEmptyLanguageFallsBackToAscii() {
+    fun formatPercentEmptyLanguageFallsBackToAscii() {
         // Defensive: empty / unknown language code must not crash and must
         // emit the safe ASCII form (no NBSP).
-        val label = formatEccentricLoad(EccentricLoad.LOAD_110, "")
+        val label = formatPercent(110, "")
         assertEquals("110%", label)
     }
 
     @Test
-    fun formatEccentricLoadItCaseInsensitive() {
-        val label = formatEccentricLoad(EccentricLoad.LOAD_100, "IT")
+    fun formatPercentItCaseInsensitive() {
+        val label = formatPercent(100, "IT")
         assertEquals("100\u00A0%", label)
     }
 
