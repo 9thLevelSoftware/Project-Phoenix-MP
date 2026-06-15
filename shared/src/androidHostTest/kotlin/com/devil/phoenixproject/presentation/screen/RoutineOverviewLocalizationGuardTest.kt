@@ -57,7 +57,7 @@ class RoutineOverviewLocalizationGuardTest {
             "Overview Eccentric Load label must use the Compose resource system.",
         )
         assertTrue(
-            source.contains("eccentricLoadPercentLabel(percent)"),
+            source.contains("percentLabel(percent)"),
             "Overview Eccentric Load value must use the locale-aware percent formatter.",
         )
         assertFalse(
