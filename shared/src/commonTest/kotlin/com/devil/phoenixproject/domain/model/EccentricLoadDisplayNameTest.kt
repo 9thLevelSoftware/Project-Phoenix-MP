@@ -139,6 +139,7 @@ class EccentricLoadDisplayNameTest {
     fun formatPercentItalianAcceptsRegionTags() {
         assertEquals("110\u00A0%", formatPercent(110, "it-IT"))
         assertEquals("105\u00A0%", formatPercent(105, "it_IT"))
+        assertEquals("110\u00A0%", formatPercent(110, "IT-ch"))
     }
 
     @Test

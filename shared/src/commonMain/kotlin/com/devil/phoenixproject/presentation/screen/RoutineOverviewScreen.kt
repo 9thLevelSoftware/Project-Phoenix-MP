@@ -70,6 +70,8 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.echoLevelLabel
+import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.BackHandler
@@ -92,6 +94,8 @@ import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.action_stop
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
+import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
+import vitruvianprojectphoenix.shared.generated.resources.rest_echo_level
 import vitruvianprojectphoenix.shared.generated.resources.start_exercise
 import vitruvianprojectphoenix.shared.generated.resources.target_reps
 
@@ -783,7 +787,7 @@ private fun ExerciseOverviewCard(
 private fun OverviewEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (EchoLevel) -> Unit) {
     Column {
         Text(
-            text = "ECHO LEVEL",
+            text = stringResource(Res.string.rest_echo_level),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             letterSpacing = 1.sp,
@@ -815,7 +819,7 @@ private fun OverviewEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (
                     onClick = { onLevelChange(level) },
                 ) {
                     Text(
-                        text = level.displayName,
+                        text = echoLevelLabel(level),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = Spacing.small),
@@ -846,13 +850,13 @@ private fun OverviewEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "ECCENTRIC LOAD",
+                text = stringResource(Res.string.rest_eccentric_load),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 letterSpacing = 1.sp,
             )
             Text(
-                text = "$percent%",
+                text = percentLabel(percent),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
