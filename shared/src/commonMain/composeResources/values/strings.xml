@@ -610,6 +610,7 @@
     <string name="cd_reorder_superset">Reorder superset</string>
     <string name="cd_remove_superset">Remove from superset</string>
     <string name="cd_progression_settings">Progression Settings</string>
+    <string name="progression_eccentric_load_increase_by">Increase eccentric load by</string>
     <string name="cd_select_template">Select template</string>
 
     <!-- Sets -->

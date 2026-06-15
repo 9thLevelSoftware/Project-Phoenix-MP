@@ -18,7 +18,7 @@ import androidx.compose.ui.window.Dialog
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
-import com.devil.phoenixproject.domain.model.eccentricLoadLabel
+import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -416,7 +416,7 @@ private fun EccentricSlider(percent: Int, onPercentChange: (Int) -> Unit, label:
                 letterSpacing = 1.sp,
             )
             Text(
-                text = eccentricLoadLabel(percent),
+                text = percentLabel(percent),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -438,8 +438,8 @@ private fun EccentricSlider(percent: Int, onPercentChange: (Int) -> Unit, label:
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(text = "100%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(text = "150%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = percentLabel(100), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = percentLabel(150), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
