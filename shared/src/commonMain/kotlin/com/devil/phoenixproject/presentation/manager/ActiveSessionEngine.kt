@@ -451,12 +451,12 @@ class ActiveSessionEngine(
         val selectedItems = equipmentRackRepository.resolveActiveItems(
             ActiveRackSelection(coordinator._activeRackItemIds.value),
         )
-        val displayMultiplier = currentExercise?.exercise?.displayMultiplier
-            ?: resolveSelectedExercise(params)?.displayMultiplier
+        val physicalCableCount = currentExercise?.exercise?.preferredCableCount
+            ?: resolveSelectedExercise(params)?.preferredCableCount
             ?: 1
         val adjustment = applyEquipmentRackLoadUseCase.calculate(
             programmedWeightPerCableKg = params.weightPerCableKg,
-            displayMultiplier = displayMultiplier,
+            physicalCableCount = physicalCableCount,
             selectedItems = selectedItems,
             isEchoMode = params.isEchoMode,
             validatorMinimumPerCableKg = validatorSafeMinimum(params),
@@ -474,12 +474,12 @@ class ActiveSessionEngine(
 
     private fun applyRackToBleParams(
         params: WorkoutParameters,
-        displayMultiplier: Int,
+        physicalCableCount: Int,
         selectedItems: List<RackItem>,
     ): WorkoutParameters {
         val adjustment = applyEquipmentRackLoadUseCase.calculate(
             programmedWeightPerCableKg = params.weightPerCableKg,
-            displayMultiplier = displayMultiplier,
+            physicalCableCount = physicalCableCount,
             selectedItems = selectedItems,
             isEchoMode = params.isEchoMode,
             validatorMinimumPerCableKg = validatorSafeMinimum(params),
@@ -1905,10 +1905,10 @@ class ActiveSessionEngine(
             val resolvedItems = equipmentRackRepository.rackItems.value
                 .filter { it.enabled && it.id in distinctIds }
             val currentParams = coordinator._workoutParameters.value
-            val displayMultiplier = currentExercise?.exercise?.displayMultiplier ?: 1
+            val physicalCableCount = currentExercise?.exercise?.preferredCableCount ?: 1
             val adjustment = applyEquipmentRackLoadUseCase.calculate(
                 programmedWeightPerCableKg = currentParams.weightPerCableKg,
-                displayMultiplier = displayMultiplier,
+                physicalCableCount = physicalCableCount,
                 selectedItems = resolvedItems,
                 isEchoMode = currentParams.isEchoMode,
                 validatorMinimumPerCableKg = validatorSafeMinimum(currentParams),
@@ -2424,8 +2424,8 @@ class ActiveSessionEngine(
                     coordinator._workoutParameters.value = warmupOverrideParams
                 }
 
-                val rackDisplayMultiplier = currentExercise?.exercise?.displayMultiplier
-                    ?: resolveSelectedExercise(effectiveParams)?.displayMultiplier
+                val rackPhysicalCableCount = currentExercise?.exercise?.preferredCableCount
+                    ?: resolveSelectedExercise(effectiveParams)?.preferredCableCount
                     ?: 1
                 val rackSnapshotItems = coordinator._currentRackLoadAdjustment.value.selectedItems
                 val bleParams = run {
@@ -2455,7 +2455,7 @@ class ActiveSessionEngine(
                 }.let { paramsForBle ->
                     applyRackToBleParams(
                         params = paramsForBle,
-                        displayMultiplier = rackDisplayMultiplier,
+                        physicalCableCount = rackPhysicalCableCount,
                         selectedItems = rackSnapshotItems,
                     )
                 }

@@ -839,10 +839,10 @@ class RoutineFlowManager(
         // Use the exercise's own weight — not the coordinator's currently-mirrored
         // workout parameters, which may still reflect the previous set / routine.
         val programmedWeightPerCableKg = exercise.weightPerCableKg
-        val displayMultiplier = exercise.exercise.displayMultiplier ?: 1
+        val physicalCableCount = exercise.exercise.preferredCableCount ?: 1
         val adjustment = applyEquipmentRackLoadUseCase.calculate(
             programmedWeightPerCableKg = programmedWeightPerCableKg,
-            displayMultiplier = displayMultiplier,
+            physicalCableCount = physicalCableCount,
             selectedItems = resolvedItems,
             isEchoMode = false,
             validatorMinimumPerCableKg = Constants.DEFAULT_WEIGHT_INCREMENT_KG,

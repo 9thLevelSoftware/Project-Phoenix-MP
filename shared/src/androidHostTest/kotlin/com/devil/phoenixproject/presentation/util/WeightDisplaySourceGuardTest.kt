@@ -187,43 +187,89 @@ class WeightDisplaySourceGuardTest {
     }
 
     @Test
-    fun workoutHud_liveForceDisplayUsesOnlyUnifiedAccessoryGate() {
+    fun workoutHud_primaryDisplaysStayPerCable() {
         val path = "com/devil/phoenixproject/presentation/screen/WorkoutHud.kt"
         val source = readSourceFile(path)
         if (source != null) {
             assertFalse(
                 source.contains("WeightDisplayFormatter"),
                 "GUARD VIOLATION: WorkoutHud.kt must not use WeightDisplayFormatter. " +
-                    "Live HUD display is allowed to multiply only after the unified-accessory gate.",
+                    "HUD primary weight display should format already-selected per-cable values directly.",
             )
             assertFalse(
-                source.contains("preferredCableCount"),
-                "GUARD VIOLATION: WorkoutHud.kt must not gate live total display on physical cable count. " +
-                    "Use liveUnifiedAccessoryDisplayMultiplier() instead.",
-            )
-            assertFalse(
-                Regex("""\bcableCount\b""").containsMatchIn(source),
-                "GUARD VIOLATION: WorkoutHud.kt must not pass generic cableCount into live weight display. " +
-                    "Dual handles and other individual attachments must remain per-cable.",
-            )
-            assertTrue(
-                source.contains("liveUnifiedAccessoryDisplayMultiplier()"),
-                "WorkoutHud.kt should derive live display multiplier from the unified-accessory helper.",
-            )
-            assertTrue(
                 source.contains("workoutParameters.weightPerCableKg * liveDisplayMultiplier"),
-                "WorkoutHud.kt should multiply selected display weight only by the narrow live display multiplier.",
+                "GUARD VIOLATION: WorkoutHud.kt selected load display must stay per-cable.",
             )
-            assertTrue(
+            assertFalse(
                 source.contains("perCableKg * liveDisplayMultiplier"),
-                "WorkoutHud.kt should multiply measured live force only by the narrow live display multiplier.",
+                "GUARD VIOLATION: WorkoutHud.kt live force display must stay per-cable.",
+            )
+            assertFalse(
+                source.contains("""subLabel = if (liveDisplayMultiplier == 2) "TOTAL" else "PER CABLE""""),
+                "GUARD VIOLATION: WorkoutHud.kt primary force display should always be labeled per-cable.",
             )
             assertTrue(
-                source.contains("""subLabel = if (liveDisplayMultiplier == 2) "TOTAL" else "PER CABLE""""),
-                "WorkoutHud.kt should label total force only when the unified-accessory multiplier is active.",
+                source.contains("formatWeight(selectedDisplayKg, weightUnit)"),
+                "WorkoutHud.kt should format selectedDisplayKg directly for target weight display.",
+            )
+            assertTrue(
+                source.contains("formatWeight(displayKg, weightUnit)"),
+                "WorkoutHud.kt should format displayKg directly for live force display.",
             )
         } else {
             assertTrue(true, "WorkoutHud.kt not found; guard passes")
+        }
+    }
+
+    @Test
+    fun savedSessionPrimaryDisplays_doNotMultiplyByDisplayLoadMultiplier() {
+        val primaryDisplayFiles = listOf(
+            "com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt",
+            "com/devil/phoenixproject/presentation/screen/ExercisesTab.kt",
+            "com/devil/phoenixproject/presentation/screen/HistoryTab.kt",
+            "com/devil/phoenixproject/presentation/screen/HomeScreen.kt",
+            "com/devil/phoenixproject/presentation/components/InsightCards.kt",
+        )
+        val forbiddenSnippets = listOf(
+            "weightPerCableKg * session.displayLoadMultiplier()",
+            "session.weightPerCableKg * session.displayLoadMultiplier()",
+            "effectiveHeaviestKgPerCable() * session.displayLoadMultiplier().toFloat()",
+            "WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, session.displayLoadMultiplier()",
+            "WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, session.displayMultiplier ?: session.cableCount",
+        )
+
+        val violations = primaryDisplayFiles.flatMap { relativePath ->
+            val source = readSourceFile(relativePath).orEmpty()
+            forbiddenSnippets
+                .filter { forbidden -> source.contains(forbidden) }
+                .map { forbidden -> "$relativePath contains '$forbidden'" }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            "GUARD VIOLATION: Saved-session primary display must stay per-cable. Violations: $violations",
+        )
+    }
+
+    @Test
+    fun setSummary_primaryWeightLabelsStayPerCable() {
+        val path = "com/devil/phoenixproject/presentation/screen/SetSummaryCard.kt"
+        val source = readSourceFile(path)
+        if (source != null) {
+            assertFalse(
+                source.contains("unit = \"(\$unitLabel total)\""),
+                "GUARD VIOLATION: Set Summary set weight is per-cable and must not be labeled total.",
+            )
+            assertFalse(
+                source.contains("\"\$unitLabel total\""),
+                "GUARD VIOLATION: Echo phase weights are per-cable and must not be labeled total.",
+            )
+            assertTrue(
+                source.contains("unit = \"(\$unitLabel/cable)\""),
+                "Set Summary set weight should be labeled per-cable.",
+            )
+        } else {
+            assertTrue(true, "SetSummaryCard.kt not found; guard passes")
         }
     }
 

@@ -381,7 +381,7 @@ private fun PRListItem(
             Text(
                 text = WeightDisplayFormatter.formatDisplayWeight(
                     pr.weightPerCableKg,
-                    cableCount = pr.cableCount,
+                    cableCount = null,
                     weightUnit,
                 ),
                 style = MaterialTheme.typography.titleMedium,
@@ -536,7 +536,7 @@ private fun TopExerciseItem(
             Text(
                 text = WeightDisplayFormatter.formatDisplayWeight(
                     pr.weightPerCableKg,
-                    cableCount = pr.cableCount,
+                    cableCount = null,
                     weightUnit,
                 ),
                 style = MaterialTheme.typography.titleLarge,

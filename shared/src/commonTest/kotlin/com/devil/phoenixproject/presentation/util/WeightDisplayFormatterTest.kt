@@ -6,16 +6,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/**
- * Tests for WeightDisplayFormatter.
- *
- * Verifies cable-aware weight display logic:
- * - Dual cable exercises multiply per-cable weight by 2
- * - Single cable exercises pass through per-cable weight
- * - Null cableCount defaults to 1 (safe legacy default)
- * - Unit conversion (KG/LB) applied AFTER cable multiplication
- * - Formatting: integers show no decimals, fractional values show 1 decimal
- */
 class WeightDisplayFormatterTest {
 
     private companion object {
@@ -23,109 +13,38 @@ class WeightDisplayFormatterTest {
         const val FLOAT_TOLERANCE = 0.01f
     }
 
-    // ===== toDisplayWeight: Dual cable, KG =====
-
     @Test
-    fun toDisplayWeight_dualCable_kg_multipliesByTwo() {
+    fun toDisplayWeight_twoCableMetadata_kg_staysPerCable() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = 50f,
             cableCount = 2,
             unit = WeightUnit.KG,
         )
-        assertEquals(100f, result, "50kg per cable x 2 cables = 100kg total")
+
+        assertEquals(50f, result, "Official app displays selected load as per-cable weight")
     }
 
-    // ===== toDisplayWeight: Dual cable, LB =====
-
     @Test
-    fun toDisplayWeight_dualCable_lb_multipliesByTwoThenConverts() {
+    fun toDisplayWeight_twoCableMetadata_lb_convertsPerCableOnly() {
         val result = WeightDisplayFormatter.toDisplayWeight(
             weightPerCableKg = 50f,
             cableCount = 2,
             unit = WeightUnit.LB,
         )
-        val expected = 100f * KG_TO_LB // 220.462
+
         assertTrue(
-            abs(result - expected) < FLOAT_TOLERANCE,
-            "50kg per cable x 2 cables = 100kg → ${expected}lb, got $result",
+            abs(result - (50f * KG_TO_LB)) < FLOAT_TOLERANCE,
+            "Two-cable metadata must not double ordinary lb display",
         )
-    }
-
-    // ===== toDisplayWeight: Single cable, KG =====
-
-    @Test
-    fun toDisplayWeight_singleCable_kg_noMultiplication() {
-        val result = WeightDisplayFormatter.toDisplayWeight(
-            weightPerCableKg = 50f,
-            cableCount = 1,
-            unit = WeightUnit.KG,
-        )
-        assertEquals(50f, result, "50kg per cable x 1 cable = 50kg total")
-    }
-
-    // ===== toDisplayWeight: Single cable, LB =====
-
-    @Test
-    fun toDisplayWeight_singleCable_lb_convertsOnly() {
-        val result = WeightDisplayFormatter.toDisplayWeight(
-            weightPerCableKg = 50f,
-            cableCount = 1,
-            unit = WeightUnit.LB,
-        )
-        val expected = 50f * KG_TO_LB // 110.231
-        assertTrue(
-            abs(result - expected) < FLOAT_TOLERANCE,
-            "50kg per cable x 1 cable = 50kg → ${expected}lb, got $result",
-        )
-    }
-
-    // ===== toDisplayWeight: Null cable count (default single) =====
-
-    @Test
-    fun toDisplayWeight_nullCableCount_defaultsToSingle() {
-        val result = WeightDisplayFormatter.toDisplayWeight(
-            weightPerCableKg = 50f,
-            cableCount = null,
-            unit = WeightUnit.KG,
-        )
-        assertEquals(50f, result, "Null cableCount defaults to 1: 50kg per cable = 50kg total")
-    }
-
-    // ===== toDisplayWeight: Zero weight =====
-
-    @Test
-    fun toDisplayWeight_zeroWeight_returnsZero_kg() {
-        val result = WeightDisplayFormatter.toDisplayWeight(
-            weightPerCableKg = 0f,
-            cableCount = 2,
-            unit = WeightUnit.KG,
-        )
-        assertEquals(0f, result, "0kg per cable x 2 = 0kg total")
     }
 
     @Test
-    fun toDisplayWeight_zeroWeight_returnsZero_lb() {
-        val result = WeightDisplayFormatter.toDisplayWeight(
-            weightPerCableKg = 0f,
-            cableCount = 2,
-            unit = WeightUnit.LB,
-        )
-        assertEquals(0f, result, "0kg per cable in LB = 0lb")
+    fun toDisplayWeight_ignoresInvalidCableMetadata() {
+        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, cableCount = 0, unit = WeightUnit.KG))
+        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, cableCount = -1, unit = WeightUnit.KG))
+        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, cableCount = 3, unit = WeightUnit.KG))
+        assertEquals(80f, WeightDisplayFormatter.toDisplayWeight(80f, cableCount = null, unit = WeightUnit.KG))
     }
-
-    // ===== toDisplayWeight: Max weight (220kg per cable for Trainer+) =====
-
-    @Test
-    fun toDisplayWeight_maxWeight_dualCable_kg() {
-        val result = WeightDisplayFormatter.toDisplayWeight(
-            weightPerCableKg = 220f,
-            cableCount = 2,
-            unit = WeightUnit.KG,
-        )
-        assertEquals(440f, result, "220kg per cable x 2 = 440kg total")
-    }
-
-    // ===== formatDisplayWeight: Integer values =====
 
     @Test
     fun formatDisplayWeight_integerResult_noDecimals() {
@@ -134,10 +53,9 @@ class WeightDisplayFormatterTest {
             cableCount = 2,
             unit = WeightUnit.KG,
         )
-        assertEquals("100", result, "100.0kg should display as '100'")
-    }
 
-    // ===== formatDisplayWeight: Decimal values =====
+        assertEquals("50", result)
+    }
 
     @Test
     fun formatDisplayWeight_decimalResult_oneDecimal() {
@@ -146,57 +64,40 @@ class WeightDisplayFormatterTest {
             cableCount = 2,
             unit = WeightUnit.KG,
         )
-        assertEquals("100.5", result, "50.25 x 2 = 100.5kg should display as '100.5'")
+
+        assertEquals("50.3", result)
     }
 
-    // ===== formatDisplayWeight: LB formatting =====
+    @Test
+    fun explicitTwoCableTotal_kg_doublesOnlyWhenCalledExplicitly() {
+        val result = WeightDisplayFormatter.toTwoCableTotalDisplayWeight(
+            weightPerCableKg = 50f,
+            unit = WeightUnit.KG,
+        )
+
+        assertEquals(100f, result, "Only the explicitly named total helper doubles")
+    }
 
     @Test
-    fun formatDisplayWeight_lb_showsConvertedValue() {
-        val result = WeightDisplayFormatter.formatDisplayWeight(
+    fun explicitTwoCableTotal_lb_doublesThenConverts() {
+        val result = WeightDisplayFormatter.toTwoCableTotalDisplayWeight(
             weightPerCableKg = 50f,
-            cableCount = 2,
             unit = WeightUnit.LB,
         )
-        // 50 * 2 = 100kg * 2.20462 = 220.462 → rounded to 1 decimal = "220.5"
-        assertEquals("220.5", result, "100kg → 220.462lb → formatted '220.5', got '$result'")
+
+        assertTrue(
+            abs(result - (100f * KG_TO_LB)) < FLOAT_TOLERANCE,
+            "Explicit total helper should show two-cable total in the selected unit",
+        )
     }
 
-    // ===== Pure function: per-cable value preserved =====
-
     @Test
-    fun toDisplayWeight_doesNotMutateInput() {
-        val perCable = 50f
-        val cableCount = 2
-        val unit = WeightUnit.KG
-
-        // Call multiple times with same input
-        val result1 = WeightDisplayFormatter.toDisplayWeight(perCable, cableCount, unit)
-        val result2 = WeightDisplayFormatter.toDisplayWeight(perCable, cableCount, unit)
-
-        assertEquals(result1, result2, "Pure function: same input produces same output")
-        assertEquals(100f, result1, "Value should be 100")
-    }
-
-    // ===== Edge: Small fractional weight =====
-
-    @Test
-    fun toDisplayWeight_smallFractionalWeight_kg() {
-        val result = WeightDisplayFormatter.toDisplayWeight(
-            weightPerCableKg = 0.5f,
-            cableCount = 2,
+    fun formatTwoCableTotalWeight_formatsExplicitHelper() {
+        val result = WeightDisplayFormatter.formatTwoCableTotalWeight(
+            weightPerCableKg = 37.5f,
             unit = WeightUnit.KG,
         )
-        assertEquals(1f, result, "0.5kg per cable x 2 = 1kg")
-    }
 
-    @Test
-    fun formatDisplayWeight_zeroWeight_showsZero() {
-        val result = WeightDisplayFormatter.formatDisplayWeight(
-            weightPerCableKg = 0f,
-            cableCount = 2,
-            unit = WeightUnit.KG,
-        )
-        assertEquals("0", result, "0kg should display as '0'")
+        assertEquals("75", result)
     }
 }

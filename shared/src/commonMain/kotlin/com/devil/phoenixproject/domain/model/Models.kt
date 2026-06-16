@@ -30,10 +30,9 @@ enum class WorkoutPhase {
 /**
  * Personal record for an exercise.
  *
- * [cableCount] enables cable-aware weight display for PRs. Populated from
- * exercise `preferredCableCount` when a PR is recorded. Legacy PRs have
- * `cableCount = null`, which causes WeightDisplayFormatter to default to 1
- * (showing per-cable weight — safe backward-compatible behavior).
+ * [weightPerCableKg] is the official-app display contract for PR load. [cableCount]
+ * is retained for legacy metadata and analytics context; ordinary PR display must
+ * not multiply by it.
  */
 data class PersonalRecord(
     val id: Long = 0,
@@ -478,8 +477,8 @@ sealed class HapticEvent {
  * @property timestamp Session start time as Unix epoch milliseconds
  * @property duration Session duration in MILLISECONDS (not seconds!)
  *                    Computed as `currentTimeMillis() - startTime`
- * @property weightPerCableKg Machine/storage weight per cable in kilograms. User-facing load
- *                            displays should prefer displayMultiplier over physical cableCount.
+ * @property weightPerCableKg Machine/storage weight per cable in kilograms. Ordinary
+ *                            selected-load displays should show this per-cable value.
  */
 data class WorkoutSession(
     val id: String = generateUUID(),
@@ -561,10 +560,10 @@ data class WorkoutSession(
 fun WorkoutSession.effectiveHeaviestKgPerCable(): Float = heaviestLiftKg ?: weightPerCableKg
 
 /**
- * Multiplier for user-facing saved-session load display.
+ * Legacy multiplier metadata for explicit total/compatibility paths.
  *
- * Prefer persisted display semantics when present; fall back to physical cable count only for
- * legacy rows that predate displayMultiplier.
+ * Ordinary saved-session load display matches the official app and stays per-cable.
+ * Do not use this helper to format primary selected/heaviest load values.
  */
 fun WorkoutSession.displayLoadMultiplier(): Int = displayMultiplier ?: cableCount ?: 1
 

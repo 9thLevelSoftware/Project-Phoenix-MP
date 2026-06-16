@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
@@ -133,7 +134,9 @@ fun WeightAdjustmentControls(
                 )
                 Spacer(modifier = Modifier.width(Spacing.small))
                 Text(
-                    text = "Total weight for 2 cables: ${formatWeight(currentWeightKg * 2, weightUnit)}",
+                    text = "Total weight for 2 cables: ${
+                        WeightDisplayFormatter.formatTwoCableTotalWeight(currentWeightKg, weightUnit)
+                    } ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -380,7 +383,9 @@ private fun WeightPickerDialog(
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
-                            text = "Total weight for 2 cables: ${formatWeight(selectedWeightKg * 2, weightUnit)}",
+                            text = "Total weight for 2 cables: ${
+                                WeightDisplayFormatter.formatTwoCableTotalWeight(selectedWeightKg, weightUnit)
+                            } ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
