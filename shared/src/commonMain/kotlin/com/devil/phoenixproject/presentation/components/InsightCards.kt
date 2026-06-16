@@ -63,7 +63,6 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.domain.model.displayLoadMultiplier
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.presentation.components.charts.ComboChart
@@ -499,7 +498,7 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
 
             val lines = sortedSessions.mapIndexed { index, session ->
                 val label = "S${index + 1}"
-                val maxWeight = session.effectiveHeaviestKgPerCable() * session.displayLoadMultiplier().toFloat()
+                val maxWeight = session.effectiveHeaviestKgPerCable()
                 // Convert to lbs if needed
                 val adjustedWeight = if (weightUnit == WeightUnit.LB) maxWeight * 2.20462f else maxWeight
                 label to adjustedWeight

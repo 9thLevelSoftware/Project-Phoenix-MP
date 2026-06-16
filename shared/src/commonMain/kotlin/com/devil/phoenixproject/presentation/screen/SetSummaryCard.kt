@@ -98,30 +98,27 @@ fun SetSummaryCard(
         }
     }
 
-    // Calculate display values
-    // Issue #5: Use WeightDisplayFormatter for cable-aware weight display.
-    // heaviestLift and setWeight are per-cable values that must be multiplied by cableCount
-    // before unit conversion to show total weight to the user.
-    // totalVolume is already a total value (not per-cable), so it only needs unit conversion.
-    val cableCount = summary.displayMultiplier
+    // Calculate display values.
+    // Official app primary load display is per-cable. Total volume is already a total value,
+    // so it only needs unit conversion.
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
-    val heaviestLiftDisplay = WeightDisplayFormatter.toDisplayWeight(summary.heaviestLiftKgPerCable, cableCount, weightUnit)
-    val setWeightDisplay = WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, cableCount, weightUnit)
+    val heaviestLiftDisplay = WeightDisplayFormatter.toDisplayWeight(summary.heaviestLiftKgPerCable, null, weightUnit)
+    val setWeightDisplay = WeightDisplayFormatter.toDisplayWeight(summary.configuredWeightKgPerCable, null, weightUnit)
 
-    // Debug logging for Issue #5 investigation
+    // Debug logging for weight display investigation
     co.touchlab.kermit.Logger.i {
-        "WEIGHT_DEBUG[Summary]: configuredWeightKgPerCable=${summary.configuredWeightKgPerCable} kg x cableCount=$cableCount → $setWeightDisplay ($weightUnit)"
+        "WEIGHT_DEBUG[Summary]: configuredWeightKgPerCable=${summary.configuredWeightKgPerCable} kg -> $setWeightDisplay ($weightUnit)"
     }
     val durationSeconds = (summary.durationMs / 1000).toInt()
     val durationFormatted = "${durationSeconds / 60}:${(durationSeconds % 60).toString().padStart(2, '0')}"
 
     // Peak/Avg forces - take max of both cables for display
-    // Force values are per-cable measurements; multiply by cableCount for total display
-    val peakConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB), cableCount, weightUnit)
-    val peakEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB), cableCount, weightUnit)
-    val avgConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceConcentricA, summary.avgForceConcentricB), cableCount, weightUnit)
-    val avgEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceEccentricA, summary.avgForceEccentricB), cableCount, weightUnit)
+    // Force values are per-cable measurements; primary display stays per-cable.
+    val peakConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB), null, weightUnit)
+    val peakEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB), null, weightUnit)
+    val avgConcentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceConcentricA, summary.avgForceConcentricB), null, weightUnit)
+    val avgEccentric = WeightDisplayFormatter.toDisplayWeight(maxOf(summary.avgForceEccentricA, summary.avgForceEccentricB), null, weightUnit)
 
     val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
 
@@ -248,16 +245,16 @@ fun SetSummaryCard(
             }
 
             // Echo Mode Phase Breakdown
-            // Echo weights are per-cable; multiply by cableCount for total display
+            // Echo weights are per-cable; primary display stays per-cable.
             if (summary.isEchoMode && (summary.warmupAvgWeightKg > 0 || summary.workingAvgWeightKg > 0)) {
                 EchoPhaseBreakdownCard(
                     warmupReps = summary.warmupReps,
                     workingReps = summary.workingReps,
                     burnoutReps = summary.burnoutReps,
-                    warmupAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.warmupAvgWeightKg, cableCount, weightUnit),
-                    workingAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.workingAvgWeightKg, cableCount, weightUnit),
-                    burnoutAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.burnoutAvgWeightKg, cableCount, weightUnit),
-                    peakWeight = WeightDisplayFormatter.toDisplayWeight(summary.peakWeightKg, cableCount, weightUnit),
+                    warmupAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.warmupAvgWeightKg, null, weightUnit),
+                    workingAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.workingAvgWeightKg, null, weightUnit),
+                    burnoutAvgWeight = WeightDisplayFormatter.toDisplayWeight(summary.burnoutAvgWeightKg, null, weightUnit),
+                    peakWeight = WeightDisplayFormatter.toDisplayWeight(summary.peakWeightKg, null, weightUnit),
                     unitLabel = unitLabel,
                 )
             }

@@ -507,14 +507,11 @@ fun WorkoutTab(
                 is WorkoutState.Countdown -> {
                     if (!workoutParameters.isJustLift) {
                         val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
-                        val displayMultiplier = currentExercise?.exercise?.displayMultiplier
-                            ?: currentExercise?.exercise?.preferredCableCount
-                            ?: 1
-                        val totalWeight = workoutParameters.weightPerCableKg * displayMultiplier
+                        val nextWeightPerCable = workoutParameters.weightPerCableKg
                         CountdownCard(
                             countdownSecondsRemaining = workoutState.secondsRemaining,
                             nextExerciseName = currentExercise?.exercise?.name ?: "Exercise",
-                            nextExerciseWeight = totalWeight,
+                            nextExerciseWeight = nextWeightPerCable,
                             nextExerciseReps = workoutParameters.reps,
                             nextExerciseMode = workoutParameters.programMode.displayName,
                             currentExerciseIndex = if (loadedRoutine != null) currentExerciseIndex else null,

@@ -180,7 +180,7 @@ fun ProgressTab(
                                 Text(
                                     text = WeightDisplayFormatter.formatDisplayWeight(
                                         pr.weightPerCableKg,
-                                        cableCount = pr.cableCount,
+                                        cableCount = null,
                                         weightUnit,
                                     ),
                                     style = MaterialTheme.typography.headlineSmall,
