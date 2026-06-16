@@ -1038,7 +1038,7 @@ fun ModeSelector(
         WorkoutMode.Pump,
         WorkoutMode.TUT,
         WorkoutMode.EccentricOnly,
-        WorkoutMode.Echo(EchoLevel.HARD),
+        WorkoutMode.Echo(EchoLevel.HARDER),
     )
 
     Surface(

@@ -579,7 +579,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         if (isEchoMode) {
                             // Echo Level selector - matching RestTimerCard style
                             SetReadyEchoLevelSelector(
-                                selectedLevel = setReadyState.echoLevel ?: EchoLevel.HARD,
+                                selectedLevel = setReadyState.echoLevel ?: EchoLevel.HARDER,
                                 onLevelChange = { viewModel.updateSetReadyEchoLevel(it) },
                             )
 

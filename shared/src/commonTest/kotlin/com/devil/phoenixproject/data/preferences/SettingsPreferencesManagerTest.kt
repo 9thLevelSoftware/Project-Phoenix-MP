@@ -26,11 +26,31 @@ class SettingsPreferencesManagerTest {
     }
 
     @Test
-    fun `just lift defaults use official Echo defaults`() {
+    fun `just lift defaults use issue 553 Echo defaults`() {
         val defaults = JustLiftDefaults()
 
-        assertEquals(0, defaults.echoLevelValue)
-        assertEquals(EchoLevel.HARD, defaults.getEchoLevel())
+        assertEquals(1, defaults.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, defaults.getEchoLevel())
+    }
+
+    @Test
+    fun `invalid saved Echo level falls back to issue 553 default`() {
+        val defaults = SingleExerciseDefaults(
+            exerciseId = "crossover-lateral-raise",
+            setReps = listOf(10, 10, 10),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 20f, 20f),
+            progressionKg = 0f,
+            setRestSeconds = listOf(60, 60, 60),
+            workoutModeId = 10,
+            eccentricLoadPercentage = 100,
+            echoLevelValue = 99,
+            duration = 0,
+            isAMRAP = false,
+            perSetRestTime = false,
+        )
+
+        assertEquals(EchoLevel.HARDER, defaults.getEchoLevel())
     }
 
     @Test
