@@ -198,7 +198,7 @@ fun SetSummaryCard(
                 SummaryStatCard(
                     label = "Set Weight",
                     value = "${setWeightDisplay.roundToInt()}",
-                    unit = "($unitLabel total)",
+                    unit = "($unitLabel/cable)",
                     icon = Icons.Default.FitnessCenter,
                     modifier = Modifier.weight(1f),
                 )
@@ -636,7 +636,7 @@ private fun EchoPhaseBreakdownCard(
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
-                    "Peak: ${peakWeight.roundToInt()} $unitLabel",
+                    "Peak: ${peakWeight.roundToInt()} $unitLabel/cable",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -706,7 +706,7 @@ private fun PhaseStatColumn(phaseName: String, reps: Int, avgWeight: Float, unit
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            "$unitLabel total",
+            "$unitLabel/cable",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

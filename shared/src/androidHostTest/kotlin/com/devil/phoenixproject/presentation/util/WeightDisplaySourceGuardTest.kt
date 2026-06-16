@@ -251,6 +251,28 @@ class WeightDisplaySourceGuardTest {
         )
     }
 
+    @Test
+    fun setSummary_primaryWeightLabelsStayPerCable() {
+        val path = "com/devil/phoenixproject/presentation/screen/SetSummaryCard.kt"
+        val source = readSourceFile(path)
+        if (source != null) {
+            assertFalse(
+                source.contains("unit = \"(\$unitLabel total)\""),
+                "GUARD VIOLATION: Set Summary set weight is per-cable and must not be labeled total.",
+            )
+            assertFalse(
+                source.contains("\"\$unitLabel total\""),
+                "GUARD VIOLATION: Echo phase weights are per-cable and must not be labeled total.",
+            )
+            assertTrue(
+                source.contains("unit = \"(\$unitLabel/cable)\""),
+                "Set Summary set weight should be labeled per-cable.",
+            )
+        } else {
+            assertTrue(true, "SetSummaryCard.kt not found; guard passes")
+        }
+    }
+
     // ===== Guard: CSV export has its own multiplication =====
 
     @Test
