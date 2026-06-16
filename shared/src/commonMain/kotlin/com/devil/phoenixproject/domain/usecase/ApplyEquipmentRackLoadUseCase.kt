@@ -8,24 +8,24 @@ import com.devil.phoenixproject.util.Constants
 class ApplyEquipmentRackLoadUseCase {
     fun calculate(
         programmedWeightPerCableKg: Float,
-        displayMultiplier: Int,
+        physicalCableCount: Int,
         selectedItems: List<RackItem>,
         isEchoMode: Boolean,
         validatorMinimumPerCableKg: Float = Constants.MIN_WEIGHT_KG,
     ): RackLoadAdjustment {
-        val multiplier = displayMultiplier.coerceAtLeast(1)
+        val cableCount = physicalCableCount.coerceIn(1, 2)
         val uniqueItems = selectedItems.distinctBy { it.id }
         val externalAddedLoadKg = uniqueItems.loadFor(RackItemBehavior.ADDED_RESISTANCE)
         val counterweightKg = uniqueItems.loadFor(RackItemBehavior.COUNTERWEIGHT)
         val displayLoadKg = (
-            programmedWeightPerCableKg.coerceAtLeast(0f) * multiplier +
+            programmedWeightPerCableKg.coerceAtLeast(0f) * cableCount +
                 externalAddedLoadKg -
                 counterweightKg
             ).coerceAtLeast(0f)
         val adjustedMachineWeightPerCableKg = if (isEchoMode) {
             programmedWeightPerCableKg
         } else {
-            (programmedWeightPerCableKg - (counterweightKg / multiplier))
+            (programmedWeightPerCableKg - (counterweightKg / cableCount))
                 .coerceIn(
                     validatorMinimumPerCableKg.coerceAtLeast(Constants.MIN_WEIGHT_KG),
                     Constants.MAX_WEIGHT_PER_CABLE_KG,
