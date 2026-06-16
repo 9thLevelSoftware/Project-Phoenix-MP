@@ -686,84 +686,6 @@ class RepCounterFromMachineTest {
         assertEquals(100f, ranges.minPosA)
         assertEquals(500f, ranges.maxPosA)
     }
-}
-
-class RepRangesTest {
-
-    @Test
-    fun `isInDangerZone returns true when position is within 5 percent of min`() {
-        val ranges = RepRanges(
-            minPosA = 100f,
-            maxPosA = 1000f,
-            minPosB = 100f,
-            maxPosB = 1000f,
-            minRangeA = null,
-            maxRangeA = null,
-            minRangeB = null,
-            maxRangeB = null,
-        )
-
-        // 5% of range (900) = 45, threshold = 145
-        assertTrue(ranges.isInDangerZone(posA = 110f, posB = 500f))
-    }
-
-    @Test
-    fun `isInDangerZone returns false when position is safe`() {
-        val ranges = RepRanges(
-            minPosA = 100f,
-            maxPosA = 1000f,
-            minPosB = 100f,
-            maxPosB = 1000f,
-            minRangeA = null,
-            maxRangeA = null,
-            minRangeB = null,
-            maxRangeB = null,
-        )
-
-        assertFalse(ranges.isInDangerZone(posA = 500f, posB = 500f))
-    }
-
-    @Test
-    fun `isInDangerZone returns false when range is too small`() {
-        val ranges = RepRanges(
-            minPosA = 100f,
-            maxPosA = 120f, // Range = 20, less than threshold
-            minPosB = 100f,
-            maxPosB = 120f,
-            minRangeA = null,
-            maxRangeA = null,
-            minRangeB = null,
-            maxRangeB = null,
-        )
-
-        // Even at min, not in danger zone because range is too small
-        assertFalse(ranges.isInDangerZone(posA = 100f, posB = 100f, minRangeThreshold = 50f))
-    }
-
-    @Test
-    fun `isInDangerZone triggers when position goes to zero after meaningful range`() {
-        // This tests the Just Lift autostop scenario where handles are placed down
-        // Position goes to ~0 after user has established a meaningful ROM range
-        val ranges = RepRanges(
-            minPosA = 30f, // Typical overhead pulley rest position
-            maxPosA = 230f, // Extended position after reps
-            minPosB = 30f,
-            maxPosB = 230f,
-            minRangeA = null,
-            maxRangeA = null,
-            minRangeB = null,
-            maxRangeB = null,
-        )
-
-        // Range = 200mm, threshold = 30 + (200 * 0.05) = 40mm
-        // Position at 0 or very low should trigger danger zone for autostop
-        assertTrue(ranges.isInDangerZone(posA = 0f, posB = 0f))
-        assertTrue(ranges.isInDangerZone(posA = 5f, posB = 5f))
-        assertTrue(ranges.isInDangerZone(posA = 35f, posB = 35f)) // Just above min but below threshold
-
-        // Position at 50 should NOT trigger (above threshold of 40)
-        assertFalse(ranges.isInDangerZone(posA = 50f, posB = 50f))
-    }
 
     // ========== Issue #553: Echo Mode Permissive Warm-Up Fallback ==========
 
@@ -848,5 +770,83 @@ class RepRangesTest {
         val count = repCounter.getRepCount()
         assertEquals(3, count.warmupReps)
         assertTrue(count.isWarmupComplete)
+    }
+}
+
+class RepRangesTest {
+
+    @Test
+    fun `isInDangerZone returns true when position is within 5 percent of min`() {
+        val ranges = RepRanges(
+            minPosA = 100f,
+            maxPosA = 1000f,
+            minPosB = 100f,
+            maxPosB = 1000f,
+            minRangeA = null,
+            maxRangeA = null,
+            minRangeB = null,
+            maxRangeB = null,
+        )
+
+        // 5% of range (900) = 45, threshold = 145
+        assertTrue(ranges.isInDangerZone(posA = 110f, posB = 500f))
+    }
+
+    @Test
+    fun `isInDangerZone returns false when position is safe`() {
+        val ranges = RepRanges(
+            minPosA = 100f,
+            maxPosA = 1000f,
+            minPosB = 100f,
+            maxPosB = 1000f,
+            minRangeA = null,
+            maxRangeA = null,
+            minRangeB = null,
+            maxRangeB = null,
+        )
+
+        assertFalse(ranges.isInDangerZone(posA = 500f, posB = 500f))
+    }
+
+    @Test
+    fun `isInDangerZone returns false when range is too small`() {
+        val ranges = RepRanges(
+            minPosA = 100f,
+            maxPosA = 120f, // Range = 20, less than threshold
+            minPosB = 100f,
+            maxPosB = 120f,
+            minRangeA = null,
+            maxRangeA = null,
+            minRangeB = null,
+            maxRangeB = null,
+        )
+
+        // Even at min, not in danger zone because range is too small
+        assertFalse(ranges.isInDangerZone(posA = 100f, posB = 100f, minRangeThreshold = 50f))
+    }
+
+    @Test
+    fun `isInDangerZone triggers when position goes to zero after meaningful range`() {
+        // This tests the Just Lift autostop scenario where handles are placed down
+        // Position goes to ~0 after user has established a meaningful ROM range
+        val ranges = RepRanges(
+            minPosA = 30f, // Typical overhead pulley rest position
+            maxPosA = 230f, // Extended position after reps
+            minPosB = 30f,
+            maxPosB = 230f,
+            minRangeA = null,
+            maxRangeA = null,
+            minRangeB = null,
+            maxRangeB = null,
+        )
+
+        // Range = 200mm, threshold = 30 + (200 * 0.05) = 40mm
+        // Position at 0 or very low should trigger danger zone for autostop
+        assertTrue(ranges.isInDangerZone(posA = 0f, posB = 0f))
+        assertTrue(ranges.isInDangerZone(posA = 5f, posB = 5f))
+        assertTrue(ranges.isInDangerZone(posA = 35f, posB = 35f)) // Just above min but below threshold
+
+        // Position at 50 should NOT trigger (above threshold of 40)
+        assertFalse(ranges.isInDangerZone(posA = 50f, posB = 50f))
     }
 }
