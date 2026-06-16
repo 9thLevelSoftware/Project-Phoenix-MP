@@ -35,22 +35,50 @@ class SettingsPreferencesManagerTest {
 
     @Test
     fun `invalid saved Echo level falls back to issue 553 default`() {
-        val defaults = SingleExerciseDefaults(
-            exerciseId = "crossover-lateral-raise",
-            setReps = listOf(10, 10, 10),
-            weightPerCableKg = 20f,
-            setWeightsPerCableKg = listOf(20f, 20f, 20f),
-            progressionKg = 0f,
-            setRestSeconds = listOf(60, 60, 60),
-            workoutModeId = 10,
-            eccentricLoadPercentage = 100,
+        val defaults = singleExerciseDefaults(
             echoLevelValue = 99,
-            duration = 0,
-            isAMRAP = false,
-            perSetRestTime = false,
         )
 
         assertEquals(EchoLevel.HARDER, defaults.getEchoLevel())
+    }
+
+    @Test
+    fun `saved Just Lift Hard default migrates once to issue 553 default`() = runTest {
+        val manager = SettingsPreferencesManager(MapSettings())
+        val hardDefaults = JustLiftDefaults(
+            workoutModeId = 10,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
+
+        manager.saveJustLiftDefaults(hardDefaults)
+
+        val migrated = manager.getJustLiftDefaults()
+        assertEquals(EchoLevel.HARDER.levelValue, migrated.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, migrated.getEchoLevel())
+
+        manager.saveJustLiftDefaults(hardDefaults)
+
+        val explicitlySavedHard = manager.getJustLiftDefaults()
+        assertEquals(EchoLevel.HARD.levelValue, explicitlySavedHard.echoLevelValue)
+        assertEquals(EchoLevel.HARD, explicitlySavedHard.getEchoLevel())
+    }
+
+    @Test
+    fun `saved single exercise Hard default migrates once to issue 553 default`() = runTest {
+        val manager = SettingsPreferencesManager(MapSettings())
+        val hardDefaults = singleExerciseDefaults(echoLevelValue = EchoLevel.HARD.levelValue)
+
+        manager.saveSingleExerciseDefaults(hardDefaults)
+
+        val migrated = manager.getSingleExerciseDefaults(hardDefaults.exerciseId) ?: error("Expected migrated defaults")
+        assertEquals(EchoLevel.HARDER.levelValue, migrated.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, migrated.getEchoLevel())
+
+        manager.saveSingleExerciseDefaults(hardDefaults)
+
+        val explicitlySavedHard = manager.getSingleExerciseDefaults(hardDefaults.exerciseId) ?: error("Expected saved defaults")
+        assertEquals(EchoLevel.HARD.levelValue, explicitlySavedHard.echoLevelValue)
+        assertEquals(EchoLevel.HARD, explicitlySavedHard.getEchoLevel())
     }
 
     @Test
@@ -66,4 +94,19 @@ class SettingsPreferencesManagerTest {
         val reloaded = SettingsPreferencesManager(settings)
         assertFalse(reloaded.preferencesFlow.value.weightSuggestionsEnabled)
     }
+
+    private fun singleExerciseDefaults(echoLevelValue: Int): SingleExerciseDefaults = SingleExerciseDefaults(
+        exerciseId = "crossover-lateral-raise",
+        setReps = listOf(10, 10, 10),
+        weightPerCableKg = 20f,
+        setWeightsPerCableKg = listOf(20f, 20f, 20f),
+        progressionKg = 0f,
+        setRestSeconds = listOf(60, 60, 60),
+        workoutModeId = 10,
+        eccentricLoadPercentage = 100,
+        echoLevelValue = echoLevelValue,
+        duration = 0,
+        isAMRAP = false,
+        perSetRestTime = false,
+    )
 }
