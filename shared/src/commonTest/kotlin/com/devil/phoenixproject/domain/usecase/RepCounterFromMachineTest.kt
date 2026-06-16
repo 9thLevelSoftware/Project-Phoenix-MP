@@ -688,6 +688,11 @@ class RepCounterFromMachineTest {
     }
 
     // ========== Issue #553: Echo Mode Permissive Warm-Up Fallback ==========
+    // The HARDER Echo default (Models.kt) is the primary fix; the existing
+    // line-484 fallback in RepCounterFromMachine.processModern (mode-agnostic
+    // up-counter advance when repsRomCount=0 AND repsSetCount=0) is the actual
+    // escape hatch. These tests pin that fallback's behavior for Echo-specific
+    // scenarios so a future refactor cannot regress the bug.
 
     @Test
     fun `issue 553 echo mode warmup advances from up counter when firmware drops reps`() {
@@ -695,21 +700,22 @@ class RepCounterFromMachineTest {
         // drops a rep event because the user's stroke falls outside the strict
         // Echo concentric timing window, repsRomCount and repsSetCount both stay
         // at 0 even though the user has completed real reps (visible as up
-        // counter increments). In Echo mode we must trust the up counter as a
-        // warm-up escape hatch or the user gets stuck on "Warm Up 1/3" forever.
+        // counter increments). The existing fallback warmup branch in
+        // processModern (mode-agnostic) must advance warmupReps from the up
+        // counter or the user gets stuck on "Warm Up 1/3" forever.
         repCounter.configure(
             warmupTarget = 3,
             workingTarget = 5,
             isJustLift = false,
             stopAtTop = false,
-            isEchoMode = true,
         )
 
         // Baseline
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
 
         // Simulate firmware dropping 3 reps: only the up counter advances.
-        // Without the fix, warmupReps stays at 0 and isWarmupComplete is false.
+        // Without the line-484 fallback, warmupReps stays at 0 and
+        // isWarmupComplete is false.
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 1, down = 0)
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 2, down = 0)
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 3, down = 0)
@@ -721,46 +727,38 @@ class RepCounterFromMachineTest {
     }
 
     @Test
-    fun `issue 553 non-echo mode does NOT advance warmup from up counter when firmware reports partial data`() {
-        // Regression guard for the Echo-specific branch: in non-Echo mode the
-        // permissive fallback must NOT fire when repsRomCount is reporting
-        // values (machine telemetry working normally) — only Echo mode with
-        // isEchoMode=true gets the up-counter escape hatch. This is the
-        // critical guard against accidentally softening Program/Eccentric mode
-        // rep counting.
+    fun `issue 553 primary repsRomCount path wins over up counter to avoid double counting`() {
+        // Regression guard for the line-484 fallback: when the firmware is
+        // reporting repsRomCount > 0 (normal telemetry), the primary path
+        // (repsRomCount > warmupReps) must advance warmupReps from repsRomCount,
+        // not from the up counter alone. Sending up=3 on the same notification
+        // as repsRomCount=1 must NOT triple-count.
         repCounter.configure(
             warmupTarget = 3,
             workingTarget = 5,
             isJustLift = false,
             stopAtTop = false,
-            isEchoMode = false,
         )
 
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
-        // Firmware reports repsRomCount > 0 (mid-warmup), repsSetCount > 0 too.
-        // The primary path (`repsRomCount > warmupReps`) advances warmupReps
-        // from repsRomCount, NOT from the up counter alone. Sending up=3 on
-        // the same notification should NOT triple-count.
         repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 3, down = 1)
 
         val count = repCounter.getRepCount()
-        // warmupReps should be 1 (from primary path repsRomCount==1), not 3
-        // (which would happen if the Echo fallback fired).
+        // warmupReps should be 1 (from primary path repsRomCount==1), not 3.
         assertEquals(1, count.warmupReps)
         assertFalse(count.isWarmupComplete)
     }
 
     @Test
-    fun `issue 553 echo mode warmup clamps at warmupTarget`() {
-        // The permissive fallback must still clamp at warmupTarget so a noisy
-        // up counter cannot push warmupReps past the firmware's calibration
+    fun `issue 553 fallback warmup clamps at warmupTarget`() {
+        // The line-484 fallback must clamp at warmupTarget so a noisy up
+        // counter cannot push warmupReps past the firmware's calibration
         // buffer of 3.
         repCounter.configure(
             warmupTarget = 3,
             workingTarget = 5,
             isJustLift = false,
             stopAtTop = false,
-            isEchoMode = true,
         )
 
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
