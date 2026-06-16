@@ -341,7 +341,12 @@ data class WorkoutParameters(
     val stallDetectionEnabled: Boolean = true, // Enable 5s stall/de-load auto-stop during active sets
     val repCountTiming: RepCountTiming = RepCountTiming.TOP, // When to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     // Echo-specific settings (only used when programMode == ProgramMode.Echo)
-    val echoLevel: EchoLevel = EchoLevel.HARD,
+    // Issue #553: Default reverted from HARD (strictest 1.0s concentric @ 50 mm/s)
+    // back to HARDER (1.25s @ 40 mm/s). HARD's timing window is too narrow for
+    // the Vitruvian V-Form firmware heuristic on BLE stacks with 50-200ms latency,
+    // causing the firmware to silently drop warm-up rep events, leaving the user
+    // stuck on "Warm Up 1/3" with the load pinned at the raw BLE reading.
+    val echoLevel: EchoLevel = EchoLevel.HARDER,
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
     // Just Lift rest timer (0 = off, 5-300 in 5s increments)
     val justLiftRestSeconds: Int = 0,

@@ -2294,6 +2294,7 @@ class ActiveSessionEngine(
                         isJustLift = false,
                         stopAtTop = params.stopAtTop,
                         isAMRAP = false,
+                        isEchoMode = params.isEchoMode,
                     )
                     coordinator._repCount.value = RepCount()
                     coordinator.warmupCompleteTimeMs = 0
@@ -2557,6 +2558,9 @@ class ActiveSessionEngine(
                     isJustLift = isJustLiftMode,
                     stopAtTop = warmupOverrideParams.stopAtTop,
                     isAMRAP = if (isTimedCableExercise) true else warmupOverrideParams.isAMRAP,
+                    // Issue #553: Pass Echo flag so RepCounter enables the permissive
+                    // warm-up fallback when V-Form firmware drops rep events.
+                    isEchoMode = effectiveParams.isEchoMode,
                 )
 
                 if (isTimedCableExercise) {

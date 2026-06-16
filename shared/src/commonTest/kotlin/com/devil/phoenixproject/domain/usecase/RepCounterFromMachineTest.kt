@@ -764,4 +764,89 @@ class RepRangesTest {
         // Position at 50 should NOT trigger (above threshold of 40)
         assertFalse(ranges.isInDangerZone(posA = 50f, posB = 50f))
     }
+
+    // ========== Issue #553: Echo Mode Permissive Warm-Up Fallback ==========
+
+    @Test
+    fun `issue 553 echo mode warmup advances from up counter when firmware drops reps`() {
+        // Issue #553: When the Vitruvian V-Form firmware's heuristic pipeline
+        // drops a rep event because the user's stroke falls outside the strict
+        // Echo concentric timing window, repsRomCount and repsSetCount both stay
+        // at 0 even though the user has completed real reps (visible as up
+        // counter increments). In Echo mode we must trust the up counter as a
+        // warm-up escape hatch or the user gets stuck on "Warm Up 1/3" forever.
+        repCounter.configure(
+            warmupTarget = 3,
+            workingTarget = 5,
+            isJustLift = false,
+            stopAtTop = false,
+            isEchoMode = true,
+        )
+
+        // Baseline
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+
+        // Simulate firmware dropping 3 reps: only the up counter advances.
+        // Without the fix, warmupReps stays at 0 and isWarmupComplete is false.
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 1, down = 0)
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 2, down = 0)
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 3, down = 0)
+
+        val count = repCounter.getRepCount()
+        assertEquals(3, count.warmupReps)
+        assertTrue(count.isWarmupComplete)
+        assertTrue(capturedEvents.any { it.type == RepType.WARMUP_COMPLETE })
+    }
+
+    @Test
+    fun `issue 553 non-echo mode does NOT advance warmup from up counter when firmware reports partial data`() {
+        // Regression guard for the Echo-specific branch: in non-Echo mode the
+        // permissive fallback must NOT fire when repsRomCount is reporting
+        // values (machine telemetry working normally) — only Echo mode with
+        // isEchoMode=true gets the up-counter escape hatch. This is the
+        // critical guard against accidentally softening Program/Eccentric mode
+        // rep counting.
+        repCounter.configure(
+            warmupTarget = 3,
+            workingTarget = 5,
+            isJustLift = false,
+            stopAtTop = false,
+            isEchoMode = false,
+        )
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+        // Firmware reports repsRomCount > 0 (mid-warmup), repsSetCount > 0 too.
+        // The primary path (`repsRomCount > warmupReps`) advances warmupReps
+        // from repsRomCount, NOT from the up counter alone. Sending up=3 on
+        // the same notification should NOT triple-count.
+        repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 3, down = 1)
+
+        val count = repCounter.getRepCount()
+        // warmupReps should be 1 (from primary path repsRomCount==1), not 3
+        // (which would happen if the Echo fallback fired).
+        assertEquals(1, count.warmupReps)
+        assertFalse(count.isWarmupComplete)
+    }
+
+    @Test
+    fun `issue 553 echo mode warmup clamps at warmupTarget`() {
+        // The permissive fallback must still clamp at warmupTarget so a noisy
+        // up counter cannot push warmupReps past the firmware's calibration
+        // buffer of 3.
+        repCounter.configure(
+            warmupTarget = 3,
+            workingTarget = 5,
+            isJustLift = false,
+            stopAtTop = false,
+            isEchoMode = true,
+        )
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+        // Single notification with up jumping by 5 — clamp to warmupTarget.
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 5, down = 0)
+
+        val count = repCounter.getRepCount()
+        assertEquals(3, count.warmupReps)
+        assertTrue(count.isWarmupComplete)
+    }
 }

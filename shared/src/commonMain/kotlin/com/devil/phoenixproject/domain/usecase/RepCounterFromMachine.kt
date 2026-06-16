@@ -34,6 +34,10 @@ class RepCounterFromMachine {
     private var stopAtTop = false
     private var shouldStop = false
     private var isAMRAP = false
+    // Issue #553: Echo mode flag enables a permissive warm-up fallback that
+    // trusts the directional up-counter when the V-Form firmware's strict
+    // heuristic pipeline drops rep events outside the timing window.
+    private var isEchoMode = false
 
     // Pending rep state - true when at TOP, waiting for machine confirm
     private var hasPendingRep = false
@@ -86,12 +90,14 @@ class RepCounterFromMachine {
         isJustLift: Boolean,
         stopAtTop: Boolean,
         isAMRAP: Boolean = false,
+        isEchoMode: Boolean = false,
     ) {
         this.warmupTarget = warmupTarget
         this.workingTarget = workingTarget
         this.isJustLift = isJustLift
         this.stopAtTop = stopAtTop
         this.isAMRAP = isAMRAP
+        this.isEchoMode = isEchoMode
 
         // Log RepCounter configuration
         logDebug("RepCounter.configure() called:")
@@ -100,6 +106,7 @@ class RepCounterFromMachine {
         logDebug("  isJustLift: $isJustLift")
         logDebug("  stopAtTop: $stopAtTop")
         logDebug("  isAMRAP: $isAMRAP")
+        logDebug("  isEchoMode: $isEchoMode")
     }
 
     fun reset() {
@@ -477,6 +484,37 @@ class RepCounterFromMachine {
         else if (repsSetCount == 0 && repsRomCount == 0 && warmupReps < warmupTarget && upDelta > 0) {
             warmupReps = (warmupReps + upDelta).coerceAtMost(warmupTarget)
             logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")
+
+            onRepEvent?.invoke(
+                RepEvent(
+                    type = RepType.WARMUP_COMPLETED,
+                    warmupCount = warmupReps,
+                    workingCount = workingReps,
+                ),
+            )
+
+            if (warmupReps >= warmupTarget) {
+                onRepEvent?.invoke(
+                    RepEvent(
+                        type = RepType.WARMUP_COMPLETE,
+                        warmupCount = warmupReps,
+                        workingCount = workingReps,
+                    ),
+                )
+            }
+        }
+        // Issue #553: ECHO MODE PERMISSIVE WARMUP — When the Vitruvian V-Form
+        // firmware's heuristic pipeline drops the rep event (because the user's
+        // stroke falls outside the strict concentric timing window derived from
+        // the Echo level), both repsRomCount and repsSetCount stay at 0 even
+        // though the user has completed reps. The directional up counter does
+        // still increment for real motion. In Echo mode, trust the up counter
+        // as a warm-up escape hatch so the user does not get stuck on
+        // "Warm Up 1/3" forever. Only active during warm-up so we never affect
+        // working-rep counting (which the machine reports via repsSetCount).
+        else if (isEchoMode && warmupReps < warmupTarget && upDelta > 0) {
+            warmupReps = (warmupReps + upDelta).coerceAtMost(warmupTarget)
+            logDebug("📈 ECHO WARMUP FALLBACK (Issue #553): Warmup rep $warmupReps from up counter (firmware heuristic dropped repsRomCount)")
 
             onRepEvent?.invoke(
                 RepEvent(
