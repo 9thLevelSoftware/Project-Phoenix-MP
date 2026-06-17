@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,9 @@ import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -86,6 +90,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     val workoutStreak by viewModel.workoutStreak.collectAsState()
     val recentSessions by viewModel.allWorkoutSessions.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
+    val scope = rememberCoroutineScope()
 
     val cycleRepository: TrainingCycleRepository = koinInject()
     val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
@@ -105,6 +110,16 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
         // other production caller of `checkAndAutoAdvance` — that is exactly why the reporter's
         // tap-Cycles-then-back workaround refreshed the banner.
         cycleProgress = activeCycle?.let { cycle -> loadHomeCycleProgress(cycleRepository, cycle) }
+    }
+
+    // Parity with TrainingCyclesScreen: refresh the banner while Home stays visible so a
+    // midnight rollover advances the cycle day without requiring a tab switch.
+    LaunchedEffect(activeCycle?.id) {
+        val cycle = activeCycle ?: return@LaunchedEffect
+        while (true) {
+            delay(60_000L)
+            cycleProgress = loadHomeCycleProgress(cycleRepository, cycle)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -141,17 +156,25 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
         null
     }
 
+    fun navigateToSetReadyAfterCycleLoad(request: CycleStartRequest) {
+        viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
+        scope.launch {
+            // Issue #541 parity: loadRoutineFromCycle is async (PR% resolution), so wait for
+            // the engine's loadedRoutine before enterSetReady — otherwise it returns early and
+            // SetReadyScreen renders blank with stale BLE parameters.
+            viewModel.loadedRoutine.first { it?.id == request.routineId }
+            viewModel.enterSetReady(0, 0)
+            navController.navigate(NavigationRoutes.SetReady.route)
+        }
+    }
+
     fun startCycleWorkout(request: CycleStartRequest) {
         if (viewModel.hasResumableProgress(request.routineId)) {
             pendingCycleStart = request
             showResumeDialog = true
         } else {
             viewModel.ensureConnection(
-                onConnected = {
-                    viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
-                    viewModel.startWorkout()
-                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
-                },
+                onConnected = { navigateToSetReadyAfterCycleLoad(request) },
                 onFailed = { /* Error shown via StateFlow */ },
             )
         }
@@ -249,10 +272,13 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                     progressInfo = info,
                     onResume = {
                         showResumeDialog = false
+                        // Issue #541 parity: resume via SetReady at the saved (ex, set) position.
                         viewModel.ensureConnection(
                             onConnected = {
-                                viewModel.startWorkout()
-                                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                val exIdx = viewModel.currentExerciseIndex.value
+                                val setIdx = viewModel.currentSetIndex.value
+                                viewModel.enterSetReady(exIdx, setIdx)
+                                navController.navigate(NavigationRoutes.SetReady.route)
                             },
                             onFailed = { /* Error shown via StateFlow */ },
                         )
@@ -262,11 +288,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                         showResumeDialog = false
                         if (request != null) {
                             viewModel.ensureConnection(
-                                onConnected = {
-                                    viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
-                                    viewModel.startWorkout()
-                                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
-                                },
+                                onConnected = { navigateToSetReadyAfterCycleLoad(request) },
                                 onFailed = { /* Error shown via StateFlow */ },
                             )
                         }

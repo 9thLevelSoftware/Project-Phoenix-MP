@@ -159,6 +159,66 @@ class DWSMRoutineFlowTest {
     }
 
     @Test
+    fun enterSetReady_beforeAsyncLoadCompletes_isNoOp() = runTest {
+        val harness = DWSMTestHarness(this)
+        val exercise = TestFixtures.benchPress
+        val routine = Routine(
+            id = "routine-home-race",
+            name = "Home Cycle Start Race",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-home-race",
+                    exercise = exercise,
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 5f,
+                    setWeightsPerCableKg = listOf(5f),
+                    programMode = ProgramMode.OldSchool,
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 80,
+                ),
+            ),
+        )
+        harness.fakeExerciseRepo.addExercise(exercise)
+        harness.fakePRRepo.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = exercise.id!!,
+                exerciseName = exercise.name,
+                weightPerCableKg = 50f,
+                reps = 6,
+                oneRepMax = 60f,
+                timestamp = 1_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 300f,
+            ),
+        )
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        harness.dwsm.enterSetReady(0, 0)
+
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.loadedRoutine.value,
+            "enterSetReady must not run before async loadRoutine completes",
+        )
+        assertTrue(
+            harness.dwsm.coordinator.routineFlowState.value !is RoutineFlowState.SetReady,
+            "SetReady state must not be entered while loadedRoutine is null",
+        )
+
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+
+        val setReady = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(setReady)
+        assertEquals(40f, setReady.adjustedWeight, "Resolved PR% weight should apply after load completes")
+        harness.cleanup()
+    }
+
+    @Test
     fun loadRoutine_percentOfPRUsesRoutineProfile() = runTest {
         val harness = DWSMTestHarness(this)
         val exercise = TestFixtures.benchPress
