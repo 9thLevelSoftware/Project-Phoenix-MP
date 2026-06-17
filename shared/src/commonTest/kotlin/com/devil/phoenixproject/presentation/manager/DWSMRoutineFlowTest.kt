@@ -16,6 +16,7 @@ import com.devil.phoenixproject.testutil.WorkoutStateFixtures
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.advanceTimeBy
@@ -170,11 +171,15 @@ class DWSMRoutineFlowTest {
 
         harness.dwsm.loadRoutineFromCycle(routine.id, "cycle-1", 1)
 
-        val staleParams = harness.dwsm.coordinator.workoutParameters.value
         assertEquals(
-            5f,
-            staleParams.weightPerCableKg,
-            "Before async resolution completes, stale snapshot weight should remain",
+            null,
+            harness.dwsm.coordinator.loadedRoutine.value,
+            "loadRoutineFromCycle is async; loadedRoutine must not be set before coroutine completes",
+        )
+        assertNotEquals(
+            40f,
+            harness.dwsm.coordinator.workoutParameters.value.weightPerCableKg,
+            "PR% weights must not be resolved before the async load completes",
         )
 
         advanceUntilIdle()
@@ -185,6 +190,7 @@ class DWSMRoutineFlowTest {
             resolvedParams.weightPerCableKg,
             "After loadRoutineFromCycle completes, PR% weights must be resolved before workout start",
         )
+        assertNotNull(harness.dwsm.coordinator.loadedRoutine.value)
         assertEquals("cycle-1", harness.dwsm.coordinator.activeCycleId)
         assertEquals(1, harness.dwsm.coordinator.activeCycleDayNumber)
         harness.cleanup()
