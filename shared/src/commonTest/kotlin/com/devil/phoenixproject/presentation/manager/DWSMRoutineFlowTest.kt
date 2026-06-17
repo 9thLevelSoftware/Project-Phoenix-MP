@@ -1051,4 +1051,386 @@ class DWSMRoutineFlowTest {
 
         harness.cleanup()
     }
+
+    // ===== G. Same-exercise continuation (Issue #572) =====
+
+    /**
+     * Build a routine that mirrors the user's "Legs" report from issue #572:
+     *  - Lunge (2x8 OldSchool)
+     *  - Lunge (1x8 TUT)             <- same exercise, different mode
+     *  - Squat   (2x8 OldSchool)
+     *  - Squat   (1x8 TUT)           <- same exercise, different mode
+     *  - Calf Raise (1x30 OldSchool) <- different exercise
+     */
+    private fun createLegsStyleRoutine(): Routine {
+        val lunge = TestFixtures.squat.copy(name = "Lunge", id = "lunge-572")
+        val lungeTut = TestFixtures.squat.copy(name = "Lunge", id = "lunge-572")
+        val squat = TestFixtures.squat.copy(name = "Squat", id = "squat-572")
+        val squatTut = TestFixtures.squat.copy(name = "Squat", id = "squat-572")
+        val calfRaise = TestFixtures.squat.copy(name = "Calf Raise", id = "calf-572")
+        return Routine(
+            id = "test-legs-routine-572",
+            name = "Legs (Issue #572)",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-lunge-1",
+                    exercise = lunge,
+                    orderIndex = 0,
+                    setReps = listOf(8, 8),
+                    setWeightsPerCableKg = listOf(40f, 40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.OldSchool,
+                ),
+                RoutineExercise(
+                    id = "re-lunge-2-tut",
+                    exercise = lungeTut,
+                    orderIndex = 1,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.TUT,
+                ),
+                RoutineExercise(
+                    id = "re-squat-1",
+                    exercise = squat,
+                    orderIndex = 2,
+                    setReps = listOf(8, 8),
+                    setWeightsPerCableKg = listOf(60f, 60f),
+                    weightPerCableKg = 60f,
+                    programMode = ProgramMode.OldSchool,
+                ),
+                RoutineExercise(
+                    id = "re-squat-2-tut",
+                    exercise = squatTut,
+                    orderIndex = 3,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(60f),
+                    weightPerCableKg = 60f,
+                    programMode = ProgramMode.TUT,
+                ),
+                RoutineExercise(
+                    id = "re-calf",
+                    exercise = calfRaise,
+                    orderIndex = 4,
+                    setReps = listOf(30),
+                    setWeightsPerCableKg = listOf(20f),
+                    weightPerCableKg = 20f,
+                    programMode = ProgramMode.OldSchool,
+                ),
+            ),
+        )
+    }
+
+    /**
+     * Issue #572 acceptance criterion #1: getNextStep returns (currentExIndex, currentSetIndex + 1)
+     * while the current entry's setReps still have unrun sets, even if the next entry is the
+     * same exercise. The 0->1 advance inside entry #0 (Lunge 2x8) must stay in entry #0.
+     */
+    @Test
+    fun sameExercise_getNextStep_advancesWithinEntryWhenUnrunSetsRemain() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createLegsStyleRoutine()
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        val nextStep = harness.routineFlowManager.getNextStep(routine, currentExIndex = 0, currentSetIndex = 0)
+        assertNotNull(nextStep, "Should have a next step from set 0 of entry #0")
+        assertEquals(
+            0,
+            nextStep.first,
+            "Should stay in entry #0 (Lunge 2x8) for set 1, not jump to entry #1 (Lunge TUT)",
+        )
+        assertEquals(
+            1,
+            nextStep.second,
+            "Should advance to set 1 of entry #0",
+        )
+        harness.cleanup()
+    }
+
+    /**
+     * Issue #572 acceptance criterion #2: with the user's exact Legs-style routine, walking
+     * getNextStep from set 0 of #0 (Lunge 2x8 OldSchool) produces the sequence
+     * (0, 1) -> (1, 0) -> (2, 0) [next non-skipped different exercise: Squat].
+     * The 0->1 transition stays inside #0; the 0 of #0 -> 0 of #1 is the same-exercise
+     * boundary (Lunge OldSchool -> Lunge TUT); the 0 of #1 -> 0 of #2 is a true exercise
+     * change (Lunge -> Squat).
+     */
+    @Test
+    fun sameExercise_getNextStep_legsRoutineFullSequence() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createLegsStyleRoutine()
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        // Start: (0, 0)
+        // After set 0 of #0 -> (0, 1) (still inside Lunge 2x8)
+        val s1 = harness.routineFlowManager.getNextStep(routine, 0, 0)
+        assertNotNull(s1)
+        assertEquals(0 to 1, s1, "After set 0 of Lunge 2x8 -> set 1 of Lunge 2x8")
+
+        // After set 1 of #0 -> (1, 0) (Lunge 2x8 -> Lunge 1x8 TUT, same-exercise boundary)
+        val s2 = harness.routineFlowManager.getNextStep(routine, 0, 1)
+        assertNotNull(s2)
+        assertEquals(1 to 0, s2, "After set 1 of Lunge 2x8 -> set 0 of Lunge 1x8 TUT")
+
+        // After set 0 of #1 -> (2, 0) (Lunge TUT -> Squat, true exercise change)
+        val s3 = harness.routineFlowManager.getNextStep(routine, 1, 0)
+        assertNotNull(s3)
+        assertEquals(2 to 0, s3, "After set 0 of Lunge TUT -> set 0 of Squat (different exercise)")
+
+        // After set 0 of #2 -> (2, 1) (inside Squat 2x8)
+        val s4 = harness.routineFlowManager.getNextStep(routine, 2, 0)
+        assertNotNull(s4)
+        assertEquals(2 to 1, s4, "After set 0 of Squat 2x8 -> set 1 of Squat 2x8")
+
+        // After set 1 of #2 -> (3, 0) (Squat OldSchool -> Squat TUT, same-exercise boundary)
+        val s5 = harness.routineFlowManager.getNextStep(routine, 2, 1)
+        assertNotNull(s5)
+        assertEquals(3 to 0, s5, "After set 1 of Squat 2x8 -> set 0 of Squat 1x8 TUT")
+
+        // After set 0 of #3 -> (4, 0) (Squat TUT -> Calf Raise, true exercise change)
+        val s6 = harness.routineFlowManager.getNextStep(routine, 3, 0)
+        assertNotNull(s6)
+        assertEquals(4 to 0, s6, "After set 0 of Squat TUT -> set 0 of Calf Raise")
+
+        // After set 0 of #4 -> null (end of routine)
+        val s7 = harness.routineFlowManager.getNextStep(routine, 4, 0)
+        assertEquals(null, s7, "After last set of last entry -> null")
+        harness.cleanup()
+    }
+
+    /**
+     * Issue #572 acceptance criterion #5: a routine with NO adjacent same-exercise entries
+     * (existing fixture) must produce identical getNextStep outputs to the pre-fix code.
+     * The 0->1 advance inside an entry stays in the entry, and the cross-entry advance
+     * jumps to the next entry's set 0 just like before the fix.
+     */
+    @Test
+    fun sameExercise_getNextStep_noAdjacentSameExercises_behavesAsBefore() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(
+            exerciseCount = 3,
+            setsPerExercise = 3,
+            weightKg = 25f,
+            repsPerSet = 10,
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        // Internal-to-entry: (0, 0) -> (0, 1)
+        val internal = harness.routineFlowManager.getNextStep(routine, 0, 0)
+        assertNotNull(internal)
+        assertEquals(0 to 1, internal)
+
+        // Cross-entry: (0, 2) [last set of entry 0] -> (1, 0)
+        val cross = harness.routineFlowManager.getNextStep(routine, 0, 2)
+        assertNotNull(cross)
+        assertEquals(1 to 0, cross)
+
+        // Cross-entry from a middle entry: (1, 2) -> (2, 0)
+        val middle = harness.routineFlowManager.getNextStep(routine, 1, 2)
+        assertNotNull(middle)
+        assertEquals(2 to 0, middle)
+
+        harness.cleanup()
+    }
+
+    /**
+     * Issue #572 acceptance criterion #5b: when two adjacent entries share the same name
+     * but have different non-null ids (a malformed-but-possible state, e.g. an old routine
+     * edited with two exercise-library entries of the same display name), the same-exercise
+     * detection must NOT fire and the routine should advance to the next entry normally.
+     */
+    @Test
+    fun sameExercise_getNextStep_differentIdsSameName_doesNotMerge() = runTest {
+        val harness = DWSMTestHarness(this)
+        val lungeA = TestFixtures.squat.copy(name = "Lunge", id = "lunge-A")
+        val lungeB = TestFixtures.squat.copy(name = "Lunge", id = "lunge-B")
+        val routine = Routine(
+            id = "test-572-different-ids",
+            name = "Lunge A then Lunge B (different ids)",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-lunge-A",
+                    exercise = lungeA,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.OldSchool,
+                ),
+                RoutineExercise(
+                    id = "re-lunge-B",
+                    exercise = lungeB,
+                    orderIndex = 1,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.TUT,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        // Same name but different ids -> NOT same exercise.
+        // After set 0 of entry #0, advance to set 0 of entry #1 as before the fix.
+        val next = harness.routineFlowManager.getNextStep(routine, 0, 0)
+        assertNotNull(next)
+        assertEquals(1 to 0, next, "Different ids with same name must not be treated as same exercise")
+
+        // And isSameExercise() agrees.
+        assertEquals(
+            false,
+            harness.routineFlowManager.isSameExercise(routine.exercises[0], routine.exercises[1]),
+            "isSameExercise must be false when both ids are present and differ",
+        )
+        harness.cleanup()
+    }
+
+    /**
+     * Issue #572 acceptance criterion #5c: same-name entries with one or both ids null
+     * (legacy / unlinked exercise data) must still be detected as same-exercise.
+     */
+    @Test
+    fun sameExercise_isSameExercise_handlesNullIdsGracefully() = runTest {
+        val harness = DWSMTestHarness(this)
+        // Two same-name entries where the second has id=null (legacy link)
+        val namedA = TestFixtures.squat.copy(name = "Lunge", id = "lunge-572")
+        val namedB = TestFixtures.squat.copy(name = "Lunge", id = null)
+        val routine = Routine(
+            id = "test-572-null-ids",
+            name = "Lunge (with id) -> Lunge (id=null)",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-A",
+                    exercise = namedA,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.OldSchool,
+                ),
+                RoutineExercise(
+                    id = "re-B",
+                    exercise = namedB,
+                    orderIndex = 1,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.TUT,
+                ),
+            ),
+        )
+        assertEquals(
+            true,
+            harness.routineFlowManager.isSameExercise(routine.exercises[0], routine.exercises[1]),
+            "isSameExercise must be true when names match and at least one id is null",
+        )
+
+        // Both ids null: still same-exercise (names match)
+        val bothNull = TestFixtures.squat.copy(name = "Lunge", id = null)
+        val routineBothNull = Routine(
+            id = "test-572-both-null",
+            name = "Lunge (id=null) -> Lunge (id=null)",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-A-null",
+                    exercise = bothNull,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.OldSchool,
+                ),
+                RoutineExercise(
+                    id = "re-B-null",
+                    exercise = bothNull,
+                    orderIndex = 1,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.TUT,
+                ),
+            ),
+        )
+        assertEquals(
+            true,
+            harness.routineFlowManager.isSameExercise(routineBothNull.exercises[0], routineBothNull.exercises[1]),
+            "isSameExercise must be true when names match and both ids are null",
+        )
+        harness.cleanup()
+    }
+
+    /**
+     * Issue #572 acceptance criterion #6: superset behaviour is unchanged. A superset
+     * containing two same-exercise entries must continue to interleave per the existing
+     * superset branch (no regression to issue-334 / DWSMRoutineFlowTest).
+     */
+    @Test
+    fun sameExercise_supersetBranchUnchangedForSameExerciseEntries() = runTest {
+        val harness = DWSMTestHarness(this)
+        // Build a superset of two same-name entries with different ids (so they are NOT
+        // same-exercise per isSameExercise). The superset branch should interleave them.
+        val lungeA = TestFixtures.squat.copy(name = "Lunge", id = "lunge-A")
+        val lungeB = TestFixtures.squat.copy(name = "Lunge", id = "lunge-B")
+        val supersetId = "ss-572"
+        val routine = Routine(
+            id = "test-572-superset",
+            name = "Lunge superset (different ids)",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-A",
+                    exercise = lungeA,
+                    orderIndex = 0,
+                    setReps = listOf(8, 8, 8),
+                    setWeightsPerCableKg = listOf(40f, 40f, 40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.OldSchool,
+                    supersetId = supersetId,
+                    orderInSuperset = 0,
+                ),
+                RoutineExercise(
+                    id = "re-B",
+                    exercise = lungeB,
+                    orderIndex = 1,
+                    setReps = listOf(8, 8, 8),
+                    setWeightsPerCableKg = listOf(50f, 50f, 50f),
+                    weightPerCableKg = 50f,
+                    programMode = ProgramMode.OldSchool,
+                    supersetId = supersetId,
+                    orderInSuperset = 1,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        // Superset interleaves A1 -> B1 -> A2 -> B2. From (0, 0) we expect (1, 0).
+        val s1 = harness.routineFlowManager.getNextStep(routine, 0, 0)
+        assertNotNull(s1)
+        assertEquals(1 to 0, s1, "Superset set 0 -> next member set 0")
+        val s2 = harness.routineFlowManager.getNextStep(routine, 1, 0)
+        assertNotNull(s2)
+        assertEquals(0 to 1, s2, "Superset set 0 of B -> set 1 of A")
+        harness.cleanup()
+    }
+
+    /**
+     * Issue #572: isSameExercise is false for genuinely different adjacent exercises.
+     */
+    @Test
+    fun sameExercise_isSameExercise_falseForDifferentExercises() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine()
+        val a = routine.exercises[0]
+        val b = routine.exercises[1]
+        assertEquals(
+            false,
+            harness.routineFlowManager.isSameExercise(a, b),
+            "Adjacent different exercises (e.g. Bench Press -> Bicep Curl) must not be same-exercise",
+        )
+        harness.cleanup()
+    }
 }
