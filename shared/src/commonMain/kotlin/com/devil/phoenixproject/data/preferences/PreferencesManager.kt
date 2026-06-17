@@ -364,6 +364,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     override suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
         val key = "$KEY_PREFIX_EXERCISE${defaults.exerciseId}"
         settings.putString(key, json.encodeToString(defaults))
+        settings.putBoolean(getEchoHardDefaultMigrationKey(defaults.exerciseId), true)
     }
 
     override suspend fun clearAllSingleExerciseDefaults() {
@@ -384,6 +385,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
     override suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(defaults))
+        settings.putBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, true)
     }
 
     override suspend fun clearJustLiftDefaults() {
@@ -406,7 +408,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         key: String,
         defaults: SingleExerciseDefaults,
     ): SingleExerciseDefaults {
-        val migrationKey = "$KEY_ECHO_HARD_DEFAULT_MIGRATION_EXERCISE_PREFIX$exerciseId"
+        val migrationKey = getEchoHardDefaultMigrationKey(exerciseId)
         if (settings.getBoolean(migrationKey, false)) return defaults
 
         settings.putBoolean(migrationKey, true)
@@ -416,6 +418,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         settings.putString(key, json.encodeToString(migrated))
         return migrated
     }
+
+    private fun getEchoHardDefaultMigrationKey(exerciseId: String): String =
+        "$KEY_ECHO_HARD_DEFAULT_MIGRATION_EXERCISE_PREFIX$exerciseId"
 
     override suspend fun setGamificationEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_GAMIFICATION_ENABLED, enabled)

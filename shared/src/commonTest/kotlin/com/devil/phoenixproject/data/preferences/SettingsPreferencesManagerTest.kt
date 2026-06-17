@@ -8,8 +8,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class SettingsPreferencesManagerTest {
+
+    private val legacyDefaultsJson = Json { encodeDefaults = true }
 
     @Test
     fun `loadPreferences removes legacy hud preset key`() {
@@ -44,13 +48,14 @@ class SettingsPreferencesManagerTest {
 
     @Test
     fun `saved Just Lift Hard default migrates once to issue 553 default`() = runTest {
-        val manager = SettingsPreferencesManager(MapSettings())
+        val settings = MapSettings()
+        val manager = SettingsPreferencesManager(settings)
         val hardDefaults = JustLiftDefaults(
             workoutModeId = 10,
             echoLevelValue = EchoLevel.HARD.levelValue,
         )
 
-        manager.saveJustLiftDefaults(hardDefaults)
+        settings.putString("just_lift_defaults", legacyDefaultsJson.encodeToString(hardDefaults))
 
         val migrated = manager.getJustLiftDefaults()
         assertEquals(EchoLevel.HARDER.levelValue, migrated.echoLevelValue)
@@ -64,11 +69,30 @@ class SettingsPreferencesManagerTest {
     }
 
     @Test
-    fun `saved single exercise Hard default migrates once to issue 553 default`() = runTest {
+    fun `new Just Lift Hard default saved after issue 553 migration is preserved`() = runTest {
         val manager = SettingsPreferencesManager(MapSettings())
+        val hardDefaults = JustLiftDefaults(
+            workoutModeId = 10,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
+
+        manager.saveJustLiftDefaults(hardDefaults)
+
+        val saved = manager.getJustLiftDefaults()
+        assertEquals(EchoLevel.HARD.levelValue, saved.echoLevelValue)
+        assertEquals(EchoLevel.HARD, saved.getEchoLevel())
+    }
+
+    @Test
+    fun `saved single exercise Hard default migrates once to issue 553 default`() = runTest {
+        val settings = MapSettings()
+        val manager = SettingsPreferencesManager(settings)
         val hardDefaults = singleExerciseDefaults(echoLevelValue = EchoLevel.HARD.levelValue)
 
-        manager.saveSingleExerciseDefaults(hardDefaults)
+        settings.putString(
+            "exercise_defaults_${hardDefaults.exerciseId}",
+            legacyDefaultsJson.encodeToString(hardDefaults),
+        )
 
         val migrated = manager.getSingleExerciseDefaults(hardDefaults.exerciseId) ?: error("Expected migrated defaults")
         assertEquals(EchoLevel.HARDER.levelValue, migrated.echoLevelValue)
@@ -79,6 +103,18 @@ class SettingsPreferencesManagerTest {
         val explicitlySavedHard = manager.getSingleExerciseDefaults(hardDefaults.exerciseId) ?: error("Expected saved defaults")
         assertEquals(EchoLevel.HARD.levelValue, explicitlySavedHard.echoLevelValue)
         assertEquals(EchoLevel.HARD, explicitlySavedHard.getEchoLevel())
+    }
+
+    @Test
+    fun `new single exercise Hard default saved after issue 553 migration is preserved`() = runTest {
+        val manager = SettingsPreferencesManager(MapSettings())
+        val hardDefaults = singleExerciseDefaults(echoLevelValue = EchoLevel.HARD.levelValue)
+
+        manager.saveSingleExerciseDefaults(hardDefaults)
+
+        val saved = manager.getSingleExerciseDefaults(hardDefaults.exerciseId) ?: error("Expected saved defaults")
+        assertEquals(EchoLevel.HARD.levelValue, saved.echoLevelValue)
+        assertEquals(EchoLevel.HARD, saved.getEchoLevel())
     }
 
     @Test

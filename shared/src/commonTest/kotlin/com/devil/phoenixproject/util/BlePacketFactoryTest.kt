@@ -597,7 +597,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `createEchoControl defaults match official app RepConfig defaults`() {
+    fun `createEchoControl HARD level matches official app RepConfig`() {
         val packet = BlePacketFactory.createEchoControl(EchoLevel.HARD)
 
         assertEquals(3.toByte(), packet[0x04], "default romRepCount")
