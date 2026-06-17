@@ -434,7 +434,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    "Increased concentric difficulty",
+                                    stringResource(Res.string.config_mode_tut_beast_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
