@@ -319,11 +319,11 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                         // is still null and SetReadyScreen would render blank.
                                         viewModel.ensureConnection(
                                             onConnected = {
-                                                viewModel.loadRoutineFromCycle(rid, cycleId, dayNumber)
                                                 scope.launch {
-                                                    viewModel.loadedRoutine.first { it?.id == rid }
-                                                    viewModel.enterSetReady(0, 0)
-                                                    navController.navigate(NavigationRoutes.SetReady.route)
+                                                    if (viewModel.loadRoutineFromCycleAsync(rid, cycleId, dayNumber)) {
+                                                        viewModel.enterSetReady(0, 0)
+                                                        navController.navigate(NavigationRoutes.SetReady.route)
+                                                    }
                                                 }
                                             },
                                             onFailed = { /* Error shown via StateFlow */ },
@@ -764,11 +764,16 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     pendingRoutineId?.let { rid ->
                         viewModel.ensureConnection(
                             onConnected = {
-                                viewModel.loadRoutineFromCycle(rid, pendingCycleId ?: "", pendingDayNumber)
                                 scope.launch {
-                                    viewModel.loadedRoutine.first { it?.id == rid }
-                                    viewModel.enterSetReady(0, 0)
-                                    navController.navigate(NavigationRoutes.SetReady.route)
+                                    if (viewModel.loadRoutineFromCycleAsync(
+                                            rid,
+                                            pendingCycleId ?: "",
+                                            pendingDayNumber,
+                                        )
+                                    ) {
+                                        viewModel.enterSetReady(0, 0)
+                                        navController.navigate(NavigationRoutes.SetReady.route)
+                                    }
                                 }
                             },
                             onFailed = { /* Error shown via StateFlow */ },

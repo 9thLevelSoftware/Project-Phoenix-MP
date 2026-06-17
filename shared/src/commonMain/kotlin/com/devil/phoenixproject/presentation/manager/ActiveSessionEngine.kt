@@ -126,6 +126,9 @@ class ActiveSessionEngine(
         /** Load a routine by object (delegates to RoutineFlowManager) */
         fun loadRoutine(routine: Routine)
 
+        /** Suspend until routine load and PR weight resolution complete */
+        suspend fun loadRoutineAsync(routine: Routine): Boolean
+
         /** Enter SetReady screen for a specific exercise/set */
         fun enterSetReady(exerciseIndex: Int, setIndex: Int)
 
@@ -1772,6 +1775,21 @@ class ActiveSessionEngine(
             Logger.d { "Loading routine from cycle: cycleId=$cycleId, dayNumber=$dayNumber" }
             flowDelegate?.loadRoutine(routine)
         }
+    }
+
+    /**
+     * Suspend version of [loadRoutineFromCycle] that completes only after PR-based
+     * weight resolution finishes. Callers must await this before enterSetReady/startWorkout.
+     */
+    suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int): Boolean {
+        val routine = coordinator._routines.value.find { it.id == routineId } ?: run {
+            Logger.w { "Routine not found for cycle load: $routineId" }
+            return false
+        }
+        coordinator.activeCycleId = cycleId
+        coordinator.activeCycleDayNumber = dayNumber
+        Logger.d { "Loading routine from cycle (async): cycleId=$cycleId, dayNumber=$dayNumber" }
+        return flowDelegate?.loadRoutineAsync(routine) ?: false
     }
 
     fun clearCycleContext() {
