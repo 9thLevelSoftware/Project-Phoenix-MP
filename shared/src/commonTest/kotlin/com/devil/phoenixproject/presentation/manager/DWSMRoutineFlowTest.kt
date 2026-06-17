@@ -129,6 +129,63 @@ class DWSMRoutineFlowTest {
     }
 
     @Test
+    fun loadRoutineFromCycleAsync_resolvesWeightsBeforeReturning() = runTest {
+        val harness = DWSMTestHarness(this)
+        val exercise = TestFixtures.benchPress
+        val routine = Routine(
+            id = "routine-cycle-pr",
+            name = "Cycle PR Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-cycle-pr",
+                    exercise = exercise,
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 5f,
+                    setWeightsPerCableKg = listOf(5f),
+                    programMode = ProgramMode.OldSchool,
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 80,
+                    setWeightsPercentOfPR = listOf(80),
+                ),
+            ),
+        )
+        harness.fakeExerciseRepo.addExercise(exercise)
+        harness.fakePRRepo.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = exercise.id!!,
+                exerciseName = exercise.name,
+                weightPerCableKg = 50f,
+                reps = 6,
+                oneRepMax = 60f,
+                timestamp = 1_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 300f,
+            ),
+        )
+        harness.dwsm.coordinator._routines.value = listOf(routine)
+        advanceUntilIdle()
+
+        val loaded = harness.dwsm.loadRoutineFromCycleAsync(
+            routineId = routine.id,
+            cycleId = "cycle-123",
+            dayNumber = 2,
+        )
+
+        assertTrue(loaded, "loadRoutineFromCycleAsync should succeed when routine exists")
+        assertEquals("cycle-123", harness.dwsm.coordinator.activeCycleId)
+        assertEquals(2, harness.dwsm.coordinator.activeCycleDayNumber)
+        assertEquals(
+            40f,
+            harness.dwsm.coordinator.workoutParameters.value.weightPerCableKg,
+            "Cycle load must finish PR% resolution before returning",
+        )
+        harness.cleanup()
+    }
+
+    @Test
     fun loadRoutine_isAsync_stateNotImmediatelyAvailable() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = WorkoutStateFixtures.createTestRoutine()

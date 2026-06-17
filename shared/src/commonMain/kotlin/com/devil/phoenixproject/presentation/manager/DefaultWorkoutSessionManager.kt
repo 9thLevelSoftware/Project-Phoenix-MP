@@ -692,6 +692,18 @@ class DefaultWorkoutSessionManager(
     // ===== Training Cycles — delegated to ActiveSessionEngine =====
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = activeSessionEngine.loadRoutineFromCycle(routineId, cycleId, dayNumber)
+
+    /**
+     * Suspend until a cycle routine is fully loaded, including PR% weight resolution.
+     * Use instead of [loadRoutineFromCycle] when starting a workout immediately afterward.
+     */
+    suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int): Boolean {
+        val routine = coordinator._routines.value.find { it.id == routineId } ?: return false
+        coordinator.activeCycleId = cycleId
+        coordinator.activeCycleDayNumber = dayNumber
+        return routineFlowManager.loadRoutineAsync(routine)
+    }
+
     fun clearCycleContext() = activeSessionEngine.clearCycleContext()
 
     // ===== Rest/Flow Control — delegated to ActiveSessionEngine =====

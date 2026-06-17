@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,6 +69,7 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.coroutines.launch
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -96,6 +98,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     var showResumeDialog by remember { mutableStateOf(false) }
     var pendingCycleStart by remember { mutableStateOf<CycleStartRequest?>(null) }
     var showOneRepMaxComingSoonDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(activeCycle) {
         // Issue #549: route the Home banner through `checkAndAutoAdvance` so the cycle banner
@@ -148,9 +151,16 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
         } else {
             viewModel.ensureConnection(
                 onConnected = {
-                    viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
-                    viewModel.startWorkout()
-                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                    scope.launch {
+                        val loaded = viewModel.loadRoutineFromCycleAsync(
+                            request.routineId,
+                            request.cycleId,
+                            request.dayNumber,
+                        )
+                        if (!loaded) return@launch
+                        viewModel.enterSetReady(0, 0)
+                        navController.navigate(NavigationRoutes.SetReady.route)
+                    }
                 },
                 onFailed = { /* Error shown via StateFlow */ },
             )
@@ -251,8 +261,10 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                         showResumeDialog = false
                         viewModel.ensureConnection(
                             onConnected = {
-                                viewModel.startWorkout()
-                                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                val exIdx = viewModel.currentExerciseIndex.value
+                                val setIdx = viewModel.currentSetIndex.value
+                                viewModel.enterSetReady(exIdx, setIdx)
+                                navController.navigate(NavigationRoutes.SetReady.route)
                             },
                             onFailed = { /* Error shown via StateFlow */ },
                         )
@@ -263,9 +275,16 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                         if (request != null) {
                             viewModel.ensureConnection(
                                 onConnected = {
-                                    viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
-                                    viewModel.startWorkout()
-                                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                    scope.launch {
+                                        val loaded = viewModel.loadRoutineFromCycleAsync(
+                                            request.routineId,
+                                            request.cycleId,
+                                            request.dayNumber,
+                                        )
+                                        if (!loaded) return@launch
+                                        viewModel.enterSetReady(0, 0)
+                                        navController.navigate(NavigationRoutes.SetReady.route)
+                                    }
                                 },
                                 onFailed = { /* Error shown via StateFlow */ },
                             )

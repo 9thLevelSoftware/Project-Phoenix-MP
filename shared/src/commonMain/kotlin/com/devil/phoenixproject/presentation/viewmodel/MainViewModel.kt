@@ -460,6 +460,11 @@ class MainViewModel constructor(
     // ===== Training Cycle Delegation =====
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = workoutSessionManager.loadRoutineFromCycle(routineId, cycleId, dayNumber)
+
+    /** Suspend until cycle routine load (including PR% resolution) completes before starting a workout. */
+    suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int): Boolean =
+        workoutSessionManager.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber)
+
     fun clearCycleContext() = workoutSessionManager.clearCycleContext()
 
     // ===== Top Bar State (stays here - pure UI scaffolding) =====
