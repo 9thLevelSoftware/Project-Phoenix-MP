@@ -397,6 +397,16 @@ class RoutineFlowManager(
             return currentExIndex to (currentSetIndex + 1)
         }
 
+        // Issue #572: when the current entry's setReps are exhausted, advance to the next
+        // non-skipped entry. If that entry references the same physical exercise as the
+        // current one (e.g. adjacent "Sumo Belt Squat 2x8 OldSchool" -> "Sumo Belt Squat 1x8
+        // TUT" entries that the user intends as a single logical movement), the consumer
+        // (ActiveSessionEngine.startNextSetOrExercise) needs to know it's a same-exercise
+        // continuation so it can carry per-set programMode forward without sending a fresh
+        // 0x04 BLE CONFIG frame (which would de-energise the cable on a mode change).
+        // We return the (nextExIndex, 0) pair unchanged so the existing navigation flow
+        // is preserved; the same-exercise signal is computed in one place via
+        // [isSameExercise] which [ActiveSessionEngine] consults directly.
         for (nextExIndex in (currentExIndex + 1) until routine.exercises.size) {
             if (nextExIndex !in skippedIndices) {
                 return nextExIndex to 0
@@ -404,6 +414,26 @@ class RoutineFlowManager(
         }
 
         return null
+    }
+
+    /**
+     * Issue #572: detect whether two routine entries refer to the same physical exercise,
+     * so adjacent same-name entries (e.g. "Sumo Belt Squat 2x8 OldSchool" followed by
+     * "Sumo Belt Squat 1x8 TUT") can be treated as a single logical movement with
+     * concatenated setReps and per-set programMode.
+     *
+     * Matching rules (mirrors the RCA's acceptance criteria):
+     * - Names must match (case-sensitive, as stored).
+     * - If both entries carry a non-null [Exercise.id], the ids must also match.
+     * - If either id is null, the id check is skipped (legacy / unlinked exercises).
+     */
+    internal fun isSameExercise(a: RoutineExercise, b: RoutineExercise): Boolean {
+        if (a.exercise.name != b.exercise.name) return false
+        val aid = a.exercise.id
+        val bid = b.exercise.id
+        // When both ids are present, they must agree. When either is null, the name match
+        // is the only signal we have, and that is sufficient.
+        return aid == null || bid == null || aid == bid
     }
 
     /**
