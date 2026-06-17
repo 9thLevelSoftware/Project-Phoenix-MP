@@ -2,7 +2,9 @@ package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.toWorkoutMode
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -1666,5 +1668,35 @@ class BlePacketFactoryTest {
         assertEquals((-260).toShort(), readShortLE(packet, 0x48), "JustLift preserves OldSchool ecc.up.minMmS")
         assertEquals(0.0f, readFloatLE(packet, 0x4C), "JustLift preserves OldSchool ecc.up.ramp")
         assertEquals(40.0f, readFloatLE(packet, 0x58), "JustLift targetWeight uses selected weight")
+    }
+
+    // ========== Issue #538: TUT/Beast Persistence Round-Trip Tests ==========
+
+    @Test
+    fun `ProgramMode TUT and TUTBeast round-trip through modeValue and syncString`() {
+        // Verify the persistence round-trip: ProgramMode -> modeValue -> ProgramMode
+        assertEquals(3, ProgramMode.TUT.modeValue, "TUT modeValue")
+        assertEquals(4, ProgramMode.TUTBeast.modeValue, "TUTBeast modeValue")
+
+        assertEquals(ProgramMode.TUT, ProgramMode.fromValue(3), "fromValue(3) == TUT")
+        assertEquals(ProgramMode.TUTBeast, ProgramMode.fromValue(4), "fromValue(4) == TUTBeast")
+
+        // Verify sync wire format
+        assertEquals("TUT", ProgramMode.TUT.toSyncString(), "TUT sync string")
+        assertEquals("TUT_BEAST", ProgramMode.TUTBeast.toSyncString(), "TUTBeast sync string")
+        assertEquals(ProgramMode.TUT, ProgramMode.fromSyncString("TUT"), "fromSyncString TUT")
+        assertEquals(ProgramMode.TUTBeast, ProgramMode.fromSyncString("TUT_BEAST"), "fromSyncString TUT_BEAST")
+    }
+
+    @Test
+    fun `WorkoutMode TUT and TUTBeast round-trip through ProgramMode`() {
+        // Verify UI mode -> protocol mode -> UI mode round-trip
+        val tutProgram = WorkoutMode.TUT.toProgramMode()
+        assertEquals(ProgramMode.TUT, tutProgram, "TUT -> ProgramMode.TUT")
+        assertEquals(WorkoutMode.TUT, tutProgram.toWorkoutMode(), "ProgramMode.TUT -> WorkoutMode.TUT")
+
+        val beastProgram = WorkoutMode.TUTBeast.toProgramMode()
+        assertEquals(ProgramMode.TUTBeast, beastProgram, "TUTBeast -> ProgramMode.TUTBeast")
+        assertEquals(WorkoutMode.TUTBeast, beastProgram.toWorkoutMode(), "ProgramMode.TUTBeast -> WorkoutMode.TUTBeast")
     }
 }
