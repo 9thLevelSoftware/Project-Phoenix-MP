@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.withPlatformLock
 import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,12 +90,19 @@ class SyncTriggerManager(
      * Respects throttle/backoff to avoid excessive sync attempts.
      */
     suspend fun onAppForeground() {
-        Logger.d { "SyncTrigger: App foreground, checking if sync needed" }
-        syncHealthBodyWeightFromConnectedPlatform()
-        if (syncManager.isAuthenticated.value) {
-            syncManager.refreshPremiumStatusFromServer()
+        try {
+            Logger.d { "SyncTrigger: App foreground, checking if sync needed" }
+            syncHealthBodyWeightFromConnectedPlatform()
+            if (syncManager.isAuthenticated.value) {
+                syncManager.refreshPremiumStatusFromServer()
+            }
+            attemptSync(bypassThrottle = false)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Logger.e(e) { "SyncTrigger: onAppForeground failed" }
+            onSyncFailure(e)
         }
-        attemptSync(bypassThrottle = false)
     }
 
     private suspend fun syncHealthBodyWeightFromConnectedPlatform() {
