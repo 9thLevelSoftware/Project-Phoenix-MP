@@ -140,10 +140,12 @@ class SqlDelightAssessmentRepository(
             "Assessment result saved for exercise $exerciseName (1RM: ${estimatedOneRepMaxKg}kg)"
         }
 
-        // 3. Update exercise 1RM (prefer user override if provided)
-        val finalOneRepMax = userOverrideKg ?: estimatedOneRepMaxKg
-        exerciseRepository.updateOneRepMax(exerciseId, finalOneRepMax)
-        Logger.d { "Exercise 1RM updated: $exerciseName -> ${finalOneRepMax}kg" }
+        // 3. Update exercise 1RM (prefer user override if provided).
+        // Assessment estimates are TOTAL weight (both cables); Exercise.oneRepMaxKg is per-cable.
+        val finalOneRepMaxTotal = userOverrideKg ?: estimatedOneRepMaxKg
+        val finalOneRepMaxPerCable = finalOneRepMaxTotal / 2f
+        exerciseRepository.updateOneRepMax(exerciseId, finalOneRepMaxPerCable)
+        Logger.d { "Exercise 1RM updated: $exerciseName -> ${finalOneRepMaxPerCable}kg per cable" }
 
         sessionId
     }

@@ -460,6 +460,8 @@ class MainViewModel constructor(
     // ===== Training Cycle Delegation =====
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = workoutSessionManager.loadRoutineFromCycle(routineId, cycleId, dayNumber)
+    suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int) =
+        workoutSessionManager.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber)
     fun clearCycleContext() = workoutSessionManager.clearCycleContext()
 
     // ===== Top Bar State (stays here - pure UI scaffolding) =====

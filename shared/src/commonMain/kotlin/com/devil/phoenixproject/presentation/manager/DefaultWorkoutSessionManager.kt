@@ -268,6 +268,7 @@ class DefaultWorkoutSessionManager(
         // which has access to RoutineFlowManager's internal members.
         activeSessionEngine.flowDelegate = object : ActiveSessionEngine.WorkoutFlowDelegate {
             override fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
+            override suspend fun loadRoutineAsync(routine: Routine): Boolean = routineFlowManager.loadRoutineAsync(routine)
             override fun enterSetReady(exerciseIndex: Int, setIndex: Int) = routineFlowManager.enterSetReady(exerciseIndex, setIndex)
             override fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = routineFlowManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
             override fun skipCurrentExerciseAndEnterNextStep(): Boolean = routineFlowManager.skipCurrentExerciseAndEnterNextStep()
@@ -692,6 +693,8 @@ class DefaultWorkoutSessionManager(
     // ===== Training Cycles — delegated to ActiveSessionEngine =====
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = activeSessionEngine.loadRoutineFromCycle(routineId, cycleId, dayNumber)
+    suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int) =
+        activeSessionEngine.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber)
     fun clearCycleContext() = activeSessionEngine.clearCycleContext()
 
     // ===== Rest/Flow Control — delegated to ActiveSessionEngine =====

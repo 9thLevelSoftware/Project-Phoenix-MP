@@ -129,6 +129,57 @@ class DWSMRoutineFlowTest {
     }
 
     @Test
+    fun loadRoutineFromCycleAsync_resolvesWeightsBeforeReturning() = runTest {
+        val harness = DWSMTestHarness(this)
+        val exercise = TestFixtures.benchPress
+        val routine = Routine(
+            id = "cycle-routine-pr-async",
+            name = "Cycle PR Async Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-cycle-pr-async",
+                    exercise = exercise,
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 5f,
+                    setWeightsPerCableKg = listOf(5f),
+                    programMode = ProgramMode.OldSchool,
+                    usePercentOfPR = true,
+                    weightPercentOfPR = 80,
+                ),
+            ),
+        )
+        harness.fakeExerciseRepo.addExercise(exercise)
+        harness.fakeWorkoutRepo.addRoutine(routine)
+        harness.fakePRRepo.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = exercise.id!!,
+                exerciseName = exercise.name,
+                weightPerCableKg = 50f,
+                reps = 6,
+                oneRepMax = 60f,
+                timestamp = 1_000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 300f,
+            ),
+        )
+        advanceUntilIdle()
+
+        val loaded = harness.dwsm.loadRoutineFromCycleAsync(routine.id, "cycle-1", 1)
+        assertTrue(loaded, "Cycle routine should load successfully")
+        assertEquals(
+            40f,
+            harness.dwsm.coordinator.workoutParameters.value.weightPerCableKg,
+            "Async cycle load must finish PR resolution before returning",
+        )
+        assertEquals("cycle-1", harness.dwsm.coordinator.activeCycleId)
+        assertEquals(1, harness.dwsm.coordinator.activeCycleDayNumber)
+        harness.cleanup()
+    }
+
+    @Test
     fun loadRoutine_isAsync_stateNotImmediatelyAvailable() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = WorkoutStateFixtures.createTestRoutine()
