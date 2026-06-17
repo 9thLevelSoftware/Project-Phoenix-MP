@@ -199,6 +199,49 @@ class HealthWorkoutExportBuilderTest {
         assertEquals(45_000L, second.endTimeMs)
     }
 
+    @Test
+    fun bodyweightRoutineExportsEffectiveLoadNotZero() {
+        val routineId = "bodyweight-routine"
+        val sessions = listOf(
+            workoutSession(
+                id = "session-pushup",
+                timestamp = 1_000L,
+                duration = 30_000L,
+                exerciseId = "push-up",
+                exerciseName = "Push Up",
+                routineSessionId = routineId,
+                routineName = "Bodyweight Day",
+                workingReps = 12,
+                weightPerCableKg = 0f,
+                displayMultiplier = 1,
+                estimatedCalories = 25f,
+                heaviestLiftKg = 62.5f,
+            ),
+        )
+        val completedSets = mapOf(
+            "session-pushup" to listOf(
+                completedSet(
+                    id = "set-pushup",
+                    sessionId = "session-pushup",
+                    setNumber = 0,
+                    actualReps = 12,
+                    actualWeightKg = 62.5f,
+                    loggedRpe = 7,
+                    completedAt = 31_000L,
+                ),
+            ),
+        )
+
+        val export = HealthWorkoutExportBuilder.buildRoutineWorkout(
+            routineSessionId = routineId,
+            sessions = sessions,
+            completedSetsBySessionId = completedSets,
+        )
+
+        assertNotNull(export)
+        assertEquals(62.5f, export.segments.single().weightKg)
+    }
+
     private fun workoutSession(
         id: String,
         timestamp: Long = 1_000L,
@@ -213,6 +256,7 @@ class HealthWorkoutExportBuilderTest {
         displayMultiplier: Int? = 1,
         estimatedCalories: Float? = null,
         rpe: Int? = null,
+        heaviestLiftKg: Float? = null,
     ) = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -227,6 +271,7 @@ class HealthWorkoutExportBuilderTest {
         displayMultiplier = displayMultiplier,
         estimatedCalories = estimatedCalories,
         rpe = rpe,
+        heaviestLiftKg = heaviestLiftKg,
     )
 
     private fun completedSet(
