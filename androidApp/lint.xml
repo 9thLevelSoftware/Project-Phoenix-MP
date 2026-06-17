@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Android Lint suppressions for Play Policy informational warnings.
+
+  These rules are Google Play policy reminders, NOT code bugs. Each suppressed
+  rule has been reviewed and the app is compliant:
+
+  HealthConnectPolicy:
+    The app uses WRITE_EXERCISE, WRITE_TOTAL_CALORIES_BURNED, and READ_WEIGHT
+    for its core fitness functionality (writing workout sessions to Health
+    Connect and reading body weight for load calculations). Play Console
+    declaration and privacy policy are maintained separately.
+
+  ForegroundServicesPolicy:
+    The app declares FOREGROUND_SERVICE_CONNECTED_DEVICE with
+    foregroundServiceType="connectedDevice" on WorkoutForegroundService for
+    maintaining BLE connections during workouts. Play Console FGS declaration
+    is maintained separately.
+-->
+<lint>
+    <issue id="HealthConnectPolicy" severity="informational" />
+    <issue id="ForegroundServicesPolicy" severity="informational" />
+</lint>
