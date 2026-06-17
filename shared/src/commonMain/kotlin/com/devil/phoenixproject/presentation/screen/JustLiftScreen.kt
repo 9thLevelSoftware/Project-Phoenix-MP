@@ -121,6 +121,10 @@ import vitruvianprojectphoenix.shared.generated.resources.eccentric_load
 import vitruvianprojectphoenix.shared.generated.resources.eccentric_load_helper
 import vitruvianprojectphoenix.shared.generated.resources.echo_level
 import vitruvianprojectphoenix.shared.generated.resources.label_live
+import vitruvianprojectphoenix.shared.generated.resources.mode_echo
+import vitruvianprojectphoenix.shared.generated.resources.mode_old_school
+import vitruvianprojectphoenix.shared.generated.resources.mode_pump
+import vitruvianprojectphoenix.shared.generated.resources.mode_tut
 import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing
 import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_bottom
 import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_top
@@ -348,11 +352,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                     )
 
                     val modes = listOf(
-                        "Old" to WorkoutMode.OldSchool,
-                        "Pump" to WorkoutMode.Pump,
-                        "TUT" to WorkoutMode.TUT,
-                        "Echo" to WorkoutMode.Echo(echoLevel),
+                        stringResource(Res.string.mode_old_school) to WorkoutMode.OldSchool,
+                        stringResource(Res.string.mode_pump) to WorkoutMode.Pump,
+                        stringResource(Res.string.mode_tut) to WorkoutMode.TUT,
+                        stringResource(Res.string.mode_echo) to WorkoutMode.Echo(echoLevel),
                     )
+                    val modesPrimaryRow = modes.take(2)
+                    val modesSecondaryRow = modes.drop(2)
 
                     val isModeSelected: (WorkoutMode) -> Boolean = { mode ->
                         when (mode) {
@@ -388,21 +394,20 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             }
                         }
                     } else {
-                        SingleChoiceSegmentedButtonRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 4.dp),
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            modes.forEachIndexed { index, (label, mode) ->
-                                SegmentedButton(
-                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
-                                    onClick = { onModeSelected(mode) },
-                                    selected = isModeSelected(mode),
-                                    icon = {},
-                                ) {
-                                    Text(label, maxLines = 1)
-                                }
-                            }
+                            JustLiftModeSegmentRow(
+                                modes = modesPrimaryRow,
+                                isModeSelected = isModeSelected,
+                                onModeSelected = onModeSelected,
+                            )
+                            JustLiftModeSegmentRow(
+                                modes = modesSecondaryRow,
+                                isModeSelected = isModeSelected,
+                                onModeSelected = onModeSelected,
+                            )
                         }
                     }
 
@@ -1223,6 +1228,37 @@ fun AutoStartStopCard(
             ),
         ) {
             bannerContent()
+        }
+    }
+}
+
+/**
+ * Two-up segmented row for Just Lift mode selection.
+ */
+@Composable
+private fun JustLiftModeSegmentRow(
+    modes: List<Pair<String, WorkoutMode>>,
+    isModeSelected: (WorkoutMode) -> Boolean,
+    onModeSelected: (WorkoutMode) -> Unit,
+) {
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+    ) {
+        modes.forEachIndexed { index, (label, mode) ->
+            SegmentedButton(
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                onClick = { onModeSelected(mode) },
+                selected = isModeSelected(mode),
+                icon = {},
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
