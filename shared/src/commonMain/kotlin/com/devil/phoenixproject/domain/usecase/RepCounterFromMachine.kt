@@ -473,34 +473,34 @@ class RepCounterFromMachine {
             }
         }
         // FALLBACK WARMUP: When machine doesn't report repsRomCount (0xFF/unlimited mode),
-        // count warmup reps from directional counters.
-        // Issue #553: Just Lift/unlimited packets can advance directional counters
-        // while leaving repsRomCount at 0. Derive from absolute counters instead of
-        // deltas so split top/bottom notifications cannot double-count the mandatory
-        // 3 ROM warmup reps.
-        else if (repsSetCount == 0 && repsRomCount == 0 && warmupReps < warmupTarget) {
-            val directionalWarmupReps = maxOf(up, down).coerceAtMost(warmupTarget)
-            if (directionalWarmupReps > warmupReps) {
-                warmupReps = directionalWarmupReps
-                logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from directional counters, repsRomCount=0)")
+        // count warmup reps from directional up counter (matches processLegacy approach).
+        // Issue #553: this is the path that fixes the Echo Mode "stuck on Warm Up 1/3"
+        // regression — it is mode-agnostic, so when PR #474's HARD EchoLevel causes the
+        // V-Form firmware to silently drop repsRomCount events, the up counter still
+        // advances and this branch advances warmupReps from it. The Echo-specific
+        // escape hatch (added in the first iteration of this fix) turned out to be
+        // unreachable because this branch already fires first when repsRomCount==0
+        // and repsSetCount==0 — see PR #554 review (gemini-code-assist) feedback.
+        else if (repsSetCount == 0 && repsRomCount == 0 && warmupReps < warmupTarget && upDelta > 0) {
+            warmupReps = (warmupReps + upDelta).coerceAtMost(warmupTarget)
+            logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")
 
+            onRepEvent?.invoke(
+                RepEvent(
+                    type = RepType.WARMUP_COMPLETED,
+                    warmupCount = warmupReps,
+                    workingCount = workingReps,
+                ),
+            )
+
+            if (warmupReps >= warmupTarget) {
                 onRepEvent?.invoke(
                     RepEvent(
-                        type = RepType.WARMUP_COMPLETED,
+                        type = RepType.WARMUP_COMPLETE,
                         warmupCount = warmupReps,
                         workingCount = workingReps,
                     ),
                 )
-
-                if (warmupReps >= warmupTarget) {
-                    onRepEvent?.invoke(
-                        RepEvent(
-                            type = RepType.WARMUP_COMPLETE,
-                            warmupCount = warmupReps,
-                            workingCount = workingReps,
-                        ),
-                    )
-                }
             }
         }
 
@@ -553,34 +553,6 @@ class RepCounterFromMachine {
             }
         }
 
-        // UNLIMITED FALLBACK: In Just Lift/AMRAP unlimited mode some firmware keeps
-        // repsSetCount at 0 while completeCounter continues to advance. Once the
-        // mandatory ROM warmup gate is open, use completed directional reps as the
-        // working count so the app mirrors the machine's live count.
-        if ((isJustLift || isAMRAP) &&
-            repsRomCount == 0 &&
-            repsSetCount == 0 &&
-            warmupReps >= warmupTarget
-        ) {
-            val directionalWorkingReps = (down - warmupTarget).coerceAtLeast(0)
-            if (directionalWorkingReps > workingReps) {
-                workingReps = directionalWorkingReps
-
-                hasPendingRep = false
-                activePhase = RepPhase.IDLE
-                phaseProgress = 0f
-
-                logDebug("WORKING_COMPLETED: rep $workingReps confirmed from complete counter fallback")
-
-                onRepEvent?.invoke(
-                    RepEvent(
-                        type = RepType.WORKING_COMPLETED,
-                        warmupCount = warmupReps,
-                        workingCount = workingReps,
-                    ),
-                )
-            }
-        }
     }
 
     private fun calculateDelta(last: Int, current: Int): Int = if (current >= last) {

@@ -770,51 +770,6 @@ class RepCounterFromMachineTest {
         assertTrue(count.isWarmupComplete)
     }
 
-    @Test
-    fun `just lift warmup advances from complete counter when unlimited modern packet omits rep fields`() {
-        // Just Lift still has the mandatory 3-rep firmware ROM calibration buffer.
-        // In unlimited mode some firmware leaves repsRomCount and repsSetCount at 0
-        // while the directional completion counter advances as reps finish.
-        repCounter.configure(
-            warmupTarget = 3,
-            workingTarget = 8,
-            isJustLift = true,
-            stopAtTop = false,
-        )
-
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 1)
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 2)
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 3)
-
-        val count = repCounter.getRepCount()
-        assertEquals(3, count.warmupReps)
-        assertTrue(count.isWarmupComplete)
-        assertTrue(capturedEvents.any { it.type == RepType.WARMUP_COMPLETE })
-    }
-
-    @Test
-    fun `just lift working reps advance from complete counter when unlimited modern packet omits set count`() {
-        repCounter.configure(
-            warmupTarget = 3,
-            workingTarget = 8,
-            isJustLift = true,
-            stopAtTop = false,
-        )
-
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 1)
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 2)
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 3)
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 4)
-        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 5)
-
-        val count = repCounter.getRepCount()
-        assertEquals(3, count.warmupReps)
-        assertTrue(count.isWarmupComplete)
-        assertEquals(2, count.workingReps)
-        assertFalse(repCounter.shouldStopWorkout())
-    }
 }
 
 class RepRangesTest {

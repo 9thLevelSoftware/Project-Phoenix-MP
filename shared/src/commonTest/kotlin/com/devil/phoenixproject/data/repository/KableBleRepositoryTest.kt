@@ -52,6 +52,40 @@ class KableBleRepositoryTest {
     }
 
     @Test
+    fun `published rep diagnostics include source packet counters and emit result`() = runTest {
+        val logRepo = ConnectionLogRepository.instance
+        logRepo.clearAll()
+        val repository = KableBleRepository()
+
+        val emitted = repository.publishRepEventForTest(
+            repNotification(index = 2).copy(
+                completeCounter = 1,
+                repsRomCount = 1,
+                repsSetCount = 0,
+                rawData = byteArrayOf(0x02, 0x02, 0x00, 0x01, 0x00),
+                isLegacyFormat = false,
+            ),
+            source = "rx",
+        )
+
+        assertTrue(emitted)
+        val logEntry = logRepo.getLogsByEventType(LogEventType.REP_RECEIVED).first()
+        assertEquals("Rep event published", logEntry.message)
+        val details = logEntry.details ?: error("Expected rep diagnostics details")
+        assertTrue(details.contains("source=rx"), details)
+        assertTrue(details.contains("packetSize=5"), details)
+        assertTrue(details.contains("legacy=false"), details)
+        assertTrue(details.contains("up=2"), details)
+        assertTrue(details.contains("down=1"), details)
+        assertTrue(details.contains("repsRomCount=1"), details)
+        assertTrue(details.contains("repsSetCount=0"), details)
+        assertTrue(details.contains("emitted=true"), details)
+
+        repository.shutdown()
+        logRepo.clearAll()
+    }
+
+    @Test
     fun `slow critical lifecycle event collectors do not suspend producers`() = runTest {
         val repository = KableBleRepository()
         val slowDeloadCollector = launch {

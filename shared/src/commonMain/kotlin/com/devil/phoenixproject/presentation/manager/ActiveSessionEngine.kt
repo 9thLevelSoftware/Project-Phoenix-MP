@@ -11,9 +11,11 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
+import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.RepNotification
@@ -117,6 +119,7 @@ class ActiveSessionEngine(
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
+    private val connectionLogRepository = ConnectionLogRepository.instance
 
     /**
      * Delegate interface for operations that require routine navigation or
@@ -1035,6 +1038,7 @@ class ActiveSessionEngine(
         val rawPosB = currentPositions?.positionB ?: 0f
 
         val repCountBefore = repCounter.getRepCount().totalReps
+        logRepNotificationReceipt(notification, repCountBefore)
 
         // Seed ROM from machine (only has effect on first notification with valid data)
         if (!notification.isLegacyFormat) {
@@ -1071,6 +1075,18 @@ class ActiveSessionEngine(
             // Segment metrics for this rep and process biomechanics (GATE-04: unconditional capture)
             processBiomechanicsForRep(repCountAfter, now)
         }
+    }
+
+    private fun logRepNotificationReceipt(notification: RepNotification, repCountBefore: Int) {
+        connectionLogRepository.debug(
+            LogEventType.REP_RECEIVED,
+            "Rep event received by session engine",
+            details = "boundary=active-session-engine, packetSize=${notification.rawData.size}, " +
+                "legacy=${notification.isLegacyFormat}, up=${notification.topCounter}, " +
+                "down=${notification.completeCounter}, repsRomCount=${notification.repsRomCount}, " +
+                "repsRomTotal=${notification.repsRomTotal}, repsSetCount=${notification.repsSetCount}, " +
+                "repsSetTotal=${notification.repsSetTotal}, repCountBefore=$repCountBefore",
+        )
     }
 
     /**
