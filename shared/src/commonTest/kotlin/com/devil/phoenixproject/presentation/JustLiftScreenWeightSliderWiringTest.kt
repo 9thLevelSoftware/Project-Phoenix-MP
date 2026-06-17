@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.presentation
 
+import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -123,32 +125,19 @@ class JustLiftScreenWeightSliderWiringTest {
     }
 
     private fun readJustLiftScreenSource(): String {
-        // Read from the classpath via the resources directory, or fall back to the
-        // project root. The test is allowed to read the source file because it
-        // runs in the commonTest source set of the same Gradle module that owns
-        // JustLiftScreen.kt. Working directory resolution: try the explicit
-        // path first, then walk up to find a gradle root.
+        // Read from disk via the KMP-compatible `readProjectFile` expect/actual helper
+        // (under testutil/). The test runs in commonTest of the same Gradle module that
+        // owns JustLiftScreen.kt, so a working-directory-relative lookup is enough.
         val relativePath =
             "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt"
-        val candidates = mutableListOf<java.io.File>()
-        candidates.add(java.io.File(relativePath))
-        // Walk up looking for a `shared` or `.git` marker to anchor the search.
-        var dir: java.io.File? = java.io.File(".").absoluteFile
-        repeat(6) {
-            if (dir == null) return@repeat
-            candidates.add(java.io.File(dir, "shared/$relativePath"))
-            if (java.io.File(dir, ".git").exists() || java.io.File(dir, "settings.gradle.kts").exists()) {
-                candidates.add(java.io.File(dir, relativePath))
-            }
-            dir = dir.parentFile
-        }
-        for (file in candidates) {
-            if (file.exists()) return file.readText()
-        }
-        error(
-            "Could not locate JustLiftScreen.kt on disk. Searched: " +
-                candidates.joinToString(", ") { it.path } +
-                ". Run the test from the shared/ module's working directory.",
+        val src = readProjectFile(relativePath)
+        assertNotNull(
+            src,
+            "Could not locate JustLiftScreen.kt on disk. The test relies on the project " +
+                "root being discoverable from the test runner's working directory. " +
+                "If you are running this from an unusual cwd, set the working directory " +
+                "to the shared/ module's root before invoking the test.",
         )
+        return src
     }
 }
