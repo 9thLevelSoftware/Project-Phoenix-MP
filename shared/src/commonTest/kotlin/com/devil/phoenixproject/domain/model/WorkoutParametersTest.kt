@@ -63,6 +63,17 @@ class WorkoutParametersTest {
     }
 
     @Test
+    fun `Echo mode defaults use issue 553 Echo level`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.Echo,
+            reps = 8,
+        )
+
+        assertEquals(EchoLevel.HARDER, params.echoLevel)
+        assertEquals(WorkoutMode.Echo(EchoLevel.HARDER), ProgramMode.Echo.toWorkoutMode())
+    }
+
+    @Test
     fun `stopAtTop can be configured`() {
         val paramsBottom = WorkoutParameters(
             programMode = ProgramMode.OldSchool,

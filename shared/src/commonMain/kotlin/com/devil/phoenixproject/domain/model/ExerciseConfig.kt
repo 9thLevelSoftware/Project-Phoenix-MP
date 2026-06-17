@@ -19,7 +19,7 @@ data class ExerciseConfig(
     val eccentricLoadPercent: Int = 100, // 100-150%
 
     // Echo-specific
-    val echoLevel: EchoLevel = EchoLevel.HARD,
+    val echoLevel: EchoLevel = EchoLevel.HARDER,
 ) {
     companion object {
         /**

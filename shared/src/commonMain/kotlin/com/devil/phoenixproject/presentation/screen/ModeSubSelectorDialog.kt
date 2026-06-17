@@ -70,7 +70,7 @@ fun ModeSubSelectorDialog(
                     if (workoutParameters.isEchoMode) {
                         workoutParameters.echoLevel
                     } else {
-                        EchoLevel.HARD
+                        EchoLevel.HARDER
                     },
                 )
             }

@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.BadgeTier
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -52,6 +53,18 @@ import kotlin.test.assertTrue
  * init collectors and prevent UncompletedCoroutinesError.
  */
 class DWSMWorkoutLifecycleTest {
+
+    @Test
+    fun `just lift presentation defaults use issue 553 Echo level`() {
+        val defaults = JustLiftDefaults(
+            weightPerCableKg = 20f,
+            weightChangePerRep = 0,
+            workoutModeId = 10,
+        )
+
+        assertEquals(1, defaults.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, defaults.getEchoLevel())
+    }
 
     // ===== A. startWorkout transitions =====
 

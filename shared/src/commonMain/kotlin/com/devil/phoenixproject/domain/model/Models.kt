@@ -268,7 +268,7 @@ sealed class WorkoutMode(val displayName: String) {
 /**
  * Extension function to convert ProgramMode to WorkoutMode for UI compatibility
  */
-fun ProgramMode.toWorkoutMode(echoLevel: EchoLevel = EchoLevel.HARD): WorkoutMode = when (this) {
+fun ProgramMode.toWorkoutMode(echoLevel: EchoLevel = EchoLevel.HARDER): WorkoutMode = when (this) {
     ProgramMode.OldSchool -> WorkoutMode.OldSchool
     ProgramMode.Pump -> WorkoutMode.Pump
     ProgramMode.TUT -> WorkoutMode.TUT
@@ -341,7 +341,10 @@ data class WorkoutParameters(
     val stallDetectionEnabled: Boolean = true, // Enable 5s stall/de-load auto-stop during active sets
     val repCountTiming: RepCountTiming = RepCountTiming.TOP, // When to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     // Echo-specific settings (only used when programMode == ProgramMode.Echo)
-    val echoLevel: EchoLevel = EchoLevel.HARD,
+    // Issue #553: prefer HARDER (1.25s @ 40 mm/s) for new Echo sessions.
+    // HARD's stricter 1.0s @ 50 mm/s window can leave V-Form users stuck in
+    // the firmware warm-up buffer when the machine never reports warm-up reps.
+    val echoLevel: EchoLevel = EchoLevel.HARDER,
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
     // Just Lift rest timer (0 = off, 5-300 in 5s increments)
     val justLiftRestSeconds: Int = 0,

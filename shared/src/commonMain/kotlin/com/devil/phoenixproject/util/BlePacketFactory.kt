@@ -316,7 +316,11 @@ object BlePacketFactory {
      * For full protocol support, use createEchoControl() instead.
      */
     fun createEchoCommand(level: Int, eccentricLoad: Int): ByteArray {
-        val echoLevel = EchoLevel.entries.find { it.levelValue == level } ?: EchoLevel.HARD
+        // Issue #553: Default fallback changed from HARD (strictest) to HARDER
+        // to match WorkoutParameters.echoLevel default. Legacy callers passing an
+        // out-of-range level integer now also fall back to the less-strict timing
+        // window so the firmware's heuristic pipeline can emit warm-up rep events.
+        val echoLevel = EchoLevel.entries.find { it.levelValue == level } ?: EchoLevel.HARDER
         return createEchoControl(echoLevel, eccentricPct = eccentricLoad)
     }
 

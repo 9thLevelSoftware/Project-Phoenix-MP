@@ -209,10 +209,10 @@ class RoutineTest {
     }
 
     @Test
-    fun routineExercise_defaultEchoSettings_matchOfficialAppDefaults() {
+    fun routineExercise_defaultEchoSettings_useIssue553EchoDefaults() {
         val exercise = createTestRoutineExercise(programMode = ProgramMode.Echo)
 
-        assertEquals(EchoLevel.HARD, exercise.echoLevel)
+        assertEquals(EchoLevel.HARDER, exercise.echoLevel)
         assertEquals(EccentricLoad.LOAD_100, exercise.eccentricLoad)
     }
 
