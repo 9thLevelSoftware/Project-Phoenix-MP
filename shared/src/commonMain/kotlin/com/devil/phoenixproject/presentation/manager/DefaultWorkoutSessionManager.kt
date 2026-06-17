@@ -275,6 +275,7 @@ class DefaultWorkoutSessionManager(
             override fun showRoutineComplete() = routineFlowManager.showRoutineComplete()
             override fun getCurrentExercise(): RoutineExercise? = routineFlowManager.getCurrentExercise()
             override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? = routineFlowManager.getNextStep(routine, exerciseIndex, setIndex)
+            override fun isSameExercise(a: RoutineExercise, b: RoutineExercise): Boolean = routineFlowManager.isSameExercise(a, b)
             override fun isInSuperset(): Boolean = routineFlowManager.isInSuperset()
             override fun isAtEndOfSupersetCycle(): Boolean = routineFlowManager.isAtEndOfSupersetCycle()
             override fun calculateNextExerciseName(
