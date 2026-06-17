@@ -3,11 +3,11 @@ package com.devil.phoenixproject.presentation.util
 import android.content.res.Configuration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 
 @Composable
 actual fun rememberIsTvRemoteInputMode(): Boolean {
-    val configuration = LocalContext.current.resources.configuration
+    val configuration = LocalConfiguration.current
     val uiModeType = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK
     return remember(uiModeType, configuration.touchscreen, configuration.navigation) {
         isTvRemoteInputMode(
