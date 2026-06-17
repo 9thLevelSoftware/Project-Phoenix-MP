@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,9 @@ import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -96,15 +100,23 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     var showResumeDialog by remember { mutableStateOf(false) }
     var pendingCycleStart by remember { mutableStateOf<CycleStartRequest?>(null) }
     var showOneRepMaxComingSoonDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(activeCycle) {
+    LaunchedEffect(activeCycle?.id) {
         // Issue #549: route the Home banner through `checkAndAutoAdvance` so the cycle banner
         // refreshes to the current day on initial Home load. Previously this called
         // `getCycleProgress` directly, which is a pure read and never reconciles
         // `lastAdvancedAt` against the current calendar day. `TrainingCyclesScreen` is the only
         // other production caller of `checkAndAutoAdvance` — that is exactly why the reporter's
         // tap-Cycles-then-back workaround refreshed the banner.
-        cycleProgress = activeCycle?.let { cycle -> loadHomeCycleProgress(cycleRepository, cycle) }
+        //
+        // Re-run every 60s while Home stays visible so a midnight rollover updates the banner
+        // without forcing the user to leave and return.
+        val cycle = activeCycle ?: return@LaunchedEffect
+        while (true) {
+            cycleProgress = loadHomeCycleProgress(cycleRepository, cycle)
+            delay(60_000)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -146,11 +158,17 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
             pendingCycleStart = request
             showResumeDialog = true
         } else {
+            // Issue #541/#544 parity: loadRoutineFromCycle is async (PR% weight resolution).
+            // TrainingCyclesScreen waits for loadedRoutine before enterSetReady; Home must too
+            // or startWorkout captures stale BLE params (wrong weights on % of PR routines).
             viewModel.ensureConnection(
                 onConnected = {
                     viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
-                    viewModel.startWorkout()
-                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                    scope.launch {
+                        viewModel.loadedRoutine.first { it?.id == request.routineId }
+                        viewModel.enterSetReady(0, 0)
+                        navController.navigate(NavigationRoutes.SetReady.route)
+                    }
                 },
                 onFailed = { /* Error shown via StateFlow */ },
             )
@@ -251,8 +269,10 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                         showResumeDialog = false
                         viewModel.ensureConnection(
                             onConnected = {
-                                viewModel.startWorkout()
-                                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                val exIdx = viewModel.currentExerciseIndex.value
+                                val setIdx = viewModel.currentSetIndex.value
+                                viewModel.enterSetReady(exIdx, setIdx)
+                                navController.navigate(NavigationRoutes.SetReady.route)
                             },
                             onFailed = { /* Error shown via StateFlow */ },
                         )
@@ -263,9 +283,16 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                         if (request != null) {
                             viewModel.ensureConnection(
                                 onConnected = {
-                                    viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
-                                    viewModel.startWorkout()
-                                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                    viewModel.loadRoutineFromCycle(
+                                        request.routineId,
+                                        request.cycleId,
+                                        request.dayNumber,
+                                    )
+                                    scope.launch {
+                                        viewModel.loadedRoutine.first { it?.id == request.routineId }
+                                        viewModel.enterSetReady(0, 0)
+                                        navController.navigate(NavigationRoutes.SetReady.route)
+                                    }
                                 },
                                 onFailed = { /* Error shown via StateFlow */ },
                             )
