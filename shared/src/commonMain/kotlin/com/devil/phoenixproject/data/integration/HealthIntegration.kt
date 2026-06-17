@@ -152,7 +152,7 @@ object HealthWorkoutExportBuilder {
         if (reps <= 0) return null
 
         val (startTimeMs, endTimeMs) = segmentTimes(session, completedSet)
-        val weightKg = session.weightPerCableKg * session.displayLoadMultiplier().toFloat()
+        val weightKg = resolveExportWeightKg(session, completedSet)
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
 
         return HealthWorkoutSegment(
@@ -167,6 +167,23 @@ object HealthWorkoutExportBuilder {
             weightKg = weightKg.coerceAtLeast(0f),
             rpe = (completedSet?.loggedRpe ?: session.rpe)?.coerceIn(0, 10),
         )
+    }
+
+    /**
+     * Prefer programmed machine load (per-cable × display multiplier). When that is zero
+     * (bodyweight exercises), fall back to persisted effective load from CompletedSet or
+     * WorkoutSession.heaviestLiftKg so Health Connect receives the real load.
+     */
+    private fun resolveExportWeightKg(
+        session: WorkoutSession,
+        completedSet: CompletedSet?,
+    ): Float {
+        val programmedTotalKg = session.weightPerCableKg * session.displayLoadMultiplier().toFloat()
+        if (programmedTotalKg > 0f) return programmedTotalKg
+
+        return completedSet?.actualWeightKg?.takeIf { it > 0f }
+            ?: session.heaviestLiftKg?.takeIf { it > 0f }
+            ?: 0f
     }
 
     private fun segmentTimes(

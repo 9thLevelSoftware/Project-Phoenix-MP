@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.util.BleConstants
 import kotlin.test.Test
@@ -230,6 +231,54 @@ class DWSMEquipmentRackTest {
             emptyList(),
             harness.dwsm.coordinator._workoutParameters.value.activeRackItemIds,
         )
+        harness.cleanup()
+    }
+
+    /**
+     * Issue #536 regression guard (autoplay path): when autoplay advances across exercises
+     * via [ActiveSessionEngine.startNextSetOrExercise], rack selection must be re-seeded
+     * just like [RoutineFlowManager.enterSetReady] and [RoutineFlowManager.jumpToExercise].
+     */
+    @Test
+    fun `autoplay startNextSet clears rack selection so weighted vest does not leak to next exercise`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakeEquipmentRackRepo.saveItems(
+            listOf(
+                rackItem("vest", 3.63f, RackItemBehavior.ADDED_RESISTANCE),
+                rackItem("assist", 10f, RackItemBehavior.COUNTERWEIGHT),
+            ),
+        )
+        harness.fakePrefsManager.setSummaryCountdownSeconds(10)
+        val routine = Routine(
+            id = "routine-issue-536-autoplay",
+            name = "Vest Leak Autoplay Repro",
+            exercises = listOf(
+                routineExercise("rex-1", "Bayesian Cable Row", emptyList()),
+                routineExercise("rex-2", "Bayesian Cable Curl", emptyList()),
+            ),
+        )
+
+        assertTrue(harness.dwsm.loadRoutineAsync(routine))
+        advanceUntilIdle()
+
+        harness.dwsm.enterSetReady(0, 0)
+        harness.dwsm.updateActiveRackSelection(listOf("vest"))
+        assertEquals(listOf("vest"), harness.dwsm.coordinator.activeRackItemIds.value)
+
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 0,
+            nextExerciseName = routine.exercises[1].exercise.displayName,
+            isLastExercise = false,
+            currentSet = 1,
+            totalSets = 1,
+        )
+        harness.dwsm.startNextSet()
+
+        assertEquals(emptyList(), harness.dwsm.coordinator.activeRackItemIds.value)
+        assertEquals(0f, harness.dwsm.coordinator._workoutParameters.value.externalAddedLoadKg)
+        assertEquals(0f, harness.dwsm.coordinator._workoutParameters.value.counterweightKg)
+        assertEquals(emptyList(), harness.dwsm.coordinator._workoutParameters.value.activeRackItemIds)
         harness.cleanup()
     }
 

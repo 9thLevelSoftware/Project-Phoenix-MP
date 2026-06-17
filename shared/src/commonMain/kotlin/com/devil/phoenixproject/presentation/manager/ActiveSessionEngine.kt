@@ -159,6 +159,12 @@ class ActiveSessionEngine(
         /** Clear cycle context */
         fun clearCycleContext()
 
+        /**
+         * Seed rack selection for the target exercise (defaults or cleared).
+         * Called when autoplay advances across exercises without entering SetReady.
+         */
+        fun seedRackSelectionForExercise(exerciseIndex: Int)
+
         /** Proceed from summary with full bookkeeping (RPE clear, exercise completion, routine check) */
         fun proceedFromSummary()
     }
@@ -4421,6 +4427,10 @@ class ActiveSessionEngine(
             Logger.d { "startNextSetOrExercise: Issue #203 - progressionKg=${nextExercise.progressionKg}kg for ${nextExercise.exercise.displayName}, isBodyweight=$nextIsBodyweight, isAMRAP=$nextIsAMRAP" }
 
             if (isChangingExercise) {
+                // Issue #536: autoplay advances via startNextSetOrExercise, not enterSetReady.
+                // Without re-seeding rack defaults here, a vest toggled on the previous
+                // exercise leaks into captureRackLoadSnapshot for the next exercise.
+                flowDelegate?.seedRackSelectionForExercise(nextExIdx)
                 repCounter.reset()
                 // Phase 35C: Initialize warm-up phase for new exercise with warmupSets
                 if (nextSetIdx == 0 && nextExercise.warmupSets.isNotEmpty() && !nextIsBodyweight) {

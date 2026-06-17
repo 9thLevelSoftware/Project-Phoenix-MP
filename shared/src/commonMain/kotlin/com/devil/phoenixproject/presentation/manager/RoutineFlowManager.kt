@@ -947,6 +947,16 @@ class RoutineFlowManager(
     // ===== SetReady Navigation =====
 
     /**
+     * Seed rack selection for an exercise without navigating to SetReady.
+     * Used by the autoplay exercise-advance path in [ActiveSessionEngine.startNextSetOrExercise].
+     */
+    fun seedRackSelectionForExercise(exerciseIndex: Int) {
+        val routine = coordinator._loadedRoutine.value ?: return
+        val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
+        applyDefaultRackSelectionForExercise(exercise)
+    }
+
+    /**
      * Enter set-ready state for specific exercise and set.
      */
     fun enterSetReady(exerciseIndex: Int, setIndex: Int) {

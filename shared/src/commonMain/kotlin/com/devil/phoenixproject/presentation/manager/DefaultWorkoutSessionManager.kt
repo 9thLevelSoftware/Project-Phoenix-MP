@@ -283,6 +283,8 @@ class DefaultWorkoutSessionManager(
             ): String? = routineFlowManager.calculateNextExerciseName(isSingleExercise, currentExercise, routine)
             override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean = routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
+            override fun seedRackSelectionForExercise(exerciseIndex: Int) =
+                routineFlowManager.seedRackSelectionForExercise(exerciseIndex)
             override fun proceedFromSummary() = this@DefaultWorkoutSessionManager.proceedFromSummary()
         }
 
