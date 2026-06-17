@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.util
 
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.util.UnitConverter
 import kotlin.math.abs
@@ -26,24 +27,29 @@ class WeightDisplayIntegrationTest {
 
     @Test
     fun formatterAndIncrementAlignmentDualCable() {
-        // Scenario: 55.5kg per-cable weight on a dual-cable exercise
-        // Total weight = 55.5 * 2 = 111.0kg (uses 0.5kg increments to avoid Float truncation)
         val perCableKg = 55.5f
-        val cableCount = 2
-        val totalKg = perCableKg * cableCount
+        val ordinaryFormatted = WeightDisplayFormatter.formatDisplayWeight(
+            weightPerCableKg = perCableKg,
+            cableCount = 2,
+            unit = WeightUnit.KG,
+        )
+        assertEquals("55.5", ordinaryFormatted, "Ordinary dual-cable display stays per-cable")
 
-        // UnitConverter.formatWeight operates on total weight (not per-cable)
-        val formatted = UnitConverter.formatWeight(totalKg, useLb = false)
+        val explicitTotalFormatted = WeightDisplayFormatter.formatTwoCableTotalWeight(
+            weightPerCableKg = perCableKg,
+            unit = WeightUnit.KG,
+        )
+        assertEquals("111", explicitTotalFormatted, "Explicit helper can show two-cable total")
 
-        // 55.5 * 2 = 111.0 (whole number) — verify it shows the total,
-        // not the per-cable value, and includes the unit suffix
-        assertEquals("111 kg", formatted, "Total weight for dual cable should be 111 kg")
-
-        // Also verify a fractional case with machine-safe 0.5kg granularity
         val fractionalPerCable = 27.5f
-        val fractionalTotal = fractionalPerCable * cableCount // 55.0
-        val fractionalFormatted = UnitConverter.formatWeight(fractionalTotal, useLb = false)
-        assertEquals("55 kg", fractionalFormatted, "27.5kg per cable x 2 = 55kg total")
+        assertEquals(
+            "27.5",
+            WeightDisplayFormatter.formatDisplayWeight(fractionalPerCable, cableCount = 2, unit = WeightUnit.KG),
+        )
+        assertEquals(
+            "55",
+            WeightDisplayFormatter.formatTwoCableTotalWeight(fractionalPerCable, WeightUnit.KG),
+        )
     }
 
     @Test
@@ -77,14 +83,21 @@ class WeightDisplayIntegrationTest {
 
     @Test
     fun bulkAdjustWithFormatterConsistency() {
-        // Scenario: 50kg per-cable + 10% bulk adjust = 55kg per-cable
-        // Total = 55 * 2 = 110kg
         val basePerCable = 50f
-        val adjustedPerCable = basePerCable * 1.10f // +10%
-        val totalKg = adjustedPerCable * 2
+        val adjustedPerCable = basePerCable * 1.10f
 
-        val formatted = UnitConverter.formatWeight(totalKg, useLb = false)
-        assertEquals("110 kg", formatted, "50kg + 10% = 55kg per cable, total 110kg")
+        val ordinaryFormatted = WeightDisplayFormatter.formatDisplayWeight(
+            weightPerCableKg = adjustedPerCable,
+            cableCount = 2,
+            unit = WeightUnit.KG,
+        )
+        assertEquals("55", ordinaryFormatted, "Bulk adjust changes per-cable load")
+
+        val explicitTotalFormatted = WeightDisplayFormatter.formatTwoCableTotalWeight(
+            weightPerCableKg = adjustedPerCable,
+            unit = WeightUnit.KG,
+        )
+        assertEquals("110", explicitTotalFormatted, "Explicit total helper doubles when requested")
     }
 
     @Test

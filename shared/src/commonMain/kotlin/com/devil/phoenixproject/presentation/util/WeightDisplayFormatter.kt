@@ -4,55 +4,54 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.format
 
 /**
- * Centralized weight display formatter that applies cable multiplication BEFORE unit conversion.
+ * Centralized weight display formatter.
  *
- * Architecture Decision:
- * - Database stores `weightPerCableKg` (Float) — always per-cable, always kg.
- * - This formatter multiplies by cableCount to get total weight, then converts to display unit.
- * - Storage, sync DTOs, and BLE commands remain per-cable — this is display-only.
- * - HealthIntegration already multiplies by cableCount — do NOT use this formatter there.
- * - Portal already multiplies by WEIGHT_MULTIPLIER (transforms.ts) — sync must stay per-cable.
- *
- * Null cableCount defaults to 1, matching:
- * - HealthIntegration convention
- * - SessionSummary.cableMultiplier: `if (cableCount == 2) 2 else 1`
+ * Phoenix stores, syncs, recommends, and commands machine load as per-cable kg.
+ * That matches the official app: cable count metadata must not change ordinary
+ * selected-load display. Total two-cable text is available only through the
+ * explicitly named total helper methods below.
  */
 object WeightDisplayFormatter {
 
     private const val KG_TO_LB = 2.20462f
 
     /**
-     * Convert a per-cable kg weight to display weight (total, in user's preferred unit).
+     * Convert per-cable kg to the user's selected display unit.
      *
-     * @param weightPerCableKg Weight per cable in kilograms (from DB/model)
-     * @param cableCount Number of cables (null = legacy data, defaults to 1)
-     * @param unit User's preferred weight unit (KG or LB)
-     * @return Display weight as Float (total weight in chosen unit)
+     * [cableCount] is accepted for backward source compatibility with existing
+     * call sites but intentionally ignored. Ordinary load display is per-cable.
      */
-    fun toDisplayWeight(weightPerCableKg: Float, cableCount: Int?, unit: WeightUnit): Float {
-        val multiplier = cableCount ?: 1
-        val totalKg = weightPerCableKg * multiplier
-        return when (unit) {
-            WeightUnit.KG -> totalKg
-            WeightUnit.LB -> totalKg * KG_TO_LB
-        }
-    }
+    @Suppress("UNUSED_PARAMETER")
+    fun toDisplayWeight(weightPerCableKg: Float, cableCount: Int?, unit: WeightUnit): Float =
+        toPerCableDisplayWeight(weightPerCableKg, unit)
 
     /**
-     * Format a per-cable kg weight as a display string (total, in user's preferred unit).
-     * Integers display without decimals; fractional values show 1 decimal place.
+     * Format per-cable kg in the user's selected display unit.
      *
-     * @param weightPerCableKg Weight per cable in kilograms (from DB/model)
-     * @param cableCount Number of cables (null = legacy data, defaults to 1)
-     * @param unit User's preferred weight unit (KG or LB)
-     * @return Formatted display string (e.g., "100" or "110.2")
+     * [cableCount] is accepted for backward source compatibility with existing
+     * call sites but intentionally ignored. Ordinary load display is per-cable.
      */
-    fun formatDisplayWeight(weightPerCableKg: Float, cableCount: Int?, unit: WeightUnit): String {
-        val display = toDisplayWeight(weightPerCableKg, cableCount, unit)
-        return if (display % 1f == 0f) {
-            display.toInt().toString()
-        } else {
-            display.format(1)
-        }
+    @Suppress("UNUSED_PARAMETER")
+    fun formatDisplayWeight(weightPerCableKg: Float, cableCount: Int?, unit: WeightUnit): String =
+        formatNumeric(toPerCableDisplayWeight(weightPerCableKg, unit))
+
+    fun toPerCableDisplayWeight(weightPerCableKg: Float, unit: WeightUnit): Float = when (unit) {
+        WeightUnit.KG -> weightPerCableKg
+        WeightUnit.LB -> weightPerCableKg * KG_TO_LB
+    }
+
+    fun formatPerCableWeight(weightPerCableKg: Float, unit: WeightUnit): String =
+        formatNumeric(toPerCableDisplayWeight(weightPerCableKg, unit))
+
+    fun toTwoCableTotalDisplayWeight(weightPerCableKg: Float, unit: WeightUnit): Float =
+        toPerCableDisplayWeight(weightPerCableKg * 2f, unit)
+
+    fun formatTwoCableTotalWeight(weightPerCableKg: Float, unit: WeightUnit): String =
+        formatNumeric(toTwoCableTotalDisplayWeight(weightPerCableKg, unit))
+
+    private fun formatNumeric(display: Float): String = if (display % 1f == 0f) {
+        display.toInt().toString()
+    } else {
+        display.format(1)
     }
 }

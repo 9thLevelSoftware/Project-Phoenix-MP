@@ -686,6 +686,89 @@ class RepCounterFromMachineTest {
         assertEquals(100f, ranges.minPosA)
         assertEquals(500f, ranges.maxPosA)
     }
+
+    // ========== Issue #553: Echo Mode Permissive Warm-Up Fallback ==========
+    // The HARDER Echo default (Models.kt) is the primary fix; the existing
+    // line-484 fallback in RepCounterFromMachine.processModern (mode-agnostic
+    // up-counter advance when repsRomCount=0 AND repsSetCount=0) is the actual
+    // escape hatch. These tests pin that fallback's behavior for Echo-specific
+    // scenarios so a future refactor cannot regress the bug.
+
+    @Test
+    fun `issue 553 echo mode warmup advances from up counter when firmware drops reps`() {
+        // Issue #553: When the Vitruvian V-Form firmware's heuristic pipeline
+        // drops a rep event because the user's stroke falls outside the strict
+        // Echo concentric timing window, repsRomCount and repsSetCount both stay
+        // at 0 even though the user has completed real reps (visible as up
+        // counter increments). The existing fallback warmup branch in
+        // processModern (mode-agnostic) must advance warmupReps from the up
+        // counter or the user gets stuck on "Warm Up 1/3" forever.
+        repCounter.configure(
+            warmupTarget = 3,
+            workingTarget = 5,
+            isJustLift = false,
+            stopAtTop = false,
+        )
+
+        // Baseline
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+
+        // Simulate firmware dropping 3 reps: only the up counter advances.
+        // Without the line-484 fallback, warmupReps stays at 0 and
+        // isWarmupComplete is false.
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 1, down = 0)
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 2, down = 0)
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 3, down = 0)
+
+        val count = repCounter.getRepCount()
+        assertEquals(3, count.warmupReps)
+        assertTrue(count.isWarmupComplete)
+        assertTrue(capturedEvents.any { it.type == RepType.WARMUP_COMPLETE })
+    }
+
+    @Test
+    fun `issue 553 primary repsRomCount path wins over up counter to avoid double counting`() {
+        // Regression guard for the line-484 fallback: when the firmware is
+        // reporting repsRomCount > 0 (normal telemetry), the primary path
+        // (repsRomCount > warmupReps) must advance warmupReps from repsRomCount,
+        // not from the up counter alone. Sending up=3 on the same notification
+        // as repsRomCount=1 must NOT triple-count.
+        repCounter.configure(
+            warmupTarget = 3,
+            workingTarget = 5,
+            isJustLift = false,
+            stopAtTop = false,
+        )
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+        repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 3, down = 1)
+
+        val count = repCounter.getRepCount()
+        // warmupReps should be 1 (from primary path repsRomCount==1), not 3.
+        assertEquals(1, count.warmupReps)
+        assertFalse(count.isWarmupComplete)
+    }
+
+    @Test
+    fun `issue 553 fallback warmup clamps at warmupTarget`() {
+        // The line-484 fallback must clamp at warmupTarget so a noisy up
+        // counter cannot push warmupReps past the firmware's calibration
+        // buffer of 3.
+        repCounter.configure(
+            warmupTarget = 3,
+            workingTarget = 5,
+            isJustLift = false,
+            stopAtTop = false,
+        )
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+        // Single notification with up jumping by 5 — clamp to warmupTarget.
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 5, down = 0)
+
+        val count = repCounter.getRepCount()
+        assertEquals(3, count.warmupReps)
+        assertTrue(count.isWarmupComplete)
+    }
 }
 
 class RepRangesTest {

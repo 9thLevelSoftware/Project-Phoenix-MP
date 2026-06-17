@@ -445,6 +445,6 @@ private fun buildSingleExerciseRoutineExercise(
         setRestSeconds = listOf(60, 60, 60),
         programMode = ProgramMode.OldSchool,
         eccentricLoad = EccentricLoad.LOAD_100,
-        echoLevel = EchoLevel.HARD,
+        echoLevel = EchoLevel.HARDER,
     )
 }

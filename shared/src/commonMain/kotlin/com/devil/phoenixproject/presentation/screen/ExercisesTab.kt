@@ -18,7 +18,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.domain.model.displayLoadMultiplier
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -65,7 +64,7 @@ fun ExercisesTab(
                     exerciseId = exerciseId,
                     exerciseName = exerciseNames[exerciseId] ?: "Unknown Exercise",
                     bestOneRepMax = calculateBestOneRepMax(sessions),
-                    bestWeight = sessions.maxOf { it.weightPerCableKg * it.displayLoadMultiplier() },
+                    bestWeight = sessions.maxOf { it.weightPerCableKg },
                     lastPerformed = sessions.maxOf { it.timestamp },
                     totalSessions = sessions.size,
                     totalSets = sessions.sumOf { estimateSets(it) },
@@ -346,8 +345,7 @@ private fun calculateOneRepMax(weight: Float, reps: Int): Float = OneRepMaxCalcu
  */
 private fun calculateBestOneRepMax(sessions: List<WorkoutSession>): Float? = sessions.mapNotNull { session ->
     if (session.workingReps > 0) {
-        val displayWeight = session.weightPerCableKg * session.displayLoadMultiplier()
-        calculateOneRepMax(displayWeight, session.workingReps)
+        calculateOneRepMax(session.weightPerCableKg, session.workingReps)
     } else {
         null
     }

@@ -28,26 +28,40 @@ private val VITRUVIAN_DEVICE = Device(
     type = Device.TYPE_UNKNOWN,
 )
 
+// Issue #531: Only the workout-export write permission is required for the
+// Health Connect integration to function. Bundling the body-weight read into
+// `requiredHealthPermissions` (PR #515) silently broke workout export for any
+// user who had Health Connect enabled before the body-weight feature shipped:
+// `hasPermissions()` started returning false because the user had never been
+// asked for `WeightRecord` read, so `writeHealthWorkout()` rejected every
+// post-workout push with a `SecurityException` and the failure was logged at
+// `Logger.w` only. The body-weight read is now treated as an *additive*
+// capability, mirroring the iOS side (where `hasPermissions()` only inspects
+// `requiredWriteTypes`). The launcher still requests it via
+// `requestedHealthPermissions`, and the body-weight sync path continues to
+// gate on `hasBodyWeightReadPermission()` so users who decline the read
+// prompt keep their workout sync and simply skip the body-weight import.
 internal val requiredHealthPermissions = setOf(
     HealthPermission.getWritePermission(ExerciseSessionRecord::class),
-    HealthPermission.getReadPermission(WeightRecord::class),
 )
 
 internal val optionalHealthPermissions = setOf(
     HealthPermission.getWritePermission(TotalCaloriesBurnedRecord::class),
 )
 
-internal val requestedHealthPermissions = requiredHealthPermissions + optionalHealthPermissions
-
-internal val workoutWriteHealthPermissions = setOf(
-    HealthPermission.getWritePermission(ExerciseSessionRecord::class),
-)
-
 internal val bodyWeightReadHealthPermissions = setOf(
     HealthPermission.getReadPermission(WeightRecord::class),
 )
 
+internal val workoutWriteHealthPermissions = requiredHealthPermissions
+
 internal val workoutExportRequestedHealthPermissions = workoutWriteHealthPermissions + optionalHealthPermissions
+
+// The full prompt surface still asks for body-weight read alongside workout
+// write so users can opt into the body-weight import in a single flow.
+internal val requestedHealthPermissions = requiredHealthPermissions +
+    optionalHealthPermissions +
+    bodyWeightReadHealthPermissions
 
 private const val BODY_WEIGHT_LOOKBACK_DAYS = 3650L
 private const val BODY_WEIGHT_READ_PAGE_SIZE = 100

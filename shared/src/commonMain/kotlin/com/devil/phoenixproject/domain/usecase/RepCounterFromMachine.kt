@@ -473,7 +473,14 @@ class RepCounterFromMachine {
             }
         }
         // FALLBACK WARMUP: When machine doesn't report repsRomCount (0xFF/unlimited mode),
-        // count warmup reps from directional up counter (matches processLegacy approach)
+        // count warmup reps from directional up counter (matches processLegacy approach).
+        // Issue #553: this is the path that fixes the Echo Mode "stuck on Warm Up 1/3"
+        // regression — it is mode-agnostic, so when PR #474's HARD EchoLevel causes the
+        // V-Form firmware to silently drop repsRomCount events, the up counter still
+        // advances and this branch advances warmupReps from it. The Echo-specific
+        // escape hatch (added in the first iteration of this fix) turned out to be
+        // unreachable because this branch already fires first when repsRomCount==0
+        // and repsSetCount==0 — see PR #554 review (gemini-code-assist) feedback.
         else if (repsSetCount == 0 && repsRomCount == 0 && warmupReps < warmupTarget && upDelta > 0) {
             warmupReps = (warmupReps + upDelta).coerceAtMost(warmupTarget)
             logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")

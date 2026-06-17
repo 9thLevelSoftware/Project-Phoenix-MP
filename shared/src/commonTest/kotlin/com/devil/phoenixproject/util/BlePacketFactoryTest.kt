@@ -586,7 +586,18 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `createEchoControl defaults match official app RepConfig defaults`() {
+    fun `createEchoCommand falls back to issue 553 Echo level`() {
+        val packet = BlePacketFactory.createEchoCommand(
+            level = 99,
+            eccentricLoad = 100,
+        )
+
+        assertEquals(1.25f, readFloatLE(packet, 0x10), "fallback HARDER duration")
+        assertEquals(40.0f, readFloatLE(packet, 0x14), "fallback HARDER velocity")
+    }
+
+    @Test
+    fun `createEchoControl HARD level matches official app RepConfig`() {
         val packet = BlePacketFactory.createEchoControl(EchoLevel.HARD)
 
         assertEquals(3.toByte(), packet[0x04], "default romRepCount")

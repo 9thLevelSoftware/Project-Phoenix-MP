@@ -191,6 +191,11 @@ class WorkoutCoordinator(
     internal val _activeRackItemIds = MutableStateFlow<List<String>>(emptyList())
     val activeRackItemIds: StateFlow<List<String>> = _activeRackItemIds.asStateFlow()
 
+    /**
+     * Rack-load adjustment for the current set. Machine-facing counterweight
+     * math uses physical cable count, while display code decides separately
+     * whether to show per-cable load or an explicit total helper.
+     */
     internal val _currentRackLoadAdjustment = MutableStateFlow(RackLoadAdjustment())
     val currentRackLoadAdjustment: StateFlow<RackLoadAdjustment> = _currentRackLoadAdjustment.asStateFlow()
 

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.preferences
 
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -8,8 +9,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class SettingsPreferencesManagerTest {
+
+    private val legacyDefaultsJson = Json { encodeDefaults = true }
 
     @Test
     fun `loadPreferences removes legacy hud preset key`() {
@@ -26,11 +31,126 @@ class SettingsPreferencesManagerTest {
     }
 
     @Test
-    fun `just lift defaults use official Echo defaults`() {
+    fun `just lift defaults use issue 553 Echo defaults`() {
         val defaults = JustLiftDefaults()
 
-        assertEquals(0, defaults.echoLevelValue)
-        assertEquals(EchoLevel.HARD, defaults.getEchoLevel())
+        assertEquals(1, defaults.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, defaults.getEchoLevel())
+    }
+
+    @Test
+    fun `invalid saved Echo level falls back to issue 553 default`() {
+        val defaults = singleExerciseDefaults(
+            echoLevelValue = 99,
+        )
+
+        assertEquals(EchoLevel.HARDER, defaults.getEchoLevel())
+    }
+
+    @Test
+    fun `saved Just Lift Hard default migrates once to issue 553 default`() = runTest {
+        val settings = MapSettings()
+        val manager = SettingsPreferencesManager(settings)
+        val hardDefaults = JustLiftDefaults(
+            workoutModeId = 10,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
+
+        settings.putString("just_lift_defaults", legacyDefaultsJson.encodeToString(hardDefaults))
+
+        val migrated = manager.getJustLiftDefaults()
+        assertEquals(EchoLevel.HARDER.levelValue, migrated.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, migrated.getEchoLevel())
+
+        manager.saveJustLiftDefaults(hardDefaults)
+
+        val explicitlySavedHard = manager.getJustLiftDefaults()
+        assertEquals(EchoLevel.HARD.levelValue, explicitlySavedHard.echoLevelValue)
+        assertEquals(EchoLevel.HARD, explicitlySavedHard.getEchoLevel())
+    }
+
+    @Test
+    fun `new Just Lift Hard default saved after issue 553 migration is preserved`() = runTest {
+        val manager = SettingsPreferencesManager(MapSettings())
+        val hardDefaults = JustLiftDefaults(
+            workoutModeId = ProgramMode.Echo.modeValue,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
+
+        manager.saveJustLiftDefaults(hardDefaults)
+
+        val saved = manager.getJustLiftDefaults()
+        assertEquals(EchoLevel.HARD.levelValue, saved.echoLevelValue)
+        assertEquals(EchoLevel.HARD, saved.getEchoLevel())
+    }
+
+    @Test
+    fun `non Echo Just Lift Hard placeholder saved after issue 553 migration is normalized`() = runTest {
+        val manager = SettingsPreferencesManager(MapSettings())
+        val oldSchoolDefaults = JustLiftDefaults(
+            workoutModeId = ProgramMode.OldSchool.modeValue,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
+
+        manager.saveJustLiftDefaults(oldSchoolDefaults)
+
+        val saved = manager.getJustLiftDefaults()
+        assertEquals(ProgramMode.OldSchool.modeValue, saved.workoutModeId)
+        assertEquals(EchoLevel.HARDER.levelValue, saved.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, saved.getEchoLevel())
+    }
+
+    @Test
+    fun `saved single exercise Hard default migrates once to issue 553 default`() = runTest {
+        val settings = MapSettings()
+        val manager = SettingsPreferencesManager(settings)
+        val hardDefaults = singleExerciseDefaults(echoLevelValue = EchoLevel.HARD.levelValue)
+
+        settings.putString(
+            "exercise_defaults_${hardDefaults.exerciseId}",
+            legacyDefaultsJson.encodeToString(hardDefaults),
+        )
+
+        val migrated = manager.getSingleExerciseDefaults(hardDefaults.exerciseId) ?: error("Expected migrated defaults")
+        assertEquals(EchoLevel.HARDER.levelValue, migrated.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, migrated.getEchoLevel())
+
+        manager.saveSingleExerciseDefaults(hardDefaults)
+
+        val explicitlySavedHard = manager.getSingleExerciseDefaults(hardDefaults.exerciseId) ?: error("Expected saved defaults")
+        assertEquals(EchoLevel.HARD.levelValue, explicitlySavedHard.echoLevelValue)
+        assertEquals(EchoLevel.HARD, explicitlySavedHard.getEchoLevel())
+    }
+
+    @Test
+    fun `new single exercise Hard default saved after issue 553 migration is preserved`() = runTest {
+        val manager = SettingsPreferencesManager(MapSettings())
+        val hardDefaults = singleExerciseDefaults(
+            workoutModeId = ProgramMode.Echo.modeValue,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
+
+        manager.saveSingleExerciseDefaults(hardDefaults)
+
+        val saved = manager.getSingleExerciseDefaults(hardDefaults.exerciseId) ?: error("Expected saved defaults")
+        assertEquals(EchoLevel.HARD.levelValue, saved.echoLevelValue)
+        assertEquals(EchoLevel.HARD, saved.getEchoLevel())
+    }
+
+    @Test
+    fun `non Echo single exercise Hard placeholder saved after issue 553 migration is normalized`() = runTest {
+        val manager = SettingsPreferencesManager(MapSettings())
+        val oldSchoolDefaults = singleExerciseDefaults(
+            workoutModeId = ProgramMode.OldSchool.modeValue,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
+
+        manager.saveSingleExerciseDefaults(oldSchoolDefaults)
+
+        val saved = manager.getSingleExerciseDefaults(oldSchoolDefaults.exerciseId) ?: error("Expected saved defaults")
+        assertEquals(ProgramMode.OldSchool.modeValue, saved.workoutModeId)
+        assertEquals(EchoLevel.HARDER.levelValue, saved.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, saved.getEchoLevel())
     }
 
     @Test
@@ -46,4 +166,22 @@ class SettingsPreferencesManagerTest {
         val reloaded = SettingsPreferencesManager(settings)
         assertFalse(reloaded.preferencesFlow.value.weightSuggestionsEnabled)
     }
+
+    private fun singleExerciseDefaults(
+        workoutModeId: Int = ProgramMode.Echo.modeValue,
+        echoLevelValue: Int,
+    ): SingleExerciseDefaults = SingleExerciseDefaults(
+        exerciseId = "crossover-lateral-raise",
+        setReps = listOf(10, 10, 10),
+        weightPerCableKg = 20f,
+        setWeightsPerCableKg = listOf(20f, 20f, 20f),
+        progressionKg = 0f,
+        setRestSeconds = listOf(60, 60, 60),
+        workoutModeId = workoutModeId,
+        eccentricLoadPercentage = 100,
+        echoLevelValue = echoLevelValue,
+        duration = 0,
+        isAMRAP = false,
+        perSetRestTime = false,
+    )
 }

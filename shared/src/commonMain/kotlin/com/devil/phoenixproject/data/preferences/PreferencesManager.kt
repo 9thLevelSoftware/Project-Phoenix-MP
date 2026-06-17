@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.data.preferences
 
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -41,7 +43,7 @@ data class SingleExerciseDefaults(
     fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel = com.devil.phoenixproject.domain.model.EchoLevel.entries.find {
         it.levelValue == echoLevelValue
     }
-        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARD
+        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
 
     fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
         0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
@@ -63,7 +65,7 @@ data class JustLiftDefaults(
     val weightPerCableKg: Float = 20f,
     val weightChangePerRep: Float = 0f,
     val eccentricLoadPercentage: Int = 100,
-    val echoLevelValue: Int = 0,
+    val echoLevelValue: Int = 1,
     val stallDetectionEnabled: Boolean = true, // Stall detection auto-stop toggle
     val repCountTimingName: String = "TOP", // RepCountTiming enum name
     val restSeconds: Int = 60, // Rest timer between sets (0 = off, 5-300 in 5s increments)
@@ -78,7 +80,7 @@ data class JustLiftDefaults(
     fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel = com.devil.phoenixproject.domain.model.EchoLevel.entries.find {
         it.levelValue == echoLevelValue
     }
-        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARD
+        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
 
     fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
         0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
@@ -190,6 +192,8 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_REP_COUNT_TIMING = "rep_count_timing"
         private const val KEY_JUST_LIFT_DEFAULTS = "just_lift_defaults"
         private const val KEY_PREFIX_EXERCISE = "exercise_defaults_"
+        private const val KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT = "echo_hard_default_migrated_just_lift"
+        private const val KEY_ECHO_HARD_DEFAULT_MIGRATION_EXERCISE_PREFIX = "echo_hard_default_migrated_exercise_"
         private const val KEY_GAMIFICATION_ENABLED = "gamification_enabled"
         private const val KEY_WEIGHT_INCREMENT = "weight_increment"
         private const val KEY_AUTO_START_ROUTINE = "auto_start_routine"
@@ -348,15 +352,21 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         if (jsonString == null) return null
 
         return try {
-            json.decodeFromString<SingleExerciseDefaults>(jsonString)
+            migrateSavedEchoHardDefault(
+                exerciseId = exerciseId,
+                key = key,
+                defaults = json.decodeFromString<SingleExerciseDefaults>(jsonString),
+            )
         } catch (_: Exception) {
             null
         }
     }
 
     override suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
+        val normalizedDefaults = defaults.withNormalizedNonEchoEchoLevel()
         val key = "$KEY_PREFIX_EXERCISE${defaults.exerciseId}"
-        settings.putString(key, json.encodeToString(defaults))
+        settings.putString(key, json.encodeToString(normalizedDefaults))
+        settings.putBoolean(getEchoHardDefaultMigrationKey(defaults.exerciseId), true)
     }
 
     override suspend fun clearAllSingleExerciseDefaults() {
@@ -369,19 +379,65 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     override suspend fun getJustLiftDefaults(): JustLiftDefaults {
         val jsonString = settings.getStringOrNull(KEY_JUST_LIFT_DEFAULTS) ?: return JustLiftDefaults()
         return try {
-            json.decodeFromString<JustLiftDefaults>(jsonString)
+            migrateSavedEchoHardDefault(json.decodeFromString<JustLiftDefaults>(jsonString))
         } catch (_: Exception) {
             JustLiftDefaults()
         }
     }
 
     override suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
-        settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(defaults))
+        val normalizedDefaults = defaults.withNormalizedNonEchoEchoLevel()
+        settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(normalizedDefaults))
+        settings.putBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, true)
     }
 
     override suspend fun clearJustLiftDefaults() {
         settings.remove(KEY_JUST_LIFT_DEFAULTS)
     }
+
+    private fun migrateSavedEchoHardDefault(defaults: JustLiftDefaults): JustLiftDefaults {
+        if (settings.getBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, false)) return defaults
+
+        settings.putBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, true)
+        if (defaults.echoLevelValue != EchoLevel.HARD.levelValue) return defaults
+
+        val migrated = defaults.copy(echoLevelValue = EchoLevel.HARDER.levelValue)
+        settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(migrated))
+        return migrated
+    }
+
+    private fun migrateSavedEchoHardDefault(
+        exerciseId: String,
+        key: String,
+        defaults: SingleExerciseDefaults,
+    ): SingleExerciseDefaults {
+        val migrationKey = getEchoHardDefaultMigrationKey(exerciseId)
+        if (settings.getBoolean(migrationKey, false)) return defaults
+
+        settings.putBoolean(migrationKey, true)
+        if (defaults.echoLevelValue != EchoLevel.HARD.levelValue) return defaults
+
+        val migrated = defaults.copy(echoLevelValue = EchoLevel.HARDER.levelValue)
+        settings.putString(key, json.encodeToString(migrated))
+        return migrated
+    }
+
+    private fun getEchoHardDefaultMigrationKey(exerciseId: String): String =
+        "$KEY_ECHO_HARD_DEFAULT_MIGRATION_EXERCISE_PREFIX$exerciseId"
+
+    private fun SingleExerciseDefaults.withNormalizedNonEchoEchoLevel(): SingleExerciseDefaults =
+        if (workoutModeId != ProgramMode.Echo.modeValue && echoLevelValue == EchoLevel.HARD.levelValue) {
+            copy(echoLevelValue = EchoLevel.HARDER.levelValue)
+        } else {
+            this
+        }
+
+    private fun JustLiftDefaults.withNormalizedNonEchoEchoLevel(): JustLiftDefaults =
+        if (workoutModeId != ProgramMode.Echo.modeValue && echoLevelValue == EchoLevel.HARD.levelValue) {
+            copy(echoLevelValue = EchoLevel.HARDER.levelValue)
+        } else {
+            this
+        }
 
     override suspend fun setGamificationEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_GAMIFICATION_ENABLED, enabled)

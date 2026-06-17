@@ -141,7 +141,7 @@ fun RestTimerCard(
     // Local state for editing parameters
     var editedReps by remember(nextExerciseReps) { mutableStateOf(nextExerciseReps ?: 10) }
     var editedWeight by remember(nextExerciseWeight) { mutableStateOf(nextExerciseWeight ?: 20f) }
-    var editedEchoLevel by remember(echoLevel) { mutableStateOf(echoLevel ?: EchoLevel.HARD) }
+    var editedEchoLevel by remember(echoLevel) { mutableStateOf(echoLevel ?: EchoLevel.HARDER) }
     var editedEccentricPercent by remember(eccentricLoadPercent) { mutableStateOf(eccentricLoadPercent ?: 100) }
 
     // Determine if this is Echo mode

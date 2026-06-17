@@ -15,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.format
 import org.jetbrains.compose.resources.stringResource
@@ -162,12 +164,10 @@ fun WeightStepper(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.width(Spacing.small))
-                val totalWeight = weight * 2
-                val totalFormatted = if (totalWeight == totalWeight.toLong().toFloat()) {
-                    totalWeight.toLong().toString()
-                } else {
-                    totalWeight.format(1)
-                }
+                val totalFormatted = WeightDisplayFormatter.formatTwoCableTotalWeight(
+                    weightPerCableKg = weight,
+                    unit = WeightUnit.KG,
+                )
                 Text(
                     text = stringResource(Res.string.weight_total_two_cables, totalFormatted),
                     style = MaterialTheme.typography.labelMedium,

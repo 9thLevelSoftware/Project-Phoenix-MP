@@ -85,7 +85,6 @@ fun WorkoutHud(
     val pagerState = rememberPagerState(pageCount = { 2 })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
     val currentRoutineExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
-    val liveDisplayMultiplier = currentRoutineExercise?.exercise.liveUnifiedAccessoryDisplayMultiplier()
 
     // Track consecutive high-asymmetry reps for alert (ASYM-05)
     var consecutiveHighAsymmetryCount by remember { mutableStateOf(0) }
@@ -129,7 +128,6 @@ fun WorkoutHud(
                 // should only be allowed when the machine is not engaged. Official app behavior.
                 showNextButton = false,
                 isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
-                liveDisplayMultiplier = liveDisplayMultiplier,
                 rackLoadAdjustment = rackLoadAdjustment,
             )
         },
@@ -166,7 +164,6 @@ fun WorkoutHud(
                             totalSets = totalSets,
                             timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
                             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
-                            liveDisplayMultiplier = liveDisplayMultiplier,
                             isExerciseTimerPaused = isExerciseTimerPaused,
                             onPauseExerciseTimer = onPauseExerciseTimer,
                             onResumeExerciseTimer = onResumeExerciseTimer,
@@ -357,7 +354,6 @@ private fun HudBottomBar(
     onNextExercise: () -> Unit,
     showNextButton: Boolean,
     isCurrentExerciseBodyweight: Boolean,
-    liveDisplayMultiplier: Int,
     rackLoadAdjustment: RackLoadAdjustment,
 ) {
     Surface(
@@ -374,8 +370,7 @@ private fun HudBottomBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Weight Controls - Echo mode shows "Adaptive" since weight is dynamic
-            val isUnifiedAccessoryDisplay = liveDisplayMultiplier == 2
-            val selectedDisplayKg = workoutParameters.weightPerCableKg * liveDisplayMultiplier
+            val selectedDisplayKg = workoutParameters.weightPerCableKg
             val rackContext = rackLoadAdjustment.toHudText(formatWeight, weightUnit)
             Column {
                 if (isCurrentExerciseBodyweight) {
@@ -391,7 +386,7 @@ private fun HudBottomBar(
                     )
                 } else {
                     Text(
-                        if (isUnifiedAccessoryDisplay) "Total weight" else "Weight/cable",
+                        "Weight/cable",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -464,7 +459,6 @@ private fun ExecutionPage(
     totalSets: Int = 0, // Total number of sets for current exercise
     timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
     isCurrentExerciseBodyweight: Boolean = false,
-    liveDisplayMultiplier: Int,
     isExerciseTimerPaused: Boolean = false,
     onPauseExerciseTimer: () -> Unit = {},
     onResumeExerciseTimer: () -> Unit = {},
@@ -667,8 +661,8 @@ private fun ExecutionPage(
                 // Use max of both loads - works for single and double cable exercises
                 maxOf(metric.loadA, metric.loadB)
             }
-            val displayKg = perCableKg * liveDisplayMultiplier
-            val targetDisplayWeight = workoutParameters.weightPerCableKg * liveDisplayMultiplier
+            val displayKg = perCableKg
+            val targetDisplayWeight = workoutParameters.weightPerCableKg
             val gaugeMax = (targetDisplayWeight * 1.5f).coerceAtLeast(20f)
 
             // For Echo mode: show "—" when force data isn't available yet (Issue #52)
@@ -685,7 +679,7 @@ private fun ExecutionPage(
                 maxForce = gaugeMax,
                 velocity = (metric.velocityA + metric.velocityB) / 2.0,
                 label = forceLabel,
-                subLabel = if (liveDisplayMultiplier == 2) "TOTAL" else "PER CABLE",
+                subLabel = "PER CABLE",
                 modifier = Modifier.size(hudSize),
             )
         } else if (isCurrentExerciseBodyweight) {

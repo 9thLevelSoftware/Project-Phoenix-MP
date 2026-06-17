@@ -30,10 +30,9 @@ enum class WorkoutPhase {
 /**
  * Personal record for an exercise.
  *
- * [cableCount] enables cable-aware weight display for PRs. Populated from
- * exercise `preferredCableCount` when a PR is recorded. Legacy PRs have
- * `cableCount = null`, which causes WeightDisplayFormatter to default to 1
- * (showing per-cable weight — safe backward-compatible behavior).
+ * [weightPerCableKg] is the official-app display contract for PR load. [cableCount]
+ * is retained for legacy metadata and analytics context; ordinary PR display must
+ * not multiply by it.
  */
 data class PersonalRecord(
     val id: Long = 0,
@@ -269,7 +268,7 @@ sealed class WorkoutMode(val displayName: String) {
 /**
  * Extension function to convert ProgramMode to WorkoutMode for UI compatibility
  */
-fun ProgramMode.toWorkoutMode(echoLevel: EchoLevel = EchoLevel.HARD): WorkoutMode = when (this) {
+fun ProgramMode.toWorkoutMode(echoLevel: EchoLevel = EchoLevel.HARDER): WorkoutMode = when (this) {
     ProgramMode.OldSchool -> WorkoutMode.OldSchool
     ProgramMode.Pump -> WorkoutMode.Pump
     ProgramMode.TUT -> WorkoutMode.TUT
@@ -342,7 +341,10 @@ data class WorkoutParameters(
     val stallDetectionEnabled: Boolean = true, // Enable 5s stall/de-load auto-stop during active sets
     val repCountTiming: RepCountTiming = RepCountTiming.TOP, // When to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     // Echo-specific settings (only used when programMode == ProgramMode.Echo)
-    val echoLevel: EchoLevel = EchoLevel.HARD,
+    // Issue #553: prefer HARDER (1.25s @ 40 mm/s) for new Echo sessions.
+    // HARD's stricter 1.0s @ 50 mm/s window can leave V-Form users stuck in
+    // the firmware warm-up buffer when the machine never reports warm-up reps.
+    val echoLevel: EchoLevel = EchoLevel.HARDER,
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
     // Just Lift rest timer (0 = off, 5-300 in 5s increments)
     val justLiftRestSeconds: Int = 0,
@@ -478,8 +480,8 @@ sealed class HapticEvent {
  * @property timestamp Session start time as Unix epoch milliseconds
  * @property duration Session duration in MILLISECONDS (not seconds!)
  *                    Computed as `currentTimeMillis() - startTime`
- * @property weightPerCableKg Machine/storage weight per cable in kilograms. User-facing load
- *                            displays should prefer displayMultiplier over physical cableCount.
+ * @property weightPerCableKg Machine/storage weight per cable in kilograms. Ordinary
+ *                            selected-load displays should show this per-cable value.
  */
 data class WorkoutSession(
     val id: String = generateUUID(),
@@ -561,10 +563,10 @@ data class WorkoutSession(
 fun WorkoutSession.effectiveHeaviestKgPerCable(): Float = heaviestLiftKg ?: weightPerCableKg
 
 /**
- * Multiplier for user-facing saved-session load display.
+ * Legacy multiplier metadata for explicit total/compatibility paths.
  *
- * Prefer persisted display semantics when present; fall back to physical cable count only for
- * legacy rows that predate displayMultiplier.
+ * Ordinary saved-session load display matches the official app and stays per-cable.
+ * Do not use this helper to format primary selected/heaviest load values.
  */
 fun WorkoutSession.displayLoadMultiplier(): Int = displayMultiplier ?: cableCount ?: 1
 
