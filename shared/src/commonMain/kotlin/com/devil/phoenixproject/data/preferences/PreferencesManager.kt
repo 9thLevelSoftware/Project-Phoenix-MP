@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.preferences
 
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -362,8 +363,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     override suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
+        val normalizedDefaults = defaults.withNormalizedNonEchoEchoLevel()
         val key = "$KEY_PREFIX_EXERCISE${defaults.exerciseId}"
-        settings.putString(key, json.encodeToString(defaults))
+        settings.putString(key, json.encodeToString(normalizedDefaults))
         settings.putBoolean(getEchoHardDefaultMigrationKey(defaults.exerciseId), true)
     }
 
@@ -384,7 +386,8 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     override suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
-        settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(defaults))
+        val normalizedDefaults = defaults.withNormalizedNonEchoEchoLevel()
+        settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(normalizedDefaults))
         settings.putBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, true)
     }
 
@@ -421,6 +424,20 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
     private fun getEchoHardDefaultMigrationKey(exerciseId: String): String =
         "$KEY_ECHO_HARD_DEFAULT_MIGRATION_EXERCISE_PREFIX$exerciseId"
+
+    private fun SingleExerciseDefaults.withNormalizedNonEchoEchoLevel(): SingleExerciseDefaults =
+        if (workoutModeId != ProgramMode.Echo.modeValue && echoLevelValue == EchoLevel.HARD.levelValue) {
+            copy(echoLevelValue = EchoLevel.HARDER.levelValue)
+        } else {
+            this
+        }
+
+    private fun JustLiftDefaults.withNormalizedNonEchoEchoLevel(): JustLiftDefaults =
+        if (workoutModeId != ProgramMode.Echo.modeValue && echoLevelValue == EchoLevel.HARD.levelValue) {
+            copy(echoLevelValue = EchoLevel.HARDER.levelValue)
+        } else {
+            this
+        }
 
     override suspend fun setGamificationEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_GAMIFICATION_ENABLED, enabled)

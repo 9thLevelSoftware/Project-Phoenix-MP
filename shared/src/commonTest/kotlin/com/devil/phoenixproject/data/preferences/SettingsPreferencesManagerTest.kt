@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.preferences
 
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -72,7 +73,7 @@ class SettingsPreferencesManagerTest {
     fun `new Just Lift Hard default saved after issue 553 migration is preserved`() = runTest {
         val manager = SettingsPreferencesManager(MapSettings())
         val hardDefaults = JustLiftDefaults(
-            workoutModeId = 10,
+            workoutModeId = ProgramMode.Echo.modeValue,
             echoLevelValue = EchoLevel.HARD.levelValue,
         )
 
@@ -81,6 +82,22 @@ class SettingsPreferencesManagerTest {
         val saved = manager.getJustLiftDefaults()
         assertEquals(EchoLevel.HARD.levelValue, saved.echoLevelValue)
         assertEquals(EchoLevel.HARD, saved.getEchoLevel())
+    }
+
+    @Test
+    fun `non Echo Just Lift Hard placeholder saved after issue 553 migration is normalized`() = runTest {
+        val manager = SettingsPreferencesManager(MapSettings())
+        val oldSchoolDefaults = JustLiftDefaults(
+            workoutModeId = ProgramMode.OldSchool.modeValue,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
+
+        manager.saveJustLiftDefaults(oldSchoolDefaults)
+
+        val saved = manager.getJustLiftDefaults()
+        assertEquals(ProgramMode.OldSchool.modeValue, saved.workoutModeId)
+        assertEquals(EchoLevel.HARDER.levelValue, saved.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, saved.getEchoLevel())
     }
 
     @Test
@@ -108,13 +125,32 @@ class SettingsPreferencesManagerTest {
     @Test
     fun `new single exercise Hard default saved after issue 553 migration is preserved`() = runTest {
         val manager = SettingsPreferencesManager(MapSettings())
-        val hardDefaults = singleExerciseDefaults(echoLevelValue = EchoLevel.HARD.levelValue)
+        val hardDefaults = singleExerciseDefaults(
+            workoutModeId = ProgramMode.Echo.modeValue,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
 
         manager.saveSingleExerciseDefaults(hardDefaults)
 
         val saved = manager.getSingleExerciseDefaults(hardDefaults.exerciseId) ?: error("Expected saved defaults")
         assertEquals(EchoLevel.HARD.levelValue, saved.echoLevelValue)
         assertEquals(EchoLevel.HARD, saved.getEchoLevel())
+    }
+
+    @Test
+    fun `non Echo single exercise Hard placeholder saved after issue 553 migration is normalized`() = runTest {
+        val manager = SettingsPreferencesManager(MapSettings())
+        val oldSchoolDefaults = singleExerciseDefaults(
+            workoutModeId = ProgramMode.OldSchool.modeValue,
+            echoLevelValue = EchoLevel.HARD.levelValue,
+        )
+
+        manager.saveSingleExerciseDefaults(oldSchoolDefaults)
+
+        val saved = manager.getSingleExerciseDefaults(oldSchoolDefaults.exerciseId) ?: error("Expected saved defaults")
+        assertEquals(ProgramMode.OldSchool.modeValue, saved.workoutModeId)
+        assertEquals(EchoLevel.HARDER.levelValue, saved.echoLevelValue)
+        assertEquals(EchoLevel.HARDER, saved.getEchoLevel())
     }
 
     @Test
@@ -131,14 +167,17 @@ class SettingsPreferencesManagerTest {
         assertFalse(reloaded.preferencesFlow.value.weightSuggestionsEnabled)
     }
 
-    private fun singleExerciseDefaults(echoLevelValue: Int): SingleExerciseDefaults = SingleExerciseDefaults(
+    private fun singleExerciseDefaults(
+        workoutModeId: Int = ProgramMode.Echo.modeValue,
+        echoLevelValue: Int,
+    ): SingleExerciseDefaults = SingleExerciseDefaults(
         exerciseId = "crossover-lateral-raise",
         setReps = listOf(10, 10, 10),
         weightPerCableKg = 20f,
         setWeightsPerCableKg = listOf(20f, 20f, 20f),
         progressionKg = 0f,
         setRestSeconds = listOf(60, 60, 60),
-        workoutModeId = 10,
+        workoutModeId = workoutModeId,
         eccentricLoadPercentage = 100,
         echoLevelValue = echoLevelValue,
         duration = 0,
