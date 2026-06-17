@@ -292,7 +292,8 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     }
 
     val useCompactAccessibility = isCompactAccessibilityLayout()
-    val contentScrollState = rememberScrollState()
+    val bodyScrollState = rememberScrollState()
+    var showRestTimerDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -303,27 +304,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
-                .padding(horizontal = Spacing.medium, vertical = Spacing.small)
-                .then(if (useCompactAccessibility) Modifier.verticalScroll(contentScrollState) else Modifier),
-            verticalArrangement = Arrangement.spacedBy(if (useCompactAccessibility) Spacing.medium else Spacing.small),
+                .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
-            // Auto-Start/Stop Banner (compact, always visible when idle)
-            if (workoutState is WorkoutState.Idle) {
-                val autoStartCountdown by viewModel.autoStartCountdown.collectAsState()
-                AutoStartStopCard(
-                    workoutState = workoutState,
-                    autoStartCountdown = autoStartCountdown,
-                    autoStopState = autoStopState,
-                )
-
-                // Issue #113: Just Lift rest countdown pill
-                val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
-                if (justLiftRestCountdown != null && justLiftRestCountdown!! > 0) {
-                    JustLiftRestCountdownRow(secondsRemaining = justLiftRestCountdown!!)
-                }
-            }
-
-            // Mode Selection Card
+            // Pinned header: auto-start status + workout mode (never clipped by lower content)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -337,9 +321,27 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         .padding(Spacing.small),
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
+                    if (workoutState is WorkoutState.Idle) {
+                        val autoStartCountdown by viewModel.autoStartCountdown.collectAsState()
+                        AutoStartStopCard(
+                            workoutState = workoutState,
+                            autoStartCountdown = autoStartCountdown,
+                            autoStopState = autoStopState,
+                            compact = true,
+                            embedded = true,
+                        )
+
+                        val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
+                        if (justLiftRestCountdown != null && justLiftRestCountdown!! > 0) {
+                            JustLiftRestCountdownRow(secondsRemaining = justLiftRestCountdown!!)
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    }
+
                     Text(
                         "Workout Mode",
-                        style = MaterialTheme.typography.titleSmall,
+                        style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -351,13 +353,25 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         "Echo" to WorkoutMode.Echo(echoLevel),
                     )
 
-                    // TUT segment highlights for both TUT and TUTBeast
                     val isModeSelected: (WorkoutMode) -> Boolean = { mode ->
                         when (mode) {
                             is WorkoutMode.TUT -> selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
                             else -> selectedMode::class == mode::class
                         }
                     }
+                    val onModeSelected: (WorkoutMode) -> Unit = { mode ->
+                        selectedMode = when (mode) {
+                            is WorkoutMode.TUT -> {
+                                if (selectedMode is WorkoutMode.TUTBeast) {
+                                    WorkoutMode.TUTBeast
+                                } else {
+                                    WorkoutMode.TUT
+                                }
+                            }
+                            else -> mode
+                        }
+                    }
+
                     if (useCompactAccessibility) {
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
@@ -367,41 +381,21 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             modes.forEach { (label, mode) ->
                                 FilterChip(
                                     selected = isModeSelected(mode),
-                                    onClick = {
-                                        selectedMode = when (mode) {
-                                            is WorkoutMode.TUT -> {
-                                                if (selectedMode is WorkoutMode.TUTBeast) {
-                                                    WorkoutMode.TUTBeast
-                                                } else {
-                                                    WorkoutMode.TUT
-                                                }
-                                            }
-                                            else -> mode
-                                        }
-                                    },
+                                    onClick = { onModeSelected(mode) },
                                     label = { Text(label) },
                                 )
                             }
                         }
                     } else {
                         SingleChoiceSegmentedButtonRow(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp),
                         ) {
                             modes.forEachIndexed { index, (label, mode) ->
                                 SegmentedButton(
                                     shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
-                                    onClick = {
-                                        selectedMode = when (mode) {
-                                            is WorkoutMode.TUT -> {
-                                                if (selectedMode is WorkoutMode.TUTBeast) {
-                                                    WorkoutMode.TUTBeast
-                                                } else {
-                                                    WorkoutMode.TUT
-                                                }
-                                            }
-                                            else -> mode
-                                        }
-                                    },
+                                    onClick = { onModeSelected(mode) },
                                     selected = isModeSelected(mode),
                                     icon = {},
                                 ) {
@@ -411,47 +405,24 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         }
                     }
 
-                    val isTutOrBeast = selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
-                    if (isTutOrBeast) {
-                        val tutVariants = listOf(
-                            "Standard" to false,
-                            "Beast" to true,
-                        )
-                        if (useCompactAccessibility) {
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                tutVariants.forEach { (label, isBeast) ->
-                                    FilterChip(
-                                        selected = (selectedMode is WorkoutMode.TUTBeast) == isBeast,
-                                        onClick = {
-                                            selectedMode = if (isBeast) WorkoutMode.TUTBeast else WorkoutMode.TUT
-                                        },
-                                        label = { Text(label) },
-                                    )
-                                }
-                            }
-                        } else {
-                            SingleChoiceSegmentedButtonRow(
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                tutVariants.forEachIndexed { index, (label, isBeast) ->
-                                    SegmentedButton(
-                                        shape = SegmentedButtonDefaults.itemShape(
-                                            index = index,
-                                            count = tutVariants.size,
-                                        ),
-                                        onClick = {
-                                            selectedMode = if (isBeast) WorkoutMode.TUTBeast else WorkoutMode.TUT
-                                        },
-                                        selected = (selectedMode is WorkoutMode.TUTBeast) == isBeast,
-                                        icon = {},
-                                    ) {
-                                        Text(label, maxLines = 1)
-                                    }
-                                }
-                            }
+                    val isTutOrBeastPinned = selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
+                    if (isTutOrBeastPinned) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilterChip(
+                                selected = selectedMode is WorkoutMode.TUT,
+                                onClick = { selectedMode = WorkoutMode.TUT },
+                                label = { Text("Standard") },
+                                modifier = Modifier.weight(1f),
+                            )
+                            FilterChip(
+                                selected = selectedMode is WorkoutMode.TUTBeast,
+                                onClick = { selectedMode = WorkoutMode.TUTBeast },
+                                label = { Text("Beast") },
+                                modifier = Modifier.weight(1f),
+                            )
                         }
                     }
 
@@ -466,20 +437,26 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
 
+            // Scrollable body: load, echo options, and quick settings
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(bodyScrollState),
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
             // Mode-specific options - OLD SCHOOL, PUMP, TUT & BEAST
             val isTutOrBeast = selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
             val showWeightAndProgression = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump || isTutOrBeast
             if (showWeightAndProgression) {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -487,7 +464,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .fillMaxWidth()
                             .padding(Spacing.small),
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
@@ -555,11 +532,8 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             // Mode-specific options - ECHO MODE
             val isEchoMode = selectedMode is WorkoutMode.Echo
             if (isEchoMode) {
-                // Eccentric Load Card
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -567,17 +541,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
-                            .padding(Spacing.medium),
-                        verticalArrangement = if (useCompactAccessibility) {
-                            Arrangement.spacedBy(Spacing.small)
-                        } else {
-                            Arrangement.SpaceEvenly
-                        },
+                            .fillMaxWidth()
+                            .padding(Spacing.small),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         Text(
                             stringResource(Res.string.eccentric_load),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -620,33 +590,15 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             stringResource(Res.string.eccentric_load_helper),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                    }
-                }
 
-                // Echo Level Card
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
-                            .padding(Spacing.medium),
-                        verticalArrangement = if (useCompactAccessibility) {
-                            Arrangement.spacedBy(Spacing.small)
-                        } else {
-                            Arrangement.SpaceEvenly
-                        },
-                    ) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
                         Text(
                             stringResource(Res.string.echo_level),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -670,7 +622,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             }
                         } else {
                             SingleChoiceSegmentedButtonRow(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp),
                             ) {
                                 EchoLevel.entries.forEachIndexed { index, level ->
                                     SegmentedButton(
@@ -691,8 +645,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             }
 
             // Quick settings — single compact card
-            var showRestTimerDialog by remember { mutableStateOf(false) }
-
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -763,6 +715,19 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 }
             }
 
+            // Active workout status (replaces mode cards when active)
+            if (workoutState !is WorkoutState.Idle) {
+                ActiveStatusCard(
+                    workoutState = workoutState,
+                    currentMetric = currentMetric,
+                    repCount = repCount,
+                    weightUnit = weightUnit,
+                    formatWeight = viewModel::formatWeight,
+                    onStopWorkout = { viewModel.stopWorkout() },
+                )
+            }
+            }
+
             if (showRestTimerDialog) {
                 RestTimePickerDialog(
                     currentRestSeconds = restSeconds,
@@ -774,18 +739,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                     options = listOf(0, 30, 60, 90, 120),
                     title = "Rest Between Sets",
                     formatLabel = { if (it == 0) "Off" else "${it}s" },
-                )
-            }
-
-            // Active workout status (replaces mode cards when active)
-            if (workoutState !is WorkoutState.Idle) {
-                ActiveStatusCard(
-                    workoutState = workoutState,
-                    currentMetric = currentMetric,
-                    repCount = repCount,
-                    weightUnit = weightUnit,
-                    formatWeight = viewModel::formatWeight,
-                    onStopWorkout = { viewModel.stopWorkout() },
                 )
             }
         }
@@ -971,7 +924,13 @@ fun ActiveStatusCard(
  * Features animated rings, pulsing glow, and countdown display
  */
 @Composable
-fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, autoStopState: AutoStopUiState) {
+fun AutoStartStopCard(
+    workoutState: WorkoutState,
+    autoStartCountdown: Int?,
+    autoStopState: AutoStopUiState,
+    compact: Boolean = false,
+    embedded: Boolean = false,
+) {
     val isIdle = workoutState is WorkoutState.Idle
     val isActive = workoutState is WorkoutState.Active
     val isCountingDown = autoStartCountdown != null
@@ -1032,40 +991,51 @@ fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, auto
         blue = (primaryColor.blue + 1f) / 2f,
     )
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isCountingDown || isStopping) 8.dp else 4.dp,
-        ),
-    ) {
+    val indicatorSize = if (compact) 40.dp else 56.dp
+    val innerIndicatorSize = if (compact) 32.dp else 44.dp
+    val handleIconSize = if (compact) 32.dp else 40.dp
+    val statusTitleStyle = if (compact) {
+        MaterialTheme.typography.labelLarge
+    } else {
+        MaterialTheme.typography.titleMedium
+    }
+    val rowPadding = if (compact) {
+        Modifier.padding(horizontal = Spacing.extraSmall, vertical = 2.dp)
+    } else {
+        Modifier.padding(horizontal = Spacing.medium, vertical = Spacing.small)
+    }
+
+    val bannerContent: @Composable () -> Unit = {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            primaryColor.copy(alpha = 0.1f),
-                            Color.Transparent,
-                        ),
-                    ),
+                .then(
+                    if (embedded) {
+                        Modifier
+                    } else {
+                        Modifier.background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    primaryColor.copy(alpha = 0.1f),
+                                    Color.Transparent,
+                                ),
+                            ),
+                        )
+                    },
                 )
-                .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                .then(rowPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Left: Animated indicator
             Box(
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(indicatorSize),
                 contentAlignment = Alignment.Center,
             ) {
                 if (isCountingDown || isStopping) {
                     // Rotating ring
                     Canvas(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(indicatorSize)
                             .alpha(0.6f),
                     ) {
                         rotate(ringRotation) {
@@ -1082,7 +1052,7 @@ fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, auto
 
                     // Progress ring
                     val progress = if (isStopping) autoStopState.progress else 0.6f
-                    Canvas(modifier = Modifier.size(44.dp)) {
+                    Canvas(modifier = Modifier.size(innerIndicatorSize)) {
                         drawArc(
                             color = primaryColor.copy(alpha = 0.2f),
                             startAngle = -90f,
@@ -1122,7 +1092,7 @@ fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, auto
                     // Pulsing glow for ready state
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(if (compact) 36.dp else 48.dp)
                             .scale(pulseScale)
                             .alpha(glowAlpha * 0.5f)
                             .blur(12.dp)
@@ -1132,7 +1102,7 @@ fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, auto
                     // Handle grip icon - two parallel bars
                     Canvas(
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(handleIconSize)
                             .scale(pulseScale),
                     ) {
                         val barWidth = 6f
@@ -1193,7 +1163,7 @@ fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, auto
                 }
             }
 
-            Spacer(modifier = Modifier.width(Spacing.medium))
+            Spacer(modifier = Modifier.width(if (compact) Spacing.small else Spacing.medium))
 
             // Center: Text content
             Column(modifier = Modifier.weight(1f)) {
@@ -1205,9 +1175,10 @@ fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, auto
                         isActive -> "AUTO-STOP READY"
                         else -> "AUTO-START READY"
                     },
-                    style = MaterialTheme.typography.titleMedium,
+                    style = statusTitleStyle,
                     fontWeight = FontWeight.Bold,
                     color = primaryColor,
+                    maxLines = 1,
                 )
 
                 // Instruction
@@ -1220,19 +1191,38 @@ fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, auto
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
             // Right: Status indicator dot
             Box(
                 modifier = Modifier
-                    .size(12.dp)
+                    .size(if (compact) 10.dp else 12.dp)
                     .scale(if (!isCountingDown && !isStopping) pulseScale else 1f)
                     .background(
                         color = primaryColor.copy(alpha = glowAlpha),
                         shape = CircleShape,
                     ),
             )
+        }
+    }
+
+    if (embedded) {
+        bannerContent()
+    } else {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+            shape = RoundedCornerShape(16.dp),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = if (isCountingDown || isStopping) 8.dp else 4.dp,
+            ),
+        ) {
+            bannerContent()
         }
     }
 }
