@@ -13,6 +13,8 @@
     <string name="app_name">Phoenix</string>
 
     <!-- ==================== Workout Modes ==================== -->
+    <string name="just_lift_tut_standard">Standard</string>
+    <string name="just_lift_tut_beast">Beast</string>
     <string name="echo_level">Livello Echo</string>
     <string name="echo_level_hard">Difficile</string>
     <string name="echo_level_harder">Più difficile</string>

@@ -371,12 +371,6 @@ class KableBleRepository : BleRepository {
 
             val emitted = publishRepEvent(notification, source = "rx")
             log.d { "Emitted rep event (RX): success=$emitted, legacy=${notification.isLegacyFormat}" }
-
-            logRepo.debug(
-                LogEventType.REP_RECEIVED,
-                if (notification.isLegacyFormat) "Legacy rep (6-byte)" else "Modern rep (24-byte)",
-                details = "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}",
-            )
         } catch (e: Exception) {
             log.e { "Error parsing rep notification: ${e.message}" }
         }
@@ -409,12 +403,6 @@ class KableBleRepository : BleRepository {
 
             val emitted = publishRepEvent(notification, source = "reps-characteristic")
             log.i { "Emitted rep event (REPS char): success=$emitted, legacy=${notification.isLegacyFormat}, repsSetCount=${notification.repsSetCount}" }
-
-            logRepo.debug(
-                LogEventType.REP_RECEIVED,
-                if (notification.isLegacyFormat) "Legacy rep (6-byte)" else "Modern rep (24-byte)",
-                details = "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}",
-            )
         } catch (e: Exception) {
             log.e { "Error parsing REPS characteristic data: ${e.message}" }
         }
@@ -464,14 +452,22 @@ class KableBleRepository : BleRepository {
 
     private fun publishRepEvent(notification: RepNotification, source: String): Boolean {
         val emitted = _repEvents.tryEmit(notification)
+        val details = buildRepEventDetails(notification, source, emitted)
         if (!emitted) {
             eventDeliveryTracker.recordDropped(BleCriticalEventType.REP)
-            val details = "source=$source, legacy=${notification.isLegacyFormat}, setCount=${notification.repsSetCount}"
             log.w { "Dropped critical BLE rep event because subscriber buffer is full: $details" }
             logRepo.warning(LogEventType.REP_RECEIVED, "Dropped BLE rep event", details = details)
+        } else {
+            logRepo.debug(LogEventType.REP_RECEIVED, "Rep event published", details = details)
         }
         return emitted
     }
+
+    private fun buildRepEventDetails(notification: RepNotification, source: String, emitted: Boolean): String =
+        "source=$source, packetSize=${notification.rawData.size}, legacy=${notification.isLegacyFormat}, " +
+            "up=${notification.topCounter}, down=${notification.completeCounter}, " +
+            "repsRomCount=${notification.repsRomCount}, repsRomTotal=${notification.repsRomTotal}, " +
+            "repsSetCount=${notification.repsSetCount}, repsSetTotal=${notification.repsSetTotal}, emitted=$emitted"
 
     internal fun publishRepEventForTest(notification: RepNotification, source: String = "test"): Boolean = publishRepEvent(notification, source)
 

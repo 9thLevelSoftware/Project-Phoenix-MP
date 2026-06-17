@@ -2,7 +2,9 @@ package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.toWorkoutMode
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -391,9 +393,11 @@ class BlePacketFactoryTest {
         // For Just Lift OVERLAP variant, tail bytes 0x48..0x4F are firmware force config.
         assertEquals(targetWeight, readFloatLE(packet, 0x48))
         assertEquals(progression, readFloatLE(packet, 0x4C))
-        assertEquals((-1300).toShort(), readShortLE(packet, 0x40))
-        assertEquals((-1200).toShort(), readShortLE(packet, 0x42))
-        assertEquals(100.0f, readFloatLE(packet, 0x44))
+        // After Issue #538, Just Lift uses the selected profile (Pump here, not OldSchool).
+        // Eccentric down ramp at 0x40-0x44 comes from the Pump profile.
+        assertEquals((-700).toShort(), readShortLE(packet, 0x40))
+        assertEquals((-550).toShort(), readShortLE(packet, 0x42))
+        assertEquals(1.0f, readFloatLE(packet, 0x44))
     }
 
     @Test
@@ -1207,11 +1211,11 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `JustLift with EccentricOnly programMode honors OVERLAP variant`() {
-        // Just Lift always copies the OldSchool profile, so its 0x48-0x4F bytes
-        // are not the eccentric-up ramp. The variant override must key off the
-        // resolved profile (not params.programMode) or this configuration would
-        // silently lose its softMax/increment writes.
+    fun `JustLift with EccentricOnly programMode uses NON_OVERLAP to preserve profile`() {
+        // After Issue #538, Just Lift no longer forces OldSchool profile.
+        // EccentricOnly triggers NON_OVERLAP, preserving eccentric-up ramp at 0x48-0x4F.
+        // EccentricOnly is never offered in the Just Lift UI, but the packet factory
+        // should still produce correct bytes if called this way.
         val params = WorkoutParameters(
             programMode = ProgramMode.EccentricOnly,
             reps = 0,
@@ -1223,10 +1227,16 @@ class BlePacketFactoryTest {
             variant = BlePacketFactory.ForceConfigVariant.OVERLAP,
         )
 
-        // Just Lift keeps softMax at the selected per-cable force and uses
-        // reps=0xFF for open-ended set length.
-        assertEquals(40.0f, readFloatLE(packet, 0x48), "Just Lift softMax at 0x48")
-        assertEquals(0.0f, readFloatLE(packet, 0x4C), "Just Lift increment at 0x4C")
+        // EccentricOnly profile preserved at 0x48-0x4F (NON_OVERLAP wins over requested OVERLAP)
+        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS preserved")
+        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS preserved")
+        assertEquals(20.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp preserved")
+
+        // Just Lift still uses reps=0xFF
+        assertEquals(0xFF.toByte(), packet[0x04], "Just Lift reps marker")
+
+        // Force config at NON_OVERLAP offsets
+        assertEquals(40.0f, readFloatLE(packet, 0x58), "targetWeight at 0x58")
     }
 
     // ========== Cross-Mode Regression Tests ==========
@@ -1366,6 +1376,184 @@ class BlePacketFactoryTest {
         assertEquals(250.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM (default)")
     }
 
+    // ========== Issue #538: Just Lift + TUT/Beast Mode Tests ==========
+
+    @Test
+    fun `JustLift TUT packet matches spec section 2-6 fixture except reps byte`() {
+        // Spec section 2.6 worked example: TUT at 40kg, 6 reps, 0 progression
+        // Just Lift overrides reps byte 0x04 to 0xFF (unlimited)
+        val params = WorkoutParameters(
+            programMode = ProgramMode.TUT,
+            reps = 6,
+            weightPerCableKg = 40f,
+            progressionRegressionKg = 0f,
+            isJustLift = true,
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Reference: spec section 2.6 TUT fixture (96 bytes)
+        @Suppress("ktlint:standard:max-line-length")
+        val specFixture = byteArrayOf(
+            0x04, 0x00, 0x00, 0x00, 0x09, 0x03, 0x03, 0x00, 0x00, 0x00, 0xA0.toByte(), 0x40, 0x00, 0x00, 0xA0.toByte(), 0x40,
+            0x00, 0x00, 0x00, 0x00, 0xFA.toByte(), 0x00, 0xFA.toByte(), 0x00, 0xC8.toByte(), 0x00, 0x1E, 0x00, 0x00, 0x00, 0xA0.toByte(), 0x40,
+            0x00, 0x00, 0x00, 0x00, 0xFA.toByte(), 0x00, 0xFA.toByte(), 0x00, 0xC8.toByte(), 0x00, 0x1E, 0x00, 0xFA.toByte(), 0x00, 0x50, 0x00,
+            0xFA.toByte(), 0x00, 0x5E, 0x01, 0x00, 0x00, 0xE0.toByte(), 0x40, 0xC2.toByte(), 0x01, 0x58, 0x02, 0x00, 0x00, 0x48, 0x42,
+            0x7C, 0xFC.toByte(), 0x44, 0xFD.toByte(), 0x00, 0x00, 0x8C.toByte(), 0x42, 0x9C.toByte(), 0xFF.toByte(), 0xCE.toByte(), 0xFF.toByte(), 0x00, 0x00, 0x60, 0x41,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0x42, 0x00, 0x00, 0x20, 0x42, 0x00, 0x00, 0x00, 0x00,
+        )
+
+        // Byte 0x04 should be 0xFF for Just Lift (spec fixture has 0x09 for reps=6)
+        assertEquals(0xFF.toByte(), packet[0x04], "Just Lift reps marker must be 0xFF")
+
+        // All other bytes must match the spec fixture exactly
+        for (i in 0 until 96) {
+            if (i == 0x04) continue // Skip reps byte (Just Lift override)
+            assertEquals(
+                specFixture[i],
+                packet[i],
+                "offset 0x${i.toString(16).padStart(2, '0')} mismatch: expected 0x${(specFixture[i].toInt() and 0xFF).toString(16).padStart(2, '0')}, got 0x${(packet[i].toInt() and 0xFF).toString(16).padStart(2, '0')}",
+            )
+        }
+    }
+
+    @Test
+    fun `JustLift Beast packet matches spec section 2-6 fixture except reps byte`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.TUTBeast,
+            reps = 6,
+            weightPerCableKg = 40f,
+            progressionRegressionKg = 0f,
+            isJustLift = true,
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Reference: spec section 2.6 Beast fixture (96 bytes)
+        @Suppress("ktlint:standard:max-line-length")
+        val specFixture = byteArrayOf(
+            0x04, 0x00, 0x00, 0x00, 0x09, 0x03, 0x03, 0x00, 0x00, 0x00, 0xA0.toByte(), 0x40, 0x00, 0x00, 0xA0.toByte(), 0x40,
+            0x00, 0x00, 0x00, 0x00, 0xFA.toByte(), 0x00, 0xFA.toByte(), 0x00, 0xC8.toByte(), 0x00, 0x1E, 0x00, 0x00, 0x00, 0xA0.toByte(), 0x40,
+            0x00, 0x00, 0x00, 0x00, 0xFA.toByte(), 0x00, 0xFA.toByte(), 0x00, 0xC8.toByte(), 0x00, 0x1E, 0x00, 0xFA.toByte(), 0x00, 0x50, 0x00,
+            0x96.toByte(), 0x00, 0xFA.toByte(), 0x00, 0x00, 0x00, 0xE0.toByte(), 0x40, 0x5E, 0x01, 0xC2.toByte(), 0x01, 0x00, 0x00, 0x48, 0x42,
+            0x7C, 0xFC.toByte(), 0x44, 0xFD.toByte(), 0x00, 0x00, 0x8C.toByte(), 0x42, 0x9C.toByte(), 0xFF.toByte(), 0xCE.toByte(), 0xFF.toByte(), 0x00, 0x00, 0xE0.toByte(), 0x41,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0x42, 0x00, 0x00, 0x20, 0x42, 0x00, 0x00, 0x00, 0x00,
+        )
+
+        assertEquals(0xFF.toByte(), packet[0x04], "Just Lift reps marker must be 0xFF")
+
+        for (i in 0 until 96) {
+            if (i == 0x04) continue
+            assertEquals(
+                specFixture[i],
+                packet[i],
+                "offset 0x${i.toString(16).padStart(2, '0')} mismatch: expected 0x${(specFixture[i].toInt() and 0xFF).toString(16).padStart(2, '0')}, got 0x${(packet[i].toInt() and 0xFF).toString(16).padStart(2, '0')}",
+            )
+        }
+    }
+
+    @Test
+    fun `JustLift TUT packet carries TUT ramp profile not OldSchool`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.TUT,
+            reps = 6,
+            weightPerCableKg = 40f,
+            isJustLift = true,
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Reps byte must be 0xFF for Just Lift (unlimited)
+        assertEquals(0xFF.toByte(), packet[0x04], "Just Lift reps marker")
+
+        // TUT concentric down ramp: min=250, max=350
+        assertEquals(250.toShort(), readShortLE(packet, 0x30), "TUT conc.down.minMmS")
+        assertEquals(350.toShort(), readShortLE(packet, 0x32), "TUT conc.down.maxMmS")
+        assertEquals(7.0f, readFloatLE(packet, 0x34), "TUT conc.down.ramp")
+
+        // TUT concentric up ramp: min=450, max=600
+        assertEquals(450.toShort(), readShortLE(packet, 0x38), "TUT conc.up.minMmS")
+        assertEquals(600.toShort(), readShortLE(packet, 0x3A), "TUT conc.up.maxMmS")
+        assertEquals(50.0f, readFloatLE(packet, 0x3C), "TUT conc.up.ramp")
+
+        // TUT eccentric up ramp = 14.0 (NOT OldSchool's 0.0)
+        assertEquals(14.0f, readFloatLE(packet, 0x4C), "TUT ecc.up.ramp")
+
+        // Force block still at correct offsets
+        assertEquals(50.0f, readFloatLE(packet, 0x54), "forceMax = weight + 10")
+        assertEquals(40.0f, readFloatLE(packet, 0x58), "softMax = weight")
+    }
+
+    @Test
+    fun `JustLift TUTBeast packet carries Beast ramp profile not OldSchool`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.TUTBeast,
+            reps = 6,
+            weightPerCableKg = 40f,
+            isJustLift = true,
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Reps byte must be 0xFF for Just Lift
+        assertEquals(0xFF.toByte(), packet[0x04], "Just Lift reps marker")
+
+        // Beast concentric down ramp: min=150, max=250
+        assertEquals(150.toShort(), readShortLE(packet, 0x30), "Beast conc.down.minMmS")
+        assertEquals(250.toShort(), readShortLE(packet, 0x32), "Beast conc.down.maxMmS")
+        assertEquals(7.0f, readFloatLE(packet, 0x34), "Beast conc.down.ramp")
+
+        // Beast concentric up ramp: min=350, max=450
+        assertEquals(350.toShort(), readShortLE(packet, 0x38), "Beast conc.up.minMmS")
+        assertEquals(450.toShort(), readShortLE(packet, 0x3A), "Beast conc.up.maxMmS")
+        assertEquals(50.0f, readFloatLE(packet, 0x3C), "Beast conc.up.ramp")
+
+        // Beast eccentric up ramp = 28.0 (NOT OldSchool's 0.0)
+        assertEquals(28.0f, readFloatLE(packet, 0x4C), "Beast ecc.up.ramp")
+
+        // Force block still at correct offsets
+        assertEquals(50.0f, readFloatLE(packet, 0x54), "forceMax = weight + 10")
+        assertEquals(40.0f, readFloatLE(packet, 0x58), "softMax = weight")
+    }
+
+    @Test
+    fun `JustLift TUT and Beast packets differ only at ramp offsets`() {
+        val tutParams = WorkoutParameters(
+            programMode = ProgramMode.TUT,
+            reps = 6,
+            weightPerCableKg = 40f,
+            isJustLift = true,
+        )
+        val beastParams = WorkoutParameters(
+            programMode = ProgramMode.TUTBeast,
+            reps = 6,
+            weightPerCableKg = 40f,
+            isJustLift = true,
+        )
+        val tutPacket = BlePacketFactory.createProgramParams(tutParams)
+        val beastPacket = BlePacketFactory.createProgramParams(beastParams)
+
+        // Per spec section 2.4, only these byte ranges differ:
+        // 0x30-0x33 (conc.down min/max), 0x38-0x3B (conc.up min/max), 0x4C-0x4F (ecc.up.ramp)
+        val expectedDiffOffsets = setOf(
+            0x30, 0x31, 0x32, 0x33,
+            0x38, 0x39, 0x3A, 0x3B,
+            0x4C, 0x4D, 0x4E, 0x4F,
+        )
+
+        for (i in 0 until 96) {
+            if (i in expectedDiffOffsets) {
+                // These bytes should differ (some sub-bytes within the ranges happen to match)
+                assertTrue(
+                    tutPacket[i] != beastPacket[i] || i in setOf(0x31, 0x39, 0x4C, 0x4D, 0x4F),
+                    "offset 0x${i.toString(16)} should differ between TUT and Beast (or be in a shared sub-byte)",
+                )
+            } else {
+                assertEquals(
+                    tutPacket[i],
+                    beastPacket[i],
+                    "offset 0x${i.toString(16)} should be identical between TUT and Beast",
+                )
+            }
+        }
+    }
+
     // ========== Issue #390 Regression: Calf Raise Weight Scenario ==========
     // Reproduces the exact no-warm-up user scenario: OldSchool calf raise at
     // 80kg per cable (80% of PR), with ~4.536kg/rep progression (10 lbs).
@@ -1480,5 +1668,35 @@ class BlePacketFactoryTest {
         assertEquals((-260).toShort(), readShortLE(packet, 0x48), "JustLift preserves OldSchool ecc.up.minMmS")
         assertEquals(0.0f, readFloatLE(packet, 0x4C), "JustLift preserves OldSchool ecc.up.ramp")
         assertEquals(40.0f, readFloatLE(packet, 0x58), "JustLift targetWeight uses selected weight")
+    }
+
+    // ========== Issue #538: TUT/Beast Persistence Round-Trip Tests ==========
+
+    @Test
+    fun `ProgramMode TUT and TUTBeast round-trip through modeValue and syncString`() {
+        // Verify the persistence round-trip: ProgramMode -> modeValue -> ProgramMode
+        assertEquals(3, ProgramMode.TUT.modeValue, "TUT modeValue")
+        assertEquals(4, ProgramMode.TUTBeast.modeValue, "TUTBeast modeValue")
+
+        assertEquals(ProgramMode.TUT, ProgramMode.fromValue(3), "fromValue(3) == TUT")
+        assertEquals(ProgramMode.TUTBeast, ProgramMode.fromValue(4), "fromValue(4) == TUTBeast")
+
+        // Verify sync wire format
+        assertEquals("TUT", ProgramMode.TUT.toSyncString(), "TUT sync string")
+        assertEquals("TUT_BEAST", ProgramMode.TUTBeast.toSyncString(), "TUTBeast sync string")
+        assertEquals(ProgramMode.TUT, ProgramMode.fromSyncString("TUT"), "fromSyncString TUT")
+        assertEquals(ProgramMode.TUTBeast, ProgramMode.fromSyncString("TUT_BEAST"), "fromSyncString TUT_BEAST")
+    }
+
+    @Test
+    fun `WorkoutMode TUT and TUTBeast round-trip through ProgramMode`() {
+        // Verify UI mode -> protocol mode -> UI mode round-trip
+        val tutProgram = WorkoutMode.TUT.toProgramMode()
+        assertEquals(ProgramMode.TUT, tutProgram, "TUT -> ProgramMode.TUT")
+        assertEquals(WorkoutMode.TUT, tutProgram.toWorkoutMode(), "ProgramMode.TUT -> WorkoutMode.TUT")
+
+        val beastProgram = WorkoutMode.TUTBeast.toProgramMode()
+        assertEquals(ProgramMode.TUTBeast, beastProgram, "TUTBeast -> ProgramMode.TUTBeast")
+        assertEquals(WorkoutMode.TUTBeast, beastProgram.toWorkoutMode(), "ProgramMode.TUTBeast -> WorkoutMode.TUTBeast")
     }
 }
