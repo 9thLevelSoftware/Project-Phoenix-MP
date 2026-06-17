@@ -249,6 +249,8 @@
     <string name="mode_pump">Pump</string>
     <string name="mode_tut">TUT</string>
     <string name="mode_tut_beast">TUT Beast</string>
+    <string name="just_lift_tut_standard">Standaard</string>
+    <string name="just_lift_tut_beast">Beast</string>
     <string name="mode_eccentric_only">Eccentric Only</string>
     <string name="mode_echo">Echo</string>
     <string name="echo_mode">Echo-modus</string>

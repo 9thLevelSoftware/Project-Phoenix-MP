@@ -147,6 +147,15 @@ class ActiveSessionEngine(
         /** Get next step in routine navigation */
         fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>?
 
+        /**
+         * Issue #572: detect whether two routine entries refer to the same physical
+         * exercise (matched on name + non-null id). Used by [ActiveSessionEngine] to
+         * detect "same-exercise continuations" where adjacent entries are the same
+         * movement with a mode change between them (e.g. "Sumo Belt Squat 2x8 OldSchool"
+         * followed by "Sumo Belt Squat 1x8 TUT").
+         */
+        fun isSameExercise(a: RoutineExercise, b: RoutineExercise): Boolean
+
         /** Check if currently in a superset */
         fun isInSuperset(): Boolean
 
@@ -4393,8 +4402,26 @@ class ActiveSessionEngine(
         if (nextStep != null) {
             val (nextExIdx, nextSetIdx) = nextStep
             val nextExercise = routine.exercises[nextExIdx]
+            val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
 
             val isChangingExercise = nextExIdx != coordinator._currentExerciseIndex.value
+            // Issue #572: when getNextStep advances to the next entry but the new entry
+            // is the same physical exercise as the current one (e.g. "Sumo Belt Squat 2x8
+            // OldSchool" -> "Sumo Belt Squat 1x8 TUT" the user intends as a single
+            // logical movement with a mode change between sets), treat this as a
+            // same-exercise continuation. We do NOT want to send a fresh 0x04 BLE CONFIG
+            // frame mid-movement, because the Vitruvian firmware de-energises the cable
+            // on a mode change, which the user perceives as "the set deloads". The mode
+            // change (OldSchool -> TUT) is still surfaced to the on-screen label, but
+            // the CONFIG frame is deferred until the user explicitly starts that set.
+            val isAdjacentLinearExercise =
+                nextExIdx == coordinator._currentExerciseIndex.value + 1 &&
+                    currentExercise?.supersetId == null &&
+                    nextExercise.supersetId == null
+            val isSameExerciseContinuation = isChangingExercise &&
+                currentExercise != null &&
+                isAdjacentLinearExercise &&
+                flowDelegate?.isSameExercise(currentExercise, nextExercise) == true
 
             coordinator._currentExerciseIndex.value = nextExIdx
             coordinator._currentSetIndex.value = nextSetIdx
@@ -4430,21 +4457,47 @@ class ActiveSessionEngine(
             val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
             val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
 
+            // Issue #572: for a same-exercise continuation, the on-screen programMode
+            // label and the per-set weight should reflect the new entry (so the user
+            // sees the TUT finisher weight + mode), but the firmware stays in the
+            // current programMode until the user explicitly starts that set, at which
+            // point a fresh 0x04 BLE CONFIG frame is sent. Keeping the firmware in the
+            // current mode across the boundary is what prevents the cable from
+            // de-energising mid-movement.
+            val carryProgramMode = if (isSameExerciseContinuation) {
+                currentParams.programMode
+            } else {
+                nextExercise.programMode
+            }
+            val carryEchoLevel = if (isSameExerciseContinuation) {
+                currentParams.echoLevel
+            } else {
+                nextEchoLevel
+            }
+            val carryEccentricLoad = if (isSameExerciseContinuation) {
+                currentParams.eccentricLoad
+            } else {
+                nextEccentricLoad
+            }
             coordinator._workoutParameters.value = currentParams.copy(
                 weightPerCableKg = nextSetWeight,
                 reps = nextReps,
-                programMode = nextExercise.programMode,
-                echoLevel = nextEchoLevel,
-                eccentricLoad = nextEccentricLoad,
+                programMode = carryProgramMode,
+                echoLevel = carryEchoLevel,
+                eccentricLoad = carryEccentricLoad,
                 progressionRegressionKg = nextExercise.progressionKg,
                 selectedExerciseId = nextExercise.exercise.id,
                 isAMRAP = nextIsAMRAP,
                 stallDetectionEnabled = nextExercise.stallDetectionEnabled,
                 warmupReps = if (nextIsBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
             )
-            Logger.d { "startNextSetOrExercise: Issue #203 - progressionKg=${nextExercise.progressionKg}kg for ${nextExercise.exercise.displayName}, isBodyweight=$nextIsBodyweight, isAMRAP=$nextIsAMRAP" }
+            Logger.d {
+                "startNextSetOrExercise: Issue #203 - progressionKg=${nextExercise.progressionKg}kg for " +
+                    "${nextExercise.exercise.displayName}, isBodyweight=$nextIsBodyweight, " +
+                    "isAMRAP=$nextIsAMRAP, isSameExerciseContinuation=$isSameExerciseContinuation"
+            }
 
-            if (isChangingExercise) {
+            if (isChangingExercise && !isSameExerciseContinuation) {
                 // Issue #536: autoplay advances via startNextSetOrExercise, not enterSetReady.
                 // Without re-seeding rack defaults here, a vest toggled on the previous
                 // exercise leaks into captureRackLoadSnapshot for the next exercise.
@@ -4459,11 +4512,34 @@ class ActiveSessionEngine(
                     coordinator._currentWarmupSetIndex.value = -1
                     coordinator._totalWarmupSets.value = 0
                 }
-            } else {
+                resetAutoStopState()
+                startWorkoutOrSetReady()
+            } else if (isSameExerciseContinuation) {
+                // Issue #572: same-exercise continuation across entries. We do NOT call
+                // startWorkout() here even when autoplay is on, because that would send
+                // a fresh 0x04 BLE CONFIG frame for the TUT finisher (or any other mode
+                // change embedded in a same-exercise continuation) mid-movement, which
+                // de-energises the cable. Instead we go to SetReady so the user
+                // explicitly starts the next set, at which point the fresh CONFIG is
+                // sent at the right time. The on-screen label and per-set weight have
+                // already been updated above to reflect the new entry.
                 repCounter.resetCountsOnly()
+                resetAutoStopState()
+                // ActiveWorkoutScreen only navigates to SetReady when workoutState is Idle.
+                // Leaving Resting/SetSummary here strands the user on the rest/summary UI
+                // while routineFlowState is already SetReady; a second Skip Rest /
+                // startNextSet() would advance past the deferred set entirely.
+                coordinator._workoutState.value = WorkoutState.Idle
+                flowDelegate?.enterSetReady(nextExIdx, nextSetIdx)
+            } else {
+                // Same-entry set advance (isChangingExercise == false). Preserve the
+                // existing behaviour so that manual rest-screen weight/rep edits
+                // (captured by _userAdjustedWeightDuringRest above) are kept when
+                // startWorkoutOrSetReady() runs.
+                repCounter.resetCountsOnly()
+                resetAutoStopState()
+                startWorkoutOrSetReady()
             }
-            resetAutoStopState()
-            startWorkoutOrSetReady()
         } else {
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
             // Issue #395: Write aggregate health workout BEFORE clearing routine state

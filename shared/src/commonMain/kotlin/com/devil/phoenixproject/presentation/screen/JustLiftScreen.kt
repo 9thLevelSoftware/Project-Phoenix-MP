@@ -107,6 +107,7 @@ import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.util.useStackedWeightCardsLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -120,6 +121,8 @@ import vitruvianprojectphoenix.shared.generated.resources.config_mode_tut_desc
 import vitruvianprojectphoenix.shared.generated.resources.eccentric_load
 import vitruvianprojectphoenix.shared.generated.resources.eccentric_load_helper
 import vitruvianprojectphoenix.shared.generated.resources.echo_level
+import vitruvianprojectphoenix.shared.generated.resources.just_lift_tut_beast
+import vitruvianprojectphoenix.shared.generated.resources.just_lift_tut_standard
 import vitruvianprojectphoenix.shared.generated.resources.label_live
 import vitruvianprojectphoenix.shared.generated.resources.mode_echo
 import vitruvianprojectphoenix.shared.generated.resources.mode_old_school
@@ -296,7 +299,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     }
 
     val useCompactAccessibility = isCompactAccessibilityLayout()
-    val accessibilityScrollState = rememberScrollState()
+    // Issue #571: Stack the Weight per Cable and Weight Change Per Rep cards only when the
+    // device is short as well (iPhone landscape 740x390, or compact height with accessibility
+    // settings). On iPhone portrait with default Dynamic Type + Bold Text OFF, keep them
+    // side-by-side so the iOS CompactNumberPicker wheel cannot eat drags intended for the
+    // ProgressionSlider.
+    val stackWeightCards = useStackedWeightCardsLayout()
+    val contentScrollState = rememberScrollState()
     var showRestTimerDialog by remember { mutableStateOf(false) }
 
     Box(
@@ -309,7 +318,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 .fillMaxSize()
                 .navigationBarsPadding()
                 .padding(horizontal = Spacing.medium, vertical = Spacing.small)
-                .then(if (useCompactAccessibility) Modifier.verticalScroll(accessibilityScrollState) else Modifier),
+                .then(if (useCompactAccessibility) Modifier.verticalScroll(contentScrollState) else Modifier),
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             // Pinned header: auto-start status + workout mode (never clipped by lower content)
@@ -420,13 +429,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             FilterChip(
                                 selected = selectedMode is WorkoutMode.TUT,
                                 onClick = { selectedMode = WorkoutMode.TUT },
-                                label = { Text("Standard") },
+                                label = { Text(stringResource(Res.string.just_lift_tut_standard)) },
                                 modifier = Modifier.weight(1f),
                             )
                             FilterChip(
                                 selected = selectedMode is WorkoutMode.TUTBeast,
                                 onClick = { selectedMode = WorkoutMode.TUTBeast },
-                                label = { Text("Beast") },
+                                label = { Text(stringResource(Res.string.just_lift_tut_beast)) },
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -461,7 +470,21 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             }
             if (showWeightAndProgression) {
                 Card(
-                    modifier = flexibleBodyModifier,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (useCompactAccessibility || stackWeightCards) Modifier else Modifier.weight(1f))
+                        // Issue #571: belt-and-braces vertical separation between the two
+                        // weight cards when stacked, so the wheel's bottom edge is
+                        // unambiguously above the slider's top edge even if the inner
+                        // gesture-isolation step in CompactNumberPicker is bypassed by a
+                        // future regression. Applied as bottom padding on the *first* card
+                        // (rather than an explicit Spacer between them) so the outer
+                        // Column's `Arrangement.spacedBy(Spacing.medium)` does not double
+                        // the gap. Total gap = Spacing.medium (outer) + Spacing.small
+                        // (this padding) = 24dp.
+                        .then(
+                            if (stackWeightCards) Modifier.padding(bottom = Spacing.small) else Modifier,
+                        ),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -469,7 +492,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.small),
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
@@ -480,7 +503,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
 
                         Box(
                             modifier = Modifier
-                                .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.weight(1f))
+                                .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.weight(1f))
                                 .fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -516,9 +539,29 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center,
                         )
+                    }
+                }
 
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
+                // Weight Change Per Rep Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (useCompactAccessibility || stackWeightCards) Modifier else Modifier.weight(1f)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .padding(Spacing.small),
+                        verticalArrangement = if (useCompactAccessibility || stackWeightCards) {
+                            Arrangement.spacedBy(Spacing.small)
+                        } else {
+                            Arrangement.SpaceEvenly
+                        },
+                    ) {
                         Text(
                             "Weight Change Per Rep",
                             style = MaterialTheme.typography.labelMedium,

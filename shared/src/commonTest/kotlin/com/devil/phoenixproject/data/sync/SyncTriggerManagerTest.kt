@@ -3,9 +3,12 @@ package com.devil.phoenixproject.data.sync
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
@@ -76,6 +79,17 @@ class SyncTriggerManagerTest {
         fun setLastSyncTime(time: Long) {
             _lastSyncTime.value = time
         }
+
+        // Mimics SyncManager.refreshPremiumStatusFromServer() — a suspend API call
+        // that can throw raw (Ktor/IO) and is NOT wrapped in Result. This is the
+        // real crash path for issue #566 when the network stack fails after wake.
+        var refreshPremiumStatusThrows: Throwable? = null
+        var refreshPremiumCallCount = 0
+
+        suspend fun refreshPremiumStatusFromServer() {
+            refreshPremiumCallCount++
+            refreshPremiumStatusThrows?.let { throw it }
+        }
     }
 
     /**
@@ -120,10 +134,24 @@ class SyncTriggerManagerTest {
         }
 
         /**
-         * Simulates onAppForeground - respects throttle
+         * Simulates onAppForeground - respects throttle.
+         *
+         * Mirrors the issue #566 fix: the body is wrapped in try/catch so a raw
+         * throwable from refreshPremiumStatusFromServer() (the real crash path)
+         * is recorded via onSyncFailure() and does NOT propagate, while
+         * CancellationException is rethrown to preserve cancellation semantics.
          */
         suspend fun onAppForeground() {
-            attemptSync(bypassThrottle = false)
+            try {
+                if (testSyncManager.isAuthenticated.value) {
+                    testSyncManager.refreshPremiumStatusFromServer()
+                }
+                attemptSync(bypassThrottle = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                onSyncFailure(e)
+            }
         }
 
         /**
@@ -673,6 +701,58 @@ class SyncTriggerManagerTest {
         assertFalse(
             triggerManager.hasPersistentError.value,
             "Single rate limit should not trigger persistent error",
+        )
+    }
+
+    // ==================== Issue #566 Foreground Crash Containment Tests ====================
+
+    /**
+     * Issue #566: a raw throwable from refreshPremiumStatusFromServer() (the real
+     * crash path — a suspend API call not wrapped in Result) must be recorded in
+     * RetryState via onSyncFailure() and must NOT propagate out of onAppForeground().
+     */
+    @Test
+    fun onAppForegroundRecordsFailureAndDoesNotPropagateWhenPremiumRefreshThrows() = runTest {
+        val syncManager = TestSyncManager()
+        val connectivity = TestConnectivityChecker()
+        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+
+        class SimulatedPremiumRefreshCrash(message: String) : Exception(message)
+        syncManager.refreshPremiumStatusThrows =
+            SimulatedPremiumRefreshCrash("simulated premium refresh failure after wake")
+
+        // Must not throw — the throwable is contained by onAppForeground()'s try/catch.
+        triggerManager.onAppForeground()
+
+        assertEquals(1, syncManager.refreshPremiumCallCount, "Premium refresh should have been attempted")
+        assertEquals(0, syncManager.syncCallCount, "attemptSync should not be reached after premium refresh threw")
+        assertEquals(1, triggerManager.getConsecutiveFailures(), "Foreground failure should be recorded")
+        assertEquals(1, triggerManager.retryState.value.retryCount, "RetryState should reflect the foreground failure")
+        assertNotNull(triggerManager.getLastErrorCategory(), "Error category should be classified and recorded")
+    }
+
+    /**
+     * Issue #566: CancellationException must be rethrown by onAppForeground() so
+     * coroutine cancellation semantics are preserved, and must NOT be recorded as
+     * a sync failure.
+     */
+    @Test
+    fun onAppForegroundRethrowsCancellationException() = runTest {
+        val syncManager = TestSyncManager()
+        val connectivity = TestConnectivityChecker()
+        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+
+        syncManager.refreshPremiumStatusThrows = CancellationException("lifecycle cancelled")
+
+        assertFailsWith<CancellationException> {
+            triggerManager.onAppForeground()
+        }
+
+        assertEquals(1, syncManager.refreshPremiumCallCount, "Premium refresh should have been attempted")
+        assertEquals(
+            0,
+            triggerManager.getConsecutiveFailures(),
+            "CancellationException must not be recorded as a sync failure",
         )
     }
 }

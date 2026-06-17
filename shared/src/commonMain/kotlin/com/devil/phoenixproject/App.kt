@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.presentation.screen.EnhancedMainScreen
@@ -40,6 +41,7 @@ import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.VitruvianTheme
 import com.devil.phoenixproject.ui.theme.isDynamicColorAvailable
 import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -57,7 +59,13 @@ private fun AppLifecycleObserver(syncTriggerManager: SyncTriggerManager) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 scope.launch {
-                    syncTriggerManager.onAppForeground()
+                    try {
+                        syncTriggerManager.onAppForeground()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        Logger.e(e) { "AppLifecycleObserver: onAppForeground failed" }
+                    }
                 }
             }
         }

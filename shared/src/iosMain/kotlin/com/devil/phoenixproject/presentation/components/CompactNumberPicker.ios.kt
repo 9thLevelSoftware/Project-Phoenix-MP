@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +48,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -190,6 +193,12 @@ actual fun CompactNumberPicker(
     // Inline editing state
     var isEditing by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
+    // Issue #571: True iff the most recent vertical drag started inside the wheel's centred
+    // band (the actual pickable row). Drives `userScrollEnabled` on the LazyColumn below so
+    // drags that start *outside* the centred band are NOT claimed by the wheel — they pass
+    // through to the outer verticalScroll / sibling card (the slider) instead. See pointerInput
+    // block on BoxWithConstraints for the gesture detector.
+    var dragStartedInCenterBand by remember { mutableStateOf(true) }
     // Issue #166 Fix: Track focus state per edit session to prevent premature commitEdit
     // hasFocusedOnce is ONLY true after focus is gained in the CURRENT edit session
     var hasFocusedOnce by remember { mutableStateOf(false) }
@@ -462,7 +471,40 @@ actual fun CompactNumberPicker(
             BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
-                    .height(containerHeight),
+                    .height(containerHeight)
+                    // Issue #571: cap the wheel's vertical drag hot zone to the centred
+                    // selected row when not in edit mode. We do this by tracking where each
+                    // vertical drag *started* (centred band vs. outside it) and gating the
+                    // inner LazyColumn's `userScrollEnabled` on that flag. When the drag
+                    // starts outside the centred band, the LazyColumn does not claim the
+                    // gesture, so the outer verticalScroll and the sibling ProgressionSlider
+                    // card can take over naturally — no "dead zone", no event consumption.
+                    // In edit mode the wheel defers entirely to the BasicTextField so
+                    // keyboard / caret interaction is not interrupted.
+                    .pointerInput(isEditing, itemHeight) {
+                        if (isEditing) return@pointerInput
+                        val itemHeightPx: Float = itemHeight.toPx()
+                        val centerY: Float = size.height.toFloat() / 2f
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val offset: Float = down.position.y - centerY
+                            val absOffset: Float = if (offset < 0f) -offset else offset
+                            val inCenterBand: Boolean = absOffset <= itemHeightPx / 2f
+                            // Toggle the gate BEFORE the LazyColumn sees the gesture so the
+                            // inner scroll connection can make its decision in the same
+                            // pass. We do not consume any events — the outer verticalScroll
+                            // is free to scroll when we say so.
+                            dragStartedInCenterBand = inCenterBand
+                            // Wait for the gesture to finish, then restore the default
+                            // (centred band = scrollable) so a *next* drag that does land
+                            // in the band still scrolls the wheel.
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.all { !it.pressed }) break
+                            }
+                            dragStartedInCenterBand = true
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 val showCenteredOverlay = !isEditing && values.isNotEmpty()
@@ -479,6 +521,13 @@ actual fun CompactNumberPicker(
                     flingBehavior = flingBehavior,
                     horizontalAlignment = Alignment.CenterHorizontally,
                     contentPadding = PaddingValues(vertical = centerPadding),
+                    // Issue #571: when the current vertical drag started outside the wheel's
+                    // centred band, disable the inner scroll so the outer verticalScroll
+                    // (or the sibling ProgressionSlider card) can claim the gesture. The
+                    // `pointerInput` above toggles `dragStartedInCenterBand` synchronously
+                    // with `awaitFirstDown`, so this flag is correct for the very first
+                    // event the LazyColumn sees in each gesture.
+                    userScrollEnabled = dragStartedInCenterBand,
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     itemsIndexed(values) { index, floatVal ->
