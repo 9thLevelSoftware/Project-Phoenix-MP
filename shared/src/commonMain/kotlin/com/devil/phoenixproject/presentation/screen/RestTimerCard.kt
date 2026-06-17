@@ -48,9 +48,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -202,11 +202,19 @@ fun RestTimerCard(
             label = "pulse",
         )
 
-        // Accessibility: countdown announcements are now driven by the visible
-        // timer Text below (see liveRegion semantics there). The previous zero-size
-        // liveRegion Box was removed (issue #565) because the 0.dp AX node increased
-        // element-disposal churn during 1Hz recomposition, racing iOS UIAccessibility
-        // and triggering an EXC_BAD_ACCESS in Compose's accessibility bounds path.
+        // Accessibility: throttled countdown announcements live on a dedicated node,
+        // not on the 1Hz-updating timer Text. Text keeps its default text semantics
+        // so VoiceOver/TalkBack users can focus the countdown and hear the current
+        // value; liveRegion only tracks lastAnnouncedText (5s/10s/0s/paused).
+        // Use 1.dp (not 0.dp) to avoid iOS UIAccessibility bounds UAF (issue #565).
+        Box(
+            modifier = Modifier
+                .size(1.dp)
+                .clearAndSetSemantics {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = lastAnnouncedText
+                },
+        )
 
         Column(
             modifier = Modifier
@@ -270,13 +278,6 @@ fun RestTimerCard(
                 )
 
                 // Timer text - dimmed when paused
-                // Accessibility: liveRegion semantics relocated here from the removed
-                // 0.dp Box (issue #565). Attaching liveRegion=Polite + contentDescription
-                // to this stable, visible, non-zero-size element preserves throttled
-                // VoiceOver/TalkBack countdown announcements (5s/10s/0s/paused) while
-                // eliminating the zero-size AX node that raced iOS UIAccessibility.
-                // contentDescription overrides the raw time string so liveRegion only
-                // fires when lastAnnouncedText changes (not every 1Hz tick).
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = formatRestTime(restSecondsRemaining),
@@ -286,10 +287,6 @@ fun RestTimerCard(
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                         } else {
                             MaterialTheme.colorScheme.primary
-                        },
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                            contentDescription = lastAnnouncedText
                         },
                     )
                     if (isRestPaused) {
