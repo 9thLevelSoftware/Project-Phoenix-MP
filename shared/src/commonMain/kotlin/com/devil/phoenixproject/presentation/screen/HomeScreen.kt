@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,9 @@ import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -96,6 +100,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     var showResumeDialog by remember { mutableStateOf(false) }
     var pendingCycleStart by remember { mutableStateOf<CycleStartRequest?>(null) }
     var showOneRepMaxComingSoonDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(activeCycle) {
         // Issue #549: route the Home banner through `checkAndAutoAdvance` so the cycle banner
@@ -149,8 +154,11 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
             viewModel.ensureConnection(
                 onConnected = {
                     viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
-                    viewModel.startWorkout()
-                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                    scope.launch {
+                        awaitLoadedRoutine(viewModel.loadedRoutine, request.routineId)
+                        viewModel.enterSetReady(0, 0)
+                        navController.navigate(NavigationRoutes.SetReady.route)
+                    }
                 },
                 onFailed = { /* Error shown via StateFlow */ },
             )
@@ -263,9 +271,16 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                         if (request != null) {
                             viewModel.ensureConnection(
                                 onConnected = {
-                                    viewModel.loadRoutineFromCycle(request.routineId, request.cycleId, request.dayNumber)
-                                    viewModel.startWorkout()
-                                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                    viewModel.loadRoutineFromCycle(
+                                        request.routineId,
+                                        request.cycleId,
+                                        request.dayNumber,
+                                    )
+                                    scope.launch {
+                                        awaitLoadedRoutine(viewModel.loadedRoutine, request.routineId)
+                                        viewModel.enterSetReady(0, 0)
+                                        navController.navigate(NavigationRoutes.SetReady.route)
+                                    }
                                 },
                                 onFailed = { /* Error shown via StateFlow */ },
                             )
@@ -662,6 +677,18 @@ internal suspend fun loadHomeCycleProgress(
     cycle: TrainingCycle,
 ): CycleProgress? {
     return repository.checkAndAutoAdvance(cycle.id) ?: repository.getCycleProgress(cycle.id)
+}
+
+/**
+ * Wait until [loadedRoutine] surfaces [routineId] after [MainViewModel.loadRoutineFromCycle].
+ * `loadRoutine` resolves PR% weights asynchronously; starting before this completes can launch
+ * with stale absolute weights.
+ */
+internal suspend fun awaitLoadedRoutine(
+    loadedRoutine: Flow<Routine?>,
+    routineId: String,
+) {
+    loadedRoutine.first { it?.id == routineId }
 }
 
 internal fun buildHomeShortcutActions(
