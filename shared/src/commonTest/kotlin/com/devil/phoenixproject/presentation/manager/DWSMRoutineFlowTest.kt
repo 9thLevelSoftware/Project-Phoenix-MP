@@ -1418,6 +1418,57 @@ class DWSMRoutineFlowTest {
     }
 
     /**
+     * Issue #572 regression: same-exercise continuation must leave workoutState Idle
+     * (not Resting) so navigation to SetReady can occur. Otherwise autoplay rest
+     * completion strands the user on the rest screen and Skip Rest double-advances,
+     * skipping the deferred TUT finisher set.
+     */
+    @Test
+    fun sameExercise_startNextSet_transitionsToIdleSetReadyWithoutDoubleAdvance() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createLegsStyleRoutine()
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        // Finished last set of Lunge OldSchool (entry #0); rest timer at 0 with autoplay off.
+        harness.dwsm.coordinator._currentExerciseIndex.value = 0
+        harness.dwsm.coordinator._currentSetIndex.value = 1
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 0,
+            nextExerciseName = "Lunge",
+            isLastExercise = false,
+            currentSet = 2,
+            totalSets = 2,
+        )
+
+        harness.dwsm.startNextSet()
+        advanceUntilIdle()
+
+        assertIs<WorkoutState.Idle>(
+            harness.dwsm.coordinator.workoutState.value,
+            "Same-exercise continuation must set Idle so SetReady navigation can fire",
+        )
+        assertIs<RoutineFlowState.SetReady>(harness.dwsm.coordinator.routineFlowState.value)
+        assertEquals(1, harness.dwsm.coordinator.currentExerciseIndex.value, "Should advance to TUT entry")
+        assertEquals(0, harness.dwsm.coordinator.currentSetIndex.value)
+        assertEquals(ProgramMode.TUT, harness.dwsm.coordinator.workoutParameters.value.programMode)
+
+        // A second advance attempt must not skip the TUT set (would jump to Squat at index 2).
+        harness.dwsm.skipRest()
+        harness.dwsm.startNextSet()
+        advanceUntilIdle()
+        assertEquals(
+            1,
+            harness.dwsm.coordinator.currentExerciseIndex.value,
+            "Must not double-advance past the deferred same-exercise set",
+        )
+
+        harness.cleanup()
+    }
+
+    /**
      * Issue #572: isSameExercise is false for genuinely different adjacent exercises.
      */
     @Test
