@@ -292,7 +292,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     }
 
     val useCompactAccessibility = isCompactAccessibilityLayout()
-    val bodyScrollState = rememberScrollState()
+    val accessibilityScrollState = rememberScrollState()
     var showRestTimerDialog by remember { mutableStateOf(false) }
 
     Box(
@@ -304,7 +304,8 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
-                .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                .padding(horizontal = Spacing.medium, vertical = Spacing.small)
+                .then(if (useCompactAccessibility) Modifier.verticalScroll(accessibilityScrollState) else Modifier),
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             // Pinned header: auto-start status + workout mode (never clipped by lower content)
@@ -443,20 +444,19 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 }
             }
 
-            // Scrollable body: load, echo options, and quick settings
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(bodyScrollState),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small),
-            ) {
             // Mode-specific options - OLD SCHOOL, PUMP, TUT & BEAST
             val isTutOrBeast = selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
             val showWeightAndProgression = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump || isTutOrBeast
+            val flexibleBodyModifier = if (useCompactAccessibility) {
+                Modifier.fillMaxWidth()
+            } else {
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            }
             if (showWeightAndProgression) {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = flexibleBodyModifier,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -464,7 +464,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.small),
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
@@ -474,7 +474,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         val displayWeight = viewModel.kgToDisplay(weightPerCable, weightUnit)
 
                         Box(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.weight(1f))
+                                .fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
                             CompactNumberPicker(
@@ -529,11 +531,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 }
             }
 
-            // Mode-specific options - ECHO MODE
             val isEchoMode = selectedMode is WorkoutMode.Echo
             if (isEchoMode) {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = flexibleBodyModifier,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -541,7 +542,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.small),
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
@@ -725,7 +726,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                     formatWeight = viewModel::formatWeight,
                     onStopWorkout = { viewModel.stopWorkout() },
                 )
-            }
             }
 
             if (showRestTimerDialog) {
