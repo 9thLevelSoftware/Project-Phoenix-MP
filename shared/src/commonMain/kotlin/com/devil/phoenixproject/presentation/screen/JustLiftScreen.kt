@@ -112,6 +112,8 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.cd_close_workout
+import vitruvianprojectphoenix.shared.generated.resources.config_mode_tut_beast_desc
+import vitruvianprojectphoenix.shared.generated.resources.config_mode_tut_desc
 import vitruvianprojectphoenix.shared.generated.resources.eccentric_load
 import vitruvianprojectphoenix.shared.generated.resources.eccentric_load_helper
 import vitruvianprojectphoenix.shared.generated.resources.echo_level
@@ -348,8 +350,17 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                     val modes = listOf(
                         "Old School" to WorkoutMode.OldSchool,
                         "Pump" to WorkoutMode.Pump,
+                        "TUT" to WorkoutMode.TUT,
                         "Echo" to WorkoutMode.Echo(echoLevel),
                     )
+
+                    // TUT segment highlights for both TUT and TUTBeast
+                    val isModeSelected: (WorkoutMode) -> Boolean = { mode ->
+                        when (mode) {
+                            is WorkoutMode.TUT -> selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
+                            else -> selectedMode::class == mode::class
+                        }
+                    }
                     if (useCompactAccessibility) {
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
@@ -358,7 +369,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         ) {
                             modes.forEach { (label, mode) ->
                                 FilterChip(
-                                    selected = selectedMode::class == mode::class,
+                                    selected = isModeSelected(mode),
                                     onClick = { selectedMode = mode },
                                     label = { Text(label) },
                                 )
@@ -372,7 +383,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                                 SegmentedButton(
                                     shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
                                     onClick = { selectedMode = mode },
-                                    selected = selectedMode::class == mode::class,
+                                    selected = isModeSelected(mode),
                                     icon = {},
                                 ) {
                                     Text(label, maxLines = 1)
@@ -385,6 +396,8 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         when (selectedMode) {
                             is WorkoutMode.OldSchool -> "Constant resistance throughout the movement"
                             is WorkoutMode.Pump -> "Resistance increases the faster you go"
+                            is WorkoutMode.TUTBeast -> stringResource(Res.string.config_mode_tut_beast_desc)
+                            is WorkoutMode.TUT -> stringResource(Res.string.config_mode_tut_desc)
                             is WorkoutMode.Echo -> "Adaptive resistance with echo feedback"
                             else -> selectedMode.displayName
                         },
@@ -394,9 +407,48 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 }
             }
 
-            // Mode-specific options - OLD SCHOOL & PUMP
-            val isOldSchoolOrPump = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump
-            if (isOldSchoolOrPump) {
+            // Mode-specific options - OLD SCHOOL, PUMP, TUT & BEAST
+            val isTutOrBeast = selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
+            val showWeightAndProgression = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump || isTutOrBeast
+            if (showWeightAndProgression) {
+                // Beast Mode toggle (only visible when TUT is selected)
+                if (isTutOrBeast) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shadowElevation = 2.dp,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.medium),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column {
+                                Text(
+                                    "Beast Mode",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    "Increased concentric difficulty",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = selectedMode is WorkoutMode.TUTBeast,
+                                onCheckedChange = { isBeast ->
+                                    selectedMode = if (isBeast) WorkoutMode.TUTBeast else WorkoutMode.TUT
+                                },
+                            )
+                        }
+                    }
+                }
+
                 // Weight per Cable Card
                 Card(
                     modifier = Modifier
