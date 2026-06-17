@@ -119,6 +119,10 @@ data class RoutineExercise(
     val warmupSets: List<WarmupSet> = emptyList(),
     // Local equipment rack defaults to preselect when this exercise opens Set Ready.
     val defaultRackItemIds: List<String> = emptyList(),
+    // Per-item behavior overrides for equipment rack (Issues #521/#526).
+    // Map of rackItemId -> RackItemBehavior. Items not in the map fall through
+    // to the global RackItem.behavior. Serialized as JSON in the DB.
+    val rackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
 ) {
     /** Returns true if this exercise is part of a superset */
     val isInSuperset: Boolean get() = supersetId != null
