@@ -4414,8 +4414,13 @@ class ActiveSessionEngine(
             // on a mode change, which the user perceives as "the set deloads". The mode
             // change (OldSchool -> TUT) is still surfaced to the on-screen label, but
             // the CONFIG frame is deferred until the user explicitly starts that set.
+            val isAdjacentLinearExercise =
+                nextExIdx == coordinator._currentExerciseIndex.value + 1 &&
+                    currentExercise?.supersetId == null &&
+                    nextExercise.supersetId == null
             val isSameExerciseContinuation = isChangingExercise &&
                 currentExercise != null &&
+                isAdjacentLinearExercise &&
                 flowDelegate?.isSameExercise(currentExercise, nextExercise) == true
 
             coordinator._currentExerciseIndex.value = nextExIdx

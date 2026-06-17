@@ -205,9 +205,12 @@ fun RestTimerCard(
         // Accessibility: hidden node that announces countdown at key intervals.
         // Uses liveRegion(Polite) so TalkBack/VoiceOver reads changes without
         // interrupting other speech. Only fires when lastAnnouncedText changes.
+        // Uses 1.dp (not 0.dp) to avoid zero-size AX node crashes on iOS (issue #565);
+        // keeping announcements on a separate node lets the visible timer Text read
+        // its actual displayed time when focused by a screen reader.
         Box(
             modifier = Modifier
-                .size(0.dp)
+                .size(1.dp)
                 .semantics {
                     liveRegion = LiveRegionMode.Polite
                     contentDescription = lastAnnouncedText

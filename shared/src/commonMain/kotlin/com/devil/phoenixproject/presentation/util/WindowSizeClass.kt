@@ -107,6 +107,41 @@ fun shouldUseCompactAccessibilityLayout(
         )
 
 /**
+ * Issue #571: Decide whether the Weight per Cable and Weight Change Per Rep cards in
+ * JustLiftScreen should be stacked vertically (one column) or side-by-side (two columns).
+ *
+ * Stacking on iPhone portrait puts the iOS CompactNumberPicker wheel directly above the
+ * ProgressionSlider, and the wheel's vertical LazyColumn has been observed to claim
+ * drags intended for the slider (the visible readout would jump to neighbour weights
+ * like 29/30/44-49 even though the slider's valueRange is -10..+10). To avoid that
+ * gesture conflict by construction, keep the cards side-by-side on iPhone portrait
+ * (width Compact) unless the height is also Compact — the only compact-width+short-height
+ * case (iPhone landscape, 740×390dp) genuinely needs the stacked layout to fit.
+ *
+ * Tablets (width Medium/Expanded) always keep the side-by-side layout.
+ *
+ * Note: this is mathematically equivalent to `shouldUseCompactAccessibilityLayout(...) &&
+ * height == Compact` because the latter already returns true for compact heights. The
+ * extra OR-clause ("Compact width + (large font OR bold text)") is what makes the broader
+ * compact-accessibility layout true on tall portrait phones, and we explicitly do NOT
+ * want that case to also stack the weight cards. So the helper is reduced to its
+ * non-redundant form: just the short-height case.
+ */
+fun shouldStackWeightCards(
+    windowSizeClass: WindowSizeClass,
+): Boolean = windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact
+
+/**
+ * Issue #571: Composable convenience wrapper around [shouldStackWeightCards] that reads
+ * the current WindowSizeClass from the ambient composition local. Use this in Composables;
+ * use the pure function in unit tests.
+ */
+@Composable
+fun useStackedWeightCardsLayout(): Boolean = shouldStackWeightCards(
+    windowSizeClass = LocalWindowSizeClass.current,
+)
+
+/**
  * Responsive dimension helpers for common UI patterns.
  */
 object ResponsiveDimensions {

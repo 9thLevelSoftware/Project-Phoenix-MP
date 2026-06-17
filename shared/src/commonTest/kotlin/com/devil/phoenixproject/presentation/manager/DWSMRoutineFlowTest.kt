@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineModifierType
+import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
@@ -1414,6 +1415,143 @@ class DWSMRoutineFlowTest {
         val s2 = harness.routineFlowManager.getNextStep(routine, 1, 0)
         assertNotNull(s2)
         assertEquals(0 to 1, s2, "Superset set 0 of B -> set 1 of A")
+        harness.cleanup()
+    }
+
+    @Test
+    fun sameExercise_startNextSet_doesNotBypassAfterSkippedInterveningExercise() = runTest {
+        val harness = DWSMTestHarness(this)
+        val lunge = TestFixtures.squat.copy(name = "Lunge", id = "lunge-572-skipped")
+        val squat = TestFixtures.squat.copy(name = "Squat", id = "squat-572-skipped")
+        val routine = Routine(
+            id = "test-572-skipped-between-same-exercise",
+            name = "Lunge, skipped Squat, Lunge",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-lunge-oldschool",
+                    exercise = lunge,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.OldSchool,
+                ),
+                RoutineExercise(
+                    id = "re-skipped-squat",
+                    exercise = squat,
+                    orderIndex = 1,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(60f),
+                    weightPerCableKg = 60f,
+                    programMode = ProgramMode.OldSchool,
+                ),
+                RoutineExercise(
+                    id = "re-lunge-tut",
+                    exercise = lunge,
+                    orderIndex = 2,
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.TUT,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakePrefsManager.setSummaryCountdownSeconds(10)
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._skippedExercises.value = setOf(1)
+        harness.dwsm.coordinator._currentExerciseIndex.value = 0
+        harness.dwsm.coordinator._currentSetIndex.value = 0
+        harness.dwsm.coordinator.skipCountdownRequested = false
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 0,
+            nextExerciseName = "Lunge",
+            isLastExercise = false,
+            currentSet = 1,
+            totalSets = 1,
+        )
+
+        harness.dwsm.startNextSet()
+
+        assertEquals(2, harness.dwsm.coordinator.currentExerciseIndex.value)
+        assertEquals(
+            true,
+            harness.dwsm.coordinator.skipCountdownRequested,
+            "A skipped intervening exercise means this is not an adjacent same-exercise continuation",
+        )
+
+        harness.cleanup()
+    }
+
+    @Test
+    fun sameExercise_startNextSet_doesNotBypassSupersetMemberTransition() = runTest {
+        val harness = DWSMTestHarness(this)
+        val lunge = TestFixtures.squat.copy(name = "Lunge", id = "lunge-572-superset")
+        val supersetId = "ss-572-same-exercise"
+        val routine = Routine(
+            id = "test-572-same-exercise-superset",
+            name = "Same Exercise Superset",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-lunge-a",
+                    exercise = lunge,
+                    orderIndex = 0,
+                    setReps = listOf(8, 8),
+                    setWeightsPerCableKg = listOf(40f, 40f),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.OldSchool,
+                    supersetId = supersetId,
+                    orderInSuperset = 0,
+                ),
+                RoutineExercise(
+                    id = "re-lunge-b",
+                    exercise = lunge,
+                    orderIndex = 1,
+                    setReps = listOf(8, 8),
+                    setWeightsPerCableKg = listOf(45f, 45f),
+                    weightPerCableKg = 45f,
+                    programMode = ProgramMode.TUT,
+                    supersetId = supersetId,
+                    orderInSuperset = 1,
+                ),
+            ),
+            supersets = listOf(
+                Superset(
+                    id = supersetId,
+                    routineId = "test-572-same-exercise-superset",
+                    name = "Lunge Pair",
+                    orderIndex = 0,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakePrefsManager.setSummaryCountdownSeconds(10)
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._currentExerciseIndex.value = 0
+        harness.dwsm.coordinator._currentSetIndex.value = 0
+        harness.dwsm.coordinator.skipCountdownRequested = false
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 0,
+            nextExerciseName = "Lunge",
+            isLastExercise = false,
+            currentSet = 1,
+            totalSets = 2,
+        )
+
+        harness.dwsm.startNextSet()
+
+        assertEquals(1, harness.dwsm.coordinator.currentExerciseIndex.value)
+        assertEquals(0, harness.dwsm.coordinator.currentSetIndex.value)
+        assertEquals(
+            true,
+            harness.dwsm.coordinator.skipCountdownRequested,
+            "Superset member transitions must keep the normal autoplay exercise-change path",
+        )
+
         harness.cleanup()
     }
 
