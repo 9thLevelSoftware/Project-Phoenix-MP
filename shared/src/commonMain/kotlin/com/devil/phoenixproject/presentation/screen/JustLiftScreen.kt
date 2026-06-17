@@ -294,6 +294,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     // side-by-side so the iOS CompactNumberPicker wheel cannot eat drags intended for the
     // ProgressionSlider.
     val stackWeightCards = useStackedWeightCardsLayout()
+    // Modifier.weight() is invalid inside a vertically scrolling Column (unbounded height).
+    // Bold Text / large Dynamic Type enables outer verticalScroll via useCompactAccessibility
+    // while stackWeightCards stays false on tall portrait — those cases must keep intrinsic height.
+    val weightCardsUseIntrinsicHeight = useCompactAccessibility || stackWeightCards
     val contentScrollState = rememberScrollState()
 
     Box(
@@ -408,7 +412,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (stackWeightCards) Modifier else Modifier.weight(1f)),
+                        .then(if (weightCardsUseIntrinsicHeight) Modifier else Modifier.weight(1f)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -416,7 +420,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .then(if (weightCardsUseIntrinsicHeight) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.medium),
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -472,7 +476,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (stackWeightCards) Modifier else Modifier.weight(1f)),
+                        .then(if (weightCardsUseIntrinsicHeight) Modifier else Modifier.weight(1f)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -480,9 +484,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .then(if (weightCardsUseIntrinsicHeight) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.medium),
-                        verticalArrangement = if (stackWeightCards) {
+                        verticalArrangement = if (weightCardsUseIntrinsicHeight) {
                             Arrangement.spacedBy(Spacing.small)
                         } else {
                             Arrangement.SpaceEvenly

@@ -96,6 +96,35 @@ class JustLiftScreenWeightSliderWiringTest {
         )
     }
 
+    @Test
+    fun justLiftScreen_weightCardsAvoidWeightModifierInsideVerticalScroll() {
+        val src = readJustLiftScreenSource()
+
+        // Modifier.weight() inside a vertically scrolling Column triggers unbounded-height
+        // measure failures (crash). Bold Text / large Dynamic Type enables
+        // useCompactAccessibility (verticalScroll) while stackWeightCards stays false on
+        // tall portrait — weight cards must gate weight(1f) on both flags.
+        assertTrue(
+            src.contains("weightCardsUseIntrinsicHeight"),
+            "JustLiftScreen.kt must compute weightCardsUseIntrinsicHeight so weight cards " +
+                "never use Modifier.weight(1f) when the outer Column scrolls.",
+        )
+        assertTrue(
+            src.contains("useCompactAccessibility || stackWeightCards"),
+            "weightCardsUseIntrinsicHeight must OR useCompactAccessibility with stackWeightCards.",
+        )
+
+        // Ensure weight cards no longer bind weight(1f) solely on !stackWeightCards.
+        val weightCardWeightPattern = Regex(
+            "if \\(stackWeightCards\\) Modifier else Modifier\\.weight\\(1f\\)",
+        )
+        assertTrue(
+            !weightCardWeightPattern.containsMatchIn(src),
+            "Weight cards must not use 'if (stackWeightCards) Modifier else Modifier.weight(1f)' " +
+                "— that applies weight inside verticalScroll when Bold Text is on.",
+        )
+    }
+
     private fun readJustLiftScreenSource(): String {
         // Read from the classpath via the resources directory, or fall back to the
         // project root. The test is allowed to read the source file because it
