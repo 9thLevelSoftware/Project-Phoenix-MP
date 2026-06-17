@@ -104,6 +104,7 @@ import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.util.useStackedWeightCardsLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -287,6 +288,12 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     }
 
     val useCompactAccessibility = isCompactAccessibilityLayout()
+    // Issue #571: Stack the Weight per Cable and Weight Change Per Rep cards only when the
+    // device is short as well (iPhone landscape 740x390, or compact height with accessibility
+    // settings). On iPhone portrait with default Dynamic Type + Bold Text OFF, keep them
+    // side-by-side so the iOS CompactNumberPicker wheel cannot eat drags intended for the
+    // ProgressionSlider.
+    val stackWeightCards = useStackedWeightCardsLayout()
     val contentScrollState = rememberScrollState()
 
     Box(
@@ -401,7 +408,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
+                        .then(if (stackWeightCards) Modifier else Modifier.weight(1f)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -409,7 +416,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .then(if (stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.medium),
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -453,11 +460,19 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                     }
                 }
 
+                // Issue #571: belt-and-braces vertical separation between the two cards
+                // when stacked, so the wheel's bottom edge is unambiguously above the slider's
+                // top edge even if the inner gesture-isolation step in CompactNumberPicker
+                // is bypassed by a future regression.
+                if (stackWeightCards) {
+                    Spacer(modifier = Modifier.height(Spacing.small))
+                }
+
                 // Weight Change Per Rep Card
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (useCompactAccessibility) Modifier else Modifier.weight(1f)),
+                        .then(if (stackWeightCards) Modifier else Modifier.weight(1f)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -465,9 +480,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .then(if (stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                             .padding(Spacing.medium),
-                        verticalArrangement = if (useCompactAccessibility) {
+                        verticalArrangement = if (stackWeightCards) {
                             Arrangement.spacedBy(Spacing.small)
                         } else {
                             Arrangement.SpaceEvenly

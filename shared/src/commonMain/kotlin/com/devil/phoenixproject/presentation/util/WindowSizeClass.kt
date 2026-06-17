@@ -107,6 +107,44 @@ fun shouldUseCompactAccessibilityLayout(
         )
 
 /**
+ * Issue #571: Decide whether the Weight per Cable and Weight Change Per Rep cards in
+ * JustLiftScreen should be stacked vertically (one column) or side-by-side (two columns).
+ *
+ * Stacking on iPhone portrait puts the iOS CompactNumberPicker wheel directly above the
+ * ProgressionSlider, and the wheel's vertical LazyColumn has been observed to claim
+ * drags intended for the slider (the visible readout would jump to neighbour weights
+ * like 29/30/44-49 even though the slider's valueRange is -10..+10). To avoid that
+ * gesture conflict by construction, keep the cards side-by-side on iPhone portrait
+ * (width Compact) unless the height is also Compact — the only compact-width+short-height
+ * case (iPhone landscape, 740×390dp) genuinely needs the stacked layout to fit.
+ *
+ * Tablets (width Medium/Expanded) always keep the side-by-side layout.
+ */
+fun shouldStackWeightCards(
+    windowSizeClass: WindowSizeClass,
+    fontScale: Float,
+    boldTextEnabled: Boolean,
+    fontScaleThreshold: Float = 1.15f,
+): Boolean = shouldUseCompactAccessibilityLayout(
+    windowSizeClass = windowSizeClass,
+    fontScale = fontScale,
+    boldTextEnabled = boldTextEnabled,
+    fontScaleThreshold = fontScaleThreshold,
+) && windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact
+
+/**
+ * Issue #571: Composable convenience wrapper around [shouldStackWeightCards] that reads
+ * the current WindowSizeClass, font scale, and accessibility settings from the ambient
+ * composition locals. Use this in Composables; use the pure function in unit tests.
+ */
+@Composable
+fun useStackedWeightCardsLayout(): Boolean = shouldStackWeightCards(
+    windowSizeClass = LocalWindowSizeClass.current,
+    fontScale = LocalDensity.current.fontScale,
+    boldTextEnabled = LocalPlatformAccessibilitySettings.current.boldTextEnabled,
+)
+
+/**
  * Responsive dimension helpers for common UI patterns.
  */
 object ResponsiveDimensions {

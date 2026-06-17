@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +48,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -460,7 +463,42 @@ actual fun CompactNumberPicker(
             BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
-                    .height(containerHeight),
+                    .height(containerHeight)
+                    // Issue #571: cap the wheel's vertical drag hot zone to the centred
+                    // selected row when not in edit mode. Drags landing above or below
+                    // the centred band are consumed at the wheel level so the inner
+                    // LazyColumn does not claim them, letting the outer verticalScroll
+                    // take over and freeing the gesture to reach the slider card below
+                    // when the two cards are stacked. In edit mode, the wheel defers
+                    // entirely to the BasicTextField so keyboard / caret interaction
+                    // is not interrupted.
+                    .pointerInput(isEditing, itemHeight) {
+                        if (isEditing) return@pointerInput
+                        val itemHeightPx: Float = itemHeight.toPx()
+                        val centerY: Float = size.height.toFloat() / 2f
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val offset: Float = down.position.y - centerY
+                            val absOffset: Float = if (offset < 0f) -offset else offset
+                            val inCenterBand: Boolean = absOffset <= itemHeightPx / 2f
+                            if (inCenterBand) {
+                                // Let the inner LazyColumn handle this gesture as before.
+                                return@awaitEachGesture
+                            }
+                            // Outside the centred band: consume the down so the LazyColumn
+                            // does not claim it. The outer verticalScroll / sibling card
+                            // can then take the drag.
+                            down.consume()
+                            // Track until release so we don't get re-entered mid-gesture.
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.all { !it.pressed }) break
+                                // Consume movement too so parent verticalScroll's nested
+                                // scroll connection does not interfere.
+                                event.changes.forEach { it.consume() }
+                            }
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 val showCenteredOverlay = !isEditing && values.isNotEmpty()
