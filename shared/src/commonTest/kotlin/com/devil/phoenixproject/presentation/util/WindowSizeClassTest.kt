@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.util
 
 import androidx.compose.ui.unit.dp
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -115,6 +116,13 @@ class WindowSizeClassTest {
     }
 
     // ========== Issue #571: shouldStackWeightCards ==========
+    //
+    // The helper is reduced to `heightSizeClass == Compact` (see WindowSizeClass.kt). The
+    // previous signature also took fontScale/boldTextEnabled/fontScaleThreshold, but those
+    // parameters were dead code (see Gemini review on PR #574 — the broader
+    // `shouldUseCompactAccessibilityLayout` already returns true for compact heights, so
+    // the `&&` was a no-op). Tests are intentionally exhaustive over the 3 size-class
+    // dimensions to lock down the exact behaviour.
 
     @Test
     fun stackWeightCards_iPhone16ProPortraitDefaultTypographyStaysSideBySide() {
@@ -130,20 +138,21 @@ class WindowSizeClassTest {
         )
 
         assertFalse(
-            shouldStackWeightCards(
-                windowSizeClass = window,
-                fontScale = 1f,
-                boldTextEnabled = false,
-            ),
+            shouldStackWeightCards(windowSizeClass = window),
+            "iPhone 16 Pro portrait (height=Medium) must NOT stack the weight cards. " +
+                "Stacking on a tall portrait device is what caused the gesture-stealing " +
+                "bug in #571.",
         )
     }
 
     @Test
     fun stackWeightCards_iPhone16ProPortraitWithBoldTextStaysSideBySide() {
-        // Bold Text on (compact width + medium height) is a stacked candidate, but
-        // unless the height is also compact we should still keep the weight cards
+        // Bold Text on (compact width + medium height) was previously a stacked candidate,
+        // but unless the height is also compact we should still keep the weight cards
         // side-by-side. Stacking them on a tall portrait device is what caused the
-        // gesture-stealing bug in #571.
+        // gesture-stealing bug in #571. Note: the new helper signature no longer takes
+        // boldTextEnabled, so this test is now a documentation guard that *removing* the
+        // parameter did not change behaviour — Bold Text cannot induce stacking.
         val window = WindowSizeClass(
             widthSizeClass = WindowWidthSizeClass.Compact,
             heightSizeClass = WindowHeightSizeClass.Medium,
@@ -152,11 +161,9 @@ class WindowSizeClassTest {
         )
 
         assertFalse(
-            shouldStackWeightCards(
-                windowSizeClass = window,
-                fontScale = 1f,
-                boldTextEnabled = true,
-            ),
+            shouldStackWeightCards(windowSizeClass = window),
+            "Bold Text no longer influences shouldStackWeightCards; tall portrait is " +
+                "always side-by-side.",
         )
     }
 
@@ -172,11 +179,7 @@ class WindowSizeClassTest {
         )
 
         assertTrue(
-            shouldStackWeightCards(
-                windowSizeClass = window,
-                fontScale = 1f,
-                boldTextEnabled = false,
-            ),
+            shouldStackWeightCards(windowSizeClass = window),
         )
     }
 
@@ -192,18 +195,15 @@ class WindowSizeClassTest {
         )
 
         assertTrue(
-            shouldStackWeightCards(
-                windowSizeClass = window,
-                fontScale = 1f,
-                boldTextEnabled = false,
-            ),
+            shouldStackWeightCards(windowSizeClass = window),
         )
     }
 
     @Test
     fun stackWeightCards_tallTabletStaysSideBySide() {
         // Tablets and large phones (width Medium/Expanded) with normal height should
-        // never stack the weight cards.
+        // never stack the weight cards. Width does not influence the helper, so a tablet
+        // here behaves the same as any other window with height=Medium.
         val window = WindowSizeClass(
             widthSizeClass = WindowWidthSizeClass.Expanded,
             heightSizeClass = WindowHeightSizeClass.Medium,
@@ -212,54 +212,38 @@ class WindowSizeClassTest {
         )
 
         assertFalse(
-            shouldStackWeightCards(
-                windowSizeClass = window,
-                fontScale = 1.3f,
-                boldTextEnabled = true,
-            ),
+            shouldStackWeightCards(windowSizeClass = window),
         )
     }
 
     @Test
-    fun stackWeightCards_consistentWithCompactAccessibilityGating() {
-        // Invariant: if shouldStackWeightCards is true, then
-        // shouldUseCompactAccessibilityLayout must also be true. The reverse is NOT
-        // required: there are cases (compact width + medium height + bold text) where
-        // the screen is "compact accessibility" overall but the weight cards should
-        // still stay side-by-side (issue #571).
-        val cases = listOf(
-            Triple(WindowWidthSizeClass.Compact, WindowHeightSizeClass.Compact, 1f),
-            Triple(WindowWidthSizeClass.Compact, WindowHeightSizeClass.Compact, 1.2f),
-            Triple(WindowWidthSizeClass.Compact, WindowHeightSizeClass.Medium, 1f),
-            Triple(WindowWidthSizeClass.Compact, WindowHeightSizeClass.Medium, 1.2f),
-            Triple(WindowWidthSizeClass.Compact, WindowHeightSizeClass.Expanded, 1f),
-            Triple(WindowWidthSizeClass.Medium, WindowHeightSizeClass.Compact, 1f),
-            Triple(WindowWidthSizeClass.Medium, WindowHeightSizeClass.Medium, 1.2f),
-            Triple(WindowWidthSizeClass.Expanded, WindowHeightSizeClass.Compact, 1f),
-            Triple(WindowWidthSizeClass.Expanded, WindowHeightSizeClass.Medium, 1.2f),
+    fun stackWeightCards_heightIsTheSoleDeterminant() {
+        // Documents the simplified contract: heightSizeClass == Compact is the only
+        // input. widthSizeClass and accessibility settings do not influence the result.
+        val heightCases = mapOf(
+            WindowHeightSizeClass.Compact to true,
+            WindowHeightSizeClass.Medium to false,
+            WindowHeightSizeClass.Expanded to false,
         )
-        for ((widthClass, heightClass, fontScale) in cases) {
-            for (boldText in listOf(false, true)) {
+        val widthCases = listOf(
+            WindowWidthSizeClass.Compact,
+            WindowWidthSizeClass.Medium,
+            WindowWidthSizeClass.Expanded,
+        )
+        for ((height, expectedStack) in heightCases) {
+            for (width in widthCases) {
                 val window = WindowSizeClass(
-                    widthSizeClass = widthClass,
-                    heightSizeClass = heightClass,
+                    widthSizeClass = width,
+                    heightSizeClass = height,
                     widthDp = 400.dp,
                     heightDp = 800.dp,
                 )
-                val compact = shouldUseCompactAccessibilityLayout(
-                    windowSizeClass = window,
-                    fontScale = fontScale,
-                    boldTextEnabled = boldText,
-                )
-                val stack = shouldStackWeightCards(
-                    windowSizeClass = window,
-                    fontScale = fontScale,
-                    boldTextEnabled = boldText,
-                )
-                assertTrue(
-                    !stack || compact,
-                    "Invariant violated for ${widthClass}/${heightClass}/fs=$fontScale/bold=$boldText: " +
-                        "stack=$stack but compact=$compact (stack must imply compact)",
+                val stack = shouldStackWeightCards(windowSizeClass = window)
+                assertEquals(
+                    expectedStack,
+                    stack,
+                    "shouldStackWeightCards must be determined solely by heightSizeClass. " +
+                        "Failed for width=$width, height=$height (expected=$expectedStack, got=$stack).",
                 )
             }
         }

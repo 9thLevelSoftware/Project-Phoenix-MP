@@ -20,6 +20,32 @@ import kotlin.test.assertTrue
  * short-height-only [com.devil.phoenixproject.presentation.util.shouldStackWeightCards]
  * helper, not the broader [com.devil.phoenixproject.presentation.util.shouldUseCompactAccessibilityLayout]
  * flag.
+ *
+ * ## Why static analysis instead of Compose UI tests?
+ *
+ * This file reads `JustLiftScreen.kt` from disk and asserts on its source text.
+ * That is intentionally a known fragile-test anti-pattern (Gemini review on PR #574).
+ * We keep it because:
+ *
+ * 1. The bug class is "the widget is wired wrong" — slider bound to the wrong state,
+ *    `valueRange` widened, gate helper swapped. These are *source-level* invariants.
+ *    A Compose UI test would still pass if a refactor accidentally rebinds
+ *    `onValueChange = { weightPerCable = it }` (the UI looks identical; the bug
+ *    only shows up downstream when the wrong state is read).
+ * 2. Compose UI tests in this repo currently cover behaviour, not wiring (see
+ *    `WindowSizeClassTest`). Adding a Compose UI test for JustLiftScreen would
+ *    require additional compose-test runtime + Robolectric wiring that this PR
+ *    does not introduce (out of scope for the issue #571 fix).
+ * 3. The tests are scoped to a small set of exact string assertions, not full
+ *    parsing. They are cheap to maintain and produce a clear failure message
+ *    pointing at the regression. A future refactor that legitimately restructures
+ *    the file will need to update these strings — that is the intended failure mode.
+ *
+ * When the repo gains a Compose UI test harness for JustLiftScreen, these static
+ * assertions should be replaced with semantic assertions on the rendered
+ * composition (e.g. `composeTestRule.onNodeWithText("+1").performTouchInput { swipeRight() }
+ * .assertTextEquals("+2")`). See the PR #574 review thread for the original
+ * suggestion and the long-term migration plan.
  */
 class JustLiftScreenWeightSliderWiringTest {
 

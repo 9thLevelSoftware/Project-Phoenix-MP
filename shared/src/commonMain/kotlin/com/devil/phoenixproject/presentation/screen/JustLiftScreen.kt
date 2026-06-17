@@ -408,7 +408,19 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (stackWeightCards) Modifier else Modifier.weight(1f)),
+                        .then(if (stackWeightCards) Modifier else Modifier.weight(1f))
+                        // Issue #571: belt-and-braces vertical separation between the two
+                        // weight cards when stacked, so the wheel's bottom edge is
+                        // unambiguously above the slider's top edge even if the inner
+                        // gesture-isolation step in CompactNumberPicker is bypassed by a
+                        // future regression. Applied as bottom padding on the *first* card
+                        // (rather than an explicit Spacer between them) so the outer
+                        // Column's `Arrangement.spacedBy(Spacing.medium)` does not double
+                        // the gap. Total gap = Spacing.medium (outer) + Spacing.small
+                        // (this padding) = 24dp.
+                        .then(
+                            if (stackWeightCards) Modifier.padding(bottom = Spacing.small) else Modifier,
+                        ),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -458,14 +470,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             textAlign = TextAlign.Center,
                         )
                     }
-                }
-
-                // Issue #571: belt-and-braces vertical separation between the two cards
-                // when stacked, so the wheel's bottom edge is unambiguously above the slider's
-                // top edge even if the inner gesture-isolation step in CompactNumberPicker
-                // is bypassed by a future regression.
-                if (stackWeightCards) {
-                    Spacer(modifier = Modifier.height(Spacing.small))
                 }
 
                 // Weight Change Per Rep Card
