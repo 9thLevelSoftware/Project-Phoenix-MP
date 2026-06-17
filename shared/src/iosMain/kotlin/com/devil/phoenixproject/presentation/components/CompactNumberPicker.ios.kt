@@ -76,13 +76,14 @@ private data class PickerSizing(
 )
 
 @Composable
-private fun rememberPickerSizing(): PickerSizing {
+private fun rememberPickerSizing(compactWheel: Boolean = false): PickerSizing {
     val windowSizeClass = LocalWindowSizeClass.current
     val fontScale = LocalDensity.current.fontScale
     val typography = MaterialTheme.typography
     val isCompactWidth = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact
     val compactHeightMode =
-        isCompactWidth && windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact && fontScale <= 1.05f
+        compactWheel ||
+            (isCompactWidth && windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact && fontScale <= 1.05f)
 
     val itemHeight: Dp
     val selectedTextStyle: TextStyle
@@ -142,6 +143,7 @@ actual fun CompactNumberPicker(
     label: String,
     suffix: String,
     step: Float,
+    compactWheel: Boolean,
 ) {
     // Generate values deterministically to avoid floating-point drift on iOS.
     val values = remember(range.start, range.endInclusive, step) {
@@ -183,7 +185,7 @@ actual fun CompactNumberPicker(
     val coroutineScope = rememberCoroutineScope()
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
     val focusManager = LocalFocusManager.current
-    val pickerSizing = rememberPickerSizing()
+    val pickerSizing = rememberPickerSizing(compactWheel = compactWheel)
 
     // Inline editing state
     var isEditing by remember { mutableStateOf(false) }
@@ -681,5 +683,6 @@ actual fun CompactNumberPicker(
         label = label,
         suffix = suffix,
         step = 1.0f,
+        compactWheel = false,
     )
 }

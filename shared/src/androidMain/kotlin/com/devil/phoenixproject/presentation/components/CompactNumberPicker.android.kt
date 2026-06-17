@@ -29,7 +29,10 @@ actual fun CompactNumberPicker(
     label: String,
     suffix: String,
     step: Float,
+    compactWheel: Boolean,
 ) {
+    val wheelHeight = if (compactWheel) 96.dp else 120.dp
+    val buttonSize = if (compactWheel) 40.dp else 48.dp
     // Generate array of values based on step
     val values = remember(range, step) {
         buildList {
@@ -78,7 +81,7 @@ actual fun CompactNumberPicker(
                     onValueChange(values[newIndex])
                 },
                 enabled = currentIndex > 0,
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(buttonSize),
             ) {
                 Icon(
                     imageVector = Icons.Default.Remove,
@@ -211,7 +214,7 @@ actual fun CompactNumberPicker(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .height(120.dp),
+                    .height(wheelHeight),
             )
 
             // Increase button
@@ -221,7 +224,7 @@ actual fun CompactNumberPicker(
                     onValueChange(values[newIndex])
                 },
                 enabled = currentIndex < values.size - 1,
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(buttonSize),
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
@@ -257,5 +260,6 @@ actual fun CompactNumberPicker(
         label = label,
         suffix = suffix,
         step = 1.0f,
+        compactWheel = false,
     )
 }
