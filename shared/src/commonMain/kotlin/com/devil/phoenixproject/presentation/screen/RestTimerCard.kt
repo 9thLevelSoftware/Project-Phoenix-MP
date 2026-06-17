@@ -202,17 +202,11 @@ fun RestTimerCard(
             label = "pulse",
         )
 
-        // Accessibility: hidden node that announces countdown at key intervals.
-        // Uses liveRegion(Polite) so TalkBack/VoiceOver reads changes without
-        // interrupting other speech. Only fires when lastAnnouncedText changes.
-        Box(
-            modifier = Modifier
-                .size(0.dp)
-                .semantics {
-                    liveRegion = LiveRegionMode.Polite
-                    contentDescription = lastAnnouncedText
-                },
-        )
+        // Accessibility: countdown announcements are now driven by the visible
+        // timer Text below (see liveRegion semantics there). The previous zero-size
+        // liveRegion Box was removed (issue #565) because the 0.dp AX node increased
+        // element-disposal churn during 1Hz recomposition, racing iOS UIAccessibility
+        // and triggering an EXC_BAD_ACCESS in Compose's accessibility bounds path.
 
         Column(
             modifier = Modifier
@@ -276,6 +270,13 @@ fun RestTimerCard(
                 )
 
                 // Timer text - dimmed when paused
+                // Accessibility: liveRegion semantics relocated here from the removed
+                // 0.dp Box (issue #565). Attaching liveRegion=Polite + contentDescription
+                // to this stable, visible, non-zero-size element preserves throttled
+                // VoiceOver/TalkBack countdown announcements (5s/10s/0s/paused) while
+                // eliminating the zero-size AX node that raced iOS UIAccessibility.
+                // contentDescription overrides the raw time string so liveRegion only
+                // fires when lastAnnouncedText changes (not every 1Hz tick).
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = formatRestTime(restSecondsRemaining),
@@ -285,6 +286,10 @@ fun RestTimerCard(
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                         } else {
                             MaterialTheme.colorScheme.primary
+                        },
+                        modifier = Modifier.semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            contentDescription = lastAnnouncedText
                         },
                     )
                     if (isRestPaused) {
