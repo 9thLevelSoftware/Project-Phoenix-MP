@@ -57,6 +57,7 @@ class SyncTriggerManagerTest {
 
         suspend fun sync(): Result<Long> {
             syncCallCount++
+            syncThrows?.let { throw it }
             // Only update to Success if we're not preserving a custom state (like PartialSuccess)
             if (syncResult.isSuccess && !preserveSyncState) {
                 _syncState.value = SyncState.Success(syncResult.getOrThrow())
@@ -90,6 +91,9 @@ class SyncTriggerManagerTest {
             refreshPremiumCallCount++
             refreshPremiumStatusThrows?.let { throw it }
         }
+
+        /** When set, sync() throws instead of returning Result (raw Ktor/IO/SqlDelight path). */
+        var syncThrows: Throwable? = null
     }
 
     /**
@@ -127,26 +131,39 @@ class SyncTriggerManagerTest {
         }
 
         /**
-         * Simulates onWorkoutCompleted - bypasses throttle
+         * Simulates onWorkoutCompleted - bypasses throttle.
+         * Mirrors production: attemptSync is wrapped so raw throwables do not escape.
          */
         suspend fun onWorkoutCompleted() {
-            attemptSync(bypassThrottle = true)
+            attemptSyncSafely(bypassThrottle = true)
         }
 
         /**
          * Simulates onAppForeground - respects throttle.
          *
-         * Mirrors the issue #566 fix: the body is wrapped in try/catch so a raw
-         * throwable from refreshPremiumStatusFromServer() (the real crash path)
-         * is recorded via onSyncFailure() and does NOT propagate, while
-         * CancellationException is rethrown to preserve cancellation semantics.
+         * Mirrors production: premium refresh is isolated; only attemptSync failures
+         * advance RetryState/backoff.
          */
         suspend fun onAppForeground() {
+            refreshPremiumStatusFromConnectedPlatform()
+            attemptSyncSafely(bypassThrottle = false)
+        }
+
+        private suspend fun refreshPremiumStatusFromConnectedPlatform() {
             try {
                 if (testSyncManager.isAuthenticated.value) {
                     testSyncManager.refreshPremiumStatusFromServer()
                 }
-                attemptSync(bypassThrottle = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Swallowed — must not block portal sync.
+            }
+        }
+
+        private suspend fun attemptSyncSafely(bypassThrottle: Boolean) {
+            try {
+                attemptSync(bypassThrottle)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -160,7 +177,7 @@ class SyncTriggerManagerTest {
         suspend fun onConnectivityRestored() {
             if (isWaitingForConnectivity) {
                 isWaitingForConnectivity = false
-                attemptSync(bypassThrottle = true)
+                attemptSyncSafely(bypassThrottle = true)
             }
         }
 
@@ -707,12 +724,11 @@ class SyncTriggerManagerTest {
     // ==================== Issue #566 Foreground Crash Containment Tests ====================
 
     /**
-     * Issue #566: a raw throwable from refreshPremiumStatusFromServer() (the real
-     * crash path — a suspend API call not wrapped in Result) must be recorded in
-     * RetryState via onSyncFailure() and must NOT propagate out of onAppForeground().
+     * Premium refresh failures must be isolated: portal sync should still run and
+     * RetryState must not advance (premium refresh is not a sync failure).
      */
     @Test
-    fun onAppForegroundRecordsFailureAndDoesNotPropagateWhenPremiumRefreshThrows() = runTest {
+    fun onAppForegroundStillSyncsWhenPremiumRefreshThrows() = runTest {
         val syncManager = TestSyncManager()
         val connectivity = TestConnectivityChecker()
         val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
@@ -721,23 +737,21 @@ class SyncTriggerManagerTest {
         syncManager.refreshPremiumStatusThrows =
             SimulatedPremiumRefreshCrash("simulated premium refresh failure after wake")
 
-        // Must not throw — the throwable is contained by onAppForeground()'s try/catch.
         triggerManager.onAppForeground()
 
         assertEquals(1, syncManager.refreshPremiumCallCount, "Premium refresh should have been attempted")
-        assertEquals(0, syncManager.syncCallCount, "attemptSync should not be reached after premium refresh threw")
-        assertEquals(1, triggerManager.getConsecutiveFailures(), "Foreground failure should be recorded")
-        assertEquals(1, triggerManager.retryState.value.retryCount, "RetryState should reflect the foreground failure")
-        assertNotNull(triggerManager.getLastErrorCategory(), "Error category should be classified and recorded")
+        assertEquals(1, syncManager.syncCallCount, "attemptSync must still run after premium refresh threw")
+        assertEquals(0, triggerManager.getConsecutiveFailures(), "Premium refresh failure must not advance backoff")
+        assertNull(triggerManager.getLastErrorCategory(), "Premium refresh failure must not be classified as sync failure")
     }
 
     /**
-     * Issue #566: CancellationException must be rethrown by onAppForeground() so
+     * Issue #566: CancellationException from premium refresh must be rethrown so
      * coroutine cancellation semantics are preserved, and must NOT be recorded as
      * a sync failure.
      */
     @Test
-    fun onAppForegroundRethrowsCancellationException() = runTest {
+    fun onAppForegroundRethrowsCancellationExceptionFromPremiumRefresh() = runTest {
         val syncManager = TestSyncManager()
         val connectivity = TestConnectivityChecker()
         val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
@@ -754,5 +768,25 @@ class SyncTriggerManagerTest {
             triggerManager.getConsecutiveFailures(),
             "CancellationException must not be recorded as a sync failure",
         )
+    }
+
+    /**
+     * Issue #566 class: onWorkoutCompleted is launched from ActiveSessionEngine via
+     * unguarded scope.launch; a raw throwable from attemptSync must not propagate.
+     */
+    @Test
+    fun onWorkoutCompletedRecordsFailureAndDoesNotPropagateWhenSyncThrows() = runTest {
+        val syncManager = TestSyncManager()
+        val connectivity = TestConnectivityChecker()
+        val triggerManager = TestableSyncTriggerManager(syncManager, connectivity)
+
+        class SimulatedSyncCrash(message: String) : Exception(message)
+        syncManager.syncThrows = SimulatedSyncCrash("simulated sync failure after workout")
+
+        triggerManager.onWorkoutCompleted()
+
+        assertEquals(1, syncManager.syncCallCount, "Sync should have been attempted")
+        assertEquals(1, triggerManager.getConsecutiveFailures(), "Workout sync failure should be recorded")
+        assertNotNull(triggerManager.getLastErrorCategory(), "Error category should be classified and recorded")
     }
 }

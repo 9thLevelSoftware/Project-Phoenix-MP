@@ -82,7 +82,7 @@ class SyncTriggerManager(
      */
     suspend fun onWorkoutCompleted() {
         Logger.d { "SyncTrigger: Workout completed, attempting sync" }
-        attemptSync(bypassThrottle = true)
+        attemptSyncSafely(bypassThrottle = true)
     }
 
     /**
@@ -90,26 +90,50 @@ class SyncTriggerManager(
      * Respects throttle/backoff to avoid excessive sync attempts.
      */
     suspend fun onAppForeground() {
-        try {
-            Logger.d { "SyncTrigger: App foreground, checking if sync needed" }
-            syncHealthBodyWeightFromConnectedPlatform()
-            if (syncManager.isAuthenticated.value) {
-                syncManager.refreshPremiumStatusFromServer()
-            }
-            attemptSync(bypassThrottle = false)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            Logger.e(e) { "SyncTrigger: onAppForeground failed" }
-            onSyncFailure(e)
-        }
+        Logger.d { "SyncTrigger: App foreground, checking if sync needed" }
+        syncHealthBodyWeightFromConnectedPlatform()
+        refreshPremiumStatusFromConnectedPlatform()
+        attemptSyncSafely(bypassThrottle = false)
     }
 
     private suspend fun syncHealthBodyWeightFromConnectedPlatform() {
         try {
             healthBodyWeightSyncManager?.syncLatestFromConnectedPlatform()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.w(e) { "SyncTrigger: Health body-weight sync failed without blocking portal sync" }
+        }
+    }
+
+    /**
+     * Best-effort premium/tier refresh on foreground. Failures are logged but must not
+     * block portal sync or advance sync backoff — same contract as health body-weight sync.
+     */
+    private suspend fun refreshPremiumStatusFromConnectedPlatform() {
+        try {
+            if (syncManager.isAuthenticated.value) {
+                syncManager.refreshPremiumStatusFromServer()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(e) { "SyncTrigger: Premium status refresh failed without blocking portal sync" }
+        }
+    }
+
+    /**
+     * Wraps [attemptSync] so raw throwables from Ktor/IO/SqlDelight do not escape to
+     * unguarded [kotlinx.coroutines.launch] callers (issue #566 class of SIGABRT on iOS).
+     */
+    private suspend fun attemptSyncSafely(bypassThrottle: Boolean) {
+        try {
+            attemptSync(bypassThrottle)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Logger.e(e) { "SyncTrigger: attemptSync failed" }
+            onSyncFailure(e)
         }
     }
 
@@ -128,7 +152,7 @@ class SyncTriggerManager(
         }
         if (shouldRetry) {
             Logger.i { "SyncTrigger: Connectivity restored, retrying sync" }
-            attemptSync(bypassThrottle = true)
+            attemptSyncSafely(bypassThrottle = true)
         }
     }
 
