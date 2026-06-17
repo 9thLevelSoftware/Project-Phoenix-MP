@@ -131,8 +131,8 @@ object BlePacketFactory {
         WorkoutCommandValidator.validateProgramParams(params).getOrThrow()
 
         // Resolve the profile up front so the variant decision can key off it.
-        val profileMode = if (params.isJustLift || params.isEchoMode) {
-            ProgramMode.OldSchool
+        val profileMode = if (params.isEchoMode) {
+            ProgramMode.OldSchool // Echo profile unused; Echo builds the 0x4E packet separately
         } else {
             params.programMode
         }
@@ -142,9 +142,8 @@ object BlePacketFactory {
         // those bytes with softMax/increment, which leaves the firmware unable
         // to apply weight during the eccentric phase (reps count, but the
         // chosen weight is never engaged). The official app preserves the
-        // profile tail for this mode. Gate on the resolved profile, not the
-        // requested mode, so Just Lift packets (which use the OldSchool
-        // profile) keep the OVERLAP overwrites they were designed for.
+        // profile tail for this mode. Gate on the resolved profile so that
+        // EccentricOnly always uses NON_OVERLAP regardless of isJustLift.
         val effectiveVariant = if (profileMode is ProgramMode.EccentricOnly) {
             ForceConfigVariant.NON_OVERLAP
         } else {
