@@ -4414,8 +4414,13 @@ class ActiveSessionEngine(
             // on a mode change, which the user perceives as "the set deloads". The mode
             // change (OldSchool -> TUT) is still surfaced to the on-screen label, but
             // the CONFIG frame is deferred until the user explicitly starts that set.
+            val isAdjacentLinearExercise =
+                nextExIdx == coordinator._currentExerciseIndex.value + 1 &&
+                    currentExercise?.supersetId == null &&
+                    nextExercise.supersetId == null
             val isSameExerciseContinuation = isChangingExercise &&
                 currentExercise != null &&
+                isAdjacentLinearExercise &&
                 flowDelegate?.isSameExercise(currentExercise, nextExercise) == true
 
             coordinator._currentExerciseIndex.value = nextExIdx
@@ -4520,6 +4525,11 @@ class ActiveSessionEngine(
                 // already been updated above to reflect the new entry.
                 repCounter.resetCountsOnly()
                 resetAutoStopState()
+                // ActiveWorkoutScreen only navigates to SetReady when workoutState is Idle.
+                // Leaving Resting/SetSummary here strands the user on the rest/summary UI
+                // while routineFlowState is already SetReady; a second Skip Rest /
+                // startNextSet() would advance past the deferred set entirely.
+                coordinator._workoutState.value = WorkoutState.Idle
                 flowDelegate?.enterSetReady(nextExIdx, nextSetIdx)
             } else {
                 // Same-entry set advance (isChangingExercise == false). Preserve the
