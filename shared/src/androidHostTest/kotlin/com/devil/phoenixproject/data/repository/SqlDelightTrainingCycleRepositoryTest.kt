@@ -238,6 +238,7 @@ class SqlDelightTrainingCycleRepositoryTest {
             setEchoLevels = "",
             warmupSets = "",
             defaultRackItemIds = "[]",
+            rackBehaviorOverrides = "{}",
         )
     }
 }

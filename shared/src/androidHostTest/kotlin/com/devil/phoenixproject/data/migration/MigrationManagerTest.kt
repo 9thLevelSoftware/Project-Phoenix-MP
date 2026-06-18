@@ -561,6 +561,7 @@ class MigrationManagerTest {
             setEchoLevels = "",
             warmupSets = "",
             defaultRackItemIds = "[]",
+            rackBehaviorOverrides = "{}",
         )
     }
 

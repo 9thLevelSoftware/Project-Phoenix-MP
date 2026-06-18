@@ -150,6 +150,7 @@ class SqlDelightCompletedSetRepositoryTest {
             setEchoLevels = "",
             warmupSets = "",
             defaultRackItemIds = "[]",
+            rackBehaviorOverrides = "{}",
         )
     }
 

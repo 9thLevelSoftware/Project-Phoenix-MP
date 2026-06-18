@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineGroup
@@ -337,6 +338,19 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     emptyList()
                 }
 
+                val rackBehaviorOverrides: Map<String, RackItemBehavior> = try {
+                    if (row.rackBehaviorOverrides.isBlank() || row.rackBehaviorOverrides == "{}") {
+                        emptyMap()
+                    } else {
+                        json.decodeFromString<Map<String, RackItemBehavior>>(row.rackBehaviorOverrides)
+                    }
+                } catch (e: Exception) {
+                    Logger.w(e) {
+                        "Failed to parse rackBehaviorOverrides '${row.rackBehaviorOverrides}' for exercise ${row.exerciseName}, using empty map"
+                    }
+                    emptyMap()
+                }
+
                 val eccentricLoad = mapEccentricLoadFromDb(row.eccentricLoad)
                 val echoLevel = EchoLevel.entries.getOrNull(row.echoLevel.toInt()) ?: EchoLevel.HARDER
 
@@ -398,6 +412,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     setWeightsPercentOfPR = setWeightsPercentOfPR,
                     warmupSets = warmupSets,
                     defaultRackItemIds = defaultRackItemIds,
+                    rackBehaviorOverrides = rackBehaviorOverrides,
                 )
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
@@ -706,6 +721,11 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             defaultRackItemIds = json.encodeToString(
                 exercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct(),
             ),
+            rackBehaviorOverrides = if (exercise.rackBehaviorOverrides.isEmpty()) {
+                "{}"
+            } else {
+                json.encodeToString(exercise.rackBehaviorOverrides)
+            },
         )
     }
 

@@ -169,6 +169,8 @@ data class RoutineExerciseBackup(
     val warmupSets: String = "",
     // Local equipment rack defaults (backup schema v4)
     val defaultRackItemIds: List<String> = emptyList(),
+    // Per-exercise rack behavior overrides (Issues #521/#526)
+    val rackBehaviorOverrides: String = "{}",
 )
 
 /**
