@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -296,6 +299,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             }
         },
     ) { padding ->
+        // Issue #582: make the SetReady body vertically scrollable so the
+        // EquipmentRackSelectionCard (always rendered for cable exercises) does
+        // not get pushed below the visible/reachable viewport by the cable-only
+        // SET CONFIGURATION / ECHO SETTINGS card on phone-sized portrait screens.
+        // The Scaffold bottomBar stays anchored — only the body content scrolls.
+        val setReadyScrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -308,9 +317,9 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         ),
                     ),
                 )
+                .verticalScroll(setReadyScrollState)
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
         ) {
             // Header - Set X of Y
             Card(
@@ -547,6 +556,9 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 },
                 onManageRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
                 showBehaviorOverrides = true,
+                // Issue #582: regression tag for Compose UI / screenshot tests that
+                // verify the Equipment Rack card is reachable on cable SetReady.
+                modifier = Modifier.testTag(SetReadyTestTags.RACK_CARD),
             )
 
             Spacer(Modifier.height(12.dp))
@@ -682,8 +694,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     }
                 }
             }
-
-            Spacer(Modifier.weight(1f))
+            // Issue #582: a trailing `Spacer(Modifier.weight(1f))` was removed here
+            // because `Modifier.weight` is not allowed inside a vertically-scrollable
+            // Column (Compose throws at composition). The scroll wrapper above keeps
+            // the rack card reachable on small portrait screens without forcing it
+            // to the bottom; the Scaffold bottomBar still anchors the action row.
+            Spacer(Modifier.height(12.dp))
         }
     }
 
@@ -839,4 +855,19 @@ private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
             modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+/**
+ * Test tags used by [SetReadyScreen]. Issue #582 introduced `RACK_CARD` so a
+ * Compose UI / screenshot test can assert that the Equipment Rack card stays
+ * reachable on a phone-sized portrait screen when a cable exercise is selected.
+ *
+ * Source-level regression coverage lives in
+ * `shared/src/commonTest/.../SetReadyScreenScrollWiringTest.kt`; that test pins
+ * this file's structure so the wiring here cannot regress without the unit test
+ * failing first.
+ */
+object SetReadyTestTags {
+    /** EquipmentRackSelectionCard root inside SetReadyScreen. Issue #582. */
+    const val RACK_CARD: String = "set_ready_rack_card"
 }
