@@ -2,7 +2,6 @@ package com.devil.phoenixproject.presentation
 
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -270,30 +269,47 @@ class SetReadyScreenScrollWiringTest {
         // for both cable and bodyweight exercises. The fix must NOT introduce an
         // `if (!isBodyweight)` gate around the rack card call — that would be a
         // different (and incorrect) interpretation of the reporter's symptom.
-        // Pin the call site exists exactly once, outside any `if (!isBodyweight)` block,
-        // and outside any import / KDoc / trailing comment that mentions the symbol.
-        // We count only matches that are NOT inside `import ...` lines, KDoc, or
-        // single-line `// ...` comments.
-        val callCount = countRealCallSites(
+        // Pin:
+        //   (a) exactly one real (non-import, non-comment) call site exists; AND
+        //   (b) that call site sits outside any `if (!isBodyweight)` block — i.e.
+        //       the rack card renders for cable AND bodyweight exercises.
+        val callSite = firstRealCallSite(
             src = src,
             symbol = "EquipmentRackSelectionCard",
         )
-        assertEquals(
-            1,
-            callCount,
+        assertTrue(
+            callSite != null,
             "SetReadyScreen.kt must contain exactly one real (non-import, non-comment) " +
-                "EquipmentRackSelectionCard call site (issue #582). Found $callCount.",
+                "EquipmentRackSelectionCard call site (issue #582). Found 0.",
+        )
+        assertNotNull(callSite)
+        // Look at the 60 source-code (non-comment, non-blank) lines preceding the
+        // call site. If we ever wrap the call in `if (!isBodyweight) { ... }`, one
+        // of those preceding lines will contain that exact gate.
+        val precedingSrc = src.substring(0, callSite.offset)
+        val precedingNonCommentLines = precedingSrc
+            .split('\n')
+            .filter { line ->
+                val t = line.trimStart()
+                t.isNotEmpty() && !t.startsWith("//") && !t.startsWith("/*") && !t.startsWith("*")
+            }
+        val recent = precedingNonCommentLines.takeLast(60)
+        assertTrue(
+            recent.none { it.contains("if (!isBodyweight)") || it.contains("if (isBodyweight)") },
+            "EquipmentRackSelectionCard call site must NOT sit inside an " +
+                "`if (!isBodyweight) { ... }` (or `if (isBodyweight) { ... }`) block. " +
+                "The rack card must render for both cable and bodyweight exercises. " +
+                "Issue #582 fix direction.",
         )
     }
 
     /**
-     * Count occurrences of [symbol]( that are NOT inside import lines or
-     * single-line / block comments. This is a heuristic for the regression
-     * guard, not a Kotlin parser; it works because SetReadyScreen is a single
-     * function per source file and the symbol never appears inside string
-     * literals or KDoc at the top of the file (only import and // comments).
+     * Find the first non-import, non-comment occurrence of `symbol(` in [src]
+     * and return its source offset (or null if none). The heuristic scans the
+     * file line-by-line, skipping imports, KDoc, and line/block comments before
+     * matching, so a future comment that documents the symbol does not count.
      */
-    private fun countRealCallSites(src: String, symbol: String): Int {
+    private fun firstRealCallSite(src: String, symbol: String): CallSiteRef? {
         val importLines = src.lineSequence()
             .withIndex()
             .filter { it.value.trimStart().startsWith("import ") }
@@ -320,14 +336,23 @@ class SetReadyScreenScrollWiringTest {
             }
         }
         val pattern = Regex("$symbol\\s*\\(")
-        var count = 0
+        var runningOffset = 0
         lines.forEachIndexed { idx, line ->
-            if (idx in importLines) return@forEachIndexed
-            if (idx in commentLineSet) return@forEachIndexed
-            if (pattern.containsMatchIn(line)) count++
+            if (idx in importLines || idx in commentLineSet) {
+                runningOffset += line.length + 1 // +1 for newline
+                return@forEachIndexed
+            }
+            val m = pattern.find(line)
+            if (m != null) {
+                return CallSiteRef(offset = runningOffset + m.range.first)
+            }
+            runningOffset += line.length + 1
         }
-        return count
+        return null
     }
+
+    /** Reference to a real (non-import, non-comment) call site in a source file. */
+    private data class CallSiteRef(val offset: Int)
 
     private fun readSetReadyScreenSource(): String {
         val relativePath =
