@@ -236,6 +236,7 @@ class ConflictResolutionTest {
             setEchoLevels = "",
             warmupSets = "",
             defaultRackItemIds = "[]",
+            rackBehaviorOverrides = "{}",
         )
 
         // Verify exercise exists
