@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WarmupSet
@@ -121,6 +122,9 @@ class ExerciseConfigViewModel constructor(
     private val _defaultRackItemIds = MutableStateFlow<List<String>>(emptyList())
     val defaultRackItemIds: StateFlow<List<String>> = _defaultRackItemIds.asStateFlow()
 
+    private val _rackBehaviorOverrides = MutableStateFlow<Map<String, RackItemBehavior>>(emptyMap())
+    val rackBehaviorOverrides: StateFlow<Map<String, RackItemBehavior>> = _rackBehaviorOverrides.asStateFlow()
+
     init {
     }
 
@@ -231,6 +235,7 @@ class ExerciseConfigViewModel constructor(
         // Warm-up sets (Issue #30)
         _warmupSets.value = exercise.warmupSets
         _defaultRackItemIds.value = exercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct()
+        _rackBehaviorOverrides.value = exercise.rackBehaviorOverrides
 
         // Load PR for the current exercise and mode
         exercise.exercise.id?.let { exerciseId ->
@@ -411,6 +416,10 @@ class ExerciseConfigViewModel constructor(
 
     fun onDefaultRackItemIdsChange(itemIds: List<String>) {
         _defaultRackItemIds.value = itemIds.filter { it.isNotBlank() }.distinct()
+    }
+
+    fun onRackBehaviorOverridesChange(overrides: Map<String, RackItemBehavior>) {
+        _rackBehaviorOverrides.value = overrides
     }
 
     /**
@@ -646,6 +655,7 @@ class ExerciseConfigViewModel constructor(
             // Warm-up sets (Issue #30)
             warmupSets = _warmupSets.value,
             defaultRackItemIds = _defaultRackItemIds.value,
+            rackBehaviorOverrides = _rackBehaviorOverrides.value,
         )
 
         logDebug("Updated exercise to save:")

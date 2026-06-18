@@ -23,6 +23,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
@@ -664,6 +665,9 @@ class DefaultWorkoutSessionManager(
     fun updateWorkoutParameters(params: WorkoutParameters) = activeSessionEngine.updateWorkoutParameters(params)
     fun setWorkoutParametersInternal(params: WorkoutParameters) = activeSessionEngine.setWorkoutParametersInternal(params)
     fun updateActiveRackSelection(itemIds: List<String>) = activeSessionEngine.updateActiveRackSelection(itemIds)
+    fun updateActiveRackBehaviorOverrides(
+        overrides: Map<String, RackItemBehavior>,
+    ) = activeSessionEngine.updateActiveRackBehaviorOverrides(overrides)
     fun clearActiveRackSelection() = activeSessionEngine.clearActiveRackSelection()
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
     fun skipCountdown() = activeSessionEngine.skipCountdown()

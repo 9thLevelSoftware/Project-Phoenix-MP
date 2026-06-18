@@ -48,6 +48,40 @@ class DWSMEquipmentRackTest {
     }
 
     @Test
+    fun `runtime behavior override adjusts non Echo set start packet`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakeEquipmentRackRepo.saveItems(
+            listOf(rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE)),
+        )
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 40f,
+            ),
+        )
+        harness.dwsm.updateActiveRackSelection(listOf("vest"))
+        harness.dwsm.updateActiveRackBehaviorOverrides(
+            mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
+        )
+
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        val command = harness.fakeBleRepo.commandsReceived.single()
+        assertEquals(30f, readFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        assertEquals(40f, harness.dwsm.coordinator.workoutParameters.value.weightPerCableKg)
+        assertEquals(
+            mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
+            harness.dwsm.coordinator.activeRackBehaviorOverrides.value,
+        )
+        harness.cleanup()
+    }
+
+    @Test
     fun `active rack edits during active set do not send mid set command and saved session uses set start snapshot`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")

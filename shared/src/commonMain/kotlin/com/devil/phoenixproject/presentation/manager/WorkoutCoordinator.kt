@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepMetricData
@@ -191,6 +192,9 @@ class WorkoutCoordinator(
     internal val _activeRackItemIds = MutableStateFlow<List<String>>(emptyList())
     val activeRackItemIds: StateFlow<List<String>> = _activeRackItemIds.asStateFlow()
 
+    internal val _activeRackBehaviorOverrides = MutableStateFlow<Map<String, RackItemBehavior>>(emptyMap())
+    val activeRackBehaviorOverrides: StateFlow<Map<String, RackItemBehavior>> = _activeRackBehaviorOverrides.asStateFlow()
+
     /**
      * Rack-load adjustment for the current set. Machine-facing counterweight
      * math uses physical cable count, while display code decides separately
@@ -239,6 +243,7 @@ class WorkoutCoordinator(
 
     internal fun clearActiveRackSelection() {
         _activeRackItemIds.value = emptyList()
+        _activeRackBehaviorOverrides.value = emptyMap()
         _currentRackLoadAdjustment.value = RackLoadAdjustment()
         currentRackItemsJson = "[]"
         _workoutParameters.value = _workoutParameters.value.copy(

@@ -290,10 +290,51 @@ class SchemaParityTest {
         assertEquals("[]", defaultRackItemIds)
     }
 
+    @Test
+    fun `migration 35 adds routine exercise rack behavior overrides`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 35)
+
+        assertEquals(false, columnExistsInDriver(driver, "RoutineExercise", "rackBehaviorOverrides"))
+        driver.execute(
+            null,
+            "INSERT INTO Routine (id, name, createdAt) VALUES ('routine-rack-overrides', 'Rack Overrides', 1)",
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-rack-overrides', 'routine-rack-overrides', 'Bench Press', 'Chest', 0, 20.0
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 35, 36)
+
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "rackBehaviorOverrides"))
+        var rackBehaviorOverrides = ""
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT rackBehaviorOverrides FROM RoutineExercise WHERE id = 'rex-rack-overrides'",
+            mapper = { cursor ->
+                if (cursor.next().value) {
+                    rackBehaviorOverrides = cursor.getString(0).orEmpty()
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        assertEquals("{}", rackBehaviorOverrides)
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 35L
+        private const val CURRENT_VERSION = 36L
 
         /**
          * Transient tables are intermediate artifacts of table-rebuild migrations

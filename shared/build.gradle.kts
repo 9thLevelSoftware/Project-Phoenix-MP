@@ -208,8 +208,8 @@ sqldelight {
     databases {
         create("VitruvianDatabase") {
             packageName.set("com.devil.phoenixproject.database")
-            // Version 35 = initial schema (1) + 34 migrations (1.sqm through 34.sqm).
-            version = 35
+            // Version 36 = initial schema (1) + 35 migrations (1.sqm through 35.sqm).
+            version = 36
         }
     }
 }

@@ -864,6 +864,7 @@ class RoutineFlowManager(
         val distinctIds = exercise.defaultRackItemIds
             .filter { it.isNotBlank() }
             .distinct()
+        coordinator._activeRackBehaviorOverrides.value = exercise.rackBehaviorOverrides
         val resolvedItems = equipmentRackRepository.rackItems.value
             .filter { it.enabled && it.id in distinctIds }
         // Use the exercise's own weight — not the coordinator's currently-mirrored
@@ -874,8 +875,9 @@ class RoutineFlowManager(
             programmedWeightPerCableKg = programmedWeightPerCableKg,
             physicalCableCount = physicalCableCount,
             selectedItems = resolvedItems,
-            isEchoMode = false,
+            isEchoMode = exercise.programMode is ProgramMode.Echo,
             validatorMinimumPerCableKg = Constants.DEFAULT_WEIGHT_INCREMENT_KG,
+            behaviorOverrides = exercise.rackBehaviorOverrides,
         )
         val itemsJson = rackJson.encodeToString(
             ListSerializer(serializer<RackItem>()),

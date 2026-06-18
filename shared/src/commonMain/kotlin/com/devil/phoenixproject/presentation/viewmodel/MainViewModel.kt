@@ -32,6 +32,7 @@ import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
@@ -182,6 +183,7 @@ class MainViewModel constructor(
     val workoutParameters: StateFlow<WorkoutParameters> get() = workoutSessionManager.coordinator.workoutParameters
     val rackItems get() = equipmentRackRepository.rackItems
     val activeRackItemIds: StateFlow<List<String>> get() = workoutSessionManager.coordinator.activeRackItemIds
+    val activeRackBehaviorOverrides: StateFlow<Map<String, RackItemBehavior>> get() = workoutSessionManager.coordinator.activeRackBehaviorOverrides
     val currentRackLoadAdjustment: StateFlow<RackLoadAdjustment> get() = workoutSessionManager.coordinator.currentRackLoadAdjustment
     val repCount: StateFlow<RepCount> get() = workoutSessionManager.coordinator.repCount
     val timedExerciseRemainingSeconds: StateFlow<Int?> get() = workoutSessionManager.coordinator.timedExerciseRemainingSeconds
@@ -324,6 +326,7 @@ class MainViewModel constructor(
 
     fun updateWorkoutParameters(params: WorkoutParameters) = workoutSessionManager.updateWorkoutParameters(params)
     fun updateActiveRackSelection(itemIds: List<String>) = workoutSessionManager.updateActiveRackSelection(itemIds)
+    fun updateActiveRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) = workoutSessionManager.updateActiveRackBehaviorOverrides(overrides)
     fun clearActiveRackSelection() = workoutSessionManager.clearActiveRackSelection()
     fun saveRackItem(item: RackItem) {
         viewModelScope.launch {
@@ -377,6 +380,19 @@ class MainViewModel constructor(
     fun getRoutineById(routineId: String): Routine? = workoutSessionManager.getRoutineById(routineId)
     fun saveRoutine(routine: Routine) = workoutSessionManager.saveRoutine(routine)
     fun updateRoutine(routine: Routine) = workoutSessionManager.updateRoutine(routine)
+    fun saveRackBehaviorOverridesForExercise(
+        exerciseIndex: Int,
+        overrides: Map<String, RackItemBehavior>,
+    ) {
+        val routine = loadedRoutine.value ?: return
+        val exercises = routine.exercises.toMutableList()
+        val exercise = exercises.getOrNull(exerciseIndex) ?: return
+        exercises[exerciseIndex] = exercise.copy(rackBehaviorOverrides = overrides)
+        val updatedRoutine = routine.copy(exercises = exercises)
+        workoutSessionManager.coordinator._loadedRoutine.value = updatedRoutine
+        updateActiveRackBehaviorOverrides(overrides)
+        updateRoutine(updatedRoutine)
+    }
     fun deleteRoutine(routineId: String) = workoutSessionManager.deleteRoutine(routineId)
     fun deleteRoutines(routineIds: Set<String>) = workoutSessionManager.deleteRoutines(routineIds)
     fun moveRoutinesToProfile(routineIds: Set<String>, targetProfileId: String) = workoutSessionManager.moveRoutinesToProfile(routineIds, targetProfileId)
