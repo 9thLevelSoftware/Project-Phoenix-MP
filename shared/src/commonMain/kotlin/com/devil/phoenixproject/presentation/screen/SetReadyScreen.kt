@@ -86,6 +86,10 @@ import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.cd_next
 import vitruvianprojectphoenix.shared.generated.resources.cd_previous
 import vitruvianprojectphoenix.shared.generated.resources.cd_stop
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_message
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_title
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
 import vitruvianprojectphoenix.shared.generated.resources.target_reps
@@ -711,11 +715,13 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     if (showSaveOverridePrompt) {
         AlertDialog(
             onDismissRequest = { showSaveOverridePrompt = false },
-            title = { Text("Save Override?") },
+            title = { Text(stringResource(Res.string.equipment_rack_save_override_title)) },
             text = {
                 Text(
-                    "Save this behavior configuration as the default for " +
-                        "${currentExercise.exercise.name} in this routine?",
+                    stringResource(
+                        Res.string.equipment_rack_save_override_message,
+                        currentExercise.exercise.name,
+                    ),
                 )
             },
             confirmButton = {
@@ -728,12 +734,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         )
                     },
                 ) {
-                    Text("Save")
+                    Text(stringResource(Res.string.equipment_rack_save_override_confirm))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showSaveOverridePrompt = false }) {
-                    Text("Just this time")
+                    Text(stringResource(Res.string.equipment_rack_save_override_dismiss))
                 }
             },
         )

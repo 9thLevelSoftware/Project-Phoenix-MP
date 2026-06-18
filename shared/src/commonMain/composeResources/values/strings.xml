@@ -731,5 +731,12 @@
     <string name="equipment_rack_behavior_added">Added resistance</string>
     <string name="equipment_rack_behavior_counterweight">Counterweight</string>
     <string name="equipment_rack_behavior_display_only">Display only</string>
+    <string name="equipment_rack_behavior_added_short">+Load</string>
+    <string name="equipment_rack_behavior_counterweight_short">-CW</string>
+    <string name="equipment_rack_behavior_display_only_short">Display</string>
+    <string name="equipment_rack_save_override_title">Save override?</string>
+    <string name="equipment_rack_save_override_message">Save this behavior configuration as the default for %1$s in this routine?</string>
+    <string name="equipment_rack_save_override_confirm">Save</string>
+    <string name="equipment_rack_save_override_dismiss">Just this time</string>
     <string name="cd_equipment_rack">Equipment rack</string>
 </resources>

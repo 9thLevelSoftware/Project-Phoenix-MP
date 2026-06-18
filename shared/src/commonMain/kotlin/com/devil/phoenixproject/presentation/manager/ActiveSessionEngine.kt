@@ -1988,8 +1988,6 @@ class ActiveSessionEngine(
             ?.exercises
             ?.getOrNull(coordinator._currentExerciseIndex.value)
             ?: return
-        val isBodyweight = currentExercise.exercise.isBodyweight
-        if (!isBodyweight) return
 
         val activeIds = coordinator._activeRackItemIds.value
         val resolvedItems = equipmentRackRepository.rackItems.value

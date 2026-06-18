@@ -663,5 +663,12 @@
     <string name="equipment_rack_behavior_added">Resistencia añadida</string>
     <string name="equipment_rack_behavior_counterweight">Contrapeso</string>
     <string name="equipment_rack_behavior_display_only">Solo visualización</string>
+    <string name="equipment_rack_behavior_added_short">+Carga</string>
+    <string name="equipment_rack_behavior_counterweight_short">-Contra</string>
+    <string name="equipment_rack_behavior_display_only_short">Mostrar</string>
+    <string name="equipment_rack_save_override_title">¿Guardar ajuste?</string>
+    <string name="equipment_rack_save_override_message">¿Guardar esta configuración de comportamiento como predeterminada para %1$s en esta rutina?</string>
+    <string name="equipment_rack_save_override_confirm">Guardar</string>
+    <string name="equipment_rack_save_override_dismiss">Solo esta vez</string>
     <string name="cd_equipment_rack">Rack de equipamiento</string>
 </resources>

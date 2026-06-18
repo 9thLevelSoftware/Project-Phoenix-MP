@@ -663,5 +663,12 @@
     <string name="equipment_rack_behavior_added">Zusätzlicher Widerstand</string>
     <string name="equipment_rack_behavior_counterweight">Gegengewicht</string>
     <string name="equipment_rack_behavior_display_only">Nur Anzeige</string>
+    <string name="equipment_rack_behavior_added_short">+Last</string>
+    <string name="equipment_rack_behavior_counterweight_short">-Geg.</string>
+    <string name="equipment_rack_behavior_display_only_short">Anzeige</string>
+    <string name="equipment_rack_save_override_title">Überschreibung speichern?</string>
+    <string name="equipment_rack_save_override_message">Diese Verhaltenskonfiguration als Standard für %1$s in dieser Routine speichern?</string>
+    <string name="equipment_rack_save_override_confirm">Speichern</string>
+    <string name="equipment_rack_save_override_dismiss">Nur dieses Mal</string>
     <string name="cd_equipment_rack">Equipment-Rack</string>
 </resources>

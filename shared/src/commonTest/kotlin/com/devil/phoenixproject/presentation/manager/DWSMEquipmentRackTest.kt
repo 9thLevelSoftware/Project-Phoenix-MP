@@ -48,32 +48,36 @@ class DWSMEquipmentRackTest {
     }
 
     @Test
-    fun `runtime behavior override adjusts non Echo set start packet`() = runTest {
+    fun `runtime behavior override recalculates non Echo rack adjustment`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.fakeEquipmentRackRepo.saveItems(
             listOf(rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE)),
         )
-
-        harness.dwsm.updateWorkoutParameters(
-            WorkoutParameters(
-                programMode = ProgramMode.OldSchool,
-                reps = 8,
-                warmupReps = 0,
-                weightPerCableKg = 40f,
+        val routine = Routine(
+            id = "routine-rack-overrides",
+            name = "Rack Overrides",
+            exercises = listOf(
+                routineExercise("rex-1", "Bench Press", listOf("vest")),
             ),
         )
-        harness.dwsm.updateActiveRackSelection(listOf("vest"))
+
+        assertTrue(harness.dwsm.loadRoutineAsync(routine))
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+        assertEquals(10f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.externalAddedLoadKg)
+        assertEquals(0f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.counterweightKg)
+
         harness.dwsm.updateActiveRackBehaviorOverrides(
             mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
         )
+        assertEquals(0f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.externalAddedLoadKg)
+        assertEquals(10f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.counterweightKg)
 
-        harness.dwsm.startWorkout(skipCountdown = true)
-        advanceUntilIdle()
-
-        val command = harness.fakeBleRepo.commandsReceived.single()
-        assertEquals(30f, readFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
         assertEquals(40f, harness.dwsm.coordinator.workoutParameters.value.weightPerCableKg)
+        assertEquals(0f, harness.dwsm.coordinator.workoutParameters.value.externalAddedLoadKg)
+        assertEquals(10f, harness.dwsm.coordinator.workoutParameters.value.counterweightKg)
         assertEquals(
             mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
             harness.dwsm.coordinator.activeRackBehaviorOverrides.value,

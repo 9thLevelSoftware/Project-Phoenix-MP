@@ -44,6 +44,9 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_active_selection
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_behavior_added_short
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_behavior_counterweight_short
+import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_behavior_display_only_short
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_manage
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_no_enabled_items
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_none_selected
@@ -224,9 +227,9 @@ private fun RackItemBehaviorPicker(
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 label = {
                     val label = when (behavior) {
-                        RackItemBehavior.ADDED_RESISTANCE -> "+Load"
-                        RackItemBehavior.COUNTERWEIGHT -> "-CW"
-                        RackItemBehavior.DISPLAY_ONLY -> "Display"
+                        RackItemBehavior.ADDED_RESISTANCE -> stringResource(Res.string.equipment_rack_behavior_added_short)
+                        RackItemBehavior.COUNTERWEIGHT -> stringResource(Res.string.equipment_rack_behavior_counterweight_short)
+                        RackItemBehavior.DISPLAY_ONLY -> stringResource(Res.string.equipment_rack_behavior_display_only_short)
                     }
                     Text(
                         text = if (behavior == globalBehavior) "$label *" else label,
