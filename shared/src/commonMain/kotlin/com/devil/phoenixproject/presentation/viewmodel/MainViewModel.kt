@@ -63,6 +63,7 @@ import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -385,14 +386,62 @@ class MainViewModel constructor(
         overrides: Map<String, RackItemBehavior>,
     ) {
         val routine = loadedRoutine.value ?: return
-        val exercises = routine.exercises.toMutableList()
-        val exercise = exercises.getOrNull(exerciseIndex) ?: return
-        exercises[exerciseIndex] = exercise.copy(rackBehaviorOverrides = overrides)
-        val updatedRoutine = routine.copy(exercises = exercises)
-        workoutSessionManager.coordinator._loadedRoutine.value = updatedRoutine
+        val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
+        val updatedActiveRoutine = routine.withRackBehaviorOverrides(
+            exerciseIndex = exerciseIndex,
+            exerciseId = exercise.id,
+            overrides = overrides,
+        ) ?: return
+        workoutSessionManager.coordinator._loadedRoutine.value = updatedActiveRoutine
         updateActiveRackBehaviorOverrides(overrides)
-        updateRoutine(updatedRoutine)
+        viewModelScope.launch {
+            try {
+                val storedRoutine = workoutRepository.getRoutineById(routine.id)
+                if (storedRoutine == null) {
+                    Logger.w { "Rack override save skipped: stored routine not found for id=${routine.id}" }
+                    return@launch
+                }
+                val updatedStoredRoutine = storedRoutine.withRackBehaviorOverrides(
+                    exerciseIndex = exerciseIndex,
+                    exerciseId = exercise.id,
+                    overrides = overrides,
+                )
+                if (updatedStoredRoutine == null) {
+                    Logger.w { "Rack override save skipped: exercise id=${exercise.id} not found in stored routine id=${routine.id}" }
+                    return@launch
+                }
+                workoutRepository.updateRoutine(updatedStoredRoutine)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Logger.e(e) { "Failed to save rack behavior overrides for routine id=${routine.id}, exercise id=${exercise.id}" }
+            }
+        }
     }
+    private fun Routine.withRackBehaviorOverrides(
+        exerciseIndex: Int,
+        exerciseId: String,
+        overrides: Map<String, RackItemBehavior>,
+    ): Routine? {
+        val targetIndex = exercises.indexOfFirst { it.id == exerciseId }
+            .takeIf { it >= 0 }
+            ?: if (exerciseId.isBlank()) {
+                exerciseIndex.takeIf { it in exercises.indices }
+            } else {
+                null
+            }
+            ?: return null
+
+        return copy(
+            exercises = exercises.mapIndexed { index, routineExercise ->
+                if (index == targetIndex) {
+                    routineExercise.copy(rackBehaviorOverrides = overrides)
+                } else {
+                    routineExercise
+                }
+            },
+        )
+    }
+
     fun deleteRoutine(routineId: String) = workoutSessionManager.deleteRoutine(routineId)
     fun deleteRoutines(routineIds: Set<String>) = workoutSessionManager.deleteRoutines(routineIds)
     fun moveRoutinesToProfile(routineIds: Set<String>, targetProfileId: String) = workoutSessionManager.moveRoutinesToProfile(routineIds, targetProfileId)
