@@ -137,6 +137,105 @@ class ApplyEquipmentRackLoadUseCaseTest {
         assertEquals(80f, result)
     }
 
+    // ===================== Behavior Override Tests (Issues #521/#526) =====================
+
+    @Test
+    fun `no overrides - uses global behavior`() {
+        val vest = rackItem("item-1", 5f, RackItemBehavior.ADDED_RESISTANCE)
+        val result = useCase.calculate(
+            programmedWeightPerCableKg = 50f,
+            physicalCableCount = 2,
+            selectedItems = listOf(vest),
+            isEchoMode = false,
+        )
+        assertEquals(5f, result.externalAddedLoadKg)
+        assertEquals(0f, result.counterweightKg)
+    }
+
+    @Test
+    fun `override flips ADDED_RESISTANCE to COUNTERWEIGHT`() {
+        val vest = rackItem("vest-1", 5f, RackItemBehavior.ADDED_RESISTANCE)
+        val overrides = mapOf("vest-1" to RackItemBehavior.COUNTERWEIGHT)
+        val result = useCase.calculate(
+            programmedWeightPerCableKg = 50f,
+            physicalCableCount = 2,
+            selectedItems = listOf(vest),
+            isEchoMode = false,
+            behaviorOverrides = overrides,
+        )
+        assertEquals(0f, result.externalAddedLoadKg)
+        assertEquals(5f, result.counterweightKg)
+    }
+
+    @Test
+    fun `override to DISPLAY_ONLY excludes from load math`() {
+        val vest = rackItem("vest-1", 5f, RackItemBehavior.ADDED_RESISTANCE)
+        val overrides = mapOf("vest-1" to RackItemBehavior.DISPLAY_ONLY)
+        val result = useCase.calculate(
+            programmedWeightPerCableKg = 50f,
+            physicalCableCount = 2,
+            selectedItems = listOf(vest),
+            isEchoMode = false,
+            behaviorOverrides = overrides,
+        )
+        assertEquals(0f, result.externalAddedLoadKg)
+        assertEquals(0f, result.counterweightKg)
+        // displayLoadKg = (50 * 2 + 0 - 0).coerceAtLeast(0) = 100
+        assertEquals(100f, result.displayLoadKg)
+    }
+
+    @Test
+    fun `override only applies to matching item ID`() {
+        val vest = rackItem("vest-1", 5f, RackItemBehavior.ADDED_RESISTANCE)
+        val ankle = rackItem("ankle-1", 2f, RackItemBehavior.ADDED_RESISTANCE)
+        // Override vest to COUNTERWEIGHT, ankle stays ADDED_RESISTANCE
+        val overrides = mapOf("vest-1" to RackItemBehavior.COUNTERWEIGHT)
+        val result = useCase.calculate(
+            programmedWeightPerCableKg = 50f,
+            physicalCableCount = 2,
+            selectedItems = listOf(vest, ankle),
+            isEchoMode = false,
+            behaviorOverrides = overrides,
+        )
+        assertEquals(2f, result.externalAddedLoadKg) // ankle only
+        assertEquals(5f, result.counterweightKg) // vest only
+    }
+
+    @Test
+    fun `empty overrides map has no effect`() {
+        val vest = rackItem("vest-1", 5f, RackItemBehavior.ADDED_RESISTANCE)
+        val withOverrides = useCase.calculate(
+            programmedWeightPerCableKg = 50f,
+            physicalCableCount = 2,
+            selectedItems = listOf(vest),
+            isEchoMode = false,
+            behaviorOverrides = emptyMap(),
+        )
+        val without = useCase.calculate(
+            programmedWeightPerCableKg = 50f,
+            physicalCableCount = 2,
+            selectedItems = listOf(vest),
+            isEchoMode = false,
+        )
+        assertEquals(without.externalAddedLoadKg, withOverrides.externalAddedLoadKg)
+        assertEquals(without.counterweightKg, withOverrides.counterweightKg)
+    }
+
+    @Test
+    fun `bodyweight effective load respects overrides`() {
+        val vest = rackItem("vest-1", 5f, RackItemBehavior.ADDED_RESISTANCE)
+        // Override vest to COUNTERWEIGHT for bodyweight
+        val overrides = mapOf("vest-1" to RackItemBehavior.COUNTERWEIGHT)
+        val result = useCase.calculateBodyweightEffectiveLoadKg(
+            bodyWeightKg = 80f,
+            percentage = 1.0f,
+            selectedItems = listOf(vest),
+            behaviorOverrides = overrides,
+        )
+        // 80 * 1.0 + 0 (no added resistance) - 5 (counterweight via override) = 75
+        assertEquals(75f, result)
+    }
+
     private fun rackItem(id: String, weightKg: Float, behavior: RackItemBehavior): RackItem = RackItem(
         id = id,
         name = id,

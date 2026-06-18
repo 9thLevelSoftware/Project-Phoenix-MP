@@ -8,6 +8,7 @@ import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -382,6 +383,52 @@ class MainViewModelTest {
         val found = viewModel.getRoutineById("non-existent")
 
         assertNull(found)
+    }
+
+    @Test
+    fun `saveRackBehaviorOverridesForExercise does not persist launch-time routine modifiers`() = runTest(testCoroutineRule.dispatcher) {
+        val storedExercise = RoutineExercise(
+            id = "routine-ex-1",
+            exercise = Exercise(
+                id = "bench",
+                name = "Bench Press",
+                muscleGroup = "Chest",
+                equipment = "HANDLES",
+            ),
+            orderIndex = 0,
+            setReps = listOf(8),
+            weightPerCableKg = 40f,
+        )
+        val storedRoutine = Routine(
+            id = "routine-modifier-safe-rack-save",
+            name = "Modifier Safe Rack Save",
+            exercises = listOf(storedExercise),
+        )
+        val launchRoutine = storedRoutine.copy(
+            exercises = listOf(
+                storedExercise.copy(
+                    setReps = listOf(4),
+                    weightPerCableKg = 20f,
+                ),
+            ),
+        )
+        fakeWorkoutRepository.addRoutine(storedRoutine)
+        viewModel.loadRoutine(launchRoutine)
+        advanceUntilIdle()
+
+        val overrides = mapOf("vest" to RackItemBehavior.COUNTERWEIGHT)
+        viewModel.saveRackBehaviorOverridesForExercise(0, overrides)
+        advanceUntilIdle()
+
+        val persisted = fakeWorkoutRepository.getRoutineById(storedRoutine.id)!!
+        assertEquals(40f, persisted.exercises.single().weightPerCableKg)
+        assertEquals(listOf(8), persisted.exercises.single().setReps)
+        assertEquals(overrides, persisted.exercises.single().rackBehaviorOverrides)
+
+        val activeRoutine = viewModel.loadedRoutine.value!!
+        assertEquals(20f, activeRoutine.exercises.single().weightPerCableKg)
+        assertEquals(listOf(4), activeRoutine.exercises.single().setReps)
+        assertEquals(overrides, activeRoutine.exercises.single().rackBehaviorOverrides)
     }
 
     // ========== Workout History Tests ==========

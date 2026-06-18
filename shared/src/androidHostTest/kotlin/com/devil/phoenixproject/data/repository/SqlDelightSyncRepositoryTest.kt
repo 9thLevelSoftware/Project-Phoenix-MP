@@ -424,6 +424,7 @@ class SqlDelightSyncRepositoryTest {
             setEchoLevels = "",
             warmupSets = "",
             defaultRackItemIds = """["vest"]""",
+            rackBehaviorOverrides = "{}",
         )
 
         repository.mergePortalRoutines(

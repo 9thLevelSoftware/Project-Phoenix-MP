@@ -158,6 +158,7 @@ fun ExerciseEditBottomSheet(
     val repCountTiming by viewModel.repCountTiming.collectAsState()
     val stopAtTop by viewModel.stopAtTop.collectAsState()
     val defaultRackItemIds by viewModel.defaultRackItemIds.collectAsState()
+    val rackBehaviorOverrides by viewModel.rackBehaviorOverrides.collectAsState()
 
     // Warm-up sets state (Issue #30)
     val warmupSets by viewModel.warmupSets.collectAsState()
@@ -325,9 +326,12 @@ fun ExerciseEditBottomSheet(
                 EquipmentRackSelectionCard(
                     rackItems = rackItems,
                     activeRackItemIds = defaultRackItemIds,
+                    behaviorOverrides = rackBehaviorOverrides,
                     weightUnit = weightUnit,
                     formatWeight = formatWeight,
                     onSelectionChange = viewModel::onDefaultRackItemIdsChange,
+                    onBehaviorOverrideChange = viewModel::onRackBehaviorOverridesChange,
+                    showBehaviorOverrides = true,
                 )
 
                 // Weight Configuration Section (PR Percentage Scaling - Issue #57)

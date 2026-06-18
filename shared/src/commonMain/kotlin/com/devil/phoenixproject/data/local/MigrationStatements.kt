@@ -856,5 +856,10 @@ WHERE gs.rowid = (
         "ALTER TABLE RoutineExercise ADD COLUMN defaultRackItemIds TEXT NOT NULL DEFAULT '[]'",
     )
 
+    // Migration 35: Persist per-exercise equipment rack behavior overrides.
+    35 -> listOf(
+        "ALTER TABLE RoutineExercise ADD COLUMN rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}'",
+    )
+
     else -> emptyList()
 }

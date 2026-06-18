@@ -20,6 +20,7 @@ import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
@@ -554,10 +555,13 @@ class SqlDelightSyncRepository(
                     // partial response, or deserialization issue). Deleting local exercises
                     // when we have nothing to replace them with causes permanent data loss.
                     if (portalRoutine.exercises.isNotEmpty()) {
-                        val localRackDefaultsByExerciseId = queries
+                        val localExerciseRows = queries
                             .selectExercisesByRoutine(portalRoutine.id)
                             .executeAsList()
+                        val localRackDefaultsByExerciseId = localExerciseRows
                             .associate { it.id to it.defaultRackItemIds }
+                        val localRackOverridesByExerciseId = localExerciseRows
+                            .associate { it.id to it.rackBehaviorOverrides }
 
                         // Replace routine exercises and supersets: delete existing then insert portal versions
                         queries.deleteRoutineExercises(portalRoutine.id)
@@ -690,6 +694,9 @@ class SqlDelightSyncRepository(
                                 setEchoLevels = setEchoLevels,
                                 warmupSets = exercise.warmupSets ?: "",
                                 defaultRackItemIds = localRackDefaultsByExerciseId[exercise.id] ?: "[]",
+                                rackBehaviorOverrides = exercise.rackBehaviorOverrides
+                                    ?: localRackOverridesByExerciseId[exercise.id]
+                                    ?: "{}",
                             )
                         }
                     } else {
@@ -1096,6 +1103,16 @@ class SqlDelightSyncRepository(
                         emptyList()
                     }
 
+                    val rackBehaviorOverrides: Map<String, RackItemBehavior> = try {
+                        if (exRow.rackBehaviorOverrides.isBlank() || exRow.rackBehaviorOverrides == "{}") {
+                            emptyMap()
+                        } else {
+                            json.decodeFromString<Map<String, RackItemBehavior>>(exRow.rackBehaviorOverrides)
+                        }
+                    } catch (_: Exception) {
+                        emptyMap()
+                    }
+
                     RoutineExercise(
                         id = exRow.id,
                         exercise = exercise,
@@ -1129,6 +1146,7 @@ class SqlDelightSyncRepository(
                         setWeightsPercentOfPR = setWeightsPercentOfPR,
                         warmupSets = warmupSets,
                         defaultRackItemIds = defaultRackItemIds,
+                        rackBehaviorOverrides = rackBehaviorOverrides,
                     )
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to map routine exercise: ${exRow.exerciseId}" }
@@ -1684,10 +1702,13 @@ class SqlDelightSyncRepository(
 
                     // Replace exercises if portal provided them (non-empty list)
                     if (portalRoutine.exercises.isNotEmpty()) {
-                        val localRackDefaultsByExerciseId = queries
+                        val localExerciseRows2 = queries
                             .selectExercisesByRoutine(portalRoutine.id)
                             .executeAsList()
+                        val localRackDefaultsByExerciseId = localExerciseRows2
                             .associate { it.id to it.defaultRackItemIds }
+                        val localRackOverridesByExerciseId = localExerciseRows2
+                            .associate { it.id to it.rackBehaviorOverrides }
 
                         queries.deleteRoutineExercises(portalRoutine.id)
                         queries.deleteSupersetsByRoutine(portalRoutine.id)
@@ -1807,6 +1828,9 @@ class SqlDelightSyncRepository(
                                 setEchoLevels = setEchoLevels,
                                 warmupSets = exercise.warmupSets ?: "",
                                 defaultRackItemIds = localRackDefaultsByExerciseId[exercise.id] ?: "[]",
+                                rackBehaviorOverrides = exercise.rackBehaviorOverrides
+                                    ?: localRackOverridesByExerciseId[exercise.id]
+                                    ?: "{}",
                             )
                         }
                     }

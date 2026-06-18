@@ -642,5 +642,12 @@
     <string name="equipment_rack_behavior_added">Toegevoegde weerstand</string>
     <string name="equipment_rack_behavior_counterweight">Contragewicht</string>
     <string name="equipment_rack_behavior_display_only">Alleen weergave</string>
+    <string name="equipment_rack_behavior_added_short">+Last</string>
+    <string name="equipment_rack_behavior_counterweight_short">-CW</string>
+    <string name="equipment_rack_behavior_display_only_short">Weergave</string>
+    <string name="equipment_rack_save_override_title">Override opslaan?</string>
+    <string name="equipment_rack_save_override_message">Deze gedragsconfiguratie als standaard opslaan voor %1$s in deze routine?</string>
+    <string name="equipment_rack_save_override_confirm">Opslaan</string>
+    <string name="equipment_rack_save_override_dismiss">Alleen deze keer</string>
     <string name="cd_equipment_rack">Equipment rack</string>
 </resources>

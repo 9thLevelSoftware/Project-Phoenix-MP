@@ -611,6 +611,7 @@ abstract class BaseDataBackupManager(
                                 setEchoLevels = exercise.setEchoLevels,
                                 warmupSets = exercise.warmupSets,
                                 defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
+                                rackBehaviorOverrides = exercise.rackBehaviorOverrides,
                             )
                         }
                         if (inserted != null) routineExercisesImported++
@@ -1332,6 +1333,7 @@ abstract class BaseDataBackupManager(
                                                         setEchoLevels = exercise.setEchoLevels,
                                                         warmupSets = exercise.warmupSets,
                                                         defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
+                                                        rackBehaviorOverrides = exercise.rackBehaviorOverrides,
                                                     )
                                                 }
                                                 if (inserted != null) {
@@ -2325,6 +2327,7 @@ abstract class BaseDataBackupManager(
         repCountTiming = exercise.repCountTiming,
         warmupSets = exercise.warmupSets,
         defaultRackItemIds = decodeRackItemIds(exercise.defaultRackItemIds),
+        rackBehaviorOverrides = exercise.rackBehaviorOverrides,
     )
 
     private fun decodeRackItemIds(encoded: String): List<String> = runCatching {

@@ -555,6 +555,12 @@ object PortalSyncAdapter {
                     },
                 warmupSets = ex.warmupSets.takeIf { it.isNotEmpty() }
                     ?.let { Json.encodeToString(it) },
+                rackBehaviorOverrides = ex.rackBehaviorOverrides.takeIf { it.isNotEmpty() }
+                    ?.let { overrides ->
+                        Json.encodeToString(
+                            overrides.mapValues { (_, v) -> v.name },
+                        )
+                    },
             )
         }
 

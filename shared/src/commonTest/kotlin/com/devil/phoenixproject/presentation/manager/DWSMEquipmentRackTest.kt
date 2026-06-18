@@ -48,6 +48,44 @@ class DWSMEquipmentRackTest {
     }
 
     @Test
+    fun `runtime behavior override recalculates non Echo rack adjustment`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakeEquipmentRackRepo.saveItems(
+            listOf(rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE)),
+        )
+        val routine = Routine(
+            id = "routine-rack-overrides",
+            name = "Rack Overrides",
+            exercises = listOf(
+                routineExercise("rex-1", "Bench Press", listOf("vest")),
+            ),
+        )
+
+        assertTrue(harness.dwsm.loadRoutineAsync(routine))
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+        assertEquals(10f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.externalAddedLoadKg)
+        assertEquals(0f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.counterweightKg)
+
+        harness.dwsm.updateActiveRackBehaviorOverrides(
+            mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
+        )
+        assertEquals(0f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.externalAddedLoadKg)
+        assertEquals(10f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.counterweightKg)
+
+        assertEquals(40f, harness.dwsm.coordinator.workoutParameters.value.weightPerCableKg)
+        assertEquals(0f, harness.dwsm.coordinator.workoutParameters.value.externalAddedLoadKg)
+        assertEquals(10f, harness.dwsm.coordinator.workoutParameters.value.counterweightKg)
+        assertEquals(
+            mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
+            harness.dwsm.coordinator.activeRackBehaviorOverrides.value,
+        )
+        harness.cleanup()
+    }
+
+    @Test
     fun `active rack edits during active set do not send mid set command and saved session uses set start snapshot`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")

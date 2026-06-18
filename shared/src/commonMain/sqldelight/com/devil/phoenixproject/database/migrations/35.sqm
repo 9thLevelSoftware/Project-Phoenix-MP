@@ -1,0 +1,3 @@
+-- Migration 35: Per-exercise equipment rack behavior overrides (Issues #521/#526).
+-- Stores JSON map of rackItemId -> RackItemBehavior override.
+ALTER TABLE RoutineExercise ADD COLUMN rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}';

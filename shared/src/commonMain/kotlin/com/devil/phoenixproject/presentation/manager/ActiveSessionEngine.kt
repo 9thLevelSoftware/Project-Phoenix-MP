@@ -32,6 +32,7 @@ import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RepMetricData
@@ -481,6 +482,7 @@ class ActiveSessionEngine(
             selectedItems = selectedItems,
             isEchoMode = params.isEchoMode,
             validatorMinimumPerCableKg = validatorSafeMinimum(params),
+            behaviorOverrides = coordinator._activeRackBehaviorOverrides.value,
         )
         coordinator._currentRackLoadAdjustment.value = adjustment
         coordinator.currentRackItemsJson = rackJson.encodeToString(selectedItems)
@@ -497,6 +499,7 @@ class ActiveSessionEngine(
         params: WorkoutParameters,
         physicalCableCount: Int,
         selectedItems: List<RackItem>,
+        behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
     ): WorkoutParameters {
         val adjustment = applyEquipmentRackLoadUseCase.calculate(
             programmedWeightPerCableKg = params.weightPerCableKg,
@@ -504,6 +507,7 @@ class ActiveSessionEngine(
             selectedItems = selectedItems,
             isEchoMode = params.isEchoMode,
             validatorMinimumPerCableKg = validatorSafeMinimum(params),
+            behaviorOverrides = behaviorOverrides,
         )
         return params.copy(
             weightPerCableKg = if (params.isEchoMode) {
@@ -1961,6 +1965,7 @@ class ActiveSessionEngine(
                 selectedItems = resolvedItems,
                 isEchoMode = currentParams.isEchoMode,
                 validatorMinimumPerCableKg = validatorSafeMinimum(currentParams),
+                behaviorOverrides = coordinator._activeRackBehaviorOverrides.value,
             )
             val itemsJson = rackJson.encodeToString(
                 ListSerializer(RackItem.serializer()),
@@ -1974,6 +1979,37 @@ class ActiveSessionEngine(
         } else {
             coordinator.setActiveRackSelection(distinctIds)
         }
+    }
+
+    fun updateActiveRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) {
+        coordinator._activeRackBehaviorOverrides.value = overrides
+
+        val currentExercise = coordinator._loadedRoutine.value
+            ?.exercises
+            ?.getOrNull(coordinator._currentExerciseIndex.value)
+            ?: return
+
+        val activeIds = coordinator._activeRackItemIds.value
+        val resolvedItems = equipmentRackRepository.rackItems.value
+            .filter { it.enabled && it.id in activeIds }
+        val currentParams = coordinator._workoutParameters.value
+        val adjustment = applyEquipmentRackLoadUseCase.calculate(
+            programmedWeightPerCableKg = currentParams.weightPerCableKg,
+            physicalCableCount = currentExercise.exercise.preferredCableCount ?: 1,
+            selectedItems = resolvedItems,
+            isEchoMode = currentParams.isEchoMode,
+            validatorMinimumPerCableKg = validatorSafeMinimum(currentParams),
+            behaviorOverrides = overrides,
+        )
+        val itemsJson = rackJson.encodeToString(
+            ListSerializer(RackItem.serializer()),
+            resolvedItems,
+        )
+        coordinator.setActiveRackSelection(
+            itemIds = activeIds,
+            precomputedAdjustment = adjustment,
+            precomputedItemsJson = itemsJson,
+        )
     }
 
     fun clearActiveRackSelection() {
@@ -2506,6 +2542,7 @@ class ActiveSessionEngine(
                         params = paramsForBle,
                         physicalCableCount = rackPhysicalCableCount,
                         selectedItems = rackSnapshotItems,
+                        behaviorOverrides = coordinator._activeRackBehaviorOverrides.value,
                     )
                 }
 

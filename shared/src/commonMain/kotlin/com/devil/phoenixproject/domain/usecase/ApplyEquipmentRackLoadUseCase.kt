@@ -12,11 +12,12 @@ class ApplyEquipmentRackLoadUseCase {
         selectedItems: List<RackItem>,
         isEchoMode: Boolean,
         validatorMinimumPerCableKg: Float = Constants.MIN_WEIGHT_KG,
+        behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
     ): RackLoadAdjustment {
         val cableCount = physicalCableCount.coerceIn(1, 2)
         val uniqueItems = selectedItems.distinctBy { it.id }
-        val externalAddedLoadKg = uniqueItems.loadFor(RackItemBehavior.ADDED_RESISTANCE)
-        val counterweightKg = uniqueItems.loadFor(RackItemBehavior.COUNTERWEIGHT)
+        val externalAddedLoadKg = uniqueItems.loadFor(RackItemBehavior.ADDED_RESISTANCE, behaviorOverrides)
+        val counterweightKg = uniqueItems.loadFor(RackItemBehavior.COUNTERWEIGHT, behaviorOverrides)
         val displayLoadKg = (
             programmedWeightPerCableKg.coerceAtLeast(0f) * cableCount +
                 externalAddedLoadKg -
@@ -45,17 +46,25 @@ class ApplyEquipmentRackLoadUseCase {
         bodyWeightKg: Float,
         percentage: Float,
         selectedItems: List<RackItem>,
+        behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
     ): Float {
         if (bodyWeightKg <= 0f || percentage <= 0f) return 0f
         val uniqueItems = selectedItems.distinctBy { it.id }
         return (
             bodyWeightKg * percentage +
-                uniqueItems.loadFor(RackItemBehavior.ADDED_RESISTANCE) -
-                uniqueItems.loadFor(RackItemBehavior.COUNTERWEIGHT)
+                uniqueItems.loadFor(RackItemBehavior.ADDED_RESISTANCE, behaviorOverrides) -
+                uniqueItems.loadFor(RackItemBehavior.COUNTERWEIGHT, behaviorOverrides)
             ).coerceAtLeast(0f)
     }
 
-    private fun List<RackItem>.loadFor(behavior: RackItemBehavior): Float = filter {
-        it.enabled && it.behavior == behavior
+    /**
+     * Resolve effective behavior: override if present, otherwise global.
+     */
+    private fun List<RackItem>.loadFor(
+        behavior: RackItemBehavior,
+        overrides: Map<String, RackItemBehavior> = emptyMap(),
+    ): Float = filter { item ->
+        val effectiveBehavior = overrides[item.id] ?: item.behavior
+        item.enabled && effectiveBehavior == behavior
     }.sumOf { it.weightKg.toDouble() }.toFloat()
 }
