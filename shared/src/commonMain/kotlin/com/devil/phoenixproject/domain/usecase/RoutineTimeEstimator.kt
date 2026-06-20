@@ -41,6 +41,18 @@ class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
 
         /** Minimum number of completed sessions before trusting historical averages */
         const val MIN_HISTORICAL_SESSIONS = 3
+
+        /**
+         * Upper bound for a plausible per-set duration in milliseconds.
+         *
+         * Issue #586: `WorkoutSession.duration` is set by `ActiveSessionEngine` to
+         * wall-clock elapsed time from warmup/workout start, not a per-set value.
+         * SQL filters apply this cap, but this constant lets `RoutineTimeEstimator`
+         * defensively reject any historical average above a human-performed set
+         * length (20 minutes) so a corrupted or stale row cannot become a
+         * multi-year AMRAP estimate.
+         */
+        const val MAX_PLAUSIBLE_SET_DURATION_MS = 20L * 60L * 1000L
     }
 
     /**
@@ -167,7 +179,14 @@ class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
             val sessionCount = workoutRepository.getSessionCountForExercise(exerciseId, profileId)
             if (sessionCount >= MIN_HISTORICAL_SESSIONS) {
                 val avgMs = workoutRepository.getAverageSetDurationMs(exerciseId, profileId)
-                if (avgMs != null && avgMs > 0) {
+                // Issue #586: defensively reject implausible per-set averages.
+                // WorkoutSession.duration is wall-clock elapsed time from
+                // ActiveSessionEngine, not a true per-set value, so the SQL average
+                // can still inherit a stale or cumulative row. Treat anything above
+                // a human-plausible set length as invalid and fall back to the
+                // configured fixed/AMRAP defaults rather than amplifying it through
+                // 1.0x–2.0x AMRAP range formatting.
+                if (avgMs != null && avgMs > 0 && avgMs <= MAX_PLAUSIBLE_SET_DURATION_MS) {
                     historicalAvgMs = avgMs
                     isHistoryBased = true
                 }

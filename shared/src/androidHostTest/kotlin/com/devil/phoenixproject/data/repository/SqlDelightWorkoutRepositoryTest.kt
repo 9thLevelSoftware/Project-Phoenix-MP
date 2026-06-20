@@ -370,4 +370,260 @@ class SqlDelightWorkoutRepositoryTest {
         exerciseId = "test-exercise",
         exerciseName = "Test Exercise",
     )
+
+    // ========== ISSUE #586: ROUTINE-TIME-ESTIMATION SQL ELIGIBILITY ==========
+
+    /**
+     * Issue #586 regression: `getAverageSetDurationMs` and `getSessionCountForExercise`
+     * must use the same eligibility filter so the SQL count threshold and the SQL
+     * average are derived from the same rows. Otherwise stale, sync-deleted,
+     * zero-rep, or implausibly-long rows (wall-clock elapsed time written by
+     * ActiveSessionEngine) can become the average and break routine time estimation.
+     */
+    @Test
+    fun `getAverageSetDurationMs and getSessionCountForExercise ignore deleted zero-rep and implausibly-long rows`() = runTest {
+        val exerciseId = "586-bench"
+        val profileId = "default"
+
+        // Plausible completed row (45s avg): eligible.
+        repository.saveSession(
+            createTestSession(id = "586-good-1", timestamp = 1000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 45_000L,
+                    workingReps = 10,
+                    profileId = profileId,
+                ),
+        )
+        repository.saveSession(
+            createTestSession(id = "586-good-2", timestamp = 2000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 60_000L,
+                    workingReps = 12,
+                    profileId = profileId,
+                ),
+        )
+        repository.saveSession(
+            createTestSession(id = "586-good-3", timestamp = 3000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 30_000L,
+                    workingReps = 8,
+                    profileId = profileId,
+                ),
+        )
+
+        // Implausibly-long row (2 hours): wall-clock elapsed time, not a set.
+        // Must be excluded by the SQL duration cap. To prove the *duration* is what
+        // disqualifies this row, force totalReps/workingReps both to 0 so the new
+        // (workingReps > 0 OR totalReps > 0) eligibility condition is also false.
+        repository.saveSession(
+            createTestSession(id = "586-corrupt-long", timestamp = 4000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 2L * 60L * 60L * 1000L, // 2 hours
+                    totalReps = 0,
+                    workingReps = 0,
+                    profileId = profileId,
+                ),
+        )
+
+        // Zero-working-rep row (canceled/warmup-only): must be excluded.
+        // Also force totalReps = 0 so it is unambiguously a zero-rep row.
+        repository.saveSession(
+            createTestSession(id = "586-zero-rep", timestamp = 5000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 60_000L,
+                    totalReps = 0,
+                    workingReps = 0,
+                    profileId = profileId,
+                ),
+        )
+
+        // Sync-deleted row: must be excluded. Keep workingReps/totalReps at default
+        // so deletion is the only thing disqualifying it.
+        repository.saveSession(
+            createTestSession(id = "586-deleted", timestamp = 6000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 60_000L,
+                    profileId = profileId,
+                ),
+        )
+        database.vitruvianDatabaseQueries.softDeleteSession(
+            id = "586-deleted",
+            deletedAt = 6500L,
+            updatedAt = 6500L,
+        )
+
+        // Different exercise — must not affect the average or count for `exerciseId`.
+        repository.saveSession(
+            createTestSession(id = "586-other-ex", timestamp = 7000L)
+                .copy(
+                    exerciseId = "other-exercise",
+                    duration = 600_000L, // 10 minutes
+                    workingReps = 10,
+                    profileId = profileId,
+                ),
+        )
+
+        // Different profile — must not affect this profile's average or count.
+        repository.saveSession(
+            createTestSession(id = "586-other-profile", timestamp = 8000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 600_000L, // 10 minutes
+                    workingReps = 10,
+                    profileId = "other-profile",
+                ),
+        )
+
+        // Expected average over the 3 plausible rows: (45 + 60 + 30) / 3 = 45_000ms
+        val expectedAvg = (45_000L + 60_000L + 30_000L) / 3L
+
+        val avg = repository.getAverageSetDurationMs(exerciseId, profileId)
+        val count = repository.getSessionCountForExercise(exerciseId, profileId)
+
+        assertEquals(
+            expectedAvg,
+            avg,
+            "Average must exclude implausibly-long, zero-rep, and sync-deleted rows",
+        )
+        assertEquals(
+            3L,
+            count,
+            "Count must use the same eligibility filter as the average query",
+        )
+    }
+
+    /**
+     * Issue #586 boundary check: rows at exactly the 20-minute eligibility cap
+     * (matching MAX_PLAUSIBLE_SET_DURATION_MS in the estimator) are still counted
+     * and included in the average so the SQL filter and the estimator guard agree.
+     */
+    @Test
+    fun `rows at exactly 20 minute duration are eligible for average and count`() = runTest {
+        val exerciseId = "586-boundary"
+        val profileId = "default"
+        val boundaryMs = 20L * 60L * 1000L
+
+        repository.saveSession(
+            createTestSession(id = "586-b-1", timestamp = 1000L)
+                .copy(exerciseId = exerciseId, duration = boundaryMs, workingReps = 10, profileId = profileId),
+        )
+        repository.saveSession(
+            createTestSession(id = "586-b-2", timestamp = 2000L)
+                .copy(exerciseId = exerciseId, duration = boundaryMs, workingReps = 10, profileId = profileId),
+        )
+        repository.saveSession(
+            createTestSession(id = "586-b-3", timestamp = 3000L)
+                .copy(exerciseId = exerciseId, duration = boundaryMs, workingReps = 10, profileId = profileId),
+        )
+
+        assertEquals(boundaryMs, repository.getAverageSetDurationMs(exerciseId, profileId))
+        assertEquals(3L, repository.getSessionCountForExercise(exerciseId, profileId))
+    }
+
+    /**
+     * Issue #586 boundary check: a row one millisecond above the 20-minute cap
+     * must be excluded by the SQL filter even when its other fields look fine.
+     */
+    @Test
+    fun `row one ms over 20 minute duration is excluded by SQL filter`() = runTest {
+        val exerciseId = "586-over-boundary"
+        val profileId = "default"
+
+        repository.saveSession(
+            createTestSession(id = "586-ob-1", timestamp = 1000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 20L * 60L * 1000L + 1L,
+                    workingReps = 10,
+                    profileId = profileId,
+                ),
+        )
+
+        assertNull(
+            repository.getAverageSetDurationMs(exerciseId, profileId),
+            "A row one ms over the 20-minute cap must not contribute to the average",
+        )
+        assertEquals(
+            0L,
+            repository.getSessionCountForExercise(exerciseId, profileId),
+            "An over-cap row must not be counted as a session",
+        )
+    }
+
+    /**
+     * Issue #586 follow-up: rows that only populate `totalReps` (with
+     * `workingReps == 0`) are still treated as completed sets by the rest of the
+     * schema (selectCompletedHealthExportCandidates, selectSessionsByRoutineSessionId,
+     * selectSessionsForPhasePRBackfill). They must contribute to the historical
+     * average and count for routine time estimation so imported, legacy, or tagged
+     * JustLift sessions don't silently disappear from history.
+     */
+    @Test
+    fun `totalReps-only rows are eligible for average and count`() = runTest {
+        val exerciseId = "586-totalreps-only"
+        val profileId = "default"
+
+        // totalReps-only rows: workingReps == 0, but the row is completed.
+        repository.saveSession(
+            createTestSession(id = "586-tr-1", timestamp = 1000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 40_000L,
+                    totalReps = 10,
+                    workingReps = 0,
+                    profileId = profileId,
+                ),
+        )
+        repository.saveSession(
+            createTestSession(id = "586-tr-2", timestamp = 2000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 50_000L,
+                    totalReps = 12,
+                    workingReps = 0,
+                    profileId = profileId,
+                ),
+        )
+
+        assertEquals(
+            45_000L,
+            repository.getAverageSetDurationMs(exerciseId, profileId),
+            "totalReps-only rows must be included in the historical average",
+        )
+        assertEquals(
+            2L,
+            repository.getSessionCountForExercise(exerciseId, profileId),
+            "totalReps-only rows must be counted as completed sessions",
+        )
+
+        // A row with both totalReps == 0 AND workingReps == 0 is a true zero-rep
+        // row and must still be excluded.
+        repository.saveSession(
+            createTestSession(id = "586-zero-both", timestamp = 3000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 60_000L,
+                    totalReps = 0,
+                    workingReps = 0,
+                    profileId = profileId,
+                ),
+        )
+
+        assertEquals(
+            45_000L,
+            repository.getAverageSetDurationMs(exerciseId, profileId),
+            "Rows with both totalReps == 0 and workingReps == 0 must not change the average",
+        )
+        assertEquals(
+            2L,
+            repository.getSessionCountForExercise(exerciseId, profileId),
+            "Rows with both totalReps == 0 and workingReps == 0 must not be counted",
+        )
+    }
 }
