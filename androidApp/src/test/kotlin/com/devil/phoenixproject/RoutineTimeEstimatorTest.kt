@@ -596,4 +596,164 @@ class RoutineTimeEstimatorTest {
         assertTrue(result.isHistoryBased)
         assertEquals(50, result.totalSeconds)
     }
+
+    // ==================== ISSUE #586: IMPLAUSIBLE HISTORY GUARDS ====================
+
+    /**
+     * Issue #586 regression: if the SQL average returns an implausibly large
+     * historical per-set duration (e.g., elapsed wall-clock time mistakenly
+     * averaged as a per-set value), the estimator must NOT mark the exercise
+     * as history-based and must NOT amplify the bad value through the AMRAP
+     * range multiplier. It must fall back to the AMRAP fallback constants so
+     * Daily Routines cannot render a multi-year routine estimate.
+     */
+    @Test
+    fun `AMRAP-heavy routine with absurd historical avg falls back to human-scale estimate`() = runTest {
+        val exerciseIds = listOf("ex-1", "ex-2", "ex-3", "ex-4", "ex-5", "ex-6", "ex-7")
+        // 268 days in ms — matches the historicalAvgMs that back-solves to the
+        // screenshot's 134921h lower bound for a 7-exercise AMRAP-heavy routine.
+        val absurdAvgMs = 268L * 24L * 60L * 60L * 1000L
+
+        for (id in exerciseIds) {
+            coEvery { workoutRepository.getSessionCountForExercise(id, profileId) } returns 5
+            coEvery { workoutRepository.getAverageSetDurationMs(id, profileId) } returns absurdAvgMs
+        }
+
+        val exercises = exerciseIds.mapIndexed { idx, id ->
+            routineExercise(
+                exercise = cableExercise(id = id, name = "Exercise $idx"),
+                // All AMRAP — matches reporter confirmation that "most of those exercises are AMRAP".
+                setReps = listOf(null, null, null),
+                restSeconds = listOf(60, 60),
+                orderIndex = idx,
+            )
+        }
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        // No exercise should be treated as history-based — the bad average must be rejected.
+        assertFalse(
+            "Estimator must not trust implausible historical averages",
+            result.isHistoryBased,
+        )
+
+        // Must NOT render hundreds of thousands of hours. The AMRAP fallback
+        // midpoint is 90s per set, so totalSeconds must stay in the thousands,
+        // not hundreds-of-thousands.
+        val totalHours = result.totalSeconds / 3600.0
+        assertTrue(
+            "Routine estimate should be human-scale but was ${totalHours}h ($result)",
+            totalHours < 24,
+        )
+
+        // Upper bound must also stay under one day even with the 2.0x AMRAP multiplier.
+        val upperHours = result.upperBoundSeconds / 3600.0
+        assertTrue(
+            "AMRAP upper bound should be human-scale but was ${upperHours}h ($result)",
+            upperHours < 24,
+        )
+    }
+
+    /**
+     * Issue #586 regression: fixed-rep sets must also reject absurd historical
+     * averages instead of multiplying them through all planned sets.
+     */
+    @Test
+    fun `fixed-rep routine with absurd historical avg falls back to defaults`() = runTest {
+        val exerciseIds = listOf("ex-1", "ex-2", "ex-3")
+        val absurdAvgMs = 200L * 24L * 60L * 60L * 1000L // 200 days
+
+        for (id in exerciseIds) {
+            coEvery { workoutRepository.getSessionCountForExercise(id, profileId) } returns 4
+            coEvery { workoutRepository.getAverageSetDurationMs(id, profileId) } returns absurdAvgMs
+        }
+
+        val exercises = exerciseIds.mapIndexed { idx, id ->
+            routineExercise(
+                exercise = cableExercise(id = id, name = "Exercise $idx"),
+                setReps = listOf(10, 10, 10),
+                restSeconds = listOf(90, 90),
+                orderIndex = idx,
+            )
+        }
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        assertFalse(
+            "Fixed-rep estimator must not trust implausible historical averages",
+            result.isHistoryBased,
+        )
+
+        // Without trust, fixed-rep defaults are 45s/set + 90s rest between sets.
+        // 3 exercises * 3 sets * 45s + 2 * 90s = 585s per exercise, plus transitions.
+        // Anything multi-day is a regression of the original bug.
+        val totalHours = result.totalSeconds / 3600.0
+        assertTrue(
+            "Fixed-rep routine must stay human-scale but was ${totalHours}h ($result)",
+            totalHours < 1,
+        )
+    }
+
+    /**
+     * Issue #586 boundary check: the upper bound for a plausible per-set average
+     * is 20 minutes. A value at or below that must still be trusted so the
+     * estimator's normal history path keeps working.
+     */
+    @Test
+    fun `historical avg at exactly MAX_PLAUSIBLE_SET_DURATION_MS is still trusted`() = runTest {
+        val exerciseId = "ex-1"
+        coEvery { workoutRepository.getSessionCountForExercise(exerciseId, profileId) } returns 5
+        coEvery {
+            workoutRepository.getAverageSetDurationMs(exerciseId, profileId)
+        } returns RoutineTimeEstimator.MAX_PLAUSIBLE_SET_DURATION_MS
+
+        val exercises = listOf(
+            routineExercise(
+                exercise = cableExercise(id = exerciseId),
+                setReps = listOf(10),
+                restSeconds = emptyList(),
+            ),
+        )
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        // Boundary value should still be trusted (inclusive upper bound).
+        assertTrue(
+            "Exactly MAX_PLAUSIBLE_SET_DURATION_MS must still be history-based",
+            result.isHistoryBased,
+        )
+        assertEquals(
+            (RoutineTimeEstimator.MAX_PLAUSIBLE_SET_DURATION_MS / 1000L).toInt(),
+            result.totalSeconds,
+        )
+    }
+
+    /**
+     * Issue #586 boundary check: a value one millisecond above the cap must be
+     * rejected so a corrupt row at exactly the boundary+1 cannot slip through.
+     */
+    @Test
+    fun `historical avg one ms over MAX_PLAUSIBLE_SET_DURATION_MS is rejected`() = runTest {
+        val exerciseId = "ex-1"
+        coEvery { workoutRepository.getSessionCountForExercise(exerciseId, profileId) } returns 5
+        coEvery {
+            workoutRepository.getAverageSetDurationMs(exerciseId, profileId)
+        } returns RoutineTimeEstimator.MAX_PLAUSIBLE_SET_DURATION_MS + 1L
+
+        val exercises = listOf(
+            routineExercise(
+                exercise = cableExercise(id = exerciseId),
+                setReps = listOf(10),
+                restSeconds = emptyList(),
+            ),
+        )
+        val result = estimator.estimateRoutineDuration(routine(exercises), profileId)
+
+        assertFalse(
+            "One-ms-over MAX_PLAUSIBLE_SET_DURATION_MS must be rejected",
+            result.isHistoryBased,
+        )
+    }
+
+    @Test
+    fun `MAX_PLAUSIBLE_SET_DURATION_MS is 20 minutes`() {
+        assertEquals(20L * 60L * 1000L, RoutineTimeEstimator.MAX_PLAUSIBLE_SET_DURATION_MS)
+    }
 }
