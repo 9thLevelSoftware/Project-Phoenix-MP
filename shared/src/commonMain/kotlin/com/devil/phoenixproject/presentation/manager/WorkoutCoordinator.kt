@@ -107,6 +107,17 @@ class WorkoutCoordinator(
     internal val _workoutState = MutableStateFlow<WorkoutState>(WorkoutState.Idle)
     val workoutState: StateFlow<WorkoutState> = _workoutState.asStateFlow()
 
+    // ===== Just Lift Rest Timer (Issue #113) =====
+
+    // Visual-only "egg timer" countdown displayed while user rests between Just Lift sets.
+    // null = no timer active, 0+ = seconds remaining. Picking up handles cancels it.
+    internal val _justLiftRestCountdown = MutableStateFlow<Int?>(null)
+    val justLiftRestCountdown: StateFlow<Int?> = _justLiftRestCountdown.asStateFlow()
+    internal var justLiftRestTimerJob: Job? = null
+
+    @Volatile
+    internal var justLiftRestDeadlineElapsedRealtimeMs: Long? = null
+
     /**
      * Returns true if a workout is currently in progress (not idle or completed).
      * Use this to prevent actions that shouldn't happen during active workouts,
@@ -130,11 +141,17 @@ class WorkoutCoordinator(
      * Unlike [isWorkoutActive], this covers the full session lifecycle:
      * - Active workout states (Initializing, Countdown, Active, Resting, SetSummary)
      * - Between-set routine states (SetReady screen where workoutState is Idle)
+     * - Just Lift visual rest countdown where workoutState is Idle between sets
      */
-    val isInWorkoutSession = combine(_workoutState, _routineFlowState) { ws, rfs ->
+    val isInWorkoutSession = combine(
+        _workoutState,
+        _routineFlowState,
+        _justLiftRestCountdown,
+    ) { ws, rfs, restCountdown ->
         val workoutInProgress = ws !is WorkoutState.Idle && ws !is WorkoutState.Completed
         val betweenRoutineSets = rfs is RoutineFlowState.SetReady
-        workoutInProgress || betweenRoutineSets
+        val betweenJustLiftSets = ws is WorkoutState.Idle && (restCountdown ?: 0) > 0
+        workoutInProgress || betweenRoutineSets || betweenJustLiftSets
     }
 
     // ===== Metrics State =====
@@ -162,17 +179,6 @@ class WorkoutCoordinator(
     // Null means motion start is not active (feature disabled or not in countdown)
     internal val _motionStartHoldProgress = MutableStateFlow<Float?>(null)
     val motionStartHoldProgress: StateFlow<Float?> = _motionStartHoldProgress.asStateFlow()
-
-    // ===== Just Lift Rest Timer (Issue #113) =====
-
-    // Visual-only "egg timer" countdown displayed while user rests between Just Lift sets.
-    // null = no timer active, 0+ = seconds remaining. Picking up handles cancels it.
-    internal val _justLiftRestCountdown = MutableStateFlow<Int?>(null)
-    val justLiftRestCountdown: StateFlow<Int?> = _justLiftRestCountdown.asStateFlow()
-    internal var justLiftRestTimerJob: Job? = null
-
-    @Volatile
-    internal var justLiftRestDeadlineElapsedRealtimeMs: Long? = null
 
     // ===== Workout Parameters =====
 

@@ -185,11 +185,12 @@ fun EnhancedMainScreen(
 
     // Issue #348: Session-scoped wake lock — keeps screen on across ALL workout screens
     // (ActiveWorkout, SetReady, rest timers) instead of just ActiveWorkoutScreen.
-    // The isInWorkoutSession flow combines workoutState and routineFlowState so
-    // the wake lock stays active during between-set navigation in routines.
+    // Just Lift also keeps the screen awake on its ready/setup screen because
+    // it is armed for handle-based auto-start before workoutState becomes Active.
     val isInWorkoutSession by viewModel.isInWorkoutSession.collectAsState(initial = false)
-    DisposableEffect(isInWorkoutSession) {
-        setKeepScreenOn(isInWorkoutSession)
+    val shouldKeepScreenOn = shouldKeepScreenOnForRoute(currentRoute, isInWorkoutSession)
+    DisposableEffect(shouldKeepScreenOn) {
+        setKeepScreenOn(shouldKeepScreenOn)
         onDispose {
             setKeepScreenOn(false)
         }
@@ -862,6 +863,9 @@ private fun ConnectionStatusIndicator(
  */
 private fun isSingleExerciseRoute(route: String): Boolean = route == NavigationRoutes.SingleExercise.route ||
     route.startsWith("${NavigationRoutes.SingleExercise.route}/")
+
+internal fun shouldKeepScreenOnForRoute(route: String, isInWorkoutSession: Boolean): Boolean =
+    isInWorkoutSession || route == NavigationRoutes.JustLift.route
 
 private fun getScreenTitle(route: String, routineName: String = "", exerciseName: String = "", cycleName: String = ""): String = when {
     // Main tabs (static titles)
