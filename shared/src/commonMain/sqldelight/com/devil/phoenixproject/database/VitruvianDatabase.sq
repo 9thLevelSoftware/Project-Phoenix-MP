@@ -718,29 +718,37 @@ DELETE FROM MetricSample WHERE sessionId = ?;
 
 -- Average set duration for a specific exercise (Issue #225: routine time estimation)
 -- Issue #586: only consider rows that look like an actual set (plausible duration
--- and at least one completed working rep). Stale/elapsed/zero-rep rows must be
--- excluded so the SQL average matches the SQL count below and matches what
+-- and at least one completed rep). Stale/elapsed/zero-rep rows must be excluded
+-- so the SQL average matches the SQL count below and matches what
 -- RoutineTimeEstimator treats as "trustworthy history".
+-- "Completed" matches the rest of the schema (selectCompletedHealthExportCandidates,
+-- selectSessionsByRoutineSessionId, selectSessionsForPhasePRBackfill): rows with
+-- either workingReps > 0 or totalReps > 0. Imported, legacy, or tagged JustLift
+-- sessions that populate only totalReps must still count as history.
+-- Note: the 1200000 ms (20 min) duration cap MUST be kept in sync with
+-- RoutineTimeEstimator.MAX_PLAUSIBLE_SET_DURATION_MS; if you change one,
+-- update the other and the related regression tests.
 selectAverageSetDurationMs:
 SELECT AVG(duration) AS avgDurationMs
 FROM WorkoutSession
 WHERE exerciseId = ?
   AND profile_id = :profileId
   AND deletedAt IS NULL
-  AND workingReps > 0
+  AND (workingReps > 0 OR totalReps > 0)
   AND duration > 0
   AND duration <= 1200000;
 
 -- Count sessions for a specific exercise (Issue #225: minimum session threshold for time estimation)
 -- Issue #586: must use the same eligibility filter as selectAverageSetDurationMs so
 -- the session-count threshold and the SQL average are derived from the same set of rows.
+-- See selectAverageSetDurationMs for the duration-cap coupling to RoutineTimeEstimator.
 selectSessionCountForExercise:
 SELECT COUNT(*)
 FROM WorkoutSession
 WHERE exerciseId = ?
   AND profile_id = :profileId
   AND deletedAt IS NULL
-  AND workingReps > 0
+  AND (workingReps > 0 OR totalReps > 0)
   AND duration > 0
   AND duration <= 1200000;
 

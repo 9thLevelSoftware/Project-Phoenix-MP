@@ -550,4 +550,75 @@ class SqlDelightWorkoutRepositoryTest {
             "An over-cap row must not be counted as a session",
         )
     }
+
+    /**
+     * Issue #586 follow-up: rows that only populate `totalReps` (with
+     * `workingReps == 0`) are still treated as completed sets by the rest of the
+     * schema (selectCompletedHealthExportCandidates, selectSessionsByRoutineSessionId,
+     * selectSessionsForPhasePRBackfill). They must contribute to the historical
+     * average and count for routine time estimation so imported, legacy, or tagged
+     * JustLift sessions don't silently disappear from history.
+     */
+    @Test
+    fun `totalReps-only rows are eligible for average and count`() = runTest {
+        val exerciseId = "586-totalreps-only"
+        val profileId = "default"
+
+        // totalReps-only rows: workingReps == 0, but the row is completed.
+        repository.saveSession(
+            createTestSession(id = "586-tr-1", timestamp = 1000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 40_000L,
+                    totalReps = 10,
+                    workingReps = 0,
+                    profileId = profileId,
+                ),
+        )
+        repository.saveSession(
+            createTestSession(id = "586-tr-2", timestamp = 2000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 50_000L,
+                    totalReps = 12,
+                    workingReps = 0,
+                    profileId = profileId,
+                ),
+        )
+
+        assertEquals(
+            45_000L,
+            repository.getAverageSetDurationMs(exerciseId, profileId),
+            "totalReps-only rows must be included in the historical average",
+        )
+        assertEquals(
+            2L,
+            repository.getSessionCountForExercise(exerciseId, profileId),
+            "totalReps-only rows must be counted as completed sessions",
+        )
+
+        // A row with both totalReps == 0 AND workingReps == 0 is a true zero-rep
+        // row and must still be excluded.
+        repository.saveSession(
+            createTestSession(id = "586-zero-both", timestamp = 3000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 60_000L,
+                    totalReps = 0,
+                    workingReps = 0,
+                    profileId = profileId,
+                ),
+        )
+
+        assertEquals(
+            45_000L,
+            repository.getAverageSetDurationMs(exerciseId, profileId),
+            "Rows with both totalReps == 0 and workingReps == 0 must not change the average",
+        )
+        assertEquals(
+            2L,
+            repository.getSessionCountForExercise(exerciseId, profileId),
+            "Rows with both totalReps == 0 and workingReps == 0 must not be counted",
+        )
+    }
 }
