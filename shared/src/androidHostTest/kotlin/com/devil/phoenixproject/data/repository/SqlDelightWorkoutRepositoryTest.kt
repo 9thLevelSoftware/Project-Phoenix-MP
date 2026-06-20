@@ -415,35 +415,40 @@ class SqlDelightWorkoutRepositoryTest {
         )
 
         // Implausibly-long row (2 hours): wall-clock elapsed time, not a set.
-        // Must be excluded so it cannot become the historical average.
+        // Must be excluded by the SQL duration cap. To prove the *duration* is what
+        // disqualifies this row, force totalReps/workingReps both to 0 so the new
+        // (workingReps > 0 OR totalReps > 0) eligibility condition is also false.
         repository.saveSession(
             createTestSession(id = "586-corrupt-long", timestamp = 4000L)
                 .copy(
                     exerciseId = exerciseId,
                     duration = 2L * 60L * 60L * 1000L, // 2 hours
-                    workingReps = 10,
-                    profileId = profileId,
-                ),
-        )
-
-        // Zero-working-rep row (canceled/warmup-only): must be excluded.
-        repository.saveSession(
-            createTestSession(id = "586-zero-rep", timestamp = 5000L)
-                .copy(
-                    exerciseId = exerciseId,
-                    duration = 60_000L,
+                    totalReps = 0,
                     workingReps = 0,
                     profileId = profileId,
                 ),
         )
 
-        // Sync-deleted row: must be excluded.
+        // Zero-working-rep row (canceled/warmup-only): must be excluded.
+        // Also force totalReps = 0 so it is unambiguously a zero-rep row.
+        repository.saveSession(
+            createTestSession(id = "586-zero-rep", timestamp = 5000L)
+                .copy(
+                    exerciseId = exerciseId,
+                    duration = 60_000L,
+                    totalReps = 0,
+                    workingReps = 0,
+                    profileId = profileId,
+                ),
+        )
+
+        // Sync-deleted row: must be excluded. Keep workingReps/totalReps at default
+        // so deletion is the only thing disqualifying it.
         repository.saveSession(
             createTestSession(id = "586-deleted", timestamp = 6000L)
                 .copy(
                     exerciseId = exerciseId,
                     duration = 60_000L,
-                    workingReps = 10,
                     profileId = profileId,
                 ),
         )
