@@ -1,11 +1,16 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.WorkoutState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -113,5 +118,58 @@ class WorkoutCoordinatorEventTest {
         )
 
         job.cancel()
+    }
+
+    @Test
+    fun justLiftRestCountdownKeepsWorkoutSessionActiveWhileIdle() = runTest {
+        val (coordinator, _) = createCoordinator()
+
+        assertFalse(
+            coordinator.isInWorkoutSession.first(),
+            "Idle without a Just Lift rest countdown should not keep the screen awake",
+        )
+
+        coordinator._justLiftRestCountdown.value = 30
+
+        assertTrue(
+            coordinator.isInWorkoutSession.first(),
+            "Just Lift rest countdown should keep the workout session active while state is Idle",
+        )
+
+        coordinator._justLiftRestCountdown.value = 0
+
+        assertFalse(
+            coordinator.isInWorkoutSession.first(),
+            "Expired Just Lift rest countdown should release the workout session wake lock",
+        )
+    }
+
+    @Test
+    fun routineSetReadyKeepsWorkoutSessionActiveWhileIdle() = runTest {
+        val (coordinator, _) = createCoordinator()
+
+        coordinator._routineFlowState.value = RoutineFlowState.SetReady(
+            exerciseIndex = 0,
+            setIndex = 0,
+            adjustedWeight = 20f,
+            adjustedReps = 8,
+        )
+
+        assertTrue(
+            coordinator.isInWorkoutSession.first(),
+            "Routine SetReady should keep the workout session active while state is Idle",
+        )
+    }
+
+    @Test
+    fun activeWorkoutStateKeepsWorkoutSessionActive() = runTest {
+        val (coordinator, _) = createCoordinator()
+
+        coordinator._workoutState.value = WorkoutState.Active
+
+        assertTrue(
+            coordinator.isInWorkoutSession.first(),
+            "Active workout state should keep the workout session active",
+        )
     }
 }
