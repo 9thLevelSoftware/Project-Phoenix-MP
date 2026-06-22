@@ -421,7 +421,7 @@ fun ExerciseEditBottomSheet(
 
                             ProgressionSlider(
                                 value = weightChange.toFloat(),
-                                onValueChange = { viewModel.onWeightChange(it.toInt()) },
+                                onValueChange = { viewModel.onWeightChange(it.roundToInt()) },
                                 valueRange = -maxWeightChange.toFloat()..maxWeightChange.toFloat(),
                                 modifier = Modifier.fillMaxWidth(),
                             )

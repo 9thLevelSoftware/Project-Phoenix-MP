@@ -95,6 +95,7 @@ import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import kotlin.math.roundToInt
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.eccentricLoadLabel
@@ -571,7 +572,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
 
                         ProgressionSlider(
                             value = weightChangePerRep.toFloat(),
-                            onValueChange = { weightChangePerRep = it.toInt() },
+                            onValueChange = { weightChangePerRep = it.roundToInt() },
                             valueRange = -10f..10f,
                             modifier = Modifier.fillMaxWidth(),
                         )

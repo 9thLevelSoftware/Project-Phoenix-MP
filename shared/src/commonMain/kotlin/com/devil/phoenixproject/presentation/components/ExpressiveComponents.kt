@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.rememberIsTvRemoteInputMode
 import com.devil.phoenixproject.presentation.util.tvSliderKeys
+import kotlin.math.roundToInt
 
 /**
  * A Material 3 Expressive Card wrapper.
@@ -120,8 +121,11 @@ fun ProgressionSlider(
     valueRange: ClosedFloatingPointRange<Float> = -10f..10f,
     modifier: Modifier = Modifier,
 ) {
-    val isNegative = value < 0
-    val isPositive = value > 0
+    // Snap to nearest integer to guard against float imprecision from the
+    // Material3 Slider's pixel→value mapping (Issue #571 continued).
+    val intVal = value.roundToInt()
+    val isNegative = intVal < 0
+    val isPositive = intVal > 0
 
     val activeColor = when {
         isNegative -> MaterialTheme.colorScheme.error
@@ -140,7 +144,7 @@ fun ProgressionSlider(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = if (value > 0) "+${value.toInt()}" else "${value.toInt()}",
+                text = if (intVal > 0) "+$intVal" else "$intVal",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = activeColor,
@@ -154,7 +158,7 @@ fun ProgressionSlider(
 
         ExpressiveSlider(
             value = value,
-            onValueChange = onValueChange,
+            onValueChange = { raw -> onValueChange(raw.roundToInt().toFloat()) },
             valueRange = valueRange,
             steps = (valueRange.endInclusive - valueRange.start).toInt() - 1,
             trackColor = activeColor,
