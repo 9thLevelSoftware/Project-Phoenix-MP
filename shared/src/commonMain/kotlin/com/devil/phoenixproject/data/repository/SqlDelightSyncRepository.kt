@@ -2191,6 +2191,13 @@ class SqlDelightSyncRepository(
      * existing local value whenever the incoming pull is null. All other
      * columns use the incoming value (LWW semantics).
      *
+     * Exception: `PortalPullAdapter` can only hydrate per-cable concentric
+     * peaks from `leftForceAvg` / `rightForceAvg`, which are average-force
+     * proxies from the push DTO rather than true peak captures. If a local
+     * row already has true per-cable peak values, keep those instead of
+     * replacing them with the pull-side proxy. First-time pulls still keep
+     * the proxy value because there is no local capture to preserve.
+     *
      * Backed by `selectSessionsMetricsForPreservationByIds` so the LWW
      * gate does not issue a full-row read per incoming pull. The column
      * list here must stay in sync with that SQL query.
@@ -2213,8 +2220,8 @@ class SqlDelightSyncRepository(
         existing: PreservationRow,
         incoming: WorkoutSession,
     ): WorkoutSession = incoming.copy(
-        peakForceConcentricA = incoming.peakForceConcentricA ?: existing.peakForceConcentricA?.toFloat(),
-        peakForceConcentricB = incoming.peakForceConcentricB ?: existing.peakForceConcentricB?.toFloat(),
+        peakForceConcentricA = existing.peakForceConcentricA?.toFloat() ?: incoming.peakForceConcentricA,
+        peakForceConcentricB = existing.peakForceConcentricB?.toFloat() ?: incoming.peakForceConcentricB,
         peakForceEccentricA = incoming.peakForceEccentricA ?: existing.peakForceEccentricA?.toFloat(),
         peakForceEccentricB = incoming.peakForceEccentricB ?: existing.peakForceEccentricB?.toFloat(),
         avgForceConcentricA = incoming.avgForceConcentricA ?: existing.avgForceConcentricA?.toFloat(),

@@ -124,10 +124,11 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww applies incoming metrics when both are populated`() = runTest {
+    fun `mergeSessionsLww preserves local true peaks but applies incoming average metrics`() = runTest {
         setUp()
 
-        // GIVEN: A locally recorded session with metric values.
+        // GIVEN: A locally recorded session with true peak values and
+        // average-force values captured by the mobile recorder.
         val sessionId = "issue-591-set-2"
         insertLocalSession(
             WorkoutSession(
@@ -140,12 +141,19 @@ class Issue591SyncLwwTest {
                 workingReps = 6,
                 exerciseName = "Squat",
                 peakForceConcentricA = 30f,
+                peakForceConcentricB = 32f,
+                avgForceConcentricA = 20f,
+                avgForceConcentricB = 21f,
                 profileId = testProfileId,
             ),
             updatedAt = now - 60_000L,
         )
 
-        // WHEN: An incoming pull with NEWER metric values arrives.
+        // WHEN: A newer portal pull arrives. PortalPullAdapter can only
+        // reconstruct peakForceConcentricA/B from leftForceAvg/rightForceAvg,
+        // so those incoming peak fields are proxies and must not overwrite
+        // true local peaks. Average-force fields are real pull-side values and
+        // still follow normal incoming-wins LWW semantics.
         val incoming = WorkoutSession(
             id = sessionId,
             timestamp = now,
@@ -155,7 +163,10 @@ class Issue591SyncLwwTest {
             totalReps = 6,
             workingReps = 6,
             exerciseName = "Squat",
-            peakForceConcentricA = 45f, // Higher / fresher value
+            peakForceConcentricA = 45f, // Pull-side proxy, not a true per-cable peak.
+            peakForceConcentricB = 46f,
+            avgForceConcentricA = 31f,
+            avgForceConcentricB = 33f,
             profileId = testProfileId,
         )
         repository.mergeSessionsLww(
@@ -163,12 +174,16 @@ class Issue591SyncLwwTest {
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
 
-        // THEN: Incoming non-null metric value wins (full LWW).
+        // THEN: True local peaks are preserved, while incoming non-peak
+        // metrics still apply.
         val after = database.vitruvianDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(after)
-        assertEquals(45f, after.peakForceConcentricA?.toFloat())
+        assertEquals(30f, after.peakForceConcentricA?.toFloat())
+        assertEquals(32f, after.peakForceConcentricB?.toFloat())
+        assertEquals(31f, after.avgForceConcentricA?.toFloat())
+        assertEquals(33f, after.avgForceConcentricB?.toFloat())
     }
 
     @Test
