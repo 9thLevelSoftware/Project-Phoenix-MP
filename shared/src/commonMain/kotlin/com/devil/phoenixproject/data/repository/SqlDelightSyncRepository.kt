@@ -2049,6 +2049,16 @@ class SqlDelightSyncRepository(
      * (== portal exercise id; one portal session expands to N mobile rows
      * in PortalPullAdapter.toWorkoutSessionsWithLookup). Missing entries
      * default to "older" so first-time pulls always write.
+     *
+     * Issue #591: When the incoming pull row is null in detailed metric
+     * columns (`peakForce*`, `avgForce*`, biomechanics, etc.) but the
+     * local row captured real measurements during recording, do not erase
+     * the locally captured metrics. LWW still applies for non-metric
+     * columns (timestamps, reps, mode, exercise tags) — only metric
+     * columns fall back to the existing local value when the incoming is
+     * null. This prevents the History "after v0.2.1" placeholder from
+     * appearing for current sessions whose metrics were lost during sync
+     * rehydration.
      */
     override suspend fun mergeSessionsLww(
         sessions: List<WorkoutSession>,
@@ -2064,63 +2074,123 @@ class SqlDelightSyncRepository(
                 val accept = existingTs == null || incomingTs >= existingTs
                 if (!accept) continue
 
+                // Issue #591: Preserve non-null detailed metric columns from
+                // the existing local row when the incoming pull is null. The
+                // pull path does not (yet) populate peakForce* / avgForce* /
+                // biomechanics fields from PullSetDto.repSummaries for every
+                // session; without this guard, an incoming row with null
+                // metrics would clobber locally captured metrics and force
+                // HistoryTab to render the stale "after v0.2.1" placeholder.
+                val existing = queries.selectSessionById(session.id, ::mapToWorkoutSession)
+                    .executeAsOneOrNull()
+                val preserved = if (existing != null) preserveMetrics(existing, session) else session
+
                 queries.mergeSessionLww(
-                    id = session.id,
-                    timestamp = session.timestamp,
-                    mode = session.mode,
-                    targetReps = session.reps.toLong(),
-                    weightPerCableKg = session.weightPerCableKg.toDouble(),
-                    progressionKg = session.progressionKg.toDouble(),
-                    duration = session.duration,
-                    totalReps = session.totalReps.toLong(),
-                    warmupReps = session.warmupReps.toLong(),
-                    workingReps = session.workingReps.toLong(),
-                    isJustLift = if (session.isJustLift) 1L else 0L,
-                    stopAtTop = if (session.stopAtTop) 1L else 0L,
-                    eccentricLoad = session.eccentricLoad.toLong(),
-                    echoLevel = session.echoLevel.toLong(),
-                    exerciseId = session.exerciseId,
-                    exerciseName = session.exerciseName,
-                    routineSessionId = session.routineSessionId,
-                    routineName = session.routineName,
-                    routineId = session.routineId,
-                    safetyFlags = session.safetyFlags.toLong(),
-                    deloadWarningCount = session.deloadWarningCount.toLong(),
-                    romViolationCount = session.romViolationCount.toLong(),
-                    spotterActivations = session.spotterActivations.toLong(),
-                    peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
-                    peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
-                    peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
-                    peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
-                    avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
-                    avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
-                    avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
-                    avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
-                    heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
-                    totalVolumeKg = session.totalVolumeKg?.toDouble(),
-                    cableCount = session.cableCount?.toLong(),
-                    estimatedCalories = session.estimatedCalories?.toDouble(),
-                    warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
-                    workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
-                    burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
-                    peakWeightKg = session.peakWeightKg?.toDouble(),
-                    rpe = session.rpe?.toLong(),
-                    avgMcvMmS = session.avgMcvMmS?.toDouble(),
-                    avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
-                    totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
-                    dominantSide = session.dominantSide,
-                    strengthProfile = session.strengthProfile,
-                    formScore = session.formScore?.toLong(),
+                    id = preserved.id,
+                    timestamp = preserved.timestamp,
+                    mode = preserved.mode,
+                    targetReps = preserved.reps.toLong(),
+                    weightPerCableKg = preserved.weightPerCableKg.toDouble(),
+                    progressionKg = preserved.progressionKg.toDouble(),
+                    duration = preserved.duration,
+                    totalReps = preserved.totalReps.toLong(),
+                    warmupReps = preserved.warmupReps.toLong(),
+                    workingReps = preserved.workingReps.toLong(),
+                    isJustLift = if (preserved.isJustLift) 1L else 0L,
+                    stopAtTop = if (preserved.stopAtTop) 1L else 0L,
+                    eccentricLoad = preserved.eccentricLoad.toLong(),
+                    echoLevel = preserved.echoLevel.toLong(),
+                    exerciseId = preserved.exerciseId,
+                    exerciseName = preserved.exerciseName,
+                    routineSessionId = preserved.routineSessionId,
+                    routineName = preserved.routineName,
+                    routineId = preserved.routineId,
+                    safetyFlags = preserved.safetyFlags.toLong(),
+                    deloadWarningCount = preserved.deloadWarningCount.toLong(),
+                    romViolationCount = preserved.romViolationCount.toLong(),
+                    spotterActivations = preserved.spotterActivations.toLong(),
+                    peakForceConcentricA = preserved.peakForceConcentricA?.toDouble(),
+                    peakForceConcentricB = preserved.peakForceConcentricB?.toDouble(),
+                    peakForceEccentricA = preserved.peakForceEccentricA?.toDouble(),
+                    peakForceEccentricB = preserved.peakForceEccentricB?.toDouble(),
+                    avgForceConcentricA = preserved.avgForceConcentricA?.toDouble(),
+                    avgForceConcentricB = preserved.avgForceConcentricB?.toDouble(),
+                    avgForceEccentricA = preserved.avgForceEccentricA?.toDouble(),
+                    avgForceEccentricB = preserved.avgForceEccentricB?.toDouble(),
+                    heaviestLiftKg = preserved.heaviestLiftKg?.toDouble(),
+                    totalVolumeKg = preserved.totalVolumeKg?.toDouble(),
+                    cableCount = preserved.cableCount?.toLong(),
+                    estimatedCalories = preserved.estimatedCalories?.toDouble(),
+                    warmupAvgWeightKg = preserved.warmupAvgWeightKg?.toDouble(),
+                    workingAvgWeightKg = preserved.workingAvgWeightKg?.toDouble(),
+                    burnoutAvgWeightKg = preserved.burnoutAvgWeightKg?.toDouble(),
+                    peakWeightKg = preserved.peakWeightKg?.toDouble(),
+                    rpe = preserved.rpe?.toLong(),
+                    avgMcvMmS = preserved.avgMcvMmS?.toDouble(),
+                    avgAsymmetryPercent = preserved.avgAsymmetryPercent?.toDouble(),
+                    totalVelocityLossPercent = preserved.totalVelocityLossPercent?.toDouble(),
+                    dominantSide = preserved.dominantSide,
+                    strengthProfile = preserved.strengthProfile,
+                    formScore = preserved.formScore?.toLong(),
                     updatedAt = incomingTs,
-                    profile_id = session.profileId,
-                    display_multiplier = session.displayMultiplier?.toLong(),
-                    externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
-                    counterweightKg = session.counterweightKg.toDouble(),
-                    rackItemsJson = session.rackItemsJson,
+                    profile_id = preserved.profileId,
+                    display_multiplier = preserved.displayMultiplier?.toLong(),
+                    externalAddedLoadKg = preserved.externalAddedLoadKg.toDouble(),
+                    counterweightKg = preserved.counterweightKg.toDouble(),
+                    rackItemsJson = preserved.rackItemsJson,
                 )
             }
         }
     }
+
+    /**
+     * Issue #591: For detailed metric / biomechanics columns, prefer the
+     * existing local value whenever the incoming pull is null. All other
+     * columns use the incoming value (LWW semantics).
+     *
+     * Columns preserved when local is non-null and incoming is null:
+     *   - peakForce* / avgForce* (concentric + eccentric, A + B)
+     *   - heaviestLiftKg, totalVolumeKg
+     *   - estimatedCalories, warmupAvgWeightKg, workingAvgWeightKg,
+     *     burnoutAvgWeightKg, peakWeightKg
+     *   - avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent
+     *   - dominantSide, strengthProfile
+     *   - cableCount, displayMultiplier
+     *   - rpe, formScore
+     *
+     * Note: `weightPerCableKg`, `totalReps`, `duration`, and exercise/routine
+     * identity are intentionally NOT preserved — those should follow LWW so
+     * the row matches whatever the server / push thinks the workout was.
+     */
+    private fun preserveMetrics(
+        existing: WorkoutSession,
+        incoming: WorkoutSession,
+    ): WorkoutSession = incoming.copy(
+        peakForceConcentricA = incoming.peakForceConcentricA ?: existing.peakForceConcentricA,
+        peakForceConcentricB = incoming.peakForceConcentricB ?: existing.peakForceConcentricB,
+        peakForceEccentricA = incoming.peakForceEccentricA ?: existing.peakForceEccentricA,
+        peakForceEccentricB = incoming.peakForceEccentricB ?: existing.peakForceEccentricB,
+        avgForceConcentricA = incoming.avgForceConcentricA ?: existing.avgForceConcentricA,
+        avgForceConcentricB = incoming.avgForceConcentricB ?: existing.avgForceConcentricB,
+        avgForceEccentricA = incoming.avgForceEccentricA ?: existing.avgForceEccentricA,
+        avgForceEccentricB = incoming.avgForceEccentricB ?: existing.avgForceEccentricB,
+        heaviestLiftKg = incoming.heaviestLiftKg ?: existing.heaviestLiftKg,
+        totalVolumeKg = incoming.totalVolumeKg ?: existing.totalVolumeKg,
+        cableCount = incoming.cableCount ?: existing.cableCount,
+        displayMultiplier = incoming.displayMultiplier ?: existing.displayMultiplier,
+        estimatedCalories = incoming.estimatedCalories ?: existing.estimatedCalories,
+        warmupAvgWeightKg = incoming.warmupAvgWeightKg ?: existing.warmupAvgWeightKg,
+        workingAvgWeightKg = incoming.workingAvgWeightKg ?: existing.workingAvgWeightKg,
+        burnoutAvgWeightKg = incoming.burnoutAvgWeightKg ?: existing.burnoutAvgWeightKg,
+        peakWeightKg = incoming.peakWeightKg ?: existing.peakWeightKg,
+        rpe = incoming.rpe ?: existing.rpe,
+        avgMcvMmS = incoming.avgMcvMmS ?: existing.avgMcvMmS,
+        avgAsymmetryPercent = incoming.avgAsymmetryPercent ?: existing.avgAsymmetryPercent,
+        totalVelocityLossPercent = incoming.totalVelocityLossPercent ?: existing.totalVelocityLossPercent,
+        dominantSide = incoming.dominantSide ?: existing.dominantSide,
+        strengthProfile = incoming.strengthProfile ?: existing.strengthProfile,
+        formScore = incoming.formScore ?: existing.formScore,
+    )
 
     override suspend fun mergeSessionNotes(
         notes: Map<String, SessionNotesEntry>,

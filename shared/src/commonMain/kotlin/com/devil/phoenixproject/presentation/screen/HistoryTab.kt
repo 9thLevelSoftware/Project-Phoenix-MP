@@ -476,8 +476,11 @@ fun WorkoutHistoryCard(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Spacer(modifier = Modifier.width(Spacing.small))
+                                // Issue #591: see per-set drill-down note —
+                                // frame this honestly instead of blaming the
+                                // app version.
                                 Text(
-                                    "Detailed metrics available for workouts after v0.2.1",
+                                    "Detailed metrics were not captured for this set",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1063,8 +1066,18 @@ fun GroupedRoutineCard(
                                 ) {
                                     Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Spacer(modifier = Modifier.width(Spacing.small))
+                                    // Issue #591: The "after v0.2.1" copy is
+                                    // misleading for current sessions whose
+                                    // metric columns were nulled by a sync pull
+                                    // or by a zero-rep save. History now also
+                                    // filters zero-rep rows out of routine
+                                    // grouping so this card only appears for
+                                    // real legacy / unmeasured rows. Frame it
+                                    // honestly: this set's detailed metrics
+                                    // were not captured for this device, not
+                                    // "you need a newer app".
                                     Text(
-                                        "Detailed metrics available for workouts after v0.2.1",
+                                        "Detailed metrics were not captured for this set",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )

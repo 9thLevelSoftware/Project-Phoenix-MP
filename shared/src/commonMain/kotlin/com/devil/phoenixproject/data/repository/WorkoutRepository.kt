@@ -36,6 +36,21 @@ interface WorkoutRepository {
     fun getRecentSessions(profileId: String, limit: Int = 10): Flow<List<WorkoutSession>>
 
     /**
+     * Issue #591: Workout sessions that should appear in the Analytics /
+     * History UI. Excludes soft-deleted rows and rows with zero recorded
+     * reps (workingReps == 0 AND totalReps == 0), which historically come
+     * from pre-completion saves, routine restart mid-set, and zero-rep
+     * import paths. Counting those as sets inflates routine set totals
+     * (e.g. "Incline Fly 0 reps / 6 sets") and triggers the misleading
+     * pre-v0.2.1 placeholder card in per-set drill-down.
+     *
+     * Mirrors the eligibility guards used by
+     * `selectCompletedHealthExportCandidates` /
+     * `selectSessionsByRoutineSessionId` / `selectSessionsForPhasePRBackfill`.
+     */
+    fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>>
+
+    /**
      * Get a specific workout session by ID
      */
     suspend fun getSession(sessionId: String): WorkoutSession?

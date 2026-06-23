@@ -539,6 +539,22 @@ DELETE FROM ExerciseVideo;
 selectAllSessions:
 SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC;
 
+-- Issue #591: Analytics / History visible rows.
+-- Filter mirrors selectCompletedHealthExportCandidates and
+-- selectSessionsByRoutineSessionId: a row counts as a "real" completed
+-- set when it has not been soft-deleted and has at least one recorded
+-- rep (working or total). Without this guard the Daily Routine card
+-- counts zero-rep rows as sets, producing
+--   "Incline Fly — 0 reps / 6 sets / 0 lbs"
+-- and per-set drill-downs render the misleading "after v0.2.1"
+-- placeholder for rows that the recorder never captured.
+selectHistoryVisibleSessions:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL
+AND (workingReps > 0 OR totalReps > 0)
+ORDER BY timestamp DESC;
+
 selectSessionById:
 SELECT * FROM WorkoutSession WHERE id = ?;
 

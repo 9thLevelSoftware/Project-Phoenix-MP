@@ -61,6 +61,14 @@ object PortalPullAdapter {
             // Attempt to resolve exerciseId from local catalog (ID-first, then name-based)
             val resolvedExerciseId = exerciseLookup(exercise.name, exercise.muscleGroup, exercise.exerciseId)
 
+            // Issue #591: Hydrate detailed metric columns from rep-level
+            // telemetry when the portal pull DTO carries them. Without this,
+            // a freshly recorded local row would be overwritten by a pull
+            // row whose peakForce* / avgForce* fields are null, and History
+            // would render the stale "after v0.2.1" placeholder. Pull DTO
+            // forces are in Newtons; mobile fields are in kg-load.
+            val metricHydration = aggregateSetMetrics(exercise.sets)
+
             WorkoutSession(
                 id = exercise.id,
                 timestamp = timestamp,
@@ -78,8 +86,87 @@ object PortalPullAdapter {
                 heaviestLiftKg = maxWeight,
                 totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps
                 cableCount = null, // Let effectiveTotalVolumeKg() use session-level cableCount if available
+                // Issue #591: best-effort hydration from per-set rep summaries.
+                // Any field that the portal does not supply stays null and
+                // falls back to the locally captured value at LWW merge time.
+                peakForceConcentricA = metricHydration.peakForceConcentricA,
+                peakForceConcentricB = metricHydration.peakForceConcentricB,
+                peakForceEccentricA = metricHydration.peakForceEccentricA,
+                peakForceEccentricB = metricHydration.peakForceEccentricB,
+                avgForceConcentricA = metricHydration.avgForceConcentricA,
+                avgForceConcentricB = metricHydration.avgForceConcentricB,
+                avgForceEccentricA = metricHydration.avgForceEccentricA,
+                avgForceEccentricB = metricHydration.avgForceEccentricB,
+                avgAsymmetryPercent = exercise.sets.flatMap { it.repSummaries }
+                    .mapNotNull { it.asymmetryPct }
+                    .takeIf { it.isNotEmpty() }?.average()?.toFloat(),
                 profileId = profileId,
             )
+        }
+    }
+
+    /**
+     * Issue #591: Aggregate per-set rep summaries into the summary-level
+     * peak/avg force fields stored on `WorkoutSession`.
+     *
+     * The portal stores per-rep telemetry in `PullRepSummaryDto`:
+     *   - `leftForceAvg` / `rightForceAvg` (Newtons) → per-rep averages for
+     *     cable A / cable B during the concentric or eccentric phase.
+     *     Cable A maps to "left", cable B maps to "right"
+     *     (see PortalSyncAdapter.kt:363-364).
+     *   - `meanForceN` / `peakForceN` (Newtons, combined cables) — set-level
+     *     aggregates already supplied by the portal set DTO.
+     *
+     * Mobile `peakForceConcentric*` / `avgForceConcentric*` columns store
+     * kg-load (i.e., Newtons / 9.80665). Conversion here so the round trip
+     * push → pull is unit-consistent with locally captured values.
+     *
+     * Eccentric peak/avg is harder to derive because the portal stores
+     * `tutMs` and not a separate eccentric force aggregate, so this helper
+     * conservatively keeps eccentric peak/avg as null unless a set DTO
+     * provides them directly. Preservation at LWW merge still protects the
+     * locally captured eccentric values when present.
+     */
+    private fun aggregateSetMetrics(sets: List<PullSetDto>): HydratedMetrics {
+        if (sets.isEmpty()) return HydratedMetrics.EMPTY
+
+        val allReps = sets.flatMap { it.repSummaries }
+        if (allReps.isEmpty()) return HydratedMetrics.EMPTY
+
+        // Cable A force: max of leftForceAvg across all reps (peak proxy)
+        // Cable B force: max of rightForceAvg across all reps
+        // Rep averages: average across all reps that supplied a value.
+        val leftForces = allReps.mapNotNull { it.leftForceAvg }
+        val rightForces = allReps.mapNotNull { it.rightForceAvg }
+        val peakLeft = leftForces.maxOrNull()
+        val peakRight = rightForces.maxOrNull()
+        val avgLeft = leftForces.takeIf { it.isNotEmpty() }?.average()?.toFloat()
+        val avgRight = rightForces.takeIf { it.isNotEmpty() }?.average()?.toFloat()
+
+        return HydratedMetrics(
+            peakForceConcentricA = peakLeft?.let { PortalMappings.newtonsToLoadKg(it) },
+            peakForceConcentricB = peakRight?.let { PortalMappings.newtonsToLoadKg(it) },
+            peakForceEccentricA = null, // Portal does not surface per-cable eccentric peak; preserve local.
+            peakForceEccentricB = null,
+            avgForceConcentricA = avgLeft?.let { PortalMappings.newtonsToLoadKg(it) },
+            avgForceConcentricB = avgRight?.let { PortalMappings.newtonsToLoadKg(it) },
+            avgForceEccentricA = null, // Same — preserved locally if available.
+            avgForceEccentricB = null,
+        )
+    }
+
+    private data class HydratedMetrics(
+        val peakForceConcentricA: Float?,
+        val peakForceConcentricB: Float?,
+        val peakForceEccentricA: Float?,
+        val peakForceEccentricB: Float?,
+        val avgForceConcentricA: Float?,
+        val avgForceConcentricB: Float?,
+        val avgForceEccentricA: Float?,
+        val avgForceEccentricB: Float?,
+    ) {
+        companion object {
+            val EMPTY = HydratedMetrics(null, null, null, null, null, null, null, null)
         }
     }
 

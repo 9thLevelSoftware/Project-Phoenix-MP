@@ -74,7 +74,29 @@ class HistoryManager(
                 initialValue = emptyList(),
             )
 
-    val groupedWorkoutHistory: StateFlow<List<HistoryItem>> = allWorkoutSessions.map { sessions ->
+    /**
+     * Issue #591: Analytics / History-visible sessions.
+     *
+     * `allWorkoutSessions` powers streak, progress percentage, and
+     * history pagination (still needs every persisted row). For the
+     * `groupedWorkoutHistory` grouping used by `HistoryTab`'s Daily Routine
+     * card and per-set drill-down we instead need to skip zero-rep /
+     * soft-deleted rows so they do not inflate routine set totals or
+     * trip the misleading pre-v0.2.1 placeholder.
+     */
+    val historyVisibleSessions: StateFlow<List<WorkoutSession>> =
+        userProfileRepository.activeProfile
+            .flatMapLatest { profile ->
+                val profileId = profile?.id ?: "default"
+                workoutRepository.getHistoryVisibleSessions(profileId)
+            }
+            .stateIn(
+                scope = scope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList(),
+            )
+
+    val groupedWorkoutHistory: StateFlow<List<HistoryItem>> = historyVisibleSessions.map { sessions ->
         val groupedByRoutine = sessions.filter { it.routineSessionId != null }
             .groupBy { it.routineSessionId!! }
             .map { (id, sessionList) ->
