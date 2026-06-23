@@ -35,6 +35,20 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
+    fun addSessions(sessionList: List<WorkoutSession>) {
+        sessionList.forEach { sessions[it.id] = it }
+        updateSessionsFlow()
+    }
+
+    /**
+     * Issue #591 follow-up test helper: snapshot every session the
+     * fake holds, including zero-rep / ghost rows that the production
+     * `getHistoryVisibleSessions` would filter out. Used by
+     * `Issue591DeleteRoutineGroupTest` to assert the routine-group
+     * delete cleans up hidden rows too.
+     */
+    fun allSessions(): List<WorkoutSession> = sessions.values.toList()
+
     fun addRoutine(routine: Routine) {
         routines[routine.id] = routine
         updateRoutinesFlow()
@@ -72,6 +86,22 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override fun getAllSessions(profileId: String): Flow<List<WorkoutSession>> = _sessionsFlow
 
+    // Issue #591: filter zero-rep / soft-deleted rows from Analytics view.
+    // The Fake mirrors the SQL eligibility guard
+    //   deletedAt IS NULL AND (workingReps > 0 OR totalReps > 0)
+    // so unit tests using this fake exercise the same data the
+    // production SqlDelightWorkoutRepository returns.
+    override fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>> =
+        _sessionsFlow.map { all ->
+            all.filter { session ->
+                // No deletedAt field on WorkoutSession today; when soft
+                // delete lands, gate on it here too. For now the in-memory
+                // fake never stores deleted rows, so only the rep guard is
+                // required to match the SQL behavior.
+                session.workingReps > 0 || session.totalReps > 0
+            }
+        }
+
     override suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long = sessions.values.count { it.exerciseId == exerciseId }.toLong()
 
     override suspend fun saveSession(session: WorkoutSession) {
@@ -98,6 +128,23 @@ class FakeWorkoutRepository : WorkoutRepository {
     override suspend fun deleteAllSessions() {
         sessions.clear()
         metrics.clear()
+        updateSessionsFlow()
+    }
+
+    override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
+        // Issue #591 follow-up: remove every session belonging to the
+        // routine session id, including any zero-rep / ghost rows that
+        // `getHistoryVisibleSessions` would have filtered out. Mirrors
+        // the production soft-delete intent (zero-rep cleanup at the
+        // group level) without the SQL deletedAt bookkeeping the
+        // production repository maintains.
+        val matchingIds = sessions.entries
+            .filter { (_, session) -> session.routineSessionId == routineSessionId }
+            .map { it.key }
+        matchingIds.forEach { id ->
+            sessions.remove(id)
+            metrics.remove(id)
+        }
         updateSessionsFlow()
     }
 

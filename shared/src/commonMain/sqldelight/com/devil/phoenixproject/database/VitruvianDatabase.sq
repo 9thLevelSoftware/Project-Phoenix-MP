@@ -515,6 +515,25 @@ DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
 deleteSession:
 DELETE FROM WorkoutSession WHERE id = ?;
 
+-- Issue #591 follow-up: hard-delete every session (including zero-rep
+-- ghost rows) that belongs to a given routine session. Used by the
+-- History "Delete All Sets" affordance so ghost rows hidden by the
+-- `selectHistoryVisibleSessions` filter do not survive the user-level
+-- deletion (chatgpt-codex-connector P2). This mirrors deleteSession's
+-- local deletion semantics; workout-session tombstone push is not
+-- currently implemented.
+deleteSessionsByRoutineSessionId:
+DELETE FROM WorkoutSession WHERE routineSessionId = ?;
+
+-- Tombstone helper for code paths that intentionally keep deleted
+-- workout rows locally. Do not use for user-facing History deletes
+-- unless session tombstones are also pushed to the portal.
+softDeleteSessionsByRoutineSessionId:
+UPDATE WorkoutSession
+SET deletedAt = ?, updatedAt = ?
+WHERE routineSessionId = ?
+  AND deletedAt IS NULL;
+
 deleteAllSessions:
 DELETE FROM WorkoutSession;
 
@@ -536,8 +555,32 @@ deleteAllVideos:
 DELETE FROM ExerciseVideo;
 
 -- Workout Session Queries
+-- Issue #591 follow-up (chatgpt-codex-connector P2): filter soft-
+-- deleted rows out of the read path so local tombstones do not leave
+-- dangling rows that reappear in streak calc or progress.
+-- Backup/export uses selectBackupSessionsSync below for the same
+-- user-visible tombstone filter.
 selectAllSessions:
-SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC;
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL
+ORDER BY timestamp DESC;
+
+-- Issue #591: Analytics / History visible rows.
+-- Filter mirrors selectCompletedHealthExportCandidates and
+-- selectSessionsByRoutineSessionId: a row counts as a "real" completed
+-- set when it has not been soft-deleted and has at least one recorded
+-- rep (working or total). Without this guard the Daily Routine card
+-- counts zero-rep rows as sets, producing
+--   "Incline Fly — 0 reps / 6 sets / 0 lbs"
+-- and per-set drill-downs render the misleading "after v0.2.1"
+-- placeholder for rows that the recorder never captured.
+selectHistoryVisibleSessions:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL
+AND (workingReps > 0 OR totalReps > 0)
+ORDER BY timestamp DESC;
 
 selectSessionById:
 SELECT * FROM WorkoutSession WHERE id = ?;
@@ -549,7 +592,57 @@ SELECT * FROM WorkoutSession WHERE id = ?;
 selectSessionUpdatedAt:
 SELECT updatedAt FROM WorkoutSession WHERE id = ?;
 
--- Sync version for backup
+-- Issue #591 follow-up: batch-read the existing updatedAt for a list of
+-- session ids. Used by SqlDelightSyncRepository.mergeSessionsLww so the
+-- LWW gate does not issue one round-trip per incoming pull row. Returns
+-- (id, updatedAt) so the caller can build an in-memory map keyed by id.
+selectSessionsUpdatedAtByIds:
+SELECT id, updatedAt FROM WorkoutSession WHERE id IN ?;
+
+-- Issue #591 follow-up: batch-read the detailed metric / biomechanics
+-- columns used by the LWW preservation guard for a list of session ids.
+-- Mirrors the column list in
+-- SqlDelightSyncRepository.preserveMetrics() so the LWW gate can fall
+-- back to the locally captured values without a per-row full-row read.
+selectSessionsMetricsForPreservationByIds:
+SELECT
+    id,
+    peakForceConcentricA,
+    peakForceConcentricB,
+    peakForceEccentricA,
+    peakForceEccentricB,
+    avgForceConcentricA,
+    avgForceConcentricB,
+    avgForceEccentricA,
+    avgForceEccentricB,
+    heaviestLiftKg,
+    totalVolumeKg,
+    cableCount,
+    display_multiplier,
+    estimatedCalories,
+    warmupAvgWeightKg,
+    workingAvgWeightKg,
+    burnoutAvgWeightKg,
+    peakWeightKg,
+    rpe,
+    avgMcvMmS,
+    avgAsymmetryPercent,
+    totalVelocityLossPercent,
+    dominantSide,
+    strengthProfile,
+    formScore
+FROM WorkoutSession WHERE id IN ?;
+
+-- Backup/export session rows. Unlike selectAllSessionsSync, this must
+-- not serialize local tombstones: WorkoutSessionBackup has no deletedAt
+-- field, so exporting soft-deleted rows would resurrect deleted sets on
+-- import/restore.
+selectBackupSessionsSync:
+SELECT * FROM WorkoutSession
+WHERE deletedAt IS NULL;
+
+-- Sync/migration version for code paths that need every local row,
+-- including tombstones.
 selectAllSessionsSync:
 SELECT * FROM WorkoutSession;
 
@@ -1325,9 +1418,17 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
 
 -- Analytics helpers for gamification (profile-scoped)
 countTotalWorkouts:
-SELECT COUNT(*) FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT COUNT(*) FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Count queries for streaming backup progress (global, all profiles)
+countBackupWorkoutSessions:
+SELECT COUNT(*) FROM WorkoutSession WHERE deletedAt IS NULL;
+
+countBackupMetricSamples:
+SELECT COUNT(*)
+FROM MetricSample
+WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL);
+
 countAllWorkoutSessions:
 SELECT COUNT(*) FROM WorkoutSession;
 
@@ -1338,19 +1439,19 @@ countAllRoutineExercises:
 SELECT COUNT(*) FROM RoutineExercise;
 
 countTotalReps:
-SELECT SUM(totalReps) FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT SUM(totalReps) FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 countTotalVolume:
-SELECT SUM(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * COALESCE(cableCount, 1))) FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT SUM(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * COALESCE(cableCount, 1))) FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 countUniqueExercises:
-SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL AND exerciseId != '' AND profile_id = :profileId AND workingReps > 0;
+SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL AND exerciseId != '' AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 countPersonalRecords:
 SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = :profileId;
 
 selectWorkoutDates:
-SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0 ORDER BY timestamp DESC;
+SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0 ORDER BY timestamp DESC;
 
 -- ==================== RPG ATTRIBUTES QUERIES ====================
 

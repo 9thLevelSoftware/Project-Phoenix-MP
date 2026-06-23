@@ -93,6 +93,7 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_routine
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_workout
 import vitruvianprojectphoenix.shared.generated.resources.cd_workout_session_icon
+import vitruvianprojectphoenix.shared.generated.resources.detailed_metrics_not_captured
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_all
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_period
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_title
@@ -108,6 +109,7 @@ fun HistoryTab(
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
     onDeleteWorkout: (String) -> Unit,
+    onDeleteRoutineGroup: (String) -> Unit,
     exerciseRepository: ExerciseRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onRefresh: () -> Unit = {},
@@ -210,7 +212,13 @@ fun HistoryTab(
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
-                                onDelete = { sessionId -> onDeleteWorkout(sessionId) },
+                                // Issue #591 follow-up: thread the
+                                // routine-level delete callback so the
+                                // History "Delete All Sets" path also
+                                // cleans up zero-rep ghost rows hidden by
+                                // the History filter. The single-session
+                                // path above still uses onDeleteWorkout.
+                                onDeleteRoutineGroup = onDeleteRoutineGroup,
                             )
                         }
                     }
@@ -476,8 +484,11 @@ fun WorkoutHistoryCard(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Spacer(modifier = Modifier.width(Spacing.small))
+                                // Issue #591: see per-set drill-down note —
+                                // frame this honestly instead of blaming the
+                                // app version.
                                 Text(
-                                    "Detailed metrics available for workouts after v0.2.1",
+                                    stringResource(Res.string.detailed_metrics_not_captured),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -770,7 +781,10 @@ fun GroupedRoutineCard(
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
-    onDelete: (String) -> Unit,
+    // Issue #591 follow-up: receives routineSessionId so the caller can
+    // soft-delete every WorkoutSession row for the routine (including
+    // zero-rep ghost rows hidden by `getHistoryVisibleSessions`).
+    onDeleteRoutineGroup: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -1063,8 +1077,18 @@ fun GroupedRoutineCard(
                                 ) {
                                     Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Spacer(modifier = Modifier.width(Spacing.small))
+                                    // Issue #591: The "after v0.2.1" copy is
+                                    // misleading for current sessions whose
+                                    // metric columns were nulled by a sync pull
+                                    // or by a zero-rep save. History now also
+                                    // filters zero-rep rows out of routine
+                                    // grouping so this card only appears for
+                                    // real legacy / unmeasured rows. Frame it
+                                    // honestly: this set's detailed metrics
+                                    // were not captured for this device, not
+                                    // "you need a newer app".
                                     Text(
-                                        "Detailed metrics available for workouts after v0.2.1",
+                                        stringResource(Res.string.detailed_metrics_not_captured),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -1160,10 +1184,12 @@ fun GroupedRoutineCard(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // Delete all sessions in the routine
-                        groupedItem.sessions.forEach { session ->
-                            onDelete(session.id)
-                        }
+                        // Issue #591 follow-up: delete the whole routine
+                        // session by id so zero-rep ghost rows hidden by
+                        // the History filter are cleaned up too. Looping
+                        // over `groupedItem.sessions` would only delete
+                        // the visible rows.
+                        onDeleteRoutineGroup(groupedItem.routineSessionId)
                         showDeleteDialog = false
                     },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button

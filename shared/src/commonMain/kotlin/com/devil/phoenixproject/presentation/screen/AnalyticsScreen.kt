@@ -441,6 +441,11 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                         formatWeight = viewModel::formatWeight,
                         kgToDisplay = viewModel::kgToDisplay,
                         onDeleteWorkout = { viewModel.deleteWorkout(it) },
+                        // Issue #591 follow-up: route the "Delete All
+                        // Sets" group action through HistoryManager
+                        // so zero-rep ghost rows hidden by the History
+                        // filter are soft-deleted too.
+                        onDeleteRoutineGroup = { viewModel.deleteRoutineWorkouts(it) },
                         exerciseRepository = viewModel.exerciseRepository,
                         onTagJustLiftSessionExercise = { sessionId, exercise, isAmrap ->
                             viewModel.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)

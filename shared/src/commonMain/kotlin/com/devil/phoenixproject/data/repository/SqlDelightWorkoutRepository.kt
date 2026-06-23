@@ -515,6 +515,11 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         .asFlow()
         .mapToList(Dispatchers.IO)
 
+    override fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>> =
+        queries.selectHistoryVisibleSessions(profileId = profileId, mapper = ::mapToSession)
+            .asFlow()
+            .mapToList(Dispatchers.IO)
+
     override suspend fun saveSession(session: WorkoutSession) {
         withContext(Dispatchers.IO) {
             queries.insertSession(
@@ -592,6 +597,12 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
     override suspend fun deleteSession(sessionId: String) {
         withContext(Dispatchers.IO) {
             queries.deleteSession(sessionId)
+        }
+    }
+
+    override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
+        withContext(Dispatchers.IO) {
+            queries.deleteSessionsByRoutineSessionId(routineSessionId)
         }
     }
 

@@ -29,11 +29,37 @@ interface WorkoutRepository {
     suspend fun deleteAllSessions()
 
     /**
+     * Issue #591 follow-up (chatgpt-codex-connector P2): delete every
+     * WorkoutSession row that belongs to the given routine session id.
+     * Used by the History "Delete All Sets" affordance so zero-rep /
+     * ghost rows hidden by `getHistoryVisibleSessions` do not survive
+     * the user-level deletion. This mirrors `deleteSession`'s local
+     * hard-delete semantics; workout-session tombstone sync is not
+     * currently implemented.
+     */
+    suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String)
+
+    /**
      * Get recent workout sessions
      * @param profileId Profile to filter by
      * @param limit Maximum number of sessions to return
      */
     fun getRecentSessions(profileId: String, limit: Int = 10): Flow<List<WorkoutSession>>
+
+    /**
+     * Issue #591: Workout sessions that should appear in the Analytics /
+     * History UI. Excludes soft-deleted rows and rows with zero recorded
+     * reps (workingReps == 0 AND totalReps == 0), which historically come
+     * from pre-completion saves, routine restart mid-set, and zero-rep
+     * import paths. Counting those as sets inflates routine set totals
+     * (e.g. "Incline Fly 0 reps / 6 sets") and triggers the misleading
+     * pre-v0.2.1 placeholder card in per-set drill-down.
+     *
+     * Mirrors the eligibility guards used by
+     * `selectCompletedHealthExportCandidates` /
+     * `selectSessionsByRoutineSessionId` / `selectSessionsForPhasePRBackfill`.
+     */
+    fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>>
 
     /**
      * Get a specific workout session by ID
