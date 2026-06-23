@@ -97,9 +97,7 @@ object PortalPullAdapter {
                 avgForceConcentricB = metricHydration.avgForceConcentricB,
                 avgForceEccentricA = metricHydration.avgForceEccentricA,
                 avgForceEccentricB = metricHydration.avgForceEccentricB,
-                avgAsymmetryPercent = exercise.sets.flatMap { it.repSummaries }
-                    .mapNotNull { it.asymmetryPct }
-                    .takeIf { it.isNotEmpty() }?.average()?.toFloat(),
+                avgAsymmetryPercent = metricHydration.avgAsymmetryPercent,
                 profileId = profileId,
             )
         }
@@ -133,15 +131,20 @@ object PortalPullAdapter {
         val allReps = sets.flatMap { it.repSummaries }
         if (allReps.isEmpty()) return HydratedMetrics.EMPTY
 
-        // Cable A force: max of leftForceAvg across all reps (peak proxy)
-        // Cable B force: max of rightForceAvg across all reps
-        // Rep averages: average across all reps that supplied a value.
+        // Single pass over allReps — avoid re-flatMapping `sets` again at
+        // the call site to compute avgAsymmetryPercent (gemini-code-assist
+        // medium-priority note). Cable A force: max of leftForceAvg across
+        // all reps (peak proxy). Cable B force: max of rightForceAvg across
+        // all reps. Rep averages: average across all reps that supplied a
+        // value.
         val leftForces = allReps.mapNotNull { it.leftForceAvg }
         val rightForces = allReps.mapNotNull { it.rightForceAvg }
         val peakLeft = leftForces.maxOrNull()
         val peakRight = rightForces.maxOrNull()
         val avgLeft = leftForces.takeIf { it.isNotEmpty() }?.average()?.toFloat()
         val avgRight = rightForces.takeIf { it.isNotEmpty() }?.average()?.toFloat()
+        val asymmetryPcts = allReps.mapNotNull { it.asymmetryPct }
+        val avgAsymmetry = asymmetryPcts.takeIf { it.isNotEmpty() }?.average()?.toFloat()
 
         return HydratedMetrics(
             peakForceConcentricA = peakLeft?.let { PortalMappings.newtonsToLoadKg(it) },
@@ -152,6 +155,7 @@ object PortalPullAdapter {
             avgForceConcentricB = avgRight?.let { PortalMappings.newtonsToLoadKg(it) },
             avgForceEccentricA = null, // Same — preserved locally if available.
             avgForceEccentricB = null,
+            avgAsymmetryPercent = avgAsymmetry,
         )
     }
 
@@ -164,9 +168,10 @@ object PortalPullAdapter {
         val avgForceConcentricB: Float?,
         val avgForceEccentricA: Float?,
         val avgForceEccentricB: Float?,
+        val avgAsymmetryPercent: Float?,
     ) {
         companion object {
-            val EMPTY = HydratedMetrics(null, null, null, null, null, null, null, null)
+            val EMPTY = HydratedMetrics(null, null, null, null, null, null, null, null, null)
         }
     }
 
