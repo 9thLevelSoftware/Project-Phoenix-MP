@@ -310,4 +310,79 @@ class Issue591SyncLwwTest {
             rackItemsJson = session.rackItemsJson,
         )
     }
+
+    /**
+     * Issue #591 follow-up (chatgpt-codex-connector P2): the
+     * batched preservation SELECTs must chunk when the incoming id
+     * list exceeds SQLite's host-parameter limit (commonly 999 on
+     * Android). Build a payload that spans 3 chunks at
+     * `BATCH_LOOKUP_CHUNK_SIZE = 500` and assert every session still
+     * preserves its locally captured metric column.
+     */
+    @Test
+    fun `mergeSessionsLww chunked batch lookup preserves metrics across all chunks`() = runTest {
+        setUp()
+
+        val chunkSize = 500
+        val totalCount = chunkSize * 3 + 17 // spans 4 chunks
+
+        val sessions = (0 until totalCount).map { i ->
+            val sessionId = "chunked-$i"
+            // GIVEN: each session starts as a local row with a unique
+            // metric value so we can detect cross-chunk contamination
+            // or off-by-one chunking bugs.
+            insertLocalSession(
+                WorkoutSession(
+                    id = sessionId,
+                    timestamp = now + i * 1_000L,
+                    mode = "OldSchool",
+                    reps = 8,
+                    weightPerCableKg = 30f,
+                    duration = 60_000L,
+                    totalReps = 8,
+                    warmupReps = 0,
+                    workingReps = 8,
+                    exerciseName = "Squat",
+                    peakForceConcentricA = 40f + i, // unique per session
+                    profileId = testProfileId,
+                ),
+                updatedAt = now - 60_000L,
+            )
+            // Incoming pull with NEWER updatedAt but null metrics so
+            // the LWW preservation guard must restore the local value.
+            WorkoutSession(
+                id = sessionId,
+                timestamp = now + i * 1_000L,
+                mode = "OldSchool",
+                reps = 8,
+                weightPerCableKg = 30f,
+                duration = 60_000L,
+                totalReps = 8,
+                warmupReps = 0,
+                workingReps = 8,
+                exerciseName = "Squat",
+                profileId = testProfileId,
+            )
+        }
+        repository.mergeSessionsLww(
+            sessions = sessions,
+            updatedAtBySessionId = sessions.associate { it.id to (now + 10_000_000L + it.timestamp) },
+        )
+
+        // Spot-check a session from each chunk boundary plus the
+        // middle of one chunk. If chunking dropped or reordered ids,
+        // one of these will land on the wrong row.
+        val samples = listOf(0, chunkSize - 1, chunkSize, chunkSize * 2 - 1, chunkSize * 2, totalCount - 1)
+        for (i in samples) {
+            val after = database.vitruvianDatabaseQueries
+                .selectSessionById("chunked-$i")
+                .executeAsOneOrNull()
+            assertNotNull(after, "chunked-$i must exist after merge")
+            assertEquals(
+                40f + i,
+                after.peakForceConcentricA?.toFloat(),
+                "chunked-$i local metric must survive chunked preservation lookup",
+            )
+        }
+    }
 }

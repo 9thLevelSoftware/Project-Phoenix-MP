@@ -51,6 +51,18 @@ class SqlDelightSyncRepository(
 
     private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
 
+    /**
+     * Issue #591 follow-up (chatgpt-codex-connector P2): SQLite host
+     * parameter limit is implementation-defined (999 on Android,
+     * 32766 on desktop). For initial/full pulls of large histories the
+     * batched preservation SELECTs would otherwise throw
+     * `SQLITE_RANGE: too many SQL variables`. 500 keeps us safely under
+     * the stricter limit and still eliminates the per-row round-trips.
+     */
+    private companion object {
+        const val BATCH_LOOKUP_CHUNK_SIZE = 500
+    }
+
     // === Push Operations ===
 
     override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> = withContext(Dispatchers.IO) {
@@ -2071,15 +2083,30 @@ class SqlDelightSyncRepository(
             // batched round-trip per concern. For a 20-set routine this
             // drops 40+ queries (one LWW gate read + one full-row read per
             // incoming pull) down to two queries total.
+            //
+            // chatgpt-codex-connector P2 (follow-up): chunk the batched
+            // SELECTs because SQLite's host-parameter limit is
+            // implementation-defined (commonly 999 on Android, 32766 on
+            // desktop). For initial/full pulls of large histories the id
+            // list can exceed the limit and throw "too many SQL variables".
+            // Chunking at CHUNK_SIZE 500 keeps us safely under both
+            // limits while still eliminating the per-row round-trips.
             val ids = sessions.map { it.id }
             val existingUpdatedAtById: Map<String, Long?> =
-                queries.selectSessionsUpdatedAtByIds(ids)
-                    .executeAsList()
+                ids.chunked(BATCH_LOOKUP_CHUNK_SIZE)
+                    .flatMap { chunk ->
+                        queries.selectSessionsUpdatedAtByIds(chunk)
+                            .executeAsList()
+                    }
                     .associate { it.id to it.updatedAt }
             val preservationRowsById: Map<String, PreservationRow> =
-                queries.selectSessionsMetricsForPreservationByIds(ids)
-                    .executeAsList()
-                    .associate { it.id to it.toPreservationRow() }
+                ids.chunked(BATCH_LOOKUP_CHUNK_SIZE)
+                    .flatMap { chunk ->
+                        queries.selectSessionsMetricsForPreservationByIds(chunk)
+                            .executeAsList()
+                            .map { it.toPreservationRow() }
+                    }
+                    .associate { it.id to it }
 
             for (session in sessions) {
                 val existingTs = existingUpdatedAtById[session.id]

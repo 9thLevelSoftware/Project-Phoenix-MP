@@ -40,6 +40,15 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
+    /**
+     * Issue #591 follow-up test helper: snapshot every session the
+     * fake holds, including zero-rep / ghost rows that the production
+     * `getHistoryVisibleSessions` would filter out. Used by
+     * `Issue591DeleteRoutineGroupTest` to assert the routine-group
+     * delete cleans up hidden rows too.
+     */
+    fun allSessions(): List<WorkoutSession> = sessions.values.toList()
+
     fun addRoutine(routine: Routine) {
         routines[routine.id] = routine
         updateRoutinesFlow()
@@ -119,6 +128,23 @@ class FakeWorkoutRepository : WorkoutRepository {
     override suspend fun deleteAllSessions() {
         sessions.clear()
         metrics.clear()
+        updateSessionsFlow()
+    }
+
+    override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
+        // Issue #591 follow-up: remove every session belonging to the
+        // routine session id, including any zero-rep / ghost rows that
+        // `getHistoryVisibleSessions` would have filtered out. Mirrors
+        // the production soft-delete intent (zero-rep cleanup at the
+        // group level) without the SQL deletedAt bookkeeping the
+        // production repository maintains.
+        val matchingIds = sessions.entries
+            .filter { (_, session) -> session.routineSessionId == routineSessionId }
+            .map { it.key }
+        matchingIds.forEach { id ->
+            sessions.remove(id)
+            metrics.remove(id)
+        }
         updateSessionsFlow()
     }
 

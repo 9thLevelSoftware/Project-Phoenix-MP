@@ -600,6 +600,16 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         }
     }
 
+    override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
+        withContext(Dispatchers.IO) {
+            queries.softDeleteSessionsByRoutineSessionId(
+                deletedAt = currentTimeMillis(),
+                updatedAt = currentTimeMillis(),
+                routineSessionId = routineSessionId,
+            )
+        }
+    }
+
     override suspend fun deleteAllSessions() {
         withContext(Dispatchers.IO) {
             queries.deleteAllSessions()

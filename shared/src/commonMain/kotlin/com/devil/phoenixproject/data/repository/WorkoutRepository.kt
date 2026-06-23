@@ -29,6 +29,17 @@ interface WorkoutRepository {
     suspend fun deleteAllSessions()
 
     /**
+     * Issue #591 follow-up (chatgpt-codex-connector P2): soft-delete
+     * every WorkoutSession row that belongs to the given routine
+     * session id. Used by the History "Delete All Sets" affordance so
+     * zero-rep / ghost rows hidden by `getHistoryVisibleSessions` do
+     * not survive the user-level deletion. Soft-delete (vs hard
+     * `DELETE`) keeps the rows visible to the sync server and matches
+     * the existing `softDeleteSession` pattern used by DataBackup.
+     */
+    suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String)
+
+    /**
      * Get recent workout sessions
      * @param profileId Profile to filter by
      * @param limit Maximum number of sessions to return

@@ -252,6 +252,15 @@ class MainViewModel constructor(
     val workoutStreak: StateFlow<Int?> get() = historyManager.workoutStreak
     val progressPercentage: StateFlow<Int?> get() = historyManager.progressPercentage
     fun deleteWorkout(sessionId: String) = historyManager.deleteWorkout(sessionId)
+
+    /**
+     * Issue #591 follow-up (chatgpt-codex-connector P2): route the
+     * History "Delete All Sets" group action through the HistoryManager
+     * so zero-rep ghost rows hidden by `getHistoryVisibleSessions` are
+     * soft-deleted along with the visible sets.
+     */
+    fun deleteRoutineWorkouts(routineSessionId: String) = historyManager.deleteRoutineWorkouts(routineSessionId)
+
     fun deleteAllWorkouts() = historyManager.deleteAllWorkouts()
 
     // ===== Settings Delegation =====

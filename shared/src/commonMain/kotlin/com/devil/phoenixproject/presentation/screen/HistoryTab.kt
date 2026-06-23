@@ -108,6 +108,7 @@ fun HistoryTab(
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
     onDeleteWorkout: (String) -> Unit,
+    onDeleteRoutineGroup: (String) -> Unit,
     exerciseRepository: ExerciseRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onRefresh: () -> Unit = {},
@@ -210,7 +211,13 @@ fun HistoryTab(
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
-                                onDelete = { sessionId -> onDeleteWorkout(sessionId) },
+                                // Issue #591 follow-up: thread the
+                                // routine-level delete callback so the
+                                // History "Delete All Sets" path also
+                                // cleans up zero-rep ghost rows hidden by
+                                // the History filter. The single-session
+                                // path above still uses onDeleteWorkout.
+                                onDeleteRoutineGroup = onDeleteRoutineGroup,
                             )
                         }
                     }
@@ -773,7 +780,10 @@ fun GroupedRoutineCard(
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
-    onDelete: (String) -> Unit,
+    // Issue #591 follow-up: receives routineSessionId so the caller can
+    // soft-delete every WorkoutSession row for the routine (including
+    // zero-rep ghost rows hidden by `getHistoryVisibleSessions`).
+    onDeleteRoutineGroup: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -1173,10 +1183,12 @@ fun GroupedRoutineCard(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // Delete all sessions in the routine
-                        groupedItem.sessions.forEach { session ->
-                            onDelete(session.id)
-                        }
+                        // Issue #591 follow-up: delete the whole routine
+                        // session by id so zero-rep ghost rows hidden by
+                        // the History filter are cleaned up too. Looping
+                        // over `groupedItem.sessions` would only delete
+                        // the visible rows.
+                        onDeleteRoutineGroup(groupedItem.routineSessionId)
                         showDeleteDialog = false
                     },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button

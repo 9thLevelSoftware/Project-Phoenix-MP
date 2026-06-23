@@ -515,6 +515,17 @@ DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
 deleteSession:
 DELETE FROM WorkoutSession WHERE id = ?;
 
+-- Issue #591 follow-up: soft-delete every session (including zero-rep
+-- ghost rows) that belongs to a given routine session. Used by the
+-- History "Delete All Sets" affordance so ghost rows hidden by the
+-- `selectHistoryVisibleSessions` filter do not survive the user-level
+-- deletion (chatgpt-codex-connector P2).
+softDeleteSessionsByRoutineSessionId:
+UPDATE WorkoutSession
+SET deletedAt = ?, updatedAt = ?
+WHERE routineSessionId = ?
+  AND deletedAt IS NULL;
+
 deleteAllSessions:
 DELETE FROM WorkoutSession;
 
