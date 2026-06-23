@@ -547,8 +547,18 @@ deleteAllVideos:
 DELETE FROM ExerciseVideo;
 
 -- Workout Session Queries
+-- Issue #591 follow-up (chatgpt-codex-connector P2): filter soft-
+-- deleted rows out of the read path so a History "Delete All Sets"
+-- group action (which soft-deletes by routineSessionId) does not
+-- leave dangling rows that reappear in streak calc, progress, or
+-- backup export. The `deletedAt IS NULL` guard mirrors the existing
+-- pattern used by selectCompletedHealthExportCandidates and
+-- selectHistoryVisibleSessions.
 selectAllSessions:
-SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC;
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL
+ORDER BY timestamp DESC;
 
 -- Issue #591: Analytics / History visible rows.
 -- Filter mirrors selectCompletedHealthExportCandidates and
