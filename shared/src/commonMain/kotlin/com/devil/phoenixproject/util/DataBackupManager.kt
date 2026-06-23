@@ -1791,7 +1791,7 @@ abstract class BaseDataBackupManager(
         // Phase 1: Count
         onProgress(BackupProgress(BackupPhase.COUNTING, 0, 0))
         val sessionCount = queries.countBackupWorkoutSessions().executeAsOne()
-        val metricCount = runCatching { queries.countAllMetricSamples().executeAsOne() }.getOrElse { 0L }
+        val metricCount = runCatching { queries.countBackupMetricSamples().executeAsOne() }.getOrElse { 0L }
         val routines = queries.selectAllRoutinesSync().executeAsList()
         val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
         val equipmentRackItems = equipmentRackRepository.getItems()

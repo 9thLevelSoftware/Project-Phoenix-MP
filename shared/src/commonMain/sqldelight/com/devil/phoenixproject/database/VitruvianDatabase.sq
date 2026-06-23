@@ -515,11 +515,19 @@ DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
 deleteSession:
 DELETE FROM WorkoutSession WHERE id = ?;
 
--- Issue #591 follow-up: soft-delete every session (including zero-rep
+-- Issue #591 follow-up: hard-delete every session (including zero-rep
 -- ghost rows) that belongs to a given routine session. Used by the
 -- History "Delete All Sets" affordance so ghost rows hidden by the
 -- `selectHistoryVisibleSessions` filter do not survive the user-level
--- deletion (chatgpt-codex-connector P2).
+-- deletion (chatgpt-codex-connector P2). This mirrors deleteSession's
+-- local deletion semantics; workout-session tombstone push is not
+-- currently implemented.
+deleteSessionsByRoutineSessionId:
+DELETE FROM WorkoutSession WHERE routineSessionId = ?;
+
+-- Tombstone helper for code paths that intentionally keep deleted
+-- workout rows locally. Do not use for user-facing History deletes
+-- unless session tombstones are also pushed to the portal.
 softDeleteSessionsByRoutineSessionId:
 UPDATE WorkoutSession
 SET deletedAt = ?, updatedAt = ?
@@ -548,9 +556,8 @@ DELETE FROM ExerciseVideo;
 
 -- Workout Session Queries
 -- Issue #591 follow-up (chatgpt-codex-connector P2): filter soft-
--- deleted rows out of the read path so a History "Delete All Sets"
--- group action (which soft-deletes by routineSessionId) does not
--- leave dangling rows that reappear in streak calc or progress.
+-- deleted rows out of the read path so local tombstones do not leave
+-- dangling rows that reappear in streak calc or progress.
 -- Backup/export uses selectBackupSessionsSync below for the same
 -- user-visible tombstone filter.
 selectAllSessions:
@@ -1411,11 +1418,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
 
 -- Analytics helpers for gamification (profile-scoped)
 countTotalWorkouts:
-SELECT COUNT(*) FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT COUNT(*) FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Count queries for streaming backup progress (global, all profiles)
 countBackupWorkoutSessions:
 SELECT COUNT(*) FROM WorkoutSession WHERE deletedAt IS NULL;
+
+countBackupMetricSamples:
+SELECT COUNT(*)
+FROM MetricSample
+WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL);
 
 countAllWorkoutSessions:
 SELECT COUNT(*) FROM WorkoutSession;
@@ -1427,19 +1439,19 @@ countAllRoutineExercises:
 SELECT COUNT(*) FROM RoutineExercise;
 
 countTotalReps:
-SELECT SUM(totalReps) FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT SUM(totalReps) FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 countTotalVolume:
-SELECT SUM(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * COALESCE(cableCount, 1))) FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT SUM(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * COALESCE(cableCount, 1))) FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 countUniqueExercises:
-SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL AND exerciseId != '' AND profile_id = :profileId AND workingReps > 0;
+SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL AND exerciseId != '' AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 countPersonalRecords:
 SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = :profileId;
 
 selectWorkoutDates:
-SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0 ORDER BY timestamp DESC;
+SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0 ORDER BY timestamp DESC;
 
 -- ==================== RPG ATTRIBUTES QUERIES ====================
 
