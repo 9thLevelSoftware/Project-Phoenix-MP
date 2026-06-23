@@ -18,6 +18,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Before
@@ -63,6 +64,39 @@ class DataBackupManagerRoutineNameTest {
         val exportedSession = backup.data.workoutSessions.first { it.id == "session-legacy-1" }
         assertEquals("Upper Day", exportedSession.routineName)
         assertNull(exportedSession.routineSessionId, "Should not fabricate routineSessionId for legacy sessions")
+    }
+
+    @Test
+    fun `full backup excludes soft-deleted workout sessions`() = runTest {
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "active-session",
+                routineSessionId = "active-routine",
+                exerciseName = "Bench Press",
+                totalReps = 10,
+                workingReps = 10,
+            ),
+        )
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "deleted-session",
+                routineSessionId = "deleted-routine",
+                exerciseName = "Incline Fly",
+                totalReps = 0,
+                workingReps = 0,
+            ),
+        )
+        database.vitruvianDatabaseQueries.softDeleteSessionsByRoutineSessionId(
+            deletedAt = 1_700_000_123_000L,
+            updatedAt = 1_700_000_123_000L,
+            routineSessionId = "deleted-routine",
+        )
+
+        val legacyBackup = backupManager.exportAllData()
+        val streamedBackup = testJson.decodeFromString<BackupData>(backupManager.exportToJson())
+
+        assertEquals(listOf("active-session"), legacyBackup.data.workoutSessions.map { it.id })
+        assertEquals(listOf("active-session"), streamedBackup.data.workoutSessions.map { it.id })
     }
 
     @Test

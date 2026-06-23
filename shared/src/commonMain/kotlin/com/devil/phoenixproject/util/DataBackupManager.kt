@@ -210,7 +210,7 @@ abstract class BaseDataBackupManager(
     // -- Legacy export (kept for backward compatibility) --
 
     override suspend fun exportAllData(): BackupData = withContext(Dispatchers.IO) {
-        val sessions = queries.selectAllSessionsSync().executeAsList()
+        val sessions = queries.selectBackupSessionsSync().executeAsList()
 
         // IMPORTANT: Load metrics per-session to avoid memory exhaustion on iOS.
         // Loading all metrics at once can cause OOM crashes on iOS due to how the
@@ -1790,7 +1790,7 @@ abstract class BaseDataBackupManager(
     ) {
         // Phase 1: Count
         onProgress(BackupProgress(BackupPhase.COUNTING, 0, 0))
-        val sessionCount = queries.countAllWorkoutSessions().executeAsOne()
+        val sessionCount = queries.countBackupWorkoutSessions().executeAsOne()
         val metricCount = runCatching { queries.countAllMetricSamples().executeAsOne() }.getOrElse { 0L }
         val routines = queries.selectAllRoutinesSync().executeAsList()
         val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
@@ -1805,7 +1805,7 @@ abstract class BaseDataBackupManager(
         // Phase 2: Sessions
         onProgress(BackupProgress(BackupPhase.SESSIONS, 0, sessionCount))
         writer.write("\"workoutSessions\":[")
-        val sessions = queries.selectAllSessionsSync().executeAsList()
+        val sessions = queries.selectBackupSessionsSync().executeAsList()
         sessions.forEachIndexed { index, session ->
             if (index > 0) writer.write(",")
             writer.write(json.encodeToString(WorkoutSessionBackup.serializer(), mapSessionToBackup(session, routineNameResolutionContext)))

@@ -550,10 +550,9 @@ DELETE FROM ExerciseVideo;
 -- Issue #591 follow-up (chatgpt-codex-connector P2): filter soft-
 -- deleted rows out of the read path so a History "Delete All Sets"
 -- group action (which soft-deletes by routineSessionId) does not
--- leave dangling rows that reappear in streak calc, progress, or
--- backup export. The `deletedAt IS NULL` guard mirrors the existing
--- pattern used by selectCompletedHealthExportCandidates and
--- selectHistoryVisibleSessions.
+-- leave dangling rows that reappear in streak calc or progress.
+-- Backup/export uses selectBackupSessionsSync below for the same
+-- user-visible tombstone filter.
 selectAllSessions:
 SELECT * FROM WorkoutSession
 WHERE profile_id = :profileId
@@ -627,7 +626,16 @@ SELECT
     formScore
 FROM WorkoutSession WHERE id IN ?;
 
--- Sync version for backup
+-- Backup/export session rows. Unlike selectAllSessionsSync, this must
+-- not serialize local tombstones: WorkoutSessionBackup has no deletedAt
+-- field, so exporting soft-deleted rows would resurrect deleted sets on
+-- import/restore.
+selectBackupSessionsSync:
+SELECT * FROM WorkoutSession
+WHERE deletedAt IS NULL;
+
+-- Sync/migration version for code paths that need every local row,
+-- including tombstones.
 selectAllSessionsSync:
 SELECT * FROM WorkoutSession;
 
@@ -1406,6 +1414,9 @@ countTotalWorkouts:
 SELECT COUNT(*) FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
 
 -- Count queries for streaming backup progress (global, all profiles)
+countBackupWorkoutSessions:
+SELECT COUNT(*) FROM WorkoutSession WHERE deletedAt IS NULL;
+
 countAllWorkoutSessions:
 SELECT COUNT(*) FROM WorkoutSession;
 

@@ -93,6 +93,7 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_routine
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_workout
 import vitruvianprojectphoenix.shared.generated.resources.cd_workout_session_icon
+import vitruvianprojectphoenix.shared.generated.resources.detailed_metrics_not_captured
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_all
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_period
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_title
@@ -487,7 +488,7 @@ fun WorkoutHistoryCard(
                                 // frame this honestly instead of blaming the
                                 // app version.
                                 Text(
-                                    "Detailed metrics were not captured for this set",
+                                    stringResource(Res.string.detailed_metrics_not_captured),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1087,7 +1088,7 @@ fun GroupedRoutineCard(
                                     // were not captured for this device, not
                                     // "you need a newer app".
                                     Text(
-                                        "Detailed metrics were not captured for this set",
+                                        stringResource(Res.string.detailed_metrics_not_captured),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
