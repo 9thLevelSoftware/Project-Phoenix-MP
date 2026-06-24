@@ -3673,13 +3673,25 @@ class ActiveSessionEngine(
 
             val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
             val wasBodyweight = isBodyweightExercise(currentExercise)
-            val wasTimedBodyweight = wasBodyweight && currentExercise?.duration?.let { it > 0 } == true
-            val selectedBodyweightVariant = coordinator.bodyweightCompletionVariantOverride
-
-            if (wasTimedBodyweight && selectedBodyweightVariant == null && currentExercise != null) {
+            // Issue #593: gate on "any routine bodyweight set whose reps have not been
+            // confirmed via the rep-entry dialog". The pre-#593 check `currentExercise.duration
+            // > 0` caused every default-reps-mode routine (duration == null) to fall through
+            // `handleSetCompletion()` to `saveWorkoutSession()` with `workingReps=0`. The
+            // user had no UI path to enter their actual rep count, so PR #592's
+            // history-visible filter then dropped the entire routine from Analytics while
+            // Home Recent Activity surfaced the misleading "0 reps · <load>" rows.
+            val shouldPromptBodyweightRepEntry = wasBodyweight &&
+                currentExercise != null &&
+                coordinator.bodyweightCompletionVariantOverride == null &&
+                // Defensive: a non-routine path could in theory reach here without a
+                // routine-loaded exercise; require a real routine exercise so we never
+                // re-prompt outside the routine flow.
+                coordinator._loadedRoutine.value != null
+            if (shouldPromptBodyweightRepEntry) {
                 Logger.d("ActiveSessionEngine") {
-                    "Timed bodyweight set finished; prompting for reps before saving " +
-                        "(exercise=${currentExercise.exercise.name}, set=${coordinator._currentSetIndex.value + 1})"
+                    "Bodyweight set finished; prompting for reps before saving " +
+                        "(exercise=${currentExercise.exercise.name}, set=${coordinator._currentSetIndex.value + 1}, " +
+                        "hasDuration=${currentExercise.duration?.let { it > 0 } == true})"
                 }
                 showBodyweightRepEntry(currentExercise)
                 coordinator.setCompletionInProgress.value = false
@@ -3820,7 +3832,7 @@ class ActiveSessionEngine(
             ).let { raw ->
                 // Issue #229: Override volume for bodyweight exercises
                 val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
-                applyBodyweightVolume(raw, currentExercise, bodyWeightKg, selectedBodyweightVariant)
+                applyBodyweightVolume(raw, currentExercise, bodyWeightKg, coordinator.bodyweightCompletionVariantOverride)
             }
 
             // Attach quality and biomechanics summaries to the set summary

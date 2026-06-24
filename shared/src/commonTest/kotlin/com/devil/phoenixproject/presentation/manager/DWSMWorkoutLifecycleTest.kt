@@ -1807,7 +1807,16 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `Issue 427 - untimed bodyweight set does not prompt for manual reps`() = runTest {
+    fun `Issue 427 - untimed bodyweight set prompts for manual reps after 30s fallback timer - Fixes 593`() = runTest {
+        // Issue #593 regression: pre-fix, an untimed routine-bodyweight
+        // set fell through `handleSetCompletion()` to `saveWorkoutSession()`
+        // with `workingReps=0`, causing Analytics to drop the entire
+        // routine while Recent Activity showed misleading "0 reps" rows.
+        // The fix extends the rep-entry gate to any routine-bodyweight
+        // set whose reps have not been confirmed, so the user now
+        // gets a rep-entry prompt even when `RoutineExercise.duration`
+        // is null or 0. The 30s fallback timer still auto-completes
+        // the set; the prompt fires afterwards.
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.fakePrefsManager.setBodyWeightKg(80f)
@@ -1820,16 +1829,20 @@ class DWSMWorkoutLifecycleTest {
         advanceUntilIdle()
         harness.dwsm.startWorkout(skipCountdown = true)
         runCurrent()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
 
+        // Drive the 30s fallback timer to completion; the rep-entry
+        // prompt must fire on the routine-bodyweight path.
         advanceTimeBy(30_100)
         runCurrent()
 
         val state = harness.dwsm.coordinator.workoutState.value
-        assertFalse(
+        assertTrue(
             state is WorkoutState.BodyweightRepEntry,
-            "Untimed bodyweight completion should not force the timed rep-entry prompt",
+            "Issue #593 fix: untimed bodyweight completion must prompt for manual reps. Got: $state",
         )
-        assertIs<WorkoutState.SetSummary>(state)
+        assertEquals(0, harness.fakeWorkoutRepo.getAllSessions("default").first().size,
+            "No session may be persisted before the user confirms reps")
 
         harness.cleanup()
     }

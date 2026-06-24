@@ -322,6 +322,11 @@ class DWSMEquipmentRackTest {
 
     @Test
     fun `single exercise completion persists rack defaults`() = runTest {
+        // Issue #593: routine-bodyweight exercises now require a rep-entry
+        // confirmation before `saveWorkoutSession()` runs. This test is
+        // about rack-default persistence (not rep-entry flow), so we use
+        // a real cable equipment ("BAR") to keep the routine on the
+        // cable save path.
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.fakeEquipmentRackRepo.saveItems(
@@ -331,7 +336,20 @@ class DWSMEquipmentRackTest {
         val routine = Routine(
             id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}rack-defaults",
             name = "Single Exercise",
-            exercises = listOf(routineExercise("single-rex", "Single Cable Row", listOf("vest"), exerciseId = exerciseId)),
+            exercises = listOf(routineExercise("single-rex", "Single Cable Row", listOf("vest"), exerciseId = exerciseId).copy(
+                exercise = com.devil.phoenixproject.domain.model.Exercise(
+                    id = exerciseId,
+                    name = "Single Cable Row",
+                    muscleGroup = "Back",
+                    muscleGroups = "Back",
+                    // "BAR" is in CABLE_ACCESSORIES, so this routine
+                    // stays on the cable save path. The pre-#593 "Cable"
+                    // string was treated as bodyweight by the codebase,
+                    // which would now require a rep-entry dialog and
+                    // break this rack-defaults test.
+                    equipment = "BAR",
+                ),
+            )),
         )
 
         assertTrue(harness.dwsm.loadRoutineAsync(routine))
