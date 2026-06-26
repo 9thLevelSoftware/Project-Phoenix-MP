@@ -35,6 +35,11 @@ class RepCounterFromMachine {
     private var shouldStop = false
     private var isAMRAP = false
 
+    // Issue #531: one-shot guard for the directional-counter carryover heuristic. The machine's
+    // up/down counters are free-running and can carry over from the prior set; on the first modern
+    // packet we detect and absorb stale values once so they don't chirp a phantom warmup rep.
+    private var carryoverChecked = false
+
     // Pending rep state - true when at TOP, waiting for machine confirm
     private var hasPendingRep = false
     private var pendingRepProgress = 0f // 0.0 at TOP, 1.0 at BOTTOM (legacy, kept for compatibility)
@@ -106,6 +111,7 @@ class RepCounterFromMachine {
         warmupReps = 0
         workingReps = 0
         shouldStop = false
+        carryoverChecked = false
         hasPendingRep = false
         pendingRepProgress = 0f
         // Issue #163: Reset phase tracking
@@ -147,6 +153,7 @@ class RepCounterFromMachine {
         warmupReps = 0
         workingReps = 0
         shouldStop = false
+        carryoverChecked = false
         hasPendingRep = false
         pendingRepProgress = 0f
         // Issue #163: Reset phase tracking (but keep position history for direction detection)
@@ -383,6 +390,27 @@ class RepCounterFromMachine {
      * - Actual rep counting comes from repsRomCount/repsSetCount
      */
     private fun processModern(repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
+        // Issue #531 (symptom 1, heuristic): suppress a phantom warmup chirp caused by the
+        // machine's free-running directional counters carrying over from the prior set. On the
+        // first modern packet of a set, if up/down are already past the warmup target while the
+        // machine reports zero ROM/set reps, treat them as stale and re-baseline once so the
+        // first real movement yields delta ~0. Deliberately narrow to preserve:
+        //   - Issue #210: a real first rep arrives as repsRomCount=1 -> fails repsRomCount==0.
+        //   - Issue #553: sends an explicit up=0/down=0 baseline packet -> fails up>warmupTarget.
+        //   - Issue #411: variable-warmup sets use warmupTarget=0 -> fails warmupTarget>0.
+        if (!carryoverChecked) {
+            carryoverChecked = true
+            if (warmupTarget > 0 && warmupReps == 0 &&
+                repsRomCount == 0 && repsSetCount == 0 &&
+                (up > warmupTarget || down > warmupTarget)
+            ) {
+                logDebug("🩹 Issue #531: directional carryover (up=$up, down=$down) — re-baselining, suppressing phantom warmup")
+                lastTopCounter = up
+                lastCompleteCounter = down
+                return
+            }
+        }
+
         // Track UP movement - for working reps, show PENDING (grey) at TOP
         // Issue #210 FIX: No null check needed - lastTopCounter initialized to 0
         val upDelta = calculateDelta(lastTopCounter, up)

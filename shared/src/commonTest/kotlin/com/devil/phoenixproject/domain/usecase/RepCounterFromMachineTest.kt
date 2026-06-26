@@ -816,6 +816,43 @@ class RepCounterFromMachineTest {
         assertEquals(3, repCounter.getRepCount().warmupReps)
     }
 
+    // ========== Issue #531: Carryover guard (phantom-chirp suppression) ==========
+
+    @Test
+    fun `issue 531 large directional carryover does not phantom-fire a warmup rep`() {
+        // Heuristic: the machine's free-running up/down counters can carry over from the prior
+        // set. On the first packet of a fresh set, counters already far past the warmup target
+        // while repsRomCount/repsSetCount are 0 are stale -> must not chirp a phantom warmup rep.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        // First packet carries stale up/down = 8 from the previous set.
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 8, down = 8)
+
+        assertEquals(0, repCounter.getRepCount().warmupReps, "Stale carryover must not advance warmup")
+        assertTrue(capturedEvents.isEmpty(), "Carryover packet must emit no rep events")
+
+        // Real warmup reps afterward count normally (delta from the re-baselined counters).
+        repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 9, down = 9)
+        repCounter.process(repsRomCount = 2, repsSetCount = 0, up = 10, down = 10)
+        repCounter.process(repsRomCount = 3, repsSetCount = 0, up = 11, down = 11)
+
+        assertEquals(3, repCounter.getRepCount().warmupReps)
+        assertEquals(3, capturedEvents.count { it.type == RepType.WARMUP_COMPLETED })
+        assertTrue(capturedEvents.any { it.type == RepType.WARMUP_COMPLETE })
+    }
+
+    @Test
+    fun `issue 531 carryover guard ignores a small first up tick`() {
+        // Guard must NOT fire for a plausible fresh-start value (preserves Issue #210): a first
+        // packet with up = 1 is a legitimate first rep, not carryover.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 1, down = 1)
+
+        assertEquals(1, repCounter.getRepCount().warmupReps, "Small first up tick is a real rep, not carryover")
+        assertEquals(1, capturedEvents.count { it.type == RepType.WARMUP_COMPLETED })
+    }
+
 }
 
 class RepRangesTest {
