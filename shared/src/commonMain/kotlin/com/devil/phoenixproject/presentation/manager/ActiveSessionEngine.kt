@@ -298,9 +298,12 @@ class ActiveSessionEngine(
                     }
 
                     RepType.WARMUP_COMPLETE -> {
+                        // Issue #531: single clean transition tone. Previously also emitted
+                        // WARMUP_TO_WORKING, which maps to the same `beepboop` file on both
+                        // platforms -> a stacked double-tone heard mid-set. The WARMUP_TO_WORKING
+                        // enum + sound mappings remain (used by HapticEventAudioTest and the
+                        // Android routing guard) but are no longer emitted from the rep-event path.
                         coordinator._hapticEvents.emit(HapticEvent.WARMUP_COMPLETE)
-                        // Issue #100: Distinct transition sound from warmup to working sets
-                        coordinator._hapticEvents.emit(HapticEvent.WARMUP_TO_WORKING)
                     }
 
                     RepType.WORKOUT_COMPLETE -> {
