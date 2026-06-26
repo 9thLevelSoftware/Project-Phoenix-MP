@@ -1,3 +1,5 @@
+import java.net.InetAddress
+import java.net.URI
 import java.util.zip.CRC32
 import java.util.zip.ZipFile
 
@@ -96,6 +98,30 @@ abstract class VerifyReleaseCueResourcesTask : DefaultTask() {
     }
 }
 
+abstract class VerifySupabaseRuntimeConfigTask : DefaultTask() {
+    @get:Input
+    abstract val configuredSupabaseUrl: Property<String>
+
+    @TaskAction
+    fun verifyRuntimeConfig() {
+        val url = configuredSupabaseUrl.get()
+        val uri = runCatching { URI(url) }.getOrNull()
+            ?: throw GradleException("Invalid Supabase URL '$url'. Expected a full https URL.")
+        if (uri.scheme != "https" || uri.host.isNullOrBlank()) {
+            throw GradleException("Invalid Supabase URL '$url'. Expected a full https URL.")
+        }
+
+        val host = uri.host.lowercase()
+
+        val addresses = InetAddress.getAllByName(host)
+        if (addresses.isEmpty()) {
+            throw GradleException("Supabase host '$host' did not resolve.")
+        }
+
+        println("Android Supabase config verified: host=$host, dnsAddresses=${addresses.size}, authPath=/auth/v1")
+    }
+}
+
 // Read Supabase config from local.properties, falling back to environment variables for CI/CD
 val localPropsFile = rootProject.file("local.properties")
 val localPropsMap: Map<String, String> = if (localPropsFile.exists()) {
@@ -117,6 +143,15 @@ val supabaseAnonKey: String = localPropsMap["supabase.anon.key"]?.takeIf { it.is
     ?: System.getenv("SUPABASE_ANON_KEY")
     ?: ""
 
+fun validateSupabaseUrl(url: String) {
+    val uri = runCatching { URI(url) }.getOrNull()
+        ?: throw GradleException("Invalid Supabase URL '$url'. Expected a full https URL.")
+
+    if (uri.scheme != "https" || uri.host.isNullOrBlank()) {
+        throw GradleException("Invalid Supabase URL '$url'. Expected a full https URL.")
+    }
+}
+
 // Validate Supabase credentials unless explicitly skipped (e.g., CI builds that only run tests)
 val skipSupabaseCheck = providers.gradleProperty("skip.supabase.check").orNull?.toBoolean() ?: false
 if (!skipSupabaseCheck && (supabaseUrl.isBlank() || supabaseAnonKey.isBlank())) {
@@ -125,6 +160,15 @@ if (!skipSupabaseCheck && (supabaseUrl.isBlank() || supabaseAnonKey.isBlank())) 
             "or environment variables (SUPABASE_URL, SUPABASE_ANON_KEY), " +
             "or pass -Pskip.supabase.check=true for test-only builds.",
     )
+}
+if (!skipSupabaseCheck && supabaseUrl.isNotBlank()) {
+    validateSupabaseUrl(supabaseUrl)
+}
+
+tasks.register<VerifySupabaseRuntimeConfigTask>("verifySupabaseRuntimeConfig") {
+    group = "verification"
+    description = "Validates the Android runtime Supabase URL and logs a non-secret host summary."
+    configuredSupabaseUrl.set(supabaseUrl)
 }
 
 val injectedVersionCode = providers.gradleProperty("version.code").orNull?.let { raw ->

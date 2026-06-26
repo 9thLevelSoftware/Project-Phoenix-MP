@@ -20,6 +20,7 @@ import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
@@ -49,7 +50,9 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
+import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
+import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
@@ -67,8 +70,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -104,6 +110,11 @@ class MainViewModel constructor(
     private val externalActivityRepository: ExternalActivityRepository? = null,
     private val workoutServiceController: WorkoutServiceController,
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
+    // Velocity-based 1RM (issue #517): computed via GamificationManager's post-save hook.
+    private val computeVelocityOneRepMaxUseCase: ComputeVelocityOneRepMaxUseCase,
+    private val recordPersonalMvtSampleUseCase: RecordPersonalMvtSampleUseCase,
+    // Exposed as a public val so ExerciseDetailScreen can query the latest passing estimate.
+    val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -118,6 +129,13 @@ class MainViewModel constructor(
     // === Phase 1a: HistoryManager (extracted from this class) ===
     val historyManager = HistoryManager(workoutRepository, personalRecordRepository, userProfileRepository, viewModelScope)
 
+    // Active profile id, exposed publicly so profile-scoped reads (e.g. velocity-1RM on
+    // ExerciseDetailScreen) query the correct profile instead of a hardcoded "default".
+    val activeProfileId: StateFlow<String> =
+        userProfileRepository.activeProfile
+            .map { it?.id ?: "default" }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
+
     // === Phase 2b: GamificationManager (extracted from this class) ===
     val gamificationManager = GamificationManager(
         gamificationRepository,
@@ -126,6 +144,16 @@ class MainViewModel constructor(
         _hapticEvents,
         viewModelScope,
         settingsManager.gamificationEnabled,
+        // Velocity-based 1RM post-save hook (issue #517): capture personalized-MVT sample then
+        // recompute the velocity-1RM estimate for the just-saved exercise.
+        onPostSaveComputed = { exId, profile, mcv ->
+            mcv?.let { v ->
+                exerciseRepository.getExerciseById(exId)?.let { ex ->
+                    recordPersonalMvtSampleUseCase(exId, profile, ex.name, ex.muscleGroups, v)
+                }
+            }
+            computeVelocityOneRepMaxUseCase(exId, profile, com.devil.phoenixproject.domain.model.currentTimeMillis())
+        },
     )
 
     // === Phase 3: WorkoutSessionManager (extracted from this class) ===

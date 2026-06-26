@@ -29,7 +29,9 @@ CREATE TABLE Exercise (
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    -- Per-exercise MVT override (added in migration 37, issue #517)
+    mvtOverrideMs REAL
 );
 
 CREATE INDEX idx_exercise_popularity ON Exercise(popularity DESC, name ASC);
@@ -433,6 +435,67 @@ CREATE TABLE AssessmentResult (
 CREATE INDEX idx_assessment_result_exercise ON AssessmentResult(exerciseId);
 CREATE INDEX idx_assessment_profile ON AssessmentResult(profile_id);
 
+-- ==================== VELOCITY-BASED 1RM ESTIMATES ====================
+-- Auto-computed velocity 1RM time-series (issue #517). Separate from
+-- AssessmentResult (wizard) and from Exercise.oneRepMaxKg (authoritative true 1RM).
+
+CREATE TABLE VelocityOneRepMaxEstimate (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exerciseId TEXT NOT NULL,
+    estimatedPerCableKg REAL NOT NULL,
+    mvtUsedMs REAL NOT NULL,
+    r2 REAL NOT NULL,
+    distinctLoads INTEGER NOT NULL,
+    passedQualityGate INTEGER NOT NULL DEFAULT 0,
+    computedAt INTEGER NOT NULL,
+    profile_id TEXT NOT NULL DEFAULT 'default',
+    -- Sync columns (future parity; unused in this plan)
+    updatedAt INTEGER,
+    serverId TEXT,
+    deletedAt INTEGER,
+    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_velocity_1rm_exercise ON VelocityOneRepMaxEstimate(exerciseId, profile_id);
+
+insertVelocityOneRepMax:
+INSERT INTO VelocityOneRepMaxEstimate (exerciseId, estimatedPerCableKg, mvtUsedMs, r2, distinctLoads, passedQualityGate, computedAt, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectVelocityOneRepMaxByExercise:
+SELECT * FROM VelocityOneRepMaxEstimate
+WHERE exerciseId = :exerciseId AND profile_id = :profileId AND deletedAt IS NULL
+ORDER BY computedAt DESC;
+
+selectLatestPassingVelocityOneRepMax:
+SELECT * FROM VelocityOneRepMaxEstimate
+WHERE exerciseId = :exerciseId AND profile_id = :profileId
+AND passedQualityGate = 1 AND deletedAt IS NULL
+ORDER BY computedAt DESC, id DESC
+LIMIT 1;
+
+-- ==================== PERSONAL MVT TABLE ====================
+-- Personalized Minimum Velocity Threshold per exercise/profile (issue #517).
+-- Stored alongside the exercise; used by VelocityOneRepMaxEstimator to override
+-- the default MVT when the user has enough personal data.
+
+CREATE TABLE ExerciseMvt (
+    exerciseId TEXT NOT NULL,
+    profile_id TEXT NOT NULL DEFAULT 'default',
+    personalMvtMs REAL NOT NULL,
+    sampleCount INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL,
+    PRIMARY KEY (exerciseId, profile_id),
+    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+);
+
+selectExerciseMvt:
+SELECT * FROM ExerciseMvt WHERE exerciseId = :exerciseId AND profile_id = :profileId;
+
+upsertExerciseMvt:
+INSERT OR REPLACE INTO ExerciseMvt (exerciseId, profile_id, personalMvtMs, sampleCount, updatedAt)
+VALUES (:exerciseId, :profileId, :personalMvtMs, :sampleCount, :updatedAt);
+
 -- Queries
 
 -- Exercise Queries
@@ -467,9 +530,9 @@ INSERT OR REPLACE INTO Exercise (
     id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
     equipment, movement, sidedness, grip, gripWidth, minRepRange,
     popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
-    aliases, defaultCableConfig, one_rep_max_kg
+    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 countExercises:
 SELECT COUNT(*) FROM Exercise;
@@ -598,6 +661,23 @@ SELECT updatedAt FROM WorkoutSession WHERE id = ?;
 -- (id, updatedAt) so the caller can build an in-memory map keyed by id.
 selectSessionsUpdatedAtByIds:
 SELECT id, updatedAt FROM WorkoutSession WHERE id IN ?;
+
+-- Issue #517: Velocity-based 1RM foundation. Returns per-set load + MCV
+-- points for a specific exercise, used by VelocityOneRepMaxEstimator.
+-- Load uses workingAvgWeightKg when available (more accurate than the
+-- target weight), else falls back to weightPerCableKg. Null MCV and
+-- zero-rep rows are excluded; the estimator requires actual captured
+-- biomechanics data.
+selectVelocityPointsByExercise:
+SELECT workingAvgWeightKg, weightPerCableKg, avgMcvMmS, timestamp, workingReps
+FROM WorkoutSession
+WHERE exerciseId = :exerciseId
+  AND profile_id = :profileId
+  AND timestamp >= :sinceTimestamp
+  AND deletedAt IS NULL
+  AND avgMcvMmS IS NOT NULL
+  AND workingReps > 0
+ORDER BY timestamp DESC;
 
 -- Issue #591 follow-up: batch-read the detailed metric / biomechanics
 -- columns used by the LWW preservation guard for a list of session ids.

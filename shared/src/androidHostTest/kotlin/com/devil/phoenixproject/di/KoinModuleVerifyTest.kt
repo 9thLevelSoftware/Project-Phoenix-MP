@@ -40,6 +40,12 @@ class KoinModuleVerifyTest {
                 WorkoutServiceController::class,
                 // Lambda types used in constructor injection (e.g. PortalApiClient tokenProvider)
                 Function0::class,
+                // Function-typed collaborators of ComputeVelocityOneRepMaxUseCase (issue #517):
+                // supplied as lambdas inside the module, not resolved from the graph.
+                Function2::class,
+                Function3::class,
+                Function4::class,
+                Function5::class,
             ),
         )
     }

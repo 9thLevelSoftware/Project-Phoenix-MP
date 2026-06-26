@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -259,4 +260,26 @@ class FakeWorkoutRepository : WorkoutRepository {
     }
 
     override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> = _phaseStatisticsFlow
+
+    override suspend fun getVelocityPointsForExercise(
+        exerciseId: String,
+        profileId: String,
+        sinceTimestampMs: Long,
+    ): List<WorkoutVelocityPoint> = sessions.values
+        .filter { s ->
+            s.exerciseId == exerciseId &&
+                s.profileId == profileId &&
+                s.timestamp >= sinceTimestampMs &&
+                s.avgMcvMmS != null &&
+                s.workingReps > 0
+        }
+        .sortedByDescending { it.timestamp }
+        .map { s ->
+            WorkoutVelocityPoint(
+                loadPerCableKg = s.workingAvgWeightKg ?: s.weightPerCableKg,
+                mcvMmS = s.avgMcvMmS ?: 0f, // non-null guaranteed by the avgMcvMmS != null filter above
+                timestampMs = s.timestamp,
+                workingReps = s.workingReps,
+            )
+        }
 }

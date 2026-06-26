@@ -685,7 +685,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // because applyColumnHeal handles "duplicate column" errors gracefully.
 
     // Exercise -- initial schema, full current shape
-    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11), displayName (m30)
+    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11), displayName (m30), mvtOverrideMs (m37)
     SchemaTableOperation(
         table = "Exercise",
         createSql = """
@@ -715,7 +715,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 one_rep_max_kg REAL DEFAULT NULL,
                 updatedAt INTEGER,
                 serverId TEXT,
-                deletedAt INTEGER
+                deletedAt INTEGER,
+                mvtOverrideMs REAL
             )
         """.trimIndent(),
     ),
@@ -1113,6 +1114,47 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // VelocityOneRepMaxEstimate -- introduced by migration 36.sqm (issue #517).
+    // Auto-computed velocity 1RM time-series. Separate from AssessmentResult (wizard)
+    // and from Exercise.oneRepMaxKg (authoritative true 1RM).
+    SchemaTableOperation(
+        table = "VelocityOneRepMaxEstimate",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS VelocityOneRepMaxEstimate (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                estimatedPerCableKg REAL NOT NULL,
+                mvtUsedMs REAL NOT NULL,
+                r2 REAL NOT NULL,
+                distinctLoads INTEGER NOT NULL,
+                passedQualityGate INTEGER NOT NULL DEFAULT 0,
+                computedAt INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // ExerciseMvt -- introduced by migration 37.sqm (issue #517).
+    // Personalized Minimum Velocity Threshold per exercise/profile.
+    SchemaTableOperation(
+        table = "ExerciseMvt",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExerciseMvt (
+                exerciseId TEXT NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                personalMvtMs REAL NOT NULL,
+                sampleCount INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL,
+                PRIMARY KEY (exerciseId, profile_id),
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================
@@ -1135,6 +1177,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("Exercise", "deletedAt", "ALTER TABLE Exercise ADD COLUMN deletedAt INTEGER"),
     // Migration 30: display name for formatted exercise names
     SchemaHealOperation("Exercise", "displayName", "ALTER TABLE Exercise ADD COLUMN displayName TEXT"),
+    // Migration 37: per-exercise MVT override for velocity 1RM (issue #517)
+    SchemaHealOperation("Exercise", "mvtOverrideMs", "ALTER TABLE Exercise ADD COLUMN mvtOverrideMs REAL"),
 
     // ── WorkoutSession (31 columns) ─────────────────────────────────────
 
@@ -1430,4 +1474,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── RoutineGroup (Phase 39, migration 27.sqm) ──────────────────────
     SchemaIndexOperation("idx_routine_group_profile", "CREATE INDEX IF NOT EXISTS idx_routine_group_profile ON RoutineGroup(profile_id)"),
+
+    // ── VelocityOneRepMaxEstimate (issue #517, migration 36.sqm) ──────
+    SchemaIndexOperation("idx_velocity_1rm_exercise", "CREATE INDEX IF NOT EXISTS idx_velocity_1rm_exercise ON VelocityOneRepMaxEstimate(exerciseId, profile_id)"),
 )

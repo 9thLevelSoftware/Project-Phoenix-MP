@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -72,6 +73,15 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
         exerciseName = exercise?.name ?: "Unknown Exercise"
         // Clear topbar title to allow dynamic title from EnhancedMainScreen
         viewModel.updateTopBarTitle("")
+    }
+
+    // Velocity-based 1RM estimate (issue #517): latest estimate that passed the quality gate,
+    // scoped to the active profile. Keyed on exerciseId + profileId so the value resets (no
+    // stale flash) when either changes.
+    val profileId by viewModel.activeProfileId.collectAsState()
+    var velocity1Rm by remember(exerciseId, profileId) { mutableStateOf<VelocityOneRepMaxEntity?>(null) }
+    LaunchedEffect(exerciseId, profileId) {
+        velocity1Rm = viewModel.velocityOneRepMaxRepository.getLatestPassing(exerciseId, profileId)
     }
 
     // Calculate 1RM progression using saved per-cable load.
@@ -129,6 +139,7 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
                         previousOneRepMax = previousOneRepMax,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
+                        velocity1Rm = velocity1Rm,
                     )
                 }
 
@@ -249,6 +260,7 @@ private fun OneRepMaxCard(
     previousOneRepMax: Float?,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
+    velocity1Rm: VelocityOneRepMaxEntity? = null,
 ) {
     val delta = if (currentOneRepMax != null && previousOneRepMax != null) {
         currentOneRepMax - previousOneRepMax
@@ -316,6 +328,30 @@ private fun OneRepMaxCard(
                     "No data",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
+                )
+            }
+
+            // Velocity-based 1RM (issue #517): show only when a passing estimate exists.
+            velocity1Rm?.let { v ->
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "VELOCITY 1RM",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    formatWeight(v.estimatedPerCableKg, weightUnit),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    "MVT ${KmpUtils.formatFloat(v.mvtUsedMs, 2)} m/s",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
                 )
             }
         }

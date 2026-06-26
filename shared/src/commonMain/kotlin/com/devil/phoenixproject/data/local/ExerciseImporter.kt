@@ -204,6 +204,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             aliases = aliasesStr,
                             defaultCableConfig = cableConfig,
                             one_rep_max_kg = null,
+                            mvtOverrideMs = null,
                         )
                         importedCount++
 
@@ -346,6 +347,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         aliases = exercise.aliases?.joinToString(","),
                         defaultCableConfig = mapSidednessToCableConfig(exercise.sidedness),
                         one_rep_max_kg = null,
+                        mvtOverrideMs = null,
                     )
 
                     // Insert videos

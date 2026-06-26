@@ -102,6 +102,27 @@ class MainViewModelTest {
             dataBackupManager = FakeDataBackupManager(),
             userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
             workoutServiceController = NoOpWorkoutServiceController,
+            computeVelocityOneRepMaxUseCase = com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase(
+                workoutPoints = { _, _, _ -> emptyList() },
+                exerciseLookup = { null },
+                personalMvtLookup = { _, _ -> null },
+                mvtProvider = com.devil.phoenixproject.domain.onerepmax.MvtProvider(),
+                estimator = com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator(
+                    com.devil.phoenixproject.domain.assessment.AssessmentEngine(),
+                ),
+                persist = { _, _, _, _ -> },
+            ),
+            recordPersonalMvtSampleUseCase = com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase(
+                object : com.devil.phoenixproject.data.repository.PersonalMvtRepository {
+                    override suspend fun get(exerciseId: String, profileId: String) = null
+                    override suspend fun upsert(exerciseId: String, profileId: String, personalMvtMs: Float, sampleCount: Int) {}
+                },
+            ),
+            velocityOneRepMaxRepository = object : com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository {
+                override suspend fun insert(result: com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult, exerciseId: String, computedAt: Long, profileId: String) {}
+                override suspend fun getLatestPassing(exerciseId: String, profileId: String): com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity? = null
+                override fun getHistory(exerciseId: String, profileId: String): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity>> = kotlinx.coroutines.flow.flowOf(emptyList())
+            },
         )
     }
 

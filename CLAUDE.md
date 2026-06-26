@@ -17,14 +17,10 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
-## Agent & Sub-Task Constraints
+## Working Rules
 
-- Spawned agents MUST use ONLY configured MCP tools (Daem0n, Vitruvian) — no freelancing
-- Agents MUST follow project skills in `.claude/skills/` (daem0nmcp-protocol, agent-browser)
-- Agents MUST NOT use tools or skills from other projects (OpenCode, TheBeckoningMU, DaemonChat)
-- Verify agent work against project `.mcp.json` configuration before accepting results
-
-BEFORE ANYTHING ELSE!!!  Look at the parent repo to see how something was implemented in a working fashion before trying to troubleshoot or make changes
+- BEFORE ANYTHING ELSE: check the monorepo parent (`../CLAUDE.md`) and the `phoenix-portal` sibling for how a feature was implemented on the working side before troubleshooting or changing it. Mobile and portal share a parity-critical contract (see Sync Architecture below).
+- Spawned agents must stay within this project's tools and skills (`.claude/skills/agent-browser`); don't pull in tooling from unrelated projects.
 
 # CLAUDE.md
 
@@ -92,9 +88,10 @@ SQLDelight schema at `shared/src/commonMain/sqldelight/.../VitruvianDatabase.sq`
 - **Routine/RoutineExercise** - Custom workout routines
 
 ### Domain Models
-Located in `shared/src/commonMain/kotlin/com/example/vitruvianredux/domain/model/`:
-- **WorkoutModels.kt**: WorkoutMode (6 modes), ConnectionState, WorkoutMetrics, WorkoutSession
-- **ExerciseModels.kt**: MuscleGroup (12 groups), Exercise, Routine
+Located in `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/`:
+- **Models.kt**: WorkoutMode (6 modes), ConnectionState, WorkoutMetrics, WorkoutSession
+- **Exercise.kt**, **Routine.kt**: Exercise, MuscleGroup, Routine
+- **Gamification.kt**, **RpgModels.kt**, **BiomechanicsModels.kt**, **TrainingCycleModels.kt**: gamification, RPG scoring, velocity zones, cycles
 
 ### Constants
 `util/Constants.kt` contains:
@@ -113,7 +110,6 @@ Located in `shared/src/commonMain/kotlin/com/example/vitruvianredux/domain/model
 ## Hardware Support
 - **Vitruvian V-Form Trainer** (VIT-200): 200kg max, device name `Vee_*`
 - **Vitruvian Trainer+**: 220kg max
-- IMPORTANT: When applicable, prefer using jetbrains-index MCP tools for code navigation and refactoring.
 
 ## Sync Architecture
 
@@ -156,56 +152,3 @@ Uses multiplatform-settings with Keychain backend (`KeychainSettings`) for secur
 - Mobile computes the estimate per exercise-session (per-cable kg) and ships it as `PortalExerciseDto.estimatedOneRepMaxKg`. The portal stores it verbatim in `exercise_progress.estimated_1rm_kg` and recomputes (same hybrid) ONLY when the field is absent (legacy payloads). Mirror any change in the phoenix-portal counterpart.
 - Max-weight PRs (`personal_records`) are a SEPARATE metric from the estimated 1RM — do not relabel one as the other.
 - Stored `Exercise.one_rep_max_kg` (manual 5/3/1 input or VBT assessment) is the fallback scaling baseline for `% of PR` routines when no matching PersonalRecord exists (`ResolveRoutineWeightsUseCase`).
-
-## The Daem0n's Covenant (v6.6.6 - Enforced)
-
-This project is bound to Daem0n for persistent AI memory. **The covenant is ENFORCED at the protocol layer** - mutating tools block with `COMMUNION_REQUIRED` or `COUNSEL_REQUIRED` errors until proper rituals are observed.
-
-**11 MCP tools (8 workflows + 3 cognitive), 63 actions.** The Daem0n speaks through workflow tools with `action` parameters:
-
-| Workflow | Purpose |
-|----------|---------|
-| `commune` | Session start & status (`briefing`, `active_context`, `triggers`, `health`, `covenant`, `updates`) |
-| `consult` | Pre-action intelligence (`preflight`, `recall`, `recall_file`, `recall_entity`, `recall_hierarchical`, `search`, `check_rules`, `compress`) |
-| `inscribe` | Memory writing & linking (`remember`, `remember_batch`, `link`, `unlink`, `pin`, `activate`, `deactivate`, `clear_active`, `ingest`) |
-| `reflect` | Outcomes & verification (`outcome`, `verify`, `execute`) |
-| `understand` | Code comprehension (`index`, `find`, `impact`, `todos`, `refactor`) |
-| `govern` | Rules & triggers (`add_rule`, `update_rule`, `list_rules`, `add_trigger`, `list_triggers`, `remove_trigger`) |
-| `explore` | Graph & discovery (`related`, `chain`, `graph`, `stats`, `communities`, `community_detail`, `rebuild_communities`, `entities`, `backfill_entities`, `evolution`, `versions`, `at_time`) |
-| `maintain` | Housekeeping & federation (`prune`, `archive`, `cleanup`, `compact`, `rebuild_index`, `export`, `import_data`, `link_project`, `unlink_project`, `list_projects`, `consolidate`, `purge_dream_spam`) |
-
-### At Session Dawn (MANDATORY)
-- Commune with `commune(action="briefing", project_path="C:/Users/dasbl/AndroidStudioProjects/Project-Phoenix-MP")` immediately
-- **This is enforced** - other tools will refuse to act until communion is complete
-- Heed any warnings or failed approaches before beginning work
-
-### Before Alterations (MANDATORY for mutations)
-- Cast `consult(action="preflight", description="your intention", project_path="...")` before modifications
-- This grants a **preflight token** valid for 5 minutes proving consultation
-- Cast `consult(action="recall_file", file_path="path", project_path="...")` when touching specific files
-- Acknowledge any warnings about past failures
-
-### After Decisions
-- Cast `inscribe(action="remember", category=..., content=..., rationale=..., file_path=..., project_path="...")` to inscribe decisions
-- Use categories: decision, pattern, warning, learning
-- **Always pass project_path** on every invocation
-
-### After Completion
-- Cast `reflect(action="outcome", memory_id=..., outcome_text=..., worked=..., project_path="...")` to seal the memory
-- ALWAYS record failures (worked=false) - they illuminate future paths
-
-### Cognitive Tools (v6.0.0 - The Three Minds)
-Three standalone reasoning tools for autonomous thought:
-- `simulate_decision(decision_id=..., project_path="...")` - Temporal scrying: replay a past decision with current knowledge
-- `evolve_rule(rule_id=..., project_path="...")` - Rule entropy analysis: detect staleness and suggest evolution
-- `debate_internal(topic=..., advocate_position=..., challenger_position=..., project_path="...")` - Adversarial council: evidence-grounded debate with convergence detection
-
-### MCP Resources (Auto-Injected Context)
-The Daem0n provides subscribable resources for automatic context injection:
-- `daem0n://warnings/{project_path}` - Active warnings
-- `daem0n://failed/{project_path}` - Failed approaches to avoid
-- `daem0n://rules/{project_path}` - All configured rules
-- `daem0n://context/{project_path}` - Combined context (warnings + failed + rules)
-- `daem0n://triggered/{file_path}` - Auto-recalled context for a specific file
-
-See Summon_Daem0n.md for the complete Grimoire (11 tools, 64 actions).

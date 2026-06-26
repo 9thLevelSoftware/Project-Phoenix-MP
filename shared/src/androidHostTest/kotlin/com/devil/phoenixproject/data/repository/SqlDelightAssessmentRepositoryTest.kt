@@ -82,6 +82,7 @@ class SqlDelightAssessmentRepositoryTest {
             aliases = null,
             defaultCableConfig = "DOUBLE",
             one_rep_max_kg = null,
+            mvtOverrideMs = null,
         )
     }
 }

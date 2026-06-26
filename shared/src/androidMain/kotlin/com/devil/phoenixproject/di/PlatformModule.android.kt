@@ -96,6 +96,9 @@ actual val platformModule: Module = module {
             externalActivityRepository = get(),
             workoutServiceController = get(),
             healthExportCursorRepository = get(),
+            computeVelocityOneRepMaxUseCase = get(),
+            recordPersonalMvtSampleUseCase = get(),
+            velocityOneRepMaxRepository = get(),
         )
     }
 }

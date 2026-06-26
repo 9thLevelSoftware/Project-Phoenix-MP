@@ -437,6 +437,7 @@ class SqlDelightSyncRepository(
                         aliases = null,
                         defaultCableConfig = dto.defaultCableConfig,
                         one_rep_max_kg = null,
+                        mvtOverrideMs = null,
                     )
 
                     if (dto.serverId != null) {

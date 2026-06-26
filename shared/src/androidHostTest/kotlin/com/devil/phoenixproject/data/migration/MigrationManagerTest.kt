@@ -523,6 +523,7 @@ class MigrationManagerTest {
             aliases = null,
             defaultCableConfig = "DOUBLE",
             one_rep_max_kg = oneRepMaxKg,
+            mvtOverrideMs = null,
         )
     }
 

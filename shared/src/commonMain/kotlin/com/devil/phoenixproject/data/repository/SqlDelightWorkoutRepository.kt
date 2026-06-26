@@ -17,6 +17,7 @@ import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -1132,6 +1133,21 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 timestamp = stats.timestamp,
             )
             Logger.d { "Saved phase statistics for session $sessionId" }
+        }
+    }
+
+    override suspend fun getVelocityPointsForExercise(
+        exerciseId: String,
+        profileId: String,
+        sinceTimestampMs: Long,
+    ): List<WorkoutVelocityPoint> = withContext(Dispatchers.IO) {
+        queries.selectVelocityPointsByExercise(exerciseId, profileId, sinceTimestampMs).executeAsList().map { row ->
+            WorkoutVelocityPoint(
+                loadPerCableKg = (row.workingAvgWeightKg ?: row.weightPerCableKg).toFloat(),
+                mcvMmS = (row.avgMcvMmS ?: 0.0).toFloat(), // non-null guaranteed by WHERE avgMcvMmS IS NOT NULL
+                timestampMs = row.timestamp,
+                workingReps = row.workingReps.toInt(),
+            )
         }
     }
 

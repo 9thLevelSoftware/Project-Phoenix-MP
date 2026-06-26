@@ -3035,6 +3035,7 @@ class ActiveSessionEngine(
                 peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
                 peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
                 profileId = userProfileRepository.activeProfile.value?.id ?: "default",
+                sessionMcvMmS = session.avgMcvMmS,
             )
 
             if (hasPR && completedSetId != null) {
@@ -3593,6 +3594,7 @@ class ActiveSessionEngine(
             peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
             peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
             profileId = userProfileRepository.activeProfile.value?.id ?: "default",
+            sessionMcvMmS = session.avgMcvMmS,
         )
 
         if (hasPR && completedSetId != null) {

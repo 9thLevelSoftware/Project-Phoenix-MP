@@ -173,7 +173,7 @@ class SqlDelightSyncRepositoryTest {
         // column order: id, name, displayName, description, created, muscleGroup,
         // muscleGroups, muscles, equipment, movement, sidedness, grip, gripWidth,
         // minRepRange, popularity, archived, isFavorite, isCustom, timesPerformed,
-        // lastPerformed, aliases, defaultCableConfig, one_rep_max_kg.
+        // lastPerformed, aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs.
         database.vitruvianDatabaseQueries.insertExercise(
             "bench-press",
             "Bench Press",
@@ -197,6 +197,7 @@ class SqlDelightSyncRepositoryTest {
             null,
             null,
             "DUAL",
+            null,
             null,
         )
 
