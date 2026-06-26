@@ -20,6 +20,7 @@ import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
@@ -109,6 +110,8 @@ class MainViewModel constructor(
     // Velocity-based 1RM (issue #517): computed via GamificationManager's post-save hook.
     private val computeVelocityOneRepMaxUseCase: ComputeVelocityOneRepMaxUseCase,
     private val recordPersonalMvtSampleUseCase: RecordPersonalMvtSampleUseCase,
+    // Exposed as a public val so ExerciseDetailScreen can query the latest passing estimate.
+    val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager

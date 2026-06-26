@@ -122,6 +122,7 @@ actual val platformModule: Module = module {
             healthExportCursorRepository = get(),
             computeVelocityOneRepMaxUseCase = get(),
             recordPersonalMvtSampleUseCase = get(),
+            velocityOneRepMaxRepository = get(),
         )
     }
 }

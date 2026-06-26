@@ -118,6 +118,11 @@ class MainViewModelTest {
                     override suspend fun upsert(exerciseId: String, profileId: String, personalMvtMs: Float, sampleCount: Int) {}
                 },
             ),
+            velocityOneRepMaxRepository = object : com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository {
+                override suspend fun insert(result: com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult, exerciseId: String, computedAt: Long, profileId: String) {}
+                override suspend fun getLatestPassing(exerciseId: String, profileId: String): com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity? = null
+                override fun getHistory(exerciseId: String, profileId: String): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity>> = kotlinx.coroutines.flow.flowOf(emptyList())
+            },
         )
     }
 
