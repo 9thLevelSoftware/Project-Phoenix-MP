@@ -24,8 +24,9 @@ class ComputeVelocityOneRepMaxUseCaseTest {
             WorkoutVelocityPoint(80f, 600f, timestampMs = 6L, workingReps = 5),
         )
         val inserted = mutableListOf<VelocityOneRepMaxResult>()
+        var capturedSinceMs = -1L
         val useCase = ComputeVelocityOneRepMaxUseCase(
-            workoutPoints = { _, _, _ -> points },
+            workoutPoints = { _, _, since -> capturedSinceMs = since; points },
             exerciseLookup = { _ -> FakeExercise(name = "Back Squat", muscleGroups = "Legs", mvtOverrideMs = null) },
             personalMvtLookup = { _, _ -> null },
             mvtProvider = MvtProvider(),
@@ -38,6 +39,22 @@ class ComputeVelocityOneRepMaxUseCaseTest {
         assertTrue(result.passedQualityGate)
         assertEquals(1, inserted.size)
         assertEquals(result.estimatedPerCableKg, inserted.first().estimatedPerCableKg)
+        // 28-day window: sinceMs = nowMs - 28 days
+        assertEquals(1_000_000L - 28L * 86_400_000L, capturedSinceMs)
+    }
+
+    @Test fun `returns null and persists nothing when exercise not found`() = runTest {
+        val inserted = mutableListOf<VelocityOneRepMaxResult>()
+        val useCase = ComputeVelocityOneRepMaxUseCase(
+            workoutPoints = { _, _, _ -> error("workoutPoints should not be called when exercise is missing") },
+            exerciseLookup = { _ -> null },
+            personalMvtLookup = { _, _ -> null },
+            mvtProvider = MvtProvider(),
+            estimator = VelocityOneRepMaxEstimator(AssessmentEngine()),
+            persist = { r, _, _, _ -> inserted += r },
+        )
+        assertEquals(null, useCase("ex1", "default", nowMs = 1_000_000L))
+        assertEquals(0, inserted.size)
     }
 
     @Test fun `returns null and persists nothing when fewer than two loads`() = runTest {
