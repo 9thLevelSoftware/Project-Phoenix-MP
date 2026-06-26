@@ -450,17 +450,21 @@ class RepCounterFromMachine {
         lastTopCounter = up
         lastCompleteCounter = down
 
-        // WARMUP TRACKING: Use repsRomCount directly from machine (no pending animation)
+        // WARMUP TRACKING: Use repsRomCount directly from machine (no pending animation).
+        // Issue #531: emit one WARMUP_COMPLETED per integer step so a batched/dropped ROM
+        // notification (count jumps 0 -> 2 in a single packet) doesn't drop setup-rep chirps.
         if (repsRomCount > warmupReps && warmupReps < warmupTarget) {
-            warmupReps = repsRomCount.coerceAtMost(warmupTarget)
-
-            onRepEvent?.invoke(
-                RepEvent(
-                    type = RepType.WARMUP_COMPLETED,
-                    warmupCount = warmupReps,
-                    workingCount = workingReps,
-                ),
-            )
+            val warmupRepTarget = repsRomCount.coerceAtMost(warmupTarget)
+            while (warmupReps < warmupRepTarget) {
+                warmupReps++
+                onRepEvent?.invoke(
+                    RepEvent(
+                        type = RepType.WARMUP_COMPLETED,
+                        warmupCount = warmupReps,
+                        workingCount = workingReps,
+                    ),
+                )
+            }
 
             if (warmupReps >= warmupTarget) {
                 onRepEvent?.invoke(
@@ -482,16 +486,19 @@ class RepCounterFromMachine {
         // unreachable because this branch already fires first when repsRomCount==0
         // and repsSetCount==0 — see PR #554 review (gemini-code-assist) feedback.
         else if (repsSetCount == 0 && repsRomCount == 0 && warmupReps < warmupTarget && upDelta > 0) {
-            warmupReps = (warmupReps + upDelta).coerceAtMost(warmupTarget)
-            logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")
-
-            onRepEvent?.invoke(
-                RepEvent(
-                    type = RepType.WARMUP_COMPLETED,
-                    warmupCount = warmupReps,
-                    workingCount = workingReps,
-                ),
-            )
+            // Issue #531: per-increment emission for the up-counter fallback too.
+            val warmupRepTarget = (warmupReps + upDelta).coerceAtMost(warmupTarget)
+            while (warmupReps < warmupRepTarget) {
+                warmupReps++
+                logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")
+                onRepEvent?.invoke(
+                    RepEvent(
+                        type = RepType.WARMUP_COMPLETED,
+                        warmupCount = warmupReps,
+                        workingCount = workingReps,
+                    ),
+                )
+            }
 
             if (warmupReps >= warmupTarget) {
                 onRepEvent?.invoke(

@@ -770,6 +770,52 @@ class RepCounterFromMachineTest {
         assertTrue(count.isWarmupComplete)
     }
 
+    // ========== Issue #531: Per-increment warmup chirp emission ==========
+
+    @Test
+    fun `issue 531 batched warmup ROM jump emits one chirp per rep`() {
+        // A BLE notification can batch/drop so the machine's ROM count jumps by >1 in a
+        // single packet (0 -> 2). Each setup rep must still chirp exactly once.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        // Baseline (idle, no movement)
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+
+        // ROM jumps 0 -> 2 in one packet, then -> 3 in the next.
+        repCounter.process(repsRomCount = 2, repsSetCount = 0, up = 2, down = 2)
+        repCounter.process(repsRomCount = 3, repsSetCount = 0, up = 3, down = 3)
+
+        assertEquals(
+            3,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETED },
+            "Each setup rep must chirp once even when the ROM count batches",
+        )
+        assertEquals(3, repCounter.getRepCount().warmupReps)
+        assertEquals(
+            1,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETE },
+            "WARMUP_COMPLETE fires exactly once when the target is reached",
+        )
+    }
+
+    @Test
+    fun `issue 531 fallback warmup emits one chirp per rep on batched up jump`() {
+        // Firmware that never reports repsRomCount (Echo/unlimited): the up counter can jump
+        // 0 -> 3 in one packet. Per-increment emission must still chirp each setup rep once,
+        // clamped to the warmup target.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 3, down = 0)
+
+        assertEquals(
+            3,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETED },
+            "Fallback warmup must chirp once per rep up to the target",
+        )
+        assertEquals(3, repCounter.getRepCount().warmupReps)
+    }
+
 }
 
 class RepRangesTest {
