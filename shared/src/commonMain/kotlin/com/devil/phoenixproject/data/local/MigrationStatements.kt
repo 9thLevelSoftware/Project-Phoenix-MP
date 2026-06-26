@@ -881,5 +881,19 @@ WHERE gs.rowid = (
         """CREATE INDEX IF NOT EXISTS idx_velocity_1rm_exercise ON VelocityOneRepMaxEstimate(exerciseId, profile_id)""",
     )
 
+    // Migration 37: Personalized MVT storage + per-exercise MVT override (issue #517).
+    37 -> listOf(
+        "ALTER TABLE Exercise ADD COLUMN mvtOverrideMs REAL",
+        """CREATE TABLE IF NOT EXISTS ExerciseMvt (
+        exerciseId TEXT NOT NULL,
+        profile_id TEXT NOT NULL DEFAULT 'default',
+        personalMvtMs REAL NOT NULL,
+        sampleCount INTEGER NOT NULL DEFAULT 0,
+        updatedAt INTEGER NOT NULL,
+        PRIMARY KEY (exerciseId, profile_id),
+        FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+    )""",
+    )
+
     else -> emptyList()
 }

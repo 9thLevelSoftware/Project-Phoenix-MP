@@ -685,7 +685,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // because applyColumnHeal handles "duplicate column" errors gracefully.
 
     // Exercise -- initial schema, full current shape
-    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11), displayName (m30)
+    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11), displayName (m30), mvtOverrideMs (m37)
     SchemaTableOperation(
         table = "Exercise",
         createSql = """
@@ -715,7 +715,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 one_rep_max_kg REAL DEFAULT NULL,
                 updatedAt INTEGER,
                 serverId TEXT,
-                deletedAt INTEGER
+                deletedAt INTEGER,
+                mvtOverrideMs REAL
             )
         """.trimIndent(),
     ),
@@ -1137,6 +1138,23 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // ExerciseMvt -- introduced by migration 37.sqm (issue #517).
+    // Personalized Minimum Velocity Threshold per exercise/profile.
+    SchemaTableOperation(
+        table = "ExerciseMvt",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExerciseMvt (
+                exerciseId TEXT NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                personalMvtMs REAL NOT NULL,
+                sampleCount INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL,
+                PRIMARY KEY (exerciseId, profile_id),
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================
@@ -1159,6 +1177,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("Exercise", "deletedAt", "ALTER TABLE Exercise ADD COLUMN deletedAt INTEGER"),
     // Migration 30: display name for formatted exercise names
     SchemaHealOperation("Exercise", "displayName", "ALTER TABLE Exercise ADD COLUMN displayName TEXT"),
+    // Migration 37: per-exercise MVT override for velocity 1RM (issue #517)
+    SchemaHealOperation("Exercise", "mvtOverrideMs", "ALTER TABLE Exercise ADD COLUMN mvtOverrideMs REAL"),
 
     // ── WorkoutSession (31 columns) ─────────────────────────────────────
 

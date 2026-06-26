@@ -270,6 +270,7 @@ class SqlDelightExerciseRepositoryTest {
             aliases = null,
             defaultCableConfig = defaultCableConfig,
             one_rep_max_kg = oneRepMaxKg,
+            mvtOverrideMs = null,
         )
     }
 }

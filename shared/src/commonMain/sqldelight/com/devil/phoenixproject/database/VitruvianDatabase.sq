@@ -29,7 +29,9 @@ CREATE TABLE Exercise (
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    -- Per-exercise MVT override (added in migration 37, issue #517)
+    mvtOverrideMs REAL
 );
 
 CREATE INDEX idx_exercise_popularity ON Exercise(popularity DESC, name ASC);
@@ -472,6 +474,28 @@ AND passedQualityGate = 1 AND deletedAt IS NULL
 ORDER BY computedAt DESC
 LIMIT 1;
 
+-- ==================== PERSONAL MVT TABLE ====================
+-- Personalized Minimum Velocity Threshold per exercise/profile (issue #517).
+-- Stored alongside the exercise; used by VelocityOneRepMaxEstimator to override
+-- the default MVT when the user has enough personal data.
+
+CREATE TABLE ExerciseMvt (
+    exerciseId TEXT NOT NULL,
+    profile_id TEXT NOT NULL DEFAULT 'default',
+    personalMvtMs REAL NOT NULL,
+    sampleCount INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL,
+    PRIMARY KEY (exerciseId, profile_id),
+    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+);
+
+selectExerciseMvt:
+SELECT * FROM ExerciseMvt WHERE exerciseId = :exerciseId AND profile_id = :profileId;
+
+upsertExerciseMvt:
+INSERT OR REPLACE INTO ExerciseMvt (exerciseId, profile_id, personalMvtMs, sampleCount, updatedAt)
+VALUES (:exerciseId, :profileId, :personalMvtMs, :sampleCount, :updatedAt);
+
 -- Queries
 
 -- Exercise Queries
@@ -506,9 +530,9 @@ INSERT OR REPLACE INTO Exercise (
     id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
     equipment, movement, sidedness, grip, gripWidth, minRepRange,
     popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
-    aliases, defaultCableConfig, one_rep_max_kg
+    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 countExercises:
 SELECT COUNT(*) FROM Exercise;

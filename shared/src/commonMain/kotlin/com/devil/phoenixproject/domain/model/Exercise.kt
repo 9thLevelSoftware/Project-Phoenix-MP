@@ -31,6 +31,7 @@ data class Exercise(
     val oneRepMaxKg: Float? = null, // User's 1RM for percentage-based programming
     val cableIntent: ExerciseCableIntent? = null, // Explicit single/dual cable metadata when known
     val displayName: String = name, // Disambiguated name from catalog; defaults to base name
+    val mvtOverrideMs: Float? = null, // User-set Minimum Velocity Threshold override (m/s) for velocity-1RM
 ) {
     /**
      * Whether this exercise uses any cable accessory (handles, bar, rope, etc.).
