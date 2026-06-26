@@ -471,7 +471,7 @@ selectLatestPassingVelocityOneRepMax:
 SELECT * FROM VelocityOneRepMaxEstimate
 WHERE exerciseId = :exerciseId AND profile_id = :profileId
 AND passedQualityGate = 1 AND deletedAt IS NULL
-ORDER BY computedAt DESC
+ORDER BY computedAt DESC, id DESC
 LIMIT 1;
 
 -- ==================== PERSONAL MVT TABLE ====================
