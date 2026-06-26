@@ -8,7 +8,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
-import org.junit.Before
 
 class SqlDelightVelocityOneRepMaxRepositoryTest {
 
@@ -63,6 +62,20 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
 
         val latest = repo.getLatestPassing("ex1", "default")
         assertEquals(110f, latest?.estimatedPerCableKg)
+        assertTrue(latest!!.passedQualityGate)
+    }
+
+    @Test
+    fun `latest passing skips a newer failing row`() = runTest {
+        val db = createInMemoryTestDatabase()
+        seedExercise(db, id = "ex3")
+        val repo = SqlDelightVelocityOneRepMaxRepository(db)
+
+        repo.insert(result(100f, passed = true), exerciseId = "ex3", computedAt = 1_000L, profileId = "default")
+        repo.insert(result(120f, passed = false), exerciseId = "ex3", computedAt = 2_000L, profileId = "default")
+
+        val latest = repo.getLatestPassing("ex3", "default")
+        assertEquals(100f, latest?.estimatedPerCableKg)
         assertTrue(latest!!.passedQualityGate)
     }
 
