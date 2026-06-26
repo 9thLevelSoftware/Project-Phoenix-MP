@@ -156,6 +156,9 @@ jobs:
           echo "supabase.url=${{ secrets.SUPABASE_URL }}" >> local.properties
           echo "supabase.anon.key=${{ secrets.SUPABASE_ANON_KEY }}" >> local.properties
 
+      - name: Verify Android Supabase runtime config
+        run: ./gradlew :androidApp:verifySupabaseRuntimeConfig
+
       - name: Build Release APK (signed)
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
