@@ -49,7 +49,9 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
+import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
+import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
@@ -104,6 +106,9 @@ class MainViewModel constructor(
     private val externalActivityRepository: ExternalActivityRepository? = null,
     private val workoutServiceController: WorkoutServiceController,
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
+    // Velocity-based 1RM (issue #517): computed via GamificationManager's post-save hook.
+    private val computeVelocityOneRepMaxUseCase: ComputeVelocityOneRepMaxUseCase,
+    private val recordPersonalMvtSampleUseCase: RecordPersonalMvtSampleUseCase,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -126,6 +131,16 @@ class MainViewModel constructor(
         _hapticEvents,
         viewModelScope,
         settingsManager.gamificationEnabled,
+        // Velocity-based 1RM post-save hook (issue #517): capture personalized-MVT sample then
+        // recompute the velocity-1RM estimate for the just-saved exercise.
+        onPostSaveComputed = { exId, profile, mcv ->
+            mcv?.let { v ->
+                exerciseRepository.getExerciseById(exId)?.let { ex ->
+                    recordPersonalMvtSampleUseCase(exId, profile, ex.name, ex.muscleGroups, v)
+                }
+            }
+            computeVelocityOneRepMaxUseCase(exId, profile, com.devil.phoenixproject.domain.model.currentTimeMillis())
+        },
     )
 
     // === Phase 3: WorkoutSessionManager (extracted from this class) ===

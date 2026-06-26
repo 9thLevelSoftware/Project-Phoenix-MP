@@ -87,6 +87,22 @@ class WorkoutFlowE2ETest {
             dataBackupManager = FakeDataBackupManager(),
             userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
             workoutServiceController = NoOpWorkoutServiceController,
+            computeVelocityOneRepMaxUseCase = com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase(
+                workoutPoints = { _, _, _ -> emptyList() },
+                exerciseLookup = { null },
+                personalMvtLookup = { _, _ -> null },
+                mvtProvider = com.devil.phoenixproject.domain.onerepmax.MvtProvider(),
+                estimator = com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator(
+                    com.devil.phoenixproject.domain.assessment.AssessmentEngine(),
+                ),
+                persist = { _, _, _, _ -> },
+            ),
+            recordPersonalMvtSampleUseCase = com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase(
+                object : com.devil.phoenixproject.data.repository.PersonalMvtRepository {
+                    override suspend fun get(exerciseId: String, profileId: String) = null
+                    override suspend fun upsert(exerciseId: String, profileId: String, personalMvtMs: Float, sampleCount: Int) {}
+                },
+            ),
         )
 
         robot = WorkoutRobot(viewModel, fakeBleRepository)

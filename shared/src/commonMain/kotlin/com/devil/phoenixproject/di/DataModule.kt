@@ -53,6 +53,10 @@ val dataModule = module {
     // Assessment Repository
     single<AssessmentRepository> { SqlDelightAssessmentRepository(get(), get(), get()) }
 
+    // Velocity-based 1RM Repositories (issue #517)
+    single<VelocityOneRepMaxRepository> { SqlDelightVelocityOneRepMaxRepository(get()) }
+    single<PersonalMvtRepository> { SqlDelightPersonalMvtRepository(get()) }
+
     // External Activity Repository (Task 3 - third-party integrations)
     single<ExternalActivityRepository> { SqlDelightExternalActivityRepository(get()) }
     single<ExternalRoutineRepository> { SqlDelightExternalRoutineRepository(get()) }

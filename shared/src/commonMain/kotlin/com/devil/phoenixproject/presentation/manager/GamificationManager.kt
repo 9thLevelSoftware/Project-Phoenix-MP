@@ -35,6 +35,12 @@ class GamificationManager(
     private val hapticEvents: MutableSharedFlow<HapticEvent>,
     private val scope: CoroutineScope,
     private val gamificationEnabled: StateFlow<Boolean>,
+    /**
+     * Optional post-save hook (issue #517). Invoked after PR/badge processing with the resolved
+     * exercise id, profile id, and the session's average MCV (mm/s, nullable). Defaults to a no-op
+     * so existing construction sites (production wiring supplies the real lambda) need no changes.
+     */
+    private val onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
 ) {
     private val _prCelebrationEvent = MutableSharedFlow<PRCelebrationEvent>()
     val prCelebrationEvent: SharedFlow<PRCelebrationEvent> = _prCelebrationEvent.asSharedFlow()
@@ -69,6 +75,7 @@ class GamificationManager(
         peakConcentricForceKg: Float = 0f,
         peakEccentricForceKg: Float = 0f,
         profileId: String = "default",
+        sessionMcvMmS: Float? = null,
     ): Boolean {
         var hasCelebrationSound = false
 
@@ -216,6 +223,17 @@ class GamificationManager(
                     // Issue #319: Emit to UI-visible error flow (direct emit in suspend function)
                     _prTrackingErrorEvents.emit(errorMsg)
                 }
+            }
+        }
+
+        // Velocity-based 1RM (issue #517): compute estimate + capture personalized-MVT sample.
+        // Runs regardless of the gamification toggle; isolated in try/catch so a failure here
+        // never breaks PR/badge flow.
+        exerciseId?.takeIf { it.isNotBlank() }?.let { id ->
+            try {
+                onPostSaveComputed(id, effectiveProfileId, sessionMcvMmS)
+            } catch (e: Exception) {
+                Logger.w(e) { "VELOCITY_1RM: post-save hook failed for $id" }
             }
         }
 
