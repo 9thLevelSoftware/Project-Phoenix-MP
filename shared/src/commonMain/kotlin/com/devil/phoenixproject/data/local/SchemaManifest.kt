@@ -1113,6 +1113,30 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // VelocityOneRepMaxEstimate -- introduced by migration 36.sqm (issue #517).
+    // Auto-computed velocity 1RM time-series. Separate from AssessmentResult (wizard)
+    // and from Exercise.oneRepMaxKg (authoritative true 1RM).
+    SchemaTableOperation(
+        table = "VelocityOneRepMaxEstimate",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS VelocityOneRepMaxEstimate (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                estimatedPerCableKg REAL NOT NULL,
+                mvtUsedMs REAL NOT NULL,
+                r2 REAL NOT NULL,
+                distinctLoads INTEGER NOT NULL,
+                passedQualityGate INTEGER NOT NULL DEFAULT 0,
+                computedAt INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================
@@ -1430,4 +1454,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── RoutineGroup (Phase 39, migration 27.sqm) ──────────────────────
     SchemaIndexOperation("idx_routine_group_profile", "CREATE INDEX IF NOT EXISTS idx_routine_group_profile ON RoutineGroup(profile_id)"),
+
+    // ── VelocityOneRepMaxEstimate (issue #517, migration 36.sqm) ──────
+    SchemaIndexOperation("idx_velocity_1rm_exercise", "CREATE INDEX IF NOT EXISTS idx_velocity_1rm_exercise ON VelocityOneRepMaxEstimate(exerciseId, profile_id)"),
 )

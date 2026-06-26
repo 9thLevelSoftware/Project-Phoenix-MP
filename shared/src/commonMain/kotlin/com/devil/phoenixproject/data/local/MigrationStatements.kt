@@ -861,5 +861,25 @@ WHERE gs.rowid = (
         "ALTER TABLE RoutineExercise ADD COLUMN rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}'",
     )
 
+    // Migration 36: Velocity-based 1RM estimate time-series (issue #517).
+    36 -> listOf(
+        """CREATE TABLE IF NOT EXISTS VelocityOneRepMaxEstimate (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        exerciseId TEXT NOT NULL,
+        estimatedPerCableKg REAL NOT NULL,
+        mvtUsedMs REAL NOT NULL,
+        r2 REAL NOT NULL,
+        distinctLoads INTEGER NOT NULL,
+        passedQualityGate INTEGER NOT NULL DEFAULT 0,
+        computedAt INTEGER NOT NULL,
+        profile_id TEXT NOT NULL DEFAULT 'default',
+        updatedAt INTEGER,
+        serverId TEXT,
+        deletedAt INTEGER,
+        FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+    )""",
+        """CREATE INDEX IF NOT EXISTS idx_velocity_1rm_exercise ON VelocityOneRepMaxEstimate(exerciseId, profile_id)""",
+    )
+
     else -> emptyList()
 }

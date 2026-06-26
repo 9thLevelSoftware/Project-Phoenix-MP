@@ -433,6 +433,45 @@ CREATE TABLE AssessmentResult (
 CREATE INDEX idx_assessment_result_exercise ON AssessmentResult(exerciseId);
 CREATE INDEX idx_assessment_profile ON AssessmentResult(profile_id);
 
+-- ==================== VELOCITY-BASED 1RM ESTIMATES ====================
+-- Auto-computed velocity 1RM time-series (issue #517). Separate from
+-- AssessmentResult (wizard) and from Exercise.oneRepMaxKg (authoritative true 1RM).
+
+CREATE TABLE VelocityOneRepMaxEstimate (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exerciseId TEXT NOT NULL,
+    estimatedPerCableKg REAL NOT NULL,
+    mvtUsedMs REAL NOT NULL,
+    r2 REAL NOT NULL,
+    distinctLoads INTEGER NOT NULL,
+    passedQualityGate INTEGER NOT NULL DEFAULT 0,
+    computedAt INTEGER NOT NULL,
+    profile_id TEXT NOT NULL DEFAULT 'default',
+    -- Sync columns (future parity; unused in this plan)
+    updatedAt INTEGER,
+    serverId TEXT,
+    deletedAt INTEGER,
+    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_velocity_1rm_exercise ON VelocityOneRepMaxEstimate(exerciseId, profile_id);
+
+insertVelocityOneRepMax:
+INSERT INTO VelocityOneRepMaxEstimate (exerciseId, estimatedPerCableKg, mvtUsedMs, r2, distinctLoads, passedQualityGate, computedAt, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectVelocityOneRepMaxByExercise:
+SELECT * FROM VelocityOneRepMaxEstimate
+WHERE exerciseId = :exerciseId AND profile_id = :profileId AND deletedAt IS NULL
+ORDER BY computedAt DESC;
+
+selectLatestPassingVelocityOneRepMax:
+SELECT * FROM VelocityOneRepMaxEstimate
+WHERE exerciseId = :exerciseId AND profile_id = :profileId
+AND passedQualityGate = 1 AND deletedAt IS NULL
+ORDER BY computedAt DESC
+LIMIT 1;
+
 -- Queries
 
 -- Exercise Queries
