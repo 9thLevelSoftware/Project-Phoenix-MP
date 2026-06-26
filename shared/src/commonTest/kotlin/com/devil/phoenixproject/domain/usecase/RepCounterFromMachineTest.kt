@@ -770,6 +770,119 @@ class RepCounterFromMachineTest {
         assertTrue(count.isWarmupComplete)
     }
 
+    // ========== Issue #531: Per-increment warmup chirp emission ==========
+
+    @Test
+    fun `issue 531 batched warmup ROM jump emits one chirp per rep`() {
+        // A BLE notification can batch/drop so the machine's ROM count jumps by >1 in a
+        // single packet (0 -> 2). Each setup rep must still chirp exactly once.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        // Baseline (idle, no movement)
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+
+        // ROM jumps 0 -> 2 in one packet, then -> 3 in the next.
+        repCounter.process(repsRomCount = 2, repsSetCount = 0, up = 2, down = 2)
+        repCounter.process(repsRomCount = 3, repsSetCount = 0, up = 3, down = 3)
+
+        assertEquals(
+            3,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETED },
+            "Each setup rep must chirp once even when the ROM count batches",
+        )
+        assertEquals(3, repCounter.getRepCount().warmupReps)
+        assertEquals(
+            1,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETE },
+            "WARMUP_COMPLETE fires exactly once when the target is reached",
+        )
+    }
+
+    @Test
+    fun `issue 531 fallback warmup emits one chirp per rep on batched up jump`() {
+        // Firmware that never reports repsRomCount (Echo/unlimited): the up counter can jump
+        // 0 -> 3 in one packet. Per-increment emission must still chirp each setup rep once,
+        // clamped to the warmup target.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 3, down = 0)
+
+        assertEquals(
+            3,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETED },
+            "Fallback warmup must chirp once per rep up to the target",
+        )
+        assertEquals(3, repCounter.getRepCount().warmupReps)
+        assertEquals(
+            1,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETE },
+            "Fallback warmup must fire WARMUP_COMPLETE exactly once on reaching target",
+        )
+    }
+
+    // ========== Issue #531: Carryover guard (phantom-chirp suppression) ==========
+
+    @Test
+    fun `issue 531 large directional carryover does not phantom-fire a warmup rep`() {
+        // Heuristic: the machine's free-running up/down counters can carry over from the prior
+        // set. On the first packet of a fresh set, counters already far past the warmup target
+        // while repsRomCount/repsSetCount are 0 are stale -> must not chirp a phantom warmup rep.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        // First packet carries stale up/down = 8 from the previous set.
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 8, down = 8)
+
+        assertEquals(0, repCounter.getRepCount().warmupReps, "Stale carryover must not advance warmup")
+        assertTrue(capturedEvents.isEmpty(), "Carryover packet must emit no rep events")
+
+        // Real warmup reps afterward count normally (delta from the re-baselined counters).
+        repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 9, down = 9)
+        repCounter.process(repsRomCount = 2, repsSetCount = 0, up = 10, down = 10)
+        repCounter.process(repsRomCount = 3, repsSetCount = 0, up = 11, down = 11)
+
+        assertEquals(3, repCounter.getRepCount().warmupReps)
+        assertEquals(3, capturedEvents.count { it.type == RepType.WARMUP_COMPLETED })
+        assertEquals(
+            1,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETE },
+            "WARMUP_COMPLETE fires exactly once after the real warmup reps",
+        )
+    }
+
+    @Test
+    fun `issue 531 carryover guard ignores a small first up tick`() {
+        // Guard must NOT fire for a plausible fresh-start value (preserves Issue #210): a first
+        // packet with up = 1 is a legitimate first rep, not carryover.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 1, down = 1)
+
+        assertEquals(1, repCounter.getRepCount().warmupReps, "Small first up tick is a real rep, not carryover")
+        assertEquals(1, capturedEvents.count { it.type == RepType.WARMUP_COMPLETED })
+    }
+
+    @Test
+    fun `issue 531 carryover guard does not suppress a top-only first packet`() {
+        // Codex PR #596 review: in Echo/fallback telemetry (repsRomCount/repsSetCount stay 0), a
+        // dropped first notification can arrive with the up counter already past the setup target
+        // while down is still at baseline (e.g. up=4, down=0). Those are REAL setup reps, not
+        // carryover from a completed prior set (which leaves BOTH counters elevated). Requiring
+        // both counters past the target means this packet is counted by the fallback branch, not
+        // silently dropped by the guard.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 4, down = 0)
+
+        assertEquals(
+            3,
+            repCounter.getRepCount().warmupReps,
+            "Top-only first packet is real dropped-rep telemetry, not carryover — must be counted",
+        )
+        assertEquals(3, capturedEvents.count { it.type == RepType.WARMUP_COMPLETED })
+        assertEquals(1, capturedEvents.count { it.type == RepType.WARMUP_COMPLETE })
+    }
+
 }
 
 class RepRangesTest {

@@ -35,6 +35,11 @@ class RepCounterFromMachine {
     private var shouldStop = false
     private var isAMRAP = false
 
+    // Issue #531: one-shot guard for the directional-counter carryover heuristic. The machine's
+    // up/down counters are free-running and can carry over from the prior set; on the first modern
+    // packet we detect and absorb stale values once so they don't chirp a phantom warmup rep.
+    private var carryoverChecked = false
+
     // Pending rep state - true when at TOP, waiting for machine confirm
     private var hasPendingRep = false
     private var pendingRepProgress = 0f // 0.0 at TOP, 1.0 at BOTTOM (legacy, kept for compatibility)
@@ -106,6 +111,7 @@ class RepCounterFromMachine {
         warmupReps = 0
         workingReps = 0
         shouldStop = false
+        carryoverChecked = false
         hasPendingRep = false
         pendingRepProgress = 0f
         // Issue #163: Reset phase tracking
@@ -147,6 +153,7 @@ class RepCounterFromMachine {
         warmupReps = 0
         workingReps = 0
         shouldStop = false
+        carryoverChecked = false
         hasPendingRep = false
         pendingRepProgress = 0f
         // Issue #163: Reset phase tracking (but keep position history for direction detection)
@@ -383,6 +390,32 @@ class RepCounterFromMachine {
      * - Actual rep counting comes from repsRomCount/repsSetCount
      */
     private fun processModern(repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
+        // Issue #531 (symptom 1, heuristic): suppress a phantom warmup chirp caused by the
+        // machine's free-running directional counters carrying over from the prior set. On the
+        // first modern packet of a set, if BOTH up and down are already past the warmup target
+        // while the machine reports zero ROM/set reps, treat them as stale and re-baseline once so
+        // the first real movement yields delta ~0. Deliberately narrow to preserve:
+        //   - Issue #210: a real first rep arrives as repsRomCount=1 -> fails repsRomCount==0.
+        //   - Issue #553: requires BOTH up AND down past the target. A completed prior set leaves
+        //     both directional counters elevated (up ~= down), so real carryover is caught. But an
+        //     Echo set whose first packet is top-only (up advanced because earlier notifications
+        //     dropped, down still at baseline = genuine setup reps, not carryover) keeps down at 0
+        //     -> fails down>warmupTarget, so the fallback branch counts those reps instead of this
+        //     guard silently dropping them. (Codex PR #596 review.)
+        //   - Issue #411: variable-warmup sets use warmupTarget=0 -> fails warmupTarget>0.
+        if (!carryoverChecked) {
+            carryoverChecked = true
+            if (warmupTarget > 0 && warmupReps == 0 &&
+                repsRomCount == 0 && repsSetCount == 0 &&
+                up > warmupTarget && down > warmupTarget
+            ) {
+                logDebug("🩹 Issue #531: directional carryover (up=$up, down=$down) — re-baselining, suppressing phantom warmup")
+                lastTopCounter = up
+                lastCompleteCounter = down
+                return
+            }
+        }
+
         // Track UP movement - for working reps, show PENDING (grey) at TOP
         // Issue #210 FIX: No null check needed - lastTopCounter initialized to 0
         val upDelta = calculateDelta(lastTopCounter, up)
@@ -450,17 +483,21 @@ class RepCounterFromMachine {
         lastTopCounter = up
         lastCompleteCounter = down
 
-        // WARMUP TRACKING: Use repsRomCount directly from machine (no pending animation)
+        // WARMUP TRACKING: Use repsRomCount directly from machine (no pending animation).
+        // Issue #531: emit one WARMUP_COMPLETED per integer step so a batched/dropped ROM
+        // notification (count jumps 0 -> 2 in a single packet) doesn't drop setup-rep chirps.
         if (repsRomCount > warmupReps && warmupReps < warmupTarget) {
-            warmupReps = repsRomCount.coerceAtMost(warmupTarget)
-
-            onRepEvent?.invoke(
-                RepEvent(
-                    type = RepType.WARMUP_COMPLETED,
-                    warmupCount = warmupReps,
-                    workingCount = workingReps,
-                ),
-            )
+            val warmupRepTarget = repsRomCount.coerceAtMost(warmupTarget)
+            while (warmupReps < warmupRepTarget) {
+                warmupReps++
+                onRepEvent?.invoke(
+                    RepEvent(
+                        type = RepType.WARMUP_COMPLETED,
+                        warmupCount = warmupReps,
+                        workingCount = workingReps,
+                    ),
+                )
+            }
 
             if (warmupReps >= warmupTarget) {
                 onRepEvent?.invoke(
@@ -482,16 +519,19 @@ class RepCounterFromMachine {
         // unreachable because this branch already fires first when repsRomCount==0
         // and repsSetCount==0 — see PR #554 review (gemini-code-assist) feedback.
         else if (repsSetCount == 0 && repsRomCount == 0 && warmupReps < warmupTarget && upDelta > 0) {
-            warmupReps = (warmupReps + upDelta).coerceAtMost(warmupTarget)
-            logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")
-
-            onRepEvent?.invoke(
-                RepEvent(
-                    type = RepType.WARMUP_COMPLETED,
-                    warmupCount = warmupReps,
-                    workingCount = workingReps,
-                ),
-            )
+            // Issue #531: per-increment emission for the up-counter fallback too.
+            val warmupRepTarget = (warmupReps + upDelta).coerceAtMost(warmupTarget)
+            while (warmupReps < warmupRepTarget) {
+                warmupReps++
+                logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")
+                onRepEvent?.invoke(
+                    RepEvent(
+                        type = RepType.WARMUP_COMPLETED,
+                        warmupCount = warmupReps,
+                        workingCount = workingReps,
+                    ),
+                )
+            }
 
             if (warmupReps >= warmupTarget) {
                 onRepEvent?.invoke(
