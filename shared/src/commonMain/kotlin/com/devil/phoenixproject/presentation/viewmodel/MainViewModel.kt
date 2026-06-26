@@ -70,8 +70,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -125,6 +128,13 @@ class MainViewModel constructor(
 
     // === Phase 1a: HistoryManager (extracted from this class) ===
     val historyManager = HistoryManager(workoutRepository, personalRecordRepository, userProfileRepository, viewModelScope)
+
+    // Active profile id, exposed publicly so profile-scoped reads (e.g. velocity-1RM on
+    // ExerciseDetailScreen) query the correct profile instead of a hardcoded "default".
+    val activeProfileId: StateFlow<String> =
+        userProfileRepository.activeProfile
+            .map { it?.id ?: "default" }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
 
     // === Phase 2b: GamificationManager (extracted from this class) ===
     val gamificationManager = GamificationManager(

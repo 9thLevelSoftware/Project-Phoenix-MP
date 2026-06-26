@@ -68,16 +68,20 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
 
     // Get exercise name
     var exerciseName by remember { mutableStateOf("Loading...") }
-    // Velocity-based 1RM estimate (issue #517): latest estimate that passed the quality gate.
-    var velocity1Rm by remember { mutableStateOf<VelocityOneRepMaxEntity?>(null) }
     LaunchedEffect(exerciseId) {
         val exercise = viewModel.exerciseRepository.getExerciseById(exerciseId)
         exerciseName = exercise?.name ?: "Unknown Exercise"
         // Clear topbar title to allow dynamic title from EnhancedMainScreen
         viewModel.updateTopBarTitle("")
-        // Load latest passing velocity-1RM estimate for this exercise.
-        // TODO: use active profile id when exposed as a public property on MainViewModel
-        velocity1Rm = viewModel.velocityOneRepMaxRepository.getLatestPassing(exerciseId, "default")
+    }
+
+    // Velocity-based 1RM estimate (issue #517): latest estimate that passed the quality gate,
+    // scoped to the active profile. Keyed on exerciseId + profileId so the value resets (no
+    // stale flash) when either changes.
+    val profileId by viewModel.activeProfileId.collectAsState()
+    var velocity1Rm by remember(exerciseId, profileId) { mutableStateOf<VelocityOneRepMaxEntity?>(null) }
+    LaunchedEffect(exerciseId, profileId) {
+        velocity1Rm = viewModel.velocityOneRepMaxRepository.getLatestPassing(exerciseId, profileId)
     }
 
     // Calculate 1RM progression using saved per-cable load.
