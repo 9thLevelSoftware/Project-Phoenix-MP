@@ -39,47 +39,73 @@ warmup state machine (larger refactor, more risk to the Echo/Just Lift/AMRAP pat
 #553/#538) and moving emission into `ActiveSessionEngine` (changes the event contract, risks
 regressing working-rep/final-rep sounds).
 
-### 1. Baseline reconciliation — "first-packet snapshot"
+### 1. Carryover guard (heuristic) — best-effort phantom suppression
 
-Fixes symptom 1.
+Fixes symptom 1, **best-effort**. The original "snapshot every first packet and return without
+emitting" idea was **rejected**: four `RepCounterFromMachineTest` cases
+(`Issue 210 - first warmup rep registers immediately in modern mode` line 340, `… in legacy mode`
+line 316, `… after reset` line 378, `… after resetCountsOnly` line 398) hard-assert that the *first*
+packet of a set counts immediately with no baseline — that contract was Issue #210's fix and a blanket
+snapshot reintroduces the bug it closed. Inference alone also cannot distinguish a slack-takeup tick
+(symptom 1) from a genuine firmware-dropped rep (Issue #553), since both appear as `up` advancing
+while `repsRomCount`/`repsSetCount` stay 0.
 
-- Add `private var countersBaselined = false`.
-- On the **first `process()` call** of a set, snapshot all four machine counters as the zero
-  reference and return **without emitting**:
-  - `lastTopCounter = up`
-  - `lastCompleteCounter = down`
-  - `romBaseline = repsRomCount`
-  - `setBaseline = repsSetCount`
-- All subsequent counting measures growth beyond the reference:
-  - warmup step target uses `(repsRomCount − romBaseline)`
-  - working count uses `(repsSetCount − setBaseline)`
-- For a normal fresh set the machine starts these at 0, so baselines are 0 → behavior unchanged. For
-  carried-over counters the reference absorbs the stale value → no phantom.
-- Reset `countersBaselined` (and `romBaseline`/`setBaseline`) in **both** `reset()` and
-  `resetCountsOnly()`, so resume/recovery re-baselines to the machine's live position rather than
-  re-counting completed reps.
+Chosen heuristic — narrow, preserves both the #210 and #553 contracts:
 
-The baseline early-return is placed at the top of `process()` (before dispatch to
-`processModern`/`processLegacy`) so both packet formats share it.
+- Add `private var carryoverChecked = false` (reset in `reset()`/`resetCountsOnly()`).
+- At the **top of `processModern()`** (after the `warmupTarget`/`repsRomTotal` sync), on the first
+  modern packet of a set only, detect the carryover signature and re-baseline once:
+  ```kotlin
+  if (!carryoverChecked) {
+      carryoverChecked = true
+      if (warmupTarget > 0 && warmupReps == 0 &&
+          repsRomCount == 0 && repsSetCount == 0 &&
+          (up > warmupTarget || down > warmupTarget)
+      ) {
+          // Directional counters are free-running and already far above the warmup target
+          // while the machine reports zero ROM/set reps → stale values carried from the prior
+          // set. Re-baseline so the first real movement yields delta ~0, not a phantom warmup rep.
+          lastTopCounter = up
+          lastCompleteCounter = down
+          return
+      }
+  }
+  ```
+- **Why this preserves the contracts:** #210 modern feeds `repsRomCount = 1` (fails the
+  `repsRomCount == 0` test → no skip, counts normally). #210 legacy uses `processLegacy` (untouched).
+  #553 sends an explicit `up = 0, down = 0` baseline packet first (fails the `up > warmupTarget`
+  test → no skip), then advances normally. The variable-warmup case uses `warmupTarget = 0` (fails
+  the `warmupTarget > 0` test → no skip).
+- **Scope limit (documented honestly):** this only catches *large* directional carryover
+  (`up`/`down` already past the warmup target). If symptom 1 is instead a *small* slack-takeup tick
+  (`up: 0 → 1`), this guard does nothing — but it also introduces no regression. If the phantom
+  persists after this ships, the remaining mechanism requires a real `REP_RECEIVED` packet trace to
+  resolve. Applied to `processModern` only (the iOS-reported path); legacy firmware is left untouched.
 
-### 2. Per-increment warmup emission + idempotent completion
+### 2. Per-increment warmup emission
 
-Fixes symptoms 2 and 3.
+Fixes symptom 2, and removes symptom 3's *late-firing* cause (a timely warmup completion means the
+belated working-rep `WARMUP_COMPLETE` path rarely triggers).
 
 - **Per-increment:** when warmup advances, loop one `WARMUP_COMPLETED` per integer step:
   ```
-  val target = (repsRomCount - romBaseline).coerceAtMost(warmupTarget)
+  val target = repsRomCount.coerceAtMost(warmupTarget)
   while (warmupReps < target) {
       warmupReps++
       emit(WARMUP_COMPLETED, warmupReps, workingReps)
   }
   ```
-  Apply the same per-increment loop to the `upDelta` fallback branch. A batched `0→2→3` ROM report
-  now emits exactly 3 chirps.
-- **Idempotent completion:** add `private var warmupCompleteEmitted = false` (reset with the other
-  state). Gate **every** `WARMUP_COMPLETE` emission — primary branch, fallback branch, and the
-  belated working-rep path (lines 510–523) — on this flag so it fires **exactly once** per set and
-  can never re-fire when working reps begin.
+  Apply the same per-increment loop to the `upDelta` fallback branch
+  (`val target = (warmupReps + upDelta).coerceAtMost(warmupTarget)`). A batched `0→2→3` ROM report
+  now emits exactly 3 chirps. Counts stay absolute-from-machine (no baseline subtraction), preserving
+  the Issue #210 first-rep contract.
+
+> **Dropped during planning:** an earlier draft added a `warmupCompleteEmitted` idempotency guard.
+> It was removed — the existing control flow already guarantees `WARMUP_COMPLETE` fires at most once
+> per set (every emission site is gated on `warmupReps < warmupTarget`; the first to fire sets
+> `warmupReps = warmupTarget`, closing all other sites, and the ROM/fallback branches are mutually
+> exclusive `else if`). No double-fire sequence is constructible, so the guard had no failing test
+> (TDD/YAGNI).
 
 ### 3. Single clean transition tone
 
@@ -95,10 +121,14 @@ New/expanded `RepCounterFromMachineTest` cases asserting the exact emitted-event
 
 1. Batched ROM `0→2→3` → exactly 3× `WARMUP_COMPLETED` + 1× `WARMUP_COMPLETE`.
 2. Sequential ROM `1→2→3` → 3 + 1 (regression guard for the normal case).
-3. Stale directional counter (`up=8`) on first packet → **zero** events (baseline absorbs it); real
-   reps afterward count correctly.
-4. Working reps begin while `warmupReps < warmupTarget` → exactly one belated `WARMUP_COMPLETE`,
-   never a second.
+3. Carryover guard: first packet `up=8, down=8, repsRomCount=0, repsSetCount=0` (warmupTarget=3) →
+   **zero** events (guard re-baselines); then `repsRomCount` `1→2→3` produces exactly 3 warmup
+   chirps + 1 `WARMUP_COMPLETE`. Plus a guard-does-not-fire case: first packet `up=1` (small) →
+   normal counting (the existing #210 tests already pin this; add an explicit small-`up` carryover
+   case for clarity).
+4. Single-transition test (engine-level, via `DWSMTestHarness`): invoking the rep-event path with
+   `RepType.WARMUP_COMPLETE` emits exactly one `HapticEvent.WARMUP_COMPLETE` and **zero**
+   `HapticEvent.WARMUP_TO_WORKING` (the de-dupe).
 5. Working-rep counting + final-rep / `WORKOUT_COMPLETE` sequence unaffected (regression).
 6. Fallback branch (`repsRomCount==0`, `up` advancing) still progresses warmup per-increment.
 
@@ -106,13 +136,23 @@ New/expanded `RepCounterFromMachineTest` cases asserting the exact emitted-event
 
 | File | Change |
 |------|--------|
-| `RepCounterFromMachine.kt` | Baseline hook in `process()`; per-increment + idempotent-completion in `processModern()`/`processLegacy()` fallback; new fields; resets in `reset()`/`resetCountsOnly()`. **Primary.** |
+| `RepCounterFromMachine.kt` | Per-increment warmup emission in both `processModern()` branches; carryover guard at top of `processModern()`; one new field (`carryoverChecked`) reset in `reset()`/`resetCountsOnly()`. **Primary.** |
 | `ActiveSessionEngine.kt` | Remove one `WARMUP_TO_WORKING` emit line. |
 | `RepCounterFromMachineTest.kt` | New/expanded cases above. |
 
-**Risk:** Low–moderate. The baseline early-return touches the shared entry path used by Echo / Just
-Lift / AMRAP; unit tests cover those branches to guard against regressing the #553/#538 fixes. No
-BLE, sync, or UI contract changes.
+**Risk:** Low–moderate.
+
+- Symptoms 2 & 3 (per-increment emission, idempotent `WARMUP_COMPLETE`, transition de-dupe) are
+  verified compatible with every existing test — those tests assert final counts and event presence,
+  not event multiplicity. High confidence.
+- Symptom 1 is a **best-effort heuristic** (large-carryover guard) deliberately scoped to NOT touch
+  the #210 first-rep or #553 Echo-fallback contracts. If the real phantom is a small slack-takeup
+  tick rather than large carryover, the guard is a no-op (no regression) and the phantom needs a
+  packet trace to finish. **Recommend an on-device Echo + normal-mode warmup smoke test before
+  merge** to confirm the phantom is gone and Echo warmup still progresses.
+- No BLE, sync, or UI contract changes. The `WARMUP_TO_WORKING` enum + its iOS/Android sound maps
+  stay (asserted by `HapticEventAudioTest` / `HapticFeedbackAudioRoutingGuardTest`); only its
+  emission from `ActiveSessionEngine` is removed.
 
 ## Out of scope
 
