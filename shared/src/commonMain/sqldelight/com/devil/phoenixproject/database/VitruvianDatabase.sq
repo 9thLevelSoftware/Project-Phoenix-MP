@@ -638,6 +638,23 @@ SELECT updatedAt FROM WorkoutSession WHERE id = ?;
 selectSessionsUpdatedAtByIds:
 SELECT id, updatedAt FROM WorkoutSession WHERE id IN ?;
 
+-- Issue #517: Velocity-based 1RM foundation. Returns per-set load + MCV
+-- points for a specific exercise, used by VelocityOneRepMaxEstimator.
+-- Load uses workingAvgWeightKg when available (more accurate than the
+-- target weight), else falls back to weightPerCableKg. Null MCV and
+-- zero-rep rows are excluded; the estimator requires actual captured
+-- biomechanics data.
+selectVelocityPointsByExercise:
+SELECT workingAvgWeightKg, weightPerCableKg, avgMcvMmS, timestamp, workingReps
+FROM WorkoutSession
+WHERE exerciseId = :exerciseId
+  AND profile_id = :profileId
+  AND timestamp >= :sinceTimestamp
+  AND deletedAt IS NULL
+  AND avgMcvMmS IS NOT NULL
+  AND workingReps > 0
+ORDER BY timestamp DESC;
+
 -- Issue #591 follow-up: batch-read the detailed metric / biomechanics
 -- columns used by the LWW preservation guard for a list of session ids.
 -- Mirrors the column list in

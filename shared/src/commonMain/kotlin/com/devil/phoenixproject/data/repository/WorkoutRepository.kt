@@ -135,6 +135,18 @@ interface WorkoutRepository {
      * Get all phase statistics
      */
     fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>>
+
+    /**
+     * Issue #517: Velocity-based 1RM foundation.
+     * Returns per-set [WorkoutVelocityPoint] records for a given exercise within the
+     * time window [sinceTimestampMs, now]. Points with null MCV or zero working reps
+     * are excluded. Load uses [workingAvgWeightKg] when captured, else [weightPerCableKg].
+     */
+    suspend fun getVelocityPointsForExercise(
+        exerciseId: String,
+        profileId: String,
+        sinceTimestampMs: Long,
+    ): List<com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint>
 }
 
 /**

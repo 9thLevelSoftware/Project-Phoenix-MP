@@ -1135,6 +1135,21 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         }
     }
 
+    override suspend fun getVelocityPointsForExercise(
+        exerciseId: String,
+        profileId: String,
+        sinceTimestampMs: Long,
+    ): List<com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint> = withContext(Dispatchers.IO) {
+        queries.selectVelocityPointsByExercise(exerciseId, profileId, sinceTimestampMs).executeAsList().map { row ->
+            com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint(
+                loadPerCableKg = (row.workingAvgWeightKg ?: row.weightPerCableKg).toFloat(),
+                mcvMmS = (row.avgMcvMmS ?: 0.0).toFloat(),
+                timestampMs = row.timestamp,
+                workingReps = row.workingReps.toInt(),
+            )
+        }
+    }
+
     override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> = queries.selectAllPhaseStats {
             id,
             sessionId,

@@ -259,4 +259,26 @@ class FakeWorkoutRepository : WorkoutRepository {
     }
 
     override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> = _phaseStatisticsFlow
+
+    override suspend fun getVelocityPointsForExercise(
+        exerciseId: String,
+        profileId: String,
+        sinceTimestampMs: Long,
+    ): List<com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint> = sessions.values
+        .filter { s ->
+            s.exerciseId == exerciseId &&
+                s.profileId == profileId &&
+                s.timestamp >= sinceTimestampMs &&
+                s.avgMcvMmS != null &&
+                s.workingReps > 0
+        }
+        .sortedByDescending { it.timestamp }
+        .map { s ->
+            com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint(
+                loadPerCableKg = s.workingAvgWeightKg ?: s.weightPerCableKg,
+                mcvMmS = s.avgMcvMmS ?: 0f,
+                timestampMs = s.timestamp,
+                workingReps = s.workingReps,
+            )
+        }
 }
