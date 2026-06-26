@@ -392,21 +392,22 @@ class RepCounterFromMachine {
     private fun processModern(repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
         // Issue #531 (symptom 1, heuristic): suppress a phantom warmup chirp caused by the
         // machine's free-running directional counters carrying over from the prior set. On the
-        // first modern packet of a set, if up/down are already past the warmup target while the
-        // machine reports zero ROM/set reps, treat them as stale and re-baseline once so the
-        // first real movement yields delta ~0. Deliberately narrow to preserve:
+        // first modern packet of a set, if BOTH up and down are already past the warmup target
+        // while the machine reports zero ROM/set reps, treat them as stale and re-baseline once so
+        // the first real movement yields delta ~0. Deliberately narrow to preserve:
         //   - Issue #210: a real first rep arrives as repsRomCount=1 -> fails repsRomCount==0.
-        //   - Issue #553: relies on the up=0/down=0 baseline packet the firmware normally sends
-        //     before warmup -> fails up>warmupTarget. If a fresh Echo set's first packet instead
-        //     arrives with up>warmupTarget and zero ROM/set counts, the warmup reps embedded in
-        //     that jump are dropped here (documented best-effort limit; warmupReps recovers from
-        //     later packets).
+        //   - Issue #553: requires BOTH up AND down past the target. A completed prior set leaves
+        //     both directional counters elevated (up ~= down), so real carryover is caught. But an
+        //     Echo set whose first packet is top-only (up advanced because earlier notifications
+        //     dropped, down still at baseline = genuine setup reps, not carryover) keeps down at 0
+        //     -> fails down>warmupTarget, so the fallback branch counts those reps instead of this
+        //     guard silently dropping them. (Codex PR #596 review.)
         //   - Issue #411: variable-warmup sets use warmupTarget=0 -> fails warmupTarget>0.
         if (!carryoverChecked) {
             carryoverChecked = true
             if (warmupTarget > 0 && warmupReps == 0 &&
                 repsRomCount == 0 && repsSetCount == 0 &&
-                (up > warmupTarget || down > warmupTarget)
+                up > warmupTarget && down > warmupTarget
             ) {
                 logDebug("🩹 Issue #531: directional carryover (up=$up, down=$down) — re-baselining, suppressing phantom warmup")
                 lastTopCounter = up

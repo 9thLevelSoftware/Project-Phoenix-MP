@@ -862,6 +862,27 @@ class RepCounterFromMachineTest {
         assertEquals(1, capturedEvents.count { it.type == RepType.WARMUP_COMPLETED })
     }
 
+    @Test
+    fun `issue 531 carryover guard does not suppress a top-only first packet`() {
+        // Codex PR #596 review: in Echo/fallback telemetry (repsRomCount/repsSetCount stay 0), a
+        // dropped first notification can arrive with the up counter already past the setup target
+        // while down is still at baseline (e.g. up=4, down=0). Those are REAL setup reps, not
+        // carryover from a completed prior set (which leaves BOTH counters elevated). Requiring
+        // both counters past the target means this packet is counted by the fallback branch, not
+        // silently dropped by the guard.
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 4, down = 0)
+
+        assertEquals(
+            3,
+            repCounter.getRepCount().warmupReps,
+            "Top-only first packet is real dropped-rep telemetry, not carryover — must be counted",
+        )
+        assertEquals(3, capturedEvents.count { it.type == RepType.WARMUP_COMPLETED })
+        assertEquals(1, capturedEvents.count { it.type == RepType.WARMUP_COMPLETE })
+    }
+
 }
 
 class RepRangesTest {
