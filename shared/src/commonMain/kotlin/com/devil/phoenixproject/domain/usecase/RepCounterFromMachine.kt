@@ -396,7 +396,11 @@ class RepCounterFromMachine {
         // machine reports zero ROM/set reps, treat them as stale and re-baseline once so the
         // first real movement yields delta ~0. Deliberately narrow to preserve:
         //   - Issue #210: a real first rep arrives as repsRomCount=1 -> fails repsRomCount==0.
-        //   - Issue #553: sends an explicit up=0/down=0 baseline packet -> fails up>warmupTarget.
+        //   - Issue #553: relies on the up=0/down=0 baseline packet the firmware normally sends
+        //     before warmup -> fails up>warmupTarget. If a fresh Echo set's first packet instead
+        //     arrives with up>warmupTarget and zero ROM/set counts, the warmup reps embedded in
+        //     that jump are dropped here (documented best-effort limit; warmupReps recovers from
+        //     later packets).
         //   - Issue #411: variable-warmup sets use warmupTarget=0 -> fails warmupTarget>0.
         if (!carryoverChecked) {
             carryoverChecked = true

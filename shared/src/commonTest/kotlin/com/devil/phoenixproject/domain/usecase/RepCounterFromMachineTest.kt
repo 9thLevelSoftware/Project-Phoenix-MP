@@ -814,6 +814,11 @@ class RepCounterFromMachineTest {
             "Fallback warmup must chirp once per rep up to the target",
         )
         assertEquals(3, repCounter.getRepCount().warmupReps)
+        assertEquals(
+            1,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETE },
+            "Fallback warmup must fire WARMUP_COMPLETE exactly once on reaching target",
+        )
     }
 
     // ========== Issue #531: Carryover guard (phantom-chirp suppression) ==========
@@ -838,7 +843,11 @@ class RepCounterFromMachineTest {
 
         assertEquals(3, repCounter.getRepCount().warmupReps)
         assertEquals(3, capturedEvents.count { it.type == RepType.WARMUP_COMPLETED })
-        assertTrue(capturedEvents.any { it.type == RepType.WARMUP_COMPLETE })
+        assertEquals(
+            1,
+            capturedEvents.count { it.type == RepType.WARMUP_COMPLETE },
+            "WARMUP_COMPLETE fires exactly once after the real warmup reps",
+        )
     }
 
     @Test

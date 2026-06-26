@@ -28,24 +28,26 @@ class WarmupTransitionToneTest {
             harness.coordinator.hapticEvents.toList(collected)
         }
 
-        // Drive the rep-event path exactly as RepCounterFromMachine does on warmup completion.
-        harness.repCounter.onRepEvent?.invoke(
-            RepEvent(type = RepType.WARMUP_COMPLETE, warmupCount = 3, workingCount = 0),
-        )
-        advanceUntilIdle()
+        try {
+            // Drive the rep-event path exactly as RepCounterFromMachine does on warmup completion.
+            harness.repCounter.onRepEvent?.invoke(
+                RepEvent(type = RepType.WARMUP_COMPLETE, warmupCount = 3, workingCount = 0),
+            )
+            advanceUntilIdle()
 
-        assertEquals(
-            1,
-            collected.count { it is HapticEvent.WARMUP_COMPLETE },
-            "Exactly one WARMUP_COMPLETE should be emitted",
-        )
-        assertEquals(
-            0,
-            collected.count { it is HapticEvent.WARMUP_TO_WORKING },
-            "WARMUP_TO_WORKING must no longer be emitted (single clean transition tone)",
-        )
-
-        job.cancel()
-        harness.cleanup()
+            assertEquals(
+                1,
+                collected.count { it is HapticEvent.WARMUP_COMPLETE },
+                "Exactly one WARMUP_COMPLETE should be emitted",
+            )
+            assertEquals(
+                0,
+                collected.count { it is HapticEvent.WARMUP_TO_WORKING },
+                "WARMUP_TO_WORKING must no longer be emitted (single clean transition tone)",
+            )
+        } finally {
+            job.cancel()
+            harness.cleanup()
+        }
     }
 }
