@@ -141,4 +141,51 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
         assertEquals(40f, points.first().loadPerCableKg, "workingAvgWeightKg must be preferred over weightPerCableKg")
         assertEquals(1200f, points.first().mcvMmS, "MCV must be preserved as mm/s")
     }
+
+    @Test
+    fun `excludes null-MCV and zero-rep sessions within the window`() = runTest {
+        val db = createInMemoryTestDatabase()
+        seedExercise(db, id = "ex1")
+        val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db))
+        val repo = SqlDelightWorkoutRepository(db, exerciseRepo)
+
+        // (a) qualifying in-window session
+        seedSession(
+            db,
+            exerciseId = "ex1",
+            weightPerCableKg = 50f,
+            workingAvgWeightKg = 48f,
+            avgMcvMmS = 900f,
+            timestamp = 3000L,
+            workingReps = 5,
+            profileId = "default",
+        )
+        // (b) in-window but null MCV — excluded by WHERE avgMcvMmS IS NOT NULL
+        seedSession(
+            db,
+            exerciseId = "ex1",
+            weightPerCableKg = 60f,
+            workingAvgWeightKg = 58f,
+            avgMcvMmS = null,
+            timestamp = 3500L,
+            workingReps = 5,
+            profileId = "default",
+        )
+        // (c) in-window but zero working reps — excluded by WHERE workingReps > 0
+        seedSession(
+            db,
+            exerciseId = "ex1",
+            weightPerCableKg = 70f,
+            workingAvgWeightKg = 68f,
+            avgMcvMmS = 800f,
+            timestamp = 4000L,
+            workingReps = 0,
+            profileId = "default",
+        )
+
+        val points = repo.getVelocityPointsForExercise("ex1", "default", sinceTimestampMs = 1000L)
+        assertEquals(1, points.size, "Only the session with non-null MCV and working reps should qualify")
+        assertEquals(48f, points.first().loadPerCableKg)
+        assertEquals(900f, points.first().mcvMmS)
+    }
 }

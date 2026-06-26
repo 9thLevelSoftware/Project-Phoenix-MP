@@ -17,6 +17,7 @@ import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -1139,11 +1140,11 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         exerciseId: String,
         profileId: String,
         sinceTimestampMs: Long,
-    ): List<com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint> = withContext(Dispatchers.IO) {
+    ): List<WorkoutVelocityPoint> = withContext(Dispatchers.IO) {
         queries.selectVelocityPointsByExercise(exerciseId, profileId, sinceTimestampMs).executeAsList().map { row ->
-            com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint(
+            WorkoutVelocityPoint(
                 loadPerCableKg = (row.workingAvgWeightKg ?: row.weightPerCableKg).toFloat(),
-                mcvMmS = (row.avgMcvMmS ?: 0.0).toFloat(),
+                mcvMmS = (row.avgMcvMmS ?: 0.0).toFloat(), // non-null guaranteed by WHERE avgMcvMmS IS NOT NULL
                 timestampMs = row.timestamp,
                 workingReps = row.workingReps.toInt(),
             )

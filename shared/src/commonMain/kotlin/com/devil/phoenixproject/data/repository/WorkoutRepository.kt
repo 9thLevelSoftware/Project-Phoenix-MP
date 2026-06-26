@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -146,7 +147,7 @@ interface WorkoutRepository {
         exerciseId: String,
         profileId: String,
         sinceTimestampMs: Long,
-    ): List<com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint>
+    ): List<WorkoutVelocityPoint>
 }
 
 /**

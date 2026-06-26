@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -264,7 +265,7 @@ class FakeWorkoutRepository : WorkoutRepository {
         exerciseId: String,
         profileId: String,
         sinceTimestampMs: Long,
-    ): List<com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint> = sessions.values
+    ): List<WorkoutVelocityPoint> = sessions.values
         .filter { s ->
             s.exerciseId == exerciseId &&
                 s.profileId == profileId &&
@@ -274,9 +275,9 @@ class FakeWorkoutRepository : WorkoutRepository {
         }
         .sortedByDescending { it.timestamp }
         .map { s ->
-            com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint(
+            WorkoutVelocityPoint(
                 loadPerCableKg = s.workingAvgWeightKg ?: s.weightPerCableKg,
-                mcvMmS = s.avgMcvMmS ?: 0f,
+                mcvMmS = s.avgMcvMmS ?: 0f, // non-null guaranteed by the avgMcvMmS != null filter above
                 timestampMs = s.timestamp,
                 workingReps = s.workingReps,
             )
