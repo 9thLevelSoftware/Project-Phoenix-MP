@@ -107,3 +107,8 @@ bugreport-*.zip
 /.hermes/
 /.serena/
 /.tmp-*.txt
+
+# Codeboarding cache
+.codeboarding/cache/
+.almanac/runs/
+.almanac/index.db

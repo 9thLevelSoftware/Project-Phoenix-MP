@@ -1,0 +1,77 @@
+# .almanac/topics.yaml — source of truth for topic metadata.
+# Managed by `almanac topics` commands. User-added comments
+# between entries will be stripped on the next write (js-yaml
+# doesn't round-trip comments). Edit at your own risk — or use the
+# CLI (`almanac topics create|link|describe|rename|delete`)
+# which preserves the structure correctly.
+topics:
+  - slug: android
+    title: android
+    description: Android-specific hosts, storage, permissions, and service integrations.
+    parents:
+      - systems
+  - slug: auth
+    title: auth
+    description: User authentication, OAuth redirects, secure token storage, and session restoration.
+    parents:
+      - sync
+  - slug: ble
+    title: ble
+    description: Trainer discovery, connection lifecycle, protocol parsing, and command delivery.
+    parents:
+      - systems
+      - workouts
+  - slug: concepts
+    title: concepts
+    description: Project-specific vocabulary and durable domain models.
+    parents: []
+  - slug: data
+    title: data
+    description: SQLDelight schema, repositories, migrations, backups, and persistence contracts.
+    parents:
+      - systems
+  - slug: flows
+    title: flows
+    description: End-to-end behaviors that cross managers, repositories, platform code, or external services.
+    parents: []
+  - slug: frontend
+    title: frontend
+    description: Compose UI structure, navigation, theming, and presentation behavior.
+    parents:
+      - systems
+  - slug: integrations
+    title: integrations
+    description: >-
+      Health-store and third-party provider integrations exposed through one shared feature area but
+      split between device-local and portal-fed paths.
+    parents:
+      - systems
+  - slug: ios
+    title: ios
+    description: iOS-specific hosts, storage, permissions, and runtime behavior.
+    parents:
+      - systems
+  - slug: product
+    title: product
+    description: Project purpose, supported hardware, and rescue-project constraints.
+    parents: []
+  - slug: stack
+    title: stack
+    description: External runtimes, libraries, SDKs, and services the app depends on.
+    parents: []
+  - slug: sync
+    title: sync
+    description: >-
+      Portal auth, sync transport, entitlement refresh, and remote data movement that depends on a
+      Supabase-backed session.
+    parents:
+      - systems
+  - slug: systems
+    title: systems
+    description: Core Phoenix subsystems built in shared code and platform adapters.
+    parents: []
+  - slug: workouts
+    title: workouts
+    description: Workout session lifecycle, routine flow, state coordination, and training logic.
+    parents:
+      - systems
