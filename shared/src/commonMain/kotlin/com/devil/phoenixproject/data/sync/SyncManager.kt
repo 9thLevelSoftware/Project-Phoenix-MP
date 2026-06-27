@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.CharacterClass
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.RpgProfile
@@ -127,6 +128,7 @@ class SyncManager(
     private val repMetricRepository: RepMetricRepository,
     private val userProfileRepository: UserProfileRepository,
     private val externalActivityRepository: ExternalActivityRepository,
+    private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
     private val rateLimiter: ClientRateLimiter = ClientRateLimiter(),
 ) {
     companion object {
@@ -761,10 +763,25 @@ class SyncManager(
         // exercise IDs may be missing remotely even after a successful sync.
         val customExerciseDtos = syncRepository.getCustomExercisesModifiedSince(0L)
 
-        // 7. Build portal session + telemetry DTOs (telemetry setIds match generated exercise set IDs)
+        // 7. Build the velocity-based 1RM map (catalog exerciseId → latest passing
+        // per-cable estimate) for the exercises in this push. Looked up here (suspend
+        // context with repo + profile) so the pure adapter just attaches the value.
+        // Distinct from the rep-based estimate the adapter computes inline.
+        val velocityEstimatesByExerciseId = sessionsWithReps
+            .mapNotNull { it.session.exerciseId }
+            .distinct()
+            .mapNotNull { exId ->
+                velocityOneRepMaxRepository.getLatestPassing(exId, activeProfileId)
+                    ?.estimatedPerCableKg
+                    ?.let { exId to it }
+            }
+            .toMap()
+
+        // 7b. Build portal session + telemetry DTOs (telemetry setIds match generated exercise set IDs)
         val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(
             sessionsWithReps,
             userId,
+            velocityEstimatesByExerciseId,
         )
 
         // Gate telemetry push behind the Inferno tier. Force-curve / 50 Hz session

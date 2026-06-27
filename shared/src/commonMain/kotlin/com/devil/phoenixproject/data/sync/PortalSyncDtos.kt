@@ -90,6 +90,17 @@ data class PortalExerciseDto(
      * only recomputes when this field is absent (legacy payloads).
      */
     val estimatedOneRepMaxKg: Float? = null,
+    /**
+     * Velocity-based (VBT) estimated 1RM (per-cable kg) for this exercise,
+     * computed on-device from BLE mean concentric velocity (see
+     * VelocityOneRepMaxEstimator). This is a SEPARATE metric from the rep-based
+     * [estimatedOneRepMaxKg] (Brzycki/Epley hybrid) and must never overwrite it.
+     * It is the latest passing estimate for this exercise/profile at push time
+     * (a rolling current value, not as-of-session). Null when the exercise has
+     * no exerciseId or no passing velocity estimate. The portal stores this
+     * verbatim in exercise_progress.velocity_estimated_1rm_kg and never recomputes.
+     */
+    val velocityEstimatedOneRepMaxKg: Float? = null,
     val sets: List<PortalSetDto> = emptyList(),
 )
 
