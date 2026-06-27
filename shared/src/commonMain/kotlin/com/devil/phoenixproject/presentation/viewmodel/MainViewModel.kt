@@ -663,13 +663,19 @@ class MainViewModel constructor(
         viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
             try {
                 if (!settingsManager.velocityOneRepMaxBackfillDone.value) {
-                    // activeProfileId.value is "default" until the real profile loads async,
-                    // so await the loaded profile (10s timeout fallback to default for
-                    // genuine default-only users whose activeProfile stays null).
-                    val profile = kotlinx.coroutines.withTimeoutOrNull(10_000) {
-                        userProfileRepository.activeProfile.filterNotNull().first().id
-                    } ?: activeProfileId.value
-                    backfillVelocityOneRepMaxUseCase(profile, com.devil.phoenixproject.domain.model.currentTimeMillis())
+                    // Backfill EVERY profile's history (not just the active one): the run-once flag
+                    // is global, so a profile skipped here would never be backfilled. Await the
+                    // loaded profile list (10s timeout fallback to the active profile id for genuine
+                    // single-profile installs whose list stays empty).
+                    val profileIds = (
+                        kotlinx.coroutines.withTimeoutOrNull(10_000) {
+                            userProfileRepository.allProfiles.first { it.isNotEmpty() }
+                        } ?: userProfileRepository.allProfiles.value
+                        ).map { it.id }.ifEmpty { listOf(activeProfileId.value) }
+                    val now = com.devil.phoenixproject.domain.model.currentTimeMillis()
+                    for (profileId in profileIds) {
+                        backfillVelocityOneRepMaxUseCase(profileId, now)
+                    }
                     preferencesManager.setVelocityOneRepMaxBackfillDone(true)
                 }
             } catch (e: Exception) {
