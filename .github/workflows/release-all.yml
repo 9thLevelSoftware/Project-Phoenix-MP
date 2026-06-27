@@ -54,11 +54,11 @@ jobs:
                 env:
                     GH_TOKEN: ${{ secrets.RELEASE_PAT }}
                 run: |
-                    ARGS=""
+                    args=()
                     if [ -n "${{ inputs.versionCodeOverride }}" ]; then
-                      ARGS="-f versionCodeOverride=${{ inputs.versionCodeOverride }}"
+                      args+=(-f "versionCodeOverride=${{ inputs.versionCodeOverride }}")
                     fi
-                    gh workflow run android-release-apk.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}" $ARGS
+                    gh workflow run android-release-apk.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}" "${args[@]}"
                     echo "Triggered Android Release APK on ref ${{ github.ref_name }}"
 
             -   name: Trigger iOS Release IPA

@@ -173,7 +173,9 @@ jobs:
           echo "Health Connect permissions packaged in release manifest:"
           grep -o 'android.permission.health\.[A-Z_]*' "$manifest" | sort -u
 
-          grep -q 'android.permission.health.READ_WEIGHT' "$manifest"
+          for perm in READ_WEIGHT WRITE_EXERCISE WRITE_TOTAL_CALORIES_BURNED; do
+            grep -q "android.permission.health.$perm" "$manifest" || { echo "Missing required Health Connect permission: $perm" >&2; exit 1; }
+          done
 
       - name: Upload to Play Store Open Testing and Submit for Review
         uses: r0adkll/upload-google-play@v1

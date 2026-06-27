@@ -191,3 +191,25 @@ still needs the same per-finding re-validation applied here (the spot checks
 found a real false-positive rate, so none should be fixed blindly). They are
 best worked in follow-up passes grouped by the same RCA clusters; this ledger
 plus the per-area reports are the work-list.
+
+---
+
+# Medium/Low tail (F076–F431) — full triage
+
+The entire remaining tail was re-validated (six parallel validators, one per
+module area). Headline: a large share of the Low tier are OBSOLETE (stale
+review-manifest paths — files renamed/deleted/platform-only), several are
+intentional or false positives, many are real-but-architectural (DEFERRED), and
+a substantial set of real low-risk bugs were fixed in the "M" batches below.
+
+## Verdict distribution (approx.)
+- OBSOLETE (stale/missing target): ~50 (esp. Presentation component manifest F177–F199, F213/F214, F389/F390; Data F086/F092/F099/F100/F101/F104/F105/F118/F353/F354/F358/F359/F361; Domain F145/F146/F152/F154/F168/F175/F176; DI F335/F338/F339).
+- FALSE-POSITIVE: F095, F130 (Data), F202, F179 (Presentation), F263, F274 (Platform), F372 (Domain) — verified intentional/mitigated.
+- DEFERRED (real, architectural/UI/concurrency/policy): the bulk of Presentation viewmodel/state-machine items (F209–F212, F218/F219, F238–F242, F249–F258, F382/F392/F397–F400), Data concurrency/transaction items (F081/F083/F093/F094/F106–F108/F112–F125 etc.), Domain validation/policy items (F133/F136/F137/F140–F144/F147/F148/F150/F153/F155–F176), Platform iOS/UX items (F261/F262/F266/F273/F276/F277/F283/F284/F286/F289–F297 etc.), CI release-pipeline items (F317/F319–F333). Each documented with evidence in the agent triage.
+
+## Real low-risk fixes APPLIED (M batches)
+- **M1 (committed):** F135, F149, F364, F373, F381 (Domain); F304, F308, F313, F316, F420, F421, F422, F423 (Utilities).
+- **M2 (Data):** F085 (BleConnectionManager surfaces scan/connect failures), F087/F348 (DiagnosticFaultDecoder unknown-bits + label disambiguation), F350 (MetricPollingEngine timeout → disconnect after cap), F346 (BleRepository doc), F351 (delete dead calculateRawVelocity), F345 (BleOperationQueue require maxRetries≥1), F109 (PreferencesManager atomic update), F126 (PortalApiClient rethrow CancellationException in 8 catches), F129 (SyncManager pull profileId = mergeProfileId), F131 (SyncManager post-merge guard), F343 (GoTrueModels displayName JSON decode), F360 (PortalMappings category case/trim).
+- **M3 (Platform):** F260 (locale apply for en), F264 (foreground-service unknown-action else), F267 (location perms maxSdkVersion=30), F270 (BLE permission grant check), F279/F294 (CSV import failed-count includes save failures, Android+iOS), F282 (FilePicker null-stream → onSaved(null)), F285 (iOS keychain migration never overwrites), F287 (CompactNumberPicker.ios empty-values guard), F408 (DriverFactory cursor.use), F409 (log MediaStore delete failures), F410 (secure-random size guard).
+- **M4 (Presentation):** F200 (encodeRouteSegment on nav IDs), F203 (empty-name grouping crash), F204/F205/F206/F236 (try/catch around repo calls in History/Home/TrainingCycles effects), F220/F221/F222/F384 (stale-state/crash guards in setup/workout tabs), F225 (cycle AMRAP rendering), F226 (diagnostics empty-faults), F232 (sync buttons disable on SyncingWithProgress), F233 (1RM input rejects non-positive), F243–F248 (viewmodel flow .catch / try-catch / isSimulating finally / commit result), F259 (superset color negative-index crash), F385 (RoutinesTab stale time estimates), F386 (JustLift weightUnit effect key), F387/F388 (RestTimer progress clamp + negative format), F393/F394 (dialog remember keyed on input), F395 (ConnectionLogs Int-overflow cutoff), F396 (EulaViewModel persist-before-accept).
+- **M5 (CI/DI):** F318 (assert all 3 Health Connect perms), F334 (release-all APK dispatch bash array), F429 (KoinInit comment).
