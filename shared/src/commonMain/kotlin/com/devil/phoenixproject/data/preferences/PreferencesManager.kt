@@ -11,6 +11,7 @@ import com.devil.phoenixproject.util.BackupDestination.Companion.toJson
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -276,7 +277,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     private fun updateAndEmit(update: UserPreferences.() -> UserPreferences) {
-        _preferencesFlow.value = _preferencesFlow.value.update()
+        _preferencesFlow.update { it.update() }
     }
 
     override suspend fun setWeightUnit(unit: WeightUnit) {

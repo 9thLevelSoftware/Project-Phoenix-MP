@@ -34,7 +34,9 @@ data class GoTrueUser(
 ) {
     /** Extract display_name from user_metadata if present */
     val displayName: String?
-        get() = userMetadata?.get("display_name")?.toString()?.trim('"')
+        get() = (userMetadata?.get("display_name") as? kotlinx.serialization.json.JsonPrimitive)
+            ?.takeIf { it.isString }
+            ?.content
 }
 
 // === GoTrue Sign-Up Request ===

@@ -48,6 +48,7 @@ class BleOperationQueue {
         writeType: WriteType = WriteType.WithResponse,
         maxRetries: Int = 3,
     ): Result<Unit> {
+        require(maxRetries >= 1) { "maxRetries must be >= 1, was $maxRetries" }
         var lastException: Exception? = null
 
         for (attempt in 0 until maxRetries) {

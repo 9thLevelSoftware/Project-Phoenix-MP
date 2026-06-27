@@ -234,22 +234,6 @@ class MonitorDataProcessor(
     }
 
     /**
-     * Calculate raw velocity from position delta and time delta.
-     * Returns 0 if this is the first-ever sample (no previous timestamp) or time delta is zero.
-     *
-     * @param currentPos Current position (mm)
-     * @param previousPos Previous position (mm)
-     * @param currentTime Current timestamp (ms)
-     * @return Raw velocity in mm/s (signed: positive = extending, negative = retracting)
-     */
-    private fun calculateRawVelocity(currentPos: Float, previousPos: Float, currentTime: Long): Double {
-        if (lastTimestamp <= 0L) return 0.0
-        val deltaTimeSeconds = (currentTime - lastTimestamp) / 1000.0
-        if (deltaTimeSeconds <= 0.0) return 0.0
-        return (currentPos - previousPos) / deltaTimeSeconds
-    }
-
-    /**
      * Process status flags from bytes 16-17 of monitor data.
      * Handles deload detection (debounced) and ROM violation events.
      */

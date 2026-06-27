@@ -21,6 +21,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -236,6 +237,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
+        if (e is CancellationException) throw e
         val classified = classifyError(e, "Sign-in")
         Result.failure(classified.toException())
     }
@@ -254,6 +256,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
+        if (e is CancellationException) throw e
         val classified = classifyError(e, "Sign-up")
         Result.failure(classified.toException())
     }
@@ -274,6 +277,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
+        if (e is CancellationException) throw e
         val classified = classifyError(e, "OAuth code exchange")
         Result.failure(classified.toException())
     }
@@ -288,6 +292,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
+        if (e is CancellationException) throw e
         val classified = classifyError(e, "Token refresh")
         Result.failure(classified.toException())
     }
@@ -317,6 +322,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 )
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val classified = classifyError(e, "Get user")
             Result.failure(classified.toException())
         }
@@ -372,6 +378,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 )
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             // Network failures return failure to allow callers to preserve existing premium status
             val classified = classifyError(e, "Subscription check")
             Result.failure(classified.toException())
@@ -422,6 +429,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 )
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val classified = classifyError(e, "Subscription tier check")
             Result.failure(classified.toException())
         }
@@ -680,6 +688,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 handleResponse(response)
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val classified = classifyError(e, "Request")
             Result.failure(classified.toException())
         }

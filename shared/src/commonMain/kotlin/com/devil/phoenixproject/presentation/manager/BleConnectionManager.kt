@@ -158,7 +158,11 @@ class BleConnectionManager(
     }
 
     fun startScanning() {
-        scope.launch { bleRepository.startScanning() }
+        scope.launch {
+            bleRepository.startScanning().onFailure { e ->
+                _connectionError.value = e.message ?: "Failed to start scan"
+            }
+        }
     }
 
     fun stopScanning() {
@@ -180,7 +184,9 @@ class BleConnectionManager(
         scope.launch {
             val device = scannedDevices.value.find { it.address == deviceAddress }
             if (device != null) {
-                bleRepository.connect(device)
+                bleRepository.connect(device).onFailure { e ->
+                    _connectionError.value = e.message ?: "Failed to connect"
+                }
             } else {
                 Logger.e { "Device not found in scanned devices: $deviceAddress" }
             }

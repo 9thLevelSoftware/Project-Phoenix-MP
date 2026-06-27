@@ -223,7 +223,7 @@ interface BleRepository {
     fun stopPolling()
 
     /**
-     * Stop only monitor and heuristic polling, keeping diagnostic polling and heartbeat running.
+     * Stop only monitor polling, keeping diagnostic, heuristic, and heartbeat polling running.
      * Use this during bodyweight exercises to keep BLE connection "warm" (via diagnostic polling
      * at 500ms intervals) while not emitting workout metrics.
      *

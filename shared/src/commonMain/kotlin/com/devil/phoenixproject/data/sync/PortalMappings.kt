@@ -73,7 +73,12 @@ object PortalMappings {
      * Map granular muscle group to a broader portal analytics category.
      * Returns the input unchanged if no mapping exists (safe passthrough).
      */
-    fun toPortalCategory(muscleGroup: String): String = muscleGroupToCategory[muscleGroup] ?: muscleGroup
+    fun toPortalCategory(muscleGroup: String): String {
+        val key = muscleGroup.trim()
+        return muscleGroupToCategory[key]
+            ?: muscleGroupToCategory.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
+            ?: muscleGroup
+    }
 
     /**
      * All portal analytics categories, for building UI filters.

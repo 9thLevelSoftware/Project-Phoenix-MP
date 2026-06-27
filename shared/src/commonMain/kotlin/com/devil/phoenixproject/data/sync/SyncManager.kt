@@ -1237,7 +1237,7 @@ class SyncManager(
             val pullResult = apiClient.pullPortalPayload(
                 knownEntityIds = knownEntityIds,
                 deviceId = deviceId,
-                profileId = activeProfileId,
+                profileId = mergeProfileId,
                 cursor = currentCursor,
                 pageSize = SyncConfig.DEFAULT_PAGE_SIZE,
             )
@@ -1501,8 +1501,9 @@ class SyncManager(
         // If these fail, the core sync data is still preserved.
         // ====================================================================================
 
-        // RPG attributes — server wins (overwrite local)
-        pullResponse.rpgAttributes?.let { rpg ->
+        try {
+            // RPG attributes — server wins (overwrite local)
+            pullResponse.rpgAttributes?.let { rpg ->
             val characterClass = try {
                 CharacterClass.valueOf(rpg.characterClass ?: "PHOENIX")
             } catch (_: IllegalArgumentException) {
@@ -1555,6 +1556,12 @@ class SyncManager(
             }
             externalActivityRepository.upsertActivities(activities)
             Logger.d("SyncManager") { "Merged ${activities.size} portal external activities" }
+        }
+        } catch (e: Exception) {
+            Logger.w(e) {
+                "Non-atomic post-merge (RPG/external activities) failed; " +
+                    "non-fatal, core sync data is preserved."
+            }
         }
 
         return Result.success(Unit)
