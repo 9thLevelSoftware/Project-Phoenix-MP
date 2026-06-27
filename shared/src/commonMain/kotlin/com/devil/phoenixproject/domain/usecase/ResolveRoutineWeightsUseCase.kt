@@ -72,6 +72,19 @@ class ResolveRoutineWeightsUseCase(
                 profileId,
             )?.estimatedPerCableKg?.takeIf { it > 0 }
         } ?: exerciseRepository.getExerciseById(exerciseId)?.oneRepMaxKg?.takeIf { it > 0 }
+            // Last-resort baseline for ESTIMATED_1RM only: when there is no velocity estimate
+            // and no stored Exercise.oneRepMaxKg, fall back to the max-weight PR before going absolute.
+            ?: (
+                if (exercise.effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM) {
+                    prRepository.getBestWeightPRForWorkoutMode(
+                        exerciseId,
+                        mode.displayName,
+                        profileId,
+                    )?.weightPerCableKg?.takeIf { it > 0 }
+                } else {
+                    null
+                }
+                )
 
         return if (scalingWeight != null) {
             ResolvedExerciseWeights(

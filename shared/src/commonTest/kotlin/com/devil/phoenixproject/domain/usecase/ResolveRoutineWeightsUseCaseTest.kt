@@ -656,6 +656,46 @@ class ResolveRoutineWeightsUseCaseTest {
     }
 
     @Test
+    fun `ESTIMATED_1RM falls back to max-weight PR when no estimate and no stored 1RM`() = runTest {
+        // Given: no velocity estimate, no stored oneRepMaxKg, but a max-weight PR exists
+        velocityRepository.latestPassing = null
+        prRepository.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = "bench-press",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 60f,
+                reps = 5,
+                oneRepMax = 70f,
+                timestamp = 1000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 300f,
+            ),
+        )
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-1rm-pr-fallback",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        // 80% of 60 (max-weight PR) = 48 kg — must scale off PR, not drop to absolute 30
+        assertEquals(48f, result.baseWeight)
+        assertEquals(60f, result.usedPR)
+        assertEquals(80, result.percentOfPR)
+        assertTrue(result.isFromPR)
+        assertNull(result.fallbackReason)
+    }
+
+    @Test
     fun `set weights default to base percentage when no per-set percentages defined`() = runTest {
         // Given: Exercise uses PR percentage for base weight, but no per-set percentages
         prRepository.addRecord(
