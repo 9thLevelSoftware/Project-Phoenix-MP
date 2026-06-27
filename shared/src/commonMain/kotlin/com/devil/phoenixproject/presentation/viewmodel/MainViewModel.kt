@@ -673,6 +673,7 @@ class MainViewModel constructor(
                     preferencesManager.setVelocityOneRepMaxBackfillDone(true)
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Logger.w(e) { "VELOCITY_1RM: backfill failed" }
             }
         }
