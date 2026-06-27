@@ -16,9 +16,9 @@ class ComputeVelocityOneRepMaxUseCase(
     private val estimator: VelocityOneRepMaxEstimator,
     private val persist: suspend (result: VelocityOneRepMaxResult, exerciseId: String, computedAt: Long, profileId: String) -> Unit,
 ) {
-    suspend operator fun invoke(exerciseId: String, profileId: String, nowMs: Long): VelocityOneRepMaxResult? {
+    suspend operator fun invoke(exerciseId: String, profileId: String, nowMs: Long, windowDays: Int = WINDOW_DAYS): VelocityOneRepMaxResult? {
         val exercise = exerciseLookup(exerciseId) ?: return null
-        val sinceMs = nowMs - WINDOW_DAYS * DAY_MS
+        val sinceMs = nowMs - windowDays.toLong() * DAY_MS
         val points = workoutPoints(exerciseId, profileId, sinceMs)
         val personal = personalMvtLookup(exerciseId, profileId)
         val mvt = mvtProvider.resolve(
