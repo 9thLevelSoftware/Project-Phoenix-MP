@@ -31,6 +31,7 @@ import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
+import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import com.russhwolf.settings.MapSettings
@@ -81,7 +82,7 @@ class MainViewModelTest {
         fakeCompletedSetRepository = FakeCompletedSetRepository()
         fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
-        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository, com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository())
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository, FakeVelocityOneRepMaxRepository())
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
