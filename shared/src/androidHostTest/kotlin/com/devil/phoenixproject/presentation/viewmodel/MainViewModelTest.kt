@@ -17,6 +17,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
+import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -125,6 +126,7 @@ class MainViewModelTest {
                 override suspend fun getAllPassing(profileId: String): List<com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity> = emptyList()
                 override fun getHistory(exerciseId: String, profileId: String): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity>> = kotlinx.coroutines.flow.flowOf(emptyList())
             },
+            countVelocityOneRepMaxImprovementsUseCase = CountVelocityOneRepMaxImprovementsUseCase(),
         )
     }
 

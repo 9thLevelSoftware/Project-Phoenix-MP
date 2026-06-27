@@ -3,6 +3,7 @@ package com.devil.phoenixproject.e2e
 import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
+import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -110,6 +111,7 @@ class WorkoutFlowE2ETest {
                 override suspend fun getAllPassing(profileId: String): List<com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity> = emptyList()
                 override fun getHistory(exerciseId: String, profileId: String): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity>> = kotlinx.coroutines.flow.flowOf(emptyList())
             },
+            countVelocityOneRepMaxImprovementsUseCase = CountVelocityOneRepMaxImprovementsUseCase(),
         )
 
         robot = WorkoutRobot(viewModel, fakeBleRepository)

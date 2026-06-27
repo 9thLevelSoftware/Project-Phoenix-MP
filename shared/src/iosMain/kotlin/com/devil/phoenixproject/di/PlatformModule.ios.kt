@@ -123,6 +123,7 @@ actual val platformModule: Module = module {
             computeVelocityOneRepMaxUseCase = get(),
             recordPersonalMvtSampleUseCase = get(),
             velocityOneRepMaxRepository = get(),
+            countVelocityOneRepMaxImprovementsUseCase = get(),
         )
     }
 }

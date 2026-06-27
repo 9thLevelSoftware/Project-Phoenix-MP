@@ -52,6 +52,7 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
+import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -116,6 +117,7 @@ class MainViewModel constructor(
     private val recordPersonalMvtSampleUseCase: RecordPersonalMvtSampleUseCase,
     // Exposed as a public val so ExerciseDetailScreen can query the latest passing estimate.
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
+    private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -138,7 +140,7 @@ class MainViewModel constructor(
             .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
 
     // === Phase 2b: GamificationManager (extracted from this class) ===
-    val gamificationManager = GamificationManager(
+    val gamificationManager: GamificationManager = GamificationManager(
         gamificationRepository,
         personalRecordRepository,
         exerciseRepository,
@@ -154,6 +156,10 @@ class MainViewModel constructor(
                 }
             }
             computeVelocityOneRepMaxUseCase(exId, profile, com.devil.phoenixproject.domain.model.currentTimeMillis())
+            val improvements = countVelocityOneRepMaxImprovementsUseCase(
+                velocityOneRepMaxRepository.getAllPassing(profile),
+            )
+            gamificationManager.checkVelocityOneRepMaxBadges(improvements, profile)
         },
     )
 

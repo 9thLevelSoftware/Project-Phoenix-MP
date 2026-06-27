@@ -15,6 +15,7 @@ import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
+import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
 import com.devil.phoenixproject.domain.usecase.MvtExerciseView
 import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
@@ -71,6 +72,7 @@ val domainModule = module {
         )
     }
     single { RecordPersonalMvtSampleUseCase(get()) }
+    single { CountVelocityOneRepMaxImprovementsUseCase() }
 
     // Migration
     single { MigrationManager(get(), get<UserProfileRepository>(), get<GamificationRepository>()) }

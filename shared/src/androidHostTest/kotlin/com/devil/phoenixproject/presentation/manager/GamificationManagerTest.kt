@@ -216,4 +216,50 @@ class GamificationManagerTest {
             managerScope.cancel()
         }
     }
+
+    @Test
+    fun `checkVelocityOneRepMaxBadges awards bronze at one improvement`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = GamificationManager(
+                gamificationRepository = fakeGamificationRepository,
+                personalRecordRepository = fakePersonalRecordRepository,
+                exerciseRepository = fakeExerciseRepository,
+                hapticEvents = hapticEvents,
+                scope = managerScope,
+                gamificationEnabled = MutableStateFlow(true),
+            )
+
+            val earned = manager.checkVelocityOneRepMaxBadges(improvementCount = 1, profileId = "default")
+            advanceUntilIdle()
+
+            assertTrue(earned.any { it.id == "velocity_1rm_1" })
+            assertFalse(earned.any { it.id == "velocity_1rm_5" })
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `checkVelocityOneRepMaxBadges does not re-award already earned`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = GamificationManager(
+                gamificationRepository = fakeGamificationRepository,
+                personalRecordRepository = fakePersonalRecordRepository,
+                exerciseRepository = fakeExerciseRepository,
+                hapticEvents = hapticEvents,
+                scope = managerScope,
+                gamificationEnabled = MutableStateFlow(true),
+            )
+
+            manager.checkVelocityOneRepMaxBadges(1, "default")
+            val again = manager.checkVelocityOneRepMaxBadges(1, "default")
+            advanceUntilIdle()
+
+            assertTrue(again.isEmpty())
+        } finally {
+            managerScope.cancel()
+        }
+    }
 }
