@@ -764,16 +764,24 @@ class SyncManager(
         val customExerciseDtos = syncRepository.getCustomExercisesModifiedSince(0L)
 
         // 7. Build the velocity-based 1RM map (catalog exerciseId → latest passing
-        // per-cable estimate) for the exercises in this push. Looked up here (suspend
-        // context with repo + profile) so the pure adapter just attaches the value.
-        // Distinct from the rep-based estimate the adapter computes inline.
-        val velocityEstimatesByExerciseId = sessionsWithReps
-            .mapNotNull { it.session.exerciseId }
-            .distinct()
-            .mapNotNull { exId ->
-                velocityOneRepMaxRepository.getLatestPassing(exId, activeProfileId)
-                    ?.estimatedPerCableKg
-                    ?.let { exId to it }
+        // per-cable estimate). Looked up here (suspend context with repo + profile)
+        // so the pure adapter just attaches the value. Distinct from the rep-based
+        // estimate the adapter computes inline.
+        //
+        // Single query for the whole profile (getAllPassing) instead of one
+        // getLatestPassing per distinct exercise — avoids an N+1 during full sync.
+        // getAllPassing returns the full passing history; pick the latest per
+        // exercise with the SAME ordering as getLatestPassing (computedAt DESC,
+        // then id DESC as the tie-break) so the two paths agree exactly. The
+        // adapter only reads keys for exercises actually in this push, so a
+        // superset map is harmless.
+        val velocityEstimatesByExerciseId = velocityOneRepMaxRepository
+            .getAllPassing(activeProfileId)
+            .groupBy { it.exerciseId }
+            .mapNotNull { (exId, estimates) ->
+                estimates
+                    .maxWithOrNull(compareBy({ it.computedAt }, { it.id }))
+                    ?.let { exId to it.estimatedPerCableKg }
             }
             .toMap()
 
