@@ -24,6 +24,7 @@ data class VelocityOneRepMaxEntity(
 interface VelocityOneRepMaxRepository {
     suspend fun insert(result: VelocityOneRepMaxResult, exerciseId: String, computedAt: Long, profileId: String)
     suspend fun getLatestPassing(exerciseId: String, profileId: String): VelocityOneRepMaxEntity?
+    suspend fun getAllPassing(profileId: String): List<VelocityOneRepMaxEntity>
     fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>>
 }
 
@@ -58,6 +59,11 @@ class SqlDelightVelocityOneRepMaxRepository(private val db: VitruvianDatabase) :
     override suspend fun getLatestPassing(exerciseId: String, profileId: String): VelocityOneRepMaxEntity? =
         withContext(Dispatchers.IO) {
             queries.selectLatestPassingVelocityOneRepMax(exerciseId, profileId, ::map).executeAsOneOrNull()
+        }
+
+    override suspend fun getAllPassing(profileId: String): List<VelocityOneRepMaxEntity> =
+        withContext(Dispatchers.IO) {
+            queries.selectAllPassingVelocityOneRepMaxByProfile(profileId, ::map).executeAsList()
         }
 
     override fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>> =

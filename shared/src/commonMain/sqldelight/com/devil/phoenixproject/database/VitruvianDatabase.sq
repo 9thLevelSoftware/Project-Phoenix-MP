@@ -476,6 +476,11 @@ AND passedQualityGate = 1 AND deletedAt IS NULL
 ORDER BY computedAt DESC, id DESC
 LIMIT 1;
 
+selectAllPassingVelocityOneRepMaxByProfile:
+SELECT * FROM VelocityOneRepMaxEstimate
+WHERE profile_id = :profileId AND passedQualityGate = 1 AND deletedAt IS NULL
+ORDER BY exerciseId ASC, computedAt ASC;
+
 -- ==================== PERSONAL MVT TABLE ====================
 -- Personalized Minimum Velocity Threshold per exercise/profile (issue #517).
 -- Stored alongside the exercise; used by VelocityOneRepMaxEstimator to override
