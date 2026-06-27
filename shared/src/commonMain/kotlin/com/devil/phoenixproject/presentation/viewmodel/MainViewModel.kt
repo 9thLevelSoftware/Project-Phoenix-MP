@@ -76,6 +76,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -661,7 +663,12 @@ class MainViewModel constructor(
         viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
             try {
                 if (!settingsManager.velocityOneRepMaxBackfillDone.value) {
-                    val profile = activeProfileId.value
+                    // activeProfileId.value is "default" until the real profile loads async,
+                    // so await the loaded profile (10s timeout fallback to default for
+                    // genuine default-only users whose activeProfile stays null).
+                    val profile = kotlinx.coroutines.withTimeoutOrNull(10_000) {
+                        userProfileRepository.activeProfile.filterNotNull().first().id
+                    } ?: activeProfileId.value
                     backfillVelocityOneRepMaxUseCase(profile, com.devil.phoenixproject.domain.model.currentTimeMillis())
                     preferencesManager.setVelocityOneRepMaxBackfillDone(true)
                 }
