@@ -481,6 +481,19 @@ SELECT * FROM VelocityOneRepMaxEstimate
 WHERE profile_id = :profileId AND passedQualityGate = 1 AND deletedAt IS NULL
 ORDER BY exerciseId ASC, computedAt ASC;
 
+-- Issue #517 Phase 5 T1: enumerate exercises that have at least one MCV-bearing set.
+-- Used by the velocity-1RM pipeline to decide which exercises are ready to estimate.
+selectExerciseIdsWithVelocityData:
+SELECT DISTINCT exerciseId FROM WorkoutSession
+WHERE profile_id = :profileId AND exerciseId IS NOT NULL
+  AND deletedAt IS NULL AND avgMcvMmS IS NOT NULL AND workingReps > 0;
+
+-- Issue #517 Phase 5 T1: count existing estimates for a given exercise/profile.
+-- Returns 0 when the exercise has never been estimated.
+countVelocityOneRepMaxByExercise:
+SELECT COUNT(*) FROM VelocityOneRepMaxEstimate
+WHERE exerciseId = :exerciseId AND profile_id = :profileId AND deletedAt IS NULL;
+
 -- ==================== PERSONAL MVT TABLE ====================
 -- Personalized Minimum Velocity Threshold per exercise/profile (issue #517).
 -- Stored alongside the exercise; used by VelocityOneRepMaxEstimator to override

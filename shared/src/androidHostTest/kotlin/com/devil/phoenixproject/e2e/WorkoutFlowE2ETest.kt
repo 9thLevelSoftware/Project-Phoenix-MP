@@ -110,6 +110,7 @@ class WorkoutFlowE2ETest {
                 override suspend fun getLatestPassing(exerciseId: String, profileId: String): com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity? = null
                 override suspend fun getAllPassing(profileId: String): List<com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity> = emptyList()
                 override fun getHistory(exerciseId: String, profileId: String): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity>> = kotlinx.coroutines.flow.flowOf(emptyList())
+                override suspend fun hasEstimates(exerciseId: String, profileId: String): Boolean = false
             },
             countVelocityOneRepMaxImprovementsUseCase = CountVelocityOneRepMaxImprovementsUseCase(),
         )

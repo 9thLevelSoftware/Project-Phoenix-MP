@@ -1154,6 +1154,11 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         }
     }
 
+    override suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String> =
+        withContext(Dispatchers.IO) {
+            queries.selectExerciseIdsWithVelocityData(profileId).executeAsList()
+        }
+
     override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> = queries.selectAllPhaseStats {
             id,
             sessionId,

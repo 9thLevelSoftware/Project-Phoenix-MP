@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -104,5 +105,16 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
         assertEquals(3, all.size)
         assertEquals(listOf("exA", "exA", "exB"), all.map { it.exerciseId })
         assertEquals(listOf(100f, 110f, 80f), all.map { it.estimatedPerCableKg })
+    }
+
+    // Issue #517 Phase 5 T1
+    @Test
+    fun `hasEstimates reflects presence of rows`() = runTest {
+        val db = createInMemoryTestDatabase()
+        seedExercise(db, id = "ex1")
+        val repo = SqlDelightVelocityOneRepMaxRepository(db)
+        assertFalse(repo.hasEstimates("ex1", "default"))
+        repo.insert(result(100f, passed = true), "ex1", computedAt = 1L, profileId = "default")
+        assertTrue(repo.hasEstimates("ex1", "default"))
     }
 }

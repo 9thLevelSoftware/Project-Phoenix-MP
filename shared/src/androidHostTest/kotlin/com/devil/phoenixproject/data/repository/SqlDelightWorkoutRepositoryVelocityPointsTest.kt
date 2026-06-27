@@ -5,6 +5,7 @@ import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
 class SqlDelightWorkoutRepositoryVelocityPointsTest {
@@ -188,5 +189,24 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
         assertEquals(1, points.size, "Only the session with non-null MCV and working reps should qualify")
         assertEquals(48f, points.first().loadPerCableKg)
         assertEquals(900f, points.first().mcvMmS)
+    }
+
+    // Issue #517 Phase 5 T1
+    @Test
+    fun `getExerciseIdsWithVelocityData returns distinct mcv-bearing exercises`() = runTest {
+        val db = createInMemoryTestDatabase()
+        seedExercise(db, id = "exA"); seedExercise(db, id = "exB")
+        val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db))
+        val repo = SqlDelightWorkoutRepository(db, exerciseRepo)
+
+        // two MCV-bearing sets for exA — must appear only once (DISTINCT)
+        seedSession(db, exerciseId = "exA", weightPerCableKg = 40f, workingAvgWeightKg = 40f, avgMcvMmS = 800f, timestamp = 1L, workingReps = 5, profileId = "default")
+        seedSession(db, exerciseId = "exA", weightPerCableKg = 60f, workingAvgWeightKg = 60f, avgMcvMmS = 500f, timestamp = 2L, workingReps = 5, profileId = "default")
+        // exB has null MCV — must be excluded
+        seedSession(db, exerciseId = "exB", weightPerCableKg = 50f, workingAvgWeightKg = 50f, avgMcvMmS = null, timestamp = 1L, workingReps = 5, profileId = "default")
+
+        val ids = repo.getExerciseIdsWithVelocityData("default")
+        assertEquals(listOf("exA"), ids)
+        assertTrue(ids.none { it == "exB" }, "exB (null MCV) must be excluded")
     }
 }

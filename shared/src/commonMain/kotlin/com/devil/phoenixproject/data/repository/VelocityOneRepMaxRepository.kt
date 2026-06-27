@@ -26,6 +26,9 @@ interface VelocityOneRepMaxRepository {
     suspend fun getLatestPassing(exerciseId: String, profileId: String): VelocityOneRepMaxEntity?
     suspend fun getAllPassing(profileId: String): List<VelocityOneRepMaxEntity>
     fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>>
+
+    /** Issue #517 Phase 5 T1: returns true if any (non-deleted) estimate exists for this exercise/profile. */
+    suspend fun hasEstimates(exerciseId: String, profileId: String): Boolean
 }
 
 class SqlDelightVelocityOneRepMaxRepository(private val db: VitruvianDatabase) : VelocityOneRepMaxRepository {
@@ -68,4 +71,9 @@ class SqlDelightVelocityOneRepMaxRepository(private val db: VitruvianDatabase) :
 
     override fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>> =
         queries.selectVelocityOneRepMaxByExercise(exerciseId, profileId, ::map).asFlow().mapToList(Dispatchers.IO)
+
+    override suspend fun hasEstimates(exerciseId: String, profileId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            queries.countVelocityOneRepMaxByExercise(exerciseId, profileId).executeAsOne() > 0L
+        }
 }
