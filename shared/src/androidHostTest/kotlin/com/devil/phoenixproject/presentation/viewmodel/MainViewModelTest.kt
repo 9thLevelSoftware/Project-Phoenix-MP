@@ -81,7 +81,7 @@ class MainViewModelTest {
         fakeCompletedSetRepository = FakeCompletedSetRepository()
         fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
-        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository)
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository, com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository())
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,

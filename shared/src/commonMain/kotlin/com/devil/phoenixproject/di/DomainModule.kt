@@ -37,7 +37,7 @@ val domainModule = module {
     single { ProgressionUseCase(get(), get()) }
     single { RecommendWeightAdjustmentUseCase() }
     single { ApplyEquipmentRackLoadUseCase() }
-    factory { ResolveRoutineWeightsUseCase(get(), get()) }
+    factory { ResolveRoutineWeightsUseCase(get(), get(), get()) }
     factory { ApplyRoutineModifierUseCase(get(), get()) }
     factory { RoutineTimeEstimator(get()) }
     single { TemplateConverter(get()) }
