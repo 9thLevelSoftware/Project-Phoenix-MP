@@ -67,6 +67,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -121,8 +122,9 @@ fun ExerciseEditBottomSheet(
     buttonText: String = "Save",
     weightStepOverride: Float = 0f, // Issue #266/#410: 0 = use default for unit
 ) {
-    // Create local ViewModel instance with PersonalRecordRepository for PR lookups
-    val viewModel = remember { ExerciseConfigViewModel(personalRecordRepository) }
+    // Create local ViewModel instance with repositories for PR and velocity-1RM lookups
+    val velocityOneRepMaxRepository: VelocityOneRepMaxRepository = koinInject()
+    val viewModel = remember { ExerciseConfigViewModel(personalRecordRepository, velocityOneRepMaxRepository, exerciseRepository) }
     val userProfileRepository: UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileId = activeProfile?.id ?: "default"
@@ -172,6 +174,25 @@ fun ExerciseEditBottomSheet(
     val weightPercentOfPR by viewModel.weightPercentOfPR.collectAsState()
     // Issue #517: per-exercise scaling basis selector
     val scalingBasis by viewModel.scalingBasis.collectAsState()
+
+    // Additional baselines for the 3-way scaling basis (Issue #517 gating + preview fix)
+    val currentMaxVolumePR by viewModel.currentMaxVolumePR.collectAsState()
+    val velocityEstimateKg by viewModel.velocityEstimateKg.collectAsState()
+    val storedOneRepMaxKg by viewModel.storedOneRepMaxKg.collectAsState()
+
+    // Resolved baseline weight for the currently-selected scaling basis, mirroring
+    // ResolveRoutineWeightsUseCase so the editor preview matches workout-start resolution.
+    val effectiveScalingBasis = scalingBasis ?: ScalingBasis.MAX_WEIGHT_PR
+    val baselineWeightKg: Float? = when (effectiveScalingBasis) {
+        ScalingBasis.MAX_WEIGHT_PR ->
+            currentExercisePR?.weightPerCableKg?.takeIf { it > 0 }
+        ScalingBasis.MAX_VOLUME_PR ->
+            currentMaxVolumePR?.weightPerCableKg?.takeIf { it > 0 }
+        ScalingBasis.ESTIMATED_1RM ->
+            velocityEstimateKg?.takeIf { it > 0 }
+                ?: storedOneRepMaxKg?.takeIf { it > 0 }
+                ?: currentExercisePR?.weightPerCableKg?.takeIf { it > 0 }
+    }
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
@@ -345,6 +366,7 @@ fun ExerciseEditBottomSheet(
                         weightPercentOfPR = weightPercentOfPR,
                         currentExercisePR = currentExercisePR,
                         scalingBasis = scalingBasis,
+                        baselineWeightKg = baselineWeightKg,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
@@ -1232,6 +1254,13 @@ fun WeightConfigurationCard(
     weightPercentOfPR: Int,
     currentExercisePR: PersonalRecord?,
     scalingBasis: ScalingBasis? = null,
+    /**
+     * Resolved baseline weight (kg/cable) for the currently-selected scaling basis.
+     * When non-null the toggle is enabled and the preview uses this weight.
+     * Callers should mirror ResolveRoutineWeightsUseCase's resolution order so the
+     * editor preview matches what the workout will actually start from.
+     */
+    baselineWeightKg: Float? = null,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onUsePercentOfPRChange: (Boolean) -> Unit,
@@ -1272,11 +1301,18 @@ fun WeightConfigurationCard(
                         fontWeight = if (usePercentOfPR) FontWeight.Bold else FontWeight.Normal,
                         color = if (usePercentOfPR) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
+                    // Subtitle: describes which baseline will be used
+                    val effectiveBasis = scalingBasis ?: ScalingBasis.MAX_WEIGHT_PR
                     Text(
-                        text = currentExercisePR?.let { pr ->
-                            "Scale weight based on your ${pr.phase.displayLabel().lowercase()} personal record"
-                        } ?: run {
-                            "No PR set for this exercise"
+                        text = when {
+                            baselineWeightKg != null && effectiveBasis == ScalingBasis.ESTIMATED_1RM ->
+                                "Scale weight based on your velocity 1RM estimate"
+                            baselineWeightKg != null && effectiveBasis == ScalingBasis.MAX_VOLUME_PR ->
+                                "Scale weight based on your max-volume personal record"
+                            currentExercisePR != null ->
+                                "Scale weight based on your ${currentExercisePR.phase.displayLabel().lowercase()} personal record"
+                            else ->
+                                "No baseline available for the selected scaling type"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1285,17 +1321,19 @@ fun WeightConfigurationCard(
                 Switch(
                     checked = usePercentOfPR,
                     onCheckedChange = onUsePercentOfPRChange,
-                    enabled = currentExercisePR != null,
+                    // Enable the toggle whenever a baseline exists for the selected basis —
+                    // not just when a max-weight PR exists (fixes ESTIMATED_1RM gating bug).
+                    enabled = baselineWeightKg != null,
                 )
             }
 
-            // Show percentage controls when toggle is ON and PR exists
-            val prForScaling = currentExercisePR
-            if (usePercentOfPR && prForScaling != null) {
+            // Show percentage controls when toggle is ON and a baseline exists for the selected basis
+            val effectiveBasisForControls = scalingBasis ?: ScalingBasis.MAX_WEIGHT_PR
+            if (usePercentOfPR && baselineWeightKg != null) {
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
-                // Calculate resolved weight
-                val resolvedWeight = (prForScaling.weightPerCableKg * weightPercentOfPR / 100f)
+                // Calculate resolved weight from the selected basis's baseline (not always max-weight PR)
+                val resolvedWeight = (baselineWeightKg * weightPercentOfPR / 100f)
                     .let { (it * 2).roundToInt() / 2f } // Round to 0.5kg
 
                 // Display current percentage and resolved weight
@@ -1305,7 +1343,12 @@ fun WeightConfigurationCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "$weightPercentOfPR% of ${prForScaling.phase.displayLabel()} PR",
+                        text = when (effectiveBasisForControls) {
+                            ScalingBasis.ESTIMATED_1RM -> "$weightPercentOfPR% of Est. 1RM"
+                            ScalingBasis.MAX_VOLUME_PR -> "$weightPercentOfPR% of Max-volume PR"
+                            ScalingBasis.MAX_WEIGHT_PR ->
+                                "$weightPercentOfPR% of ${currentExercisePR?.phase?.displayLabel() ?: "Max-weight"} PR"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -1360,13 +1403,12 @@ fun WeightConfigurationCard(
                     ScalingBasis.MAX_VOLUME_PR to "Max-volume PR",
                     ScalingBasis.ESTIMATED_1RM to "Est. 1RM",
                 )
-                val effectiveBasis = scalingBasis ?: ScalingBasis.MAX_WEIGHT_PR
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                     basisOptions.forEachIndexed { index, (basis, label) ->
                         SegmentedButton(
                             shape = SegmentedButtonDefaults.itemShape(index = index, count = basisOptions.size),
                             onClick = { onScalingBasisChange(basis) },
-                            selected = effectiveBasis == basis,
+                            selected = effectiveBasisForControls == basis,
                         ) {
                             Text(label, maxLines = 1)
                         }
@@ -1374,8 +1416,8 @@ fun WeightConfigurationCard(
                 }
             }
 
-            // Show warning if no PR available and toggle is off
-            if (currentExercisePR == null && !usePercentOfPR) {
+            // Show warning when no baseline is available for the selected basis and toggle is off
+            if (baselineWeightKg == null && !usePercentOfPR) {
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -1394,7 +1436,7 @@ fun WeightConfigurationCard(
                             modifier = Modifier.size(16.dp),
                         )
                         Text(
-                            text = "Complete a workout to set your PR and enable percentage scaling",
+                            text = "Complete a workout to record data and enable percentage scaling",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
                         )
