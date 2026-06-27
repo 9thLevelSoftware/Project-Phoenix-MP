@@ -688,6 +688,12 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
             // which tracks session-scoped consecutive quality sets. Not evaluated via DB stats.
             false
         }
+
+        is BadgeRequirement.VelocityOneRepMaxImprovements -> {
+            // Awarded by VelocityOneRepMaxRepository when cumulative improvement count meets threshold.
+            // Not evaluated via aggregate GamificationStats — handled outside this stats-based path.
+            false
+        }
     }
 
     override suspend fun getBadgeProgress(badgeId: String, profileId: String): Pair<Int, Int>? {
@@ -775,6 +781,8 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
                 is BadgeRequirement.RoutinesCreated -> getCreatedRoutinesCount(profileId)
 
                 is BadgeRequirement.QualityStreak -> 0 // Session-scoped, not tracked in DB
+
+                is BadgeRequirement.VelocityOneRepMaxImprovements -> 0 // Awarded by VelocityOneRepMaxRepository
             }
 
             Pair(current, badge.getTargetValue())

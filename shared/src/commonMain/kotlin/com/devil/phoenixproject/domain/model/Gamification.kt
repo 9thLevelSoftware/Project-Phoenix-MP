@@ -94,6 +94,9 @@ sealed class BadgeRequirement {
 
     /** Consecutive sets with average quality score above threshold (session-scoped) */
     data class QualityStreak(val sets: Int, val minScore: Int) : BadgeRequirement()
+
+    /** Cumulative velocity-estimated 1RM improvements (>=2.5% over prior best) across all exercises. */
+    data class VelocityOneRepMaxImprovements(val count: Int) : BadgeRequirement()
 }
 
 /**
@@ -135,6 +138,7 @@ data class Badge(
         is BadgeRequirement.RoutinesCompleted -> "$currentValue/${req.count} routines"
         is BadgeRequirement.RoutinesCreated -> "$currentValue/${req.count} routines"
         is BadgeRequirement.QualityStreak -> "$currentValue/${req.sets} sets (>${req.minScore})"
+        is BadgeRequirement.VelocityOneRepMaxImprovements -> "$currentValue/${req.count} velocity 1RMs"
     }
 
     /**
@@ -163,6 +167,7 @@ data class Badge(
         is BadgeRequirement.RoutinesCompleted -> req.count
         is BadgeRequirement.RoutinesCreated -> req.count
         is BadgeRequirement.QualityStreak -> req.sets
+        is BadgeRequirement.VelocityOneRepMaxImprovements -> req.count
     }
 }
 
