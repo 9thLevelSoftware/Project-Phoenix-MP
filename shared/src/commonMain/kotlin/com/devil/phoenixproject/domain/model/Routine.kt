@@ -192,7 +192,11 @@ data class RoutineExercise(
             }
         }
 
-        return setWeightsPerCableKg.ifEmpty { List(sets) { weightPerCableKg } }
+        // F135: normalize to exactly `sets` entries. The percent path above
+        // already returns List(sets); the explicit-weights fallback must too,
+        // otherwise a stored setWeightsPerCableKg whose length != sets returns a
+        // list that mismatches setReps downstream.
+        return List(sets) { index -> setWeightsPerCableKg.getOrNull(index) ?: weightPerCableKg }
     }
 }
 

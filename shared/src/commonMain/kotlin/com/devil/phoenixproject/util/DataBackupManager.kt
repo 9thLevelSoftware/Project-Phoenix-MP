@@ -1406,7 +1406,9 @@ abstract class BaseDataBackupManager(
                                                     volume = pr.volume.toDouble(),
                                                     phase = pr.phase ?: "COMBINED",
                                                     profile_id = pr.profileId ?: "default",
-                                                    cable_count = null,
+                                                    // F304: preserve cable count on streaming restore (the
+                                                    // non-streaming path already passes pr.cableCount).
+                                                    cable_count = pr.cableCount?.toLong(),
                                                 )
                                                 personalRecordsImported++
                                             } catch (e: Exception) {

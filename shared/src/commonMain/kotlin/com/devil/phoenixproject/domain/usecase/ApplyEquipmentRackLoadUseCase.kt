@@ -28,7 +28,10 @@ class ApplyEquipmentRackLoadUseCase {
         } else {
             (programmedWeightPerCableKg - (counterweightKg / cableCount))
                 .coerceIn(
-                    validatorMinimumPerCableKg.coerceAtLeast(Constants.MIN_WEIGHT_KG),
+                    // F373: clamp the lower bound below the ceiling. A caller-supplied
+                    // validatorMinimumPerCableKg above MAX_WEIGHT_PER_CABLE_KG would make
+                    // coerceIn(min, max) have min > max and throw.
+                    validatorMinimumPerCableKg.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG),
                     Constants.MAX_WEIGHT_PER_CABLE_KG,
                 )
         }

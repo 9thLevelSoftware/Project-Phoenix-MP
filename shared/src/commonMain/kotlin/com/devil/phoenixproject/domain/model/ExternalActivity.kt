@@ -14,7 +14,10 @@ enum class IntegrationProvider(val key: String, val displayName: String) {
     ;
 
     companion object {
-        fun fromKey(key: String): IntegrationProvider? = entries.find { it.key == key }
+        // F364: normalize the incoming key (trim + lowercase) before matching so
+        // "HEVY" / " hevy " resolve instead of falling through to null/UNKNOWN.
+        // Enum keys are already lowercase; null-on-unknown contract preserved.
+        fun fromKey(key: String): IntegrationProvider? = key.trim().lowercase().let { k -> entries.find { it.key == k } }
     }
 }
 
