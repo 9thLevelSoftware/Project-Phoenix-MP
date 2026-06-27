@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.testutil.FakeBleRepository
@@ -64,6 +65,24 @@ class SettingsManagerTest {
 
             assertEquals(WeightUnit.KG, fakePreferencesManager.preferencesFlow.value.weightUnit)
             assertEquals(WeightUnit.KG, manager.userPreferences.value.weightUnit)
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `setDefaultScalingBasis persists to preference-backed flow`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+
+            assertEquals(ScalingBasis.MAX_WEIGHT_PR, manager.defaultScalingBasis.value)
+
+            manager.setDefaultScalingBasis(ScalingBasis.ESTIMATED_1RM)
+            advanceUntilIdle()
+
+            assertEquals(ScalingBasis.ESTIMATED_1RM, fakePreferencesManager.preferencesFlow.value.defaultScalingBasis)
+            assertEquals(ScalingBasis.ESTIMATED_1RM, manager.defaultScalingBasis.value)
         } finally {
             managerScope.cancel()
         }

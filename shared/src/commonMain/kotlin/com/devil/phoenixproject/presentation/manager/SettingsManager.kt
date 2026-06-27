@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.domain.model.RepCountTiming
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.format
@@ -37,6 +38,11 @@ class SettingsManager(
     val gamificationEnabled: StateFlow<Boolean> = userPreferences
         .map { it.gamificationEnabled }
         .stateIn(scope, SharingStarted.Eagerly, true)
+
+    // Issue #517: Default scaling basis for % of 1RM routine weight resolution
+    val defaultScalingBasis: StateFlow<ScalingBasis> = userPreferences
+        .map { it.defaultScalingBasis }
+        .stateIn(scope, SharingStarted.Eagerly, ScalingBasis.MAX_WEIGHT_PR)
 
     // Issue #167: Autoplay is now derived from summaryCountdownSeconds
     // - summaryCountdownSeconds == 0 (Unlimited) = autoplay OFF (manual control)
@@ -144,6 +150,10 @@ class SettingsManager(
 
     fun setWeightSuggestionsEnabled(enabled: Boolean) {
         scope.launch { preferencesManager.setWeightSuggestionsEnabled(enabled) }
+    }
+
+    fun setDefaultScalingBasis(basis: ScalingBasis) {
+        scope.launch { preferencesManager.setDefaultScalingBasis(basis) }
     }
 
     fun setColorScheme(schemeIndex: Int) {

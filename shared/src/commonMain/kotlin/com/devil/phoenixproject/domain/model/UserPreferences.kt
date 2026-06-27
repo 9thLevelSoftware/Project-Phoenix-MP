@@ -47,6 +47,8 @@ data class UserPreferences(
     val autoEndOnVelocityLoss: Boolean = false,
     // Issue #424: Suggestion-only next-set weight recommendations
     val weightSuggestionsEnabled: Boolean = true,
+    // Issue #517: Default scaling basis for % of 1RM routine weight resolution
+    val defaultScalingBasis: ScalingBasis = ScalingBasis.MAX_WEIGHT_PR,
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

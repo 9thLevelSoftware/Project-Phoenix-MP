@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.preferences
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.BackupDestination
@@ -152,6 +153,9 @@ interface PreferencesManager {
     // Issue #424: Suggestion-only next-set weight recommendations
     suspend fun setWeightSuggestionsEnabled(enabled: Boolean)
 
+    // Issue #517: Default scaling basis for % of 1RM routine weight resolution
+    suspend fun setDefaultScalingBasis(basis: ScalingBasis)
+
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
     suspend fun clearAllSingleExerciseDefaults()
@@ -210,6 +214,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_VELOCITY_LOSS_THRESHOLD = "velocity_loss_threshold_percent"
         private const val KEY_AUTO_END_VELOCITY_LOSS = "auto_end_on_velocity_loss"
         private const val KEY_WEIGHT_SUGGESTIONS_ENABLED = "weight_suggestions_enabled"
+        private const val KEY_DEFAULT_SCALING_BASIS = "default_scaling_basis"
 
         // Permissions onboarding (health + microphone)
         private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
@@ -259,6 +264,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             velocityLossThresholdPercent = settings.getInt(KEY_VELOCITY_LOSS_THRESHOLD, 20).coerceIn(10, 50),
             autoEndOnVelocityLoss = settings.getBoolean(KEY_AUTO_END_VELOCITY_LOSS, false),
             weightSuggestionsEnabled = settings.getBoolean(KEY_WEIGHT_SUGGESTIONS_ENABLED, true),
+            defaultScalingBasis = settings.getStringOrNull(KEY_DEFAULT_SCALING_BASIS)?.let {
+                runCatching { ScalingBasis.valueOf(it) }.getOrNull()
+            } ?: ScalingBasis.MAX_WEIGHT_PR,
         )
     }
 
@@ -522,5 +530,10 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     override suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_WEIGHT_SUGGESTIONS_ENABLED, enabled)
         updateAndEmit { copy(weightSuggestionsEnabled = enabled) }
+    }
+
+    override suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
+        settings.putString(KEY_DEFAULT_SCALING_BASIS, basis.name)
+        updateAndEmit { copy(defaultScalingBasis = basis) }
     }
 }
