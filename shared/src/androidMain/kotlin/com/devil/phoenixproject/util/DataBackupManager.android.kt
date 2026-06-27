@@ -190,7 +190,9 @@ class AndroidDataBackupManager(
             toDelete.forEach { uri ->
                 try {
                     resolver.delete(uri, null, null)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Logger.w(e) { "Failed to delete old MediaStore backup $uri during prune" }
+                }
             }
         } else {
             @Suppress("DEPRECATION")

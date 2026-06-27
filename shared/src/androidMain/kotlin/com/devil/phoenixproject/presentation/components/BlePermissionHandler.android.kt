@@ -105,8 +105,11 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
-    ) { permissions ->
-        val allGranted = permissions.values.all { it }
+    ) { _ ->
+        // Re-check every required permission directly rather than trusting the
+        // result map: Android may omit keys for permissions it didn't prompt
+        // for, and `map.values.all { it }` would then pass on a partial subset.
+        val allGranted = BlePermissions.arePermissionsGranted(context)
         permissionState = if (allGranted) {
             BlePermissionState.Granted
         } else {

@@ -79,6 +79,16 @@ class WorkoutForegroundService : Service() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
+
+            else -> {
+                // Unknown/missing action: never entered foreground mode. If we were
+                // launched via startForegroundService(), Android requires a timely
+                // startForeground() call; since we cannot satisfy that for an
+                // unrecognized action, stop immediately to avoid an ANR/crash.
+                log.w { "Unexpected action ${intent.action}; stopping" }
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
         }
 
         // A killed workout cannot resume the BLE connection, so do not request restart.

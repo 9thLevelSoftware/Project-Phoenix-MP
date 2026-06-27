@@ -29,6 +29,9 @@ private const val ASWEB_AUTH_SESSION_ERROR_DOMAIN =
 
 @OptIn(ExperimentalForeignApi::class)
 internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
+    require(size >= 0) { "size must be non-negative, was $size" }
+    // pinned.addressOf(0) is invalid for an empty array, so short-circuit.
+    if (size == 0) return ByteArray(0)
     val bytes = ByteArray(size)
     bytes.usePinned { pinned ->
         val status = SecRandomCopyBytes(kSecRandomDefault, size.convert(), pinned.addressOf(0))

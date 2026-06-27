@@ -150,6 +150,16 @@ private fun migrateTokensToKeychain(legacy: Settings, keychain: Settings) {
 
     try {
         for (key in PORTAL_KEYS) {
+            // Never overwrite a value that already lives in the Keychain. The app
+            // may have authenticated directly into the Keychain while stale legacy
+            // NSUserDefaults keys still linger; clobbering the fresh token with an
+            // old one (and then deleting the legacy copy) would corrupt the session.
+            if (keychain.getStringOrNull(key) != null ||
+                keychain.getLongOrNull(key) != null ||
+                keychain.getBooleanOrNull(key) != null
+            ) {
+                continue
+            }
             // Try each type - Settings stores typed values
             legacy.getStringOrNull(key)?.let { value ->
                 keychain.putString(key, value)
