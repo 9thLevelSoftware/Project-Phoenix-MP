@@ -779,6 +779,8 @@ fun RoutineEditorScreen(
                     exercise = selectedExercise,
                     orderIndex = state.exercises.size,
                     weightPerCableKg = 5f,
+                    // Issue #517: seed new exercises from the system-wide default scaling basis
+                    scalingBasis = userPreferences.defaultScalingBasis,
                     // If adding to a superset, set the superset reference
                     supersetId = supersetForAddExercise?.id,
                     orderInSuperset = supersetForAddExercise?.let { ss ->
