@@ -107,3 +107,12 @@ raw GitHub for the parity-critical sync contracts.
 | F063 | REAL | iOS `IosSoundManager.release()` unconditionally `setActive(false)` on the process-wide `AVAudioSession`, which can kill the safe-word mic. | **FIXED** — skip deactivation when the category is `playAndRecord` (owned by the safe-word listener), mirroring the setup-time guard. |
 | F065 | REAL | iOS `BackupJsonWriter.open()/write()` ignored directory/file/handle creation failures and silently dropped writes. | **FIXED** — throw on directory/file/handle creation failure and on missing handle / failed UTF-8 encoding. |
 | F064 | DOCUMENTED | iOS `VideoPlayer` calls `onReady()` immediately after `play()`; initial-load failures aren't observed, so the UI can show a blank player forever. | **DOCUMENTED** — proper fix is KVO on `AVPlayerItem.status`; not shipping an unverified KVO impl for an iOS-only Medium without device testing. Recommended follow-up. |
+
+## C3 — Multi-profile data isolation
+
+| ID | Verdict | Evidence | Disposition |
+|----|---------|----------|-------------|
+| F016 / F028 | REAL | `getRecentCompletedSetsForExercise` and its query (`selectRecentCompletedSetsForExercise`) had no `profile_id`/`deletedAt` filter, leaking other profiles' (and soft-deleted) sets into progression/deload analysis. Only 2 callers, both in `ProgressionUseCase` (which has `profileId`). | **FIXED** — added `ws.profile_id = ? AND ws.deletedAt IS NULL` to the query; threaded `profileId` through the interface/impl and both call sites. |
+| F029 | REAL | `checkForProgression` used `recentSets.maxOfOrNull { it.actualWeightKg }` despite the "most recent weight" comment; `checkForDeload` already used `.first()`. | **FIXED** — uses the most-recent (newest-first) working set's weight. Regression test added. |
+| F019 | REAL | `getRpgInput` peak-power inputs used global `selectPeakRepPower`/`selectPeakPower` (no profile filter), so one profile's metrics inflated another's RPG power. | **FIXED** — added profile-scoped `selectPeakRepPowerForProfile`/`selectPeakPowerForProfile` (join WorkoutSession, filter profile + deletedAt) and used them in `getRpgInput`. |
+| F047 / F049 | PENDING | `AssessmentViewModel` saves with no active profile; `GamificationViewModel` badge progress not reactive to profile changes. | Deferred to C7 (ViewModel reactivity). |

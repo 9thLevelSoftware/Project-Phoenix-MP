@@ -521,14 +521,16 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
             queries.selectAvgWorkingWeight(profileId = profileId).executeAsOneOrNull()?.AVG
                 ?: 0.0
 
-        // Peak power: try RepMetric first, fall back to MetricSample
+        // Peak power: try RepMetric first, fall back to MetricSample.
+        // F019: scope both to the active profile so another profile's metrics
+        // cannot inflate this profile's RPG power attribute.
         val peakRepPower = try {
-            queries.selectPeakRepPower().executeAsOneOrNull()?.MAX
+            queries.selectPeakRepPowerForProfile(profileId).executeAsOneOrNull()?.peakRepPower
         } catch (_: Exception) {
             null // RepMetric table may not exist due to migration gap
         }
         val peakPowerWatts = peakRepPower
-            ?: queries.selectPeakPower().executeAsOneOrNull()?.peakPower
+            ?: queries.selectPeakPowerForProfile(profileId).executeAsOneOrNull()?.peakPower
             ?: 0.0
 
         val trainingDays = queries.countTrainingDays(

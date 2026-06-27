@@ -91,7 +91,10 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         .filter { sessionExerciseIds[it.sessionId] == exerciseId }
         .sortedByDescending { it.completedAt }
 
-    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int): List<CompletedSet> = getCompletedSetsForExercise(exerciseId).take(limit)
+    // profileId is accepted to match the interface; this fake does not model
+    // per-session profiles, so profile scoping is exercised by the SQL-backed
+    // repository, not here.
+    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> = getCompletedSetsForExercise(exerciseId).take(limit)
 
     override suspend fun saveCompletedSet(set: CompletedSet) {
         completedSets[set.id] = set
