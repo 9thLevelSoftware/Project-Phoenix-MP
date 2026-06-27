@@ -157,14 +157,17 @@ object BlePacketFactory {
         frame[2] = 0x00
         frame[3] = 0x00
 
-        // Reps field at offset 0x04
+        // Reps field at offset 0x04. 0xFF is the unlimited/Just Lift/AMRAP
+        // sentinel; clamp a finite total to 254 so it can never serialize to the
+        // sentinel and silently become an unlimited workout (audit F069). The
+        // validator already rejects finite totals > 254; this is defense in depth.
         frame[0x04] =
             if (params.isJustLift ||
                 params.isAMRAP
             ) {
                 0xFF.toByte()
             } else {
-                (params.reps + params.warmupReps).toByte()
+                (params.reps + params.warmupReps).coerceAtMost(0xFE).toByte()
             }
 
         frame[5] = 0x03
@@ -360,8 +363,10 @@ object BlePacketFactory {
         // Command ID at 0x00 (u32) = 0x4E (78 decimal)
         putIntLE(frame, 0x00, 0x0000004E)
 
-        frame[0x04] = warmupReps.toByte()
-        frame[0x05] = if (isJustLift || isAMRAP) 0xFF.toByte() else targetReps.toByte()
+        frame[0x04] = warmupReps.coerceAtMost(0xFE).toByte()
+        // 0xFF is the unlimited/Just Lift/AMRAP sentinel; clamp a finite target to
+        // 254 so it can never collide with it (audit F069).
+        frame[0x05] = if (isJustLift || isAMRAP) 0xFF.toByte() else targetReps.coerceAtMost(0xFE).toByte()
 
         putShortLE(frame, 0x06, 0)
 

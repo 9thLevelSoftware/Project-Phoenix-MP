@@ -598,8 +598,22 @@ class RepCounterFromMachine {
     private fun calculateDelta(last: Int, current: Int): Int = if (current >= last) {
         (current - last).coerceAtMost(100_000)
     } else {
+        // current < last. A genuine 16-bit counter wrap only happens at the
+        // boundary (last near 0xFFFF, current near 0) and advances by a small
+        // amount. Any other backward jump — a counter reset, reconnect, or stale
+        // baseline such as last=500/current=0 — must be treated as a re-baseline
+        // (delta 0), NOT the ~65000 delta the old code returned, which
+        // repeat(topDelta) would turn into thousands of phantom reps and could
+        // lock up the workout flow. Callers re-sync their baseline to `current`
+        // after this returns, so 0 here cleanly re-bases (audit F030).
+        val wrapHighThreshold = 0xFF00 // last must be within 255 of the 16-bit max
+        val wrapLowThreshold = 0x00FF // current must be within 255 of zero
         val wrap = 0xFFFF - last + current + 1
-        wrap.takeIf { it in 0..100_000 } ?: 0
+        if (last >= wrapHighThreshold && current <= wrapLowThreshold && wrap in 1..1_000) {
+            wrap
+        } else {
+            0
+        }
     }
 
     private fun recordTopPosition(posA: Float, posB: Float) {

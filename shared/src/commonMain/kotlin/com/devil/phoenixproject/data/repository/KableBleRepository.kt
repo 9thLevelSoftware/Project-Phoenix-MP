@@ -108,17 +108,15 @@ class KableBleRepository : BleRepository {
     private val bleQueue = BleOperationQueue()
 
     private val monitorProcessor = MonitorDataProcessor(
-        onDeloadOccurred = { scope.launch { _deloadOccurredEvents.emit(Unit) } },
+        onDeloadOccurred = {
+            publishSafetyEvent(_deloadOccurredEvents, Unit, BleCriticalEventType.DELOAD)
+        },
         onRomViolation = { type ->
-            scope.launch {
-                when (type) {
-                    MonitorDataProcessor.RomViolationType.OUTSIDE_HIGH ->
-                        _romViolationEvents.emit(RomViolationType.OUTSIDE_HIGH)
-
-                    MonitorDataProcessor.RomViolationType.OUTSIDE_LOW ->
-                        _romViolationEvents.emit(RomViolationType.OUTSIDE_LOW)
-                }
+            val mapped = when (type) {
+                MonitorDataProcessor.RomViolationType.OUTSIDE_HIGH -> RomViolationType.OUTSIDE_HIGH
+                MonitorDataProcessor.RomViolationType.OUTSIDE_LOW -> RomViolationType.OUTSIDE_LOW
             }
+            publishSafetyEvent(_romViolationEvents, mapped, BleCriticalEventType.ROM_VIOLATION)
         },
     )
 
@@ -159,7 +157,9 @@ class KableBleRepository : BleRepository {
             }
         },
         onScannedDevicesChanged = { devices -> _scannedDevices.value = devices },
-        onReconnectionRequested = { request -> _reconnectionRequested.emit(request) },
+        onReconnectionRequested = { request ->
+            publishSafetyEvent(_reconnectionRequested, request, BleCriticalEventType.RECONNECTION_REQUEST)
+        },
         onCommandResponse = { _ -> /* no external consumer currently */ },
         onRepEventFromCharacteristic = { data -> parseRepsCharacteristicData(data) },
         onRepEventFromRx = { data -> parseRepNotification(data) },
@@ -243,13 +243,24 @@ class KableBleRepository : BleRepository {
         return try {
             val resetCmd = BlePacketFactory.createResetCommand()
             log.d { "Sending RESET command (0x0A)..." }
-            sendWorkoutCommand(resetCmd)
+            // F007: honor the send result. The BLE write can fail without throwing
+            // (returns Result.failure); previously stopWorkout reported success even
+            // though no RESET reached the machine, so the caller/UI believed the
+            // trainer was stopped when it may still be loaded. Always stop local
+            // polling, but surface a send failure so the caller can react.
+            val sendResult = sendWorkoutCommand(resetCmd)
             delay(50)
 
             log.d { "Stopping polling after RESET..." }
             stopPolling()
 
-            Result.success(Unit)
+            sendResult.fold(
+                onSuccess = { Result.success(Unit) },
+                onFailure = { cause ->
+                    log.e { "RESET command failed to send; polling stopped but machine may not be reset: ${cause.message}" }
+                    Result.failure(cause)
+                },
+            )
         } catch (e: Exception) {
             e.rethrowIfCancellation()
             log.e { "Failed to stop workout: ${e.message}" }
@@ -452,15 +463,46 @@ class KableBleRepository : BleRepository {
 
     private fun publishRepEvent(notification: RepNotification, source: String): Boolean {
         val emitted = _repEvents.tryEmit(notification)
+        // F008: _repEvents has replay = 0, so a rep notification emitted while no
+        // collector is subscribed returns true from tryEmit but is silently
+        // discarded (nothing to receive it, nothing cached). Account for that loss
+        // on the delivery tracker so it is observable, in addition to the
+        // buffer-overflow case.
+        val noSubscribers = _repEvents.subscriptionCount.value == 0
         val details = buildRepEventDetails(notification, source, emitted)
         if (!emitted) {
             eventDeliveryTracker.recordDropped(BleCriticalEventType.REP)
             log.w { "Dropped critical BLE rep event because subscriber buffer is full: $details" }
             logRepo.warning(LogEventType.REP_RECEIVED, "Dropped BLE rep event", details = details)
         } else {
+            if (noSubscribers) {
+                eventDeliveryTracker.recordDropped(BleCriticalEventType.REP)
+                log.w { "Rep event emitted with no active subscriber (not delivered): $details" }
+            }
             logRepo.debug(LogEventType.REP_RECEIVED, "Rep event published", details = details)
         }
         return emitted
+    }
+
+    // F006: emit a safety-relevant event (deload / ROM violation / reconnection
+    // request) and account for losses. These flows use DROP_OLDEST, and an event
+    // emitted while no collector is subscribed (replay = 0) is lost. Record such
+    // drops on the BleEventDeliveryTracker so they are observable, matching the
+    // rep-event handling — previously only REP drops were tracked.
+    private fun <T> publishSafetyEvent(
+        flow: MutableSharedFlow<T>,
+        value: T,
+        type: BleCriticalEventType,
+    ) {
+        val emitted = flow.tryEmit(value)
+        val noSubscribers = flow.subscriptionCount.value == 0
+        if (!emitted || noSubscribers) {
+            eventDeliveryTracker.recordDropped(type)
+            log.w {
+                "Dropped critical BLE safety event $type (emitted=$emitted, " +
+                    "subscribers=${flow.subscriptionCount.value})"
+            }
+        }
     }
 
     private fun buildRepEventDetails(notification: RepNotification, source: String, emitted: Boolean): String =
