@@ -133,6 +133,7 @@ class SqlDelightAssessmentRepository(
         // workout session with no assessment result, or a result with no 1RM
         // update. Cross-repository transaction sharing isn't available here, so
         // this explicit rollback is the safe equivalent.
+        var insertedResultId: Long? = null
         try {
             // 2. Insert AssessmentResult linked to the session
             queries.insertAssessmentResult(
@@ -144,6 +145,7 @@ class SqlDelightAssessmentRepository(
                 createdAt = currentTimeMillis(),
                 profile_id = profileId,
             )
+            insertedResultId = queries.lastInsertRowId().executeAsOne()
             Logger.d {
                 "Assessment result saved for exercise $exerciseName (1RM: ${estimatedOneRepMaxKg}kg)"
             }
@@ -159,6 +161,9 @@ class SqlDelightAssessmentRepository(
             Logger.w(e) {
                 "Assessment save failed after session create; rolling back session $sessionId"
             }
+            // Remove BOTH the inserted result (if any) and the session, otherwise a
+            // failure between steps 2 and 3 leaves an orphaned AssessmentResult.
+            insertedResultId?.let { runCatching { queries.deleteAssessmentResult(it) } }
             runCatching { workoutRepository.deleteSession(sessionId) }
             throw e
         }

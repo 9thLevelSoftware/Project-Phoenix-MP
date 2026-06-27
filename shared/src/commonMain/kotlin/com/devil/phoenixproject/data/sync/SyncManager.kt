@@ -1365,10 +1365,15 @@ class SyncManager(
 
         // 2. Prepare badge and PR DTOs
         val badgeDtos = pullResponse.badges.map { PortalPullAdapter.toBadgeSyncDto(it) }
+        // Resolve the catalog exercise id by name/muscle group; the portal PR
+        // projection carries no exercise_id (audit F021). Cache lookups by
+        // (name, muscleGroup) so a pull with many PRs for the same exercise does
+        // not issue a DB query per row (N+1).
+        val exerciseIdCache = mutableMapOf<Pair<String, String>, String?>()
         val prDtos = pullResponse.personalRecords.map { pr ->
-            // Resolve the catalog exercise id by name/muscle group; the portal
-            // PR projection carries no exercise_id (audit F021).
-            val resolvedExerciseId = syncRepository.findExerciseId(pr.exerciseName, pr.muscleGroup)
+            val resolvedExerciseId = exerciseIdCache.getOrPut(pr.exerciseName to pr.muscleGroup) {
+                syncRepository.findExerciseId(pr.exerciseName, pr.muscleGroup)
+            }
             PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId)
         }
         val gamificationStatsDto = pullResponse.gamificationStats?.let {

@@ -144,8 +144,11 @@ class PortalTokenStorage(private val settings: Settings) {
         // resolves a different user) must NOT inherit the previous user's
         // entitlement; fail closed to non-premium and let a subsequent status
         // refresh set the correct value.
+        // Only inherit premium when there was a real previous session for the SAME
+        // user. A null previous id means no trusted prior session, so any leftover
+        // premium flag is stale and must not be inherited (fail closed).
         val previousUserId: String? = settings.getStringOrNull(KEY_USER_ID)
-        val sameUser = previousUserId == null || previousUserId == response.user.id
+        val sameUser = previousUserId != null && previousUserId == response.user.id
         val existingPremium: Boolean = if (sameUser) settings[KEY_IS_PREMIUM, false] else false
 
         settings[KEY_TOKEN] = response.accessToken

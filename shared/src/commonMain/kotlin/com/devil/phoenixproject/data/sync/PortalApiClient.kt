@@ -587,14 +587,18 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                                 isRecoverable = true,
                             ),
                         )
-                    } else {
-                        tokenStorage.clearAuthWithEvent(
-                            AuthEvent.RefreshFailed(
-                                reason = error.message ?: "Token refresh failed",
-                                isRecoverable = false,
-                            ),
-                        )
+                        // Rethrow so authenticatedRequest classifies this as a
+                        // transient/network error rather than treating a null token
+                        // as a permanent 401 (which would surface NotAuthenticated
+                        // and force re-login despite the preserved tokens).
+                        throw error
                     }
+                    tokenStorage.clearAuthWithEvent(
+                        AuthEvent.RefreshFailed(
+                            reason = error.message ?: "Token refresh failed",
+                            isRecoverable = false,
+                        ),
+                    )
                     null
                 },
             )
@@ -631,14 +635,16 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                                 isRecoverable = true,
                             ),
                         )
-                    } else {
-                        tokenStorage.clearAuthWithEvent(
-                            AuthEvent.RefreshFailed(
-                                reason = error.message ?: "Session refresh failed",
-                                isRecoverable = false,
-                            ),
-                        )
+                        // Rethrow so the authenticatedRequest catch classifies this
+                        // as transient rather than converting it into a 401.
+                        throw error
                     }
+                    tokenStorage.clearAuthWithEvent(
+                        AuthEvent.RefreshFailed(
+                            reason = error.message ?: "Session refresh failed",
+                            isRecoverable = false,
+                        ),
+                    )
                     null
                 },
             )
@@ -646,11 +652,15 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
     }
 
     private suspend inline fun <reified T> authenticatedRequest(block: (token: String) -> HttpResponse): Result<T> {
-        val token = ensureValidToken() ?: return Result.failure(
-            PortalApiException("Not authenticated - please log in again", null, 401),
-        )
-        Logger.d("PortalApiClient") { "AUTH REQUEST: tokenLen=${token.length}" }
         return try {
+            // ensureValidToken() may rethrow a transient refresh error; keep it
+            // inside this try so classifyError reports it as transient/network
+            // instead of letting it escape as an unhandled exception. A null token
+            // means a definitive auth failure → surface as 401.
+            val token = ensureValidToken() ?: return Result.failure(
+                PortalApiException("Not authenticated - please log in again", null, 401),
+            )
+            Logger.d("PortalApiClient") { "AUTH REQUEST: tokenLen=${token.length}" }
             val response = block(token)
             if (response.status.value == 401) {
                 // Token was valid by our clock but server rejected — force one refresh
