@@ -4,7 +4,9 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.auth.generateOAuthPkce
+import com.devil.phoenixproject.data.sync.AuthEvent
 import com.devil.phoenixproject.data.sync.PortalApiClient
+import com.devil.phoenixproject.data.sync.PortalApiException
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.PortalUser
 import com.devil.phoenixproject.data.sync.SupabaseConfig
@@ -188,11 +190,21 @@ class PortalAuthRepository(
                 tokenStorage.saveGoTrueAuth(goTrueResponse)
             }
             .map { }
-            .onFailure {
-                if (it.message?.contains("Unauthorized") == true ||
-                    it.message?.contains("invalid") == true
-                ) {
-                    tokenStorage.clearAuth()
+            .onFailure { error ->
+                // F003: classify by structured HTTP status, not brittle, case-
+                // sensitive message substrings. GoTrue/Portal permanent auth
+                // failures surface as PortalApiException with statusCode 401/403
+                // (messages like "Invalid Refresh Token"/"JWT expired" would slip
+                // past the old substring check, leaving the app falsely
+                // "authenticated"). Clear auth and emit SessionExpired only for
+                // definitive auth failures; preserve tokens for transient/network
+                // failures so a later retry can refresh.
+                val isPermanentAuthFailure = error is PortalApiException &&
+                    (error.statusCode == 401 || error.statusCode == 403)
+                if (isPermanentAuthFailure) {
+                    tokenStorage.clearAuthWithEvent(
+                        AuthEvent.SessionExpired(error.message ?: "Session expired - please log in again"),
+                    )
                 }
             }
     }

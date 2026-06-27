@@ -576,12 +576,25 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                     // Determine if this is a recoverable network error or permanent auth failure
                     val isRecoverable = error !is PortalApiException ||
                         (error.statusCode != 401 && error.statusCode != 403)
-                    tokenStorage.clearAuthWithEvent(
-                        AuthEvent.RefreshFailed(
-                            reason = error.message ?: "Token refresh failed",
-                            isRecoverable = isRecoverable,
-                        ),
-                    )
+                    // F020/F077: only clear stored auth for definitive auth failures.
+                    // For transient failures (network/timeout/5xx) keep the tokens so
+                    // a later retry can refresh; clearing here would force re-login on
+                    // a temporary outage and discard a still-valid refresh token.
+                    if (isRecoverable) {
+                        tokenStorage.emitAuthEvent(
+                            AuthEvent.RefreshFailed(
+                                reason = error.message ?: "Token refresh failed",
+                                isRecoverable = true,
+                            ),
+                        )
+                    } else {
+                        tokenStorage.clearAuthWithEvent(
+                            AuthEvent.RefreshFailed(
+                                reason = error.message ?: "Token refresh failed",
+                                isRecoverable = false,
+                            ),
+                        )
+                    }
                     null
                 },
             )
@@ -610,12 +623,22 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                     // Determine if this is a recoverable network error or permanent auth failure
                     val isRecoverable = error !is PortalApiException ||
                         (error.statusCode != 401 && error.statusCode != 403)
-                    tokenStorage.clearAuthWithEvent(
-                        AuthEvent.RefreshFailed(
-                            reason = error.message ?: "Session refresh failed",
-                            isRecoverable = isRecoverable,
-                        ),
-                    )
+                    // F020/F077: preserve tokens on transient failures (see ensureValidToken).
+                    if (isRecoverable) {
+                        tokenStorage.emitAuthEvent(
+                            AuthEvent.RefreshFailed(
+                                reason = error.message ?: "Session refresh failed",
+                                isRecoverable = true,
+                            ),
+                        )
+                    } else {
+                        tokenStorage.clearAuthWithEvent(
+                            AuthEvent.RefreshFailed(
+                                reason = error.message ?: "Session refresh failed",
+                                isRecoverable = false,
+                            ),
+                        )
+                    }
                     null
                 },
             )
