@@ -44,6 +44,11 @@ class SettingsManager(
         .map { it.defaultScalingBasis }
         .stateIn(scope, SharingStarted.Eagerly, ScalingBasis.MAX_WEIGHT_PR)
 
+    // Issue #517: Run-once flag — true after the velocity 1RM backfill has completed
+    val velocityOneRepMaxBackfillDone: StateFlow<Boolean> = userPreferences
+        .map { it.velocityOneRepMaxBackfillDone }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
     // Issue #167: Autoplay is now derived from summaryCountdownSeconds
     // - summaryCountdownSeconds == 0 (Unlimited) = autoplay OFF (manual control)
     // - summaryCountdownSeconds != 0 (-1 or 5-30) = autoplay ON (auto-advance)
@@ -154,6 +159,10 @@ class SettingsManager(
 
     fun setDefaultScalingBasis(basis: ScalingBasis) {
         scope.launch { preferencesManager.setDefaultScalingBasis(basis) }
+    }
+
+    fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
+        scope.launch { preferencesManager.setVelocityOneRepMaxBackfillDone(done) }
     }
 
     fun setColorScheme(schemeIndex: Int) {

@@ -89,6 +89,24 @@ class SettingsManagerTest {
     }
 
     @Test
+    fun `setVelocityOneRepMaxBackfillDone persists to preference-backed flow`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+
+            assertFalse(manager.velocityOneRepMaxBackfillDone.value)
+
+            manager.setVelocityOneRepMaxBackfillDone(true)
+            advanceUntilIdle()
+
+            assertTrue(fakePreferencesManager.preferencesFlow.value.velocityOneRepMaxBackfillDone)
+            assertTrue(manager.velocityOneRepMaxBackfillDone.value)
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
     fun `weight conversion and formatting preserves legacy behavior`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {

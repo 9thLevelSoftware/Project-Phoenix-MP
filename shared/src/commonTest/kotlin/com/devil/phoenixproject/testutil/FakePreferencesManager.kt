@@ -166,4 +166,8 @@ class FakePreferencesManager : PreferencesManager {
     override suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
         _preferencesFlow.value = _preferencesFlow.value.copy(defaultScalingBasis = basis)
     }
+
+    override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(velocityOneRepMaxBackfillDone = done)
+    }
 }

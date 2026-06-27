@@ -156,6 +156,9 @@ interface PreferencesManager {
     // Issue #517: Default scaling basis for % of 1RM routine weight resolution
     suspend fun setDefaultScalingBasis(basis: ScalingBasis)
 
+    // Issue #517: Run-once flag for velocity 1RM backfill
+    suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean)
+
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
     suspend fun clearAllSingleExerciseDefaults()
@@ -215,6 +218,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_AUTO_END_VELOCITY_LOSS = "auto_end_on_velocity_loss"
         private const val KEY_WEIGHT_SUGGESTIONS_ENABLED = "weight_suggestions_enabled"
         private const val KEY_DEFAULT_SCALING_BASIS = "default_scaling_basis"
+        private const val KEY_VELOCITY_1RM_BACKFILL_DONE = "velocity_1rm_backfill_done"
 
         // Permissions onboarding (health + microphone)
         private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
@@ -267,6 +271,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             defaultScalingBasis = settings.getStringOrNull(KEY_DEFAULT_SCALING_BASIS)?.let {
                 runCatching { ScalingBasis.valueOf(it) }.getOrNull()
             } ?: ScalingBasis.MAX_WEIGHT_PR,
+            velocityOneRepMaxBackfillDone = settings.getBoolean(KEY_VELOCITY_1RM_BACKFILL_DONE, false),
         )
     }
 
@@ -535,5 +540,10 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     override suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
         settings.putString(KEY_DEFAULT_SCALING_BASIS, basis.name)
         updateAndEmit { copy(defaultScalingBasis = basis) }
+    }
+
+    override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
+        settings.putBoolean(KEY_VELOCITY_1RM_BACKFILL_DONE, done)
+        updateAndEmit { copy(velocityOneRepMaxBackfillDone = done) }
     }
 }
