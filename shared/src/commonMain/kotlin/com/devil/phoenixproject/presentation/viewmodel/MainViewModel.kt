@@ -673,8 +673,16 @@ class MainViewModel constructor(
                         } ?: userProfileRepository.allProfiles.value
                         ).map { it.id }.ifEmpty { listOf(activeProfileId.value) }
                     val now = com.devil.phoenixproject.domain.model.currentTimeMillis()
+                    // Per-profile try/catch so one profile's failure can't abort the rest, and the
+                    // run-once flag is still set afterwards (a failed profile is covered later by its
+                    // own new workouts / hasEstimates idempotency rather than blocking every launch).
                     for (profileId in profileIds) {
-                        backfillVelocityOneRepMaxUseCase(profileId, now)
+                        try {
+                            backfillVelocityOneRepMaxUseCase(profileId, now)
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            Logger.w(e) { "VELOCITY_1RM: backfill failed for profile=$profileId" }
+                        }
                     }
                     preferencesManager.setVelocityOneRepMaxBackfillDone(true)
                 }
