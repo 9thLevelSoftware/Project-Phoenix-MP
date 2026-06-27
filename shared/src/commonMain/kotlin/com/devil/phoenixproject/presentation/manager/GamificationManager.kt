@@ -340,6 +340,7 @@ class GamificationManager(
         if (newlyEarned.isNotEmpty()) {
             hapticEvents.emit(HapticEvent.BADGE_EARNED)
             _badgeEarnedEvents.emit(newlyEarned)
+            Logger.d("Velocity 1RM badges earned: ${newlyEarned.map { it.name }}")
         }
         return newlyEarned
     }

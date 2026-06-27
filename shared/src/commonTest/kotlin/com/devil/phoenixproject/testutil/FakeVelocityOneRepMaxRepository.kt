@@ -20,5 +20,6 @@ class FakeVelocityOneRepMaxRepository : VelocityOneRepMaxRepository {
     override suspend fun getAllPassing(profileId: String): List<VelocityOneRepMaxEntity> =
         allPassing.filter { it.profileId == profileId }
     override fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>> = flowOf(emptyList())
+    // Note: no-op — set allPassing/latestPassing directly for read tests.
     override suspend fun insert(result: VelocityOneRepMaxResult, exerciseId: String, computedAt: Long, profileId: String) = Unit
 }

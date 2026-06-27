@@ -690,8 +690,7 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
         }
 
         is BadgeRequirement.VelocityOneRepMaxImprovements -> {
-            // Awarded by VelocityOneRepMaxRepository when cumulative improvement count meets threshold.
-            // Not evaluated via aggregate GamificationStats — handled outside this stats-based path.
+            // Awarded by GamificationManager.checkVelocityOneRepMaxBadges() via the post-save hook in MainViewModel.
             false
         }
     }
@@ -782,7 +781,7 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
 
                 is BadgeRequirement.QualityStreak -> 0 // Session-scoped, not tracked in DB
 
-                is BadgeRequirement.VelocityOneRepMaxImprovements -> 0 // Awarded by VelocityOneRepMaxRepository
+                is BadgeRequirement.VelocityOneRepMaxImprovements -> 0 // Awarded by GamificationManager.checkVelocityOneRepMaxBadges() via the post-save hook in MainViewModel.
             }
 
             Pair(current, badge.getTargetValue())
