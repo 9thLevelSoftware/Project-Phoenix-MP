@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackItemCategory
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
@@ -1043,6 +1044,51 @@ class DataBackupManagerRoutineNameTest {
             .executeAsList()
             .single()
         assertEquals("""["vest"]""", importedExercise.defaultRackItemIds)
+    }
+
+    @Test
+    fun `backup round-trip preserves routine exercise scalingBasis`() = runTest {
+        // Issue #517 Phase 3: a user who sets scalingBasis (e.g. ESTIMATED_1RM) must not
+        // silently lose it across export -> import. Mirrors the v4 rack-defaults round-trip.
+        val sourceManager = TestDataBackupManager(database)
+        workoutRepository.saveRoutine(
+            buildRoutine(
+                routineId = "routine-scaling-backup",
+                routineName = "Scaling Backup",
+                exerciseId = "exercise-scaling-backup",
+                exerciseName = "Bench Press",
+            ).let { routine ->
+                routine.copy(
+                    exercises = routine.exercises.map { exercise ->
+                        exercise.copy(scalingBasis = ScalingBasis.ESTIMATED_1RM)
+                    },
+                )
+            },
+        )
+
+        // Confirm it was persisted on the source DB before export.
+        val sourceExercise = database.vitruvianDatabaseQueries
+            .selectAllRoutineExercisesSync()
+            .executeAsList()
+            .single()
+        assertEquals("ESTIMATED_1RM", sourceExercise.scalingBasis, "scalingBasis must persist on source DB")
+
+        val backupJson = sourceManager.exportToJson()
+        val targetDatabase = createTestDatabase()
+        val targetManager = TestDataBackupManager(targetDatabase)
+
+        val importResult = targetManager.importFromJson(backupJson)
+        assertTrue(importResult.isSuccess, "Backup import must succeed: ${importResult.exceptionOrNull()?.message}")
+
+        val importedExercise = targetDatabase.vitruvianDatabaseQueries
+            .selectAllRoutineExercisesSync()
+            .executeAsList()
+            .single()
+        assertEquals(
+            "ESTIMATED_1RM",
+            importedExercise.scalingBasis,
+            "scalingBasis must survive export -> import round-trip",
+        )
     }
 
     @Test

@@ -171,6 +171,9 @@ data class RoutineExerciseBackup(
     val defaultRackItemIds: List<String> = emptyList(),
     // Per-exercise rack behavior overrides (Issues #521/#526)
     val rackBehaviorOverrides: String = "{}",
+    // Velocity-based 1RM scaling basis (issue #517 Phase 3); enum name or null.
+    // Default null keeps pre-existing backup files loadable.
+    val scalingBasis: String? = null,
 )
 
 /**

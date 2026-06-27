@@ -612,7 +612,9 @@ abstract class BaseDataBackupManager(
                                 warmupSets = exercise.warmupSets,
                                 defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
                                 rackBehaviorOverrides = exercise.rackBehaviorOverrides,
-                                scalingBasis = null,
+                                scalingBasis = exercise.scalingBasis?.let {
+                                    runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
+                                }?.name,
                             )
                         }
                         if (inserted != null) routineExercisesImported++
@@ -1335,7 +1337,9 @@ abstract class BaseDataBackupManager(
                                                         warmupSets = exercise.warmupSets,
                                                         defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
                                                         rackBehaviorOverrides = exercise.rackBehaviorOverrides,
-                                                        scalingBasis = null,
+                                                        scalingBasis = exercise.scalingBasis?.let {
+                                                            runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
+                                                        }?.name,
                                                     )
                                                 }
                                                 if (inserted != null) {
@@ -2330,6 +2334,8 @@ abstract class BaseDataBackupManager(
         warmupSets = exercise.warmupSets,
         defaultRackItemIds = decodeRackItemIds(exercise.defaultRackItemIds),
         rackBehaviorOverrides = exercise.rackBehaviorOverrides,
+        // scalingBasis is stored as the enum name (TEXT) on the DB row; persist it verbatim.
+        scalingBasis = exercise.scalingBasis,
     )
 
     private fun decodeRackItemIds(encoded: String): List<String> = runCatching {
