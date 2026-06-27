@@ -575,6 +575,8 @@ class SqlDelightSyncRepository(
                             .associate { it.id to it.defaultRackItemIds }
                         val localRackOverridesByExerciseId = localExerciseRows
                             .associate { it.id to it.rackBehaviorOverrides }
+                        val localScalingBasisByExerciseId = localExerciseRows
+                            .associate { it.id to it.scalingBasis }
 
                         // Replace routine exercises and supersets: delete existing then insert portal versions
                         queries.deleteRoutineExercises(portalRoutine.id)
@@ -710,7 +712,7 @@ class SqlDelightSyncRepository(
                                 rackBehaviorOverrides = exercise.rackBehaviorOverrides
                                     ?: localRackOverridesByExerciseId[exercise.id]
                                     ?: "{}",
-                                scalingBasis = null,
+                                scalingBasis = localScalingBasisByExerciseId[exercise.id],
                             )
                         }
                     } else {
@@ -1723,6 +1725,8 @@ class SqlDelightSyncRepository(
                             .associate { it.id to it.defaultRackItemIds }
                         val localRackOverridesByExerciseId = localExerciseRows2
                             .associate { it.id to it.rackBehaviorOverrides }
+                        val localScalingBasisByExerciseId = localExerciseRows2
+                            .associate { it.id to it.scalingBasis }
 
                         queries.deleteRoutineExercises(portalRoutine.id)
                         queries.deleteSupersetsByRoutine(portalRoutine.id)
@@ -1845,7 +1849,7 @@ class SqlDelightSyncRepository(
                                 rackBehaviorOverrides = exercise.rackBehaviorOverrides
                                     ?: localRackOverridesByExerciseId[exercise.id]
                                     ?: "{}",
-                                scalingBasis = null,
+                                scalingBasis = localScalingBasisByExerciseId[exercise.id],
                             )
                         }
                     }

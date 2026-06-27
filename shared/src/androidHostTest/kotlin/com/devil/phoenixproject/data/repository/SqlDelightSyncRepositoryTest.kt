@@ -460,6 +460,87 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("""["vest"]""", exercise.defaultRackItemIds)
     }
 
+    @Test
+    fun `mergePortalRoutines preserves local scalingBasis across portal pull`() = runTest {
+        database.vitruvianDatabaseQueries.insertRoutine(
+            id = "routine-scaling-basis",
+            name = "Scaling Basis",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 0,
+            profile_id = "active-profile",
+            groupId = null,
+        )
+        database.vitruvianDatabaseQueries.insertRoutineExercise(
+            id = "rex-scaling-basis",
+            routineId = "routine-scaling-basis",
+            exerciseName = "Deadlift",
+            exerciseMuscleGroup = "Back",
+            exerciseEquipment = "Cable",
+            exerciseDefaultCableConfig = "DOUBLE",
+            exerciseId = null,
+            cableConfig = "DOUBLE",
+            orderIndex = 0,
+            setReps = "5",
+            weightPerCableKg = 60.0,
+            setWeights = "",
+            mode = "OldSchool",
+            eccentricLoad = 100,
+            echoLevel = 1,
+            progressionKg = 0.0,
+            restSeconds = 90,
+            duration = null,
+            setRestSeconds = "[]",
+            perSetRestTime = 0,
+            isAMRAP = 0,
+            supersetId = null,
+            orderInSuperset = 0,
+            usePercentOfPR = 0,
+            weightPercentOfPR = 80,
+            prTypeForScaling = "MAX_WEIGHT",
+            setWeightsPercentOfPR = null,
+            stallDetectionEnabled = 1,
+            stopAtTop = 0,
+            repCountTiming = "TOP",
+            setEchoLevels = "",
+            warmupSets = "",
+            defaultRackItemIds = "[]",
+            rackBehaviorOverrides = "{}",
+            scalingBasis = "ESTIMATED_1RM",
+        )
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-scaling-basis",
+                    userId = "user",
+                    name = "Scaling Basis Remote",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-scaling-basis",
+                            routineId = "routine-scaling-basis",
+                            name = "Deadlift",
+                            muscleGroup = "Back",
+                            orderIndex = 0,
+                            reps = 5,
+                            weight = 65f,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val exercise = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("routine-scaling-basis")
+            .executeAsList()
+            .single()
+        assertEquals("ESTIMATED_1RM", exercise.scalingBasis)
+    }
+
     private fun insertHistoricalSession(
         id: String,
         timestamp: Long,
