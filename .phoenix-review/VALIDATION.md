@@ -57,8 +57,9 @@ raw GitHub for the parity-critical sync contracts.
 | F005 | REAL | `isExplicitDisconnect` set true on disconnect/cancel, only reset inside the `State.Disconnected` handler; could leak into the next connection and suppress auto-reconnect. | **FIXED** — reset the flag at the start of each new `connect()` after cleanup. |
 | F006 | REAL | Deload/ROM/reconnection events were `emit()`'d from launched coroutines with `DROP_OLDEST`; only REP drops were tracked. | **FIXED** — `publishSafetyEvent` helper uses `tryEmit` and records DELOAD/ROM_VIOLATION/RECONNECTION_REQUEST losses (no-subscriber / overflow) on `BleEventDeliveryTracker`. |
 | F008 | REAL | `_repEvents` (replay=0): a rep emitted with no subscriber returns true from `tryEmit` but is lost, without recording a drop. | **FIXED** — record a REP drop on the tracker (and warn) when emitted with no active subscriber. Return value / "published" log contract preserved. |
-| F088 | PENDING | `DiscoMode._isActive` may stay true if the cycling loop breaks on a non-cancellation exception. | To address in C5 follow-up / Medium sweep. |
-| F090 / F091 | PENDING | `HandleStateDetector.disable()` leaves stale state; `maxPositionSeen` init to `Double.MIN_VALUE` (smallest positive, not most-negative). | To address in C5 follow-up / Medium sweep. |
+| F088 | REAL | `DiscoMode._isActive` stayed true if the cycling loop broke on a non-cancellation exception. | **FIXED (C12)** — reset `_isActive=false` in a `finally` around the loop. |
+| F090 | REAL | `HandleStateDetector.disable()` left `_handleState`/`_handleDetection`/timers stale. | **FIXED (C12)** — `disable()` now resets handle state/detection and calls `resetInternalState()`. |
+| F091 | REAL | `maxPositionSeen` initialized/reset to `Double.MIN_VALUE` (smallest positive, not most-negative). | **FIXED (C12)** — use `-Double.MAX_VALUE` at the field decl and in `resetInternalState()`. |
 | F071 | PENDING | `WorkoutCommandValidator` weight cap is hardware-agnostic (110kg global). | Needs hardware-capability threading; assess in C5 follow-up. |
 
 ## C6 — Integration sync robustness
@@ -133,3 +134,60 @@ raw GitHub for the parity-critical sync contracts.
 | F047 | DOCUMENTED | `AssessmentViewModel.acceptResult` saves with the default profile (no active-profile dependency). | **DOCUMENTED** — needs `UserProfileRepository` injection / profile captured at assessment start; recommended follow-up. |
 | F051 | DOCUMENTED | `MainViewModel.onCleared` launches `NonCancellable` on the (cleared) `viewModelScope` to disconnect BLE. | **DOCUMENTED** — proper fix is an application-owned cleanup scope (DI change); no app scope is currently injected. Recommended follow-up. |
 | F054 | DOCUMENTED | `WorkoutCoordinator.setActiveRackSelection` reuses the prior adjustment when `precomputedAdjustment` is null, pairing new rack ids with stale load. | **DOCUMENTED** — needs a reset/recompute contract or immutable update object; recommended follow-up. |
+
+## C12 — Stubs (triage)
+
+The 12 stub findings are mostly intentional incomplete features / placeholders,
+not active bugs. Disposition:
+
+| ID | Target | Disposition |
+|----|--------|-------------|
+| F207 | SettingsTab safe-word calibration timeout | DOCUMENTED — feature gap (no calibration-failed path); needs a bounded timeout. |
+| F215 | SingleExerciseScreen multi-muscle filter (`flows.firstOrNull()`) | DOCUMENTED — placeholder; needs combine/intersect semantics. |
+| F268 | AndroidManifest CAMERA permission for unshipped Form Check | DOCUMENTED — remove until the feature ships, or implement runtime UX. |
+| F278 | Android accessibility settings constant `boldTextEnabled=false` | DOCUMENTED — read real Configuration/Settings. |
+| F298 / F312 | Health permission settings launcher no-op / no result contract | DOCUMENTED — make `openSettings` report success; iOS actual is a no-op. |
+| F310 | HardwareDetection.getCapabilities ignores input → DEFAULT | DOCUMENTED — root of F071; needs VERSION/firmware-characteristic wiring + an explicit unknown state. |
+| F351 | Dead `MonitorDataProcessor.calculateRawVelocity()` | DOCUMENTED — safe to remove/mark test-only. |
+| F375 | ComparativeAnalytics `isSignificant` is a 5% heuristic | DOCUMENTED — rename to `isMeaningfulChange` or implement real significance. |
+| F383 | Stale `BottomNavItem` enum | DOCUMENTED — single source of truth for the bottom bar. |
+| F403 | Deprecated `AndroidTheme` wrapper collapses ThemeMode.SYSTEM | DOCUMENTED — remove once callers migrated. |
+| F424 | FUNDING.yml placeholder keys | DOCUMENTED — cosmetic template residue. |
+
+---
+
+## Summary & remaining work
+
+**Resolved with code + tests (clusters C1–C12):** the 2 Critical findings (one
+real → fixed, one false positive → closed) and the validated High-severity
+findings across sync/LWW, auth/token lifecycle, multi-profile isolation,
+migration/schema integrity, BLE safety & protocol, integration sync, error
+handling, import/export, voice safety, build/CI, Compose lifecycle, and BLE
+mediums. New regression tests were added where the logic was unit-testable
+(PR exercise-id resolution, premium isolation, index-replacement rollback,
+rep-byte boundaries, counter-reset flood, progression-from-recent-weight,
+upgrade-required handling, lb→kg, etc.). Android + iOS (`iosArm64`) both compile;
+the shared host test suites pass locally.
+
+**Validated false positives / intentional behavior (closed, no code change):**
+F002 (iOS log strings compile fine — one of the two Criticals), F009
+(requiresUpgrade intentionally stays CONNECTED, per existing test), F023
+(portal already delete-then-inserts per session). These illustrate why each
+finding was re-validated rather than fixed blindly.
+
+**Deferred (real but require coordinated/architectural change), documented in
+place + here:** F022 (domain-wide `updated_at` separate from the sync marker +
+portal contract), F018 (external-activity deletion needs a wire + Edge Function
+change), F071/F310 (hardware-capability detection from the firmware VERSION
+characteristic), F051 (application-owned cleanup scope / DI), F064 (iOS KVO on
+AVPlayerItem.status), F042/F045/F048/F047/F054/F040/F041 (Compose
+state-machine/DI changes best verified with UI tests), F066 (CSV Time column +
+platform importers), F078 (secure-storage type hardening), F132 (SyncTrigger
+constant/doc), plus the C12 stubs (intentional incomplete features).
+
+**Remaining Medium/Low tail (F076–F431):** the per-area source reports contain a
+large Medium/Low tail beyond the items pulled into the clusters above. Each
+still needs the same per-finding re-validation applied here (the spot checks
+found a real false-positive rate, so none should be fixed blindly). They are
+best worked in follow-up passes grouped by the same RCA clusters; this ledger
+plus the per-area reports are the work-list.
