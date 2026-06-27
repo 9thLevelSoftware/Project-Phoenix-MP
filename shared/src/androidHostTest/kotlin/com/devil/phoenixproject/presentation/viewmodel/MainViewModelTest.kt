@@ -128,6 +128,11 @@ class MainViewModelTest {
                 override suspend fun hasEstimates(exerciseId: String, profileId: String): Boolean = false
             },
             countVelocityOneRepMaxImprovementsUseCase = CountVelocityOneRepMaxImprovementsUseCase(),
+            backfillVelocityOneRepMaxUseCase = com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase(
+                exerciseIds = { emptyList() },
+                hasEstimates = { _, _ -> false },
+                computeAllTime = { _, _, _ -> null },
+            ),
         )
     }
 

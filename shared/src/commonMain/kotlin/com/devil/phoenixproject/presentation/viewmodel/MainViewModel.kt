@@ -51,6 +51,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
+import com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
@@ -118,6 +119,8 @@ class MainViewModel constructor(
     // Exposed as a public val so ExerciseDetailScreen can query the latest passing estimate.
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
     private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
+    // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
+    private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -647,6 +650,24 @@ class MainViewModel constructor(
             _hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(5))
             kotlinx.coroutines.delay(1000)
             _hapticEvents.emit(HapticEvent.WORKOUT_COMPLETE)
+        }
+    }
+
+    // ===== Velocity-1RM Backfill (Issue #517) =====
+
+    init {
+        // Run once at startup: backfill velocity-1RM estimates for historical sets.
+        // Gated by a run-once preference flag so it never re-runs after the first successful pass.
+        viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
+            try {
+                if (!settingsManager.velocityOneRepMaxBackfillDone.value) {
+                    val profile = activeProfileId.value
+                    backfillVelocityOneRepMaxUseCase(profile, com.devil.phoenixproject.domain.model.currentTimeMillis())
+                    preferencesManager.setVelocityOneRepMaxBackfillDone(true)
+                }
+            } catch (e: Exception) {
+                Logger.w(e) { "VELOCITY_1RM: backfill failed" }
+            }
         }
     }
 

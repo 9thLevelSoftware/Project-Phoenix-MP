@@ -100,6 +100,7 @@ actual val platformModule: Module = module {
             recordPersonalMvtSampleUseCase = get(),
             velocityOneRepMaxRepository = get(),
             countVelocityOneRepMaxImprovementsUseCase = get(),
+            backfillVelocityOneRepMaxUseCase = get(),
         )
     }
 }

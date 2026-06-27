@@ -14,6 +14,7 @@ import com.devil.phoenixproject.domain.onerepmax.MvtProvider
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
+import com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
 import com.devil.phoenixproject.domain.usecase.MvtExerciseView
@@ -73,6 +74,16 @@ val domainModule = module {
     }
     single { RecordPersonalMvtSampleUseCase(get()) }
     single { CountVelocityOneRepMaxImprovementsUseCase() }
+    single {
+        val workoutRepo = get<WorkoutRepository>()
+        val velRepo = get<VelocityOneRepMaxRepository>()
+        val compute = get<ComputeVelocityOneRepMaxUseCase>()
+        BackfillVelocityOneRepMaxUseCase(
+            exerciseIds = { profile -> workoutRepo.getExerciseIdsWithVelocityData(profile) },
+            hasEstimates = { id, profile -> velRepo.hasEstimates(id, profile) },
+            computeAllTime = { id, profile, now -> compute(id, profile, now, windowDays = 3650) },
+        )
+    }
 
     // Migration
     single { MigrationManager(get(), get<UserProfileRepository>(), get<GamificationRepository>()) }
