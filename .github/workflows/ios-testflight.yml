@@ -2,6 +2,11 @@ name: iOS TestFlight
 
 on:
   workflow_dispatch:  # Manual trigger only
+    inputs:
+      fail_on_distribution_error:
+        description: "Fail the run if adding the build to the TestFlight group or the Beta App Review submission fails. Set true for external-tester workflows; leave false for internal-only groups (audit F073)."
+        type: boolean
+        default: false
 
 permissions:
   contents: write  # Needed to push testflight/* tags for release notes tracking
@@ -551,7 +556,13 @@ jobs:
           else
             echo "WARNING: Unexpected response code $HTTP_CODE"
             echo "$RESPONSE_BODY"
-            # Don't fail - build was uploaded successfully
+            # F073: build was uploaded, but it was NOT added to the tester group.
+            # For external-tester workflows this means testers get nothing, so
+            # allow the run to fail when the caller opts in.
+            if [ "${{ inputs.fail_on_distribution_error }}" = "true" ]; then
+              echo "ERROR: failing because fail_on_distribution_error=true and the build was not added to '$TESTFLIGHT_GROUP_NAME'"
+              exit 1
+            fi
           fi
 
           # Submit for Beta App Review (required for external TestFlight groups)
@@ -584,7 +595,12 @@ jobs:
           else
             echo "WARNING: Failed to submit for Beta App Review (HTTP $REVIEW_HTTP_CODE)"
             echo "$REVIEW_BODY"
-            # Don't fail - may be an internal-only group that doesn't require review
+            # F073: an internal-only group doesn't require review, so this is
+            # tolerated by default; external-tester workflows can opt in to fail.
+            if [ "${{ inputs.fail_on_distribution_error }}" = "true" ]; then
+              echo "ERROR: failing because fail_on_distribution_error=true and Beta App Review submission failed"
+              exit 1
+            fi
           fi
 
       - name: Tag build for release notes tracking

@@ -84,3 +84,12 @@ raw GitHub for the parity-critical sync contracts.
 |----|---------|----------|-------------|
 | F032 | REAL | `SafeWordDetectionManager.startForWorkout()` logged the configured safe word verbatim, re-introducing the voice-PII leak the platform listeners deliberately redact. | **FIXED** — log only length/configured metadata. |
 | F062 | REAL | `matchesSafeWord` split on whitespace and compared tokens exactly, so `"stop!"`/`"stop."`/`"stop, now"` failed to match `stop` — a safety-critical false negative. Present on BOTH iOS and Android listeners. | **FIXED** — strip non-alphanumerics from each token before comparison; applied to both `SafeWordListener.ios.kt` and `SafeWordListener.android.kt` for parity. |
+
+## C11 — Build & CI correctness
+
+| ID | Verdict | Evidence | Disposition |
+|----|---------|----------|-------------|
+| F072 | PARTIALLY-REAL | `ci-tests.yml` compiles the iosArm64 target on `ubuntu-latest`. | **DOCUMENTED, no change** — the Linux job DOES validate compilation (it caught a real commonTest iOS-incompatibility during this work: parentheses in test names). It does not link/run on a real iOS host, but that compile-check is valuable and cheap; moving to macOS trades cost for marginal gain. Left as-is intentionally. |
+| F073 | REAL | `ios-testflight.yml` logs group-assignment and Beta App Review failures as warnings and continues. | **FIXED** — added an opt-in `fail_on_distribution_error` input (default false = current lenient behavior for internal groups); when true the two distribution steps `exit 1`. |
+| F074 | REAL | `release-all.yml` `gh workflow run` calls omit `--ref`, dispatching children on the default branch. | **FIXED** — pass `--ref "${{ github.ref_name }}"` to all four dispatches; ref echoed in logs and summary. |
+| F075 | DOCUMENTED | `release-all.yml` only dispatches children and reports "Triggered"; it does not await their conclusions. | **DOCUMENTED** — added an explicit note to the job summary that green ≠ published and each child run must be checked. Full run-id capture + polling is a larger workflow rewrite (recommended follow-up). |
