@@ -761,6 +761,12 @@ class SyncManager(
         val portalPaid = tokenStorage.currentUser.value?.isPremium == true
         val isPremium = localPaid || portalPaid
         val externalActivityDtos = if (isPremium) {
+            // F018 (deferred): getUnsyncedActivities intentionally excludes deletion
+            // tombstones (deletedAt set). Neither ExternalActivitySyncDto nor the
+            // portal mobile-sync-push handler carries a deletion field today, so
+            // including tombstones here would make the server re-create the deleted
+            // activity. Syncing external-activity deletions requires a coordinated
+            // wire + Edge Function change before the query can return tombstones.
             val unsyncedActivities = externalActivityRepository.getUnsyncedActivities(
                 activeProfileId,
             )

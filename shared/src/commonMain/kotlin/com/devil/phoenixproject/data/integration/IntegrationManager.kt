@@ -179,6 +179,12 @@ class IntegrationManager(
                 return Result.failure(error)
             }
 
+            // Note (audit F009): a `requiresUpgrade` response is intentionally NOT
+            // treated as a hard error. The connection itself is valid; the
+            // entitlement state (persisted below) carries the upgrade prompt and
+            // the provider stays CONNECTED so the UI shows "connected, upgrade for
+            // X" rather than a broken integration. Only non-upgrade errors fail.
+            // (Verified by IntegrationManagerTest.requiresUpgradeResponseKeepsProviderConnected.)
             if (response.status == "error" && !response.requiresUpgrade) {
                 val message = response.error ?: "Unknown error from portal"
                 Logger.w("IntegrationManager") { "$action responded with error for ${provider.key}: $message" }
@@ -191,7 +197,22 @@ class IntegrationManager(
                 return Result.failure(Exception(message))
             }
 
-            val pageResult = persistResponse(provider, profileId, isPaidUser, response)
+            // F010: persistResponse performs many repository writes; a failure in
+            // any of them must not escape the Result flow (leaving a partial sync
+            // reported as success). Catch, mark ERROR, and return failure.
+            val pageResult = try {
+                persistResponse(provider, profileId, isPaidUser, response)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Logger.e("IntegrationManager") { "Local persistence failed for ${provider.key}: ${e.message}" }
+                activityRepository.updateIntegrationStatus(
+                    provider = provider,
+                    status = ConnectionStatus.ERROR,
+                    profileId = profileId,
+                    errorMessage = e.message,
+                )
+                return Result.failure(e)
+            }
             aggregate = aggregate.merge(pageResult)
             response.providerSyncCursor?.let { latestProviderSyncCursor = it }
 
@@ -251,6 +272,12 @@ class IntegrationManager(
         val programs = response.programs.map { it.toDomain(provider, profileId) }
 
         if (activities.isNotEmpty()) activityRepository.upsertActivities(activities)
+        // F011: deletedExternalIds carries external ACTIVITY ids only — it is a
+        // flat, untyped list, and these ids live in the external-activity id space,
+        // so they must not be routed to routine/folder/template/measurement/program
+        // repositories (that would delete the wrong rows). If the portal ever needs
+        // to propagate deletions for those entities it must add per-entity deletion
+        // fields; until then non-activity deletions are intentionally not applied.
         if (response.deletedExternalIds.isNotEmpty()) {
             activityRepository.markDeletedByExternalIds(
                 provider = provider,

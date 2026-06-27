@@ -60,3 +60,12 @@ raw GitHub for the parity-critical sync contracts.
 | F088 | PENDING | `DiscoMode._isActive` may stay true if the cycling loop breaks on a non-cancellation exception. | To address in C5 follow-up / Medium sweep. |
 | F090 / F091 | PENDING | `HandleStateDetector.disable()` leaves stale state; `maxPositionSeen` init to `Double.MIN_VALUE` (smallest positive, not most-negative). | To address in C5 follow-up / Medium sweep. |
 | F071 | PENDING | `WorkoutCommandValidator` weight cap is hardware-agnostic (110kg global). | Needs hardware-capability threading; assess in C5 follow-up. |
+
+## C6 — Integration sync robustness
+
+| ID | Verdict | Evidence | Disposition |
+|----|---------|----------|-------------|
+| F009 | FALSE-POSITIVE | An `error` response with `requiresUpgrade` deliberately stays CONNECTED and surfaces the entitlement/upgrade state — confirmed by the existing test `IntegrationManagerTest.requiresUpgradeResponseKeepsProviderConnected`. The connection is valid; the upgrade prompt rides on the entitlement state. | Closed; original behavior restored + comment added. (A trial fix broke the intended UX and the existing test caught it.) |
+| F010 | REAL | `persistResponse`'s multi-repository writes could throw and escape the `Result` flow, leaving a partial sync not reflected in status. | **FIXED** — wrapped in try/catch (cancellation-aware): mark ERROR and return failure on persistence failure. |
+| F011 | PARTIALLY-REAL | `deletedExternalIds` deletions applied only to activities. | **DOCUMENTED** — the field is a flat, untyped list of external ACTIVITY ids; routing them to routine/template/etc. repos would delete wrong rows. Per-entity deletion needs a wire-contract change; comment added making the activity-only contract explicit. |
+| F018 | DEFERRED | Deletion tombstones (`needsSync=1, deletedAt` set) are excluded from `getUnsyncedExternalActivities`. | **DEFERRED** — confirmed via portal `mobile-sync-push` that neither `ExternalActivitySyncDto` nor the Edge Function supports external-activity deletion; including tombstones would re-create them server-side. Requires a coordinated wire + portal change (documented at the push site). |
