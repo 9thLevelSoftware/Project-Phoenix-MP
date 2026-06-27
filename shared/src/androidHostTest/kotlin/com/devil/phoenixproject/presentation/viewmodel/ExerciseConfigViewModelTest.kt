@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.presentation.screen.shouldShowCableOnlyExerciseControls
@@ -454,6 +455,62 @@ class ExerciseConfigViewModelTest {
         assertEquals(45f, viewModel.currentExercisePR.value?.weightPerCableKg)
     }
 
+    @Test
+    fun `initialize and save preserve explicit scalingBasis`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = benchRoutineExercise(
+            id = "rex-scaling-basis",
+            setReps = listOf(10),
+            weightPerCableKg = 20f,
+            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        assertEquals(ScalingBasis.ESTIMATED_1RM, viewModel.scalingBasis.value)
+
+        viewModel.onScalingBasisChange(ScalingBasis.MAX_VOLUME_PR)
+        assertEquals(ScalingBasis.MAX_VOLUME_PR, viewModel.scalingBasis.value)
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertEquals(ScalingBasis.MAX_VOLUME_PR, saved.scalingBasis)
+    }
+
+    @Test
+    fun `initialize with null scalingBasis derives from prTypeForScaling`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = benchRoutineExercise(
+            id = "rex-scaling-null",
+            setReps = listOf(10),
+            weightPerCableKg = 20f,
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        // null scalingBasis means back-compat derivation — effectiveScalingBasis should derive
+        assertNull(viewModel.scalingBasis.value)
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertNull(saved.scalingBasis)
+        assertEquals(ScalingBasis.MAX_WEIGHT_PR, saved.effectiveScalingBasis)
+    }
+
     private fun benchRoutineExercise(
         id: String,
         setReps: List<Int?>,
@@ -463,6 +520,7 @@ class ExerciseConfigViewModelTest {
         weightPercentOfPR: Int = 80,
         setWeightsPercentOfPR: List<Int> = emptyList(),
         defaultRackItemIds: List<String> = emptyList(),
+        scalingBasis: ScalingBasis? = null,
     ) = RoutineExercise(
         id = id,
         exercise = Exercise(
@@ -483,6 +541,7 @@ class ExerciseConfigViewModelTest {
         weightPercentOfPR = weightPercentOfPR,
         setWeightsPercentOfPR = setWeightsPercentOfPR,
         defaultRackItemIds = defaultRackItemIds,
+        scalingBasis = scalingBasis,
     )
 
     private fun weightPR(weight: Float) = PersonalRecord(

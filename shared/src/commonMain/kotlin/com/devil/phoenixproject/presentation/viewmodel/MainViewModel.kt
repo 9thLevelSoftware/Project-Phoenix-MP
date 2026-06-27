@@ -38,6 +38,7 @@ import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineGroup
@@ -334,6 +335,8 @@ class MainViewModel constructor(
     fun setVelocityLossThreshold(percent: Int) = settingsManager.setVelocityLossThreshold(percent)
     fun setAutoEndOnVelocityLoss(enabled: Boolean) = settingsManager.setAutoEndOnVelocityLoss(enabled)
     fun setWeightSuggestionsEnabled(enabled: Boolean) = settingsManager.setWeightSuggestionsEnabled(enabled)
+    // Issue #517: system-wide default scaling basis
+    fun setDefaultScalingBasis(basis: ScalingBasis) = settingsManager.setDefaultScalingBasis(basis)
 
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)

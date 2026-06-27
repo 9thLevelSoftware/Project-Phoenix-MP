@@ -73,6 +73,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
@@ -169,6 +170,8 @@ fun ExerciseEditBottomSheet(
     // PR percentage scaling state (Issue #57)
     val usePercentOfPR by viewModel.usePercentOfPR.collectAsState()
     val weightPercentOfPR by viewModel.weightPercentOfPR.collectAsState()
+    // Issue #517: per-exercise scaling basis selector
+    val scalingBasis by viewModel.scalingBasis.collectAsState()
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
@@ -341,10 +344,12 @@ fun ExerciseEditBottomSheet(
                         usePercentOfPR = usePercentOfPR,
                         weightPercentOfPR = weightPercentOfPR,
                         currentExercisePR = currentExercisePR,
+                        scalingBasis = scalingBasis,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
                         onWeightPercentOfPRChange = viewModel::onWeightPercentOfPRChange,
+                        onScalingBasisChange = viewModel::onScalingBasisChange,
                     )
                 }
 
@@ -1226,10 +1231,12 @@ fun WeightConfigurationCard(
     usePercentOfPR: Boolean,
     weightPercentOfPR: Int,
     currentExercisePR: PersonalRecord?,
+    scalingBasis: ScalingBasis? = null,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onUsePercentOfPRChange: (Boolean) -> Unit,
     onWeightPercentOfPRChange: (Int) -> Unit,
+    onScalingBasisChange: (ScalingBasis) -> Unit = {},
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1336,6 +1343,33 @@ fun WeightConfigurationCard(
                             label = { Text(stringResource(Res.string.percent_label, percent)) },
                             modifier = Modifier.weight(1f),
                         )
+                    }
+                }
+
+                // Issue #517: 3-way scaling basis selector
+                Spacer(modifier = Modifier.height(Spacing.small))
+                Text(
+                    text = "Scale from",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(Spacing.extraSmall))
+                val basisOptions = listOf(
+                    ScalingBasis.MAX_WEIGHT_PR to "Max-weight PR",
+                    ScalingBasis.MAX_VOLUME_PR to "Max-volume PR",
+                    ScalingBasis.ESTIMATED_1RM to "Est. 1RM",
+                )
+                val effectiveBasis = scalingBasis ?: ScalingBasis.MAX_WEIGHT_PR
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    basisOptions.forEachIndexed { index, (basis, label) ->
+                        SegmentedButton(
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = basisOptions.size),
+                            onClick = { onScalingBasisChange(basis) },
+                            selected = effectiveBasis == basis,
+                        ) {
+                            Text(label, maxLines = 1)
+                        }
                     }
                 }
             }

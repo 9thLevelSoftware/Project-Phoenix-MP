@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
@@ -111,6 +112,10 @@ class ExerciseConfigViewModel constructor(
 
     private val _prTypeForScaling = MutableStateFlow(PRType.MAX_WEIGHT)
     val prTypeForScaling: StateFlow<PRType> = _prTypeForScaling.asStateFlow()
+
+    // Issue #517: Velocity 1RM scaling basis (null = derive from prTypeForScaling for back-compat)
+    private val _scalingBasis = MutableStateFlow<ScalingBasis?>(null)
+    val scalingBasis: StateFlow<ScalingBasis?> = _scalingBasis.asStateFlow()
 
     private var setWeightsPercentOfPR: List<Int> = emptyList()
     private val pendingPercentOfPREditWeights = mutableMapOf<String, Float>()
@@ -225,6 +230,8 @@ class ExerciseConfigViewModel constructor(
         _usePercentOfPR.value = exercise.usePercentOfPR
         _weightPercentOfPR.value = exercise.weightPercentOfPR
         _prTypeForScaling.value = exercise.prTypeForScaling
+        // Issue #517: load explicit scalingBasis (null preserved for back-compat derivation)
+        _scalingBasis.value = exercise.scalingBasis
         pendingPercentOfPREditWeights.clear()
         setWeightsPercentOfPR = normalizeSetWeightPercentages(
             source = exercise.setWeightsPercentOfPR,
@@ -356,6 +363,11 @@ class ExerciseConfigViewModel constructor(
 
     fun onPRTypeForScalingChange(prType: PRType) {
         _prTypeForScaling.value = prType
+    }
+
+    // Issue #517: explicit 3-way scaling basis selector
+    fun onScalingBasisChange(basis: ScalingBasis) {
+        _scalingBasis.value = basis
     }
 
     // Warm-up set handlers (Issue #30)
@@ -652,6 +664,8 @@ class ExerciseConfigViewModel constructor(
             weightPercentOfPR = _weightPercentOfPR.value,
             prTypeForScaling = _prTypeForScaling.value,
             setWeightsPercentOfPR = resolvedSetWeightsPercentOfPR,
+            // Issue #517: persist explicit scaling basis (null = back-compat derivation from prTypeForScaling)
+            scalingBasis = _scalingBasis.value,
             // Warm-up sets (Issue #30)
             warmupSets = _warmupSets.value,
             defaultRackItemIds = _defaultRackItemIds.value,
