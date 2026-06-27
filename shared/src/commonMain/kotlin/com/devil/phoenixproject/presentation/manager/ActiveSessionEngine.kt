@@ -2946,6 +2946,9 @@ class ActiveSessionEngine(
 
             // Issue #252: Exclude warmup time from session duration
             val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
+            // Capture biomechanics summary before building session (mirrors saveWorkoutSession() pattern;
+            // biomechanicsEngine.reset() is not called on this path before this point).
+            val bioSummary = coordinator.biomechanicsEngine.getSetSummary()
             val session = WorkoutSession(
                 timestamp = coordinator.workoutStartTime,
                 mode = params.programMode.displayName,
@@ -2982,6 +2985,7 @@ class ActiveSessionEngine(
                 burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
                 peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
                 rpe = coordinator._currentSetRpe.value,
+                avgMcvMmS = bioSummary?.avgMcvMmS,
                 // C4: profileId was missing from manual-stop path — matches saveWorkoutSession() pattern
                 profileId = userProfileRepository.activeProfile.value?.id ?: "default",
             )
