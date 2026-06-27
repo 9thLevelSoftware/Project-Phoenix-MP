@@ -6,6 +6,7 @@ import com.devil.phoenixproject.testutil.FakePortalApiClient
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
+import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -41,6 +42,7 @@ class PortalPullPaginationTest {
     private val fakeRepMetricRepo = FakeRepMetricRepository()
     private val fakeUserProfileRepo = FakeUserProfileRepository()
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
+    private val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
 
     private fun createManager() = SyncManager(
         apiClient = fakeApi,
@@ -50,6 +52,7 @@ class PortalPullPaginationTest {
         repMetricRepository = fakeRepMetricRepo,
         userProfileRepository = fakeUserProfileRepo,
         externalActivityRepository = fakeExternalActivityRepo,
+        velocityOneRepMaxRepository = fakeVelocityRepo,
     )
 
     private fun authenticate(userId: String = "user-123") {

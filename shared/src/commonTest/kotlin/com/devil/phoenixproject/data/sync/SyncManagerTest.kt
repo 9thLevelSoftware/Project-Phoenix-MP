@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
@@ -17,6 +18,7 @@ import com.devil.phoenixproject.testutil.FakePortalApiClient
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
+import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -45,6 +47,7 @@ class SyncManagerTest {
     private val fakeRepMetricRepo = FakeRepMetricRepository()
     private val fakeUserProfileRepo = FakeUserProfileRepository()
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
+    private val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
     private val json = Json { encodeDefaults = true }
 
     private fun createManager() = SyncManager(
@@ -55,6 +58,7 @@ class SyncManagerTest {
         repMetricRepository = fakeRepMetricRepo,
         userProfileRepository = fakeUserProfileRepo,
         externalActivityRepository = fakeExternalActivityRepo,
+        velocityOneRepMaxRepository = fakeVelocityRepo,
     )
 
     /**
@@ -431,6 +435,83 @@ class SyncManagerTest {
             "Legacy set-level hint should prefer the normal concentric weight PR when present",
         )
     }
+
+    @Test
+    fun syncAttachesLatestPassingVelocityEstimateToExerciseDto() = runTest {
+        // Issue #517 Phase 6: the push payload's exercise DTO carries the velocity-
+        // based 1RM from getAllPassing, picking the LATEST passing estimate per
+        // exercise (max computedAt) — same ordering as getLatestPassing. An exercise
+        // with no passing estimate stays null.
+        setupAuthenticated()
+        val withEstimate = "bench-press"
+        val withoutEstimate = "row"
+        val timestamp = 1_740_916_800_000L
+        fakeSyncRepo.workoutSessionsToReturn = listOf(
+            makeWorkoutSession(
+                id = "session-vel-1",
+                timestamp = timestamp,
+                exerciseId = withEstimate,
+                exerciseName = "Bench Press",
+            ),
+            makeWorkoutSession(
+                id = "session-vel-2",
+                timestamp = timestamp + 1000L,
+                exerciseId = withoutEstimate,
+                exerciseName = "Row",
+            ),
+        )
+        // Two passing estimates for the same exercise; the newer (computedAt) wins.
+        fakeVelocityRepo.allPassing = listOf(
+            makeVelocityEntity(
+                id = 1,
+                exerciseId = withEstimate,
+                estimatedPerCableKg = 80f,
+                computedAt = 1_000L,
+            ),
+            makeVelocityEntity(
+                id = 2,
+                exerciseId = withEstimate,
+                estimatedPerCableKg = 95f,
+                computedAt = 2_000L,
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        val exercises = payload.sessions.flatMap { it.exercises }
+        assertEquals(
+            95f,
+            exercises.single { it.exerciseId == withEstimate }.velocityEstimatedOneRepMaxKg,
+            "Latest passing velocity estimate (max computedAt) should be attached",
+        )
+        assertNull(
+            exercises.single { it.exerciseId == withoutEstimate }.velocityEstimatedOneRepMaxKg,
+            "Exercise with no passing estimate should have a null velocity 1RM",
+        )
+    }
+
+    private fun makeVelocityEntity(
+        id: Long,
+        exerciseId: String,
+        estimatedPerCableKg: Float,
+        computedAt: Long,
+        profileId: String = "default",
+    ): VelocityOneRepMaxEntity = VelocityOneRepMaxEntity(
+        id = id,
+        exerciseId = exerciseId,
+        estimatedPerCableKg = estimatedPerCableKg,
+        mvtUsedMs = 0.3f,
+        r2 = 0.95f,
+        distinctLoads = 3,
+        passedQualityGate = true,
+        computedAt = computedAt,
+        profileId = profileId,
+    )
 
     @Test
     fun syncStampsPushedPersonalRecordsToPreventResend() = runTest {

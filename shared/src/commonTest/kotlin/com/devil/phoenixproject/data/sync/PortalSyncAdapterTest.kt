@@ -1015,12 +1015,89 @@ class PortalSyncAdapterTest {
         assertTrue(abs(estimate - 67.5f) < 0.01f, "expected 67.5, got $estimate")
     }
 
+    // ========== Velocity-estimated 1RM in sync payload (Phase 6) ==========
+
+    @Test
+    fun `exercise dto carries velocity estimate from the map keyed by catalog exerciseId`() {
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                routineSessionId = null,
+                exerciseName = "Bench Press",
+                exerciseId = "ex1",
+                weightPerCableKg = 60f,
+                totalReps = 5,
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(
+            sessions,
+            "user-1",
+            velocityEstimatesByExerciseId = mapOf("ex1" to 92f),
+        )
+
+        val exercise = result[0].exercises[0]
+        assertFloatEquals(92f, exercise.velocityEstimatedOneRepMaxKg!!)
+        // Rep-based estimate is still computed independently: 60 * 36 / 32 = 67.5
+        assertNotNull(exercise.estimatedOneRepMaxKg)
+        assertFloatEquals(67.5f, exercise.estimatedOneRepMaxKg!!)
+    }
+
+    @Test
+    fun `exercise dto velocity estimate is null when not in the map`() {
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                exerciseName = "Bench Press",
+                exerciseId = "ex1",
+            ),
+        )
+
+        // Map has a different exercise; the rep-based estimate must be unaffected.
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(
+            sessions,
+            "user-1",
+            velocityEstimatesByExerciseId = mapOf("other-ex" to 80f),
+        )
+
+        val exercise = result[0].exercises[0]
+        assertNull(exercise.velocityEstimatedOneRepMaxKg)
+        assertNotNull(exercise.estimatedOneRepMaxKg)
+    }
+
+    @Test
+    fun `exercise dto velocity estimate is null when exerciseId is null`() {
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "s1", exerciseName = "Bench Press", exerciseId = null),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(
+            sessions,
+            "user-1",
+            velocityEstimatesByExerciseId = mapOf("ex1" to 92f),
+        )
+
+        assertNull(result[0].exercises[0].velocityEstimatedOneRepMaxKg)
+    }
+
+    @Test
+    fun `exercise dto velocity estimate defaults to null with no map argument`() {
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "s1", exerciseName = "Bench Press", exerciseId = "ex1"),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
+
+        assertNull(result[0].exercises[0].velocityEstimatedOneRepMaxKg)
+    }
+
     // ========== Factory Helpers ==========
 
     private fun makeSessionWithReps(
         sessionId: String = "session-${idCounter++}",
         routineSessionId: String? = null,
         exerciseName: String? = "Test Exercise",
+        exerciseId: String? = null,
         routineName: String? = null,
         mode: String = "Old School",
         timestamp: Long = 1700000000000L + (idCounter * 1000),
@@ -1044,6 +1121,7 @@ class PortalSyncAdapterTest {
             duration = durationMs,
             totalReps = totalReps,
             exerciseName = exerciseName,
+            exerciseId = exerciseId,
             routineSessionId = routineSessionId,
             routineName = routineName,
             totalVolumeKg = totalVolumeKg,

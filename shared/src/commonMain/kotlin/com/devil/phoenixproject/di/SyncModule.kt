@@ -31,6 +31,7 @@ val syncModule = module {
             repMetricRepository = get(),
             userProfileRepository = get(),
             externalActivityRepository = get(),
+            velocityOneRepMaxRepository = get(),
         )
     }
     single<HealthBodyWeightReader> { HealthIntegrationBodyWeightReader(get()) }

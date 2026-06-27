@@ -76,13 +76,26 @@ object PortalSyncAdapter {
      */
     data class PortalSessionBuildResult(val sessions: List<PortalWorkoutSessionDto>, val telemetry: List<PortalRepTelemetryDto>)
 
-    fun toPortalWorkoutSessions(sessionsWithReps: List<SessionWithReps>, userId: String): List<PortalWorkoutSessionDto> = toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId).sessions
+    fun toPortalWorkoutSessions(
+        sessionsWithReps: List<SessionWithReps>,
+        userId: String,
+        velocityEstimatesByExerciseId: Map<String, Float> = emptyMap(),
+    ): List<PortalWorkoutSessionDto> = toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId, velocityEstimatesByExerciseId).sessions
 
     /**
      * Build portal workout sessions AND correctly-keyed telemetry in one pass.
      * Telemetry setIds are guaranteed to match the generated set IDs in the exercises.
+     *
+     * [velocityEstimatesByExerciseId] maps catalog exerciseId → latest passing
+     * velocity-based 1RM (per-cable kg). The caller (SyncManager) precomputes it
+     * from VelocityOneRepMaxRepository in a suspend context; the adapter stays
+     * pure. Exercises not present in the map get a null velocity estimate.
      */
-    fun toPortalWorkoutSessionsWithTelemetry(sessionsWithReps: List<SessionWithReps>, userId: String): PortalSessionBuildResult {
+    fun toPortalWorkoutSessionsWithTelemetry(
+        sessionsWithReps: List<SessionWithReps>,
+        userId: String,
+        velocityEstimatesByExerciseId: Map<String, Float> = emptyMap(),
+    ): PortalSessionBuildResult {
         // Group: null routineSessionId = standalone, non-null = routine group
         val standalone = sessionsWithReps.filter { it.session.routineSessionId == null }
         val routineGroups = sessionsWithReps
@@ -94,14 +107,14 @@ object PortalSyncAdapter {
 
         // Standalone sessions: each becomes its own portal workout
         for (swr in standalone) {
-            val (session, telemetry) = buildPortalSession(listOf(swr), userId, routineSessionId = null)
+            val (session, telemetry) = buildPortalSession(listOf(swr), userId, routineSessionId = null, velocityEstimatesByExerciseId)
             resultSessions.add(session)
             resultTelemetry.addAll(telemetry)
         }
 
         // Routine groups: each group becomes one portal workout
         for ((routineSessionId, group) in routineGroups) {
-            val (session, telemetry) = buildPortalSession(group, userId, routineSessionId)
+            val (session, telemetry) = buildPortalSession(group, userId, routineSessionId, velocityEstimatesByExerciseId)
             resultSessions.add(session)
             resultTelemetry.addAll(telemetry)
         }
@@ -113,6 +126,7 @@ object PortalSyncAdapter {
         sessionsWithReps: List<SessionWithReps>,
         userId: String,
         routineSessionId: String?,
+        velocityEstimatesByExerciseId: Map<String, Float> = emptyMap(),
     ): Pair<PortalWorkoutSessionDto, List<PortalRepTelemetryDto>> {
         val sorted = sessionsWithReps.sortedBy { it.session.timestamp }
         val first = sorted.first().session
@@ -135,7 +149,7 @@ object PortalSyncAdapter {
 
         // Build exercise entries with telemetry (setIds are generated inside)
         val exerciseBundles = sorted.mapIndexed { index, swr ->
-            buildPortalExerciseWithTelemetry(swr, portalSessionId, index)
+            buildPortalExerciseWithTelemetry(swr, portalSessionId, index, velocityEstimatesByExerciseId)
         }
         val exercises = exerciseBundles.map { it.exercise }
         val telemetry = exerciseBundles.flatMap { it.telemetry }
@@ -241,7 +255,12 @@ object PortalSyncAdapter {
      * The generated setId is shared between the set DTO and the telemetry points,
      * ensuring FK consistency when inserted into the portal database.
      */
-    private fun buildPortalExerciseWithTelemetry(swr: SessionWithReps, portalSessionId: String, orderIndex: Int): ExerciseWithTelemetry {
+    private fun buildPortalExerciseWithTelemetry(
+        swr: SessionWithReps,
+        portalSessionId: String,
+        orderIndex: Int,
+        velocityEstimatesByExerciseId: Map<String, Float> = emptyMap(),
+    ): ExerciseWithTelemetry {
         val session = swr.session
         // Use stable mobile session ID as exercise ID so repeated syncs
         // upsert the same row instead of creating duplicates (issue #33).
@@ -292,6 +311,10 @@ object PortalSyncAdapter {
                 session.weightPerCableKg,
                 session.totalReps,
             ).takeIf { it > 0f },
+            // Velocity-based (VBT) estimate, looked up by catalog exerciseId from
+            // the precomputed map. Distinct from the rep-based estimate above; null
+            // when this exercise has no exerciseId or no passing velocity estimate.
+            velocityEstimatedOneRepMaxKg = session.exerciseId?.let { velocityEstimatesByExerciseId[it] },
             sets = listOf(set),
         )
         return ExerciseWithTelemetry(exercise, telemetry)

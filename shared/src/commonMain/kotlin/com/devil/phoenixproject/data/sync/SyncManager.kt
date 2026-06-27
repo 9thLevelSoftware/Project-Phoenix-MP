@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.CharacterClass
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.RpgProfile
@@ -127,6 +128,7 @@ class SyncManager(
     private val repMetricRepository: RepMetricRepository,
     private val userProfileRepository: UserProfileRepository,
     private val externalActivityRepository: ExternalActivityRepository,
+    private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
     private val rateLimiter: ClientRateLimiter = ClientRateLimiter(),
 ) {
     companion object {
@@ -761,10 +763,33 @@ class SyncManager(
         // exercise IDs may be missing remotely even after a successful sync.
         val customExerciseDtos = syncRepository.getCustomExercisesModifiedSince(0L)
 
-        // 7. Build portal session + telemetry DTOs (telemetry setIds match generated exercise set IDs)
+        // 7. Build the velocity-based 1RM map (catalog exerciseId → latest passing
+        // per-cable estimate). Looked up here (suspend context with repo + profile)
+        // so the pure adapter just attaches the value. Distinct from the rep-based
+        // estimate the adapter computes inline.
+        //
+        // Single query for the whole profile (getAllPassing) instead of one
+        // getLatestPassing per distinct exercise — avoids an N+1 during full sync.
+        // getAllPassing returns the full passing history; pick the latest per
+        // exercise with the SAME ordering as getLatestPassing (computedAt DESC,
+        // then id DESC as the tie-break) so the two paths agree exactly. The
+        // adapter only reads keys for exercises actually in this push, so a
+        // superset map is harmless.
+        val velocityEstimatesByExerciseId = velocityOneRepMaxRepository
+            .getAllPassing(activeProfileId)
+            .groupBy { it.exerciseId }
+            .mapNotNull { (exId, estimates) ->
+                estimates
+                    .maxWithOrNull(compareBy({ it.computedAt }, { it.id }))
+                    ?.let { exId to it.estimatedPerCableKg }
+            }
+            .toMap()
+
+        // 7b. Build portal session + telemetry DTOs (telemetry setIds match generated exercise set IDs)
         val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(
             sessionsWithReps,
             userId,
+            velocityEstimatesByExerciseId,
         )
 
         // Gate telemetry push behind the Inferno tier. Force-curve / 50 Hz session
