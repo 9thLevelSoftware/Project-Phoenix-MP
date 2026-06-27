@@ -318,6 +318,22 @@ class ExerciseConfigViewModel constructor(
                 logWarning("Failed to load volume PR for exercise=$exerciseId, mode=$workoutMode: ${e.message}")
                 _currentMaxVolumePR.value = null
             }
+            // The volume PR loads after the weight-PR sync above; re-sync so a MAX_VOLUME_PR
+            // exercise picks up the just-loaded baseline instead of staying on stale weights.
+            resyncSetWeightsIfBaselineReady()
+        }
+    }
+
+    /**
+     * Re-resolve visible set weights against the current basis baseline, but only when
+     * percentage scaling is enabled AND a baseline for the current basis is now available.
+     * Safe to call repeatedly after each async baseline load — syncSetWeightsToPercentOfPR
+     * only reads the stored percentages and rewrites set weights, so it cannot re-trigger a
+     * load or loop.
+     */
+    private fun resyncSetWeightsIfBaselineReady() {
+        if (_usePercentOfPR.value && baselineKgForCurrentBasis() != null) {
+            syncSetWeightsToPercentOfPR()
         }
     }
 
@@ -336,6 +352,8 @@ class ExerciseConfigViewModel constructor(
                     logWarning("Failed to load velocity estimate for exercise=$exerciseId: ${e.message}")
                     _velocityEstimateKg.value = null
                 }
+                // Re-sync after the velocity baseline lands (ESTIMATED_1RM may now resolve).
+                resyncSetWeightsIfBaselineReady()
             }
             if (exerciseRepository != null) {
                 try {
@@ -346,13 +364,21 @@ class ExerciseConfigViewModel constructor(
                     logWarning("Failed to load stored 1RM for exercise=$exerciseId: ${e.message}")
                     _storedOneRepMaxKg.value = null
                 }
-            }
-            // If the selected basis depends on these baselines, re-resolve visible set weights.
-            if (_usePercentOfPR.value && _scalingBasis.value == ScalingBasis.ESTIMATED_1RM) {
-                syncSetWeightsToPercentOfPR()
+                // Re-sync after the stored-1RM fallback lands.
+                resyncSetWeightsIfBaselineReady()
             }
         }
     }
+
+    /**
+     * The basis the editor/workout-start actually use. Mirrors
+     * RoutineExercise.effectiveScalingBasis: when no explicit scalingBasis is set
+     * (legacy/back-compat rows), derive it from prTypeForScaling so the editor matches
+     * ResolveRoutineWeightsUseCase (e.g. a legacy row with prTypeForScaling=MAX_VOLUME
+     * resolves to MAX_VOLUME_PR, not the default MAX_WEIGHT_PR).
+     */
+    fun effectiveScalingBasis(): ScalingBasis =
+        _scalingBasis.value ?: ScalingBasis.fromPrType(_prTypeForScaling.value)
 
     /**
      * Resolves the baseline weight (kg/cable) for the currently-selected scaling basis,
@@ -364,8 +390,7 @@ class ExerciseConfigViewModel constructor(
      * Returns null when no data is available for the selected basis (controls preview and gating).
      */
     fun baselineKgForCurrentBasis(): Float? {
-        val basis = _scalingBasis.value ?: ScalingBasis.MAX_WEIGHT_PR
-        return when (basis) {
+        return when (effectiveScalingBasis()) {
             ScalingBasis.MAX_WEIGHT_PR ->
                 _currentExercisePR.value?.weightPerCableKg?.takeIf { it > 0 }
             ScalingBasis.MAX_VOLUME_PR ->

@@ -174,6 +174,7 @@ fun ExerciseEditBottomSheet(
     val weightPercentOfPR by viewModel.weightPercentOfPR.collectAsState()
     // Issue #517: per-exercise scaling basis selector
     val scalingBasis by viewModel.scalingBasis.collectAsState()
+    val prTypeForScaling by viewModel.prTypeForScaling.collectAsState()
 
     // Additional baselines for the 3-way scaling basis (Issue #517 gating + preview fix)
     val currentMaxVolumePR by viewModel.currentMaxVolumePR.collectAsState()
@@ -182,7 +183,9 @@ fun ExerciseEditBottomSheet(
 
     // Resolved baseline weight for the currently-selected scaling basis, mirroring
     // ResolveRoutineWeightsUseCase so the editor preview matches workout-start resolution.
-    val effectiveScalingBasis = scalingBasis ?: ScalingBasis.MAX_WEIGHT_PR
+    // For legacy rows with no explicit scalingBasis, derive it from prTypeForScaling
+    // (same as RoutineExercise.effectiveScalingBasis) instead of defaulting to MAX_WEIGHT_PR.
+    val effectiveScalingBasis = scalingBasis ?: ScalingBasis.fromPrType(prTypeForScaling)
     val maxWeightBaselineKg = currentExercisePR?.weightPerCableKg?.takeIf { it > 0 }
     val maxVolumeBaselineKg = currentMaxVolumePR?.weightPerCableKg?.takeIf { it > 0 }
     val velocityBaselineKg = velocityEstimateKg?.takeIf { it > 0 }
@@ -371,7 +374,7 @@ fun ExerciseEditBottomSheet(
                         usePercentOfPR = usePercentOfPR,
                         weightPercentOfPR = weightPercentOfPR,
                         currentExercisePR = currentExercisePR,
-                        scalingBasis = scalingBasis,
+                        effectiveScalingBasis = effectiveScalingBasis,
                         baselineWeightKg = baselineWeightKg,
                         hasAnyBaseline = hasAnyBaseline,
                         weightUnit = weightUnit,
@@ -1260,7 +1263,11 @@ fun WeightConfigurationCard(
     usePercentOfPR: Boolean,
     weightPercentOfPR: Int,
     currentExercisePR: PersonalRecord?,
-    scalingBasis: ScalingBasis? = null,
+    /**
+     * The basis actually in effect (already derived via effectiveScalingBasis, i.e.
+     * scalingBasis ?: fromPrType(prTypeForScaling)) so legacy rows select the right basis.
+     */
+    effectiveScalingBasis: ScalingBasis = ScalingBasis.MAX_WEIGHT_PR,
     /**
      * Resolved baseline weight (kg/cable) for the currently-selected scaling basis.
      * When non-null the resolved-weight preview is shown and uses this weight.
@@ -1315,12 +1322,11 @@ fun WeightConfigurationCard(
                         color = if (usePercentOfPR) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
                     // Subtitle: describes which baseline will be used
-                    val effectiveBasis = scalingBasis ?: ScalingBasis.MAX_WEIGHT_PR
                     Text(
                         text = when {
-                            baselineWeightKg != null && effectiveBasis == ScalingBasis.ESTIMATED_1RM ->
+                            baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM ->
                                 "Scale weight based on your velocity 1RM estimate"
-                            baselineWeightKg != null && effectiveBasis == ScalingBasis.MAX_VOLUME_PR ->
+                            baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_VOLUME_PR ->
                                 "Scale weight based on your max-volume personal record"
                             currentExercisePR != null ->
                                 "Scale weight based on your ${currentExercisePR.phase.displayLabel().lowercase()} personal record"
@@ -1343,7 +1349,7 @@ fun WeightConfigurationCard(
             // When scaling is ON, the basis selector is ALWAYS available so the user can
             // switch to a basis that has data; the resolved-weight preview only appears when
             // the currently-selected basis actually has a baseline (Issue #517).
-            val effectiveBasisForControls = scalingBasis ?: ScalingBasis.MAX_WEIGHT_PR
+            val effectiveBasisForControls = effectiveScalingBasis
             if (usePercentOfPR) {
                 // Issue #517: 3-way scaling basis selector (always shown while scaling enabled)
                 Spacer(modifier = Modifier.height(Spacing.medium))
