@@ -317,6 +317,35 @@ class GamificationManager(
     }
 
     /**
+     * Check for and award velocity-1RM improvement badges.
+     * Mirrors processSetQualityEvent — called from the post-save hook in MainViewModel
+     * after CountVelocityOneRepMaxImprovementsUseCase tallies cumulative improvements.
+     *
+     * @param improvementCount Total cumulative velocity-1RM improvements across all exercises.
+     * @param profileId Active profile ID for profile-scoped badge awarding.
+     * @return List of newly awarded badges (empty if none earned or gamification disabled).
+     */
+    suspend fun checkVelocityOneRepMaxBadges(improvementCount: Int, profileId: String = "default"): List<Badge> {
+        if (!gamificationEnabled.value) return emptyList()
+        val candidates = BadgeDefinitions.allBadges.filter {
+            it.requirement is BadgeRequirement.VelocityOneRepMaxImprovements
+        }
+        val newlyEarned = mutableListOf<Badge>()
+        for (badge in candidates) {
+            val req = badge.requirement as BadgeRequirement.VelocityOneRepMaxImprovements
+            if (improvementCount >= req.count && !gamificationRepository.isBadgeEarned(badge.id, profileId)) {
+                if (gamificationRepository.awardBadge(badge.id, profileId)) newlyEarned.add(badge)
+            }
+        }
+        if (newlyEarned.isNotEmpty()) {
+            hapticEvents.emit(HapticEvent.BADGE_EARNED)
+            _badgeEarnedEvents.emit(newlyEarned)
+            Logger.d("Velocity 1RM badges earned: ${newlyEarned.map { it.name }}")
+        }
+        return newlyEarned
+    }
+
+    /**
      * Reset quality streak counter. Called when starting a new workout session.
      */
     fun resetQualityStreak() {

@@ -70,4 +70,30 @@ class ComputeVelocityOneRepMaxUseCaseTest {
         assertEquals(null, useCase("ex1", "default", nowMs = 1L))
         assertEquals(0, inserted.size)
     }
+
+    @Test fun `respects custom windowDays parameter for point filtering`() = runTest {
+        val points = listOf(
+            WorkoutVelocityPoint(40f, 1200f, timestampMs = 5L, workingReps = 5),
+            WorkoutVelocityPoint(80f, 600f, timestampMs = 6L, workingReps = 5),
+        )
+        val inserted = mutableListOf<VelocityOneRepMaxResult>()
+        var capturedSinceMs = -1L
+        val useCase = ComputeVelocityOneRepMaxUseCase(
+            workoutPoints = { _, _, since -> capturedSinceMs = since; points },
+            exerciseLookup = { _ -> FakeExercise(name = "Back Squat", muscleGroups = "Legs", mvtOverrideMs = null) },
+            personalMvtLookup = { _, _ -> null },
+            mvtProvider = MvtProvider(),
+            estimator = VelocityOneRepMaxEstimator(AssessmentEngine()),
+            persist = { result, _, _, _ -> inserted += result },
+        )
+
+        val nowMs = 1_000_000L
+        val windowDays = 3650
+        val result = useCase("ex1", "default", nowMs, windowDays)
+        assertNotNull(result)
+        assertTrue(result.passedQualityGate)
+        assertEquals(1, inserted.size)
+        // 3650-day window: sinceMs = nowMs - 3650 * DAY_MS
+        assertEquals(nowMs - 3650L * 86_400_000L, capturedSinceMs)
+    }
 }

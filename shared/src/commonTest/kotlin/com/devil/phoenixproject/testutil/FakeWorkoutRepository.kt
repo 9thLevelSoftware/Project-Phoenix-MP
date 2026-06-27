@@ -282,4 +282,15 @@ class FakeWorkoutRepository : WorkoutRepository {
                 workingReps = s.workingReps,
             )
         }
+
+    override suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String> =
+        sessions.values
+            .filter { s ->
+                s.profileId == profileId &&
+                    s.avgMcvMmS != null &&
+                    s.workingReps > 0 &&
+                    s.exerciseId != null
+            }
+            .map { it.exerciseId!! }
+            .distinct()
 }

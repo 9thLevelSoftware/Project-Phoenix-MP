@@ -212,6 +212,35 @@ object BadgeDefinitions {
             requirement = PRsAchieved(100),
         ),
 
+        // ==================== VELOCITY 1RM BADGES (VBT-estimated improvements) ====================
+        Badge(
+            id = "velocity_1rm_1",
+            name = "Velocity Breakthrough",
+            description = "Improved your velocity-estimated 1RM on any lift",
+            category = STRENGTH,
+            iconResource = "trophy",
+            tier = BRONZE,
+            requirement = VelocityOneRepMaxImprovements(1),
+        ),
+        Badge(
+            id = "velocity_1rm_5",
+            name = "Velocity Climber",
+            description = "5 velocity-estimated 1RM improvements",
+            category = STRENGTH,
+            iconResource = "trophy",
+            tier = SILVER,
+            requirement = VelocityOneRepMaxImprovements(5),
+        ),
+        Badge(
+            id = "velocity_1rm_15",
+            name = "Velocity Master",
+            description = "15 velocity-estimated 1RM improvements",
+            category = STRENGTH,
+            iconResource = "trophy",
+            tier = GOLD,
+            requirement = VelocityOneRepMaxImprovements(15),
+        ),
+
         // ==================== VOLUME BADGES (Rep count) ====================
         Badge(
             id = "reps_100",

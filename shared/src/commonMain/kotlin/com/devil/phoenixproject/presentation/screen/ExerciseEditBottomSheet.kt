@@ -67,12 +67,14 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
@@ -120,8 +122,9 @@ fun ExerciseEditBottomSheet(
     buttonText: String = "Save",
     weightStepOverride: Float = 0f, // Issue #266/#410: 0 = use default for unit
 ) {
-    // Create local ViewModel instance with PersonalRecordRepository for PR lookups
-    val viewModel = remember { ExerciseConfigViewModel(personalRecordRepository) }
+    // Create local ViewModel instance with repositories for PR and velocity-1RM lookups
+    val velocityOneRepMaxRepository: VelocityOneRepMaxRepository = koinInject()
+    val viewModel = remember { ExerciseConfigViewModel(personalRecordRepository, velocityOneRepMaxRepository, exerciseRepository) }
     val userProfileRepository: UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileId = activeProfile?.id ?: "default"
@@ -169,6 +172,36 @@ fun ExerciseEditBottomSheet(
     // PR percentage scaling state (Issue #57)
     val usePercentOfPR by viewModel.usePercentOfPR.collectAsState()
     val weightPercentOfPR by viewModel.weightPercentOfPR.collectAsState()
+    // Issue #517: per-exercise scaling basis selector
+    val scalingBasis by viewModel.scalingBasis.collectAsState()
+    val prTypeForScaling by viewModel.prTypeForScaling.collectAsState()
+
+    // Additional baselines for the 3-way scaling basis (Issue #517 gating + preview fix)
+    val currentMaxVolumePR by viewModel.currentMaxVolumePR.collectAsState()
+    val velocityEstimateKg by viewModel.velocityEstimateKg.collectAsState()
+    val storedOneRepMaxKg by viewModel.storedOneRepMaxKg.collectAsState()
+
+    // Resolved baseline weight for the currently-selected scaling basis, mirroring
+    // ResolveRoutineWeightsUseCase so the editor preview matches workout-start resolution.
+    // For legacy rows with no explicit scalingBasis, derive it from prTypeForScaling
+    // (same as RoutineExercise.effectiveScalingBasis) instead of defaulting to MAX_WEIGHT_PR.
+    val effectiveScalingBasis = scalingBasis ?: ScalingBasis.fromPrType(prTypeForScaling)
+    val maxWeightBaselineKg = currentExercisePR?.weightPerCableKg?.takeIf { it > 0 }
+    val maxVolumeBaselineKg = currentMaxVolumePR?.weightPerCableKg?.takeIf { it > 0 }
+    val velocityBaselineKg = velocityEstimateKg?.takeIf { it > 0 }
+    val storedBaselineKg = storedOneRepMaxKg?.takeIf { it > 0 }
+    val baselineWeightKg: Float? = when (effectiveScalingBasis) {
+        ScalingBasis.MAX_WEIGHT_PR -> maxWeightBaselineKg
+        ScalingBasis.MAX_VOLUME_PR -> maxVolumeBaselineKg
+        ScalingBasis.ESTIMATED_1RM -> velocityBaselineKg ?: storedBaselineKg ?: maxWeightBaselineKg
+    }
+    // True if a baseline exists for AT LEAST ONE basis. Used to gate the % toggle and
+    // warning so the user can enable scaling and switch to a basis that has data, rather
+    // than being locked out when only the currently-selected basis lacks a baseline (#517).
+    val hasAnyBaseline = maxWeightBaselineKg != null ||
+        maxVolumeBaselineKg != null ||
+        velocityBaselineKg != null ||
+        storedBaselineKg != null
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
@@ -341,10 +374,14 @@ fun ExerciseEditBottomSheet(
                         usePercentOfPR = usePercentOfPR,
                         weightPercentOfPR = weightPercentOfPR,
                         currentExercisePR = currentExercisePR,
+                        effectiveScalingBasis = effectiveScalingBasis,
+                        baselineWeightKg = baselineWeightKg,
+                        hasAnyBaseline = hasAnyBaseline,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
                         onWeightPercentOfPRChange = viewModel::onWeightPercentOfPRChange,
+                        onScalingBasisChange = viewModel::onScalingBasisChange,
                     )
                 }
 
@@ -1226,10 +1263,29 @@ fun WeightConfigurationCard(
     usePercentOfPR: Boolean,
     weightPercentOfPR: Int,
     currentExercisePR: PersonalRecord?,
+    /**
+     * The basis actually in effect (already derived via effectiveScalingBasis, i.e.
+     * scalingBasis ?: fromPrType(prTypeForScaling)) so legacy rows select the right basis.
+     */
+    effectiveScalingBasis: ScalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+    /**
+     * Resolved baseline weight (kg/cable) for the currently-selected scaling basis.
+     * When non-null the resolved-weight preview is shown and uses this weight.
+     * Callers should mirror ResolveRoutineWeightsUseCase's resolution order so the
+     * editor preview matches what the workout will actually start from.
+     */
+    baselineWeightKg: Float? = null,
+    /**
+     * True if a baseline exists for at least one scaling basis. Gates the % toggle and
+     * the warning so the user can enable scaling and switch to a basis that has data,
+     * even when the currently-selected basis lacks a baseline (Issue #517).
+     */
+    hasAnyBaseline: Boolean = baselineWeightKg != null,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onUsePercentOfPRChange: (Boolean) -> Unit,
     onWeightPercentOfPRChange: (Int) -> Unit,
+    onScalingBasisChange: (ScalingBasis) -> Unit = {},
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1265,11 +1321,17 @@ fun WeightConfigurationCard(
                         fontWeight = if (usePercentOfPR) FontWeight.Bold else FontWeight.Normal,
                         color = if (usePercentOfPR) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
+                    // Subtitle: describes which baseline will be used
                     Text(
-                        text = currentExercisePR?.let { pr ->
-                            "Scale weight based on your ${pr.phase.displayLabel().lowercase()} personal record"
-                        } ?: run {
-                            "No PR set for this exercise"
+                        text = when {
+                            baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM ->
+                                "Scale weight based on your velocity 1RM estimate"
+                            baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_VOLUME_PR ->
+                                "Scale weight based on your max-volume personal record"
+                            currentExercisePR != null ->
+                                "Scale weight based on your ${currentExercisePR.phase.displayLabel().lowercase()} personal record"
+                            else ->
+                                "No baseline available for the selected scaling type"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1278,70 +1340,115 @@ fun WeightConfigurationCard(
                 Switch(
                     checked = usePercentOfPR,
                     onCheckedChange = onUsePercentOfPRChange,
-                    enabled = currentExercisePR != null,
+                    // Enable the toggle whenever a baseline exists for ANY basis — the user
+                    // can then switch to the basis that has data (fixes ESTIMATED_1RM lockout).
+                    enabled = hasAnyBaseline,
                 )
             }
 
-            // Show percentage controls when toggle is ON and PR exists
-            val prForScaling = currentExercisePR
-            if (usePercentOfPR && prForScaling != null) {
+            // When scaling is ON, the basis selector is ALWAYS available so the user can
+            // switch to a basis that has data; the resolved-weight preview only appears when
+            // the currently-selected basis actually has a baseline (Issue #517).
+            val effectiveBasisForControls = effectiveScalingBasis
+            if (usePercentOfPR) {
+                // Issue #517: 3-way scaling basis selector (always shown while scaling enabled)
                 Spacer(modifier = Modifier.height(Spacing.medium))
+                Text(
+                    text = "Scale from",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(Spacing.extraSmall))
+                val basisOptions = listOf(
+                    ScalingBasis.MAX_WEIGHT_PR to "Max-weight PR",
+                    ScalingBasis.MAX_VOLUME_PR to "Max-volume PR",
+                    ScalingBasis.ESTIMATED_1RM to "Est. 1RM",
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    basisOptions.forEachIndexed { index, (basis, label) ->
+                        SegmentedButton(
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = basisOptions.size),
+                            onClick = { onScalingBasisChange(basis) },
+                            selected = effectiveBasisForControls == basis,
+                        ) {
+                            Text(label, maxLines = 1)
+                        }
+                    }
+                }
 
-                // Calculate resolved weight
-                val resolvedWeight = (prForScaling.weightPerCableKg * weightPercentOfPR / 100f)
-                    .let { (it * 2).roundToInt() / 2f } // Round to 0.5kg
+                if (baselineWeightKg != null) {
+                    Spacer(modifier = Modifier.height(Spacing.medium))
 
-                // Display current percentage and resolved weight
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "$weightPercentOfPR% of ${prForScaling.phase.displayLabel()} PR",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                    // Resolved weight from the selected basis's baseline (not always max-weight PR)
+                    val resolvedWeight = (baselineWeightKg * weightPercentOfPR / 100f)
+                        .let { (it * 2).roundToInt() / 2f } // Round to 0.5kg
+
+                    // Display current percentage and resolved weight
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = when (effectiveBasisForControls) {
+                                ScalingBasis.ESTIMATED_1RM -> "$weightPercentOfPR% of Est. 1RM"
+                                ScalingBasis.MAX_VOLUME_PR -> "$weightPercentOfPR% of Max-volume PR"
+                                ScalingBasis.MAX_WEIGHT_PR ->
+                                    "$weightPercentOfPR% of ${currentExercisePR?.phase?.displayLabel() ?: "Max-weight"} PR"
+                            },
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "= ${formatWeight(resolvedWeight, weightUnit)}/cable",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(Spacing.small))
+
+                    // Percentage slider (50% - 120%, 5% increments)
+                    ExpressiveSlider(
+                        value = weightPercentOfPR.toFloat(),
+                        onValueChange = { onWeightPercentOfPRChange(it.toInt()) },
+                        valueRange = 50f..120f,
+                        steps = 13, // (120-50)/5 - 1 = 13 steps for 5% increments
+                        modifier = Modifier.fillMaxWidth(),
                     )
+
+                    Spacer(modifier = Modifier.height(Spacing.small))
+
+                    // Common preset buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    ) {
+                        listOf(70, 80, 90, 100).forEach { percent ->
+                            FilterChip(
+                                selected = weightPercentOfPR == percent,
+                                onClick = { onWeightPercentOfPRChange(percent) },
+                                label = { Text(stringResource(Res.string.percent_label, percent)) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                } else {
+                    // Selected basis has no baseline — guide the user to pick one that does.
+                    Spacer(modifier = Modifier.height(Spacing.small))
                     Text(
-                        text = "= ${formatWeight(resolvedWeight, weightUnit)}/cable",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
+                        text = "No data for the selected basis yet. Pick a basis with a recorded baseline.",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-
-                Spacer(modifier = Modifier.height(Spacing.small))
-
-                // Percentage slider (50% - 120%, 5% increments)
-                ExpressiveSlider(
-                    value = weightPercentOfPR.toFloat(),
-                    onValueChange = { onWeightPercentOfPRChange(it.toInt()) },
-                    valueRange = 50f..120f,
-                    steps = 13, // (120-50)/5 - 1 = 13 steps for 5% increments
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(modifier = Modifier.height(Spacing.small))
-
-                // Common preset buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                ) {
-                    listOf(70, 80, 90, 100).forEach { percent ->
-                        FilterChip(
-                            selected = weightPercentOfPR == percent,
-                            onClick = { onWeightPercentOfPRChange(percent) },
-                            label = { Text(stringResource(Res.string.percent_label, percent)) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
             }
 
-            // Show warning if no PR available and toggle is off
-            if (currentExercisePR == null && !usePercentOfPR) {
+            // Show warning when no baseline is available for any basis and toggle is off
+            if (!hasAnyBaseline && !usePercentOfPR) {
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -1360,7 +1467,7 @@ fun WeightConfigurationCard(
                             modifier = Modifier.size(16.dp),
                         )
                         Text(
-                            text = "Complete a workout to set your PR and enable percentage scaling",
+                            text = "Complete a workout to record data and enable percentage scaling",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
                         )

@@ -113,6 +113,7 @@ data class RoutineExercise(
     val weightPercentOfPR: Int = 80, // Percentage (e.g., 80 = 80%)
     val prTypeForScaling: PRType = PRType.MAX_WEIGHT, // Which PR type to scale from
     val setWeightsPercentOfPR: List<Int> = emptyList(), // Per-set percentages
+    val scalingBasis: ScalingBasis? = null, // null = derive from prTypeForScaling (legacy/back-compat)
     // Variable warm-up sets (Phase 35C: Issue #30)
     // Each WarmupSet defines reps and a percentage of working weight.
     // Executed before working sets as separate BLE stop/start cycles.
@@ -130,6 +131,10 @@ data class RoutineExercise(
     // Computed property for backwards compatibility
     val sets: Int get() = setReps.size
     val reps: Int get() = setReps.firstOrNull() ?: 10
+
+    /** The resolved scaling baseline; derives from prTypeForScaling for legacy rows. */
+    val effectiveScalingBasis: ScalingBasis
+        get() = scalingBasis ?: ScalingBasis.fromPrType(prTypeForScaling)
 
     // Helper to get rest time for specific set (with fallback to 60s default)
     fun getRestForSet(setIndex: Int): Int = setRestSeconds.getOrNull(setIndex) ?: 60

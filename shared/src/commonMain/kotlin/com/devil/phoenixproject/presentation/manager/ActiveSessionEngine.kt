@@ -2946,6 +2946,9 @@ class ActiveSessionEngine(
 
             // Issue #252: Exclude warmup time from session duration
             val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
+            // Capture biomechanics summary before building session (mirrors saveWorkoutSession() pattern;
+            // biomechanicsEngine.reset() is not called on this path before this point).
+            val bioSummary = coordinator.biomechanicsEngine.getSetSummary()
             val session = WorkoutSession(
                 timestamp = coordinator.workoutStartTime,
                 mode = params.programMode.displayName,
@@ -2982,6 +2985,11 @@ class ActiveSessionEngine(
                 burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
                 peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
                 rpe = coordinator._currentSetRpe.value,
+                avgMcvMmS = bioSummary?.avgMcvMmS,
+                avgAsymmetryPercent = bioSummary?.avgAsymmetryPercent,
+                totalVelocityLossPercent = bioSummary?.totalVelocityLossPercent,
+                dominantSide = bioSummary?.dominantSide,
+                strengthProfile = bioSummary?.strengthProfile?.name,
                 // C4: profileId was missing from manual-stop path — matches saveWorkoutSession() pattern
                 profileId = userProfileRepository.activeProfile.value?.id ?: "default",
             )
@@ -3037,6 +3045,11 @@ class ActiveSessionEngine(
                 profileId = userProfileRepository.activeProfile.value?.id ?: "default",
                 sessionMcvMmS = session.avgMcvMmS,
             )
+
+            // Reset biomechanics engine after manual-stop — mirrors handleSetCompletion() (~line 3821).
+            // Safe: processPostSaveEvents() is the last consumer of bioSummary/session.avgMcvMmS;
+            // nothing below this point reads bioSummary or calls getSetSummary().
+            coordinator.biomechanicsEngine.reset()
 
             if (hasPR && completedSetId != null) {
                 completedSetRepository.markAsPr(completedSetId)

@@ -396,6 +396,9 @@ fun NavGraph(
                     autoEndOnVelocityLoss = userPreferences.autoEndOnVelocityLoss,
                     onAutoEndOnVelocityLossChange = { viewModel.setAutoEndOnVelocityLoss(it) },
                     stallDetectionEnabled = userPreferences.stallDetectionEnabled,
+                    // Issue #517: system-wide default scaling basis
+                    defaultScalingBasis = userPreferences.defaultScalingBasis,
+                    onDefaultScalingBasisChange = { viewModel.setDefaultScalingBasis(it) },
                 )
             }
 

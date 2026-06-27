@@ -3,7 +3,10 @@ package com.devil.phoenixproject.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
+import com.devil.phoenixproject.data.repository.getBestVolumePRForWorkoutMode
 import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
@@ -12,6 +15,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
@@ -46,6 +50,8 @@ data class SetConfiguration(
 
 class ExerciseConfigViewModel constructor(
     private val personalRecordRepository: PersonalRecordRepository? = null,
+    private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository? = null,
+    private val exerciseRepository: ExerciseRepository? = null,
 ) : ViewModel() {
 
     private val log = Logger.withTag("ExerciseConfigViewModel")
@@ -61,6 +67,18 @@ class ExerciseConfigViewModel constructor(
     // PR state for the current exercise/mode combination
     private val _currentExercisePR = MutableStateFlow<PersonalRecord?>(null)
     val currentExercisePR: StateFlow<PersonalRecord?> = _currentExercisePR.asStateFlow()
+
+    // Max-volume PR for the current exercise/mode (used when scalingBasis == MAX_VOLUME_PR)
+    private val _currentMaxVolumePR = MutableStateFlow<PersonalRecord?>(null)
+    val currentMaxVolumePR: StateFlow<PersonalRecord?> = _currentMaxVolumePR.asStateFlow()
+
+    // Latest passing velocity-based 1RM estimate (kg per cable) for ESTIMATED_1RM basis
+    private val _velocityEstimateKg = MutableStateFlow<Float?>(null)
+    val velocityEstimateKg: StateFlow<Float?> = _velocityEstimateKg.asStateFlow()
+
+    // Stored Exercise.oneRepMaxKg (manual/VBT input) — fallback within ESTIMATED_1RM basis
+    private val _storedOneRepMaxKg = MutableStateFlow<Float?>(null)
+    val storedOneRepMaxKg: StateFlow<Float?> = _storedOneRepMaxKg.asStateFlow()
 
     // Convenience accessor for just the PR weight (useful for PRIndicator component)
     val currentExercisePRWeight: Float?
@@ -111,6 +129,10 @@ class ExerciseConfigViewModel constructor(
 
     private val _prTypeForScaling = MutableStateFlow(PRType.MAX_WEIGHT)
     val prTypeForScaling: StateFlow<PRType> = _prTypeForScaling.asStateFlow()
+
+    // Issue #517: Velocity 1RM scaling basis (null = derive from prTypeForScaling for back-compat)
+    private val _scalingBasis = MutableStateFlow<ScalingBasis?>(null)
+    val scalingBasis: StateFlow<ScalingBasis?> = _scalingBasis.asStateFlow()
 
     private var setWeightsPercentOfPR: List<Int> = emptyList()
     private val pendingPercentOfPREditWeights = mutableMapOf<String, Float>()
@@ -225,6 +247,8 @@ class ExerciseConfigViewModel constructor(
         _usePercentOfPR.value = exercise.usePercentOfPR
         _weightPercentOfPR.value = exercise.weightPercentOfPR
         _prTypeForScaling.value = exercise.prTypeForScaling
+        // Issue #517: load explicit scalingBasis (null preserved for back-compat derivation)
+        _scalingBasis.value = exercise.scalingBasis
         pendingPercentOfPREditWeights.clear()
         setWeightsPercentOfPR = normalizeSetWeightPercentages(
             source = exercise.setWeightsPercentOfPR,
@@ -237,9 +261,10 @@ class ExerciseConfigViewModel constructor(
         _defaultRackItemIds.value = exercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct()
         _rackBehaviorOverrides.value = exercise.rackBehaviorOverrides
 
-        // Load PR for the current exercise and mode
+        // Load PR for the current exercise and mode; also load mode-independent baselines
         exercise.exercise.id?.let { exerciseId ->
             loadPRForExercise(exerciseId, _selectedMode.value.displayName)
+            loadModeIndependentBaselines(exerciseId)
         }
 
         _initialized.value = true
@@ -266,7 +291,8 @@ class ExerciseConfigViewModel constructor(
 
     /**
      * Load the personal record for the given exercise and workout mode.
-     * This updates currentExercisePR which can be used by PRIndicator components.
+     * This updates currentExercisePR (max-weight) and currentMaxVolumePR,
+     * both of which are used by PRIndicator components and the scaling preview.
      */
     fun loadPRForExercise(exerciseId: String, workoutMode: String) {
         if (personalRecordRepository == null) {
@@ -283,6 +309,96 @@ class ExerciseConfigViewModel constructor(
                 logWarning("Failed to load PR for exercise=$exerciseId, mode=$workoutMode, profile=$activeProfileId: ${e.message}")
                 _currentExercisePR.value = null
             }
+            // Also load max-volume PR (mode-dependent, so reload on mode change)
+            try {
+                val volumePR = personalRecordRepository.getBestVolumePRForWorkoutMode(exerciseId, workoutMode, activeProfileId)
+                _currentMaxVolumePR.value = volumePR
+                logDebug("Loaded volume PR for exercise=$exerciseId, mode=$workoutMode: ${volumePR?.weightPerCableKg ?: "none"}")
+            } catch (e: Exception) {
+                logWarning("Failed to load volume PR for exercise=$exerciseId, mode=$workoutMode: ${e.message}")
+                _currentMaxVolumePR.value = null
+            }
+            // The volume PR loads after the weight-PR sync above; re-sync so a MAX_VOLUME_PR
+            // exercise picks up the just-loaded baseline instead of staying on stale weights.
+            resyncSetWeightsIfBaselineReady()
+        }
+    }
+
+    /**
+     * Re-resolve visible set weights against the current basis baseline, but only when
+     * percentage scaling is enabled AND a baseline for the current basis is now available.
+     * Safe to call repeatedly after each async baseline load — syncSetWeightsToPercentOfPR
+     * only reads the stored percentages and rewrites set weights, so it cannot re-trigger a
+     * load or loop.
+     */
+    private fun resyncSetWeightsIfBaselineReady() {
+        if (_usePercentOfPR.value && baselineKgForCurrentBasis() != null) {
+            syncSetWeightsToPercentOfPR()
+        }
+    }
+
+    /**
+     * Load mode-independent baselines: velocity estimate and stored Exercise.oneRepMaxKg.
+     * Called once per initialize; these do not change when the workout mode selector changes.
+     */
+    private fun loadModeIndependentBaselines(exerciseId: String) {
+        viewModelScope.launch {
+            if (velocityOneRepMaxRepository != null) {
+                try {
+                    val estimate = velocityOneRepMaxRepository.getLatestPassing(exerciseId, activeProfileId)
+                    _velocityEstimateKg.value = estimate?.estimatedPerCableKg?.takeIf { it > 0 }
+                    logDebug("Loaded velocity estimate for exercise=$exerciseId: ${_velocityEstimateKg.value ?: "none"}")
+                } catch (e: Exception) {
+                    logWarning("Failed to load velocity estimate for exercise=$exerciseId: ${e.message}")
+                    _velocityEstimateKg.value = null
+                }
+                // Re-sync after the velocity baseline lands (ESTIMATED_1RM may now resolve).
+                resyncSetWeightsIfBaselineReady()
+            }
+            if (exerciseRepository != null) {
+                try {
+                    val ex = exerciseRepository.getExerciseById(exerciseId)
+                    _storedOneRepMaxKg.value = ex?.oneRepMaxKg?.takeIf { it > 0 }
+                    logDebug("Loaded stored 1RM for exercise=$exerciseId: ${_storedOneRepMaxKg.value ?: "none"}")
+                } catch (e: Exception) {
+                    logWarning("Failed to load stored 1RM for exercise=$exerciseId: ${e.message}")
+                    _storedOneRepMaxKg.value = null
+                }
+                // Re-sync after the stored-1RM fallback lands.
+                resyncSetWeightsIfBaselineReady()
+            }
+        }
+    }
+
+    /**
+     * The basis the editor/workout-start actually use. Mirrors
+     * RoutineExercise.effectiveScalingBasis: when no explicit scalingBasis is set
+     * (legacy/back-compat rows), derive it from prTypeForScaling so the editor matches
+     * ResolveRoutineWeightsUseCase (e.g. a legacy row with prTypeForScaling=MAX_VOLUME
+     * resolves to MAX_VOLUME_PR, not the default MAX_WEIGHT_PR).
+     */
+    fun effectiveScalingBasis(): ScalingBasis =
+        _scalingBasis.value ?: ScalingBasis.fromPrType(_prTypeForScaling.value)
+
+    /**
+     * Resolves the baseline weight (kg/cable) for the currently-selected scaling basis,
+     * mirroring ResolveRoutineWeightsUseCase's resolution order:
+     *   MAX_WEIGHT_PR  → max-weight PR
+     *   MAX_VOLUME_PR  → max-volume PR
+     *   ESTIMATED_1RM  → velocity estimate → stored Exercise.oneRepMaxKg → max-weight PR (last resort)
+     *
+     * Returns null when no data is available for the selected basis (controls preview and gating).
+     */
+    fun baselineKgForCurrentBasis(): Float? {
+        return when (effectiveScalingBasis()) {
+            ScalingBasis.MAX_WEIGHT_PR ->
+                _currentExercisePR.value?.weightPerCableKg?.takeIf { it > 0 }
+            ScalingBasis.MAX_VOLUME_PR ->
+                _currentMaxVolumePR.value?.weightPerCableKg?.takeIf { it > 0 }
+            ScalingBasis.ESTIMATED_1RM ->
+                _velocityEstimateKg.value?.takeIf { it > 0 }
+                    ?: _storedOneRepMaxKg.value?.takeIf { it > 0 }
+                    ?: _currentExercisePR.value?.weightPerCableKg?.takeIf { it > 0 }
         }
     }
 
@@ -356,6 +472,16 @@ class ExerciseConfigViewModel constructor(
 
     fun onPRTypeForScalingChange(prType: PRType) {
         _prTypeForScaling.value = prType
+    }
+
+    // Issue #517: explicit 3-way scaling basis selector
+    fun onScalingBasisChange(basis: ScalingBasis) {
+        _scalingBasis.value = basis
+        // Re-resolve visible set weights against the newly-selected basis baseline
+        // so the editor table matches what ResolveRoutineWeightsUseCase will use.
+        if (_usePercentOfPR.value) {
+            syncSetWeightsToPercentOfPR()
+        }
     }
 
     // Warm-up set handlers (Issue #30)
@@ -435,15 +561,16 @@ class ExerciseConfigViewModel constructor(
     }
 
     /**
-     * Calculate the resolved weight based on current PR and percentage settings.
-     * Returns null if PR is not available or percentage scaling is disabled.
+     * Calculate the resolved preview weight for the currently-selected scaling basis.
+     * Returns null if no baseline is available for the selected basis, or if percentage
+     * scaling is disabled.
      */
     fun calculateResolvedWeight(): Float? {
-        val pr = _currentExercisePR.value ?: return null
         if (!_usePercentOfPR.value) return null
+        val baseline = baselineKgForCurrentBasis() ?: return null
         val percent = _weightPercentOfPR.value
         if (percent <= 0) return null
-        return (pr.weightPerCableKg * percent / 100f).roundToHalfKg()
+        return (baseline * percent / 100f).roundToHalfKg()
     }
 
     private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
@@ -464,42 +591,45 @@ class ExerciseConfigViewModel constructor(
         )
     }
 
-    private fun resolvedSetWeightsKgFromCurrentPR(): List<Float>? {
-        val pr = _currentExercisePR.value ?: return null
-        if (!_usePercentOfPR.value || pr.weightPerCableKg <= 0f) return null
-        applyPendingPercentOfPREdits(pr)
+    // Issue #517: per-set weights resolve against the SELECTED scaling basis baseline
+    // (baselineKgForCurrentBasis), not just the max-weight PR. When the basis is
+    // MAX_WEIGHT_PR the baseline IS the max-weight PR, so behavior is unchanged.
+    private fun resolvedSetWeightsKgFromCurrentBasis(): List<Float>? {
+        val baselineKg = baselineKgForCurrentBasis() ?: return null
+        if (!_usePercentOfPR.value || baselineKg <= 0f) return null
+        applyPendingPercentOfPREdits(baselineKg)
         ensureSetWeightPercentages()
         return setWeightsPercentOfPR.map { percent ->
-            (pr.weightPerCableKg * percent / 100f).roundToHalfKg()
+            (baselineKg * percent / 100f).roundToHalfKg()
         }
     }
 
     private fun syncSetWeightsToPercentOfPR() {
-        val resolvedWeightsKg = resolvedSetWeightsKgFromCurrentPR() ?: return
+        val resolvedWeightsKg = resolvedSetWeightsKgFromCurrentBasis() ?: return
         _sets.value = _sets.value.mapIndexed { index, set ->
             val resolvedWeightKg = resolvedWeightsKg.getOrNull(index) ?: return@mapIndexed set
             set.copy(weightPerCable = kgToDisplay(resolvedWeightKg, weightUnit))
         }
     }
 
-    private fun percentFromDisplayWeight(displayWeight: Float, pr: PersonalRecord): Int {
+    private fun percentFromDisplayWeight(displayWeight: Float, baselineKg: Float): Int {
         val weightKg = displayToKg(displayWeight, weightUnit)
-        return ((weightKg / pr.weightPerCableKg) * 100f).roundToInt().coerceIn(50, 120)
+        return ((weightKg / baselineKg) * 100f).roundToInt().coerceIn(50, 120)
     }
 
-    private fun displayWeightFromPercent(percent: Int, pr: PersonalRecord): Float {
-        val resolvedWeightKg = (pr.weightPerCableKg * percent / 100f).roundToHalfKg()
+    private fun displayWeightFromPercent(percent: Int, baselineKg: Float): Float {
+        val resolvedWeightKg = (baselineKg * percent / 100f).roundToHalfKg()
         return kgToDisplay(resolvedWeightKg, weightUnit)
     }
 
-    private fun applyPendingPercentOfPREdits(pr: PersonalRecord) {
+    private fun applyPendingPercentOfPREdits(baselineKg: Float) {
         if (pendingPercentOfPREditWeights.isEmpty()) return
         ensureSetWeightPercentages()
         val setsById = _sets.value.mapIndexed { index, set -> set.id to index }.toMap()
 
         pendingPercentOfPREditWeights.forEach { (setId, displayWeight) ->
             val setIndex = setsById[setId] ?: return@forEach
-            val percent = percentFromDisplayWeight(displayWeight, pr)
+            val percent = percentFromDisplayWeight(displayWeight, baselineKg)
             setWeightsPercentOfPR = setWeightsPercentOfPR.mapIndexed { index, existing ->
                 if (index == setIndex) percent else existing
             }
@@ -507,9 +637,9 @@ class ExerciseConfigViewModel constructor(
         pendingPercentOfPREditWeights.clear()
     }
 
-    private fun updateSetPercentFromDisplayWeight(setIndex: Int, displayWeight: Float, pr: PersonalRecord): Int {
+    private fun updateSetPercentFromDisplayWeight(setIndex: Int, displayWeight: Float, baselineKg: Float): Int {
         ensureSetWeightPercentages()
-        val percent = percentFromDisplayWeight(displayWeight, pr)
+        val percent = percentFromDisplayWeight(displayWeight, baselineKg)
         setWeightsPercentOfPR = setWeightsPercentOfPR.mapIndexed { index, existing ->
             if (index == setIndex) percent else existing
         }
@@ -526,11 +656,11 @@ class ExerciseConfigViewModel constructor(
         val setIndex = _sets.value.indexOfFirst { it.id == setId }
         if (setIndex < 0) return
 
-        val pr = _currentExercisePR.value
-        val nextWeight = if (_usePercentOfPR.value && pr != null && pr.weightPerCableKg > 0f) {
+        val baselineKg = baselineKgForCurrentBasis()
+        val nextWeight = if (_usePercentOfPR.value && baselineKg != null && baselineKg > 0f) {
             pendingPercentOfPREditWeights.remove(setId)
-            val percent = updateSetPercentFromDisplayWeight(setIndex, weight, pr)
-            displayWeightFromPercent(percent, pr)
+            val percent = updateSetPercentFromDisplayWeight(setIndex, weight, baselineKg)
+            displayWeightFromPercent(percent, baselineKg)
         } else {
             if (_usePercentOfPR.value) {
                 pendingPercentOfPREditWeights[setId] = weight
@@ -616,7 +746,7 @@ class ExerciseConfigViewModel constructor(
         logDebug("Rest times to save: $restTimes")
         logDebug("Weights to save: ${_sets.value.map { displayToKg(it.weightPerCable, weightUnit) }}")
 
-        val resolvedSetWeightsKg = resolvedSetWeightsKgFromCurrentPR()
+        val resolvedSetWeightsKg = resolvedSetWeightsKgFromCurrentBasis()
             ?: _sets.value.map { displayToKg(it.weightPerCable, weightUnit) }
         val resolvedSetWeightsPercentOfPR = if (_usePercentOfPR.value) {
             normalizeSetWeightPercentages(
@@ -652,6 +782,8 @@ class ExerciseConfigViewModel constructor(
             weightPercentOfPR = _weightPercentOfPR.value,
             prTypeForScaling = _prTypeForScaling.value,
             setWeightsPercentOfPR = resolvedSetWeightsPercentOfPR,
+            // Issue #517: persist explicit scaling basis (null = back-compat derivation from prTypeForScaling)
+            scalingBasis = _scalingBasis.value,
             // Warm-up sets (Issue #30)
             warmupSets = _warmupSets.value,
             defaultRackItemIds = _defaultRackItemIds.value,

@@ -148,6 +148,14 @@ interface WorkoutRepository {
         profileId: String,
         sinceTimestampMs: Long,
     ): List<WorkoutVelocityPoint>
+
+    /**
+     * Issue #517 Phase 5 T1: enumerate distinct exercise IDs that have at least one
+     * non-deleted set with a captured MCV value and at least one working rep, for the
+     * given profile. Used by the velocity-1RM pipeline to decide which exercises are
+     * ready to estimate.
+     */
+    suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String>
 }
 
 /**

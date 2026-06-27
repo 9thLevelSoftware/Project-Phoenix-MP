@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -414,6 +415,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     warmupSets = warmupSets,
                     defaultRackItemIds = defaultRackItemIds,
                     rackBehaviorOverrides = rackBehaviorOverrides,
+                    scalingBasis = row.scalingBasis?.let { runCatching { ScalingBasis.valueOf(it) }.getOrNull() },
                 )
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
@@ -738,6 +740,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             } else {
                 json.encodeToString(exercise.rackBehaviorOverrides)
             },
+            scalingBasis = exercise.scalingBasis?.name,
         )
     }
 
@@ -1150,6 +1153,11 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             )
         }
     }
+
+    override suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String> =
+        withContext(Dispatchers.IO) {
+            queries.selectExerciseIdsWithVelocityData(profileId).executeAsList()
+        }
 
     override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> = queries.selectAllPhaseStats {
             id,

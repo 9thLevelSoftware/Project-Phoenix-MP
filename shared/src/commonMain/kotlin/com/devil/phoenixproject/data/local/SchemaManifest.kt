@@ -873,7 +873,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // RoutineExercise -- initial schema, full current shape
     // Columns added by later migrations: superset fields (m4), PR scaling (m7),
-    // routine programming (m18), behavior overrides (m20)
+    // routine programming (m18), behavior overrides (m20), scalingBasis (m38)
     SchemaTableOperation(
         table = "RoutineExercise",
         createSql = """
@@ -905,6 +905,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
                 prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
                 setWeightsPercentOfPR TEXT,
+                scalingBasis TEXT,
                 stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
                 stopAtTop INTEGER NOT NULL DEFAULT 0,
                 repCountTiming TEXT NOT NULL DEFAULT 'TOP',
@@ -1266,6 +1267,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("RoutineExercise", "defaultRackItemIds", "ALTER TABLE RoutineExercise ADD COLUMN defaultRackItemIds TEXT NOT NULL DEFAULT '[]'"),
     // Migration 35: equipment rack behavior overrides
     SchemaHealOperation("RoutineExercise", "rackBehaviorOverrides", "ALTER TABLE RoutineExercise ADD COLUMN rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}'"),
+    // Migration 38: velocity-based 1RM scaling basis (issue #517 Phase 3)
+    SchemaHealOperation("RoutineExercise", "scalingBasis", "ALTER TABLE RoutineExercise ADD COLUMN scalingBasis TEXT"),
     // Migration 20 (healed outside .sqm): rep detection behavior
     SchemaHealOperation("RoutineExercise", "stallDetectionEnabled", "ALTER TABLE RoutineExercise ADD COLUMN stallDetectionEnabled INTEGER NOT NULL DEFAULT 1"),
     SchemaHealOperation("RoutineExercise", "stopAtTop", "ALTER TABLE RoutineExercise ADD COLUMN stopAtTop INTEGER NOT NULL DEFAULT 0"),

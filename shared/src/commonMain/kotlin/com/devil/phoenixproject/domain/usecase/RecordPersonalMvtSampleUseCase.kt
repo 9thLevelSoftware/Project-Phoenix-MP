@@ -15,7 +15,9 @@ class RecordPersonalMvtSampleUseCase(private val personalMvtRepo: PersonalMvtRep
         muscleGroups: String,
         sessionMcvMmS: Float,
     ): Boolean {
-        if (sessionMcvMmS <= 0f) return false
+        // isNaN() guard is explicit so a linter cannot "simplify" it to `<= 0f` and silently
+        // reintroduce the NaN bypass (NaN <= 0f is false).
+        if (sessionMcvMmS.isNaN() || sessionMcvMmS <= 0f) return false
         val sampleMs = sessionMcvMmS / 1000f
         val patternDefault = classifyMovementPattern(exerciseName, muscleGroups).defaultMvtMs
         if (sampleMs > patternDefault * FAILURE_PROXY_FACTOR) return false

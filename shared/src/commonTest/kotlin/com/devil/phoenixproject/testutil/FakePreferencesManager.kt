@@ -3,6 +3,7 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.preferences.JustLiftDefaults
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.BackupDestination
@@ -160,5 +161,13 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(weightSuggestionsEnabled = enabled)
+    }
+
+    override suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(defaultScalingBasis = basis)
+    }
+
+    override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(velocityOneRepMaxBackfillDone = done)
     }
 }

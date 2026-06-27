@@ -38,6 +38,7 @@ import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineGroup
@@ -50,7 +51,9 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
+import com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
+import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -73,6 +76,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -115,6 +120,9 @@ class MainViewModel constructor(
     private val recordPersonalMvtSampleUseCase: RecordPersonalMvtSampleUseCase,
     // Exposed as a public val so ExerciseDetailScreen can query the latest passing estimate.
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
+    private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
+    // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
+    private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -137,7 +145,7 @@ class MainViewModel constructor(
             .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
 
     // === Phase 2b: GamificationManager (extracted from this class) ===
-    val gamificationManager = GamificationManager(
+    val gamificationManager: GamificationManager = GamificationManager(
         gamificationRepository,
         personalRecordRepository,
         exerciseRepository,
@@ -153,6 +161,10 @@ class MainViewModel constructor(
                 }
             }
             computeVelocityOneRepMaxUseCase(exId, profile, com.devil.phoenixproject.domain.model.currentTimeMillis())
+            val improvements = countVelocityOneRepMaxImprovementsUseCase(
+                velocityOneRepMaxRepository.getAllPassing(profile),
+            )
+            gamificationManager.checkVelocityOneRepMaxBadges(improvements, profile)
         },
     )
 
@@ -334,6 +346,8 @@ class MainViewModel constructor(
     fun setVelocityLossThreshold(percent: Int) = settingsManager.setVelocityLossThreshold(percent)
     fun setAutoEndOnVelocityLoss(enabled: Boolean) = settingsManager.setAutoEndOnVelocityLoss(enabled)
     fun setWeightSuggestionsEnabled(enabled: Boolean) = settingsManager.setWeightSuggestionsEnabled(enabled)
+    // Issue #517: system-wide default scaling basis
+    fun setDefaultScalingBasis(basis: ScalingBasis) = settingsManager.setDefaultScalingBasis(basis)
 
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
@@ -638,6 +652,44 @@ class MainViewModel constructor(
             _hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(5))
             kotlinx.coroutines.delay(1000)
             _hapticEvents.emit(HapticEvent.WORKOUT_COMPLETE)
+        }
+    }
+
+    // ===== Velocity-1RM Backfill (Issue #517) =====
+
+    init {
+        // Run once at startup: backfill velocity-1RM estimates for historical sets.
+        // Gated by a run-once preference flag so it never re-runs after the first successful pass.
+        viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
+            try {
+                if (!settingsManager.velocityOneRepMaxBackfillDone.value) {
+                    // Backfill EVERY profile's history (not just the active one): the run-once flag
+                    // is global, so a profile skipped here would never be backfilled. Await the
+                    // loaded profile list (10s timeout fallback to the active profile id for genuine
+                    // single-profile installs whose list stays empty).
+                    val profileIds = (
+                        kotlinx.coroutines.withTimeoutOrNull(10_000) {
+                            userProfileRepository.allProfiles.first { it.isNotEmpty() }
+                        } ?: userProfileRepository.allProfiles.value
+                        ).map { it.id }.ifEmpty { listOf(activeProfileId.value) }
+                    val now = com.devil.phoenixproject.domain.model.currentTimeMillis()
+                    // Per-profile try/catch so one profile's failure can't abort the rest, and the
+                    // run-once flag is still set afterwards (a failed profile is covered later by its
+                    // own new workouts / hasEstimates idempotency rather than blocking every launch).
+                    for (profileId in profileIds) {
+                        try {
+                            backfillVelocityOneRepMaxUseCase(profileId, now)
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            Logger.w(e) { "VELOCITY_1RM: backfill failed for profile=$profileId" }
+                        }
+                    }
+                    preferencesManager.setVelocityOneRepMaxBackfillDone(true)
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Logger.w(e) { "VELOCITY_1RM: backfill failed" }
+            }
         }
     }
 

@@ -2,11 +2,12 @@ package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.getBestVolumePRForWorkoutMode
 import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
-import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 
 /**
  * Use case for resolving PR percentage weights to absolute values at workout start time.
@@ -19,6 +20,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 class ResolveRoutineWeightsUseCase(
     private val prRepository: PersonalRecordRepository,
     private val exerciseRepository: ExerciseRepository,
+    private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
 ) {
     /**
      * Resolves RoutineExercise weights from PR percentages to absolute values.
@@ -51,26 +53,38 @@ class ResolveRoutineWeightsUseCase(
             fallbackReason = "Exercise has no ID for PR lookup",
         )
 
-        // Lookup PR for this exercise filtered by mode and profile
-        val pr = when (exercise.prTypeForScaling) {
-            PRType.MAX_WEIGHT -> prRepository.getBestWeightPRForWorkoutMode(
+        // Lookup scaling baseline for this exercise filtered by mode and profile
+        val scalingWeight: Float? = when (exercise.effectiveScalingBasis) {
+            ScalingBasis.MAX_WEIGHT_PR -> prRepository.getBestWeightPRForWorkoutMode(
                 exerciseId,
                 mode.displayName,
                 profileId,
-            )
+            )?.weightPerCableKg?.takeIf { it > 0 }
 
-            PRType.MAX_VOLUME -> prRepository.getBestVolumePRForWorkoutMode(
+            ScalingBasis.MAX_VOLUME_PR -> prRepository.getBestVolumePRForWorkoutMode(
                 exerciseId,
                 mode.displayName,
                 profileId,
-            )
-        }
+            )?.weightPerCableKg?.takeIf { it > 0 }
 
-        val prWeight = pr?.weightPerCableKg?.takeIf { it > 0 }
-        val storedOneRepMax = exerciseRepository.getExerciseById(exerciseId)
-            ?.oneRepMaxKg
-            ?.takeIf { it > 0 }
-        val scalingWeight = prWeight ?: storedOneRepMax
+            ScalingBasis.ESTIMATED_1RM -> velocityOneRepMaxRepository.getLatestPassing(
+                exerciseId,
+                profileId,
+            )?.estimatedPerCableKg?.takeIf { it > 0 }
+        } ?: exerciseRepository.getExerciseById(exerciseId)?.oneRepMaxKg?.takeIf { it > 0 }
+            // Last-resort baseline for ESTIMATED_1RM only: when there is no velocity estimate
+            // and no stored Exercise.oneRepMaxKg, fall back to the max-weight PR before going absolute.
+            ?: (
+                if (exercise.effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM) {
+                    prRepository.getBestWeightPRForWorkoutMode(
+                        exerciseId,
+                        mode.displayName,
+                        profileId,
+                    )?.weightPerCableKg?.takeIf { it > 0 }
+                } else {
+                    null
+                }
+                )
 
         return if (scalingWeight != null) {
             ResolvedExerciseWeights(

@@ -240,6 +240,8 @@ CREATE TABLE RoutineExercise (
     weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
     prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
     setWeightsPercentOfPR TEXT,
+    -- Velocity-based 1RM scaling basis (issue #517 Phase 3); null = derive from prTypeForScaling
+    scalingBasis TEXT,
     -- Per-exercise behavior overrides (PR #245)
     stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
     stopAtTop INTEGER NOT NULL DEFAULT 0,
@@ -473,6 +475,24 @@ WHERE exerciseId = :exerciseId AND profile_id = :profileId
 AND passedQualityGate = 1 AND deletedAt IS NULL
 ORDER BY computedAt DESC, id DESC
 LIMIT 1;
+
+selectAllPassingVelocityOneRepMaxByProfile:
+SELECT * FROM VelocityOneRepMaxEstimate
+WHERE profile_id = :profileId AND passedQualityGate = 1 AND deletedAt IS NULL
+ORDER BY exerciseId ASC, computedAt ASC;
+
+-- Issue #517 Phase 5 T1: enumerate exercises that have at least one MCV-bearing set.
+-- Used by the velocity-1RM pipeline to decide which exercises are ready to estimate.
+selectExerciseIdsWithVelocityData:
+SELECT DISTINCT exerciseId FROM WorkoutSession
+WHERE profile_id = :profileId AND exerciseId IS NOT NULL
+  AND deletedAt IS NULL AND avgMcvMmS IS NOT NULL AND workingReps > 0;
+
+-- Issue #517 Phase 5 T1: count existing estimates for a given exercise/profile.
+-- Returns 0 when the exercise has never been estimated.
+countVelocityOneRepMaxByExercise:
+SELECT COUNT(*) FROM VelocityOneRepMaxEstimate
+WHERE exerciseId = :exerciseId AND profile_id = :profileId AND deletedAt IS NULL;
 
 -- ==================== PERSONAL MVT TABLE ====================
 -- Personalized Minimum Velocity Threshold per exercise/profile (issue #517).
@@ -1115,9 +1135,9 @@ INSERT INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides
+    rackBehaviorOverrides, scalingBasis
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert with IGNORE for import (won't overwrite existing)
 insertRoutineExerciseIgnore:
@@ -1128,9 +1148,9 @@ INSERT OR IGNORE INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides
+    rackBehaviorOverrides, scalingBasis
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;

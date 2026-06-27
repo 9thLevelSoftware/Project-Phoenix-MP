@@ -1,13 +1,16 @@
 package com.devil.phoenixproject.domain.usecase
 
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
+import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,6 +30,7 @@ class ResolveRoutineWeightsUseCaseTest {
 
     private lateinit var prRepository: FakePersonalRecordRepository
     private lateinit var exerciseRepository: FakeExerciseRepository
+    private lateinit var velocityRepository: FakeVelocityOneRepMaxRepository
     private lateinit var useCase: ResolveRoutineWeightsUseCase
 
     private val testExercise = Exercise(
@@ -41,7 +45,8 @@ class ResolveRoutineWeightsUseCaseTest {
         prRepository.reset()
         exerciseRepository = FakeExerciseRepository()
         exerciseRepository.reset()
-        useCase = ResolveRoutineWeightsUseCase(prRepository, exerciseRepository)
+        velocityRepository = FakeVelocityOneRepMaxRepository()
+        useCase = ResolveRoutineWeightsUseCase(prRepository, exerciseRepository, velocityRepository)
     }
 
     // ========== Test 1: Resolves percentage to absolute weight using PR ==========
@@ -583,6 +588,111 @@ class ResolveRoutineWeightsUseCaseTest {
 
         assertEquals(90f, result.baseWeight)
         assertEquals(90f, result.usedPR)
+    }
+
+    // ========== Tests for ESTIMATED_1RM scaling basis (#517) ==========
+
+    @Test
+    fun `ESTIMATED_1RM uses latest passing velocity estimate`() = runTest {
+        // Given: velocity repo returns an estimate of 100 kg per-cable for this exercise
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 1L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 100f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = 1000L,
+            profileId = "default",
+        )
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-1rm",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        // 80% of 100 = 80 kg
+        assertEquals(80f, result.baseWeight)
+        assertEquals(100f, result.usedPR)
+        assertEquals(80, result.percentOfPR)
+        assertTrue(result.isFromPR)
+        assertNull(result.fallbackReason)
+    }
+
+    @Test
+    fun `ESTIMATED_1RM falls back to stored 1RM when no estimate exists`() = runTest {
+        // Given: velocity repo returns null; exercise has oneRepMaxKg = 120f
+        velocityRepository.latestPassing = null
+        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 120f))
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-1rm-fallback",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        // 80% of 120 = 96 kg
+        assertEquals(96f, result.baseWeight)
+        assertEquals(120f, result.usedPR)
+        assertEquals(80, result.percentOfPR)
+        assertTrue(result.isFromPR)
+        assertNull(result.fallbackReason)
+    }
+
+    @Test
+    fun `ESTIMATED_1RM falls back to max-weight PR when no estimate and no stored 1RM`() = runTest {
+        // Given: no velocity estimate, no stored oneRepMaxKg, but a max-weight PR exists
+        velocityRepository.latestPassing = null
+        prRepository.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = "bench-press",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 60f,
+                reps = 5,
+                oneRepMax = 70f,
+                timestamp = 1000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 300f,
+            ),
+        )
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-1rm-pr-fallback",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        // 80% of 60 (max-weight PR) = 48 kg — must scale off PR, not drop to absolute 30
+        assertEquals(48f, result.baseWeight)
+        assertEquals(60f, result.usedPR)
+        assertEquals(80, result.percentOfPR)
+        assertTrue(result.isFromPR)
+        assertNull(result.fallbackReason)
     }
 
     @Test

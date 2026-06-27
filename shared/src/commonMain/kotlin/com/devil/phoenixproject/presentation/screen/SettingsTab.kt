@@ -110,6 +110,7 @@ import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
@@ -341,6 +342,9 @@ fun SettingsTab(
     autoEndOnVelocityLoss: Boolean = false,
     onAutoEndOnVelocityLossChange: (Boolean) -> Unit = {},
     stallDetectionEnabled: Boolean = true,
+    // Issue #517: System-wide default scaling basis for % of 1RM
+    defaultScalingBasis: ScalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+    onDefaultScalingBasisChange: (ScalingBasis) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -1353,6 +1357,41 @@ fun SettingsTab(
                         checked = weightSuggestionsEnabled,
                         onCheckedChange = onWeightSuggestionsEnabledChange,
                     )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Issue #517: Default scaling basis for % of 1RM / VBT weight scaling
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Default Weight Scaling Basis",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Baseline used when scaling routine weights by percentage",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.small))
+                    val scalingBasisOptions = listOf(
+                        ScalingBasis.MAX_WEIGHT_PR to "Max-weight PR",
+                        ScalingBasis.MAX_VOLUME_PR to "Max-volume PR",
+                        ScalingBasis.ESTIMATED_1RM to "Est. 1RM",
+                    )
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        scalingBasisOptions.forEachIndexed { index, (basis, label) ->
+                            SegmentedButton(
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = scalingBasisOptions.size),
+                                onClick = { onDefaultScalingBasisChange(basis) },
+                                selected = defaultScalingBasis == basis,
+                            ) {
+                                Text(label, maxLines = 1)
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
