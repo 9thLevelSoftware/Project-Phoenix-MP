@@ -77,3 +77,10 @@ raw GitHub for the parity-critical sync contracts.
 | F067 | REAL | `CsvParser.parseWeight` stripped unit suffixes but never converted pounds; both CSV exporters write pounds when the display unit is LB, so a lb export round-tripped as kg. Existing test `parseWeight_withLbSuffix` encoded the bug. | **FIXED** — detect `lb`/`lbs` and convert via `UnitConverter.lbToKg`; existing test corrected to assert the converted value. |
 | F068 | REAL | Streaming backup importer had no `routineGroups` case, so v4 group data was skipped (group organization dropped on streaming restore). | **FIXED** — added the streaming `routineGroups` case (mirrors the non-streaming insert). `Routine.groupId` has no FK constraint, so no risky export reordering was needed. |
 | F066 | DOCUMENTED | The `util/` workout-history CSV (`Date,Exercise,…`) has no time-of-day/session-id column, so `CsvParser` maps same-date rows to midnight and same-day same-exercise workouts are indistinguishable for dedup. | **DOCUMENTED** — the parser already supports a time string; the fix is to add a Time column to `util/CsvExporter` + the platform importer column mapping (the `data/integration` Strong exporter already emits `HH:MM:SS`). Spans platform importers; recommended follow-up. |
+
+## C10 — Voice / safe-word safety & privacy
+
+| ID | Verdict | Evidence | Disposition |
+|----|---------|----------|-------------|
+| F032 | REAL | `SafeWordDetectionManager.startForWorkout()` logged the configured safe word verbatim, re-introducing the voice-PII leak the platform listeners deliberately redact. | **FIXED** — log only length/configured metadata. |
+| F062 | REAL | `matchesSafeWord` split on whitespace and compared tokens exactly, so `"stop!"`/`"stop."`/`"stop, now"` failed to match `stop` — a safety-critical false negative. Present on BOTH iOS and Android listeners. | **FIXED** — strip non-alphanumerics from each token before comparison; applied to both `SafeWordListener.ios.kt` and `SafeWordListener.android.kt` for parity. |
