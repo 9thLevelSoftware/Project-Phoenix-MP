@@ -217,9 +217,15 @@ object CsvParser {
      */
     internal fun parseWeight(value: String?): Float {
         if (value.isNullOrBlank() || value == "0") return 0f
+        // Detect the unit BEFORE stripping suffixes. Exporters format weights in
+        // the user's display unit, so a pounds export ("176.4 lbs") must be
+        // converted back to kg (the stored unit) instead of being stored verbatim
+        // as kilograms (audit F067).
+        val isPounds = value.contains("lb", ignoreCase = true)
         // Strip everything except digits, dot, minus, plus
         val numeric = value.replace(Regex("[^\\d.\\-+]"), "").trim()
-        return numeric.toFloatOrNull() ?: 0f
+        val parsed = numeric.toFloatOrNull() ?: 0f
+        return if (isPounds) UnitConverter.lbToKg(parsed) else parsed
     }
 
     /**

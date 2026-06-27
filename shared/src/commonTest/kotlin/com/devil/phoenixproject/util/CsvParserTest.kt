@@ -42,7 +42,11 @@ class CsvParserTest {
 
     @Test
     fun parseWeight_withLbSuffix() {
-        assertEquals(176.4f, CsvParser.parseWeight("176.4 lb"))
+        // A "lb"/"lbs" suffix means the value was exported in pounds (the user's
+        // display unit), so it must be converted back to kg — not stored verbatim
+        // as kilograms (audit F067). 176.4 lb ≈ 80.0 kg.
+        assertEquals(80.0f, CsvParser.parseWeight("176.4 lb"), 0.05f)
+        assertEquals(80.0f, CsvParser.parseWeight("176.4 lbs"), 0.05f)
     }
 
     @Test
