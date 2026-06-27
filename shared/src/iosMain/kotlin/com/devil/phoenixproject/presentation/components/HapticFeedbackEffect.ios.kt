@@ -408,11 +408,20 @@ private class IosSoundManager {
         countdownTickPlayer = null
 
         try {
-            AVAudioSession.sharedInstance().setActive(
-                false,
-                AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
-                null,
-            )
+            // F063: AVAudioSession is process-wide. If SafeWordListener currently
+            // holds it in playAndRecord for emergency voice detection, deactivating
+            // here would break the microphone. Only deactivate when we are not
+            // stepping on an active record session (mirrors the setup-time guard).
+            val session = AVAudioSession.sharedInstance()
+            if (session.category != AVAudioSessionCategoryPlayAndRecord) {
+                session.setActive(
+                    false,
+                    AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
+                    null,
+                )
+            } else {
+                log.d { "Skipping audio-session deactivation: playAndRecord is active (safe-word listener owns it)" }
+            }
         } catch (e: Exception) {
             // Ignore cleanup errors
         }

@@ -264,6 +264,11 @@ class MetricPollingEngine(
                         } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
                             consecutiveTimeouts++
                             log.w { "Monitor read timeout exception - consecutive: $consecutiveTimeouts" }
+                            if (consecutiveTimeouts >= BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS) {
+                                log.e { "Too many consecutive timeouts ($consecutiveTimeouts), triggering disconnect" }
+                                scope.launch { onConnectionLost() }
+                                return@withLock
+                            }
                             delay(50)
                         } catch (e: Exception) {
                             e.rethrowIfCancellation()

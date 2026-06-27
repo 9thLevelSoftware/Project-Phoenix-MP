@@ -68,7 +68,10 @@ class HandleStateDetector(
     // Position range diagnostics
     var minPositionSeen: Double = Double.MAX_VALUE
         private set
-    var maxPositionSeen: Double = Double.MIN_VALUE
+    // F091: Double.MIN_VALUE is the smallest POSITIVE double, not the most
+    // negative, so an all-negative position stream would never update this and
+    // report a bogus ~0 maximum. Use -Double.MAX_VALUE as the sentinel.
+    var maxPositionSeen: Double = -Double.MAX_VALUE
         private set
 
     // Periodic logging counter
@@ -119,9 +122,13 @@ class HandleStateDetector(
     fun disable() {
         isEnabled = false
         isAutoStartMode = false
-        // Issue #176: Clear baseline when detection disabled
-        restBaselinePosA = null
-        restBaselinePosB = null
+        // F090: fully clear runtime state when disabled, not just the baselines.
+        // Leaving _handleState/_handleDetection/dwell timers behind let the UI and
+        // downstream observers keep showing a stale Grabbed/detected state after
+        // detection was turned off.
+        _handleState.value = HandleState.WaitingForRest
+        _handleDetection.value = HandleDetection()
+        resetInternalState()
         log.i { "Handle detection disabled" }
     }
 
@@ -153,7 +160,7 @@ class HandleStateDetector(
      */
     private fun resetInternalState() {
         minPositionSeen = Double.MAX_VALUE
-        maxPositionSeen = Double.MIN_VALUE
+        maxPositionSeen = -Double.MAX_VALUE // F091: most-negative sentinel (see field decl)
         pendingGrabbedStartTime = null
         pendingReleasedStartTime = null
         activeHandlesMask = 0

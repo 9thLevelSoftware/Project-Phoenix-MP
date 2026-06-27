@@ -51,6 +51,7 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
 
                 var imported = 0
                 var skipped = 0
+                var saveFailures = 0
                 val importErrors = parseErrors.toMutableList()
 
                 for (parsedSession in sessions) {
@@ -71,6 +72,7 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
                         if (e.message?.contains("UNIQUE", ignoreCase = true) == true) {
                             skipped++
                         } else {
+                            saveFailures++
                             importErrors.add(
                                 "Failed to save session (${session.exerciseName}): ${e.message}",
                             )
@@ -83,7 +85,7 @@ class AndroidCsvImporter(private val context: Context, private val workoutReposi
                 CsvImportResult(
                     imported = imported,
                     skipped = skipped,
-                    failed = parseErrors.size,
+                    failed = parseErrors.size + saveFailures,
                     errors = importErrors,
                 )
             } catch (e: Exception) {

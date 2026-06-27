@@ -167,7 +167,7 @@ fun GroupNameDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var name by remember { mutableStateOf(initialName) }
+    var name by remember(initialName) { mutableStateOf(initialName) }
 
     AlertDialog(
         onDismissRequest = onDismiss,

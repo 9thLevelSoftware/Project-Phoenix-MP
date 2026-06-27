@@ -21,6 +21,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -236,6 +237,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
+        if (e is CancellationException) throw e
         val classified = classifyError(e, "Sign-in")
         Result.failure(classified.toException())
     }
@@ -254,6 +256,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
+        if (e is CancellationException) throw e
         val classified = classifyError(e, "Sign-up")
         Result.failure(classified.toException())
     }
@@ -274,6 +277,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
+        if (e is CancellationException) throw e
         val classified = classifyError(e, "OAuth code exchange")
         Result.failure(classified.toException())
     }
@@ -288,6 +292,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
+        if (e is CancellationException) throw e
         val classified = classifyError(e, "Token refresh")
         Result.failure(classified.toException())
     }
@@ -317,6 +322,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 )
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val classified = classifyError(e, "Get user")
             Result.failure(classified.toException())
         }
@@ -372,6 +378,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 )
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             // Network failures return failure to allow callers to preserve existing premium status
             val classified = classifyError(e, "Subscription check")
             Result.failure(classified.toException())
@@ -422,6 +429,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 )
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val classified = classifyError(e, "Subscription tier check")
             Result.failure(classified.toException())
         }
@@ -576,10 +584,27 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                     // Determine if this is a recoverable network error or permanent auth failure
                     val isRecoverable = error !is PortalApiException ||
                         (error.statusCode != 401 && error.statusCode != 403)
+                    // F020/F077: only clear stored auth for definitive auth failures.
+                    // For transient failures (network/timeout/5xx) keep the tokens so
+                    // a later retry can refresh; clearing here would force re-login on
+                    // a temporary outage and discard a still-valid refresh token.
+                    if (isRecoverable) {
+                        tokenStorage.emitAuthEvent(
+                            AuthEvent.RefreshFailed(
+                                reason = error.message ?: "Token refresh failed",
+                                isRecoverable = true,
+                            ),
+                        )
+                        // Rethrow so authenticatedRequest classifies this as a
+                        // transient/network error rather than treating a null token
+                        // as a permanent 401 (which would surface NotAuthenticated
+                        // and force re-login despite the preserved tokens).
+                        throw error
+                    }
                     tokenStorage.clearAuthWithEvent(
                         AuthEvent.RefreshFailed(
                             reason = error.message ?: "Token refresh failed",
-                            isRecoverable = isRecoverable,
+                            isRecoverable = false,
                         ),
                     )
                     null
@@ -610,10 +635,22 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                     // Determine if this is a recoverable network error or permanent auth failure
                     val isRecoverable = error !is PortalApiException ||
                         (error.statusCode != 401 && error.statusCode != 403)
+                    // F020/F077: preserve tokens on transient failures (see ensureValidToken).
+                    if (isRecoverable) {
+                        tokenStorage.emitAuthEvent(
+                            AuthEvent.RefreshFailed(
+                                reason = error.message ?: "Session refresh failed",
+                                isRecoverable = true,
+                            ),
+                        )
+                        // Rethrow so the authenticatedRequest catch classifies this
+                        // as transient rather than converting it into a 401.
+                        throw error
+                    }
                     tokenStorage.clearAuthWithEvent(
                         AuthEvent.RefreshFailed(
                             reason = error.message ?: "Session refresh failed",
-                            isRecoverable = isRecoverable,
+                            isRecoverable = false,
                         ),
                     )
                     null
@@ -623,11 +660,15 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
     }
 
     private suspend inline fun <reified T> authenticatedRequest(block: (token: String) -> HttpResponse): Result<T> {
-        val token = ensureValidToken() ?: return Result.failure(
-            PortalApiException("Not authenticated - please log in again", null, 401),
-        )
-        Logger.d("PortalApiClient") { "AUTH REQUEST: tokenLen=${token.length}" }
         return try {
+            // ensureValidToken() may rethrow a transient refresh error; keep it
+            // inside this try so classifyError reports it as transient/network
+            // instead of letting it escape as an unhandled exception. A null token
+            // means a definitive auth failure → surface as 401.
+            val token = ensureValidToken() ?: return Result.failure(
+                PortalApiException("Not authenticated - please log in again", null, 401),
+            )
+            Logger.d("PortalApiClient") { "AUTH REQUEST: tokenLen=${token.length}" }
             val response = block(token)
             if (response.status.value == 401) {
                 // Token was valid by our clock but server rejected — force one refresh
@@ -647,6 +688,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 handleResponse(response)
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val classified = classifyError(e, "Request")
             Result.failure(classified.toException())
         }

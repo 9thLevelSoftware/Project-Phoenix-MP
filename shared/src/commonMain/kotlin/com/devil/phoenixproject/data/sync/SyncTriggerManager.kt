@@ -327,8 +327,21 @@ class SyncTriggerManager(
             return
         }
 
-        // Attempt sync (outside lock - suspend call)
-        val result = syncManager.sync()
+        // Attempt sync (outside lock - suspend call).
+        // F026: sync() is expected to return a Result, but repository/API code
+        // inside it can still throw. onWorkoutCompleted()/onConnectivityRestored()
+        // call attemptSync() directly (no outer catch), so an escaping exception
+        // would skip retry/backoff state and could crash the caller coroutine.
+        // Convert non-cancellation throws into a normal sync failure here.
+        val result = try {
+            syncManager.sync()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w { "SyncTrigger: sync() threw: ${e.message}" }
+            onSyncFailure(e)
+            return
+        }
 
         if (result.isSuccess) {
             // Check if this was a partial success (push OK, pull failed)

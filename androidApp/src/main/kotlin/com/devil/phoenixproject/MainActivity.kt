@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
         try {
             val prefs = getSharedPreferences("vitruvian_preferences", Context.MODE_PRIVATE)
             val langCode = prefs.getString("language", null)
-            if (!langCode.isNullOrBlank() && langCode != "en") {
+            if (!langCode.isNullOrBlank()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val localeManager = getSystemService(android.app.LocaleManager::class.java)
                     localeManager.applicationLocales = LocaleList.forLanguageTags(langCode)

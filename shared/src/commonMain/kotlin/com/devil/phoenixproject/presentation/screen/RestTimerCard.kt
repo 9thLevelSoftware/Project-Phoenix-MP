@@ -538,7 +538,7 @@ fun RestTimerCard(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     LinearProgressIndicator(
-                        progress = { (currentExerciseIndex + 1).toFloat() / totalExercises },
+                        progress = { ((currentExerciseIndex + 1).toFloat() / totalExercises).coerceIn(0f, 1f) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(4.dp),
@@ -616,8 +616,9 @@ fun RestTimerCard(
  * Formats rest time in seconds to MM:SS format
  */
 private fun formatRestTime(seconds: Int): String {
-    val minutes = seconds / 60
-    val remainingSeconds = seconds % 60
+    val safeSeconds = seconds.coerceAtLeast(0)
+    val minutes = safeSeconds / 60
+    val remainingSeconds = safeSeconds % 60
     return "$minutes:${remainingSeconds.toString().padStart(2, '0')}"
 }
 

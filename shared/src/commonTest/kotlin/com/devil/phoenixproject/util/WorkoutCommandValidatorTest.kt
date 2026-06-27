@@ -120,6 +120,60 @@ class WorkoutCommandValidatorTest {
     }
 
     @Test
+    fun `finite rep total of 254 is accepted but 255 collides with the unlimited sentinel F069 F070`() {
+        // 0xFF (255) is the unlimited/Just Lift/AMRAP sentinel; a finite total of
+        // 255 must be rejected so it cannot serialize to an unlimited workout.
+        assertTrue(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.Pump,
+                    reps = 251,
+                    warmupReps = 3,
+                    weightPerCableKg = 10f,
+                ),
+            ).isSuccess,
+            "reps+warmup == 254 should be accepted",
+        )
+        assertFailureContains(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.Pump,
+                    reps = 252,
+                    warmupReps = 3,
+                    weightPerCableKg = 10f,
+                ),
+            ),
+            "fit in one byte",
+        )
+    }
+
+    @Test
+    fun `finite echo target of 254 is accepted but 255 is rejected F069 F070`() {
+        assertTrue(
+            WorkoutCommandValidator.validateEchoControl(
+                level = EchoLevel.HARD,
+                warmupReps = 0,
+                targetReps = 254,
+                isJustLift = false,
+                isAMRAP = false,
+                eccentricPct = 100,
+            ).isSuccess,
+            "targetReps == 254 should be accepted",
+        )
+        assertFailureContains(
+            WorkoutCommandValidator.validateEchoControl(
+                level = EchoLevel.HARD,
+                warmupReps = 0,
+                targetReps = 255,
+                isJustLift = false,
+                isAMRAP = false,
+                eccentricPct = 100,
+            ),
+            "targetReps",
+        )
+    }
+
+    @Test
     fun `echo eccentric percent must stay within machine range`() {
         assertFailureContains(
             WorkoutCommandValidator.validateEchoControl(

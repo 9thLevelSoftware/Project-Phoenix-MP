@@ -157,8 +157,10 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                             ?: run {
                                 val oneRepMax = exercise.oneRepMaxKg ?: 0f
                                 if (oneRepMax > 0f) {
-                                    // Round to nearest 0.5kg for cleaner weights
-                                    ((oneRepMax * DEFAULT_STARTING_WEIGHT_PERCENT) * 2).toInt() / 2f
+                                    // Round to nearest 0.5kg for cleaner weights.
+                                    // F381: use round(), not toInt() — toInt() truncates
+                                    // (70.9 → 70.5 instead of 71.0).
+                                    kotlin.math.round((oneRepMax * DEFAULT_STARTING_WEIGHT_PERCENT) * 2).toInt() / 2f
                                 } else {
                                     0f
                                 }

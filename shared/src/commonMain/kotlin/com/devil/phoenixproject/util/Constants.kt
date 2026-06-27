@@ -69,13 +69,16 @@ object UnitConverter {
     fun formatDecimal(value: Float): String = if (value % 1.0f == 0f) {
         value.toInt().toString()
     } else {
-        val rounded = (value * 10).toInt() / 10f
-        if (rounded % 1.0f == 0f) {
-            rounded.toInt().toString()
+        // F420: round (not truncate) to nearest 0.1 and preserve the sign for
+        // values in (-1, 0). The old code truncated (1.99 → 1.9) and dropped the
+        // sign for -1 < value < 0 (-0.5 → "0.5") because intPart was 0.
+        val scaled = kotlin.math.round(value * 10).toInt()
+        if (scaled % 10 == 0) {
+            (scaled / 10).toString()
         } else {
-            val intPart = rounded.toInt()
-            val decPart = kotlin.math.abs(((rounded - intPart) * 10).toInt())
-            "$intPart.$decPart"
+            val sign = if (scaled < 0) "-" else ""
+            val absScaled = kotlin.math.abs(scaled)
+            "$sign${absScaled / 10}.${absScaled % 10}"
         }
     }
 
@@ -138,8 +141,8 @@ object ProtocolConstants {
     // Frame sizes (Phoenix Backend aligned)
     const val STOP_PACKET_SIZE = 2
     const val REGULAR_PACKET_SIZE = 25 // Was 96 in web app
-    const val ECHO_PACKET_SIZE = 29 // Was 40 in web app
-    const val ACTIVATION_PACKET_SIZE = 97
+    const val ECHO_PACKET_SIZE = 32 // F308: matches BlePacketFactory.createEchoControl()
+    const val ACTIVATION_PACKET_SIZE = 96 // F308: matches BlePacketFactory.createProgramParams()/ActivationPacket.SIZE
     const val COLOR_SCHEME_SIZE = 34
 
     // Mode values (used in ActivationPacket)

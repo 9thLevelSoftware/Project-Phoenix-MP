@@ -104,6 +104,12 @@ class PortalTokenStorage(private val settings: Settings) {
 
     private val deviceIdLock = Any()
 
+    // Serializes multi-key auth state mutations (save/clear). Without this,
+    // a concurrent sign-in/refresh and sign-out can interleave their multi-key
+    // writes, letting a stale completion re-populate tokens after sign-out or
+    // letting observers see partial combinations (audit F004).
+    private val authLock = Any()
+
     private val _isAuthenticated = MutableStateFlow(hasToken())
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated.asStateFlow()
 
@@ -118,7 +124,7 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _authEvents = MutableSharedFlow<AuthEvent>(replay = 0, extraBufferCapacity = 1)
     val authEvents: SharedFlow<AuthEvent> = _authEvents.asSharedFlow()
 
-    fun saveAuth(response: PortalAuthResponse) {
+    fun saveAuth(response: PortalAuthResponse) = withPlatformLock(authLock) {
         settings[KEY_TOKEN] = response.token
         settings[KEY_USER_ID] = response.user.id
         settings[KEY_USER_EMAIL] = response.user.email
@@ -129,10 +135,21 @@ class PortalTokenStorage(private val settings: Settings) {
         _currentUser.value = response.user
     }
 
-    fun saveGoTrueAuth(response: GoTrueAuthResponse) {
+    fun saveGoTrueAuth(response: GoTrueAuthResponse) = withPlatformLock(authLock) {
         // Preserve existing premium status — GoTrue auth response does not include it,
         // and overwriting would reset paid users to non-premium on every sign-in.
-        val existingPremium: Boolean = settings[KEY_IS_PREMIUM, false]
+        //
+        // F024: only preserve premium when the new auth response belongs to the
+        // SAME user. Switching accounts (email/OAuth sign-in or a refresh that
+        // resolves a different user) must NOT inherit the previous user's
+        // entitlement; fail closed to non-premium and let a subsequent status
+        // refresh set the correct value.
+        // Only inherit premium when there was a real previous session for the SAME
+        // user. A null previous id means no trusted prior session, so any leftover
+        // premium flag is stale and must not be inherited (fail closed).
+        val previousUserId: String? = settings.getStringOrNull(KEY_USER_ID)
+        val sameUser = previousUserId != null && previousUserId == response.user.id
+        val existingPremium: Boolean = if (sameUser) settings[KEY_IS_PREMIUM, false] else false
 
         settings[KEY_TOKEN] = response.accessToken
         settings[KEY_REFRESH_TOKEN] = response.refreshToken
@@ -228,7 +245,16 @@ class PortalTokenStorage(private val settings: Settings) {
         _authEvents.tryEmit(AuthEvent.LoggedOut)
     }
 
-    private fun clearAuthInternal() {
+    /**
+     * Emits an auth event WITHOUT clearing stored tokens. Use for recoverable
+     * (transient/network) refresh failures so the stored refresh token survives
+     * for a later retry instead of forcing the user to re-login (audit F020/F077).
+     */
+    fun emitAuthEvent(event: AuthEvent) {
+        _authEvents.tryEmit(event)
+    }
+
+    private fun clearAuthInternal() = withPlatformLock(authLock) {
         settings.remove(KEY_TOKEN)
         settings.remove(KEY_REFRESH_TOKEN)
         settings.remove(KEY_EXPIRES_AT)

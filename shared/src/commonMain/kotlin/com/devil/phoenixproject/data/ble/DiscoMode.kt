@@ -48,19 +48,26 @@ class DiscoMode(private val scope: CoroutineScope, private val sendCommand: susp
             val colorCount = 7 // Schemes 0-6 (excluding "None" at 7)
             val intervalMs = 300L
 
-            while (isActive) {
-                try {
-                    val command = BlePacketFactory.createColorSchemeCommand(colorIndex)
-                    sendCommand(command)
-                    colorIndex = (colorIndex + 1) % colorCount
-                    delay(intervalMs)
-                } catch (e: Exception) {
-                    e.rethrowIfCancellation()
-                    log.w { "Disco mode error: ${e.message}" }
-                    break
+            try {
+                while (isActive) {
+                    try {
+                        val command = BlePacketFactory.createColorSchemeCommand(colorIndex)
+                        sendCommand(command)
+                        colorIndex = (colorIndex + 1) % colorCount
+                        delay(intervalMs)
+                    } catch (e: Exception) {
+                        e.rethrowIfCancellation()
+                        log.w { "Disco mode error: ${e.message}" }
+                        break
+                    }
                 }
+            } finally {
+                // F088: reflect reality if the cycling loop exits early (e.g. a
+                // sendCommand failure broke the loop) — otherwise isActive stays
+                // true and consumers show disco mode as running with no job.
+                _isActive.value = false
+                log.d { "Disco mode coroutine ended" }
             }
-            log.d { "Disco mode coroutine ended" }
         }
     }
 

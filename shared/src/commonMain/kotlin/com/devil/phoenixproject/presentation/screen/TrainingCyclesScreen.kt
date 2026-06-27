@@ -225,7 +225,11 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     // This keeps manual actions responsive and allows date rollover to apply automatically.
     LaunchedEffect(cycles, activeCycle?.id) {
         while (true) {
-            cycleProgress = loadProgressMap(cycles, activeCycle?.id)
+            try {
+                cycleProgress = loadProgressMap(cycles, activeCycle?.id)
+            } catch (e: Exception) {
+                Logger.w("TrainingCycles") { "Progress refresh failed: ${e.message}" }
+            }
             delay(60_000L)
         }
     }

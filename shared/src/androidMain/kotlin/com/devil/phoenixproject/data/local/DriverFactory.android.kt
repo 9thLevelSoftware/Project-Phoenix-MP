@@ -32,21 +32,21 @@ actual class DriverFactory(private val context: Context) {
                 }
                 // Diagnostic: log Routine table state so we can debug #324
                 try {
-                    val cursor = db.query("SELECT COUNT(*) AS cnt FROM Routine")
-                    if (cursor.moveToFirst()) {
-                        val count = cursor.getInt(0)
-                        Log.i(TAG, "ROUTINE_DIAG: Routine table has $count rows")
+                    db.query("SELECT COUNT(*) AS cnt FROM Routine").use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val count = cursor.getInt(0)
+                            Log.i(TAG, "ROUTINE_DIAG: Routine table has $count rows")
+                        }
                     }
-                    cursor.close()
-                    val profileCursor = db.query(
+                    db.query(
                         "SELECT profile_id, COUNT(*) AS cnt FROM Routine GROUP BY profile_id",
-                    )
-                    while (profileCursor.moveToNext()) {
-                        val pid = profileCursor.getString(0)
-                        val cnt = profileCursor.getInt(1)
-                        Log.i(TAG, "ROUTINE_DIAG: profile_id='$pid' → $cnt routines")
+                    ).use { profileCursor ->
+                        while (profileCursor.moveToNext()) {
+                            val pid = profileCursor.getString(0)
+                            val cnt = profileCursor.getInt(1)
+                            Log.i(TAG, "ROUTINE_DIAG: profile_id='$pid' → $cnt routines")
+                        }
                     }
-                    profileCursor.close()
                 } catch (e: Exception) {
                     Log.e(TAG, "ROUTINE_DIAG: Failed to query Routine table — ${e.message}")
                 }

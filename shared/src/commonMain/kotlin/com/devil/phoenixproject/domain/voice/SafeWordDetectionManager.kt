@@ -70,7 +70,10 @@ class SafeWordDetectionManager(private val preferencesManager: PreferencesManage
         // Stop any existing listener before starting a new one
         stop()
 
-        Logger.i(TAG) { "Starting safe word detection for workout (word: \"$safeWord\")" }
+        // F032: do not log the safe word itself — it is user-chosen voice PII.
+        // The platform listeners already redact it in their startup logs; this
+        // manager must too. Log only non-sensitive metadata.
+        Logger.i(TAG) { "Starting safe word detection for workout (configured, length=${safeWord.length})" }
         val newListener = listenerFactory.create(safeWord)
         listener = newListener
 

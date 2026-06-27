@@ -36,7 +36,7 @@ internal fun doInitKoinInternal() {
 
 /**
  * Helper function for iOS to run migrations after Koin initialization.
- * Call this from Swift: KoinKt.runMigrations()
+ * Call this from Swift: KoinInitKt.runMigrations()
  * This mirrors Android's VitruvianApp.onCreate() migration call.
  */
 fun runMigrations() {

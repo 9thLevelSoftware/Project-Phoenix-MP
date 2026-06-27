@@ -124,7 +124,7 @@ class ConnectionLogsViewModel : ViewModel() {
      * Clear logs older than specified hours.
      */
     fun clearOldLogs(hoursOld: Int = 24) {
-        val cutoffTime = Clock.System.now().toEpochMilliseconds() - (hoursOld * 60 * 60 * 1000L)
+        val cutoffTime = Clock.System.now().toEpochMilliseconds() - (hoursOld.coerceAtLeast(0).toLong() * 60L * 60L * 1000L)
         repository.clearOlderThan(cutoffTime)
     }
 

@@ -68,8 +68,10 @@ interface CompletedSetRepository {
     /**
      * Get recent completed sets for an exercise (for progression analysis).
      * @param limit Maximum number of sets to return
+     * @param profileId Profile to scope the query to — prevents another profile's
+     *   sets (and soft-deleted sessions) leaking into progression/deload analysis.
      */
-    suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int): List<CompletedSet>
+    suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet>
 
     /**
      * Save a completed set.

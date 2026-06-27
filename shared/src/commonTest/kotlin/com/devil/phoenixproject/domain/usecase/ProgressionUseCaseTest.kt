@@ -100,6 +100,27 @@ class ProgressionUseCaseTest {
     }
 
     @Test
+    fun `progression baseline uses most recent weight not historical max F029`() = runTest {
+        val now = 1_000_000_000L
+        completedSetRepository.setSessionExercise("session-1", "bench")
+        completedSetRepository.saveCompletedSets(
+            listOf(
+                // Most recent working weight is 40kg (user deliberately reduced load)...
+                completedSet("set-1", "session-1", reps = 10, weight = 40f, rpe = 5, completedAt = now),
+                completedSet("set-2", "session-1", reps = 10, weight = 40f, rpe = 5, completedAt = now - 1000),
+                // ...but an older set was heavier (60kg). The old code progressed from
+                // this historical max; the fix must use the recent 40kg.
+                completedSet("set-3", "session-1", reps = 10, weight = 60f, rpe = 5, completedAt = now - 100_000),
+            ),
+        )
+
+        val result = useCase.checkForProgression(exerciseId = "bench", targetReps = 10)
+
+        assertEquals(ProgressionReason.LOW_RPE, result?.reason)
+        assertEquals(40f, result?.previousWeightKg, "baseline must be the most recent weight, not the historical max")
+    }
+
+    @Test
     fun `suggests progression when target reps achieved across sessions`() = runTest {
         val now = 1_000_000_000L
         completedSetRepository.setSessionExercise("session-1", "bench")

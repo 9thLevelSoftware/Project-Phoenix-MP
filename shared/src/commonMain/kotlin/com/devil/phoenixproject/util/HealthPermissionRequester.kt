@@ -6,7 +6,8 @@ import androidx.compose.runtime.Composable
  * Platform-specific launcher for health permission requests.
  *
  * Android uses Health Connect's Activity Result contract.
- * iOS currently no-ops because HealthKit is not wired up yet.
+ * iOS uses HealthKit (HKHealthStore.requestAuthorization) via HealthIntegration;
+ * the result is delivered asynchronously through onPermissionsResult.
  */
 expect class HealthPermissionRequester {
     @Composable

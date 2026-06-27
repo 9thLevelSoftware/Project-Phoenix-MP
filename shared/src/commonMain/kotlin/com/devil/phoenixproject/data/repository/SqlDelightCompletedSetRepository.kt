@@ -155,9 +155,10 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
         queries.selectCompletedSetsForExercise(exerciseId, ::mapToCompletedSet).executeAsList()
     }
 
-    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int): List<CompletedSet> = withContext(Dispatchers.IO) {
+    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> = withContext(Dispatchers.IO) {
         queries.selectRecentCompletedSetsForExercise(
             exerciseId,
+            profileId,
             limit.toLong(),
             ::mapToCompletedSet,
         )

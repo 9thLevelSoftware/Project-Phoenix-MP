@@ -19,7 +19,7 @@ sealed class NavigationRoutes(val route: String) {
     object TrainingCycles : NavigationRoutes("training_cycles")
     object Analytics : NavigationRoutes("analytics")
     object ExerciseDetail : NavigationRoutes("exercise_detail/{exerciseId}") {
-        fun createRoute(exerciseId: String) = "exercise_detail/$exerciseId"
+        fun createRoute(exerciseId: String) = "exercise_detail/${exerciseId.encodeRouteSegment()}"
     }
     object Settings : NavigationRoutes("settings")
     object EquipmentRack : NavigationRoutes("equipment_rack")
@@ -27,15 +27,15 @@ sealed class NavigationRoutes(val route: String) {
     object Diagnostics : NavigationRoutes("diagnostics")
     object Badges : NavigationRoutes("badges")
     object RoutineEditor : NavigationRoutes("routine_editor/{routineId}") {
-        fun createRoute(routineId: String) = "routine_editor/$routineId"
+        fun createRoute(routineId: String) = "routine_editor/${routineId.encodeRouteSegment()}"
     }
 
     object CycleEditor : NavigationRoutes("cycle_editor/{cycleId}") {
-        fun createRoute(cycleId: String) = "cycle_editor/$cycleId"
+        fun createRoute(cycleId: String) = "cycle_editor/${cycleId.encodeRouteSegment()}"
     }
 
     object CycleReview : NavigationRoutes("cycleReview/{cycleId}") {
-        fun createRoute(cycleId: String) = "cycleReview/$cycleId"
+        fun createRoute(cycleId: String) = "cycleReview/${cycleId.encodeRouteSegment()}"
     }
 
     // Smart Insights - training suggestions and readiness
@@ -46,7 +46,7 @@ sealed class NavigationRoutes(val route: String) {
 
     // Strength Assessment - VBT-based 1RM estimation with BLE velocity capture
     object StrengthAssessment : NavigationRoutes("strength_assessment/{exerciseId}") {
-        fun createRoute(exerciseId: String) = "strength_assessment/$exerciseId"
+        fun createRoute(exerciseId: String) = "strength_assessment/${exerciseId.encodeRouteSegment()}"
     }
     object StrengthAssessmentPicker : NavigationRoutes("strength_assessment_picker")
 

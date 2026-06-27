@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -82,24 +83,37 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
         get() = BadgeDefinitions.totalBadgeCount
 
     init {
-        loadBadges()
+        // F049: badge progress must track profile switches like streaks/stats/
+        // uncelebrated badges above. getAllBadgesWithProgress is suspend (not a
+        // Flow), so collect activeProfileId and reload; collectLatest cancels an
+        // in-flight load for a previous profile, preventing a stale slow result
+        // from overwriting the new profile's badges.
+        viewModelScope.launch {
+            activeProfileId.collectLatest { profileId ->
+                loadBadgesForProfile(profileId)
+            }
+        }
     }
 
+    /** Manually refresh badges for the active profile. */
     fun loadBadges() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            _loadError.value = null
-            try {
-                val profileId = activeProfileId.value
-                val badges = repository.getAllBadgesWithProgress(profileId)
-                _badgesWithProgress.value = badges
-            } catch (e: Exception) {
-                // fix(audit): H — log and surface the error instead of silently swallowing.
-                Logger.e("GamificationViewModel", e) { "Failed to load badges: ${e.message}" }
-                _loadError.value = e.message ?: "Failed to load badges"
-            } finally {
-                _isLoading.value = false
-            }
+        viewModelScope.launch { loadBadgesForProfile(activeProfileId.value) }
+    }
+
+    private suspend fun loadBadgesForProfile(profileId: String) {
+        _isLoading.value = true
+        _loadError.value = null
+        // Clear stale badges so the UI doesn't show the previous profile's data
+        // while the new profile loads.
+        _badgesWithProgress.value = emptyList()
+        try {
+            _badgesWithProgress.value = repository.getAllBadgesWithProgress(profileId)
+        } catch (e: Exception) {
+            // fix(audit): H — log and surface the error instead of silently swallowing.
+            Logger.e("GamificationViewModel", e) { "Failed to load badges: ${e.message}" }
+            _loadError.value = e.message ?: "Failed to load badges"
+        } finally {
+            _isLoading.value = false
         }
     }
 
@@ -135,7 +149,11 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
     fun markBadgeCelebrated(badgeId: String) {
         viewModelScope.launch {
             val profileId = activeProfileId.value
-            repository.markBadgeCelebrated(badgeId, profileId)
+            try {
+                repository.markBadgeCelebrated(badgeId, profileId)
+            } catch (e: Exception) {
+                Logger.w("GamificationViewModel", e) { "Failed to mark badge celebrated: ${e.message}" }
+            }
         }
     }
 

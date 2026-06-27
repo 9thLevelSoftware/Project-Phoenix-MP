@@ -93,6 +93,11 @@ class LinkAccountViewModel(
             } catch (e: CancellationException) {
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
+            } catch (e: Exception) {
+                // F055: an unexpected throw (not a Result.failure) must not leave
+                // the screen stuck in Loading or surface as an unhandled coroutine
+                // exception — show a retryable error instead.
+                _uiState.value = LinkAccountUiState.Error(e.message ?: "Login failed")
             }
         }
     }
@@ -144,6 +149,9 @@ class LinkAccountViewModel(
                     }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: Exception) {
+                // F055: surface unexpected OAuth failures instead of leaving Loading.
+                _uiState.value = LinkAccountUiState.Error(e.message ?: fallbackErrorMessage)
             }
         }
     }
@@ -197,6 +205,9 @@ class LinkAccountViewModel(
             } catch (e: CancellationException) {
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
+            } catch (e: Exception) {
+                // F055: surface unexpected signup failures instead of leaving Loading.
+                _uiState.value = LinkAccountUiState.Error(e.message ?: "Signup failed")
             }
         }
     }
@@ -209,6 +220,9 @@ class LinkAccountViewModel(
             } catch (e: CancellationException) {
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
+            } catch (e: Exception) {
+                // F055: surface unexpected logout failures instead of swallowing them.
+                _uiState.value = LinkAccountUiState.Error(e.message ?: "Logout failed")
             }
         }
     }
@@ -220,6 +234,9 @@ class LinkAccountViewModel(
             } catch (e: CancellationException) {
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
+            } catch (e: Exception) {
+                // F055: surface unexpected sync failures instead of an unhandled throw.
+                _uiState.value = LinkAccountUiState.Error(e.message ?: "Sync failed")
             }
         }
     }
@@ -235,6 +252,9 @@ class LinkAccountViewModel(
                 syncManager.forceFullResync()
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: Exception) {
+                // F055: surface unexpected resync failures instead of an unhandled throw.
+                _uiState.value = LinkAccountUiState.Error(e.message ?: "Resync failed")
             }
         }
     }

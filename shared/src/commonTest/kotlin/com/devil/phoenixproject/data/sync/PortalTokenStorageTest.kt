@@ -158,6 +158,49 @@ class PortalTokenStorageTest {
         assertEquals("hello@world.com", user.email)
     }
 
+    // ===== saveGoTrueAuth premium isolation (audit F024) =====
+
+    private fun goTrueResponseFor(userId: String): GoTrueAuthResponse = GoTrueAuthResponse(
+        accessToken = "access-$userId",
+        tokenType = "bearer",
+        expiresIn = 3600,
+        expiresAt = currentTimeMillis() / 1000 + 3600,
+        refreshToken = "refresh-$userId",
+        user = GoTrueUser(id = userId, email = "$userId@example.com"),
+    )
+
+    @Test
+    fun saveGoTrueAuthPreservesPremiumForSameUser() {
+        val storage = createStorage()
+        storage.saveGoTrueAuth(goTrueResponseFor("user-1"))
+        storage.updatePremiumStatus(true)
+
+        // Re-auth (e.g. token refresh) for the SAME user must keep premium.
+        storage.saveGoTrueAuth(goTrueResponseFor("user-1"))
+
+        assertTrue(
+            storage.currentUser.value?.isPremium == true,
+            "Premium must be preserved when the auth response is for the same user",
+        )
+    }
+
+    @Test
+    fun saveGoTrueAuthDropsPremiumOnAccountSwitch() {
+        val storage = createStorage()
+        storage.saveGoTrueAuth(goTrueResponseFor("user-1"))
+        storage.updatePremiumStatus(true)
+        assertTrue(storage.currentUser.value?.isPremium == true, "user-1 premium set")
+
+        // Switching to a DIFFERENT user must NOT inherit user-1's premium flag.
+        storage.saveGoTrueAuth(goTrueResponseFor("user-2"))
+
+        assertEquals("user-2", storage.currentUser.value?.id)
+        assertFalse(
+            storage.currentUser.value?.isPremium ?: true,
+            "Premium must NOT carry over to a different account (F024)",
+        )
+    }
+
     // ===== hasToken after clearAuth =====
 
     @Test

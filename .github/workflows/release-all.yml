@@ -46,40 +46,46 @@ jobs:
                     if [ -n "${{ inputs.versionCodeOverride }}" ]; then
                       args+=(-f "versionCodeOverride=${{ inputs.versionCodeOverride }}")
                     fi
-                    gh workflow run android-playstore.yml --repo ${{ github.repository }} "${args[@]}"
-                    echo "Triggered Android Play Store"
+                    gh workflow run android-playstore.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}" "${args[@]}"
+                    echo "Triggered Android Play Store on ref ${{ github.ref_name }}"
 
             -   name: Trigger Android Release APK
                 if: ${{ !inputs.skip_android_apk }}
                 env:
                     GH_TOKEN: ${{ secrets.RELEASE_PAT }}
                 run: |
-                    ARGS=""
+                    args=()
                     if [ -n "${{ inputs.versionCodeOverride }}" ]; then
-                      ARGS="-f versionCodeOverride=${{ inputs.versionCodeOverride }}"
+                      args+=(-f "versionCodeOverride=${{ inputs.versionCodeOverride }}")
                     fi
-                    gh workflow run android-release-apk.yml --repo ${{ github.repository }} $ARGS
-                    echo "Triggered Android Release APK"
+                    gh workflow run android-release-apk.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}" "${args[@]}"
+                    echo "Triggered Android Release APK on ref ${{ github.ref_name }}"
 
             -   name: Trigger iOS Release IPA
                 if: ${{ !inputs.skip_ios_ipa }}
                 env:
                     GH_TOKEN: ${{ secrets.RELEASE_PAT }}
                 run: |
-                    gh workflow run ios-release-ipa.yml --repo ${{ github.repository }}
-                    echo "Triggered iOS Release IPA"
+                    gh workflow run ios-release-ipa.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}"
+                    echo "Triggered iOS Release IPA on ref ${{ github.ref_name }}"
 
             -   name: Trigger iOS TestFlight
                 if: ${{ !inputs.skip_ios_testflight }}
                 env:
                     GH_TOKEN: ${{ secrets.RELEASE_PAT }}
                 run: |
-                    gh workflow run ios-testflight.yml --repo ${{ github.repository }}
-                    echo "Triggered iOS TestFlight"
+                    gh workflow run ios-testflight.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}"
+                    echo "Triggered iOS TestFlight on ref ${{ github.ref_name }}"
 
             -   name: Summary
                 run: |
                     echo "## Release All Platforms" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "Dispatched on ref: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "> NOTE: this job only **dispatches** the platform workflows on the ref above;" >> $GITHUB_STEP_SUMMARY
+                    echo "> it does not wait for them. A green run here means they were triggered, not that" >> $GITHUB_STEP_SUMMARY
+                    echo "> they published successfully — check each child workflow run for its outcome (audit F075)." >> $GITHUB_STEP_SUMMARY
                     echo "" >> $GITHUB_STEP_SUMMARY
                     echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
                     echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY

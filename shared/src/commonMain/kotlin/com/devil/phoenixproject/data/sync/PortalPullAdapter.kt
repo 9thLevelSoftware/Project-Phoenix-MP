@@ -305,12 +305,22 @@ object PortalPullAdapter {
      *
      * Weight convention: value is stored per-cable in DB. No multiplication needed.
      */
-    fun toPersonalRecordSyncDto(pr: PullPersonalRecordDto): PersonalRecordSyncDto {
+    fun toPersonalRecordSyncDto(
+        pr: PullPersonalRecordDto,
+        resolvedExerciseId: String? = null,
+    ): PersonalRecordSyncDto {
         val now = currentTimeMillis()
         return PersonalRecordSyncDto(
             clientId = pr.id,
             serverId = pr.id,
-            exerciseId = pr.id, // PR records don't have a separate exerciseId
+            // Portal personal_records has no exercise_id column (only
+            // exercise_name), so the catalog exercise id is resolved by
+            // name/muscle group at the call site and passed in. Falling back to
+            // pr.id (the PR row id) only when there is no catalog match — the
+            // previous unconditional `exerciseId = pr.id` broke exercise linkage
+            // and made every pulled PR a unique idx_pr_unique key that never
+            // deduped against local PRs (audit F021).
+            exerciseId = resolvedExerciseId?.takeIf { it.isNotBlank() } ?: pr.id,
             exerciseName = pr.exerciseName,
             weight = pr.value.toFloat(),
             reps = pr.reps ?: 0,

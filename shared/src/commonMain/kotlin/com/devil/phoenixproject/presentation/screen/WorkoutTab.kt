@@ -611,11 +611,15 @@ fun WorkoutTab(
                                 onExerciseSelected = { exercise ->
                                     showExerciseTagPicker = false
                                     scope.launch {
-                                        onTagJustLiftSessionExercise(
-                                            summarySessionId,
-                                            exercise,
-                                            workoutState.isAmrap,
-                                        )
+                                        try {
+                                            onTagJustLiftSessionExercise(
+                                                summarySessionId,
+                                                exercise,
+                                                workoutState.isAmrap,
+                                            )
+                                        } catch (e: Exception) {
+                                            co.touchlab.kermit.Logger.e("WorkoutTab") { "Failed to tag JustLift session: ${e.message}" }
+                                        }
                                     }
                                 },
                             )
@@ -1812,9 +1816,12 @@ fun CurrentExerciseCard(
         // Load new exercise and video data
         val exerciseId = currentExercise?.exercise?.id ?: workoutParameters.selectedExerciseId
         if (exerciseId != null) {
-            exerciseEntity = exerciseRepository.getExerciseById(exerciseId)
-            val videos = exerciseRepository.getVideos(exerciseId)
-            videoEntity = videos.firstOrNull()
+            try {
+                exerciseEntity = exerciseRepository.getExerciseById(exerciseId)
+                videoEntity = exerciseRepository.getVideos(exerciseId).firstOrNull()
+            } catch (e: Exception) {
+                co.touchlab.kermit.Logger.e("WorkoutTab") { "Failed to load exercise/video for $exerciseId: ${e.message}" }
+            }
         }
     }
 

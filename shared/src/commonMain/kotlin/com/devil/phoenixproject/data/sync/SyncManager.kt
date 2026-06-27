@@ -405,10 +405,40 @@ class SyncManager(
         }
         Logger.i("SyncManager") { "Push succeeded" }
 
+        // Inspect per-entity LWW rejections (Phase 3.2 contract: the server
+        // rejects an incoming row when it already holds a newer updated_at,
+        // and mobile is expected to log the conflict and let the next pull
+        // repair convergence). Without this, rejections were decoded but never
+        // surfaced (audit F025).
+        val pushResponse = pushResult.getOrThrow()
+        val rejections = pushResponse.rejections
+        val rejectedSessionIds = rejections.sessions.map { it.id }.toSet()
+        val totalRejections = rejections.sessions.size + rejections.routines.size +
+            rejections.cycles.size + rejections.externalActivities.size +
+            rejections.rpgAttributes.size + rejections.gamificationStats.size
+        if (totalRejections > 0) {
+            Logger.w("SyncManager") {
+                "Push LWW rejections ($totalRejections): " +
+                    "sessions=${rejections.sessions.size}, routines=${rejections.routines.size}, " +
+                    "cycles=${rejections.cycles.size}, externalActivities=${rejections.externalActivities.size}, " +
+                    "rpgAttributes=${rejections.rpgAttributes.size}, gamificationStats=${rejections.gamificationStats.size}. " +
+                    "Next pull will repair convergence."
+            }
+        }
+
         // Stamp pushed sessions so they aren't re-sent on next sync.
         // Sessions with NULL updatedAt would match every delta query indefinitely.
         // Use prePushLastSync (captured before push) so batched push doesn't cause
         // earlier-batch sessions to be missed by the re-query.
+        //
+        // CRITICAL (audit F001): never stamp a session the server rejected under
+        // LWW. Stamping with currentTimeMillis() makes the stale local row look
+        // newer than the authoritative server row, so the immediate pull merge
+        // (mergeSessionsLww accepts incoming only when incomingTs >= existingTs)
+        // would keep the stale local row and silently drop the server-newer
+        // change. Leaving rejected rows unstamped lets the pull repair them.
+        // A rejection id is the portal session id (routineSessionId for grouped
+        // routine sessions, else the local session id), so match on either.
         val stampTime = currentTimeMillis()
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
         val pushedSessions = dedupeWorkoutSessionsById(
@@ -418,17 +448,26 @@ class SyncManager(
             ),
             context = "Post-push stamping",
         )
+        var stampedCount = 0
+        var skippedRejected = 0
         pushedSessions.forEach { session ->
-            syncRepository.updateSessionTimestamp(session.id, stampTime)
+            val isRejected = session.id in rejectedSessionIds ||
+                (session.routineSessionId != null && session.routineSessionId in rejectedSessionIds)
+            if (isRejected) {
+                skippedRejected++
+            } else {
+                syncRepository.updateSessionTimestamp(session.id, stampTime)
+                stampedCount++
+            }
         }
-        if (pushedSessions.isNotEmpty()) {
+        if (stampedCount > 0 || skippedRejected > 0) {
             Logger.d("SyncManager") {
-                "Stamped ${pushedSessions.size} pushed sessions with updatedAt=$stampTime"
+                "Stamped $stampedCount pushed sessions with updatedAt=$stampTime" +
+                    (if (skippedRejected > 0) "; left $skippedRejected LWW-rejected session(s) unstamped for pull repair" else "")
             }
         }
 
         // Parse syncTime from ISO 8601 to epoch millis
-        val pushResponse = pushResult.getOrThrow()
         val syncTimeEpoch = try {
             kotlin.time.Instant.parse(pushResponse.syncTime).toEpochMilliseconds()
         } catch (e: Exception) {
@@ -722,6 +761,12 @@ class SyncManager(
         val portalPaid = tokenStorage.currentUser.value?.isPremium == true
         val isPremium = localPaid || portalPaid
         val externalActivityDtos = if (isPremium) {
+            // F018 (deferred): getUnsyncedActivities intentionally excludes deletion
+            // tombstones (deletedAt set). Neither ExternalActivitySyncDto nor the
+            // portal mobile-sync-push handler carries a deletion field today, so
+            // including tombstones here would make the server re-create the deleted
+            // activity. Syncing external-activity deletions requires a coordinated
+            // wire + Edge Function change before the query can return tombstones.
             val unsyncedActivities = externalActivityRepository.getUnsyncedActivities(
                 activeProfileId,
             )
@@ -1192,7 +1237,7 @@ class SyncManager(
             val pullResult = apiClient.pullPortalPayload(
                 knownEntityIds = knownEntityIds,
                 deviceId = deviceId,
-                profileId = activeProfileId,
+                profileId = mergeProfileId,
                 cursor = currentCursor,
                 pageSize = SyncConfig.DEFAULT_PAGE_SIZE,
             )
@@ -1326,7 +1371,17 @@ class SyncManager(
 
         // 2. Prepare badge and PR DTOs
         val badgeDtos = pullResponse.badges.map { PortalPullAdapter.toBadgeSyncDto(it) }
-        val prDtos = pullResponse.personalRecords.map { PortalPullAdapter.toPersonalRecordSyncDto(it) }
+        // Resolve the catalog exercise id by name/muscle group; the portal PR
+        // projection carries no exercise_id (audit F021). Cache lookups by
+        // (name, muscleGroup) so a pull with many PRs for the same exercise does
+        // not issue a DB query per row (N+1).
+        val exerciseIdCache = mutableMapOf<Pair<String, String>, String?>()
+        val prDtos = pullResponse.personalRecords.map { pr ->
+            val resolvedExerciseId = exerciseIdCache.getOrPut(pr.exerciseName to pr.muscleGroup) {
+                syncRepository.findExerciseId(pr.exerciseName, pr.muscleGroup)
+            }
+            PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId)
+        }
         val gamificationStatsDto = pullResponse.gamificationStats?.let {
             PortalPullAdapter.toGamificationStatsSyncDto(it)
         }
@@ -1446,8 +1501,9 @@ class SyncManager(
         // If these fail, the core sync data is still preserved.
         // ====================================================================================
 
-        // RPG attributes — server wins (overwrite local)
-        pullResponse.rpgAttributes?.let { rpg ->
+        try {
+            // RPG attributes — server wins (overwrite local)
+            pullResponse.rpgAttributes?.let { rpg ->
             val characterClass = try {
                 CharacterClass.valueOf(rpg.characterClass ?: "PHOENIX")
             } catch (_: IllegalArgumentException) {
@@ -1500,6 +1556,12 @@ class SyncManager(
             }
             externalActivityRepository.upsertActivities(activities)
             Logger.d("SyncManager") { "Merged ${activities.size} portal external activities" }
+        }
+        } catch (e: Exception) {
+            Logger.w(e) {
+                "Non-atomic post-merge (RPG/external activities) failed; " +
+                    "non-fatal, core sync data is preserved."
+            }
         }
 
         return Result.success(Unit)

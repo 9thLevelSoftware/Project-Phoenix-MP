@@ -5,9 +5,14 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 
 object WorkoutCommandValidator {
-    private const val MAX_PACKET_REPS = 255
+    // Byte value 0xFF (255) is reserved on the wire as the unlimited / Just Lift /
+    // AMRAP sentinel (see BlePacketFactory). A finite rep count that serializes to
+    // 0xFF would be indistinguishable from an unlimited workout and could defeat
+    // automatic stop, so finite rep bytes are capped at 254 (audit F069/F070).
+    private const val MAX_FINITE_REP_BYTE = 254
+    private const val MAX_PACKET_REPS = MAX_FINITE_REP_BYTE
     private const val MAX_ECHO_ECCENTRIC_PERCENT = 150
-    private const val MAX_ECHO_REP_BYTE = 255
+    private const val MAX_ECHO_REP_BYTE = MAX_FINITE_REP_BYTE
 
     fun validateLegacyWorkoutCommand(
         programMode: ProgramMode,

@@ -523,6 +523,13 @@ class KableBleConnectionManager(
         // Prevents "dangling GATT connections" on Android 16/Pixel 7
         cleanupExistingConnection()
 
+        // F005: start every new connection lifecycle with a clean
+        // explicit-disconnect flag. A prior disconnect/cancel sets this true, and
+        // if that teardown did not flow through the State.Disconnected handler that
+        // resets it, the flag could leak into this new connection and suppress
+        // auto-reconnect on the next genuine unexpected drop.
+        isExplicitDisconnect = false
+
         reportConnectionState(ConnectionState.Connecting)
 
         val advertisement = discoveredAdvertisements[device.address]

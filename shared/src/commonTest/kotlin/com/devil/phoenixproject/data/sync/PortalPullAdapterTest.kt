@@ -266,6 +266,39 @@ class PortalPullAdapterTest {
         assertTrue(result.updatedAt >= before - 5000, "updatedAt should be recent")
     }
 
+    // ========== toPersonalRecordSyncDto (audit F021) ==========
+
+    @Test
+    fun `toPersonalRecordSyncDto uses resolved catalog exerciseId when provided`() {
+        val pr = makePullPersonalRecordDto(id = "pr-row-uuid", exerciseName = "Bench Press")
+
+        val result = PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = "catalog-bench")
+
+        assertEquals("catalog-bench", result.exerciseId)
+        // The PR row id is still preserved as the sync identity.
+        assertEquals("pr-row-uuid", result.clientId)
+        assertEquals("pr-row-uuid", result.serverId)
+    }
+
+    @Test
+    fun `toPersonalRecordSyncDto falls back to PR row id when no catalog match`() {
+        val pr = makePullPersonalRecordDto(id = "pr-row-uuid", exerciseName = "Unknown Move")
+
+        assertEquals("pr-row-uuid", PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = null).exerciseId)
+        assertEquals("pr-row-uuid", PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = "").exerciseId)
+        assertEquals("pr-row-uuid", PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = "   ").exerciseId)
+    }
+
+    @Test
+    fun `toPersonalRecordSyncDto maps weight value and reps`() {
+        val pr = makePullPersonalRecordDto(value = 102.5, reps = 5)
+
+        val result = PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = "catalog-1")
+
+        assertEquals(102.5f, result.weight)
+        assertEquals(5, result.reps)
+    }
+
     // ========== Factory Helpers ==========
 
     private fun makePullRoutineDto(
@@ -292,6 +325,23 @@ class PortalPullAdapterTest {
         badgeDescription = "Complete your first workout",
         badgeTier = "bronze",
         earnedAt = earnedAt,
+    )
+
+    private fun makePullPersonalRecordDto(
+        id: String = "pr-1",
+        exerciseName: String = "Bench Press",
+        value: Double = 100.0,
+        reps: Int? = 1,
+    ) = PullPersonalRecordDto(
+        id = id,
+        userId = "user-1",
+        exerciseName = exerciseName,
+        muscleGroup = "Chest",
+        recordType = "MAX_WEIGHT",
+        value = value,
+        reps = reps,
+        workoutPhase = "COMBINED",
+        achievedAt = "2026-01-01T00:00:00Z",
     )
 
     private fun makePullGamificationStatsDto(

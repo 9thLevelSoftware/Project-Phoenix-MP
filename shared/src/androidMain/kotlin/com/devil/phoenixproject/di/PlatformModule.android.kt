@@ -173,13 +173,22 @@ private fun migrateTokensToEncrypted(plain: SharedPreferences, encrypted: Shared
             // null or missing — skip
         }
     }
-    editor.apply()
+    // F059: use synchronous commit() and verify success BEFORE removing the
+    // plaintext copy. apply() is asynchronous and does not report failure, so a
+    // process death or storage error between the encrypted write and the
+    // plaintext removal could lose the auth tokens permanently. If the encrypted
+    // write fails, leave the plaintext keys intact so migration can retry.
+    val committed = editor.commit()
+    if (!committed) {
+        log.w { "Encrypted token migration write failed; keeping plaintext keys for retry" }
+        return
+    }
 
-    // Remove migrated keys from plaintext
+    // Remove migrated keys from plaintext only after the encrypted write is durable.
     val plainEditor = plain.edit()
     for (key in PORTAL_KEYS) {
         plainEditor.remove(key)
     }
-    plainEditor.apply()
+    plainEditor.commit()
     log.i { "Portal key migration to encrypted storage complete" }
 }

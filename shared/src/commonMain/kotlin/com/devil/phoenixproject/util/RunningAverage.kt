@@ -18,6 +18,10 @@ class RunningAverage {
      * Add a value to the running average.
      */
     fun add(value: Float) {
+        // F316: ignore non-finite samples — a single NaN/±Inf would poison `sum`
+        // and every subsequent average() until reset() (this feeds RepQualityScorer
+        // ROM/velocity baselines).
+        if (!value.isFinite()) return
         sum += value
         count++
     }

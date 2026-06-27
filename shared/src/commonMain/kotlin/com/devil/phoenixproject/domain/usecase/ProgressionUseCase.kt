@@ -69,6 +69,7 @@ class ProgressionUseCase(
         val recentSets = completedSetRepository.getRecentCompletedSetsForExercise(
             exerciseId = exerciseId,
             limit = 20, // Get enough history for analysis
+            profileId = profileId, // F028: scope to the active profile
         ).filter { it.setType != SetType.WARMUP } // Exclude warmup sets
 
         if (recentSets.size < MIN_SETS_FOR_ANALYSIS) {
@@ -76,8 +77,11 @@ class ProgressionUseCase(
             return null
         }
 
-        // Get the most recent weight used
-        val currentWeight = recentSets.maxOfOrNull { it.actualWeightKg } ?: return null
+        // F029: use the most recent working weight, not the maximum ever lifted.
+        // Sets are ordered newest-first, so the first non-warmup set is current.
+        // The old maxOfOrNull progressed from a stale historical peak even after
+        // the user deliberately reduced load.
+        val currentWeight = recentSets.firstOrNull()?.actualWeightKg ?: return null
 
         // Check for RPE-based progression first (more immediate signal)
         val rpeProgression = checkRpeBasedProgression(recentSets, currentWeight, targetRpe)
@@ -211,6 +215,7 @@ class ProgressionUseCase(
         val recentSets = completedSetRepository.getRecentCompletedSetsForExercise(
             exerciseId = exerciseId,
             limit = 30,
+            profileId = profileId, // F028: scope to the active profile
         ).filter { it.setType != SetType.WARMUP }
 
         if (recentSets.size < MIN_SETS_FOR_ANALYSIS) {

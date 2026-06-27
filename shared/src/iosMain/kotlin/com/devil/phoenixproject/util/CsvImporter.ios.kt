@@ -56,6 +56,7 @@ class IosCsvImporter(private val workoutRepository: WorkoutRepository) : CsvImpo
 
                 var imported = 0
                 var skipped = 0
+                var saveFailures = 0
                 val importErrors = parseErrors.toMutableList()
 
                 for (session in sessions) {
@@ -73,6 +74,7 @@ class IosCsvImporter(private val workoutRepository: WorkoutRepository) : CsvImpo
                         if (e.message?.contains("UNIQUE", ignoreCase = true) == true) {
                             skipped++
                         } else {
+                            saveFailures++
                             importErrors.add(
                                 "Failed to save session (${session.exerciseName}): ${e.message}",
                             )
@@ -85,7 +87,7 @@ class IosCsvImporter(private val workoutRepository: WorkoutRepository) : CsvImpo
                 CsvImportResult(
                     imported = imported,
                     skipped = skipped,
-                    failed = parseErrors.size,
+                    failed = parseErrors.size + saveFailures,
                     errors = importErrors,
                 )
             } catch (e: Exception) {

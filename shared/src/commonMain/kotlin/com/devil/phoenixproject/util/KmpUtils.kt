@@ -164,6 +164,10 @@ object KmpUtils {
         val diffDays = diffHours / 24
 
         return when {
+            // F422: a future timestamp (clock skew / imported data) makes
+            // diffMinutes negative and would otherwise render as "Just now".
+            // Allow ~1 min of skew, else show the absolute date.
+            diffMinutes < -1 -> formatTimestamp(timestamp, "MMM dd, yyyy")
             diffMinutes < 1 -> "Just now"
             diffMinutes < 60 -> "${diffMinutes}m ago"
             diffHours < 24 -> "${diffHours}h ago"
@@ -229,11 +233,17 @@ object KmpUtils {
         var factor = 1f
         repeat(decimals) { factor *= 10f }
 
-        val rounded = (value * factor).roundToInt() / factor
-        val intPart = rounded.toLong()
-        val decPart = ((rounded - intPart) * factor).roundToInt()
+        // F313: format from a single scaled integer so negatives render correctly.
+        // The previous (rounded - intPart) approach produced "-1.-23" / "0.-25"
+        // because the integer and fractional parts each carried the sign.
+        val scaled = (value * factor).roundToInt()
+        val sign = if (scaled < 0) "-" else ""
+        val absScaled = kotlin.math.abs(scaled).toLong()
+        val factorLong = factor.toLong()
+        val intPart = absScaled / factorLong
+        val decPart = absScaled % factorLong
 
-        return "$intPart.${"$decPart".padStart(decimals, '0')}"
+        return "$sign$intPart.${"$decPart".padStart(decimals, '0')}"
     }
 
     /**

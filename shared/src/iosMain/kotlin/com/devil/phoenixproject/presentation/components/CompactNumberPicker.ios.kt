@@ -384,7 +384,9 @@ actual fun CompactNumberPicker(
         if (listState.isScrollInProgress) {
             isUserInteracting = true
         } else {
-            if (wasUserDragging) {
+            if (wasUserDragging && values.isNotEmpty()) {
+                // `values.indices` is an empty range when `values` is empty (invalid
+                // step/range), and `coerceIn` throws on an empty range — guard above.
                 val centerIndex = centeredVisibleIndex.coerceIn(values.indices)
                 if (centerIndex in values.indices) {
                     val scrollValue = values[centerIndex]

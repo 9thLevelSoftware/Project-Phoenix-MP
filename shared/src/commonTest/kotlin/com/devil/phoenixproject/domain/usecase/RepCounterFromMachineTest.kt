@@ -54,6 +54,26 @@ class RepCounterFromMachineTest {
         assertFalse(repCounter.shouldStopWorkout())
     }
 
+    @Test
+    fun `counter reset to zero does not emit a flood of phantom reps F030`() {
+        repCounter.configure(warmupTarget = 0, workingTarget = 1000, isJustLift = false, stopAtTop = false)
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+        // Advance counters to a mid value.
+        repCounter.process(repsRomCount = 5, repsSetCount = 5, up = 5, down = 5)
+
+        capturedEvents.clear()
+        // A reconnect/reset drops the counters back to 0 (last=5, current=0). The
+        // old wrap math computed delta = 0xFFFF - 5 + 0 + 1 = 65531 and drove
+        // repeat(delta), emitting tens of thousands of phantom reps. With the fix
+        // this backward jump is treated as a re-baseline (delta 0).
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+
+        assertTrue(
+            capturedEvents.size < 10,
+            "Counter reset must not emit a flood of phantom reps, got ${capturedEvents.size}",
+        )
+    }
+
     // ========== Modern Mode Rep Counting Tests (Issue #210: down counter based) ==========
 
     @Test

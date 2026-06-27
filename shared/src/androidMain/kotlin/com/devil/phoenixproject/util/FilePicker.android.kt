@@ -47,10 +47,14 @@ actual class FilePicker {
         ) { uri: Uri? ->
             if (uri != null) {
                 try {
-                    context.contentResolver.openOutputStream(uri)?.use { stream ->
-                        stream.write(content.toByteArray())
+                    val stream = context.contentResolver.openOutputStream(uri)
+                    if (stream == null) {
+                        // Could not open the destination; nothing was written.
+                        onSaved(null)
+                    } else {
+                        stream.use { it.write(content.toByteArray()) }
+                        onSaved(uri.toString())
                     }
-                    onSaved(uri.toString())
                 } catch (_: Exception) {
                     onSaved(null)
                 }

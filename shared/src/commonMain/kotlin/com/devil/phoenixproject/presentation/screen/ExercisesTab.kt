@@ -88,7 +88,7 @@ fun ExercisesTab(
 
     // Alphabetical with section headers
     val alphabetical = filtered.sortedBy { it.exerciseName.lowercase() }
-    val grouped = alphabetical.groupBy { it.exerciseName.first().uppercaseChar() }
+    val grouped = alphabetical.groupBy { it.exerciseName.firstOrNull()?.uppercaseChar() ?: '#' }
 
     LazyColumn(
         modifier = modifier

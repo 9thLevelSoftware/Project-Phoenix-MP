@@ -969,6 +969,8 @@ abstract class BaseDataBackupManager(
             var gamificationStatsImported = false
             var sessionNotesImported = 0
             var sessionNotesSkipped = 0
+            var routineGroupsImported = 0
+            var routineGroupsSkipped = 0
             var sessionsAdopted = 0
             var routinesAdopted = 0
             var entitiesWithErrors = 0
@@ -1252,6 +1254,35 @@ abstract class BaseDataBackupManager(
                                     }
                                 }
 
+                                // --- routineGroups (audit F068) ---
+                                // The streaming importer previously had no case for
+                                // routineGroups, so v4 backup group data was treated
+                                // as an unknown field and skipped, silently dropping
+                                // routine group organization on restore. Routine.groupId
+                                // has no FK constraint, so import order does not matter.
+                                "routineGroups" -> {
+                                    database.transaction {
+                                        nav.beginArray()
+                                        while (nav.hasNextInArray()) {
+                                            val rawJson = nav.nextValueAsString()
+                                            val group = tryImport("routineGroup-parse", null) {
+                                                json.decodeFromString<RoutineGroupBackup>(rawJson)
+                                            } ?: continue
+                                            val inserted = tryImport("routineGroup", group.id) {
+                                                queries.insertRoutineGroupIgnore(
+                                                    id = group.id,
+                                                    name = group.name,
+                                                    orderIndex = group.orderIndex.toLong(),
+                                                    createdAt = group.createdAt,
+                                                    profile_id = group.profileId,
+                                                )
+                                            }
+                                            if (inserted != null) routineGroupsImported++ else routineGroupsSkipped++
+                                        }
+                                        nav.endArray()
+                                    }
+                                }
+
                                 // --- supersets ---
                                 "supersets" -> {
                                     database.transaction {
@@ -1375,7 +1406,9 @@ abstract class BaseDataBackupManager(
                                                     volume = pr.volume.toDouble(),
                                                     phase = pr.phase ?: "COMBINED",
                                                     profile_id = pr.profileId ?: "default",
-                                                    cable_count = null,
+                                                    // F304: preserve cable count on streaming restore (the
+                                                    // non-streaming path already passes pr.cableCount).
+                                                    cable_count = pr.cableCount?.toLong(),
                                                 )
                                                 personalRecordsImported++
                                             } catch (e: Exception) {
