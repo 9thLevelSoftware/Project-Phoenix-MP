@@ -15,7 +15,7 @@ class RecordPersonalMvtSampleUseCase(private val personalMvtRepo: PersonalMvtRep
         muscleGroups: String,
         sessionMcvMmS: Float,
     ): Boolean {
-        if (sessionMcvMmS <= 0f) return false
+        if (!(sessionMcvMmS > 0f)) return false
         val sampleMs = sessionMcvMmS / 1000f
         val patternDefault = classifyMovementPattern(exerciseName, muscleGroups).defaultMvtMs
         if (sampleMs > patternDefault * FAILURE_PROXY_FACTOR) return false

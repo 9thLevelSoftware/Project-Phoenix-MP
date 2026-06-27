@@ -35,6 +35,14 @@ class RecordPersonalMvtSampleUseCaseTest {
         assertEquals(null, repo.get("ex1", "default"))
     }
 
+    @Test fun `rejects NaN session MCV without writing to repo`() = runTest {
+        val repo = FakePersonalMvtRepo()
+        val useCase = RecordPersonalMvtSampleUseCase(repo)
+        val result = useCase("ex1", "default", "Back Squat", "Legs", sessionMcvMmS = Float.NaN)
+        assertFalse(result)
+        assertEquals(null, repo.get("ex1", "default"))
+    }
+
     @Test fun `rolling mean across samples`() = runTest {
         val repo = FakePersonalMvtRepo()
         val useCase = RecordPersonalMvtSampleUseCase(repo)
