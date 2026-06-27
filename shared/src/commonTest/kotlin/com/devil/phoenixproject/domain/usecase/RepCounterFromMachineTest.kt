@@ -55,7 +55,7 @@ class RepCounterFromMachineTest {
     }
 
     @Test
-    fun `counter reset to zero does not emit a flood of phantom reps (F030)`() {
+    fun `counter reset to zero does not emit a flood of phantom reps F030`() {
         repCounter.configure(warmupTarget = 0, workingTarget = 1000, isJustLift = false, stopAtTop = false)
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
         // Advance counters to a mid value.

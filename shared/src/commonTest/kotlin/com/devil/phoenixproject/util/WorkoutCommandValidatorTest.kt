@@ -120,7 +120,7 @@ class WorkoutCommandValidatorTest {
     }
 
     @Test
-    fun `finite rep total of 254 is accepted but 255 collides with the unlimited sentinel (F069 F070)`() {
+    fun `finite rep total of 254 is accepted but 255 collides with the unlimited sentinel F069 F070`() {
         // 0xFF (255) is the unlimited/Just Lift/AMRAP sentinel; a finite total of
         // 255 must be rejected so it cannot serialize to an unlimited workout.
         assertTrue(
@@ -148,7 +148,7 @@ class WorkoutCommandValidatorTest {
     }
 
     @Test
-    fun `finite echo target of 254 is accepted but 255 is rejected (F069 F070)`() {
+    fun `finite echo target of 254 is accepted but 255 is rejected F069 F070`() {
         assertTrue(
             WorkoutCommandValidator.validateEchoControl(
                 level = EchoLevel.HARD,
