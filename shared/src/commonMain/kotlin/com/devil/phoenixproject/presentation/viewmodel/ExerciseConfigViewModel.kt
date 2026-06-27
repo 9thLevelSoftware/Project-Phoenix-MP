@@ -347,6 +347,10 @@ class ExerciseConfigViewModel constructor(
                     _storedOneRepMaxKg.value = null
                 }
             }
+            // If the selected basis depends on these baselines, re-resolve visible set weights.
+            if (_usePercentOfPR.value && _scalingBasis.value == ScalingBasis.ESTIMATED_1RM) {
+                syncSetWeightsToPercentOfPR()
+            }
         }
     }
 
@@ -448,6 +452,11 @@ class ExerciseConfigViewModel constructor(
     // Issue #517: explicit 3-way scaling basis selector
     fun onScalingBasisChange(basis: ScalingBasis) {
         _scalingBasis.value = basis
+        // Re-resolve visible set weights against the newly-selected basis baseline
+        // so the editor table matches what ResolveRoutineWeightsUseCase will use.
+        if (_usePercentOfPR.value) {
+            syncSetWeightsToPercentOfPR()
+        }
     }
 
     // Warm-up set handlers (Issue #30)
@@ -557,42 +566,45 @@ class ExerciseConfigViewModel constructor(
         )
     }
 
-    private fun resolvedSetWeightsKgFromCurrentPR(): List<Float>? {
-        val pr = _currentExercisePR.value ?: return null
-        if (!_usePercentOfPR.value || pr.weightPerCableKg <= 0f) return null
-        applyPendingPercentOfPREdits(pr)
+    // Issue #517: per-set weights resolve against the SELECTED scaling basis baseline
+    // (baselineKgForCurrentBasis), not just the max-weight PR. When the basis is
+    // MAX_WEIGHT_PR the baseline IS the max-weight PR, so behavior is unchanged.
+    private fun resolvedSetWeightsKgFromCurrentBasis(): List<Float>? {
+        val baselineKg = baselineKgForCurrentBasis() ?: return null
+        if (!_usePercentOfPR.value || baselineKg <= 0f) return null
+        applyPendingPercentOfPREdits(baselineKg)
         ensureSetWeightPercentages()
         return setWeightsPercentOfPR.map { percent ->
-            (pr.weightPerCableKg * percent / 100f).roundToHalfKg()
+            (baselineKg * percent / 100f).roundToHalfKg()
         }
     }
 
     private fun syncSetWeightsToPercentOfPR() {
-        val resolvedWeightsKg = resolvedSetWeightsKgFromCurrentPR() ?: return
+        val resolvedWeightsKg = resolvedSetWeightsKgFromCurrentBasis() ?: return
         _sets.value = _sets.value.mapIndexed { index, set ->
             val resolvedWeightKg = resolvedWeightsKg.getOrNull(index) ?: return@mapIndexed set
             set.copy(weightPerCable = kgToDisplay(resolvedWeightKg, weightUnit))
         }
     }
 
-    private fun percentFromDisplayWeight(displayWeight: Float, pr: PersonalRecord): Int {
+    private fun percentFromDisplayWeight(displayWeight: Float, baselineKg: Float): Int {
         val weightKg = displayToKg(displayWeight, weightUnit)
-        return ((weightKg / pr.weightPerCableKg) * 100f).roundToInt().coerceIn(50, 120)
+        return ((weightKg / baselineKg) * 100f).roundToInt().coerceIn(50, 120)
     }
 
-    private fun displayWeightFromPercent(percent: Int, pr: PersonalRecord): Float {
-        val resolvedWeightKg = (pr.weightPerCableKg * percent / 100f).roundToHalfKg()
+    private fun displayWeightFromPercent(percent: Int, baselineKg: Float): Float {
+        val resolvedWeightKg = (baselineKg * percent / 100f).roundToHalfKg()
         return kgToDisplay(resolvedWeightKg, weightUnit)
     }
 
-    private fun applyPendingPercentOfPREdits(pr: PersonalRecord) {
+    private fun applyPendingPercentOfPREdits(baselineKg: Float) {
         if (pendingPercentOfPREditWeights.isEmpty()) return
         ensureSetWeightPercentages()
         val setsById = _sets.value.mapIndexed { index, set -> set.id to index }.toMap()
 
         pendingPercentOfPREditWeights.forEach { (setId, displayWeight) ->
             val setIndex = setsById[setId] ?: return@forEach
-            val percent = percentFromDisplayWeight(displayWeight, pr)
+            val percent = percentFromDisplayWeight(displayWeight, baselineKg)
             setWeightsPercentOfPR = setWeightsPercentOfPR.mapIndexed { index, existing ->
                 if (index == setIndex) percent else existing
             }
@@ -600,9 +612,9 @@ class ExerciseConfigViewModel constructor(
         pendingPercentOfPREditWeights.clear()
     }
 
-    private fun updateSetPercentFromDisplayWeight(setIndex: Int, displayWeight: Float, pr: PersonalRecord): Int {
+    private fun updateSetPercentFromDisplayWeight(setIndex: Int, displayWeight: Float, baselineKg: Float): Int {
         ensureSetWeightPercentages()
-        val percent = percentFromDisplayWeight(displayWeight, pr)
+        val percent = percentFromDisplayWeight(displayWeight, baselineKg)
         setWeightsPercentOfPR = setWeightsPercentOfPR.mapIndexed { index, existing ->
             if (index == setIndex) percent else existing
         }
@@ -619,11 +631,11 @@ class ExerciseConfigViewModel constructor(
         val setIndex = _sets.value.indexOfFirst { it.id == setId }
         if (setIndex < 0) return
 
-        val pr = _currentExercisePR.value
-        val nextWeight = if (_usePercentOfPR.value && pr != null && pr.weightPerCableKg > 0f) {
+        val baselineKg = baselineKgForCurrentBasis()
+        val nextWeight = if (_usePercentOfPR.value && baselineKg != null && baselineKg > 0f) {
             pendingPercentOfPREditWeights.remove(setId)
-            val percent = updateSetPercentFromDisplayWeight(setIndex, weight, pr)
-            displayWeightFromPercent(percent, pr)
+            val percent = updateSetPercentFromDisplayWeight(setIndex, weight, baselineKg)
+            displayWeightFromPercent(percent, baselineKg)
         } else {
             if (_usePercentOfPR.value) {
                 pendingPercentOfPREditWeights[setId] = weight
@@ -709,7 +721,7 @@ class ExerciseConfigViewModel constructor(
         logDebug("Rest times to save: $restTimes")
         logDebug("Weights to save: ${_sets.value.map { displayToKg(it.weightPerCable, weightUnit) }}")
 
-        val resolvedSetWeightsKg = resolvedSetWeightsKgFromCurrentPR()
+        val resolvedSetWeightsKg = resolvedSetWeightsKgFromCurrentBasis()
             ?: _sets.value.map { displayToKg(it.weightPerCable, weightUnit) }
         val resolvedSetWeightsPercentOfPR = if (_usePercentOfPR.value) {
             normalizeSetWeightPercentages(
