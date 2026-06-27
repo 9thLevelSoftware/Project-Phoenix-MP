@@ -63,8 +63,7 @@ class WorkoutForegroundService : Service() {
             WorkoutServiceProtocol.ACTION_SYNC -> {
                 notificationState = intent.toNotificationState(previous = notificationState)
                 if (!isForegroundActive) {
-                    startWorkoutForeground()
-                    isForegroundActive = true
+                    isForegroundActive = startWorkoutForeground()
                 } else {
                     updateNotification()
                 }
@@ -88,16 +87,34 @@ class WorkoutForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun startWorkoutForeground() {
+    /**
+     * Promote the service to the foreground. Returns true on success.
+     *
+     * F056: startForeground() can throw at runtime (SecurityException,
+     * ForegroundServiceStartNotAllowedException, or a service-type mismatch when
+     * POST_NOTIFICATIONS / connected-device prerequisites aren't satisfied). The
+     * throw happens inside this service process, so the controller's try/catch
+     * around startForegroundService() cannot catch it and the app would crash
+     * mid-workout. Catch it here, log, and stop the service so we degrade
+     * gracefully instead.
+     */
+    private fun startWorkoutForeground(): Boolean {
         val notification = createNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            true
+        } catch (e: Exception) {
+            log.e(e) { "Failed to start workout foreground service; stopping" }
+            stopSelf()
+            false
         }
     }
 

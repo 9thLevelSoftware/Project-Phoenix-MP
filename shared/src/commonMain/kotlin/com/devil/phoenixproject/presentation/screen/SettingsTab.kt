@@ -2880,6 +2880,17 @@ fun SettingsTab(
                             backupError = "Import failed ($cls): $msg"
                             showResultDialog = true
                         }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // F039: importFromFile can throw directly (not only return
+                        // Result.failure). Without this catch the thrown exception
+                        // escapes the coroutine after finally, leaving the user with
+                        // no error dialog. Mirror the onFailure path.
+                        val cls = e::class.simpleName ?: "Error"
+                        val msg = e.message?.take(240) ?: "Unknown error"
+                        backupError = "Import failed ($cls): $msg"
+                        showResultDialog = true
                     } finally {
                         restoreInProgress = false
                     }

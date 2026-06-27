@@ -82,12 +82,20 @@ class AndroidDataBackupManager(
                     treeDoc.findFile(fileName)?.delete()
                     val newFile = treeDoc.createFile("application/json", fileName)
                     if (newFile != null) {
-                        context.contentResolver.openOutputStream(newFile.uri)?.use { outputStream ->
-                            tempFile.inputStream().use { it.copyTo(outputStream) }
+                        // F061: only treat the custom write as done when the stream
+                        // actually opened. A null stream means nothing was written;
+                        // don't delete the temp file and report success — fall
+                        // through to the default location instead.
+                        val outputStream = context.contentResolver.openOutputStream(newFile.uri)
+                        if (outputStream != null) {
+                            outputStream.use { stream ->
+                                tempFile.inputStream().use { it.copyTo(stream) }
+                            }
+                            tempFile.delete()
+                            Logger.d { "Session backup written to custom destination: ${destination.displayName}" }
+                            return
                         }
-                        tempFile.delete()
-                        Logger.d { "Session backup written to custom destination: ${destination.displayName}" }
-                        return
+                        Logger.w { "openOutputStream returned null for custom destination; falling back to default" }
                     }
                 }
                 tempFile.delete()
@@ -108,8 +116,16 @@ class AndroidDataBackupManager(
             val resolver = context.contentResolver
             val destUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                 ?: throw Exception("Failed to create backup file in Downloads")
-            resolver.openOutputStream(destUri)?.use { outputStream ->
-                outputStream.write(content.toByteArray(Charsets.UTF_8))
+            // F060: a null output stream means the backup was never written; remove
+            // the empty MediaStore row and fail instead of leaving an empty file
+            // and reporting success.
+            val outputStream = resolver.openOutputStream(destUri)
+            if (outputStream == null) {
+                runCatching { resolver.delete(destUri, null, null) }
+                throw Exception("Failed to open output stream for backup file in Downloads")
+            }
+            outputStream.use {
+                it.write(content.toByteArray(Charsets.UTF_8))
             }
         } else {
             // Pre-Q: write directly to public Downloads path (already set by getSessionBackupDirectory)
@@ -279,9 +295,16 @@ class AndroidDataBackupManager(
                 val destUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                     ?: throw Exception("Failed to create file in Downloads")
 
-                resolver.openOutputStream(destUri)?.use { outputStream ->
+                // F060: fail (and clean up the empty row) when the stream can't be
+                // opened, instead of returning the URI as if the export succeeded.
+                val outputStream = resolver.openOutputStream(destUri)
+                if (outputStream == null) {
+                    runCatching { resolver.delete(destUri, null, null) }
+                    throw Exception("Failed to open output stream for export file in Downloads")
+                }
+                outputStream.use { stream ->
                     file.inputStream().use { inputStream ->
-                        inputStream.copyTo(outputStream)
+                        inputStream.copyTo(stream)
                     }
                 }
 
