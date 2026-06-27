@@ -833,24 +833,37 @@ class MigrationManager(
             return 0
         }
 
+        // F013/F014: the orphan repair previously moved PR and badge rows with a
+        // raw `UPDATE ... SET profile_id`. When the target profile already holds a
+        // row with the same composite key (idx_pr_unique:
+        // exerciseId+workoutMode+prType+phase+profile_id; idx_earned_badge_profile:
+        // badgeId+profile_id), the update produces a duplicate key and aborts the
+        // whole repair transaction. Reuse the canonical dedup-merge helpers that the
+        // profile-scope move (applyProfileScopeMove) already uses — they collect
+        // both profiles, pick a canonical winner per key, delete both, and reinsert
+        // one row under the target profile.
+        // The dedup-merge helpers need a SqlDriver. When none was injected (the
+        // raw-UPDATE path was historically a no-op in that case), skip rather than
+        // crash — matching the prior behavior but without risking the unique-index
+        // abort the raw UPDATE could cause when a driver IS present.
+        val moveDriver = driver
+        if (moveDriver == null) {
+            log.w { "Orphaned PR repair skipped: no SqlDriver available for a safe dedup-merge" }
+            _orphanedDataRepairState.value =
+                OrphanedDataRepairState.Completed("Repair skipped: no SqlDriver available", 0)
+            return 0
+        }
         var totalRepaired = 0
         database.transaction {
             for ((orphanProfileId, count) in orphanedCounts) {
                 log.i { "Issue #319: Migrating $count PR records from deleted profile '$orphanProfileId' to '$targetProfileId'" }
 
-                // Use raw SQL to update profile_id for all records belonging to the orphaned profile
-                driver?.execute(
-                    identifier = null,
-                    sql = "UPDATE PersonalRecord SET profile_id = ? WHERE profile_id = ?",
-                    parameters = 2,
-                ) {
-                    bindString(0, targetProfileId)
-                    bindString(1, orphanProfileId)
-                }
+                mergePersonalRecords(orphanProfileId, targetProfileId, moveDriver)
+                mergeEarnedBadges(orphanProfileId, targetProfileId, moveDriver)
 
                 // Derived profile aggregates are recomputed after the move to avoid
                 // carrying duplicate singleton rows across profiles.
-                driver?.execute(
+                moveDriver.execute(
                     identifier = null,
                     sql = "DELETE FROM GamificationStats WHERE profile_id IN (?, ?)",
                     parameters = 2,
@@ -859,19 +872,9 @@ class MigrationManager(
                     bindString(1, orphanProfileId)
                 }
 
-                driver?.execute(
+                moveDriver.execute(
                     identifier = null,
                     sql = "DELETE FROM RpgAttributes WHERE profile_id IN (?, ?)",
-                    parameters = 2,
-                ) {
-                    bindString(0, targetProfileId)
-                    bindString(1, orphanProfileId)
-                }
-
-                // Migrate EarnedBadge records
-                driver?.execute(
-                    identifier = null,
-                    sql = "UPDATE EarnedBadge SET profile_id = ? WHERE profile_id = ?",
                     parameters = 2,
                 ) {
                     bindString(0, targetProfileId)

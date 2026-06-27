@@ -138,19 +138,46 @@ internal fun applyColumnHeal(driver: SqlDriver, op: SchemaHealOperation): Reconc
     }
 }
 
-internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): ReconciliationResult = try {
-    if (op.preDropSql != null) {
-        driver.execute(identifier = null, sql = op.preDropSql, parameters = 0)
+internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): ReconciliationResult {
+    // Create-only path (no replacement): unchanged.
+    if (op.preDropSql == null) {
+        return try {
+            val alreadyExists = indexExists(driver, op.name)
+            driver.execute(identifier = null, sql = op.createSql, parameters = 0)
+            if (alreadyExists) {
+                ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
+            } else {
+                ReconciliationResult("index", op.name, ReconciliationStatus.CREATED)
+            }
+        } catch (e: Exception) {
+            ReconciliationResult("index", op.name, ReconciliationStatus.FAILED, e.message)
+        }
     }
-    val alreadyExists = indexExists(driver, op.name)
-    driver.execute(identifier = null, sql = op.createSql, parameters = 0)
-    if (alreadyExists && op.preDropSql == null) {
-        ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
-    } else {
-        ReconciliationResult("index", op.name, ReconciliationStatus.CREATED)
+
+    // Replacement path (F012): drop+create must be atomic. The old code dropped
+    // the existing index and only then created the replacement; if the CREATE
+    // failed — most importantly for UNIQUE indexes like idx_pr_unique when the
+    // table still holds duplicate rows — the table was left with NO uniqueness
+    // constraint and could accumulate more duplicates. Wrap the drop+create in a
+    // SQLite SAVEPOINT so a failed create rolls back the drop, preserving the
+    // previous (working) constraint and reporting FAILED.
+    val savepoint = "idx_replace_${op.name}"
+    return try {
+        driver.execute(identifier = null, sql = "SAVEPOINT \"$savepoint\"", parameters = 0)
+        try {
+            driver.execute(identifier = null, sql = op.preDropSql, parameters = 0)
+            driver.execute(identifier = null, sql = op.createSql, parameters = 0)
+            driver.execute(identifier = null, sql = "RELEASE \"$savepoint\"", parameters = 0)
+            ReconciliationResult("index", op.name, ReconciliationStatus.CREATED)
+        } catch (inner: Exception) {
+            // Roll the drop back so the prior constraint survives, then release.
+            driver.execute(identifier = null, sql = "ROLLBACK TO \"$savepoint\"", parameters = 0)
+            driver.execute(identifier = null, sql = "RELEASE \"$savepoint\"", parameters = 0)
+            ReconciliationResult("index", op.name, ReconciliationStatus.FAILED, inner.message)
+        }
+    } catch (e: Exception) {
+        ReconciliationResult("index", op.name, ReconciliationStatus.FAILED, e.message)
     }
-} catch (e: Exception) {
-    ReconciliationResult("index", op.name, ReconciliationStatus.FAILED, e.message)
 }
 
 // ==================== ENTRY POINT ====================

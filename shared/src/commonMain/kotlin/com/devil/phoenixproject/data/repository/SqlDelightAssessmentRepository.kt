@@ -126,26 +126,42 @@ class SqlDelightAssessmentRepository(
         workoutRepository.saveSession(session)
         Logger.d { "Assessment session created: $sessionId for exercise $exerciseName" }
 
-        // 2. Insert AssessmentResult linked to the session
-        queries.insertAssessmentResult(
-            exerciseId = exerciseId,
-            estimatedOneRepMaxKg = estimatedOneRepMaxKg.toDouble(),
-            loadVelocityData = loadVelocityDataJson,
-            assessmentSessionId = sessionId,
-            userOverrideKg = userOverrideKg?.toDouble(),
-            createdAt = currentTimeMillis(),
-            profile_id = profileId,
-        )
-        Logger.d {
-            "Assessment result saved for exercise $exerciseName (1RM: ${estimatedOneRepMaxKg}kg)"
-        }
+        // F015: the assessment save is one logical operation (session + result +
+        // 1RM update) but the three writes go through different repositories and
+        // are not a single DB transaction. If a later step fails after the session
+        // is created, compensate by deleting the session so we never persist a
+        // workout session with no assessment result, or a result with no 1RM
+        // update. Cross-repository transaction sharing isn't available here, so
+        // this explicit rollback is the safe equivalent.
+        try {
+            // 2. Insert AssessmentResult linked to the session
+            queries.insertAssessmentResult(
+                exerciseId = exerciseId,
+                estimatedOneRepMaxKg = estimatedOneRepMaxKg.toDouble(),
+                loadVelocityData = loadVelocityDataJson,
+                assessmentSessionId = sessionId,
+                userOverrideKg = userOverrideKg?.toDouble(),
+                createdAt = currentTimeMillis(),
+                profile_id = profileId,
+            )
+            Logger.d {
+                "Assessment result saved for exercise $exerciseName (1RM: ${estimatedOneRepMaxKg}kg)"
+            }
 
-        // 3. Update exercise 1RM (prefer user override if provided).
-        // Assessment estimates are TOTAL weight (both cables); Exercise.oneRepMaxKg is per-cable.
-        val finalOneRepMaxTotal = userOverrideKg ?: estimatedOneRepMaxKg
-        val finalOneRepMaxPerCable = finalOneRepMaxTotal / 2f
-        exerciseRepository.updateOneRepMax(exerciseId, finalOneRepMaxPerCable)
-        Logger.d { "Exercise 1RM updated: $exerciseName -> ${finalOneRepMaxPerCable}kg per cable" }
+            // 3. Update exercise 1RM (prefer user override if provided).
+            // Assessment estimates are TOTAL weight (both cables); Exercise.oneRepMaxKg is per-cable.
+            val finalOneRepMaxTotal = userOverrideKg ?: estimatedOneRepMaxKg
+            val finalOneRepMaxPerCable = finalOneRepMaxTotal / 2f
+            exerciseRepository.updateOneRepMax(exerciseId, finalOneRepMaxPerCable)
+            Logger.d { "Exercise 1RM updated: $exerciseName -> ${finalOneRepMaxPerCable}kg per cable" }
+        } catch (e: Throwable) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Logger.w(e) {
+                "Assessment save failed after session create; rolling back session $sessionId"
+            }
+            runCatching { workoutRepository.deleteSession(sessionId) }
+            throw e
+        }
 
         sessionId
     }

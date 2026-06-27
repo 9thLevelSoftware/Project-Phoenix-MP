@@ -216,6 +216,44 @@ class SchemaManifestTest {
         assertTrue(newSql.contains("col2"))
     }
 
+    @Test
+    fun `applyIndexCreate rolls back drop when unique replacement fails on duplicates (F012)`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(null, "CREATE TABLE TestTable (id INTEGER PRIMARY KEY, col1 TEXT)", 0)
+        // Existing (working) unique index on col1.
+        driver.execute(null, "CREATE UNIQUE INDEX idx_test_unique ON TestTable(col1)", 0)
+        assertTrue(indexExists(driver, "idx_test_unique"))
+
+        // Insert rows that are unique on col1 but would collide once the index is
+        // (incorrectly) rebuilt on a column with duplicates.
+        driver.execute(null, "INSERT INTO TestTable (id, col1) VALUES (1, 'dup')", 0)
+        driver.execute(null, "INSERT INTO TestTable (id, col1) VALUES (2, 'dup2')", 0)
+        // Add a duplicate value for a DIFFERENT target column to make the new
+        // unique index creation fail.
+        driver.execute(null, "ALTER TABLE TestTable ADD COLUMN col2 TEXT", 0)
+        driver.execute(null, "UPDATE TestTable SET col2 = 'same'", 0)
+
+        // Attempt to replace the index with a UNIQUE index on col2 — this MUST fail
+        // because col2 has duplicate values.
+        val op = SchemaIndexOperation(
+            name = "idx_test_unique",
+            createSql = "CREATE UNIQUE INDEX idx_test_unique ON TestTable(col2)",
+            preDropSql = "DROP INDEX IF EXISTS idx_test_unique",
+        )
+        val result = applyIndexCreate(driver, op)
+
+        // The create failed...
+        assertEquals(ReconciliationStatus.FAILED, result.status)
+        // ...but the original constraint must NOT have been lost (savepoint rollback).
+        assertTrue(
+            indexExists(driver, "idx_test_unique"),
+            "Old unique index must survive a failed replacement (F012)",
+        )
+        // And it must still be the original col1 index, not a partial col2 one.
+        val sql = indexSql(driver, "idx_test_unique").orEmpty()
+        assertTrue(sql.contains("col1"), "Surviving index should be the original col1 index")
+    }
+
     // ── Full Reconciliation Test ────────────────────────────────────────
 
     @Test
