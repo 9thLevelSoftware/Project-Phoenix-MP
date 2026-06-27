@@ -1,0 +1,2 @@
+-- Migration 38: per-routine-exercise scaling basis (% of estimated 1RM) — issue #517 Phase 3.
+ALTER TABLE RoutineExercise ADD COLUMN scalingBasis TEXT;

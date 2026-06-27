@@ -895,5 +895,10 @@ WHERE gs.rowid = (
     )""",
     )
 
+    // Migration 38: per-routine-exercise scaling basis (% of estimated 1RM) — issue #517 Phase 3.
+    38 -> listOf(
+        "ALTER TABLE RoutineExercise ADD COLUMN scalingBasis TEXT",
+    )
+
     else -> emptyList()
 }

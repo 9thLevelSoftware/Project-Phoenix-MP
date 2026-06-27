@@ -710,6 +710,7 @@ class SqlDelightSyncRepository(
                                 rackBehaviorOverrides = exercise.rackBehaviorOverrides
                                     ?: localRackOverridesByExerciseId[exercise.id]
                                     ?: "{}",
+                                scalingBasis = null,
                             )
                         }
                     } else {
@@ -1844,6 +1845,7 @@ class SqlDelightSyncRepository(
                                 rackBehaviorOverrides = exercise.rackBehaviorOverrides
                                     ?: localRackOverridesByExerciseId[exercise.id]
                                     ?: "{}",
+                                scalingBasis = null,
                             )
                         }
                     }

@@ -563,6 +563,7 @@ class MigrationManagerTest {
             warmupSets = "",
             defaultRackItemIds = "[]",
             rackBehaviorOverrides = "{}",
+            scalingBasis = null,
         )
     }
 

@@ -239,6 +239,7 @@ class SqlDelightTrainingCycleRepositoryTest {
             warmupSets = "",
             defaultRackItemIds = "[]",
             rackBehaviorOverrides = "{}",
+            scalingBasis = null,
         )
     }
 }

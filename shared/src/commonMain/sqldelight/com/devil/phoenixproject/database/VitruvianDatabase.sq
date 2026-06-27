@@ -240,6 +240,8 @@ CREATE TABLE RoutineExercise (
     weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
     prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
     setWeightsPercentOfPR TEXT,
+    -- Velocity-based 1RM scaling basis (issue #517 Phase 3); null = derive from prTypeForScaling
+    scalingBasis TEXT,
     -- Per-exercise behavior overrides (PR #245)
     stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
     stopAtTop INTEGER NOT NULL DEFAULT 0,
@@ -1115,9 +1117,9 @@ INSERT INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides
+    rackBehaviorOverrides, scalingBasis
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert with IGNORE for import (won't overwrite existing)
 insertRoutineExerciseIgnore:
@@ -1128,9 +1130,9 @@ INSERT OR IGNORE INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides
+    rackBehaviorOverrides, scalingBasis
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;

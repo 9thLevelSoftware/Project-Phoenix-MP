@@ -612,6 +612,7 @@ abstract class BaseDataBackupManager(
                                 warmupSets = exercise.warmupSets,
                                 defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
                                 rackBehaviorOverrides = exercise.rackBehaviorOverrides,
+                                scalingBasis = null,
                             )
                         }
                         if (inserted != null) routineExercisesImported++
@@ -1334,6 +1335,7 @@ abstract class BaseDataBackupManager(
                                                         warmupSets = exercise.warmupSets,
                                                         defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
                                                         rackBehaviorOverrides = exercise.rackBehaviorOverrides,
+                                                        scalingBasis = null,
                                                     )
                                                 }
                                                 if (inserted != null) {
