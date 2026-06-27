@@ -259,6 +259,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         echoLevel,
         repCountTiming,
         restSeconds,
+        weightUnit,
         defaultsLoaded,
     ) {
         // Don't write params until saved defaults have been loaded.

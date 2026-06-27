@@ -25,7 +25,7 @@ object SupersetTheme {
      * Get the color for a given superset color index.
      * Cycles through the 4 colors if index exceeds range.
      */
-    fun colorForIndex(index: Int): Color = colors[index % colors.size]
+    fun colorForIndex(index: Int): Color = colors[((index % colors.size) + colors.size) % colors.size]
 
     /**
      * Get a background tint color for superset containers.

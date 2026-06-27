@@ -51,12 +51,17 @@ class EulaViewModel(private val settings: Settings) : ViewModel() {
     fun acceptEula() {
         val timestamp = Clock.System.now().toEpochMilliseconds()
 
-        settings[EULA_ACCEPTED_VERSION_KEY] = Constants.EULA_VERSION
-        settings[EULA_ACCEPTED_TIMESTAMP_KEY] = timestamp
+        val persisted = runCatching {
+            settings[EULA_ACCEPTED_VERSION_KEY] = Constants.EULA_VERSION
+            settings[EULA_ACCEPTED_TIMESTAMP_KEY] = timestamp
+        }.isSuccess
 
-        _eulaAccepted.value = true
-
-        log.i { "EULA v${Constants.EULA_VERSION} accepted at timestamp $timestamp" }
+        if (persisted) {
+            _eulaAccepted.value = true
+            log.i { "EULA v${Constants.EULA_VERSION} accepted at timestamp $timestamp" }
+        } else {
+            log.e { "Failed to persist EULA acceptance for v${Constants.EULA_VERSION}" }
+        }
     }
 
     /**

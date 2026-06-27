@@ -630,7 +630,12 @@ private fun CompletedSetsSection(
     var completedSets by remember { mutableStateOf<List<CompletedSet>>(emptyList()) }
 
     LaunchedEffect(sessionId) {
-        completedSets = completedSetRepository.getCompletedSets(sessionId)
+        try {
+            completedSets = completedSetRepository.getCompletedSets(sessionId)
+        } catch (e: Exception) {
+            co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load completed sets for session $sessionId: ${e.message}" }
+            completedSets = emptyList()
+        }
     }
 
     if (completedSets.isNotEmpty()) {
@@ -1234,9 +1239,8 @@ fun WorkoutSessionCard(
 ) {
     var exerciseName by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(session.exerciseId) {
-        session.exerciseId?.let { id ->
-            exerciseName = exerciseRepository.getExerciseById(id)?.name
-        }
+        val id = session.exerciseId
+        exerciseName = if (id != null) exerciseRepository.getExerciseById(id)?.name else null
     }
 
     Surface(
@@ -1433,8 +1437,14 @@ private fun BiomechanicsSection(session: WorkoutSession) {
 
         LaunchedEffect(session.id) {
             isLoadingBiomechanics = true
-            repBiomechanics = biomechanicsRepository.getRepBiomechanics(session.id)
-            isLoadingBiomechanics = false
+            try {
+                repBiomechanics = biomechanicsRepository.getRepBiomechanics(session.id)
+            } catch (e: Exception) {
+                co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load biomechanics for session ${session.id}: ${e.message}" }
+                repBiomechanics = emptyList()
+            } finally {
+                isLoadingBiomechanics = false
+            }
         }
 
         RepBiomechanicsDetail(

@@ -54,9 +54,8 @@ fun WorkoutSetupDialog(
     var modeSubSelectorType by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(workoutParameters.selectedExerciseId) {
-        workoutParameters.selectedExerciseId?.let { id ->
-            exerciseRepository.getExerciseById(id).also { selectedExercise = it }
-        }
+        val id = workoutParameters.selectedExerciseId
+        selectedExercise = if (id != null) exerciseRepository.getExerciseById(id) else null
     }
 
     AlertDialog(

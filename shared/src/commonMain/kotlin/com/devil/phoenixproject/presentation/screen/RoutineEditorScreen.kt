@@ -850,7 +850,7 @@ fun RoutineEditorScreen(
 
     // Rename Superset Dialog
     supersetToRename?.let { superset ->
-        var newName by remember { mutableStateOf(superset.name) }
+        var newName by remember(superset.id) { mutableStateOf(superset.name) }
         AlertDialog(
             onDismissRequest = { supersetToRename = null },
             title = { Text(stringResource(Res.string.rename_superset)) },

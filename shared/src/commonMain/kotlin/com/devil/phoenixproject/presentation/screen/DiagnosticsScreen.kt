@@ -274,9 +274,17 @@ private fun UptimeSection(packet: DiagnosticPacket) {
 @Composable
 private fun FaultsSection(faults: List<DiagnosticFault>) {
     DetailSection(title = stringResource(Res.string.diagnostics_faults)) {
-        faults.forEachIndexed { index, fault ->
-            if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            FaultRow(fault)
+        if (faults.isEmpty()) {
+            Text(
+                text = stringResource(Res.string.diagnostics_none_reported),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            faults.forEachIndexed { index, fault ->
+                if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                FaultRow(fault)
+            }
         }
     }
 }

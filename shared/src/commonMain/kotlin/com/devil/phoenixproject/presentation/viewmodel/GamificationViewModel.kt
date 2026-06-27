@@ -149,7 +149,11 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
     fun markBadgeCelebrated(badgeId: String) {
         viewModelScope.launch {
             val profileId = activeProfileId.value
-            repository.markBadgeCelebrated(badgeId, profileId)
+            try {
+                repository.markBadgeCelebrated(badgeId, profileId)
+            } catch (e: Exception) {
+                Logger.w("GamificationViewModel", e) { "Failed to mark badge celebrated: ${e.message}" }
+            }
         }
     }
 

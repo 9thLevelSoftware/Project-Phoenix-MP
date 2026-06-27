@@ -174,6 +174,7 @@ fun RoutinesTab(
     val timeEstimator: RoutineTimeEstimator = koinInject()
     val timeEstimates = remember { mutableStateMapOf<String, String>() }
     LaunchedEffect(routines) {
+        timeEstimates.clear()
         for (routine in routines) {
             if (routine.exercises.isEmpty()) continue
             try {

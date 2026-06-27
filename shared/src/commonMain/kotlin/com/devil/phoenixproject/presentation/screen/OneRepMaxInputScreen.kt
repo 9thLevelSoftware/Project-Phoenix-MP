@@ -70,8 +70,8 @@ fun OneRepMaxInputScreen(
 
     // Check if at least one value is entered and all non-empty values are valid
     val hasAtLeastOneValue = inputValues.values.any { it.isNotBlank() }
-    val allValidOrEmpty = inputValues.all { (name, value) ->
-        value.isBlank() || value.toFloatOrNull() != null
+    val allValidOrEmpty = inputValues.all { (_, value) ->
+        value.isBlank() || (value.toFloatOrNull()?.let { it > 0f && it.isFinite() } == true)
     }
     val canContinue = hasAtLeastOneValue && allValidOrEmpty
 

@@ -107,7 +107,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
         // `lastAdvancedAt` against the current calendar day. `TrainingCyclesScreen` is the only
         // other production caller of `checkAndAutoAdvance` — that is exactly why the reporter's
         // tap-Cycles-then-back workaround refreshed the banner.
-        cycleProgress = activeCycle?.let { cycle -> loadHomeCycleProgress(cycleRepository, cycle) }
+        cycleProgress = activeCycle?.let { cycle -> runCatching { loadHomeCycleProgress(cycleRepository, cycle) }.getOrNull() }
     }
 
     LaunchedEffect(Unit) {

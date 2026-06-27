@@ -287,7 +287,7 @@ private fun LinkedAccountContent(
 
                 Button(
                     onClick = onSync,
-                    enabled = syncState !is SyncState.Syncing,
+                    enabled = syncState !is SyncState.Syncing && syncState !is SyncState.SyncingWithProgress,
                 ) {
                     Text(stringResource(Res.string.sync_now))
                 }
@@ -296,7 +296,7 @@ private fun LinkedAccountContent(
             // Force full resync option for when delta sync misses data
             TextButton(
                 onClick = onForceFullResync,
-                enabled = syncState !is SyncState.Syncing,
+                enabled = syncState !is SyncState.Syncing && syncState !is SyncState.SyncingWithProgress,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
                 Text(

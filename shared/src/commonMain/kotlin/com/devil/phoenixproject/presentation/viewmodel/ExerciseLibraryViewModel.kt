@@ -2,12 +2,14 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -42,10 +44,15 @@ class ExerciseLibraryViewModel(private val exerciseRepository: ExerciseRepositor
     private fun loadExercises() {
         viewModelScope.launch {
             _isLoading.value = true
-            exerciseRepository.getAllExercises().collectLatest { exerciseList ->
-                _exercises.value = exerciseList
-                _isLoading.value = false
-            }
+            exerciseRepository.getAllExercises()
+                .catch { e ->
+                    Logger.e("ExerciseLibraryVM", e) { "Failed to load exercises: ${e.message}" }
+                    _isLoading.value = false
+                }
+                .collectLatest { exerciseList ->
+                    _exercises.value = exerciseList
+                    _isLoading.value = false
+                }
         }
     }
 
@@ -89,8 +96,12 @@ class ExerciseLibraryViewModel(private val exerciseRepository: ExerciseRepositor
      */
     fun loadVideosForExercise(exerciseId: String) {
         viewModelScope.launch {
-            val videos = exerciseRepository.getVideos(exerciseId)
-            _exerciseVideos.value = _exerciseVideos.value + (exerciseId to videos)
+            try {
+                val videos = exerciseRepository.getVideos(exerciseId)
+                _exerciseVideos.value = _exerciseVideos.value + (exerciseId to videos)
+            } catch (e: Exception) {
+                Logger.w("ExerciseLibraryVM", e) { "Failed to load videos for $exerciseId: ${e.message}" }
+            }
         }
     }
 

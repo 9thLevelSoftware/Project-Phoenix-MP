@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
 import com.devil.phoenixproject.data.integration.ExternalProgramRepository
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -44,6 +46,9 @@ class ExternalActivitiesViewModel(
     val uiState: StateFlow<ExternalActivitiesUiState> = activeProfileId.flatMapLatest { profileId ->
         repository.getAll(profileId)
             .map { activities -> ExternalActivitiesUiState(activities = activities) }
+    }.catch { e ->
+        Logger.e("ExternalActivitiesVM", e) { "Activities flow failed: ${e.message}" }
+        emit(ExternalActivitiesUiState())
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ExternalActivitiesUiState())
 }
 
@@ -67,6 +72,9 @@ class ExternalRoutinesViewModel(
         ) { routines, folders ->
             ExternalRoutinesUiState(routines = routines, folders = folders)
         }
+    }.catch { e ->
+        Logger.e("ExternalRoutinesVM", e) { "Routines flow failed: ${e.message}" }
+        emit(ExternalRoutinesUiState())
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ExternalRoutinesUiState())
 }
 
@@ -117,18 +125,24 @@ class ExternalProgramsViewModel(
         val scriptText = program.scriptText ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSimulating = true)
-            integrationManager.simulatePlayground(
-                provider = program.provider,
-                externalProgramId = program.externalId,
-                scriptText = scriptText,
-                commands = commands,
-                profileId = activeProfileId.value,
-            ).onSuccess { preview ->
-                _uiState.value = _uiState.value.copy(playgroundPreview = preview)
-            }.onFailure { error ->
-                _events.emit(IntegrationUiEvent.Snackbar("Simulation failed: ${error.message}"))
+            try {
+                integrationManager.simulatePlayground(
+                    provider = program.provider,
+                    externalProgramId = program.externalId,
+                    scriptText = scriptText,
+                    commands = commands,
+                    profileId = activeProfileId.value,
+                ).onSuccess { preview ->
+                    _uiState.value = _uiState.value.copy(playgroundPreview = preview)
+                }.onFailure { error ->
+                    _events.emit(IntegrationUiEvent.Snackbar("Simulation failed: ${error.message}"))
+                }
+            } catch (e: Exception) {
+                Logger.e("ExternalProgramsVM", e) { "Simulation threw: ${e.message}" }
+                _events.emit(IntegrationUiEvent.Snackbar("Simulation failed: ${e.message}"))
+            } finally {
+                _uiState.value = _uiState.value.copy(isSimulating = false)
             }
-            _uiState.value = _uiState.value.copy(isSimulating = false)
         }
     }
 
@@ -140,9 +154,15 @@ class ExternalProgramsViewModel(
         }
         val text = preview.updatedProgramText ?: return
         viewModelScope.launch {
-            integrationManager.commitProgramText(program.id, text)
-            _uiState.value = _uiState.value.copy(playgroundPreview = null)
-            _events.emit(IntegrationUiEvent.Snackbar("Program text updated"))
+            runCatching { integrationManager.commitProgramText(program.id, text) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(playgroundPreview = null)
+                    _events.emit(IntegrationUiEvent.Snackbar("Program text updated"))
+                }
+                .onFailure { e ->
+                    Logger.e("ExternalProgramsVM", e) { "Commit failed: ${e.message}" }
+                    _events.emit(IntegrationUiEvent.Snackbar("Commit failed: ${e.message}"))
+                }
         }
     }
 
@@ -175,6 +195,9 @@ class ExternalMeasurementsViewModel(
             measurementTypes = measurements.map { it.measurementType }.distinct(),
             selectedType = type,
         )
+    }.catch { e ->
+        Logger.e("ExternalMeasurementsVM", e) { "Measurements flow failed: ${e.message}" }
+        emit(ExternalMeasurementsUiState())
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ExternalMeasurementsUiState())
 
     fun selectType(type: String?) {

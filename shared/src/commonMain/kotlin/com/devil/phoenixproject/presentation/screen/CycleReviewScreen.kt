@@ -313,9 +313,12 @@ private fun formatSetsReps(routineExercise: RoutineExercise): String {
     val nonNullReps = setReps.filterNotNull()
     return if (nonNullReps.isEmpty()) {
         "${sets}x AMRAP"
-    } else if (nonNullReps.distinct().size == 1) {
-        // All same reps
+    } else if (nonNullReps.distinct().size == 1 && nonNullReps.size == sets) {
+        // All same reps, no AMRAP sets
         "${sets}x${nonNullReps.first()}"
+    } else if (nonNullReps.distinct().size == 1) {
+        // Some sets are AMRAP (null reps)
+        "${nonNullReps.size}x${nonNullReps.first()} + ${sets - nonNullReps.size}x AMRAP"
     } else {
         // Different reps - show range or list
         val min = nonNullReps.minOrNull() ?: 0
