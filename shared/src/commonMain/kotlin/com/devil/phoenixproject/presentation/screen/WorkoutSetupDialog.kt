@@ -240,7 +240,12 @@ fun WorkoutSetupDialog(
                             )
 
                             ExpressiveSlider(
-                                value = kgToDisplay(workoutParameters.weightPerCableKg, weightUnit),
+                                // F043: weightPerCableKg defaults to 0, but the slider
+                                // range starts at 1; feeding 0 violates Material's
+                                // value-range requirement and can crash/render invalid.
+                                // Clamp the displayed value into the range.
+                                value = kgToDisplay(workoutParameters.weightPerCableKg, weightUnit)
+                                    .coerceIn(weightRange.first.toFloat(), weightRange.last.toFloat()),
                                 onValueChange = { displayValue ->
                                     val kg = displayToKg(displayValue, weightUnit)
                                     onUpdateParameters(workoutParameters.copy(weightPerCableKg = kg))

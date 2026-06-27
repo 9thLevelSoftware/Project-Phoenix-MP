@@ -115,4 +115,21 @@ raw GitHub for the parity-critical sync contracts.
 | F016 / F028 | REAL | `getRecentCompletedSetsForExercise` and its query (`selectRecentCompletedSetsForExercise`) had no `profile_id`/`deletedAt` filter, leaking other profiles' (and soft-deleted) sets into progression/deload analysis. Only 2 callers, both in `ProgressionUseCase` (which has `profileId`). | **FIXED** — added `ws.profile_id = ? AND ws.deletedAt IS NULL` to the query; threaded `profileId` through the interface/impl and both call sites. |
 | F029 | REAL | `checkForProgression` used `recentSets.maxOfOrNull { it.actualWeightKg }` despite the "most recent weight" comment; `checkForDeload` already used `.first()`. | **FIXED** — uses the most-recent (newest-first) working set's weight. Regression test added. |
 | F019 | REAL | `getRpgInput` peak-power inputs used global `selectPeakRepPower`/`selectPeakPower` (no profile filter), so one profile's metrics inflated another's RPG power. | **FIXED** — added profile-scoped `selectPeakRepPowerForProfile`/`selectPeakPowerForProfile` (join WorkoutSession, filter profile + deletedAt) and used them in `getRpgInput`. |
-| F047 / F049 | PENDING | `AssessmentViewModel` saves with no active profile; `GamificationViewModel` badge progress not reactive to profile changes. | Deferred to C7 (ViewModel reactivity). |
+| F047 | REAL | `AssessmentViewModel` saves with no active profile. | See C7 (deferred — needs profile injection). |
+| F049 | REAL | `GamificationViewModel` badge progress not reactive to profile changes. | **FIXED** in C7. |
+
+## C7 — Compose state, lifecycle & navigation
+
+| ID | Verdict | Evidence | Disposition |
+|----|---------|----------|-------------|
+| F050 | REAL | `MainViewModel` velocity-1RM backfill launched with `viewModelScope.launch(NonCancellable)` — defeats lifecycle cancellation of a long DB job. | **FIXED** — launched as a normal `viewModelScope` child; work is idempotent/run-once so cancel-on-clear is safe. |
+| F049 | REAL | `_badgesWithProgress` loaded once in `init` via `activeProfileId.value`, not reactive (unlike streaks/stats/uncelebrated). | **FIXED** — `init` collects `activeProfileId` with `collectLatest`, reloading per profile and clearing stale badges; in-flight load cancelled on switch. |
+| F046 | REAL | Saving a new routine replaced the id with a fresh UUID but left child `Superset.routineId = "new"`. | **FIXED** — resolve the final id first, then remap every `superset.routineId` before persisting. |
+| F043 | REAL | `WorkoutSetupDialog` fed `weightPerCableKg` (default 0) into a slider whose range starts at 1. | **FIXED** — clamp the displayed value into the range. |
+| F042 | DOCUMENTED | `ModeConfirmationScreen` keys exercise configs by `exerciseName`; duplicate exercises collide (and LazyColumn key can crash). | **DOCUMENTED** — needs a stable occurrence-id keying scheme threaded through every config read/write in the screen; a broad UI refactor best verified with UI tests. Recommended follow-up. |
+| F040 / F041 | DOCUMENTED | `JustLiftScreen` nav effect can push duplicate ActiveWorkout entries; entering with non-Idle/Active state resets the session. | **DOCUMENTED** — Compose nav/state-machine changes, UI-verification-heavy; recommended follow-up. |
+| F045 | DOCUMENTED | `OneRepMaxInputScreen` `remember(existingOneRepMaxValues)` initializer can run before async values arrive. | **DOCUMENTED** — key the remember on contents/version or update in a `LaunchedEffect`; UI follow-up. |
+| F048 | DOCUMENTED | `ExerciseConfigViewModel` async PR/baseline loaders write shared state without versioning/cancellation. | **DOCUMENTED** — needs request-token/cancellation rework; recommended follow-up. |
+| F047 | DOCUMENTED | `AssessmentViewModel.acceptResult` saves with the default profile (no active-profile dependency). | **DOCUMENTED** — needs `UserProfileRepository` injection / profile captured at assessment start; recommended follow-up. |
+| F051 | DOCUMENTED | `MainViewModel.onCleared` launches `NonCancellable` on the (cleared) `viewModelScope` to disconnect BLE. | **DOCUMENTED** — proper fix is an application-owned cleanup scope (DI change); no app scope is currently injected. Recommended follow-up. |
+| F054 | DOCUMENTED | `WorkoutCoordinator.setActiveRackSelection` reuses the prior adjustment when `precomputedAdjustment` is null, pairing new rack ids with stale load. | **DOCUMENTED** — needs a reset/recompute contract or immutable update object; recommended follow-up. |

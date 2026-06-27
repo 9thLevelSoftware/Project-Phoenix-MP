@@ -446,13 +446,25 @@ fun RoutineEditorScreen(
                 )
                 Button(
                     onClick = {
-                        val routineToSave = state.routine?.copy(
-                            id = if (routineId == "new") generateUUID() else routineId,
-                            name = state.routineName.ifBlank { "Unnamed Routine" },
-                        ) ?: Routine(
-                            id = generateUUID(),
-                            name = state.routineName.ifBlank { "Unnamed Routine" },
-                        )
+                        // F046: resolve the final routine id first, then rewrite
+                        // every child Superset.routineId to it. New routines are
+                        // edited under the draft id "new"; without this remap the
+                        // saved superset rows keep routineId = "new" and become
+                        // unreachable by the real routine id.
+                        val finalRoutineId = if (routineId == "new") generateUUID() else routineId
+                        val base = state.routine
+                        val routineToSave = if (base != null) {
+                            base.copy(
+                                id = finalRoutineId,
+                                name = state.routineName.ifBlank { "Unnamed Routine" },
+                                supersets = base.supersets.map { it.copy(routineId = finalRoutineId) },
+                            )
+                        } else {
+                            Routine(
+                                id = finalRoutineId,
+                                name = state.routineName.ifBlank { "Unnamed Routine" },
+                            )
+                        }
                         viewModel.saveRoutine(routineToSave)
                         navController.popBackStack()
                     },

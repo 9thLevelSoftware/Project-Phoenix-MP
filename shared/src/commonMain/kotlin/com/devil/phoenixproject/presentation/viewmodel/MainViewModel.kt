@@ -660,7 +660,15 @@ class MainViewModel constructor(
     init {
         // Run once at startup: backfill velocity-1RM estimates for historical sets.
         // Gated by a run-once preference flag so it never re-runs after the first successful pass.
-        viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
+        //
+        // F050: launch as a normal child of viewModelScope (NOT NonCancellable).
+        // Passing NonCancellable as the launch context replaces structured
+        // cancellation, so this long DB backfill would keep running after the
+        // ViewModel is cleared and hold repository/ViewModel references past the
+        // lifecycle. The work is idempotent (run-once flag set only on success,
+        // per-profile try/catch), so cancelling on clear is safe — it resumes on
+        // the next launch.
+        viewModelScope.launch {
             try {
                 if (!settingsManager.velocityOneRepMaxBackfillDone.value) {
                     // Backfill EVERY profile's history (not just the active one): the run-once flag
