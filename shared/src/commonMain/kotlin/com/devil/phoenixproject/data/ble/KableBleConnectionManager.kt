@@ -885,7 +885,9 @@ class KableBleConnectionManager(
         // and the old code tore the subscription down permanently — rep counting was
         // silently dead until a manual Bluetooth toggle. We now (1) subscribe reps
         // FIRST and alone, and (2) retry/resubscribe on transient busy so it
-        // self-heals. [repsReady] completes once the CCCD write lands.
+        // self-heals. [repsReady] is released once the reps subscription settles —
+        // either the CCCD write lands OR it permanently gives up — so the gated work
+        // below never waits longer than necessary.
         val repsReady = CompletableDeferred<Unit>()
         scope.launch {
             observeRepsWithRetry(p) { repsReady.complete(Unit) }
@@ -933,9 +935,11 @@ class KableBleConnectionManager(
      * self-heals instead of requiring the user to toggle Bluetooth.
      *
      * @param p the peripheral to observe; the loop exits if it is replaced/disconnected
-     * @param onReady invoked once, when the subscription's CCCD write succeeds
+     * @param onSettled invoked exactly once when the subscription settles — either the
+     *   CCCD write succeeds OR retries are permanently exhausted. Lets the caller
+     *   release work gated on the subscription without waiting for a timeout.
      */
-    private suspend fun observeRepsWithRetry(p: Peripheral, onReady: () -> Unit) {
+    private suspend fun observeRepsWithRetry(p: Peripheral, onSettled: () -> Unit) {
         var attempt = 0
         while (peripheral === p) {
             try {
@@ -943,7 +947,7 @@ class KableBleConnectionManager(
                 p.observe(repsCharacteristic) {
                     // onSubscription: CCCD write landed — reps notifications are live.
                     attempt = 0
-                    onReady()
+                    onSettled()
                     log.i { "REPS notifications enabled" }
                 }
                     .collect { data ->
@@ -972,6 +976,9 @@ class KableBleConnectionManager(
                         connectedDeviceAddress,
                         "${e.message} (after $attempt attempt(s), transient=$transient)",
                     )
+                    // Release the gate now so polling does not wait out the full
+                    // REPS_SUBSCRIBE_READY_TIMEOUT_MS — there is nothing left to wait for.
+                    onSettled()
                     return
                 }
                 logRepo.warning(
@@ -1015,7 +1022,9 @@ class KableBleConnectionManager(
      * capped at [BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_MAX_MS].
      */
     internal fun repsBackoffMs(attempt: Int): Long =
-        (BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_BASE_MS shl (attempt - 1).coerceAtLeast(0))
+        // coerceIn(0, 30) guards the shift amount: a stray large attempt can never
+        // wrap the Long shift (Kotlin shifts mod 64); 30 bits is far beyond the cap.
+        (BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_BASE_MS shl (attempt - 1).coerceIn(0, 30))
             .coerceAtMost(BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_MAX_MS)
 
     /**

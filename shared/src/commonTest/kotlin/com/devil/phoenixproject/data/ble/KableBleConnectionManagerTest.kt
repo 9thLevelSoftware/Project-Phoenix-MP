@@ -311,7 +311,7 @@ class KableBleConnectionManagerTest {
     }
 
     @Test
-    fun `isTransientObservationError treats null message as transient (default retry)`() {
+    fun `isTransientObservationError treats null message as transient by default`() {
         val (manager, _) = createTestManager()
         assertTrue(manager.isTransientObservationError(RuntimeException()))
     }
