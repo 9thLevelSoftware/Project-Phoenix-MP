@@ -181,6 +181,20 @@ object BleConstants {
         const val STATE_TRANSITION_DWELL_MS = 200L
         const val WAITING_FOR_REST_TIMEOUT_MS = 3000L
         const val MAX_CONSECUTIVE_TIMEOUTS = 5
+
+        // Reps notification subscription resilience.
+        // RCA (2026-06-28): the reps CCCD (descriptor) write is issued by Kable's
+        // observe() flow OUTSIDE BleOperationQueue, so it can race other in-flight
+        // GATT operations during the connection-setup burst and fail with Android
+        // ERROR_GATT_WRITE_REQUEST_BUSY ("WriteRequestBusy"). The failure was caught
+        // once and the subscription torn down permanently — rep counting was silently
+        // dead for the whole session until the user toggled Bluetooth (forcing a
+        // reconnect that re-rolled the race). These bound an automatic busy-retry /
+        // resubscribe so the failure self-heals.
+        const val REPS_SUBSCRIBE_MAX_ATTEMPTS = 5
+        const val REPS_SUBSCRIBE_BACKOFF_BASE_MS = 100L // 100, 200, 400, 800 (capped)
+        const val REPS_SUBSCRIBE_BACKOFF_MAX_MS = 800L
+        const val REPS_SUBSCRIBE_READY_TIMEOUT_MS = 2000L // fail-open gate for polling/non-critical observes
     }
 
     // -------------------------------------------------------------------------

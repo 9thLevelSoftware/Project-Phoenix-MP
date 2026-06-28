@@ -297,6 +297,44 @@ class KableBleConnectionManagerTest {
         )
     }
 
+    // =========================================================================
+    // Reps subscription resilience (RCA 2026-06-28: WriteRequestBusy)
+    // =========================================================================
+
+    @Test
+    fun `isTransientObservationError treats busy and GATT errors as transient`() {
+        val (manager, _) = createTestManager()
+        // The exact failure from the field log:
+        assertTrue(manager.isTransientObservationError(Exception("Write failed: WriteRequestBusy")))
+        assertTrue(manager.isTransientObservationError(Exception("GATT error status 133")))
+        assertTrue(manager.isTransientObservationError(Exception("device busy")))
+    }
+
+    @Test
+    fun `isTransientObservationError treats null message as transient (default retry)`() {
+        val (manager, _) = createTestManager()
+        assertTrue(manager.isTransientObservationError(RuntimeException()))
+    }
+
+    @Test
+    fun `isTransientObservationError treats disconnect and cancel as permanent`() {
+        val (manager, _) = createTestManager()
+        assertFalse(manager.isTransientObservationError(Exception("Peripheral is not connected")))
+        assertFalse(manager.isTransientObservationError(Exception("Disconnected from device")))
+        assertFalse(manager.isTransientObservationError(Exception("operation was cancelled")))
+    }
+
+    @Test
+    fun `repsBackoffMs grows exponentially then caps`() {
+        val (manager, _) = createTestManager()
+        assertEquals(100L, manager.repsBackoffMs(1))
+        assertEquals(200L, manager.repsBackoffMs(2))
+        assertEquals(400L, manager.repsBackoffMs(3))
+        assertEquals(800L, manager.repsBackoffMs(4))
+        assertEquals(800L, manager.repsBackoffMs(5)) // capped
+        assertEquals(800L, manager.repsBackoffMs(10)) // still capped, no overflow
+    }
+
     @Test
     fun `shutdown cancels lifecycle jobs and clears scan state`() = runTest {
         val (manager, tracker) = createTestManager()

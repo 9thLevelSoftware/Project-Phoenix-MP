@@ -10,6 +10,7 @@ import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.HardwareDetection
 import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Advertisement
+import com.juul.kable.Characteristic
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
@@ -19,6 +20,7 @@ import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -871,94 +873,164 @@ class KableBleConnectionManager(
             connectedDeviceAddress,
         )
 
-        // ===== FIRMWARE VERSION READ (best effort) =====
-        // Try to read firmware version from Device Information Service
-        scope.launch {
-            tryReadFirmwareVersion(p)
-            tryReadVitruvianVersion(p)
-        }
-
-        // ===== CORE NOTIFICATIONS =====
-
         // NOTE: Standard NUS RX (6e400003) does NOT exist on Vitruvian devices.
         // The device uses custom characteristics for notifications instead.
         // Skipping observation of non-existent rxCharacteristic to avoid errors.
         // Command responses (if any) come through device-specific characteristics.
 
-        // Observe REPS characteristic for rep completion events (CRITICAL for rep counting!)
+        // ===== CRITICAL NOTIFICATION: REPS (rep counting) =====
+        // RCA (2026-06-28): Kable issues the reps CCCD (descriptor) write when this
+        // flow is first collected, OUTSIDE BleOperationQueue. If it races another
+        // in-flight GATT op during setup it fails with ERROR_GATT_WRITE_REQUEST_BUSY
+        // and the old code tore the subscription down permanently — rep counting was
+        // silently dead until a manual Bluetooth toggle. We now (1) subscribe reps
+        // FIRST and alone, and (2) retry/resubscribe on transient busy so it
+        // self-heals. [repsReady] completes once the CCCD write lands.
+        val repsReady = CompletableDeferred<Unit>()
         scope.launch {
+            observeRepsWithRetry(p) { repsReady.complete(Unit) }
+        }
+
+        // ===== Everything else waits for the reps CCCD write to land (bounded) =====
+        // Deferring the firmware reads, non-critical observes, and the polling read
+        // flood until reps is subscribed gives the critical CCCD write a
+        // contention-free window, so it normally succeeds on the first attempt.
+        // Fail-open: if reps never subscribes we still start polling after a timeout.
+        scope.launch {
+            withTimeoutOrNull(BleConstants.Timing.REPS_SUBSCRIBE_READY_TIMEOUT_MS) {
+                repsReady.await()
+            }
+            if (peripheral !== p) return@launch // disconnected/replaced while we waited
+
+            // Firmware/version reads (best effort, diagnostic only) — own coroutine so
+            // their up-to-2s timeouts never delay polling start.
+            scope.launch {
+                tryReadFirmwareVersion(p)
+                tryReadVitruvianVersion(p)
+            }
+
+            // Non-critical notifications (logging only): VERSION + MODE.
+            startNonCriticalObserve(p, versionCharacteristic, "VERSION")
+            startNonCriticalObserve(p, modeCharacteristic, "MODE")
+
+            // ===== POLLING (delegated to MetricPollingEngine) =====
+            discoMode.stop()
+            pollingEngine.startAll(p)
+        }
+    }
+
+    /**
+     * Observe the REPS characteristic with bounded busy-retry and automatic
+     * resubscribe (CRITICAL for rep counting).
+     *
+     * The reps notification CCCD (descriptor) write is performed by Kable's
+     * [Peripheral.observe] flow on first collection, OUTSIDE [bleQueue], so it can
+     * race other in-flight GATT operations during connection setup and fail with
+     * Android `ERROR_GATT_WRITE_REQUEST_BUSY` ("WriteRequestBusy"). The previous
+     * implementation caught that error once and let the flow complete, leaving reps
+     * permanently unsubscribed for the whole session. This retries the subscription
+     * (mirroring [BleOperationQueue.write]'s busy-retry) so a transient collision
+     * self-heals instead of requiring the user to toggle Bluetooth.
+     *
+     * @param p the peripheral to observe; the loop exits if it is replaced/disconnected
+     * @param onReady invoked once, when the subscription's CCCD write succeeds
+     */
+    private suspend fun observeRepsWithRetry(p: Peripheral, onReady: () -> Unit) {
+        var attempt = 0
+        while (peripheral === p) {
             try {
-                log.i { "Starting REPS characteristic notifications (rep events)" }
-                p.observe(repsCharacteristic)
-                    .catch { e ->
-                        e.rethrowIfCancellation()
-                        log.e { "Reps observation error: ${e.message}" }
-                        logRepo.error(
-                            LogEventType.ERROR,
-                            "Reps notification error",
-                            connectedDeviceName,
-                            connectedDeviceAddress,
-                            e.message,
-                        )
-                    }
+                log.i { "Starting REPS characteristic notifications (attempt ${attempt + 1})" }
+                p.observe(repsCharacteristic) {
+                    // onSubscription: CCCD write landed — reps notifications are live.
+                    attempt = 0
+                    onReady()
+                    log.i { "REPS notifications enabled" }
+                }
                     .collect { data ->
                         log.d { "REPS notification received: ${data.size} bytes" }
                         onRepEventFromCharacteristic(data)
                     }
+                // Flow completed without error — only happens on cancel/disconnect.
+                return
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.rethrowIfCancellation()
-                log.e { "Failed to observe Reps: ${e.message}" }
-                logRepo.error(
-                    LogEventType.ERROR,
-                    "Failed to enable Reps notifications",
+                // Connection gone? Stop — a fresh connect() will resubscribe.
+                if (peripheral !== p) {
+                    log.d { "Reps observe stopped: peripheral replaced/disconnected" }
+                    return
+                }
+                attempt++
+                val transient = isTransientObservationError(e)
+                log.e { "Reps observation error (attempt $attempt, transient=$transient): ${e.message}" }
+                if (!transient || attempt >= BleConstants.Timing.REPS_SUBSCRIBE_MAX_ATTEMPTS) {
+                    log.e { "Reps subscription failed permanently after $attempt attempt(s) — rep counting unavailable" }
+                    logRepo.error(
+                        LogEventType.ERROR,
+                        "Rep counting unavailable — reconnect required",
+                        connectedDeviceName,
+                        connectedDeviceAddress,
+                        "${e.message} (after $attempt attempt(s), transient=$transient)",
+                    )
+                    return
+                }
+                logRepo.warning(
+                    LogEventType.NOTIFICATION,
+                    "Reps notification busy — retrying",
                     connectedDeviceName,
                     connectedDeviceAddress,
-                    e.message,
+                    "${e.message} (attempt $attempt/${BleConstants.Timing.REPS_SUBSCRIBE_MAX_ATTEMPTS})",
                 )
+                delay(repsBackoffMs(attempt))
             }
         }
+    }
 
-        // Observe VERSION characteristic (for firmware info logging)
+    /**
+     * Observe a non-critical (logging-only) notification characteristic. Failures
+     * are logged at warn and never affect the connection — unlike reps, these are
+     * not retried because no app behavior depends on them.
+     */
+    private fun startNonCriticalObserve(p: Peripheral, characteristic: Characteristic, label: String) {
         scope.launch {
             try {
-                log.d { "Starting VERSION characteristic notifications" }
-                p.observe(versionCharacteristic)
+                log.d { "Starting $label characteristic notifications" }
+                p.observe(characteristic)
                     .catch { e ->
                         e.rethrowIfCancellation()
-                        log.w { "Version observation error (non-fatal): ${e.message}" }
+                        log.w { "$label observation error (non-fatal): ${e.message}" }
                     }
                     .collect { data ->
-                        val hexString = data.joinToString(" ") { it.toHexString() }
-                        log.i { "VERSION CHARACTERISTIC DATA RECEIVED" }
-                        log.i { "  Size: ${data.size} bytes, Hex: $hexString" }
+                        log.d { "$label notification: ${data.size} bytes" }
                     }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
-                log.d { "VERSION notifications not available (expected): ${e.message}" }
+                log.d { "$label notifications not available (expected): ${e.message}" }
             }
         }
+    }
 
-        // Observe MODE characteristic (for mode change logging)
-        scope.launch {
-            try {
-                log.d { "Starting MODE characteristic notifications" }
-                p.observe(modeCharacteristic)
-                    .catch { e ->
-                        e.rethrowIfCancellation()
-                        log.w { "Mode observation error (non-fatal): ${e.message}" }
-                    }
-                    .collect { data ->
-                        log.d { "MODE notification: ${data.size} bytes" }
-                    }
-            } catch (e: Exception) {
-                e.rethrowIfCancellation()
-                log.d { "MODE notifications not available (expected): ${e.message}" }
-            }
-        }
+    /**
+     * Exponential backoff (ms) for reps resubscribe attempts: 100, 200, 400, 800,
+     * capped at [BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_MAX_MS].
+     */
+    internal fun repsBackoffMs(attempt: Int): Long =
+        (BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_BASE_MS shl (attempt - 1).coerceAtLeast(0))
+            .coerceAtMost(BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_MAX_MS)
 
-        // ===== POLLING (delegated to MetricPollingEngine) =====
-        discoMode.stop()
-        pollingEngine.startAll(p)
+    /**
+     * Classify an observation/CCCD-write failure as transient (worth retrying).
+     *
+     * Defaults to transient so busy-variant messages we have not catalogued (the
+     * exact failure mode behind the original bug) are still retried; only clear
+     * disconnect/cancel signals are treated as permanent. Retries are bounded by
+     * [BleConstants.Timing.REPS_SUBSCRIBE_MAX_ATTEMPTS], so an over-classification
+     * costs at most a few short backoffs.
+     */
+    internal fun isTransientObservationError(e: Throwable): Boolean {
+        val msg = e.message?.lowercase() ?: return true
+        val permanentMarkers = listOf("not connected", "disconnected", "cancel")
+        return permanentMarkers.none { msg.contains(it) }
     }
 
     // -------------------------------------------------------------------------
