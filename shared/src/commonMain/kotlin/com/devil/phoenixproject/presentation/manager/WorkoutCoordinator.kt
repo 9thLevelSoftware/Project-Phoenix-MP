@@ -14,6 +14,7 @@ import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -133,6 +134,10 @@ class WorkoutCoordinator(
 
     internal val _routineFlowState = MutableStateFlow<RoutineFlowState>(RoutineFlowState.NotInRoutine)
     val routineFlowState: StateFlow<RoutineFlowState> = _routineFlowState.asStateFlow()
+
+    // Issue #600: once-per-session bodyweight prompt and resolved session override.
+    internal val _sessionBodyweightState = MutableStateFlow(SessionBodyweightState())
+    val sessionBodyweightState: StateFlow<SessionBodyweightState> = _sessionBodyweightState.asStateFlow()
 
     /**
      * Issue #348: Session-scoped workout detection for wake lock.

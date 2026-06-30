@@ -21,6 +21,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineItem
+import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -774,9 +775,23 @@ class RoutineFlowManager(
     /**
      * Internal function to load a routine after weights have been resolved.
      */
+    private fun resetSessionBodyweightStateForRoutine(routine: Routine) {
+        coordinator._sessionBodyweightState.value = SessionBodyweightState(
+            routineHasBodyweight = routine.exercises.any { it.exercise.isBodyweight },
+            promptHandled = false,
+            sessionBodyWeightKg = null,
+            lastAction = null,
+        )
+    }
+
+    private fun clearSessionBodyweightState() {
+        coordinator._sessionBodyweightState.value = SessionBodyweightState()
+    }
+
     private fun loadRoutineInternal(routine: Routine) {
         val normalized = normalizeExerciseOrder(routine)
         coordinator.clearActiveRackSelection()
+        resetSessionBodyweightStateForRoutine(normalized)
         coordinator._loadedRoutine.value = normalized
         coordinator._currentExerciseIndex.value = 0
         coordinator._currentSetIndex.value = 0
@@ -957,6 +972,7 @@ class RoutineFlowManager(
 
     private fun enterRoutineOverviewInternal(routine: Routine) {
         val normalized = normalizeExerciseOrder(routine)
+        resetSessionBodyweightStateForRoutine(normalized)
         coordinator._loadedRoutine.value = normalized
         coordinator._currentExerciseIndex.value = 0
         coordinator._currentSetIndex.value = 0
@@ -1268,6 +1284,7 @@ class RoutineFlowManager(
     fun exitRoutineFlow() {
         coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
         coordinator._loadedRoutine.value = null
+        clearSessionBodyweightState()
         coordinator._workoutState.value = WorkoutState.Idle
         coordinator._weightAdjustmentRecommendation.value = null
         coordinator.clearActiveRackSelection()
@@ -1309,6 +1326,7 @@ class RoutineFlowManager(
             0L
         }
         coordinator._weightAdjustmentRecommendation.value = null
+        clearSessionBodyweightState()
         coordinator._routineFlowState.value = RoutineFlowState.Complete(
             routineName = routine.name,
             totalSets = completedSetCount,
@@ -1319,6 +1337,7 @@ class RoutineFlowManager(
 
     fun clearLoadedRoutine() {
         coordinator._loadedRoutine.value = null
+        clearSessionBodyweightState()
         coordinator.clearActiveRackSelection()
         clearCycleContext()
         coordinator._weightAdjustmentRecommendation.value = null

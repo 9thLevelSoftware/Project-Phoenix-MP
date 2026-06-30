@@ -372,11 +372,22 @@ fun SingleExerciseScreen(
 
                                 viewModel.ensureConnection(
                                     onConnected = {
-                                        Logger.d { "SingleExercise: onConnected callback - starting workout" }
-                                        viewModel.startWorkout()
-                                        Logger.d { "SingleExercise: Navigating to ActiveWorkout" }
-                                        navController.navigate(NavigationRoutes.ActiveWorkout.route) {
-                                            popUpTo(NavigationRoutes.Home.route)
+                                        if (configuredExercise.exercise.isBodyweight) {
+                                            Logger.d {
+                                                "SingleExercise: onConnected callback - entering SetReady for bodyweight prompt"
+                                            }
+                                            viewModel.enterSetReady(0, 0)
+                                            Logger.d { "SingleExercise: Navigating to SetReady for bodyweight prompt" }
+                                            navController.navigate(NavigationRoutes.SetReady.route) {
+                                                popUpTo(NavigationRoutes.Home.route)
+                                            }
+                                        } else {
+                                            Logger.d { "SingleExercise: onConnected callback - starting workout" }
+                                            viewModel.startWorkout()
+                                            Logger.d { "SingleExercise: Navigating to ActiveWorkout" }
+                                            navController.navigate(NavigationRoutes.ActiveWorkout.route) {
+                                                popUpTo(NavigationRoutes.Home.route)
+                                            }
                                         }
                                     },
                                     onFailed = {
