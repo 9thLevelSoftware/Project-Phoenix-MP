@@ -1015,6 +1015,7 @@ class RoutineFlowManager(
             setIndex = setIndex,
             adjustedWeight = setWeight,
             adjustedReps = setReps,
+            adjustedProgressionKg = exercise.progressionKg,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
@@ -1086,6 +1087,7 @@ class RoutineFlowManager(
             setIndex = setIndex,
             adjustedWeight = adjustedWeight,
             adjustedReps = adjustedReps,
+            adjustedProgressionKg = exercise.progressionKg,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
@@ -1155,6 +1157,21 @@ class RoutineFlowManager(
     }
 
     /**
+     * Update per-rep progression/regression for the upcoming set only.
+     * Stored internally in kg and intentionally does not mutate RoutineExercise defaults.
+     */
+    fun updateSetReadyProgressionKg(valueKg: Float) {
+        val state = coordinator._routineFlowState.value
+        if (state is RoutineFlowState.SetReady) {
+            val clampedValue = valueKg.coerceIn(-3f, 3f)
+            coordinator._routineFlowState.value = state.copy(adjustedProgressionKg = clampedValue)
+            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                progressionRegressionKg = clampedValue,
+            )
+        }
+    }
+
+    /**
      * Update echo level in set-ready state for Echo mode.
      */
     fun updateSetReadyEchoLevel(level: EchoLevel) {
@@ -1200,6 +1217,7 @@ class RoutineFlowManager(
         coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
             weightPerCableKg = state.adjustedWeight,
             reps = state.adjustedReps,
+            progressionRegressionKg = state.adjustedProgressionKg,
             isJustLift = false,
         )
 

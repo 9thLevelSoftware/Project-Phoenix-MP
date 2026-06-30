@@ -516,6 +516,7 @@ class MainViewModel constructor(
     fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = workoutSessionManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
     fun updateSetReadyWeight(weight: Float) = workoutSessionManager.updateSetReadyWeight(weight)
     fun updateSetReadyReps(reps: Int) = workoutSessionManager.updateSetReadyReps(reps)
+    fun updateSetReadyProgressionKg(valueKg: Float) = workoutSessionManager.updateSetReadyProgressionKg(valueKg)
     fun updateSetReadyEchoLevel(level: EchoLevel) = workoutSessionManager.updateSetReadyEchoLevel(level)
     fun updateSetReadyEccentricLoad(percent: Int) = workoutSessionManager.updateSetReadyEccentricLoad(percent)
     fun startSetFromReady() = workoutSessionManager.startSetFromReady()

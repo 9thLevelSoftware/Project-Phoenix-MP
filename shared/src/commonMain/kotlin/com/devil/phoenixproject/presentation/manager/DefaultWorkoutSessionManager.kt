@@ -589,6 +589,7 @@ class DefaultWorkoutSessionManager(
     fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = routineFlowManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
     fun updateSetReadyWeight(weight: Float) = routineFlowManager.updateSetReadyWeight(weight)
     fun updateSetReadyReps(reps: Int) = routineFlowManager.updateSetReadyReps(reps)
+    fun updateSetReadyProgressionKg(valueKg: Float) = routineFlowManager.updateSetReadyProgressionKg(valueKg)
     fun updateSetReadyEchoLevel(level: EchoLevel) = routineFlowManager.updateSetReadyEchoLevel(level)
     fun updateSetReadyEccentricLoad(percent: Int) = routineFlowManager.updateSetReadyEccentricLoad(percent)
     fun startSetFromReady() = routineFlowManager.startSetFromReady()

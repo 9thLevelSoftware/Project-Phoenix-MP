@@ -158,6 +158,7 @@ sealed class RoutineFlowState {
         val setIndex: Int,
         val adjustedWeight: Float,
         val adjustedReps: Int,
+        val adjustedProgressionKg: Float = 0f,
         val echoLevel: EchoLevel? = null,
         val eccentricLoadPercent: Int? = null,
     ) : RoutineFlowState()

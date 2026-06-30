@@ -61,6 +61,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
+import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
@@ -107,6 +108,7 @@ fun RestTimerCard(
     totalSets: Int,
     nextExerciseWeight: Float? = null,
     nextExerciseReps: Int? = null,
+    nextExerciseProgressionKg: Float? = null,
     nextExerciseMode: String? = null,
     currentExerciseIndex: Int? = null,
     totalExercises: Int? = null,
@@ -126,6 +128,9 @@ fun RestTimerCard(
     onEndWorkout: () -> Unit,
     onUpdateReps: ((Int) -> Unit)? = null,
     onUpdateWeight: ((Float) -> Unit)? = null,
+    onUpdateProgressionKg: ((Float) -> Unit)? = null,
+    kgToDisplay: ((Float, WeightUnit) -> Float)? = null,
+    displayToKg: ((Float, WeightUnit) -> Float)? = null,
     // Echo mode specific
     programMode: ProgramMode? = null,
     echoLevel: EchoLevel? = null,
@@ -141,6 +146,7 @@ fun RestTimerCard(
     // Local state for editing parameters
     var editedReps by remember(nextExerciseReps) { mutableStateOf(nextExerciseReps ?: 10) }
     var editedWeight by remember(nextExerciseWeight) { mutableStateOf(nextExerciseWeight ?: 20f) }
+    var editedProgressionKg by remember(nextExerciseProgressionKg) { mutableStateOf(nextExerciseProgressionKg ?: 0f) }
     var editedEchoLevel by remember(echoLevel) { mutableStateOf(echoLevel ?: EchoLevel.HARDER) }
     var editedEccentricPercent by remember(eccentricLoadPercent) { mutableStateOf(eccentricLoadPercent ?: 100) }
 
@@ -428,7 +434,7 @@ fun RestTimerCard(
             // Issue #222: Never show for bodyweight exercises
             val showConfigCard = !isLastExercise && !isNextExerciseBodyweight && (
                 (isEchoMode && (echoLevel != null || nextExerciseReps != null)) ||
-                    (!isEchoMode && (nextExerciseWeight != null || nextExerciseReps != null))
+                    (!isEchoMode && (nextExerciseWeight != null || nextExerciseReps != null || nextExerciseProgressionKg != null))
                 )
 
             if (showConfigCard) {
@@ -516,6 +522,24 @@ fun RestTimerCard(
                                     formatValue = { formatWeightWithUnit(it, weightUnit) },
                                     deltaText = deltaText,
                                     isDeltaPositive = deltaKg >= 0f,
+                                )
+                            }
+
+                            if (
+                                nextExerciseProgressionKg != null &&
+                                onUpdateProgressionKg != null &&
+                                kgToDisplay != null &&
+                                displayToKg != null
+                            ) {
+                                WeightChangePerRepControl(
+                                    valueKg = editedProgressionKg,
+                                    weightUnit = weightUnit,
+                                    kgToDisplay = kgToDisplay,
+                                    displayToKg = displayToKg,
+                                    onValueChangeKg = { newValueKg ->
+                                        editedProgressionKg = newValueKg
+                                        onUpdateProgressionKg.invoke(newValueKg)
+                                    },
                                 )
                             }
                         }
