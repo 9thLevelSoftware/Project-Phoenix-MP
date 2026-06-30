@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,8 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.platform.testTag
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -27,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -50,13 +52,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,6 +86,7 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
@@ -149,6 +154,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
     // Issue #266/#410: Use configured weight increment from user preferences
     val userPreferences by viewModel.userPreferences.collectAsState()
+    val sessionBodyweightState by viewModel.sessionBodyweightState.collectAsState()
+    val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
+    val resolvedBodyWeightKg = sessionBodyweightState.sessionBodyWeightKg ?: userPreferences.bodyWeightKg
+    val bodyweightPromptPending = sessionBodyweightState.routineHasBodyweight &&
+        !sessionBodyweightState.promptHandled
     val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
     val weightStepKg = userPreferences.effectiveWeightIncrementKg
 
@@ -164,6 +174,16 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     // and the reporter's request for "set selection in the middle of a workout"). Disabled when
     // there is only one set (no point picking).
     var setPickerExpanded by remember { mutableStateOf(false) }
+
+    var showSessionBodyweightEditor by remember { mutableStateOf(false) }
+    var sessionBodyweightInput by remember { mutableStateOf("") }
+    var saveSessionBodyweightToProfile by remember { mutableStateOf(false) }
+    fun openSessionBodyweightEditor() {
+        val initialKg = resolvedBodyWeightKg.takeIf { it > 0f }
+        sessionBodyweightInput = initialKg?.let { formatBodyWeightNumberForUnit(it, weightUnit) } ?: ""
+        saveSessionBodyweightToProfile = false
+        showSessionBodyweightEditor = true
+    }
 
     // Handle system back button
     BackHandler {
@@ -253,7 +273,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),
-                        enabled = connectionState is ConnectionState.Connected,
+                        enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending,
                         shape = RoundedCornerShape(12.dp),
                     ) {
                         Icon(
@@ -447,6 +467,20 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 Spacer(Modifier.height(12.dp))
             }
 
+            // Issue #600: once-per-session Current bodyweight card for any routine
+            // containing a bodyweight exercise, even if the first Set Ready exercise is cable.
+            if (bodyweightPromptPending) {
+                CurrentBodyweightPromptCard(
+                    savedBodyWeightKg = userPreferences.bodyWeightKg,
+                    resolvedBodyWeightKg = resolvedBodyWeightKg,
+                    weightUnit = weightUnit,
+                    onConfirmStored = { viewModel.confirmSessionBodyWeight(null, saveToProfile = false) },
+                    onEdit = { openSessionBodyweightEditor() },
+                    onSkip = viewModel::skipSessionBodyWeightPrompt,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
             // Issue #229/#427: Bodyweight variant picker (runtime state, carried across sets)
             if (isBodyweight) {
                 val variants = remember(currentExercise.exercise.name) {
@@ -514,15 +548,16 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     }
                                 }
                             }
-                            val userPrefs by viewModel.userPreferences.collectAsState()
-                            val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
-                            if (userPrefs.bodyWeightKg > 0f) {
+                            if (resolvedBodyWeightKg > 0f) {
                                 val effectiveKg = if (selectedVariant.percentage > 0f) {
-                                    (userPrefs.bodyWeightKg * selectedVariant.percentage +
-                                        currentRackLoadAdjustment.externalAddedLoadKg -
-                                        currentRackLoadAdjustment.counterweightKg
-                                    ).coerceAtLeast(0f)
-                                } else 0f
+                                    (
+                                        resolvedBodyWeightKg * selectedVariant.percentage +
+                                            currentRackLoadAdjustment.externalAddedLoadKg -
+                                            currentRackLoadAdjustment.counterweightKg
+                                        ).coerceAtLeast(0f)
+                                } else {
+                                    0f
+                                }
                                 val displayWeight = if (weightUnit == WeightUnit.KG) {
                                     "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(effectiveKg)} kg"
                                 } else {
@@ -539,6 +574,15 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     }
                     Spacer(Modifier.height(12.dp))
                 }
+            }
+
+            if (isBodyweight && sessionBodyweightState.promptHandled) {
+                HandledSessionBodyweightCard(
+                    resolvedBodyWeightKg = resolvedBodyWeightKg,
+                    weightUnit = weightUnit,
+                    onEdit = { openSessionBodyweightEditor() },
+                )
+                Spacer(Modifier.height(12.dp))
             }
 
             EquipmentRackSelectionCard(
@@ -703,6 +747,62 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
         }
     }
 
+    val parsedSessionBodyWeightKg = parseBodyWeightInputKg(sessionBodyweightInput, weightUnit)
+    if (showSessionBodyweightEditor) {
+        AlertDialog(
+            onDismissRequest = { showSessionBodyweightEditor = false },
+            title = { Text("Edit current bodyweight") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                    Text("Used only for this workout unless saved to your profile.")
+                    OutlinedTextField(
+                        value = sessionBodyweightInput,
+                        onValueChange = { value ->
+                            sessionBodyweightInput = value.filter { it.isDigit() || it == '.' || it == ',' }
+                        },
+                        label = { Text("Current bodyweight (${if (weightUnit == WeightUnit.KG) "kg" else "lb"})") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { saveSessionBodyweightToProfile = !saveSessionBodyweightToProfile },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = saveSessionBodyweightToProfile,
+                            onCheckedChange = { saveSessionBodyweightToProfile = it },
+                        )
+                        Text("Save to profile for next time")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = parsedSessionBodyWeightKg != null && parsedSessionBodyWeightKg > 0f,
+                    onClick = {
+                        parsedSessionBodyWeightKg?.let { kg ->
+                            viewModel.confirmSessionBodyWeight(
+                                weightKg = kg,
+                                saveToProfile = saveSessionBodyweightToProfile,
+                            )
+                        }
+                        showSessionBodyweightEditor = false
+                    },
+                ) {
+                    Text("Save for session")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSessionBodyweightEditor = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     // Stop confirmation dialog
     if (showStopConfirmation) {
         AlertDialog(
@@ -759,6 +859,147 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun CurrentBodyweightPromptCard(
+    savedBodyWeightKg: Float,
+    resolvedBodyWeightKg: Float,
+    weightUnit: WeightUnit,
+    onConfirmStored: () -> Unit,
+    onEdit: () -> Unit,
+    onSkip: () -> Unit,
+) {
+    val hasSavedBodyweight = savedBodyWeightKg > 0f
+    val displayBodyweight = (savedBodyWeightKg.takeIf { it > 0f } ?: resolvedBodyWeightKg)
+        .takeIf { it > 0f }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(SetReadyTestTags.SESSION_BODYWEIGHT_CARD),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            Text(
+                "Current bodyweight",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                if (hasSavedBodyweight) {
+                    "Used for bodyweight effective load and volume in this session."
+                } else {
+                    "Add bodyweight to calculate bodyweight effective load and volume for this session."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (displayBodyweight != null) {
+                Text(
+                    formatBodyWeightForUnit(displayBodyweight, weightUnit),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (hasSavedBodyweight) {
+                    Button(onClick = onConfirmStored) {
+                        Text("Use for this session")
+                    }
+                    TextButton(onClick = onEdit) {
+                        Text("Edit")
+                    }
+                } else {
+                    Button(onClick = onEdit) {
+                        Text("Save for session")
+                    }
+                    TextButton(onClick = onSkip) {
+                        Text("Not now")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HandledSessionBodyweightCard(
+    resolvedBodyWeightKg: Float,
+    weightUnit: WeightUnit,
+    onEdit: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.medium),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Current bodyweight",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    if (resolvedBodyWeightKg > 0f) {
+                        formatBodyWeightForUnit(resolvedBodyWeightKg, weightUnit)
+                    } else {
+                        "Not set for this session"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            TextButton(onClick = onEdit) {
+                Text("Edit current bodyweight")
+            }
+        }
+    }
+}
+
+private fun formatBodyWeightNumberForUnit(weightKg: Float, weightUnit: WeightUnit): String {
+    val displayValue = when (weightUnit) {
+        WeightUnit.KG -> weightKg
+        WeightUnit.LB -> UnitConverter.kgToLb(weightKg)
+    }
+    return UnitConverter.formatDecimal(displayValue)
+}
+
+private fun formatBodyWeightForUnit(weightKg: Float, weightUnit: WeightUnit): String {
+    val suffix = when (weightUnit) {
+        WeightUnit.KG -> "kg"
+        WeightUnit.LB -> "lb"
+    }
+    return "${formatBodyWeightNumberForUnit(weightKg, weightUnit)} $suffix"
+}
+
+private fun parseBodyWeightInputKg(input: String, weightUnit: WeightUnit): Float? {
+    val displayValue = input.trim().replace(',', '.').toFloatOrNull() ?: return null
+    return when (weightUnit) {
+        WeightUnit.KG -> displayValue
+        WeightUnit.LB -> UnitConverter.lbToKg(displayValue)
     }
 }
 
@@ -870,4 +1111,7 @@ private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
 object SetReadyTestTags {
     /** EquipmentRackSelectionCard root inside SetReadyScreen. Issue #582. */
     const val RACK_CARD: String = "set_ready_rack_card"
+
+    /** Current bodyweight prompt card shown once per bodyweight-containing session. Issue #600. */
+    const val SESSION_BODYWEIGHT_CARD: String = "set_ready_session_bodyweight_card"
 }

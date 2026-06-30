@@ -62,6 +62,8 @@ import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -73,8 +75,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.roundToInt
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -467,6 +467,9 @@ class ActiveSessionEngine(
 
     // ===== Calculation Helpers =====
 
+    private fun resolvedSessionBodyWeightKg(): Float = coordinator._sessionBodyweightState.value.sessionBodyWeightKg?.takeIf { it > 0f }
+        ?: settingsManager.userPreferences.value.bodyWeightKg
+
     private suspend fun resolveSelectedExercise(params: WorkoutParameters) = params.selectedExerciseId?.let { exerciseId -> exerciseRepository.getExerciseById(exerciseId) }
 
     private suspend fun captureRackLoadSnapshot(
@@ -838,7 +841,7 @@ class ActiveSessionEngine(
         )
 
         Logger.d("ActiveSessionEngine") {
-            "applyBodyweightVolume: exercise=$exerciseName, bodyWeight=${bodyWeightKg}kg, " +
+            "applyBodyweightVolume: exercise=$exerciseName, bodyWeightSet=${bodyWeightKg > 0f}, " +
                 "variant=${resolvedVariant?.label ?: "name-match"}, reps=$repCount, " +
                 "externalAddedLoad=${rackAdjustment.externalAddedLoadKg}kg, counterweight=${rackAdjustment.counterweightKg}kg, " +
                 "volume=${volume}kg, effectiveWeight=${effectiveWeight}kg"
@@ -901,7 +904,7 @@ class ActiveSessionEngine(
             plannedReps = plannedReps,
             currentSet = currentSetIndex + 1,
             totalSets = currentExercise.setReps.size.coerceAtLeast(1),
-            bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg,
+            bodyWeightKg = resolvedSessionBodyWeightKg(),
             variants = variants,
             selectedVariant = selectedVariant,
         )
@@ -2939,7 +2942,7 @@ class ActiveSessionEngine(
                 displayMultiplierHint = selectedExercise?.displayMultiplier,
             ).let { baseSummary ->
                 // Issue #229: Override volume for bodyweight exercises
-                val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
+                val bodyWeightKg = resolvedSessionBodyWeightKg()
                 applyBodyweightVolume(baseSummary, currentExercise, bodyWeightKg)
             }
             val rackAdjustment = coordinator._currentRackLoadAdjustment.value
@@ -3479,7 +3482,7 @@ class ActiveSessionEngine(
             displayMultiplierHint = selectedExercise?.displayMultiplier,
         ).let { baseSummary ->
             // Issue #229: Override volume for bodyweight exercises
-            val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
+            val bodyWeightKg = resolvedSessionBodyWeightKg()
             applyBodyweightVolume(baseSummary, currentExercise, bodyWeightKg, bodyweightVariant)
         }
         val savedWeightKg = if (isBodyweightExercise(currentExercise)) {
@@ -3849,7 +3852,7 @@ class ActiveSessionEngine(
                 displayMultiplierHint = selectedExercise?.displayMultiplier,
             ).let { raw ->
                 // Issue #229: Override volume for bodyweight exercises
-                val bodyWeightKg = settingsManager.userPreferences.value.bodyWeightKg
+                val bodyWeightKg = resolvedSessionBodyWeightKg()
                 applyBodyweightVolume(raw, currentExercise, bodyWeightKg, coordinator.bodyweightCompletionVariantOverride)
             }
 
