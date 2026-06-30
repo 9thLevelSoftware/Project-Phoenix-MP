@@ -2,6 +2,7 @@ package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackLoadContribution
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.util.Constants
 
@@ -18,6 +19,7 @@ class ApplyEquipmentRackLoadUseCase {
         val uniqueItems = selectedItems.distinctBy { it.id }
         val externalAddedLoadKg = uniqueItems.loadFor(RackItemBehavior.ADDED_RESISTANCE, behaviorOverrides)
         val counterweightKg = uniqueItems.loadFor(RackItemBehavior.COUNTERWEIGHT, behaviorOverrides)
+        val loadContributions = uniqueItems.loadContributions(behaviorOverrides)
         val displayLoadKg = (
             programmedWeightPerCableKg.coerceAtLeast(0f) * cableCount +
                 externalAddedLoadKg -
@@ -42,6 +44,7 @@ class ApplyEquipmentRackLoadUseCase {
             counterweightKg = counterweightKg,
             displayLoadKg = displayLoadKg,
             adjustedMachineWeightPerCableKg = adjustedMachineWeightPerCableKg,
+            loadContributions = loadContributions,
         )
     }
 
@@ -70,4 +73,23 @@ class ApplyEquipmentRackLoadUseCase {
         val effectiveBehavior = overrides[item.id] ?: item.behavior
         item.enabled && effectiveBehavior == behavior
     }.sumOf { it.weightKg.toDouble() }.toFloat()
+
+    private fun List<RackItem>.loadContributions(
+        overrides: Map<String, RackItemBehavior> = emptyMap(),
+    ): List<RackLoadContribution> = mapNotNull { item ->
+        if (!item.enabled) return@mapNotNull null
+
+        val effectiveBehavior = overrides[item.id] ?: item.behavior
+        when (effectiveBehavior) {
+            RackItemBehavior.ADDED_RESISTANCE,
+            RackItemBehavior.COUNTERWEIGHT -> RackLoadContribution(
+                itemId = item.id,
+                itemName = item.name,
+                behavior = effectiveBehavior,
+                weightKg = item.weightKg,
+            )
+
+            RackItemBehavior.DISPLAY_ONLY -> null
+        }
+    }
 }

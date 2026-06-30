@@ -82,6 +82,8 @@
     <string name="bodyweight_variant">Variant</string>
     <string name="bodyweight_variant_percent">%1$s (%2$d%%)</string>
     <string name="bodyweight_effective_load">Effective load: %1$s</string>
+    <string name="bodyweight_effective_load_includes">Includes: %1$s</string>
+    <string name="bodyweight_effective_load_more">+%1$d more</string>
     <string name="bodyweight_volume">Volume: %1$s</string>
     <string name="bodyweight_no_weight_volume">Body weight is not set, so volume will be saved as 0.</string>
     <string name="weight_recommendation_increase">Increase next set</string>

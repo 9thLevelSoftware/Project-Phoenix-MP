@@ -23,6 +23,11 @@ class ApplyEquipmentRackLoadUseCaseTest {
         assertEquals(0f, result.counterweightKg)
         assertEquals(30f, result.displayLoadKg)
         assertEquals(20f, result.adjustedMachineWeightPerCableKg)
+        assertEquals(1, result.loadContributions.size)
+        assertEquals("vest", result.loadContributions.single().itemId)
+        assertEquals("vest", result.loadContributions.single().itemName)
+        assertEquals(RackItemBehavior.ADDED_RESISTANCE, result.loadContributions.single().behavior)
+        assertEquals(10f, result.loadContributions.single().weightKg)
     }
 
     @Test
@@ -38,6 +43,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
         assertEquals(0f, result.counterweightKg)
         assertEquals(20f, result.displayLoadKg)
         assertEquals(20f, result.adjustedMachineWeightPerCableKg)
+        assertEquals(0, result.loadContributions.size)
     }
 
     @Test
@@ -53,6 +59,10 @@ class ApplyEquipmentRackLoadUseCaseTest {
         assertEquals(12f, result.counterweightKg)
         assertEquals(68f, result.displayLoadKg)
         assertEquals(34f, result.adjustedMachineWeightPerCableKg)
+        assertEquals(1, result.loadContributions.size)
+        assertEquals("assist", result.loadContributions.single().itemId)
+        assertEquals(RackItemBehavior.COUNTERWEIGHT, result.loadContributions.single().behavior)
+        assertEquals(12f, result.loadContributions.single().weightKg)
     }
 
     @Test
@@ -107,6 +117,15 @@ class ApplyEquipmentRackLoadUseCaseTest {
         assertEquals(8f, result.counterweightKg)
         assertEquals(37f, result.displayLoadKg)
         assertEquals(22f, result.adjustedMachineWeightPerCableKg)
+        assertEquals(listOf("vest", "chain", "assist"), result.loadContributions.map { it.itemId })
+        assertEquals(
+            listOf(
+                RackItemBehavior.ADDED_RESISTANCE,
+                RackItemBehavior.ADDED_RESISTANCE,
+                RackItemBehavior.COUNTERWEIGHT,
+            ),
+            result.loadContributions.map { it.behavior },
+        )
     }
 
     @Test
@@ -165,6 +184,9 @@ class ApplyEquipmentRackLoadUseCaseTest {
         )
         assertEquals(0f, result.externalAddedLoadKg)
         assertEquals(5f, result.counterweightKg)
+        assertEquals(1, result.loadContributions.size)
+        assertEquals("vest-1", result.loadContributions.single().itemId)
+        assertEquals(RackItemBehavior.COUNTERWEIGHT, result.loadContributions.single().behavior)
     }
 
     @Test
@@ -182,6 +204,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
         assertEquals(0f, result.counterweightKg)
         // displayLoadKg = (50 * 2 + 0 - 0).coerceAtLeast(0) = 100
         assertEquals(100f, result.displayLoadKg)
+        assertEquals(0, result.loadContributions.size)
     }
 
     @Test
@@ -199,6 +222,11 @@ class ApplyEquipmentRackLoadUseCaseTest {
         )
         assertEquals(2f, result.externalAddedLoadKg) // ankle only
         assertEquals(5f, result.counterweightKg) // vest only
+        assertEquals(listOf("vest-1", "ankle-1"), result.loadContributions.map { it.itemId })
+        assertEquals(
+            listOf(RackItemBehavior.COUNTERWEIGHT, RackItemBehavior.ADDED_RESISTANCE),
+            result.loadContributions.map { it.behavior },
+        )
     }
 
     @Test
