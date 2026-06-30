@@ -679,8 +679,7 @@ fun WorkoutTab(
                             nextExerciseName.startsWith(it.exercise.name) ||
                             nextExerciseName.startsWith(it.exercise.displayName)
                     }
-                    val nextEquipment = nextExercise?.exercise?.equipment ?: ""
-                    val isNextBodyweight = nextEquipment.isEmpty() || nextEquipment.equals("bodyweight", ignoreCase = true)
+                    val isNextBodyweight = nextExercise?.exercise?.hasCableAccessory != true
                     val showNextProgression = !isNextBodyweight && workoutParameters.programMode != ProgramMode.Echo
 
                     RestTimerCard(
