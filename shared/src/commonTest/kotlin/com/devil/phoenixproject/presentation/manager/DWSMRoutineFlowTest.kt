@@ -16,6 +16,7 @@ import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -70,6 +71,44 @@ class DWSMRoutineFlowTest {
             routine.exercises[0].exercise.id,
             params.selectedExerciseId,
             "Selected exercise ID should match first exercise",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun loadRoutine_clearsStaleIdleRestEditFlagBeforeSeedingProgression() = runTest {
+        val harness = DWSMTestHarness(this)
+        val baseRoutine = WorkoutStateFixtures.createTestRoutine(
+            weightKg = 30f,
+            repsPerSet = 12,
+        )
+        val routine = baseRoutine.copy(
+            exercises = baseRoutine.exercises.mapIndexed { index, exercise ->
+                if (index == 0) exercise.copy(progressionKg = -0.75f) else exercise
+            },
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.updateWorkoutParameters(
+            harness.dwsm.coordinator.workoutParameters.value.copy(progressionRegressionKg = 2.5f),
+        )
+        assertTrue(
+            harness.dwsm.coordinator._userAdjustedWeightDuringRest,
+            "Idle parameter edits can set the rest-edit preservation flag before a routine is loaded.",
+        )
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        assertFalse(
+            harness.dwsm.coordinator._userAdjustedWeightDuringRest,
+            "Loading a routine through internal parameter seeding must clear stale rest-edit flags.",
+        )
+        assertEquals(
+            -0.75f,
+            harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg,
+            "Routine load must seed progression from the first routine exercise, not a stale pre-routine edit.",
         )
         harness.cleanup()
     }

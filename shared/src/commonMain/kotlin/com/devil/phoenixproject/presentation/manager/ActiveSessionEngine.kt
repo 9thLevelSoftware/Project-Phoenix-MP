@@ -2031,6 +2031,7 @@ class ActiveSessionEngine(
      * parameters as user-adjusted during rest.
      */
     fun setWorkoutParametersInternal(params: WorkoutParameters) {
+        coordinator._userAdjustedWeightDuringRest = false
         coordinator._workoutParameters.value = params
     }
 
