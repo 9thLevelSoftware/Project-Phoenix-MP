@@ -29,6 +29,8 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.SessionBodyweightAction
+import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -286,8 +288,7 @@ class DefaultWorkoutSessionManager(
             ): String? = routineFlowManager.calculateNextExerciseName(isSingleExercise, currentExercise, routine)
             override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean = routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
-            override fun seedRackSelectionForExercise(exerciseIndex: Int) =
-                routineFlowManager.seedRackSelectionForExercise(exerciseIndex)
+            override fun seedRackSelectionForExercise(exerciseIndex: Int) = routineFlowManager.seedRackSelectionForExercise(exerciseIndex)
             override fun proceedFromSummary() = this@DefaultWorkoutSessionManager.proceedFromSummary()
         }
 
@@ -700,8 +701,7 @@ class DefaultWorkoutSessionManager(
     // ===== Training Cycles — delegated to ActiveSessionEngine =====
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = activeSessionEngine.loadRoutineFromCycle(routineId, cycleId, dayNumber)
-    suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int) =
-        activeSessionEngine.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber)
+    suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int) = activeSessionEngine.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber)
     fun clearCycleContext() = activeSessionEngine.clearCycleContext()
 
     // ===== Rest/Flow Control — delegated to ActiveSessionEngine =====
@@ -726,6 +726,49 @@ class DefaultWorkoutSessionManager(
     fun bodyweightVariantKey(exercise: RoutineExercise): String = activeSessionEngine.bodyweightVariantKey(exercise)
     fun selectBodyweightVariant(exerciseKey: String, variant: BodyweightVariantOption) = activeSessionEngine.selectBodyweightVariant(exerciseKey, variant)
     fun confirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) = activeSessionEngine.confirmBodyweightSetResult(reps, variant)
+
+    // ===== Session bodyweight prompt (Issue #600) =====
+
+    val sessionBodyweightState: StateFlow<SessionBodyweightState>
+        get() = coordinator.sessionBodyweightState
+
+    fun resolvedBodyWeightKg(): Float = coordinator._sessionBodyweightState.value.sessionBodyWeightKg?.takeIf { it > 0f }
+        ?: settingsManager.userPreferences.value.bodyWeightKg
+
+    fun confirmSessionBodyWeight(weightKg: Float? = null, saveToProfile: Boolean = false) {
+        val current = coordinator._sessionBodyweightState.value
+        if (weightKg == null) {
+            coordinator._sessionBodyweightState.value = current.copy(
+                promptHandled = true,
+                sessionBodyWeightKg = null,
+                lastAction = SessionBodyweightAction.CONFIRMED_STORED,
+            )
+            return
+        }
+
+        val clamped = weightKg.coerceIn(20f, 300f)
+        coordinator._sessionBodyweightState.value = current.copy(
+            promptHandled = true,
+            sessionBodyWeightKg = clamped,
+            lastAction = if (saveToProfile) {
+                SessionBodyweightAction.EDITED_AND_SAVED_TO_PROFILE
+            } else {
+                SessionBodyweightAction.EDITED_FOR_SESSION
+            },
+        )
+        if (saveToProfile) {
+            settingsManager.setBodyWeightKg(clamped)
+        }
+    }
+
+    fun skipSessionBodyWeightPrompt() {
+        val current = coordinator._sessionBodyweightState.value
+        coordinator._sessionBodyweightState.value = current.copy(
+            promptHandled = true,
+            sessionBodyWeightKg = null,
+            lastAction = SessionBodyweightAction.SKIPPED,
+        )
+    }
 
     // ===== Orchestration: proceedFromSummary (cross-cutting, stays in DWSM) =====
 
