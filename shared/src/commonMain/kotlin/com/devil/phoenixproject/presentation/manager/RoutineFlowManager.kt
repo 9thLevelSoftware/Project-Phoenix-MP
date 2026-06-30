@@ -104,6 +104,13 @@ class RoutineFlowManager(
      */
     internal lateinit var lifecycleDelegate: WorkoutLifecycleDelegate
 
+    private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
+
+    private fun shouldPreserveRestEditedProgression(): Boolean =
+        coordinator._userAdjustedWeightDuringRest &&
+            (coordinator._workoutState.value is WorkoutState.Resting ||
+                coordinator._workoutState.value is WorkoutState.SetSummary)
+
     private fun markExerciseSkipped(index: Int) {
         coordinator._skippedExercises.update { it + index }
         coordinator._completedExercises.update { it - index }
@@ -1025,12 +1032,22 @@ class RoutineFlowManager(
         // Issue #129: Check raw value for AMRAP before fallback
         val rawSetReps = exercise.setReps.getOrNull(setIndex)
         val setReps = rawSetReps ?: exercise.reps
+        val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
+        val progressionKg = if (preserveRestEditedProgression) {
+            clampUpcomingProgressionKg(coordinator._workoutParameters.value.progressionRegressionKg)
+        } else {
+            clampUpcomingProgressionKg(exercise.progressionKg)
+        }
+        if (!preserveRestEditedProgression) {
+            coordinator._userAdjustedWeightDuringRest = false
+        }
 
         coordinator._routineFlowState.value = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
             adjustedWeight = setWeight,
             adjustedReps = setReps,
+            adjustedProgressionKg = progressionKg,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
@@ -1075,7 +1092,7 @@ class RoutineFlowManager(
             repCountTiming = exercise.repCountTiming,
             stopAtTop = exercise.stopAtTop,
             isAMRAP = isSetAmrap,
-            progressionRegressionKg = exercise.progressionKg,
+            progressionRegressionKg = progressionKg,
             isJustLift = false,
             useAutoStart = false,
         )
@@ -1096,12 +1113,22 @@ class RoutineFlowManager(
         coordinator._currentSetIndex.value = setIndex
         // Issue #534: recompute rack load adjustment for the body-weight effective load formula
         applyDefaultRackSelectionForExercise(exercise)
+        val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
+        val progressionKg = if (preserveRestEditedProgression) {
+            clampUpcomingProgressionKg(coordinator._workoutParameters.value.progressionRegressionKg)
+        } else {
+            clampUpcomingProgressionKg(exercise.progressionKg)
+        }
+        if (!preserveRestEditedProgression) {
+            coordinator._userAdjustedWeightDuringRest = false
+        }
 
         coordinator._routineFlowState.value = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
             adjustedWeight = adjustedWeight,
             adjustedReps = adjustedReps,
+            adjustedProgressionKg = progressionKg,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
@@ -1140,7 +1167,7 @@ class RoutineFlowManager(
             repCountTiming = exercise.repCountTiming,
             stopAtTop = exercise.stopAtTop,
             isAMRAP = isSetAmrap,
-            progressionRegressionKg = exercise.progressionKg,
+            progressionRegressionKg = progressionKg,
             isJustLift = false,
             useAutoStart = false,
         )
@@ -1167,6 +1194,21 @@ class RoutineFlowManager(
         if (state is RoutineFlowState.SetReady && reps >= 1) {
             coordinator._routineFlowState.value = state.copy(adjustedReps = reps)
             coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(reps = reps)
+        }
+    }
+
+    /**
+     * Update per-rep progression/regression for the upcoming set only.
+     * Stored internally in kg and intentionally does not mutate RoutineExercise defaults.
+     */
+    fun updateSetReadyProgressionKg(valueKg: Float) {
+        val state = coordinator._routineFlowState.value
+        if (state is RoutineFlowState.SetReady) {
+            val clampedValue = clampUpcomingProgressionKg(valueKg)
+            coordinator._routineFlowState.value = state.copy(adjustedProgressionKg = clampedValue)
+            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                progressionRegressionKg = clampedValue,
+            )
         }
     }
 
@@ -1216,6 +1258,7 @@ class RoutineFlowManager(
         coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
             weightPerCableKg = state.adjustedWeight,
             reps = state.adjustedReps,
+            progressionRegressionKg = state.adjustedProgressionKg,
             isJustLift = false,
         )
 

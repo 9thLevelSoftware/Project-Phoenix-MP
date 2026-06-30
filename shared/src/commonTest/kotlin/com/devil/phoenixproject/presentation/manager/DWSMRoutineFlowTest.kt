@@ -16,6 +16,7 @@ import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -70,6 +71,44 @@ class DWSMRoutineFlowTest {
             routine.exercises[0].exercise.id,
             params.selectedExerciseId,
             "Selected exercise ID should match first exercise",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun loadRoutine_clearsStaleIdleRestEditFlagBeforeSeedingProgression() = runTest {
+        val harness = DWSMTestHarness(this)
+        val baseRoutine = WorkoutStateFixtures.createTestRoutine(
+            weightKg = 30f,
+            repsPerSet = 12,
+        )
+        val routine = baseRoutine.copy(
+            exercises = baseRoutine.exercises.mapIndexed { index, exercise ->
+                if (index == 0) exercise.copy(progressionKg = -0.75f) else exercise
+            },
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.updateWorkoutParameters(
+            harness.dwsm.coordinator.workoutParameters.value.copy(progressionRegressionKg = 2.5f),
+        )
+        assertTrue(
+            harness.dwsm.coordinator._userAdjustedWeightDuringRest,
+            "Idle parameter edits can set the rest-edit preservation flag before a routine is loaded.",
+        )
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        assertFalse(
+            harness.dwsm.coordinator._userAdjustedWeightDuringRest,
+            "Loading a routine through internal parameter seeding must clear stale rest-edit flags.",
+        )
+        assertEquals(
+            -0.75f,
+            harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg,
+            "Routine load must seed progression from the first routine exercise, not a stale pre-routine edit.",
         )
         harness.cleanup()
     }
@@ -419,6 +458,232 @@ class DWSMRoutineFlowTest {
             false,
             params.isJustLift,
             "enterSetReady should set isJustLift=false for routines",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun enterSetReady_seedsAdjustedProgressionFromRoutineExercise() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = Routine(
+            id = "routine-progress-set-ready",
+            name = "Progress Set Ready",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-progress-set-ready",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    weightPerCableKg = 32f,
+                    setWeightsPerCableKg = listOf(32f),
+                    programMode = ProgramMode.OldSchool,
+                    progressionKg = 1.25f,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+
+        val state = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(state)
+        assertEquals(1.25f, state.adjustedProgressionKg)
+        assertEquals(1.25f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        assertEquals(
+            1.25f,
+            routine.exercises.single().progressionKg,
+            "Set Ready runtime progression must not mutate the saved routine default.",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun enterSetReady_clampsOutOfRangeRoutineProgressionToControlRange() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = Routine(
+            id = "routine-progress-set-ready-clamp",
+            name = "Progress Set Ready Clamp",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-progress-set-ready-clamp",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    weightPerCableKg = 32f,
+                    setWeightsPerCableKg = listOf(32f),
+                    programMode = ProgramMode.OldSchool,
+                    progressionKg = 5f,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+
+        val state = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(state)
+        assertEquals(3f, state.adjustedProgressionKg)
+        assertEquals(3f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        assertEquals(
+            5f,
+            routine.exercises.single().progressionKg,
+            "Clamping the runtime Set Ready value must not mutate the saved routine default.",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun enterSetReady_ignoresStaleIdleRestEditFlagWhenSeedingProgression() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = Routine(
+            id = "routine-progress-stale-flag",
+            name = "Progress Stale Flag",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-progress-stale-first",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    weightPerCableKg = 32f,
+                    setWeightsPerCableKg = listOf(32f),
+                    programMode = ProgramMode.OldSchool,
+                    progressionKg = 2.5f,
+                ),
+                RoutineExercise(
+                    id = "re-progress-stale-second",
+                    exercise = TestFixtures.bicepCurl,
+                    orderIndex = 1,
+                    setReps = listOf(10),
+                    weightPerCableKg = 18f,
+                    setWeightsPerCableKg = listOf(18f),
+                    programMode = ProgramMode.OldSchool,
+                    progressionKg = -1.25f,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.updateWorkoutParameters(
+            harness.dwsm.coordinator.workoutParameters.value.copy(progressionRegressionKg = 2.5f),
+        )
+        harness.dwsm.enterSetReady(1, 0)
+
+        val state = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(state)
+        assertEquals(-1.25f, state.adjustedProgressionKg)
+        assertEquals(-1.25f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        assertEquals(
+            false,
+            harness.dwsm.coordinator._userAdjustedWeightDuringRest,
+            "Entering Set Ready from Idle must clear the stale rest-edit flag.",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun enterSetReadyWithAdjustments_seedsAdjustedProgressionFromRoutineExercise() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = Routine(
+            id = "routine-progress-adjusted",
+            name = "Progress Adjusted",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-progress-adjusted",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 30f,
+                    setWeightsPerCableKg = listOf(30f),
+                    programMode = ProgramMode.OldSchool,
+                    progressionKg = -0.75f,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReadyWithAdjustments(0, 0, adjustedWeight = 34f, adjustedReps = 7)
+
+        val state = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(state)
+        assertEquals(34f, state.adjustedWeight)
+        assertEquals(7, state.adjustedReps)
+        assertEquals(-0.75f, state.adjustedProgressionKg)
+        assertEquals(-0.75f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        harness.cleanup()
+    }
+
+    @Test
+    fun updateSetReadyProgressionKg_updatesStateAndWorkoutParameters() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1)
+        val routineWithProgression = routine.copy(
+            exercises = listOf(routine.exercises.single().copy(progressionKg = 0.5f)),
+        )
+        routineWithProgression.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routineWithProgression)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        harness.dwsm.updateSetReadyProgressionKg(-2.5f)
+
+        val state = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(state)
+        assertEquals(-2.5f, state.adjustedProgressionKg)
+        assertEquals(-2.5f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        assertEquals(
+            0.5f,
+            routineWithProgression.exercises.single().progressionKg,
+            "Updating Set Ready progression is an upcoming-set override only.",
+        )
+
+        harness.dwsm.updateSetReadyProgressionKg(9f)
+        val clampedState = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(clampedState)
+        assertEquals(3f, clampedState.adjustedProgressionKg)
+        assertEquals(3f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        harness.cleanup()
+    }
+
+    @Test
+    fun startSetFromReady_usesAdjustedProgressionKg() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1)
+        val routineWithProgression = routine.copy(
+            exercises = listOf(routine.exercises.single().copy(progressionKg = 0.25f)),
+        )
+        routineWithProgression.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routineWithProgression)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        harness.dwsm.updateSetReadyProgressionKg(1.5f)
+        harness.dwsm.startSetFromReady()
+        advanceUntilIdle()
+
+        assertEquals(
+            1.5f,
+            harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg,
+            "Starting from Set Ready must keep the adjusted per-rep progression in WorkoutParameters.",
+        )
+        assertEquals(
+            0.25f,
+            routineWithProgression.exercises.single().progressionKg,
+            "Starting from Set Ready must not mutate the saved routine default.",
         )
         harness.cleanup()
     }

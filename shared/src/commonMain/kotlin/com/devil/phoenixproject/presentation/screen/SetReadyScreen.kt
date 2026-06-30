@@ -82,6 +82,7 @@ import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
+import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -341,10 +342,10 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Header - Set X of Y
+            // Compact header - exercise, set picker, and mode/bodyweight context.
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                 ),
@@ -352,102 +353,89 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     // Issue #142: Display exercise name prominently
                     Text(
                         currentExercise.exercise.name,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(4.dp))
-                    // Issue #541: Make "Set X of Y" a tappable set picker. The label is the
-                    // dropdown anchor; tapping it opens a menu of every set index in the current
-                    // exercise. Selecting an entry calls viewModel.enterSetReady(ex, pickedSet) which
-                    // the engine layer already supports (RoutineFlowManager.kt:886). This is the
-                    // parity surface for the reporter's "no set selector" bug.
-                    //
-                    // a11y: the anchor Text is marked with Role.DropdownList so screen readers
-                    // announce it as an interactive picker rather than a static label. We avoid
-                    // OutlinedTextField(readOnly=true) here because the label lives inside a
-                    // primaryContainer card whose on-color doesn't match the OutlinedTextField's
-                    // default chrome; the existing in-file bodyweight variant picker uses that
-                    // pattern but lives in a surfaceContainerHighest card where it blends cleanly.
-                    ExposedDropdownMenuBox(
-                        expanded = setPickerExpanded && currentExercise.setReps.size > 1,
-                        onExpandedChange = { requested ->
-                            // Respect the requested state from the Material3 API (e.g. for
-                            // accessibility services or external state changes) but only honor
-                            // opens when there is more than one set to pick from.
-                            if (currentExercise.setReps.size > 1) {
-                                setPickerExpanded = requested
-                            } else {
-                                setPickerExpanded = false
-                            }
-                        },
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "Set ${setReadyState.setIndex + 1} of ${currentExercise.setReps.size}" +
-                                if (currentExercise.setReps.size > 1) "  \u25BE" else "",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f),
-                            modifier = Modifier
-                                .menuAnchor()
-                                .semantics {
-                                    role = Role.DropdownList
-                                    contentDescription = "Set selector, currently set " +
-                                        "${setReadyState.setIndex + 1} of " +
-                                        "${currentExercise.setReps.size}"
-                                    if (currentExercise.setReps.size > 1) {
-                                        stateDescription = "Tap to choose a different set"
-                                    }
-                                },
-                        )
-                        ExposedDropdownMenu(
+                        // Issue #541: Make "Set X of Y" a tappable set picker. The label is the
+                        // dropdown anchor; tapping it opens a menu of every set index in the current
+                        // exercise. Selecting an entry calls viewModel.enterSetReady(ex, pickedSet) which
+                        // the engine layer already supports. Keep Role.DropdownList and descriptions.
+                        ExposedDropdownMenuBox(
                             expanded = setPickerExpanded && currentExercise.setReps.size > 1,
-                            onDismissRequest = { setPickerExpanded = false },
+                            onExpandedChange = { requested ->
+                                if (currentExercise.setReps.size > 1) {
+                                    setPickerExpanded = requested
+                                } else {
+                                    setPickerExpanded = false
+                                }
+                            },
                         ) {
-                            currentExercise.setReps.indices.forEach { setIdx ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            "Set ${setIdx + 1}" +
-                                                if (setIdx == setReadyState.setIndex) "  (current)" else "",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                        )
-                                    },
-                                    onClick = {
-                                        setPickerExpanded = false
-                                        if (setIdx != setReadyState.setIndex) {
-                                            // enterSetReady is the engine-level "jump to (ex, set)"
-                                            // API and updates routineFlowState, currentSetIndex, and
-                                            // warm-up state for the new set. No workout state change.
-                                            viewModel.enterSetReady(
-                                                setReadyState.exerciseIndex,
-                                                setIdx,
-                                            )
+                            Text(
+                                text = "Set ${setReadyState.setIndex + 1} of ${currentExercise.setReps.size}" +
+                                    if (currentExercise.setReps.size > 1) "  \u25BE" else "",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f),
+                                modifier = Modifier
+                                    .menuAnchor()
+                                    .semantics {
+                                        role = Role.DropdownList
+                                        contentDescription = "Set selector, currently set " +
+                                            "${setReadyState.setIndex + 1} of " +
+                                            "${currentExercise.setReps.size}"
+                                        if (currentExercise.setReps.size > 1) {
+                                            stateDescription = "Tap to choose a different set"
                                         }
                                     },
-                                )
+                            )
+                            ExposedDropdownMenu(
+                                expanded = setPickerExpanded && currentExercise.setReps.size > 1,
+                                onDismissRequest = { setPickerExpanded = false },
+                            ) {
+                                currentExercise.setReps.indices.forEach { setIdx ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                "Set ${setIdx + 1}" +
+                                                    if (setIdx == setReadyState.setIndex) "  (current)" else "",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                            )
+                                        },
+                                        onClick = {
+                                            setPickerExpanded = false
+                                            if (setIdx != setReadyState.setIndex) {
+                                                viewModel.enterSetReady(
+                                                    setReadyState.exerciseIndex,
+                                                    setIdx,
+                                                )
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
-                    }
-                    // Issue #222: Show "Bodyweight • XXs" for bodyweight, mode name for cable
-                    if (isBodyweight) {
-                        val durationText = currentExercise.duration?.let { "${it}s" } ?: "Timed"
                         Text(
-                            "Bodyweight • $durationText",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                        )
-                    } else {
-                        Text(
-                            currentExercise.programMode.displayName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                            text = if (isBodyweight) {
+                                val durationText = currentExercise.duration?.let { "${it}s" } ?: "Timed"
+                                "Bodyweight • $durationText"
+                            } else {
+                                currentExercise.programMode.displayName
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
                         )
                     }
                 }
@@ -455,20 +443,8 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
             Spacer(Modifier.height(12.dp))
 
-            // Video thumbnail
-            if (enableVideoPlayback) {
-                VideoPlayer(
-                    videoUrl = videoEntity?.videoUrl,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(140.dp)
-                        .clip(RoundedCornerShape(12.dp)),
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-
             // Issue #600: once-per-session Current bodyweight card for any routine
-            // containing a bodyweight exercise, even if the first Set Ready exercise is cable.
+            // containing a bodyweight exercise, even if the current Set Ready exercise is cable.
             if (bodyweightPromptPending) {
                 CurrentBodyweightPromptCard(
                     savedBodyWeightKg = userPreferences.bodyWeightKg,
@@ -584,28 +560,6 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 )
                 Spacer(Modifier.height(12.dp))
             }
-
-            EquipmentRackSelectionCard(
-                rackItems = rackItems,
-                activeRackItemIds = activeRackItemIds,
-                behaviorOverrides = runtimeBehaviorOverrides,
-                weightUnit = weightUnit,
-                formatWeight = viewModel::formatWeight,
-                onSelectionChange = viewModel::updateActiveRackSelection,
-                onBehaviorOverrideChange = { newOverrides ->
-                    runtimeBehaviorOverrides = newOverrides
-                    viewModel.updateActiveRackBehaviorOverrides(newOverrides)
-                    pendingOverridesToSave = newOverrides
-                    showSaveOverridePrompt = true
-                },
-                onManageRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
-                showBehaviorOverrides = true,
-                // Issue #582: regression tag for Compose UI / screenshot tests that
-                // verify the Equipment Rack card is reachable on cable SetReady.
-                modifier = Modifier.testTag(SetReadyTestTags.RACK_CARD),
-            )
-
-            Spacer(Modifier.height(12.dp))
 
             // Configuration card - matching RestTimerCard style
             // Issue #222: Hide for bodyweight exercises (no cable settings to configure)
@@ -734,9 +688,52 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     )
                                 }
                             }
+
+                            WeightChangePerRepControl(
+                                valueKg = setReadyState.adjustedProgressionKg,
+                                weightUnit = weightUnit,
+                                kgToDisplay = viewModel::kgToDisplay,
+                                displayToKg = viewModel::displayToKg,
+                                onValueChangeKg = { viewModel.updateSetReadyProgressionKg(it) },
+                                modifier = Modifier.testTag(SetReadyTestTags.PROGRESSION_CONTROL),
+                            )
                         }
                     }
                 }
+            }
+
+            EquipmentRackSelectionCard(
+                rackItems = rackItems,
+                activeRackItemIds = activeRackItemIds,
+                behaviorOverrides = runtimeBehaviorOverrides,
+                weightUnit = weightUnit,
+                formatWeight = viewModel::formatWeight,
+                onSelectionChange = viewModel::updateActiveRackSelection,
+                onBehaviorOverrideChange = { newOverrides ->
+                    runtimeBehaviorOverrides = newOverrides
+                    viewModel.updateActiveRackBehaviorOverrides(newOverrides)
+                    pendingOverridesToSave = newOverrides
+                    showSaveOverridePrompt = true
+                },
+                onManageRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
+                showBehaviorOverrides = true,
+                // Issue #582: regression tag for Compose UI / screenshot tests that
+                // verify the Equipment Rack card is reachable on cable SetReady.
+                modifier = Modifier.testTag(SetReadyTestTags.RACK_CARD),
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Video thumbnail stays available but no longer pushes primary set configuration down.
+            if (enableVideoPlayback) {
+                VideoPlayer(
+                    videoUrl = videoEntity?.videoUrl,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(96.dp)
+                        .clip(RoundedCornerShape(12.dp)),
+                )
+                Spacer(Modifier.height(12.dp))
             }
             // Issue #582: a trailing `Spacer(Modifier.weight(1f))` was removed here
             // because `Modifier.weight` is not allowed inside a vertically-scrollable
@@ -1111,6 +1108,9 @@ private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
 object SetReadyTestTags {
     /** EquipmentRackSelectionCard root inside SetReadyScreen. Issue #582. */
     const val RACK_CARD: String = "set_ready_rack_card"
+
+    /** Weight Change / Rep control inside cable non-Echo Set Configuration. Issue #604. */
+    const val PROGRESSION_CONTROL: String = "set_ready_progression_control"
 
     /** Current bodyweight prompt card shown once per bodyweight-containing session. Issue #600. */
     const val SESSION_BODYWEIGHT_CARD: String = "set_ready_session_bodyweight_card"

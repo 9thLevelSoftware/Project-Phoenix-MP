@@ -146,4 +146,46 @@ class WarmupProgressionTest {
 
         harness.cleanup()
     }
+
+    @Test
+    fun `working set after warm-up uses Set Ready progression override`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = warmupRoutine()
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        harness.dwsm.updateSetReadyProgressionKg(1.25f)
+
+        harness.fakeBleRepo.commandsReceived.clear()
+        harness.dwsm.startSetFromReady()
+        advanceUntilIdle()
+
+        val warmupPacket = harness.firstActivationPacket()
+        assertEquals(
+            0f,
+            readFloatLE(warmupPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
+            "Warm-up set should still send 0 per-rep progression even when Set Ready overrides the working set.",
+        )
+
+        harness.fakeBleRepo.commandsReceived.clear()
+        harness.activeSessionEngine.handleSetCompletion()
+        advanceUntilIdle()
+
+        val workingPacket = harness.firstActivationPacket()
+        assertEquals(
+            1.25f,
+            readFloatLE(workingPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
+            "Working set after warm-up should use the upcoming-set Set Ready progression override.",
+        )
+
+        assertEquals(
+            progressionKg,
+            routine.exercises.single().progressionKg,
+            "Set Ready override must not mutate the saved routine default progression.",
+        )
+        harness.cleanup()
+    }
 }

@@ -214,6 +214,54 @@ class SetReadyScreenScrollWiringTest {
     }
 
     @Test
+    fun setReadyProgressionControl_isTaggedForRegressionTests() {
+        val src = readSetReadyScreenSource()
+
+        assertTrue(
+            src.contains("testTag(SetReadyTestTags.PROGRESSION_CONTROL)"),
+            "SetReadyScreen.kt must tag the Weight Change / Rep control so issue #604 can be guarded by UI/screenshot tests.",
+        )
+        assertTrue(
+            src.contains("\"set_ready_progression_control\""),
+            "SetReadyTestTags.PROGRESSION_CONTROL must stringify to \"set_ready_progression_control\".",
+        )
+    }
+
+    @Test
+    fun setReadyProgressionControl_wiresToViewModel() {
+        val src = readSetReadyScreenSource()
+
+        assertTrue(
+            src.contains("WeightChangePerRepControl"),
+            "Cable non-Echo SetReady configuration must render WeightChangePerRepControl for issue #604.",
+        )
+        assertTrue(
+            src.contains("valueKg = setReadyState.adjustedProgressionKg"),
+            "SetReadyScreen.kt must seed Weight Change / Rep from RoutineFlowState.SetReady.adjustedProgressionKg.",
+        )
+        assertTrue(
+            src.contains("viewModel.updateSetReadyProgressionKg(it)"),
+            "SetReadyScreen.kt must route Weight Change / Rep edits through MainViewModel.updateSetReadyProgressionKg.",
+        )
+    }
+
+    @Test
+    fun setReadyConfiguration_appearsBeforeVideo() {
+        val src = readSetReadyScreenSource()
+        val configIdx = src.indexOf("if (isEchoMode) \"ECHO SETTINGS\" else \"SET CONFIGURATION\"")
+        val rackIdx = src.indexOf("testTag(SetReadyTestTags.RACK_CARD)")
+        val videoIdx = src.indexOf("Video thumbnail stays available")
+
+        assertTrue(configIdx >= 0, "SetReady SET CONFIGURATION label must exist.")
+        assertTrue(rackIdx >= 0, "SetReady equipment rack tag must exist.")
+        assertTrue(videoIdx >= 0, "SetReady compact/lower video block must exist.")
+        assertTrue(
+            configIdx < rackIdx && rackIdx < videoIdx,
+            "Issue #604 signed-off layout requires Set Configuration before Equipment Rack, with video moved below primary controls.",
+        )
+    }
+
+    @Test
     fun equipmentRackCard_callSiteUsesIssueScopeComment() {
         val src = readSetReadyScreenSource()
 

@@ -1914,6 +1914,8 @@ class ActiveSessionEngine(
         Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Reset to 0 (disabled)" }
     }
 
+    private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
+
     fun updateWorkoutParameters(params: WorkoutParameters) {
         // Defense: reject near-zero weight writes in Just Lift mode.
         // The JustLiftScreen param-sync LaunchedEffect can fire before defaults
@@ -2029,6 +2031,7 @@ class ActiveSessionEngine(
      * parameters as user-adjusted during rest.
      */
     fun setWorkoutParametersInternal(params: WorkoutParameters) {
+        coordinator._userAdjustedWeightDuringRest = false
         coordinator._workoutParameters.value = params
     }
 
@@ -4175,7 +4178,7 @@ class ActiveSessionEngine(
                         programMode = exerciseForNextSet.programMode,
                         echoLevel = exerciseForNextSet.getEchoLevelForSet(nextSetIdx),
                         eccentricLoad = exerciseForNextSet.eccentricLoad,
-                        progressionRegressionKg = exerciseForNextSet.progressionKg,
+                        progressionRegressionKg = clampUpcomingProgressionKg(exerciseForNextSet.progressionKg),
                         selectedExerciseId = exerciseForNextSet.exercise.id,
                         isAMRAP = nextIsAMRAP,
                         stallDetectionEnabled = exerciseForNextSet.stallDetectionEnabled,
@@ -4406,6 +4409,11 @@ class ActiveSessionEngine(
             } else {
                 targetReps ?: 0
             }
+            val setProgressionKg = if (coordinator._userAdjustedWeightDuringRest) {
+                currentParams.progressionRegressionKg
+            } else {
+                clampUpcomingProgressionKg(currentExercise.progressionKg)
+            }
             coordinator._userAdjustedWeightDuringRest = false
 
             val isLastSet = coordinator._currentSetIndex.value >= currentExercise.setReps.size - 1
@@ -4416,7 +4424,7 @@ class ActiveSessionEngine(
                 weightPerCableKg = setWeight,
                 isAMRAP = nextIsAMRAP,
                 stallDetectionEnabled = currentExercise.stallDetectionEnabled,
-                progressionRegressionKg = currentExercise.progressionKg,
+                progressionRegressionKg = setProgressionKg,
             )
             Logger.d { "advanceToNextSetInSingleExercise: Issue #203 - setIdx=${coordinator._currentSetIndex.value}, isAMRAP=$nextIsAMRAP" }
 
@@ -4514,29 +4522,34 @@ class ActiveSessionEngine(
 
             val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
             val currentParams = coordinator._workoutParameters.value
+            val preserveRestEdits = coordinator._userAdjustedWeightDuringRest
 
-            val nextSetWeight = if (coordinator._userAdjustedWeightDuringRest) {
+            val nextSetWeight = if (preserveRestEdits) {
                 currentParams.weightPerCableKg
             } else {
                 nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
                     ?: nextExercise.weightPerCableKg
             }
-            val nextReps = if (coordinator._userAdjustedWeightDuringRest) {
+            val nextReps = if (preserveRestEdits) {
                 currentParams.reps
             } else {
                 nextSetReps ?: 0
             }
-            val nextEchoLevel = if (coordinator._userAdjustedWeightDuringRest) {
+            val nextEchoLevel = if (preserveRestEdits) {
                 currentParams.echoLevel
             } else {
                 nextExercise.getEchoLevelForSet(nextSetIdx)
             }
-            val nextEccentricLoad = if (coordinator._userAdjustedWeightDuringRest) {
+            val nextEccentricLoad = if (preserveRestEdits) {
                 currentParams.eccentricLoad
             } else {
                 nextExercise.eccentricLoad
             }
-            coordinator._userAdjustedWeightDuringRest = false
+            val nextProgressionKg = if (preserveRestEdits) {
+                currentParams.progressionRegressionKg
+            } else {
+                clampUpcomingProgressionKg(nextExercise.progressionKg)
+            }
 
             val nextIsBodyweight = isBodyweightExercise(nextExercise)
 
@@ -4571,7 +4584,7 @@ class ActiveSessionEngine(
                 programMode = carryProgramMode,
                 echoLevel = carryEchoLevel,
                 eccentricLoad = carryEccentricLoad,
-                progressionRegressionKg = nextExercise.progressionKg,
+                progressionRegressionKg = nextProgressionKg,
                 selectedExerciseId = nextExercise.exercise.id,
                 isAMRAP = nextIsAMRAP,
                 stallDetectionEnabled = nextExercise.stallDetectionEnabled,
@@ -4612,11 +4625,11 @@ class ActiveSessionEngine(
                 repCounter.resetCountsOnly()
                 resetAutoStopState()
                 // ActiveWorkoutScreen only navigates to SetReady when workoutState is Idle.
-                // Leaving Resting/SetSummary here strands the user on the rest/summary UI
-                // while routineFlowState is already SetReady; a second Skip Rest /
-                // startNextSet() would advance past the deferred set entirely.
-                coordinator._workoutState.value = WorkoutState.Idle
+                // Leaving Resting/SetSummary after SetReady setup strands the user on the
+                // rest/summary UI; once the SetReady state has preserved any rest-screen
+                // edits, flip the workout state to Idle so navigation can occur.
                 flowDelegate?.enterSetReady(nextExIdx, nextSetIdx)
+                coordinator._workoutState.value = WorkoutState.Idle
             } else {
                 // Same-entry set advance (isChangingExercise == false). Preserve the
                 // existing behaviour so that manual rest-screen weight/rep edits
@@ -4626,7 +4639,9 @@ class ActiveSessionEngine(
                 resetAutoStopState()
                 startWorkoutOrSetReady()
             }
+            coordinator._userAdjustedWeightDuringRest = false
         } else {
+            coordinator._userAdjustedWeightDuringRest = false
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
             // Issue #395: Write aggregate health workout BEFORE clearing routine state
             writeRoutineHealthData()

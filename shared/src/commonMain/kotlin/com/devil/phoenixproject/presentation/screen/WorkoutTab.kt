@@ -679,8 +679,8 @@ fun WorkoutTab(
                             nextExerciseName.startsWith(it.exercise.name) ||
                             nextExerciseName.startsWith(it.exercise.displayName)
                     }
-                    val nextEquipment = nextExercise?.exercise?.equipment ?: ""
-                    val isNextBodyweight = nextEquipment.isEmpty() || nextEquipment.equals("bodyweight", ignoreCase = true)
+                    val isNextBodyweight = nextExercise?.exercise?.hasCableAccessory != true
+                    val showNextProgression = !isNextBodyweight && workoutParameters.programMode != ProgramMode.Echo
 
                     RestTimerCard(
                         restSecondsRemaining = workoutState.restSecondsRemaining,
@@ -690,6 +690,7 @@ fun WorkoutTab(
                         totalSets = workoutState.totalSets,
                         nextExerciseWeight = workoutParameters.weightPerCableKg,
                         nextExerciseReps = workoutParameters.reps,
+                        nextExerciseProgressionKg = if (showNextProgression) workoutParameters.progressionRegressionKg else null,
                         nextExerciseMode = workoutParameters.programMode.displayName,
                         currentExerciseIndex = if (loadedRoutine != null) currentExerciseIndex else null,
                         totalExercises = loadedRoutine?.exercises?.size,
@@ -713,6 +714,11 @@ fun WorkoutTab(
                         onUpdateWeight = { newWeight ->
                             onUpdateParameters(workoutParameters.copy(weightPerCableKg = newWeight))
                         },
+                        onUpdateProgressionKg = { newValueKg ->
+                            onUpdateParameters(workoutParameters.copy(progressionRegressionKg = newValueKg))
+                        },
+                        kgToDisplay = kgToDisplay,
+                        displayToKg = displayToKg,
                         // Echo mode specific
                         programMode = workoutParameters.programMode,
                         echoLevel = workoutParameters.echoLevel,
