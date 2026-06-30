@@ -89,6 +89,44 @@ class SettingsManagerTest {
     }
 
     @Test
+    fun `routine exercise percent defaults are off and eighty percent`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+
+            assertFalse(manager.defaultRoutineExerciseUsePercentOfPR.value)
+            assertEquals(80, manager.defaultRoutineExerciseWeightPercentOfPR.value)
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `set routine exercise percent preferences persist and coerce range`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+
+            manager.setDefaultRoutineExerciseUsePercentOfPR(true)
+            manager.setDefaultRoutineExerciseWeightPercentOfPR(135)
+            advanceUntilIdle()
+
+            assertTrue(fakePreferencesManager.preferencesFlow.value.defaultRoutineExerciseUsePercentOfPR)
+            assertEquals(120, fakePreferencesManager.preferencesFlow.value.defaultRoutineExerciseWeightPercentOfPR)
+            assertTrue(manager.defaultRoutineExerciseUsePercentOfPR.value)
+            assertEquals(120, manager.defaultRoutineExerciseWeightPercentOfPR.value)
+
+            manager.setDefaultRoutineExerciseWeightPercentOfPR(20)
+            advanceUntilIdle()
+
+            assertEquals(50, fakePreferencesManager.preferencesFlow.value.defaultRoutineExerciseWeightPercentOfPR)
+            assertEquals(50, manager.defaultRoutineExerciseWeightPercentOfPR.value)
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
     fun `setVelocityOneRepMaxBackfillDone persists to preference-backed flow`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {

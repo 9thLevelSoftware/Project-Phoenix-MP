@@ -44,6 +44,15 @@ class SettingsManager(
         .map { it.defaultScalingBasis }
         .stateIn(scope, SharingStarted.Eagerly, ScalingBasis.MAX_WEIGHT_PR)
 
+    // Issue #595: Routine-builder defaults for newly added cable exercises
+    val defaultRoutineExerciseUsePercentOfPR: StateFlow<Boolean> = userPreferences
+        .map { it.defaultRoutineExerciseUsePercentOfPR }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
+    val defaultRoutineExerciseWeightPercentOfPR: StateFlow<Int> = userPreferences
+        .map { it.defaultRoutineExerciseWeightPercentOfPR }
+        .stateIn(scope, SharingStarted.Eagerly, 80)
+
     // Issue #517: Run-once flag — true after the velocity 1RM backfill has completed
     val velocityOneRepMaxBackfillDone: StateFlow<Boolean> = userPreferences
         .map { it.velocityOneRepMaxBackfillDone }
@@ -159,6 +168,14 @@ class SettingsManager(
 
     fun setDefaultScalingBasis(basis: ScalingBasis) {
         scope.launch { preferencesManager.setDefaultScalingBasis(basis) }
+    }
+
+    fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) {
+        scope.launch { preferencesManager.setDefaultRoutineExerciseUsePercentOfPR(enabled) }
+    }
+
+    fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) {
+        scope.launch { preferencesManager.setDefaultRoutineExerciseWeightPercentOfPR(percent.coerceIn(50, 120)) }
     }
 
     fun setVelocityOneRepMaxBackfillDone(done: Boolean) {

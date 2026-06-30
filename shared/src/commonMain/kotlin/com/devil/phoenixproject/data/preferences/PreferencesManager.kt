@@ -157,6 +157,10 @@ interface PreferencesManager {
     // Issue #517: Default scaling basis for % of 1RM routine weight resolution
     suspend fun setDefaultScalingBasis(basis: ScalingBasis)
 
+    // Issue #595: Routine-builder defaults for newly added exercises
+    suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean)
+    suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int)
+
     // Issue #517: Run-once flag for velocity 1RM backfill
     suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean)
 
@@ -219,6 +223,8 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_AUTO_END_VELOCITY_LOSS = "auto_end_on_velocity_loss"
         private const val KEY_WEIGHT_SUGGESTIONS_ENABLED = "weight_suggestions_enabled"
         private const val KEY_DEFAULT_SCALING_BASIS = "default_scaling_basis"
+        private const val KEY_DEFAULT_ROUTINE_EXERCISE_USE_PERCENT_OF_PR = "default_routine_exercise_use_percent_of_pr"
+        private const val KEY_DEFAULT_ROUTINE_EXERCISE_WEIGHT_PERCENT_OF_PR = "default_routine_exercise_weight_percent_of_pr"
         private const val KEY_VELOCITY_1RM_BACKFILL_DONE = "velocity_1rm_backfill_done"
 
         // Permissions onboarding (health + microphone)
@@ -272,6 +278,11 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             defaultScalingBasis = settings.getStringOrNull(KEY_DEFAULT_SCALING_BASIS)?.let {
                 runCatching { ScalingBasis.valueOf(it) }.getOrNull()
             } ?: ScalingBasis.MAX_WEIGHT_PR,
+            defaultRoutineExerciseUsePercentOfPR = settings.getBoolean(KEY_DEFAULT_ROUTINE_EXERCISE_USE_PERCENT_OF_PR, false),
+            defaultRoutineExerciseWeightPercentOfPR = settings.getInt(
+                KEY_DEFAULT_ROUTINE_EXERCISE_WEIGHT_PERCENT_OF_PR,
+                80,
+            ).coerceIn(50, 120),
             velocityOneRepMaxBackfillDone = settings.getBoolean(KEY_VELOCITY_1RM_BACKFILL_DONE, false),
         )
     }
@@ -541,6 +552,17 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     override suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
         settings.putString(KEY_DEFAULT_SCALING_BASIS, basis.name)
         updateAndEmit { copy(defaultScalingBasis = basis) }
+    }
+
+    override suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) {
+        settings.putBoolean(KEY_DEFAULT_ROUTINE_EXERCISE_USE_PERCENT_OF_PR, enabled)
+        updateAndEmit { copy(defaultRoutineExerciseUsePercentOfPR = enabled) }
+    }
+
+    override suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) {
+        val clamped = percent.coerceIn(50, 120)
+        settings.putInt(KEY_DEFAULT_ROUTINE_EXERCISE_WEIGHT_PERCENT_OF_PR, clamped)
+        updateAndEmit { copy(defaultRoutineExerciseWeightPercentOfPR = clamped) }
     }
 
     override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {

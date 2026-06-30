@@ -79,6 +79,7 @@ import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.domain.usecase.RoutineScalingBaselineSource
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
@@ -180,6 +181,7 @@ fun ExerciseEditBottomSheet(
     val currentMaxVolumePR by viewModel.currentMaxVolumePR.collectAsState()
     val velocityEstimateKg by viewModel.velocityEstimateKg.collectAsState()
     val storedOneRepMaxKg by viewModel.storedOneRepMaxKg.collectAsState()
+    val routineScalingBaseline by viewModel.routineScalingBaseline.collectAsState()
 
     // Resolved baseline weight for the currently-selected scaling basis, mirroring
     // ResolveRoutineWeightsUseCase so the editor preview matches workout-start resolution.
@@ -190,18 +192,34 @@ fun ExerciseEditBottomSheet(
     val maxVolumeBaselineKg = currentMaxVolumePR?.weightPerCableKg?.takeIf { it > 0 }
     val velocityBaselineKg = velocityEstimateKg?.takeIf { it > 0 }
     val storedBaselineKg = storedOneRepMaxKg?.takeIf { it > 0 }
-    val baselineWeightKg: Float? = when (effectiveScalingBasis) {
+    val sharedBaselineKg = routineScalingBaseline
+        ?.takeIf { it.basis == effectiveScalingBasis }
+        ?.weightPerCableKg
+        ?.takeIf { it > 0 }
+    val baselineWeightKg: Float? = sharedBaselineKg ?: when (effectiveScalingBasis) {
         ScalingBasis.MAX_WEIGHT_PR -> maxWeightBaselineKg
         ScalingBasis.MAX_VOLUME_PR -> maxVolumeBaselineKg
         ScalingBasis.ESTIMATED_1RM -> velocityBaselineKg ?: storedBaselineKg ?: maxWeightBaselineKg
     }
+    val baselineSourceMessage = routineScalingBaseline
+        ?.takeIf { it.source == RoutineScalingBaselineSource.CROSS_MODE_PR && it.basis == effectiveScalingBasis }
+        ?.sourceMode
+        ?.let { sourceMode ->
+            val basisLabel = when (effectiveScalingBasis) {
+                ScalingBasis.MAX_WEIGHT_PR -> "Max-weight PR"
+                ScalingBasis.MAX_VOLUME_PR -> "Max-volume PR"
+                ScalingBasis.ESTIMATED_1RM -> "Est. 1RM"
+            }
+            "No ${selectedMode.displayName} PR yet; using your best available $basisLabel from $sourceMode."
+        }
     // True if a baseline exists for AT LEAST ONE basis. Used to gate the % toggle and
     // warning so the user can enable scaling and switch to a basis that has data, rather
     // than being locked out when only the currently-selected basis lacks a baseline (#517).
     val hasAnyBaseline = maxWeightBaselineKg != null ||
         maxVolumeBaselineKg != null ||
         velocityBaselineKg != null ||
-        storedBaselineKg != null
+        storedBaselineKg != null ||
+        sharedBaselineKg != null
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
@@ -377,6 +395,7 @@ fun ExerciseEditBottomSheet(
                         effectiveScalingBasis = effectiveScalingBasis,
                         baselineWeightKg = baselineWeightKg,
                         hasAnyBaseline = hasAnyBaseline,
+                        baselineSourceMessage = baselineSourceMessage,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
@@ -1281,6 +1300,7 @@ fun WeightConfigurationCard(
      * even when the currently-selected basis lacks a baseline (Issue #517).
      */
     hasAnyBaseline: Boolean = baselineWeightKg != null,
+    baselineSourceMessage: String? = null,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onUsePercentOfPRChange: (Boolean) -> Unit,
@@ -1328,6 +1348,8 @@ fun WeightConfigurationCard(
                                 "Scale weight based on your velocity 1RM estimate"
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_VOLUME_PR ->
                                 "Scale weight based on your max-volume personal record"
+                            baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_WEIGHT_PR ->
+                                "Scale weight based on your max-weight personal record"
                             currentExercisePR != null ->
                                 "Scale weight based on your ${currentExercisePR.phase.displayLabel().lowercase()} personal record"
                             else ->
@@ -1336,13 +1358,23 @@ fun WeightConfigurationCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    baselineSourceMessage?.let { message ->
+                        Spacer(modifier = Modifier.height(Spacing.extraSmall))
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
                 Switch(
                     checked = usePercentOfPR,
                     onCheckedChange = onUsePercentOfPRChange,
                     // Enable the toggle whenever a baseline exists for ANY basis — the user
                     // can then switch to the basis that has data (fixes ESTIMATED_1RM lockout).
-                    enabled = hasAnyBaseline,
+                    // If scaling was seeded by routine defaults before a baseline exists,
+                    // keep the switch reversible so saving does not leave a latent % rule.
+                    enabled = hasAnyBaseline || usePercentOfPR,
                 )
             }
 

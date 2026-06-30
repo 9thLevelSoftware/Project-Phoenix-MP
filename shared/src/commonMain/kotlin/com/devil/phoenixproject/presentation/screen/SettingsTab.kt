@@ -345,6 +345,11 @@ fun SettingsTab(
     // Issue #517: System-wide default scaling basis for % of 1RM
     defaultScalingBasis: ScalingBasis = ScalingBasis.MAX_WEIGHT_PR,
     onDefaultScalingBasisChange: (ScalingBasis) -> Unit = {},
+    // Issue #595: Routine-builder defaults for newly added cable exercises
+    defaultRoutineExerciseUsePercentOfPR: Boolean = false,
+    defaultRoutineExerciseWeightPercentOfPR: Int = 80,
+    onDefaultRoutineExerciseUsePercentOfPRChange: (Boolean) -> Unit = {},
+    onDefaultRoutineExerciseWeightPercentOfPRChange: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -1389,6 +1394,76 @@ fun SettingsTab(
                                 selected = defaultScalingBasis == basis,
                             ) {
                                 Text(label, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Issue #595: Opt-in starting weights for newly added routine exercises.
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Routine starting weights",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                if (defaultRoutineExerciseUsePercentOfPR) {
+                                    "When a baseline exists, newly added routine exercises start at your chosen percentage. You can still edit each exercise before saving."
+                                } else {
+                                    "New routine exercises start from the normal manual weight."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = defaultRoutineExerciseUsePercentOfPR,
+                            onCheckedChange = onDefaultRoutineExerciseUsePercentOfPRChange,
+                        )
+                    }
+
+                    if (defaultRoutineExerciseUsePercentOfPR) {
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                        val routineDefaultPercent = defaultRoutineExerciseWeightPercentOfPR.coerceIn(50, 120)
+                        Text(
+                            "$routineDefaultPercent% of selected baseline",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                        ExpressiveSlider(
+                            value = routineDefaultPercent.toFloat(),
+                            onValueChange = { value ->
+                                val roundedToFive = (value / 5f).roundToInt() * 5
+                                onDefaultRoutineExerciseWeightPercentOfPRChange(roundedToFive.coerceIn(50, 120))
+                            },
+                            valueRange = 50f..120f,
+                            steps = 13,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                        ) {
+                            listOf(70, 80, 90, 100).forEach { percent ->
+                                FilterChip(
+                                    selected = routineDefaultPercent == percent,
+                                    onClick = { onDefaultRoutineExerciseWeightPercentOfPRChange(percent) },
+                                    label = { Text("$percent%") },
+                                    modifier = Modifier.weight(1f),
+                                )
                             }
                         }
                     }

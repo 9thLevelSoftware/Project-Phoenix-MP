@@ -167,6 +167,14 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(defaultScalingBasis = basis)
     }
 
+    override suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(defaultRoutineExerciseUsePercentOfPR = enabled)
+    }
+
+    override suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(defaultRoutineExerciseWeightPercentOfPR = percent.coerceIn(50, 120))
+    }
+
     override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(velocityOneRepMaxBackfillDone = done)
     }

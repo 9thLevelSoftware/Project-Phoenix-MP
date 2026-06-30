@@ -22,6 +22,7 @@ import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
@@ -39,7 +40,8 @@ val domainModule = module {
     single { ProgressionUseCase(get(), get()) }
     single { RecommendWeightAdjustmentUseCase() }
     single { ApplyEquipmentRackLoadUseCase() }
-    factory { ResolveRoutineWeightsUseCase(get(), get(), get()) }
+    factory { ResolveRoutineScalingBaselineUseCase(get(), get(), get()) }
+    factory { ResolveRoutineWeightsUseCase(get(), get(), get(), get()) }
     factory { ApplyRoutineModifierUseCase(get(), get()) }
     factory { RoutineTimeEstimator(get()) }
     single { TemplateConverter(get()) }

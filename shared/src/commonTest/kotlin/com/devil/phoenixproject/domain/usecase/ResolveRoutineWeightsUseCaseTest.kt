@@ -696,6 +696,94 @@ class ResolveRoutineWeightsUseCaseTest {
     }
 
     @Test
+    fun `max weight basis falls back to same profile cross mode PR when selected mode has none`() = runTest {
+        prRepository.addRecord(
+            PersonalRecord(
+                id = 10,
+                exerciseId = "bench-press",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 62f,
+                reps = 5,
+                oneRepMax = 70f,
+                timestamp = 2_000L,
+                workoutMode = "Pump",
+                prType = PRType.MAX_WEIGHT,
+                volume = 310f,
+                profileId = "default",
+            ),
+        )
+        prRepository.addRecord(
+            PersonalRecord(
+                id = 11,
+                exerciseId = "bench-press",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 90f,
+                reps = 5,
+                oneRepMax = 100f,
+                timestamp = 3_000L,
+                workoutMode = "Pump",
+                prType = PRType.MAX_WEIGHT,
+                volume = 450f,
+                profileId = "other-profile",
+            ),
+        )
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-cross-mode",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 5f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise, profileId = "default")
+
+        assertEquals(49.5f, result.baseWeight)
+        assertEquals(62f, result.usedPR)
+        assertTrue(result.isFromPR)
+        assertNull(result.fallbackReason)
+    }
+
+    @Test
+    fun `max volume basis falls back to same profile cross mode volume PR when selected mode has none`() = runTest {
+        prRepository.addRecord(
+            PersonalRecord(
+                id = 12,
+                exerciseId = "bench-press",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 45f,
+                reps = 15,
+                oneRepMax = 65f,
+                timestamp = 2_000L,
+                workoutMode = "Pump",
+                prType = PRType.MAX_VOLUME,
+                volume = 675f,
+                profileId = "default",
+            ),
+        )
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-cross-volume",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 5f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 100,
+            scalingBasis = ScalingBasis.MAX_VOLUME_PR,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise, profileId = "default")
+
+        assertEquals(45f, result.baseWeight)
+        assertEquals(45f, result.usedPR)
+        assertTrue(result.isFromPR)
+    }
+
+    @Test
     fun `set weights default to base percentage when no per-set percentages defined`() = runTest {
         // Given: Exercise uses PR percentage for base weight, but no per-set percentages
         prRepository.addRecord(
