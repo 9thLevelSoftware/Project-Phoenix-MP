@@ -49,6 +49,9 @@ data class UserPreferences(
     val weightSuggestionsEnabled: Boolean = true,
     // Issue #517: Default scaling basis for % of 1RM routine weight resolution
     val defaultScalingBasis: ScalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+    // Issue #595: Opt-in routine-builder default for newly added cable exercises
+    val defaultRoutineExerciseUsePercentOfPR: Boolean = false,
+    val defaultRoutineExerciseWeightPercentOfPR: Int = 80,
     // Issue #517: Run-once flag — true after the velocity 1RM backfill has completed
     val velocityOneRepMaxBackfillDone: Boolean = false,
 ) {

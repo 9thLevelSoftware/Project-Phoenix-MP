@@ -353,6 +353,13 @@ class MainViewModel constructor(
     // Issue #517: system-wide default scaling basis
     fun setDefaultScalingBasis(basis: ScalingBasis) = settingsManager.setDefaultScalingBasis(basis)
 
+    // Issue #595: routine-builder defaults for newly added cable exercises
+    fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) =
+        settingsManager.setDefaultRoutineExerciseUsePercentOfPR(enabled)
+
+    fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) =
+        settingsManager.setDefaultRoutineExerciseWeightPercentOfPR(percent)
+
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
     val backupStats: kotlinx.coroutines.flow.StateFlow<BackupStats?> = _backupStats

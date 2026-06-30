@@ -399,6 +399,11 @@ fun NavGraph(
                     // Issue #517: system-wide default scaling basis
                     defaultScalingBasis = userPreferences.defaultScalingBasis,
                     onDefaultScalingBasisChange = { viewModel.setDefaultScalingBasis(it) },
+                    // Issue #595: routine-builder defaults for newly added cable exercises
+                    defaultRoutineExerciseUsePercentOfPR = userPreferences.defaultRoutineExerciseUsePercentOfPR,
+                    defaultRoutineExerciseWeightPercentOfPR = userPreferences.defaultRoutineExerciseWeightPercentOfPR,
+                    onDefaultRoutineExerciseUsePercentOfPRChange = { viewModel.setDefaultRoutineExerciseUsePercentOfPR(it) },
+                    onDefaultRoutineExerciseWeightPercentOfPRChange = { viewModel.setDefaultRoutineExerciseWeightPercentOfPR(it) },
                 )
             }
 

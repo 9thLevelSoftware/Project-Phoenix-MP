@@ -20,6 +20,8 @@ import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.toWorkoutMode
+import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
+import com.devil.phoenixproject.domain.usecase.RoutineScalingBaseline
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +56,13 @@ class ExerciseConfigViewModel constructor(
     private val exerciseRepository: ExerciseRepository? = null,
 ) : ViewModel() {
 
+    private val scalingBaselineResolver: ResolveRoutineScalingBaselineUseCase? =
+        if (personalRecordRepository != null && velocityOneRepMaxRepository != null && exerciseRepository != null) {
+            ResolveRoutineScalingBaselineUseCase(personalRecordRepository, exerciseRepository, velocityOneRepMaxRepository)
+        } else {
+            null
+        }
+
     private val log = Logger.withTag("ExerciseConfigViewModel")
     private val _initialized = MutableStateFlow(false)
     private var activeProfileId: String = "default"
@@ -79,6 +88,10 @@ class ExerciseConfigViewModel constructor(
     // Stored Exercise.oneRepMaxKg (manual/VBT input) — fallback within ESTIMATED_1RM basis
     private val _storedOneRepMaxKg = MutableStateFlow<Float?>(null)
     val storedOneRepMaxKg: StateFlow<Float?> = _storedOneRepMaxKg.asStateFlow()
+
+    // Shared baseline resolver output, including same-profile cross-mode fallback metadata.
+    private val _routineScalingBaseline = MutableStateFlow<RoutineScalingBaseline?>(null)
+    val routineScalingBaseline: StateFlow<RoutineScalingBaseline?> = _routineScalingBaseline.asStateFlow()
 
     // Convenience accessor for just the PR weight (useful for PRIndicator component)
     val currentExercisePRWeight: Float?
@@ -265,6 +278,7 @@ class ExerciseConfigViewModel constructor(
         exercise.exercise.id?.let { exerciseId ->
             loadPRForExercise(exerciseId, _selectedMode.value.displayName)
             loadModeIndependentBaselines(exerciseId)
+            loadRoutineScalingBaseline(exerciseId, _selectedMode.value)
         }
 
         _initialized.value = true
@@ -321,6 +335,32 @@ class ExerciseConfigViewModel constructor(
             // The volume PR loads after the weight-PR sync above; re-sync so a MAX_VOLUME_PR
             // exercise picks up the just-loaded baseline instead of staying on stale weights.
             resyncSetWeightsIfBaselineReady()
+            loadRoutineScalingBaseline(exerciseId, _selectedMode.value)
+        }
+    }
+
+    private fun loadRoutineScalingBaselineForCurrentExercise() {
+        if (!::originalExercise.isInitialized) return
+        originalExercise.exercise.id?.let { exerciseId ->
+            loadRoutineScalingBaseline(exerciseId, _selectedMode.value)
+        }
+    }
+
+    private fun loadRoutineScalingBaseline(exerciseId: String, mode: WorkoutMode) {
+        val resolver = scalingBaselineResolver ?: return
+        viewModelScope.launch {
+            try {
+                _routineScalingBaseline.value = resolver(
+                    exerciseId = exerciseId,
+                    mode = mode.toProgramMode(),
+                    profileId = activeProfileId,
+                    basis = effectiveScalingBasis(),
+                )
+                resyncSetWeightsIfBaselineReady()
+            } catch (e: Exception) {
+                logWarning("Failed to resolve routine scaling baseline for exercise=$exerciseId, mode=${mode.displayName}, profile=$activeProfileId: ${e.message}")
+                _routineScalingBaseline.value = null
+            }
         }
     }
 
@@ -367,6 +407,7 @@ class ExerciseConfigViewModel constructor(
                 // Re-sync after the stored-1RM fallback lands.
                 resyncSetWeightsIfBaselineReady()
             }
+            loadRoutineScalingBaseline(exerciseId, _selectedMode.value)
         }
     }
 
@@ -390,6 +431,12 @@ class ExerciseConfigViewModel constructor(
      * Returns null when no data is available for the selected basis (controls preview and gating).
      */
     fun baselineKgForCurrentBasis(): Float? {
+        _routineScalingBaseline.value
+            ?.takeIf { it.basis == effectiveScalingBasis() }
+            ?.weightPerCableKg
+            ?.takeIf { it > 0 }
+            ?.let { return it }
+
         return when (effectiveScalingBasis()) {
             ScalingBasis.MAX_WEIGHT_PR ->
                 _currentExercisePR.value?.weightPerCableKg?.takeIf { it > 0 }
@@ -477,6 +524,7 @@ class ExerciseConfigViewModel constructor(
     // Issue #517: explicit 3-way scaling basis selector
     fun onScalingBasisChange(basis: ScalingBasis) {
         _scalingBasis.value = basis
+        loadRoutineScalingBaselineForCurrentExercise()
         // Re-resolve visible set weights against the newly-selected basis baseline
         // so the editor table matches what ResolveRoutineWeightsUseCase will use.
         if (_usePercentOfPR.value) {

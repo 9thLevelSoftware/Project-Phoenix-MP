@@ -83,6 +83,7 @@ import com.devil.phoenixproject.presentation.components.SelectionActionBar
 import com.devil.phoenixproject.presentation.components.SupersetContainer
 import com.devil.phoenixproject.presentation.components.SupersetHeader
 import com.devil.phoenixproject.presentation.components.SupersetPickerDialog
+import com.devil.phoenixproject.presentation.routine.buildDefaultRoutineExerciseForEditor
 import com.devil.phoenixproject.ui.theme.SupersetTheme
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
@@ -786,16 +787,15 @@ fun RoutineEditorScreen(
                 supersetForAddExercise = null // Clear superset target on dismiss
             },
             onExerciseSelected = { selectedExercise ->
-                val newEx = RoutineExercise(
+                val targetSuperset = supersetForAddExercise
+                val newEx = buildDefaultRoutineExerciseForEditor(
                     id = generateUUID(),
-                    exercise = selectedExercise,
+                    selectedExercise = selectedExercise,
                     orderIndex = state.exercises.size,
-                    weightPerCableKg = 5f,
-                    // Issue #517: seed new exercises from the system-wide default scaling basis
-                    scalingBasis = userPreferences.defaultScalingBasis,
-                    // If adding to a superset, set the superset reference
-                    supersetId = supersetForAddExercise?.id,
-                    orderInSuperset = supersetForAddExercise?.let { ss ->
+                    userPreferences = userPreferences,
+                    // If adding to a superset, set the superset reference.
+                    supersetId = targetSuperset?.id,
+                    orderInSuperset = targetSuperset?.let { ss ->
                         state.exercises.filter { it.supersetId == ss.id }.size
                     } ?: 0,
                 )

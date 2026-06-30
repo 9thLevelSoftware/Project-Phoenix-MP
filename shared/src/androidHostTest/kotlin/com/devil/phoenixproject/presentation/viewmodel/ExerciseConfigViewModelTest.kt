@@ -13,7 +13,9 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.presentation.screen.shouldShowCableOnlyExerciseControls
 import com.devil.phoenixproject.presentation.screen.shouldShowStopAtTopToggle
+import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
+import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -576,6 +578,62 @@ class ExerciseConfigViewModelTest {
         assertNotNull(saved)
         assertNull(saved.scalingBasis)
         assertEquals(ScalingBasis.MAX_WEIGHT_PR, saved.effectiveScalingBasis)
+    }
+
+    @Test
+    fun `editor preview uses same profile cross mode baseline when selected mode has none`() = runTest {
+        val prRepository = FakePersonalRecordRepository()
+        val velocityRepository = FakeVelocityOneRepMaxRepository()
+        val exerciseRepository = FakeExerciseRepository()
+        exerciseRepository.addExercise(
+            Exercise(
+                id = "bench-1",
+                name = "Bench Press",
+                muscleGroup = "Chest",
+                muscleGroups = "Chest",
+                equipment = "BAR",
+            ),
+        )
+        prRepository.addRecord(
+            PersonalRecord(
+                id = 595,
+                exerciseId = "bench-1",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 60f,
+                reps = 5,
+                oneRepMax = 72f,
+                timestamp = 2_000L,
+                workoutMode = "Pump",
+                prType = PRType.MAX_WEIGHT,
+                volume = 300f,
+                profileId = "default",
+            ),
+        )
+
+        val viewModel = ExerciseConfigViewModel(prRepository, velocityRepository, exerciseRepository)
+        val exercise = benchRoutineExercise(
+            id = "rex-cross-mode-preview",
+            setReps = listOf(10),
+            weightPerCableKg = 5f,
+            setWeightsPerCableKg = listOf(5f),
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            scalingBasis = ScalingBasis.MAX_WEIGHT_PR,
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+            profileId = "default",
+        )
+        advanceUntilIdle()
+
+        assertNull(viewModel.currentExercisePR.value)
+        waitForCondition { viewModel.baselineKgForCurrentBasis() == 60f }
+        waitForCondition { viewModel.sets.value.first().weightPerCable == 48f }
+        assertEquals(48f, viewModel.calculateResolvedWeight())
     }
 
     private fun benchRoutineExercise(
