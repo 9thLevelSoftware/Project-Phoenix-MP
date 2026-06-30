@@ -95,6 +95,7 @@ import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -107,6 +108,7 @@ import vitruvianprojectphoenix.shared.generated.resources.action_cancel
 import vitruvianprojectphoenix.shared.generated.resources.action_skip
 import vitruvianprojectphoenix.shared.generated.resources.action_tag
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_no_weight_volume
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_completed
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_title
@@ -1224,6 +1226,11 @@ private fun BodyweightRepEntryDialog(
         0f
     }
     val volumeKg = effectiveWeightKg * reps
+    val rackLoadContributionSummary = formatRackLoadContributionSummary(
+        contributions = rackLoadAdjustment.loadContributions,
+        weightUnit = weightUnit,
+        formatWeight = formatWeight,
+    )
 
     AlertDialog(
         onDismissRequest = {},
@@ -1300,6 +1307,16 @@ private fun BodyweightRepEntryDialog(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
+                    if (rackLoadContributionSummary != null) {
+                        Text(
+                            stringResource(
+                                Res.string.bodyweight_effective_load_includes,
+                                rackLoadContributionSummary,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
                         stringResource(
                             Res.string.bodyweight_volume,

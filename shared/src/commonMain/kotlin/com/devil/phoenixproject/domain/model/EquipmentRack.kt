@@ -51,12 +51,21 @@ data class ActiveRackSelection(
 }
 
 @Serializable
+data class RackLoadContribution(
+    val itemId: String,
+    val itemName: String,
+    val behavior: RackItemBehavior,
+    val weightKg: Float,
+)
+
+@Serializable
 data class RackLoadAdjustment(
     val selectedItems: List<RackItem> = emptyList(),
     val externalAddedLoadKg: Float = 0f,
     val counterweightKg: Float = 0f,
     val displayLoadKg: Float = 0f,
     val adjustedMachineWeightPerCableKg: Float = 0f,
+    val loadContributions: List<RackLoadContribution> = emptyList(),
 ) {
     val hasLoadAdjustment: Boolean
         get() = externalAddedLoadKg > 0f || counterweightKg > 0f

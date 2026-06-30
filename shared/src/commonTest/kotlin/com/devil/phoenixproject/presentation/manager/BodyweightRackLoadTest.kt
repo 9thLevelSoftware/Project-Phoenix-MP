@@ -110,10 +110,15 @@ class BodyweightRackLoadTest {
         advanceTimeBy(1_000)
         runCurrent()
 
-        // The adjustment must reflect the vest mass.
+        // The adjustment must reflect the vest mass and expose the contributing item.
         assertFloatEquals(3.62874f, harness.dwsm.coordinator._currentRackLoadAdjustment.value.externalAddedLoadKg)
         assertEquals(0f, harness.dwsm.coordinator._currentRackLoadAdjustment.value.counterweightKg)
         assertEquals(listOf(v.id), harness.dwsm.coordinator._currentRackLoadAdjustment.value.selectedItems.map { it.id })
+        assertEquals(listOf(v.id), harness.dwsm.coordinator._currentRackLoadAdjustment.value.loadContributions.map { it.itemId })
+        val contribution = harness.dwsm.coordinator._currentRackLoadAdjustment.value.loadContributions.single()
+        assertEquals(v.name, contribution.itemName)
+        assertEquals(RackItemBehavior.ADDED_RESISTANCE, contribution.behavior)
+        assertFloatEquals(3.62874f, contribution.weightKg)
 
         // Effective per-rep weight: 80 * 0.73 + 3.62874 = 62.02874 kg
         // Volume for 10 reps: 620.2874 kg
@@ -166,7 +171,7 @@ class BodyweightRackLoadTest {
         // Capture the adjustment right after the toggle, before confirmBodyweightSetResult
         // triggers auto-advance to the next set (which would re-snapshot the empty
         // defaultRackItemIds via startWorkout → captureRackLoadSnapshot).
-        val capturedAdjustment = harness.dwsm.coordinator._currentRackLoadAdjustment.value.externalAddedLoadKg
+        val capturedAdjustment = harness.dwsm.coordinator._currentRackLoadAdjustment.value
 
         val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.dwsm.coordinator.workoutState.value)
         val decline18 = entry.variants.first { it.label == "Decline 18\"" }
@@ -175,7 +180,12 @@ class BodyweightRackLoadTest {
         advanceTimeBy(1_000)
         runCurrent()
 
-        assertFloatEquals(3.62874f, capturedAdjustment)
+        assertFloatEquals(3.62874f, capturedAdjustment.externalAddedLoadKg)
+        assertEquals(listOf(v.id), capturedAdjustment.loadContributions.map { it.itemId })
+        val contribution = capturedAdjustment.loadContributions.single()
+        assertEquals(v.name, contribution.itemName)
+        assertEquals(RackItemBehavior.ADDED_RESISTANCE, contribution.behavior)
+        assertFloatEquals(3.62874f, contribution.weightKg)
 
         val session = harness.fakeWorkoutRepo.getAllSessions("default").first().single()
         // If the body-weight fix regresses, this will be 584.0 (vest-less).
@@ -241,6 +251,11 @@ class BodyweightRackLoadTest {
         assertFloatEquals(3.62874f, harness.dwsm.coordinator._currentRackLoadAdjustment.value.externalAddedLoadKg)
         assertEquals(0f, harness.dwsm.coordinator._currentRackLoadAdjustment.value.counterweightKg)
         assertEquals(listOf(v.id), harness.dwsm.coordinator._currentRackLoadAdjustment.value.selectedItems.map { it.id })
+        assertEquals(listOf(v.id), harness.dwsm.coordinator._currentRackLoadAdjustment.value.loadContributions.map { it.itemId })
+        val contribution = harness.dwsm.coordinator._currentRackLoadAdjustment.value.loadContributions.single()
+        assertEquals(v.name, contribution.itemName)
+        assertEquals(RackItemBehavior.ADDED_RESISTANCE, contribution.behavior)
+        assertFloatEquals(3.62874f, contribution.weightKg)
 
         // Mirror fields on workout parameters must also be populated.
         assertFloatEquals(3.62874f, harness.dwsm.coordinator._workoutParameters.value.externalAddedLoadKg)

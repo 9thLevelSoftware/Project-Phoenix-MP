@@ -650,4 +650,5 @@
     <string name="equipment_rack_save_override_confirm">Opslaan</string>
     <string name="equipment_rack_save_override_dismiss">Alleen deze keer</string>
     <string name="cd_equipment_rack">Equipment rack</string>
+    <string name="bodyweight_effective_load_includes">Includes: %1$s</string>
 </resources>

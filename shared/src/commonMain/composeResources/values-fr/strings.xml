@@ -671,4 +671,5 @@
     <string name="equipment_rack_save_override_confirm">Enregistrer</string>
     <string name="equipment_rack_save_override_dismiss">Seulement cette fois</string>
     <string name="cd_equipment_rack">Rack d\'équipement</string>
+    <string name="bodyweight_effective_load_includes">Includes: %1$s</string>
 </resources>

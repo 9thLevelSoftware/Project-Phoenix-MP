@@ -83,6 +83,7 @@ import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
+import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -95,6 +96,7 @@ import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.cd_next
 import vitruvianprojectphoenix.shared.generated.resources.cd_previous
 import vitruvianprojectphoenix.shared.generated.resources.cd_stop
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_message
@@ -539,12 +541,28 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 } else {
                                     "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(com.devil.phoenixproject.util.UnitConverter.kgToLb(effectiveKg))} lb"
                                 }
+                                val rackLoadContributionSummary = formatRackLoadContributionSummary(
+                                    contributions = currentRackLoadAdjustment.loadContributions,
+                                    weightUnit = weightUnit,
+                                    formatWeight = viewModel::formatWeight,
+                                )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     "Effective load: $displayWeight",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
+                                if (rackLoadContributionSummary != null) {
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        stringResource(
+                                            Res.string.bodyweight_effective_load_includes,
+                                            rackLoadContributionSummary,
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
