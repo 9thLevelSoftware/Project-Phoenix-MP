@@ -4621,11 +4621,11 @@ class ActiveSessionEngine(
                 repCounter.resetCountsOnly()
                 resetAutoStopState()
                 // ActiveWorkoutScreen only navigates to SetReady when workoutState is Idle.
-                // Leaving Resting/SetSummary here strands the user on the rest/summary UI
-                // while routineFlowState is already SetReady; a second Skip Rest /
-                // startNextSet() would advance past the deferred set entirely.
-                coordinator._workoutState.value = WorkoutState.Idle
+                // Leaving Resting/SetSummary after SetReady setup strands the user on the
+                // rest/summary UI; once the SetReady state has preserved any rest-screen
+                // edits, flip the workout state to Idle so navigation can occur.
                 flowDelegate?.enterSetReady(nextExIdx, nextSetIdx)
+                coordinator._workoutState.value = WorkoutState.Idle
             } else {
                 // Same-entry set advance (isChangingExercise == false). Preserve the
                 // existing behaviour so that manual rest-screen weight/rep edits

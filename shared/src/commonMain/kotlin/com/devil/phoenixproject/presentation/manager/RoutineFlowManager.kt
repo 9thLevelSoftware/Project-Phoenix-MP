@@ -105,6 +105,11 @@ class RoutineFlowManager(
 
     private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
 
+    private fun shouldPreserveRestEditedProgression(): Boolean =
+        coordinator._userAdjustedWeightDuringRest &&
+            (coordinator._workoutState.value is WorkoutState.Resting ||
+                coordinator._workoutState.value is WorkoutState.SetSummary)
+
     private fun markExerciseSkipped(index: Int) {
         coordinator._skippedExercises.update { it + index }
         coordinator._completedExercises.update { it - index }
@@ -1011,10 +1016,14 @@ class RoutineFlowManager(
         // Issue #129: Check raw value for AMRAP before fallback
         val rawSetReps = exercise.setReps.getOrNull(setIndex)
         val setReps = rawSetReps ?: exercise.reps
-        val progressionKg = if (coordinator._userAdjustedWeightDuringRest) {
+        val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
+        val progressionKg = if (preserveRestEditedProgression) {
             clampUpcomingProgressionKg(coordinator._workoutParameters.value.progressionRegressionKg)
         } else {
             clampUpcomingProgressionKg(exercise.progressionKg)
+        }
+        if (!preserveRestEditedProgression) {
+            coordinator._userAdjustedWeightDuringRest = false
         }
 
         coordinator._routineFlowState.value = RoutineFlowState.SetReady(
@@ -1088,10 +1097,14 @@ class RoutineFlowManager(
         coordinator._currentSetIndex.value = setIndex
         // Issue #534: recompute rack load adjustment for the body-weight effective load formula
         applyDefaultRackSelectionForExercise(exercise)
-        val progressionKg = if (coordinator._userAdjustedWeightDuringRest) {
+        val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
+        val progressionKg = if (preserveRestEditedProgression) {
             clampUpcomingProgressionKg(coordinator._workoutParameters.value.progressionRegressionKg)
         } else {
             clampUpcomingProgressionKg(exercise.progressionKg)
+        }
+        if (!preserveRestEditedProgression) {
+            coordinator._userAdjustedWeightDuringRest = false
         }
 
         coordinator._routineFlowState.value = RoutineFlowState.SetReady(
