@@ -83,15 +83,12 @@ jobs:
                       echo "Tag $TAG already exists, skipping release creation"
                       exit 0
                     fi
-                    # Create tag on current HEAD
-                    gh auth setup-git
-                    git tag "$TAG"
-                    git push origin "$TAG"
-                    # Create release with auto-generated notes
+                    # Create tag + release in one shot (gh creates the tag on the server)
                     gh release create "$TAG" \
                       --repo "${{ github.repository }}" \
                       --title "$TAG" \
                       --generate-notes \
+                      --target "${{ github.sha }}" \
                       --latest
                     echo "Created release $TAG"
 
