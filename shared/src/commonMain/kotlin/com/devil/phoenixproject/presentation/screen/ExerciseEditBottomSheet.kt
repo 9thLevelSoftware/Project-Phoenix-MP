@@ -1372,7 +1372,9 @@ fun WeightConfigurationCard(
                     onCheckedChange = onUsePercentOfPRChange,
                     // Enable the toggle whenever a baseline exists for ANY basis — the user
                     // can then switch to the basis that has data (fixes ESTIMATED_1RM lockout).
-                    enabled = hasAnyBaseline,
+                    // If scaling was seeded by routine defaults before a baseline exists,
+                    // keep the switch reversible so saving does not leave a latent % rule.
+                    enabled = hasAnyBaseline || usePercentOfPR,
                 )
             }
 
