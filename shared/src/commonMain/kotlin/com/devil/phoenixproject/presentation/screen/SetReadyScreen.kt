@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -764,7 +765,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { saveSessionBodyweightToProfile = !saveSessionBodyweightToProfile },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Checkbox(
                             checked = saveSessionBodyweightToProfile,
                             onCheckedChange = { saveSessionBodyweightToProfile = it },
@@ -916,9 +922,6 @@ private fun CurrentBodyweightPromptCard(
                     }
                     TextButton(onClick = onEdit) {
                         Text("Edit")
-                    }
-                    TextButton(onClick = onConfirmStored) {
-                        Text("Use stored")
                     }
                 } else {
                     Button(onClick = onEdit) {

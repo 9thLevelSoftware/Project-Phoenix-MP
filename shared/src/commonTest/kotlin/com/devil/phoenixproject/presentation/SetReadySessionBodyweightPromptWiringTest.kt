@@ -17,7 +17,6 @@ class SetReadySessionBodyweightPromptWiringTest {
             "Used for bodyweight effective load and volume in this session.",
             "Add bodyweight to calculate bodyweight effective load and volume for this session.",
             "Use for this session",
-            "Use stored",
             "Not now",
             "Save for session",
             "Save to profile for next time",
@@ -28,6 +27,38 @@ class SetReadySessionBodyweightPromptWiringTest {
                 "SetReadyScreen.kt must contain issue #600 prompt copy: $expected",
             )
         }
+        assertTrue(
+            "\"Use stored\"" !in src,
+            "SetReadyScreen.kt must not render a redundant Use stored action when Use for this session already confirms the saved value.",
+        )
+    }
+
+    @Test
+    fun saveToProfileCheckbox_usesClickableRowTouchTarget() {
+        val src = readSetReadyScreenSource()
+
+        assertTrue(
+            src.contains(".clickable { saveSessionBodyweightToProfile = !saveSessionBodyweightToProfile }"),
+            "The Save to profile row must be clickable so users do not have to precisely tap the checkbox.",
+        )
+    }
+
+    @Test
+    fun directBodyweightSingleExercise_routesThroughSetReadyPrompt() {
+        val src = readSingleExerciseScreenSource()
+
+        assertTrue(
+            src.contains("if (configuredExercise.exercise.isBodyweight)"),
+            "SingleExerciseScreen.kt must special-case direct bodyweight launches after loading the temp routine.",
+        )
+        assertTrue(
+            src.contains("viewModel.enterSetReady(0, 0)"),
+            "Direct bodyweight single-exercise launches must enter Set Ready so the current-bodyweight prompt can be handled before the set starts.",
+        )
+        assertTrue(
+            src.contains("navController.navigate(NavigationRoutes.SetReady.route)"),
+            "Direct bodyweight single-exercise launches must navigate to Set Ready instead of bypassing the prompt.",
+        )
     }
 
     @Test
@@ -87,6 +118,17 @@ class SetReadySessionBodyweightPromptWiringTest {
         assertNotNull(
             src,
             "Could not locate SetReadyScreen.kt on disk. Run from the shared/ module root or project root.",
+        )
+        return src
+    }
+
+    private fun readSingleExerciseScreenSource(): String {
+        val relativePath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SingleExerciseScreen.kt"
+        val src = readProjectFile(relativePath)
+        assertNotNull(
+            src,
+            "Could not locate SingleExerciseScreen.kt on disk. Run from the shared/ module root or project root.",
         )
         return src
     }
