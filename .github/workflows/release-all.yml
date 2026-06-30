@@ -84,6 +84,7 @@ jobs:
                       exit 0
                     fi
                     # Create tag on current HEAD
+                    gh auth setup-git
                     git tag "$TAG"
                     git push origin "$TAG"
                     # Create release with auto-generated notes
