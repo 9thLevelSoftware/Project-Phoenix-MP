@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -16,6 +17,7 @@ import androidx.compose.ui.semantics.semantics
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.UnitConverter
+import kotlin.math.abs
 
 private const val MAX_PROGRESS_KG_DISPLAY = 3f
 private const val MAX_PROGRESS_LB_DISPLAY = 6f
@@ -37,11 +39,19 @@ fun WeightChangePerRepControl(
     label: String = "Weight Change / Rep",
 ) {
     val maxProgression = if (weightUnit == WeightUnit.LB) MAX_PROGRESS_LB_DISPLAY else MAX_PROGRESS_KG_DISPLAY
-    val currentDisplay = kgToDisplay(valueKg, weightUnit).coerceIn(-maxProgression, maxProgression)
-    val valueText = formatProgressionPerRep(currentDisplay, weightUnit)
+    val clampedDisplay = kgToDisplay(valueKg, weightUnit).coerceIn(-maxProgression, maxProgression)
+    val clampedValueKg = displayToKg(clampedDisplay, weightUnit)
+    val valueText = formatProgressionPerRep(clampedDisplay, weightUnit)
+
+    LaunchedEffect(clampedValueKg, valueKg, weightUnit) {
+        if (abs(valueKg - clampedValueKg) > 0.0001f) {
+            onValueChangeKg(clampedValueKg)
+        }
+    }
+
     val accentColor = when {
-        currentDisplay > 0f -> MaterialTheme.colorScheme.primary
-        currentDisplay < 0f -> MaterialTheme.colorScheme.error
+        clampedDisplay > 0f -> MaterialTheme.colorScheme.primary
+        clampedDisplay < 0f -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
@@ -70,10 +80,10 @@ fun WeightChangePerRepControl(
         Spacer(modifier = Modifier.height(Spacing.small))
 
         ExpressiveSlider(
-            value = currentDisplay,
+            value = clampedDisplay,
             onValueChange = { displayValue ->
-                val clampedDisplay = displayValue.coerceIn(-maxProgression, maxProgression)
-                onValueChangeKg(displayToKg(clampedDisplay, weightUnit))
+                val selectedDisplay = displayValue.coerceIn(-maxProgression, maxProgression)
+                onValueChangeKg(displayToKg(selectedDisplay, weightUnit))
             },
             valueRange = -maxProgression..maxProgression,
             remoteStep = 0.1f,

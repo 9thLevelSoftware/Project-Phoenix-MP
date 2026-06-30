@@ -462,6 +462,44 @@ class DWSMRoutineFlowTest {
     }
 
     @Test
+    fun enterSetReady_clampsOutOfRangeRoutineProgressionToControlRange() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = Routine(
+            id = "routine-progress-set-ready-clamp",
+            name = "Progress Set Ready Clamp",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-progress-set-ready-clamp",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    weightPerCableKg = 32f,
+                    setWeightsPerCableKg = listOf(32f),
+                    programMode = ProgramMode.OldSchool,
+                    progressionKg = 5f,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+
+        val state = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(state)
+        assertEquals(3f, state.adjustedProgressionKg)
+        assertEquals(3f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        assertEquals(
+            5f,
+            routine.exercises.single().progressionKg,
+            "Clamping the runtime Set Ready value must not mutate the saved routine default.",
+        )
+        harness.cleanup()
+    }
+
+    @Test
     fun enterSetReadyWithAdjustments_seedsAdjustedProgressionFromRoutineExercise() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = Routine(

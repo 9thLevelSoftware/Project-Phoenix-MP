@@ -146,7 +146,6 @@ fun RestTimerCard(
     // Local state for editing parameters
     var editedReps by remember(nextExerciseReps) { mutableStateOf(nextExerciseReps ?: 10) }
     var editedWeight by remember(nextExerciseWeight) { mutableStateOf(nextExerciseWeight ?: 20f) }
-    var editedProgressionKg by remember(nextExerciseProgressionKg) { mutableStateOf(nextExerciseProgressionKg ?: 0f) }
     var editedEchoLevel by remember(echoLevel) { mutableStateOf(echoLevel ?: EchoLevel.HARDER) }
     var editedEccentricPercent by remember(eccentricLoadPercent) { mutableStateOf(eccentricLoadPercent ?: 100) }
 
@@ -532,12 +531,11 @@ fun RestTimerCard(
                                 displayToKg != null
                             ) {
                                 WeightChangePerRepControl(
-                                    valueKg = editedProgressionKg,
+                                    valueKg = nextExerciseProgressionKg,
                                     weightUnit = weightUnit,
                                     kgToDisplay = kgToDisplay,
                                     displayToKg = displayToKg,
                                     onValueChangeKg = { newValueKg ->
-                                        editedProgressionKg = newValueKg
                                         onUpdateProgressionKg.invoke(newValueKg)
                                     },
                                 )

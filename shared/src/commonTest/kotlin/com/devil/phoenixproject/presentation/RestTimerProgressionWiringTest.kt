@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation
 
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -47,6 +48,59 @@ class RestTimerProgressionWiringTest {
             src.contains("onUpdateProgressionKg.invoke(newValueKg)"),
             "RestTimerCard.kt must call the progression update callback when the control changes.",
         )
+        assertTrue(
+            src.contains("valueKg = nextExerciseProgressionKg"),
+            "RestTimerCard.kt must pass the latest parent value into WeightChangePerRepControl.",
+        )
+        assertFalse(
+            src.contains("editedProgressionKg"),
+            "RestTimer progression must be controlled by WorkoutParameters, not duplicated in local component state.",
+        )
+    }
+
+    @Test
+    fun activeSessionEngine_preservesRestProgressionEditsWhenAdvancing() {
+        val src = readActiveSessionEngineSource()
+
+        assertTrue(
+            src.contains("val preserveRestEdits = coordinator._userAdjustedWeightDuringRest"),
+            "ActiveSessionEngine must snapshot rest-screen user edits before advancing.",
+        )
+        assertTrue(
+            src.contains("val nextProgressionKg = if (preserveRestEdits)") &&
+                src.contains("currentParams.progressionRegressionKg") &&
+                src.contains("progressionRegressionKg = nextProgressionKg"),
+            "Routine rest advance must preserve WorkoutParameters.progressionRegressionKg when the user edits Rest Timer config.",
+        )
+        assertTrue(
+            src.contains("val setProgressionKg = if (coordinator._userAdjustedWeightDuringRest)") &&
+                src.contains("progressionRegressionKg = setProgressionKg"),
+            "Single-exercise rest advance must preserve WorkoutParameters.progressionRegressionKg when the user edits Rest Timer config.",
+        )
+        assertTrue(
+            src.contains("clampUpcomingProgressionKg(nextExercise.progressionKg)") &&
+                src.contains("clampUpcomingProgressionKg(exerciseForNextSet.progressionKg)"),
+            "Rest Timer defaults must be clamped to the signed-off control range before display/advance.",
+        )
+    }
+
+    @Test
+    fun weightChangeControlSyncsClampedDisplayValueBackToParent() {
+        val src = readWeightChangeControlSource()
+
+        assertTrue(
+            src.contains("val clampedDisplay = kgToDisplay(valueKg, weightUnit).coerceIn"),
+            "WeightChangePerRepControl must clamp in display units.",
+        )
+        assertTrue(
+            src.contains("val clampedValueKg = displayToKg(clampedDisplay, weightUnit)"),
+            "WeightChangePerRepControl must convert the displayed clamp back to kg.",
+        )
+        assertTrue(
+            src.contains("LaunchedEffect(clampedValueKg, valueKg, weightUnit)") &&
+                src.contains("onValueChangeKg(clampedValueKg)"),
+            "WeightChangePerRepControl must sync out-of-range parent values back to the displayed kg value.",
+        )
     }
 
     @Test
@@ -79,6 +133,18 @@ class RestTimerProgressionWiringTest {
     private fun readRestTimerCardSource(): String {
         val src = readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RestTimerCard.kt")
         assertNotNull(src, "Could not locate RestTimerCard.kt")
+        return src
+    }
+
+    private fun readActiveSessionEngineSource(): String {
+        val src = readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt")
+        assertNotNull(src, "Could not locate ActiveSessionEngine.kt")
+        return src
+    }
+
+    private fun readWeightChangeControlSource(): String {
+        val src = readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/WeightChangePerRepControl.kt")
+        assertNotNull(src, "Could not locate WeightChangePerRepControl.kt")
         return src
     }
 }
