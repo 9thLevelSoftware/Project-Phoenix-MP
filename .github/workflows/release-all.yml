@@ -54,9 +54,11 @@ jobs:
                     if [ -n "${{ inputs.version_override }}" ]; then
                       TAG="${{ inputs.version_override }}"
                       echo "Using override tag: $TAG"
+                      # Find latest semver tag for comparison
+                      LATEST=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1)
                     else
-                      # Find latest semver tag
-                      LATEST=$(git tag --list 'v*' --sort=-version:refname | head -1)
+                      # Find latest semver tag (exclude non-semver like v03.3.3-yetmoarfix)
+                      LATEST=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1)
                       if [ -z "$LATEST" ]; then
                         TAG="v0.1.0"
                         echo "No existing tags, starting at $TAG"
@@ -72,6 +74,7 @@ jobs:
                       fi
                     fi
                     echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+                    echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
 
             -   name: Create release
                 env:
@@ -88,6 +91,7 @@ jobs:
                       --repo "${{ github.repository }}" \
                       --title "$TAG" \
                       --generate-notes \
+                      --notes-start-tag "${{ steps.version.outputs.latest }}" \
                       --target "${{ github.sha }}" \
                       --latest
                     echo "Created release $TAG"
