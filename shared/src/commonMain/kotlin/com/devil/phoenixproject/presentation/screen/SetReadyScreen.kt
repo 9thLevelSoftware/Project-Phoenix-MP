@@ -97,6 +97,7 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_next
 import vitruvianprojectphoenix.shared.generated.resources.cd_previous
 import vitruvianprojectphoenix.shared.generated.resources.cd_stop
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_more
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_message
@@ -545,6 +546,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     contributions = currentRackLoadAdjustment.loadContributions,
                                     weightUnit = weightUnit,
                                     formatWeight = viewModel::formatWeight,
+                                    moreTemplate = stringResource(Res.string.bodyweight_effective_load_more),
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(

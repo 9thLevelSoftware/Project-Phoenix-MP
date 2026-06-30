@@ -62,6 +62,22 @@ class RackLoadContributionFormatterTest {
     }
 
     @Test
+    fun `more count uses localized template`() {
+        val result = formatRackLoadContributionSummary(
+            contributions = listOf(
+                contribution("vest", "Weighted Vest", RackItemBehavior.ADDED_RESISTANCE, 3.62874f),
+                contribution("band", "Assistance Band", RackItemBehavior.COUNTERWEIGHT, 10f),
+                contribution("chains", "Chains", RackItemBehavior.ADDED_RESISTANCE, 2f),
+            ),
+            weightUnit = WeightUnit.KG,
+            formatWeight = ::formatWeight,
+            moreTemplate = "+%1\$d más",
+        )
+
+        assertEquals("Weighted Vest +3.6 kg, Assistance Band -10.0 kg, +1 más", result)
+    }
+
+    @Test
     fun `empty contribution list returns null`() {
         val result = formatRackLoadContributionSummary(
             contributions = emptyList(),

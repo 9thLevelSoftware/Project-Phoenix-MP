@@ -109,6 +109,7 @@ import vitruvianprojectphoenix.shared.generated.resources.action_skip
 import vitruvianprojectphoenix.shared.generated.resources.action_tag
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_more
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_no_weight_volume
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_completed
 import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_title
@@ -1230,6 +1231,7 @@ private fun BodyweightRepEntryDialog(
         contributions = rackLoadAdjustment.loadContributions,
         weightUnit = weightUnit,
         formatWeight = formatWeight,
+        moreTemplate = stringResource(Res.string.bodyweight_effective_load_more),
     )
 
     AlertDialog(
