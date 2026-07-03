@@ -321,6 +321,71 @@ internal object AndroidCueResources {
         AndroidCueResource("rep_25", R.raw.rep_25),
     )
 
+    val encouragementCues: List<AndroidCueResource> = listOf(
+        AndroidCueResource("encouragement_01", R.raw.encouragement_01),
+        AndroidCueResource("encouragement_02", R.raw.encouragement_02),
+        AndroidCueResource("encouragement_03", R.raw.encouragement_03),
+        AndroidCueResource("encouragement_04", R.raw.encouragement_04),
+        AndroidCueResource("encouragement_05", R.raw.encouragement_05),
+        AndroidCueResource("encouragement_06", R.raw.encouragement_06),
+        AndroidCueResource("encouragement_07", R.raw.encouragement_07),
+        AndroidCueResource("encouragement_08", R.raw.encouragement_08),
+        AndroidCueResource("encouragement_09", R.raw.encouragement_09),
+        AndroidCueResource("encouragement_10", R.raw.encouragement_10),
+        AndroidCueResource("encouragement_11", R.raw.encouragement_11),
+        AndroidCueResource("encouragement_12", R.raw.encouragement_12),
+        AndroidCueResource("encouragement_13", R.raw.encouragement_13),
+        AndroidCueResource("encouragement_14", R.raw.encouragement_14),
+        AndroidCueResource("encouragement_15", R.raw.encouragement_15),
+    )
+
+    val vulgarMildCues: List<AndroidCueResource> = listOf(
+        AndroidCueResource("vulgar_mild_01", R.raw.vulgar_mild_01),
+        AndroidCueResource("vulgar_mild_02", R.raw.vulgar_mild_02),
+        AndroidCueResource("vulgar_mild_03", R.raw.vulgar_mild_03),
+        AndroidCueResource("vulgar_mild_04", R.raw.vulgar_mild_04),
+        AndroidCueResource("vulgar_mild_05", R.raw.vulgar_mild_05),
+        AndroidCueResource("vulgar_mild_06", R.raw.vulgar_mild_06),
+        AndroidCueResource("vulgar_mild_07", R.raw.vulgar_mild_07),
+        AndroidCueResource("vulgar_mild_08", R.raw.vulgar_mild_08),
+        AndroidCueResource("vulgar_mild_09", R.raw.vulgar_mild_09),
+        AndroidCueResource("vulgar_mild_10", R.raw.vulgar_mild_10),
+        AndroidCueResource("vulgar_mild_11", R.raw.vulgar_mild_11),
+        AndroidCueResource("vulgar_mild_12", R.raw.vulgar_mild_12),
+    )
+
+    val vulgarStrongCues: List<AndroidCueResource> = listOf(
+        AndroidCueResource("vulgar_strong_01", R.raw.vulgar_strong_01),
+        AndroidCueResource("vulgar_strong_02", R.raw.vulgar_strong_02),
+        AndroidCueResource("vulgar_strong_03", R.raw.vulgar_strong_03),
+        AndroidCueResource("vulgar_strong_04", R.raw.vulgar_strong_04),
+        AndroidCueResource("vulgar_strong_05", R.raw.vulgar_strong_05),
+        AndroidCueResource("vulgar_strong_06", R.raw.vulgar_strong_06),
+        AndroidCueResource("vulgar_strong_07", R.raw.vulgar_strong_07),
+        AndroidCueResource("vulgar_strong_08", R.raw.vulgar_strong_08),
+        AndroidCueResource("vulgar_strong_09", R.raw.vulgar_strong_09),
+        AndroidCueResource("vulgar_strong_10", R.raw.vulgar_strong_10),
+        AndroidCueResource("vulgar_strong_11", R.raw.vulgar_strong_11),
+        AndroidCueResource("vulgar_strong_12", R.raw.vulgar_strong_12),
+    )
+
+    val dominatrixCues: List<AndroidCueResource> = listOf(
+        AndroidCueResource("dominatrix_01", R.raw.dominatrix_01),
+        AndroidCueResource("dominatrix_02", R.raw.dominatrix_02),
+        AndroidCueResource("dominatrix_03", R.raw.dominatrix_03),
+        AndroidCueResource("dominatrix_04", R.raw.dominatrix_04),
+        AndroidCueResource("dominatrix_05", R.raw.dominatrix_05),
+        AndroidCueResource("dominatrix_06", R.raw.dominatrix_06),
+        AndroidCueResource("dominatrix_07", R.raw.dominatrix_07),
+        AndroidCueResource("dominatrix_08", R.raw.dominatrix_08),
+        AndroidCueResource("dominatrix_09", R.raw.dominatrix_09),
+        AndroidCueResource("dominatrix_10", R.raw.dominatrix_10),
+        AndroidCueResource("dominatrix_11", R.raw.dominatrix_11),
+        AndroidCueResource("dominatrix_12", R.raw.dominatrix_12),
+    )
+
+    private val dominatrixUnlock = AndroidCueResource("dominatrix_unlock", R.raw.dominatrix_unlock)
+
     val countdownTickCue: AndroidCueResource = beep
 
     val allCues: List<AndroidCueResource> = (
@@ -328,6 +393,11 @@ internal object AndroidCueResources {
             badgeCues +
             prCues +
             repCountCues +
+            encouragementCues +
+            vulgarMildCues +
+            vulgarStrongCues +
+            dominatrixCues +
+            dominatrixUnlock +
             countdownTickCue
         )
         .distinctBy { it.name }
