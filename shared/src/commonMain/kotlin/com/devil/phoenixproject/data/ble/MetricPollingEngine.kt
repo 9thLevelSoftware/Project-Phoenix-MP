@@ -181,6 +181,16 @@ class MetricPollingEngine(
     // ===== Public API =====
 
     /**
+     * Issue #333: heartbeat inclusion decided once per connection by
+     * [startAll] (from the connection's compatibility-mode snapshot). Restart
+     * paths consult this instead of the live setting so a mid-connection
+     * settings change cannot resurrect (or kill) the heartbeat until the next
+     * connection.
+     */
+    @Volatile
+    private var includeHeartbeatForSession = true
+
+    /**
      * Start all polling loops. Called from startObservingNotifications().
      *
      * Issue #333: on the small-MTU compatibility path the GATT heartbeat is
@@ -201,15 +211,6 @@ class MetricPollingEngine(
         }
     }
 
-    /**
-     * Issue #333: heartbeat inclusion decided once per connection by
-     * [startAll] (from the connection's compatibility-mode snapshot). Restart
-     * paths consult this instead of the live setting so a mid-connection
-     * settings change cannot resurrect (or kill) the heartbeat until the next
-     * connection.
-     */
-    @Volatile
-    private var includeHeartbeatForSession = true
 
     /**
      * Start monitor polling loop for real-time position/load data.
