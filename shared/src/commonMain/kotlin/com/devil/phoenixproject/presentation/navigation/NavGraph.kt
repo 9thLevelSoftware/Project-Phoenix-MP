@@ -417,6 +417,13 @@ fun NavGraph(
                     onDominatrixModeActiveChange = { viewModel.setDominatrixModeActive(it) },
                     adultsOnlyConfirmed = userPreferences.adultsOnlyConfirmed,
                     onAdultsOnlyConfirmedChange = { viewModel.setAdultsOnlyConfirmed(it) },
+                    // Issue #611 (PR-followup #613): one-shot 18+ modal gate. Read
+                    // directly from PreferencesManager (not part of UserPreferences
+                    // by design — see architecture §3). Mirrors the same accessors
+                    // used by FakePreferencesManager in
+                    // VerbalEncouragementPreferenceCascadeTest.
+                    adultsOnlyPrompted = viewModel.isAdultsOnlyPrompted(),
+                    onAdultsOnlyPromptedChange = { viewModel.setAdultsOnlyPrompted(it) },
                     onPlayDominatrixUnlockSound = { viewModel.emitDominatrixUnlockSound() },
                 )
             }

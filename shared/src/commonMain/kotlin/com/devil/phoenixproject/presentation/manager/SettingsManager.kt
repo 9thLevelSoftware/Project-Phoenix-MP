@@ -208,6 +208,18 @@ class SettingsManager(
         scope.launch { preferencesManager.setAdultsOnlyConfirmed(confirmed) }
     }
 
+    // Issue #611 (PR-followup #613): One-shot decline-remember gate accessors for
+    // the 18+ Adults Only modal. Non-suspend so the modal-call site can read the
+    // gate on the main thread without dispatching into the preference scope.
+    fun isAdultsOnlyPrompted(): Boolean = preferencesManager.isAdultsOnlyPrompted()
+
+    fun setAdultsOnlyPrompted(prompted: Boolean) {
+        // Synchronous write is acceptable — KEY_ADULTS_ONLY_PROMPTED is a single
+        // boolean backed by NSUserDefaults/SharedPreferences putBoolean which both
+        // platforms guarantee immediate visibility to subsequent reads.
+        preferencesManager.setAdultsOnlyPrompted(prompted)
+    }
+
     fun setColorScheme(schemeIndex: Int) {
         scope.launch {
             bleRepository.setColorScheme(schemeIndex)

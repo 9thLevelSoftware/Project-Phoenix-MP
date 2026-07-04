@@ -174,6 +174,14 @@ interface PreferencesManager {
     suspend fun setDominatrixModeActive(active: Boolean)
     suspend fun setAdultsOnlyConfirmed(confirmed: Boolean)
 
+    // Issue #611 (PR-followup #613): One-shot decline-remember gate for the 18+
+    // Adults Only modal. The modal must not re-prompt on subsequent vulgar-on toggles
+    // once either confirm OR decline has been recorded (architecture §3 — follow
+    // DiscoModeUnlockDialog pattern). Booleans stored in
+    // KEY_ADULTS_ONLY_PROMPTED; not exposed via UserPreferences.
+    fun isAdultsOnlyPrompted(): Boolean
+    fun setAdultsOnlyPrompted(prompted: Boolean)
+
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
     suspend fun clearAllSingleExerciseDefaults()
@@ -673,18 +681,16 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(adultsOnlyConfirmed = confirmed) }
     }
 
-    /**
-     * Issue #611: One-shot decline-remember read used by the 18+ modal-call site.
-     * The modal skips re-prompting once this returns true (decline OR confirm path).
-     */
-    fun isAdultsOnlyPrompted(): Boolean = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false)
+    override fun isAdultsOnlyPrompted(): Boolean = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false)
 
     /**
-     * Issue #611: Persist the one-shot decline-remember flag without touching the
-     * `adultsOnlyConfirmed` boolean. Used by the 18+ modal decline path so the modal
-     * never re-appears for this install.
+     * Issue #611 (PR-followup #613): Persist the one-shot decline-remember flag
+     * without touching the `adultsOnlyConfirmed` boolean. Used by the 18+ modal
+     * decline path so the modal never re-appears for this install. Symmetric with
+     * [setAdultsOnlyConfirmed] which writes `KEY_ADULTS_ONLY_PROMPTED = true` on
+     * the confirm path; this setter covers the decline path.
      */
-    fun setAdultsOnlyPrompted(prompted: Boolean) {
+    override fun setAdultsOnlyPrompted(prompted: Boolean) {
         settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, prompted)
     }
 }

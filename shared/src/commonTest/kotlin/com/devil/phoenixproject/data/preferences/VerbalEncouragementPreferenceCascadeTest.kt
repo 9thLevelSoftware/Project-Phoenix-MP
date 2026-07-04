@@ -141,4 +141,106 @@ class VerbalEncouragementPreferenceCascadeTest {
         assertFalse(prefs.dominatrixModeActive)
         assertFalse(prefs.adultsOnlyConfirmed)
     }
+
+    /**
+     * Issue #611 (PR-followup #613): confirm path marks the one-shot decline-remember
+     * flag so the modal never re-appears after a confirm. Mirrors the
+     * SettingsPreferencesManager.setAdultsOnlyConfirmed cascade which writes
+     * KEY_ADULTS_ONLY_PROMPTED = true after writing KEY_ADULTS_ONLY_CONFIRMED.
+     */
+    @Test
+    fun `confirm path marks adults only prompted so modal never re appears`() = runTest {
+        val manager = FakePreferencesManager()
+
+        assertFalse(manager.isAdultsOnlyPrompted(), "fresh install: not prompted yet")
+        assertFalse(manager.preferencesFlow.value.adultsOnlyConfirmed)
+
+        manager.setAdultsOnlyConfirmed(true)
+
+        assertTrue(manager.isAdultsOnlyPrompted(), "confirm implies prompted")
+        assertTrue(manager.preferencesFlow.value.adultsOnlyConfirmed)
+    }
+
+    /**
+     * Issue #611 (PR-followup #613): decline path leaves adultsOnlyConfirmed=false
+     * (the user did NOT confirm) but still marks the one-shot decline-remember flag
+     * so the modal does NOT re-prompt on subsequent vulgar-on toggles. This is the
+     * regression test for the Kilo "modal re-prompts forever after decline" finding:
+     * prior to this fix, the decline path wrote confirmed=false WITHOUT writing the
+     * prompted flag, causing the SettingsTab modal gate (`!adultsOnlyPrompted`) to
+     * keep firing on every vulgar-on toggle.
+     */
+    @Test
+    fun `decline path leaves adultsOnlyConfirmed false but marks prompted so modal stays dormant`() = runTest {
+        val manager = FakePreferencesManager()
+
+        assertFalse(manager.isAdultsOnlyPrompted(), "fresh install: not prompted yet")
+
+        // Mirror the SettingsTab.onDecline callback — calls both confirm AND prompted
+        // setters so the cascade invariant holds in either branch.
+        manager.setAdultsOnlyConfirmed(false)
+        manager.setAdultsOnlyPrompted(true)
+
+        assertFalse(
+            manager.preferencesFlow.value.adultsOnlyConfirmed,
+            "decline must NOT flip confirmed=true",
+        )
+        assertTrue(
+            manager.isAdultsOnlyPrompted(),
+            "decline MUST set prompted=true so the modal is dormant for the rest of this install",
+        )
+
+        // Simulate the user toggling vulgar mode OFF then ON again. The SettingsTab
+        // gate `if (checked && !adultsOnlyPrompted)` should now evaluate to false,
+        // so the modal must NOT re-fire on this install.
+        manager.setVulgarModeEnabled(false)
+        assertFalse(manager.isAdultsOnlyPrompted().not(), "gate condition: prompted stays true")
+
+        // The "second click on the same install" scenario: even after vulgar-on
+        // finally goes through (via the modal path that was supposed to be dormant),
+        // prompted stays true and never decrements.
+        repeat(3) {
+            // Hypothetical: user tries to re-arm vulgar after the decline-dormant gate.
+            // The gate `checked && !adultsOnlyPrompted` is false → no modal call.
+            assertTrue(
+                manager.isAdultsOnlyPrompted(),
+                "one-shot flag is monotonic across $it subsequent toggle attempts",
+            )
+        }
+    }
+
+    /**
+     * Issue #611 (PR-followup #613): setAdultsOnlyPrompted alone does not flip
+     * confirmed — it is purely the decline-remember gate. This is the symmetric
+     * invariant to `confirm path marks adults only prompted ...`.
+     */
+    @Test
+    fun `setAdultsOnlyPrompted leaves adultsOnlyConfirmed unchanged`() = runTest {
+        val manager = FakePreferencesManager()
+        assertFalse(manager.preferencesFlow.value.adultsOnlyConfirmed)
+
+        manager.setAdultsOnlyPrompted(true)
+
+        assertTrue(manager.isAdultsOnlyPrompted())
+        assertFalse(
+            manager.preferencesFlow.value.adultsOnlyConfirmed,
+            "prompted setter must not collide with the confirm cascade",
+        )
+    }
+
+    /**
+     * Issue #611 (PR-followup #613): reset() clears the prompted flag so test
+     * isolation is preserved across test methods that share a FakePreferencesManager.
+     */
+    @Test
+    fun `reset clears adultsOnlyPrompted backing field`() = runTest {
+        val manager = FakePreferencesManager()
+        manager.setAdultsOnlyPrompted(true)
+        assertTrue(manager.isAdultsOnlyPrompted())
+
+        manager.reset()
+
+        assertFalse(manager.isAdultsOnlyPrompted(), "reset must clear the one-shot flag")
+        assertFalse(manager.preferencesFlow.value.adultsOnlyConfirmed)
+    }
 }

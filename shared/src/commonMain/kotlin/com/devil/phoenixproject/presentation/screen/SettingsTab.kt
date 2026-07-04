@@ -383,6 +383,11 @@ fun SettingsTab(
     onDominatrixModeActiveChange: (Boolean) -> Unit = {},
     adultsOnlyConfirmed: Boolean = false,
     onAdultsOnlyConfirmedChange: (Boolean) -> Unit = {},
+    // Issue #611 (PR-followup #613): one-shot 18+ modal gate reader + writer. Lives
+    // outside UserPreferences by design (architecture §3); read on every vulgar-on
+    // toggle, written once per install by either confirm OR decline callback.
+    adultsOnlyPrompted: Boolean = false,
+    onAdultsOnlyPromptedChange: (Boolean) -> Unit = {},
     onPlayDominatrixUnlockSound: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -2245,9 +2250,14 @@ fun SettingsTab(
                         Switch(
                             checked = vulgarModeEnabled,
                             onCheckedChange = { checked ->
-                                if (checked && !adultsOnlyConfirmed) {
-                                    // Show the 18+ modal flow. The modal confirm callback flips
-                                    // adultsOnlyConfirmed first, then re-issues setVulgarModeEnabled(true).
+                                // Issue #611 (PR-followup #613): gate on the one-shot
+                                // decline-remember flag, not the adultsOnlyConfirmed
+                                // confirm flag. confirmed=false (decline path) must NOT
+                                // re-trigger the modal — see VerbalEncouragementPreferenceCascadeTest.
+                                if (checked && !adultsOnlyPrompted) {
+                                    // Show the 18+ modal flow. Confirm flips
+                                    // adultsOnlyConfirmed + marks prompted; decline only
+                                    // marks prompted so the modal never re-appears.
                                     showAdultsOnlyDialog = true
                                 } else {
                                     onVulgarModeEnabledChange(checked)
@@ -2983,17 +2993,26 @@ fun SettingsTab(
         AdultsOnlyConfirmDialog(
             onConfirm = {
                 showAdultsOnlyDialog = false
+                // Confirm: write both confirmed (cascade-enable path) and prompted
+                // (one-shot gate). Mirrors SettingsPreferencesManager.setAdultsOnlyConfirmed.
                 onAdultsOnlyConfirmedChange(true)
+                onAdultsOnlyPromptedChange(true)
                 onVulgarModeEnabledChange(true)
             },
             onDecline = {
                 showAdultsOnlyDialog = false
-                // Persist the decline-remember flag so the modal never re-prompts for this install.
+                // Decline: ONLY mark the one-shot prompt gate. Persisting
+                // confirmed=false (the old behavior) would re-arm the gate on the
+                // next vulgar-on toggle and re-prompt the modal — violating
+                // architecture §3's "once per install" promise.
                 onAdultsOnlyConfirmedChange(false)
+                onAdultsOnlyPromptedChange(true)
             },
             onDismiss = {
                 showAdultsOnlyDialog = false
-                // Dismiss without confirmation — user must explicitly tap "I'm 18+" to proceed.
+                // Dismiss (back-press / scrim) without confirmation — user must
+                // explicitly tap a button to either confirm or decline. Does NOT
+                // mark prompted so a subsequent vulgar-on toggle can re-prompt.
             },
         )
     }
@@ -3454,7 +3473,9 @@ private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("OK", color = Color.White)
+                // Issue #611 (PR-followup #613): use the localized OK label
+                // (matches every other dialog in SettingsTab).
+                Text(stringResource(Res.string.action_ok), color = Color.White)
             }
         },
     )
@@ -3462,9 +3483,11 @@ private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
 
 /**
  * Issue #611: 18+ Adults Only confirmation modal. Fires once per install when
- * the user toggles Vulgar Mode from off to on. Confirm flips adultsOnlyConfirmed
- * first then re-issues the vulgar-mode setter; decline only persists the
- * one-shot decline-remember flag so the modal never re-prompts.
+ * the user toggles Vulgar Mode from off to on. Confirm flips
+ * adultsOnlyConfirmed first then re-issues the vulgar-mode setter; decline
+ * only persists the one-shot decline-remember flag (`adultsOnlyPrompted`) so
+ * the modal never re-prompts — see VerbalEncouragementPreferenceCascadeTest
+ * "decline path leaves modal dormant on subsequent vulgar-on toggles".
  */
 @Composable
 private fun AdultsOnlyConfirmDialog(

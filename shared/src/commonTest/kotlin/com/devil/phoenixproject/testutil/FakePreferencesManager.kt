@@ -23,11 +23,14 @@ class FakePreferencesManager : PreferencesManager {
 
     private val exerciseDefaults = mutableMapOf<String, SingleExerciseDefaults>()
     private var justLiftDefaults = JustLiftDefaults()
+    // Issue #611 (PR-followup #613): backing field for the 18+ modal one-shot flag.
+    private var _adultsOnlyPrompted: Boolean = false
 
     fun reset() {
         _preferencesFlow.value = UserPreferences()
         exerciseDefaults.clear()
         justLiftDefaults = JustLiftDefaults()
+        _adultsOnlyPrompted = false
     }
 
     fun setPreferences(preferences: UserPreferences) {
@@ -222,5 +225,18 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setAdultsOnlyConfirmed(confirmed: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(adultsOnlyConfirmed = confirmed)
+        // Issue #611 (PR-followup #613): confirm implies prompted (one-shot flag
+        // becomes irrelevant after confirm; mirror SettingsPreferencesManager).
+        _adultsOnlyPrompted = true
+    }
+
+    // Issue #611 (PR-followup #613): One-shot decline-remember backing field
+    // for the 18+ Adults Only modal. Lives outside UserPreferences because the
+    // modal-call site is the only consumer (architecture §3 — follow
+    // DiscoModeUnlockDialog pattern).
+    override fun isAdultsOnlyPrompted(): Boolean = _adultsOnlyPrompted
+
+    override fun setAdultsOnlyPrompted(prompted: Boolean) {
+        _adultsOnlyPrompted = prompted
     }
 }

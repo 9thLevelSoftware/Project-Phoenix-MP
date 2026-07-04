@@ -375,6 +375,14 @@ class MainViewModel constructor(
     fun setAdultsOnlyConfirmed(confirmed: Boolean) =
         settingsManager.setAdultsOnlyConfirmed(confirmed)
 
+    // Issue #611 (PR-followup #613): one-shot decline-remember gate for the 18+
+    // Adults Only modal. Thin wrapper around SettingsManager; used by SettingsTab's
+    // modal decline path so the modal never re-prompts for this install.
+    fun setAdultsOnlyPrompted(prompted: Boolean) =
+        settingsManager.setAdultsOnlyPrompted(prompted)
+    fun isAdultsOnlyPrompted(): Boolean =
+        settingsManager.isAdultsOnlyPrompted()
+
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
     val backupStats: kotlinx.coroutines.flow.StateFlow<BackupStats?> = _backupStats
