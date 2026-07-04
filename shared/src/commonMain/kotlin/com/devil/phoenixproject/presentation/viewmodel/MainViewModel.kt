@@ -36,6 +36,7 @@ import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -327,6 +328,9 @@ class MainViewModel constructor(
     fun setAutoStartRoutine(enabled: Boolean) = settingsManager.setAutoStartRoutine(enabled)
     fun setBodyWeightKg(weightKg: Float) = settingsManager.setBodyWeightKg(weightKg)
     fun setGamificationEnabled(enabled: Boolean) = settingsManager.setGamificationEnabled(enabled)
+
+    // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
+    fun setBleCompatibilityMode(setting: BleCompatibilitySetting) = settingsManager.setBleCompatibilityMode(setting)
     fun setCountdownBeepsEnabled(enabled: Boolean) = settingsManager.setCountdownBeepsEnabled(enabled)
     fun setRepSoundEnabled(enabled: Boolean) = settingsManager.setRepSoundEnabled(enabled)
     fun setMotionStartEnabled(enabled: Boolean) = settingsManager.setMotionStartEnabled(enabled)

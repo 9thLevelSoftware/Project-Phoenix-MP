@@ -366,6 +366,9 @@ fun NavGraph(
                     // Gamification toggle
                     gamificationEnabled = userPreferences.gamificationEnabled,
                     onGamificationEnabledChange = { viewModel.setGamificationEnabled(it) },
+                    // Issue #333: BLE small-MTU compatibility path
+                    bleCompatibilityMode = userPreferences.bleCompatibilityMode,
+                    onBleCompatibilityModeChange = { viewModel.setBleCompatibilityMode(it) },
                     // Auto-backup (Phase 36)
                     autoBackupEnabled = userPreferences.autoBackupEnabled,
                     onAutoBackupEnabledChange = { viewModel.setAutoBackupEnabled(it) },

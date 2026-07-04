@@ -62,6 +62,8 @@ data class UserPreferences(
     val dominatrixModeActive: Boolean = false, // User-toggled "on" state; only meaningful when unlocked + vulgar + adults
     val adultsOnlyConfirmed: Boolean = false, // One-shot gate set true after the 18+ modal is confirmed
     val adultsOnlyPrompted: Boolean = false, // One-shot flag: true after the 18+ modal is shown (confirm or decline)
+    // Issue #333: BLE small-MTU compatibility path (Auto = on for Pixel 6/7 family)
+    val bleCompatibilityMode: BleCompatibilitySetting = BleCompatibilitySetting.AUTO,
 ) {
     /**
      * Get the effective weight increment in the user's display unit.
