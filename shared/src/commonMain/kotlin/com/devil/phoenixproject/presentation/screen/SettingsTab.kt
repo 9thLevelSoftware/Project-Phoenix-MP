@@ -78,6 +78,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -111,6 +112,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ScalingBasis
+import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
@@ -211,6 +213,24 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_ti
 import vitruvianprojectphoenix.shared.generated.resources.settings_weight_suggestions_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_weight_suggestions_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_weight_unit
+import vitruvianprojectphoenix.shared.generated.resources.settings_verbal_encouragement_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_verbal_encouragement_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_vulgar_mode_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_vulgar_mode_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_vulgar_mode_headphone_warning
+import vitruvianprojectphoenix.shared.generated.resources.settings_vulgar_mode_tier_label
+import vitruvianprojectphoenix.shared.generated.resources.settings_vulgar_mode_tier_mild
+import vitruvianprojectphoenix.shared.generated.resources.settings_vulgar_mode_tier_strong
+import vitruvianprojectphoenix.shared.generated.resources.settings_vulgar_mode_tier_mix
+import vitruvianprojectphoenix.shared.generated.resources.settings_dominatrix_mode_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_dominatrix_mode_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_dominatrix_unlock_hint
+import vitruvianprojectphoenix.shared.generated.resources.settings_dominatrix_unlock_toast
+import vitruvianprojectphoenix.shared.generated.resources.settings_adults_only_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_adults_only_body
+import vitruvianprojectphoenix.shared.generated.resources.settings_adults_only_compliance_footer
+import vitruvianprojectphoenix.shared.generated.resources.settings_adults_only_confirm
+import vitruvianprojectphoenix.shared.generated.resources.settings_adults_only_decline
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -350,6 +370,20 @@ fun SettingsTab(
     defaultRoutineExerciseWeightPercentOfPR: Int = 80,
     onDefaultRoutineExerciseUsePercentOfPRChange: (Boolean) -> Unit = {},
     onDefaultRoutineExerciseWeightPercentOfPRChange: (Int) -> Unit = {},
+    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
+    verbalEncouragementEnabled: Boolean = false,
+    onVerbalEncouragementEnabledChange: (Boolean) -> Unit = {},
+    vulgarModeEnabled: Boolean = false,
+    onVulgarModeEnabledChange: (Boolean) -> Unit = {},
+    vulgarTier: VulgarTier = VulgarTier.STRONG,
+    onVulgarTierChange: (VulgarTier) -> Unit = {},
+    dominatrixModeUnlocked: Boolean = false,
+    onDominatrixModeUnlockedChange: (Boolean) -> Unit = {},
+    dominatrixModeActive: Boolean = false,
+    onDominatrixModeActiveChange: (Boolean) -> Unit = {},
+    adultsOnlyConfirmed: Boolean = false,
+    onAdultsOnlyConfirmedChange: (Boolean) -> Unit = {},
+    onPlayDominatrixUnlockSound: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -388,6 +422,13 @@ fun SettingsTab(
     var lastTapTime by remember { mutableStateOf(0L) }
     // Disco mode unlock celebration dialog
     var showDiscoUnlockDialog by remember { mutableStateOf(false) }
+    // Issue #611: Gated 7-tap counter for Dominatrix easter egg on the VBT card header.
+    // Only counts when vulgarModeEnabled=true; otherwise clickable is a no-op.
+    var dominatrixEasterEggTapCount by remember { mutableStateOf(0) }
+    var lastDominatrixTapTime by remember { mutableStateOf(0L) }
+    var showDominatrixUnlockDialog by remember { mutableStateOf(false) }
+    // Issue #611: 18+ Adults Only modal state. Fires once per install on first vulgar-on.
+    var showAdultsOnlyDialog by remember { mutableStateOf(false) }
     // Voice emergency stop state (moved from VoiceEmergencyStopSection for consolidation)
     var showCalibrationDialog by remember { mutableStateOf(false) }
     var localSafeWord by remember(safeWord) { mutableStateOf(safeWord ?: "") }
@@ -1973,7 +2014,32 @@ fun SettingsTab(
                     .fillMaxWidth()
                     .padding(Spacing.medium),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.clickable(
+                        // Issue #611: 7-tap easter egg counter gated to only count
+                        // when vulgar mode is on. The clickable is a no-op otherwise,
+                        // so the Dominatrix feature stays unreachable from a clean install.
+                        enabled = verbalEncouragementEnabled && vulgarModeEnabled,
+                    ) {
+                        val currentTime = KmpUtils.currentTimeMillis()
+                        // Reset if more than 2 seconds since last tap
+                        if (currentTime - lastDominatrixTapTime > 2000L) {
+                            dominatrixEasterEggTapCount = 1
+                        } else {
+                            dominatrixEasterEggTapCount++
+                        }
+                        lastDominatrixTapTime = currentTime
+
+                        // Unlock Dominatrix Mode after 7 rapid taps
+                        if (dominatrixEasterEggTapCount >= 7 && !dominatrixModeUnlocked) {
+                            showDominatrixUnlockDialog = true
+                            onPlayDominatrixUnlockSound()
+                            onDominatrixModeUnlockedChange(true)
+                            dominatrixEasterEggTapCount = 0
+                        }
+                    },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Box(
                         modifier = Modifier
                             .size(48.dp)
@@ -2000,6 +2066,23 @@ fun SettingsTab(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
+                }
+
+                // Issue #611: 7-tap hint pill (visible when master + vulgar on, dominatrix locked)
+                if (verbalEncouragementEnabled && vulgarModeEnabled && !dominatrixModeUnlocked) {
+                    Spacer(modifier = Modifier.height(Spacing.small))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            stringResource(Res.string.settings_dominatrix_unlock_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = Spacing.medium, vertical = 8.dp),
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -2088,6 +2171,153 @@ fun SettingsTab(
                         onCheckedChange = onAutoEndOnVelocityLossChange,
                         enabled = stallDetectionEnabled,
                     )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = Spacing.small),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+
+                // ===== Issue #611: Verbal Encouragement (master toggle) =====
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(Res.string.settings_verbal_encouragement_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            stringResource(Res.string.settings_verbal_encouragement_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = verbalEncouragementEnabled,
+                        onCheckedChange = { checked ->
+                            // Master-off cascades vulgar + dominatrix off via the preferences setter
+                            // (see SettingsPreferencesManager.setVerbalEncouragementEnabled).
+                            // When the user is enabling the master for the first time, the
+                            // existing audio cues master switch (beepsEnabled) gates everything.
+                            if (!checked) {
+                                onVerbalEncouragementEnabledChange(false)
+                            } else {
+                                onVerbalEncouragementEnabledChange(true)
+                            }
+                        },
+                    )
+                }
+
+                // ===== Issue #611: Vulgar Mode sub-row (visible iff master on) =====
+                if (verbalEncouragementEnabled) {
+                    Spacer(modifier = Modifier.height(Spacing.small))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(Res.string.settings_vulgar_mode_title),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                stringResource(Res.string.settings_vulgar_mode_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                stringResource(Res.string.settings_vulgar_mode_headphone_warning),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = vulgarModeEnabled,
+                            onCheckedChange = { checked ->
+                                if (checked && !adultsOnlyConfirmed) {
+                                    // Show the 18+ modal flow. The modal confirm callback flips
+                                    // adultsOnlyConfirmed first, then re-issues setVulgarModeEnabled(true).
+                                    showAdultsOnlyDialog = true
+                                } else {
+                                    onVulgarModeEnabledChange(checked)
+                                }
+                            },
+                        )
+                    }
+
+                    // ===== Issue #611: Tier chip selector (MILD / STRONG / MIX) =====
+                    if (vulgarModeEnabled) {
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                        Text(
+                            stringResource(Res.string.settings_vulgar_mode_tier_label),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                        ) {
+                            VulgarTier.entries.forEach { tier ->
+                                FilterChip(
+                                    selected = vulgarTier == tier,
+                                    onClick = { onVulgarTierChange(tier) },
+                                    label = {
+                                        Text(
+                                            stringResource(
+                                                when (tier) {
+                                                    VulgarTier.MILD -> Res.string.settings_vulgar_mode_tier_mild
+                                                    VulgarTier.STRONG -> Res.string.settings_vulgar_mode_tier_strong
+                                                    VulgarTier.MIX -> Res.string.settings_vulgar_mode_tier_mix
+                                                },
+                                            ),
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    // ===== Issue #611: Dominatrix Mode sub-sub-row =====
+                    if (vulgarModeEnabled && dominatrixModeUnlocked && adultsOnlyConfirmed) {
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    stringResource(Res.string.settings_dominatrix_mode_title),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    stringResource(Res.string.settings_dominatrix_mode_description),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = dominatrixModeActive,
+                                onCheckedChange = onDominatrixModeActiveChange,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2741,6 +2971,33 @@ fun SettingsTab(
         )
     }
 
+    // Issue #611: Dominatrix Mode Unlock Celebration Dialog
+    if (showDominatrixUnlockDialog) {
+        DominatrixUnlockDialog(
+            onDismiss = { showDominatrixUnlockDialog = false },
+        )
+    }
+
+    // Issue #611: 18+ Adults Only confirmation modal (fires once per install on first vulgar-on)
+    if (showAdultsOnlyDialog) {
+        AdultsOnlyConfirmDialog(
+            onConfirm = {
+                showAdultsOnlyDialog = false
+                onAdultsOnlyConfirmedChange(true)
+                onVulgarModeEnabledChange(true)
+            },
+            onDecline = {
+                showAdultsOnlyDialog = false
+                // Persist the decline-remember flag so the modal never re-prompts for this install.
+                onAdultsOnlyConfirmedChange(false)
+            },
+            onDismiss = {
+                showAdultsOnlyDialog = false
+                // Dismiss without confirmation — user must explicitly tap "I'm 18+" to proceed.
+            },
+        )
+    }
+
     // Backup confirmation dialog
     if (showBackupDialog) {
         AlertDialog(
@@ -3146,6 +3403,119 @@ private fun formatCount(count: Long): String = when {
     count >= 10_000 -> "${count / 1_000}K"
     count >= 1_000 -> "${count / 1_000}.${(count % 1_000) / 100}K"
     else -> count.toString()
+}
+
+/**
+ * Issue #611: Dominatrix Mode unlock celebration dialog. Mirrors the disco-mode
+ * unlock dialog shape (pop-in scale + 4s auto-dismiss) with a BOSS-pink accent.
+ */
+@Composable
+private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(4000)
+        onDismiss()
+    }
+
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { isVisible = true }
+
+    val scale by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "dominatrix_dialog_scale",
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.scale(scale),
+        containerColor = Color(0xFF1A1A2E),
+        shape = RoundedCornerShape(28.dp),
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    "👑",
+                    style = MaterialTheme.typography.displayLarge,
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = stringResource(Res.string.settings_dominatrix_unlock_toast),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFFFF1493), // Deep pink — BOSS accent
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK", color = Color.White)
+            }
+        },
+    )
+}
+
+/**
+ * Issue #611: 18+ Adults Only confirmation modal. Fires once per install when
+ * the user toggles Vulgar Mode from off to on. Confirm flips adultsOnlyConfirmed
+ * first then re-issues the vulgar-mode setter; decline only persists the
+ * one-shot decline-remember flag so the modal never re-prompts.
+ */
+@Composable
+private fun AdultsOnlyConfirmDialog(
+    onConfirm: () -> Unit,
+    onDecline: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1A1A2E),
+        shape = RoundedCornerShape(28.dp),
+        title = {
+            Text(
+                text = stringResource(Res.string.settings_adults_only_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(Res.string.settings_adults_only_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.9f),
+                )
+                Spacer(modifier = Modifier.height(Spacing.medium))
+                Text(
+                    text = stringResource(Res.string.settings_adults_only_compliance_footer),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF1493), // BOSS pink
+                    contentColor = Color.White,
+                ),
+            ) {
+                Text(stringResource(Res.string.settings_adults_only_confirm))
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDecline) {
+                Text(stringResource(Res.string.settings_adults_only_decline), color = Color.White)
+            }
+        },
+    )
 }
 
 /**

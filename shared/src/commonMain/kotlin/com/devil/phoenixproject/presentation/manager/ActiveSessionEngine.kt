@@ -1307,6 +1307,21 @@ class ActiveSessionEngine(
                 velocityThresholdAlertEmitted = true
                 coordinator._hapticEvents.emit(HapticEvent.VELOCITY_THRESHOLD_REACHED)
                 Logger.i { "VBT: Velocity loss threshold reached (${velocity.velocityLossPercent?.roundToInt()}%). Alert emitted." }
+
+                // Issue #611: Verbal encouragement (gated on master + global audio toggle + vulgar)
+                // Emitted alongside VELOCITY_THRESHOLD_REACHED so both events share one-shot
+                // semantics per set. The vulgar-on gate here is the master "encouragement fires"
+                // gate; the tier + dominatrix fields carry the routing info to the audio router.
+                val prefs = settingsManager.userPreferences.value
+                if (prefs.beepsEnabled && prefs.verbalEncouragementEnabled && prefs.vulgarModeEnabled) {
+                    coordinator._hapticEvents.emit(
+                        HapticEvent.VERBAL_ENCOURAGEMENT(
+                            vulgarTier = prefs.vulgarTier,
+                            dominatrixMode = prefs.dominatrixModeActive,
+                        ),
+                    )
+                    Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${prefs.vulgarTier}, dominatrix=${prefs.dominatrixModeActive})" }
+                }
             }
 
             if (consecutiveThresholdReps >= 2 && coordinator.autoEndOnVelocityLoss) {

@@ -591,6 +591,27 @@
     <string name="cd_voice_stop">Spraak noodstop</string>
     <string name="cd_calibration_check">Kalibratiecontrole</string>
 
+    <!-- ==================== Verbale aanmoediging (Issue #611) ==================== -->
+    <string name="settings_verbal_encouragement_title">Verbale aanmoediging</string>
+    <string name="settings_verbal_encouragement_description">Gesproken aanmoediging bij spierfalen (VBT %)</string>
+    <string name="settings_verbal_encouragement_beeps_disabled">Schakel audio-cues in de Workout-instellingen in om verbale aanmoediging te gebruiken</string>
+    <string name="settings_vulgar_mode_title">Vulgaire modus</string>
+    <string name="settings_vulgar_mode_description">Gebruikt krachttermen in plaats van neutrale formulering. Standaard uit.</string>
+    <string name="settings_vulgar_mode_headphone_warning">Koptelefoongebruik sterk aanbevolen.</string>
+    <string name="settings_vulgar_mode_tier_label">Krachtterm-niveau</string>
+    <string name="settings_vulgar_mode_tier_mild">Mild</string>
+    <string name="settings_vulgar_mode_tier_strong">Sterk</string>
+    <string name="settings_vulgar_mode_tier_mix">Mix</string>
+    <string name="settings_dominatrix_mode_title">Dominatrix-modus</string>
+    <string name="settings_dominatrix_mode_description">Charlotte-stemopdrachten. Overschrijft vulgaire pool indien actief.</string>
+    <string name="settings_dominatrix_unlock_hint">Tik 7× op de header om te ontgrendelen</string>
+    <string name="settings_dominatrix_unlock_toast">Baasmodus ontgrendeld</string>
+    <string name="settings_adults_only_title">Alleen voor volwassenen</string>
+    <string name="settings_adults_only_body">Vulgaire modus bevat krachttermen en volwassen thema\'s. Ben je 18 of ouder?</string>
+    <string name="settings_adults_only_confirm">Ik ben 18+ en oma hoort me niet</string>
+    <string name="settings_adults_only_decline">Houd het netjes</string>
+    <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Krachtige taal + Suggestieve thema\'s</string>
+
     <!-- ==================== RPG Attributes ==================== -->
     <string name="rpg_no_data_yet">Voltooi je eerste training om RPG-attributen te ontgrendelen</string>
     <!-- Just Lift exercise tagging -->

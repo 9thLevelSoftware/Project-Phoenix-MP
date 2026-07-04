@@ -8,6 +8,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.presentation.manager.ExerciseCountdownCuePolicy
 import kotlinx.coroutines.flow.SharedFlow
 import platform.AVFAudio.AVAudioPlayer
@@ -74,6 +75,13 @@ private class IosSoundManager {
     private val repCountSoundPlayers = mutableListOf<AVAudioPlayer?>()
     private var countdownTickPlayer: AVAudioPlayer? = null // Issue #100
 
+    // Issue #611: Verbal encouragement pools (4 pools + 1 unlock SFX from PR #612)
+    private val encouragementNeutralSoundPlayers = mutableListOf<AVAudioPlayer?>()
+    private val encouragementMildSoundPlayers = mutableListOf<AVAudioPlayer?>()
+    private val encouragementStrongSoundPlayers = mutableListOf<AVAudioPlayer?>()
+    private val encouragementDominatrixSoundPlayers = mutableListOf<AVAudioPlayer?>()
+    private var dominatrixUnlockPlayer: AVAudioPlayer? = null
+
     // Issue #522: Observer tokens for foreground + AVAudioSession interruption
     // notifications. Removed in release() to avoid leaking observers across
     // recompositions of HapticFeedbackEffect.
@@ -86,6 +94,21 @@ private class IosSoundManager {
         loadBadgeSounds()
         loadPRSounds()
         loadRepCountSounds()
+        loadEncouragementNeutralSounds()
+        loadEncouragementMildSounds()
+        loadEncouragementStrongSounds()
+        loadEncouragementDominatrixSounds()
+        loadDominatrixUnlockSound()
+        // Issue #611 §9.4: One-time boot log asserting the 4 verbal-encouragement pool sizes
+        // match the PR #612 contract. Required by the implementation Gate 11-equivalent.
+        log.i {
+            "VBT: encouragement pool sizes — " +
+                "neutral=${encouragementNeutralSoundPlayers.size} " +
+                "mild=${encouragementMildSoundPlayers.size} " +
+                "strong=${encouragementStrongSoundPlayers.size} " +
+                "dominatrix=${encouragementDominatrixSoundPlayers.size} " +
+                "unlock=${if (dominatrixUnlockPlayer != null) 1 else 0}"
+        }
         installLifecycleObservers()
     }
 
@@ -168,6 +191,12 @@ private class IosSoundManager {
         prSoundPlayers.forEach { it?.prepareToPlay() }
         repCountSoundPlayers.forEach { it?.prepareToPlay() }
         countdownTickPlayer?.prepareToPlay()
+        // Issue #611: Verbal encouragement pools + dominatrix unlock SFX
+        encouragementNeutralSoundPlayers.forEach { it?.prepareToPlay() }
+        encouragementMildSoundPlayers.forEach { it?.prepareToPlay() }
+        encouragementStrongSoundPlayers.forEach { it?.prepareToPlay() }
+        encouragementDominatrixSoundPlayers.forEach { it?.prepareToPlay() }
+        dominatrixUnlockPlayer?.prepareToPlay()
     }
 
     private fun loadSounds() {
@@ -183,6 +212,8 @@ private class IosSoundManager {
             HapticEvent.WORKOUT_END to "chirpchirp",
             HapticEvent.REST_ENDING to "restover",
             HapticEvent.DISCO_MODE_UNLOCKED to "discomode",
+            // Issue #611: Dominatrix easter-egg unlock SFX
+            HapticEvent.DOMINATRIX_MODE_UNLOCKED to "dominatrix_unlock",
             // Issue #100: Warmup-to-working transition (ascending tone)
             HapticEvent.WARMUP_TO_WORKING to "beepboop",
             // Issue #313: Velocity loss threshold alert (attention-getting)
@@ -270,6 +301,61 @@ private class IosSoundManager {
         log.d { "Loaded $loadedCount/25 rep count sounds" }
     }
 
+    // Issue #611: Verbal encouragement audio pools. Bare filenames match PR #612's
+    // `Sounds/` drop-in contract (no extension; loadSound() tries .caf/.m4a/.wav/.mp3).
+    private fun loadEncouragementNeutralSounds() {
+        val soundFiles = (1..15).map { i -> "encouragement_${i.toString().padStart(2, '0')}" }
+        soundFiles.forEach { fileName ->
+            loadSound(fileName)?.let { encouragementNeutralSoundPlayers.add(it) }
+        }
+        log.d { "Loaded ${encouragementNeutralSoundPlayers.size} encouragement neutral sounds" }
+    }
+
+    private fun loadEncouragementMildSounds() {
+        val soundFiles = (1..12).map { i -> "vulgar_mild_${i.toString().padStart(2, '0')}" }
+        soundFiles.forEach { fileName ->
+            loadSound(fileName)?.let { encouragementMildSoundPlayers.add(it) }
+        }
+        log.d { "Loaded ${encouragementMildSoundPlayers.size} vulgar mild sounds" }
+    }
+
+    private fun loadEncouragementStrongSounds() {
+        val soundFiles = (1..12).map { i -> "vulgar_strong_${i.toString().padStart(2, '0')}" }
+        soundFiles.forEach { fileName ->
+            loadSound(fileName)?.let { encouragementStrongSoundPlayers.add(it) }
+        }
+        log.d { "Loaded ${encouragementStrongSoundPlayers.size} vulgar strong sounds" }
+    }
+
+    private fun loadEncouragementDominatrixSounds() {
+        val soundFiles = (1..12).map { i -> "dominatrix_${i.toString().padStart(2, '0')}" }
+        soundFiles.forEach { fileName ->
+            loadSound(fileName)?.let { encouragementDominatrixSoundPlayers.add(it) }
+        }
+        log.d { "Loaded ${encouragementDominatrixSoundPlayers.size} dominatrix sounds" }
+    }
+
+    private fun loadDominatrixUnlockSound() {
+        dominatrixUnlockPlayer = loadSound("dominatrix_unlock")
+        log.d { "Dominatrix unlock SFX loaded: ${dominatrixUnlockPlayer != null}" }
+    }
+
+    /**
+     * Issue #611: Play the dominatrix unlock whip-crack SFX from Settings when the
+     * 7-tap easter egg fires. Mirrors onPlayDiscoSound() in SettingsTab.kt.
+     */
+    fun playDominatrixUnlockSound() {
+        dominatrixUnlockPlayer?.let { player ->
+            try {
+                player.prepareToPlay()
+                player.currentTime = 0.0
+                player.play()
+            } catch (e: Exception) {
+                log.w { "Dominatrix unlock SFX playback failed: ${e.message}" }
+            }
+        }
+    }
+
     private fun loadSound(fileName: String): AVAudioPlayer? {
         // Try different audio formats in order of preference
         val extensions = listOf("caf", "m4a", "wav", "mp3")
@@ -325,6 +411,39 @@ private class IosSoundManager {
             }
 
             is HapticEvent.COUNTDOWN_TICK -> countdownTickPlayer
+
+            // Issue #611: Verbal encouragement pool routing. Mirrors Android cueForEvent.
+            is HapticEvent.VERBAL_ENCOURAGEMENT -> {
+                when {
+                    event.dominatrixMode && encouragementDominatrixSoundPlayers.isNotEmpty() ->
+                        encouragementDominatrixSoundPlayers[
+                            kotlin.random.Random.nextInt(encouragementDominatrixSoundPlayers.size),
+                        ]
+                    event.vulgarTier == VulgarTier.MILD && encouragementMildSoundPlayers.isNotEmpty() ->
+                        encouragementMildSoundPlayers[
+                            kotlin.random.Random.nextInt(encouragementMildSoundPlayers.size),
+                        ]
+                    event.vulgarTier == VulgarTier.STRONG && encouragementStrongSoundPlayers.isNotEmpty() ->
+                        encouragementStrongSoundPlayers[
+                            kotlin.random.Random.nextInt(encouragementStrongSoundPlayers.size),
+                        ]
+                    event.vulgarTier == VulgarTier.MIX -> {
+                        val combined = encouragementMildSoundPlayers + encouragementStrongSoundPlayers
+                        if (combined.isNotEmpty()) {
+                            combined[kotlin.random.Random.nextInt(combined.size)]
+                        } else {
+                            null
+                        }
+                    }
+                    else -> if (encouragementNeutralSoundPlayers.isNotEmpty()) {
+                        encouragementNeutralSoundPlayers[
+                            kotlin.random.Random.nextInt(encouragementNeutralSoundPlayers.size),
+                        ]
+                    } else {
+                        null
+                    }
+                }
+            }
 
             else -> players[event]
         }
@@ -407,6 +526,25 @@ private class IosSoundManager {
         }
         countdownTickPlayer = null
 
+        // Issue #611: Stop + clear the verbal encouragement pools
+        listOf(
+            encouragementNeutralSoundPlayers,
+            encouragementMildSoundPlayers,
+            encouragementStrongSoundPlayers,
+            encouragementDominatrixSoundPlayers,
+        ).forEach { pool ->
+            pool.forEach { player ->
+                try { player?.stop() } catch (e: Exception) { /* ignore */ }
+            }
+            pool.clear()
+        }
+        try {
+            dominatrixUnlockPlayer?.stop()
+        } catch (e: Exception) {
+            // Ignore cleanup errors
+        }
+        dominatrixUnlockPlayer = null
+
         try {
             // F063: AVAudioSession is process-wide. If SafeWordListener currently
             // holds it in playAndRecord for emergency voice detection, deactivating
@@ -434,6 +572,8 @@ private class IosSoundManager {
 private fun playHapticFeedback(event: HapticEvent) {
     // REP_COUNT_ANNOUNCED has no haptic feedback - it's audio only
     if (event is HapticEvent.REP_COUNT_ANNOUNCED) return
+    // Issue #611: VERBAL_ENCOURAGEMENT is audio-only - no haptic feedback
+    if (event is HapticEvent.VERBAL_ENCOURAGEMENT) return
 
     try {
         when (event) {
@@ -490,6 +630,13 @@ private fun playHapticFeedback(event: HapticEvent) {
                 notificationGenerator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeSuccess)
             }
 
+            // Issue #611: Dominatrix unlock - heavy impact matching the whip crack SFX
+            is HapticEvent.DOMINATRIX_MODE_UNLOCKED -> {
+                val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleHeavy)
+                generator.prepare()
+                generator.impactOccurred()
+            }
+
             is HapticEvent.COUNTDOWN_TICK -> {
                 // Issue #100: Light tick for rest countdown
                 val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleLight)
@@ -516,6 +663,12 @@ private fun playHapticFeedback(event: HapticEvent) {
 
             is HapticEvent.REP_COUNT_ANNOUNCED -> {
                 // No haptic for rep count announcement - audio only
+            }
+
+            // Issue #611: VERBAL_ENCOURAGEMENT is audio-only - early return at top of fn,
+            // but the exhaustive when requires an explicit arm.
+            is HapticEvent.VERBAL_ENCOURAGEMENT -> {
+                // No haptic for verbal encouragement - audio only
             }
         }
     } catch (e: Exception) {

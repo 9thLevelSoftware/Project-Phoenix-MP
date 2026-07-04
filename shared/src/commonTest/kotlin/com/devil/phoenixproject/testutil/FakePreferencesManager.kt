@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.BackupDestination
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -177,5 +178,49 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(velocityOneRepMaxBackfillDone = done)
+    }
+
+    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
+    // Cascade invariants mirror SettingsPreferencesManager.
+    override suspend fun setVerbalEncouragementEnabled(enabled: Boolean) {
+        _preferencesFlow.value = if (!enabled) {
+            _preferencesFlow.value.copy(
+                verbalEncouragementEnabled = false,
+                vulgarModeEnabled = false,
+                dominatrixModeActive = false,
+            )
+        } else {
+            _preferencesFlow.value.copy(verbalEncouragementEnabled = true)
+        }
+    }
+
+    override suspend fun setVulgarModeEnabled(enabled: Boolean) {
+        val current = _preferencesFlow.value
+        if (enabled && !current.adultsOnlyConfirmed) return
+        _preferencesFlow.value = if (!enabled) {
+            current.copy(vulgarModeEnabled = false, dominatrixModeActive = false)
+        } else {
+            current.copy(vulgarModeEnabled = true)
+        }
+    }
+
+    override suspend fun setVulgarTier(tier: VulgarTier) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(vulgarTier = tier)
+    }
+
+    override suspend fun setDominatrixModeUnlocked(unlocked: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(dominatrixModeUnlocked = unlocked)
+    }
+
+    override suspend fun setDominatrixModeActive(active: Boolean) {
+        val current = _preferencesFlow.value
+        if (active && (!current.dominatrixModeUnlocked || !current.vulgarModeEnabled || !current.adultsOnlyConfirmed)) {
+            return
+        }
+        _preferencesFlow.value = current.copy(dominatrixModeActive = active)
+    }
+
+    override suspend fun setAdultsOnlyConfirmed(confirmed: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(adultsOnlyConfirmed = confirmed)
     }
 }

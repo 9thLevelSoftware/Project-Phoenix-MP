@@ -609,11 +609,32 @@
     <string name="settings_calibration_progress">%1$d von 3 Erkennungen</string>
     <string name="settings_calibration_mic_error">Zugriff auf das Mikrofon nicht m\u00f6glich. \u00dcberpr\u00fcfe die Berechtigungen und versuche es erneut.</string>
     <string name="settings_calibration_open_settings">Einstellungen öffnen</string>
-    <string name="cd_voice_stop">Sprach-Notstopp</string>
-    <string name="cd_calibration_check">Kalibrierungspr\u00fcfung</string>
+    <string name="cd_voice_stop">Sprachnotfall-Stopp</string>
+    <string name="cd_calibration_check">Kalibrierungsprüfung</string>
+
+    <!-- ==================== Verbale Ermutigung (Issue #611) ==================== -->
+    <string name="settings_verbal_encouragement_title">Verbale Ermutigung</string>
+    <string name="settings_verbal_encouragement_description">Gesprochene Motivation bei Muskelversagen (VBT %)</string>
+    <string name="settings_verbal_encouragement_beeps_disabled">Aktiviere Audio-Cues in den Workout-Einstellungen, um verbale Ermutigung zu nutzen</string>
+    <string name="settings_vulgar_mode_title">Vulgärer Modus</string>
+    <string name="settings_vulgar_mode_description">Verwendet Kraftausdrücke statt neutraler Formulierungen. Standardmäßig aus.</string>
+    <string name="settings_vulgar_mode_headphone_warning">Kopfhörer dringend empfohlen.</string>
+    <string name="settings_vulgar_mode_tier_label">Kraftausdruck-Stufe</string>
+    <string name="settings_vulgar_mode_tier_mild">Mild</string>
+    <string name="settings_vulgar_mode_tier_strong">Stark</string>
+    <string name="settings_vulgar_mode_tier_mix">Mix</string>
+    <string name="settings_dominatrix_mode_title">Dominatrix-Modus</string>
+    <string name="settings_dominatrix_mode_description">Charlotte-Sprachbefehle. Überschreibt das vulgäre Pool, wenn aktiv.</string>
+    <string name="settings_dominatrix_unlock_hint">Tippe 7× auf den Header zum Entsperren</string>
+    <string name="settings_dominatrix_unlock_toast">Boss-Modus freigeschaltet</string>
+    <string name="settings_adults_only_title">Nur für Erwachsene</string>
+    <string name="settings_adults_only_body">Der vulgäre Modus enthält Kraftausdrücke und reife Themen. Bist du 18 oder älter?</string>
+    <string name="settings_adults_only_confirm">Ich bin 18+ und Oma hört mich nicht</string>
+    <string name="settings_adults_only_decline">Sauber halten</string>
+    <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Starke Sprache + Anzügliche Themen</string>
 
     <!-- ==================== RPG Attributes ==================== -->
-    <string name="rpg_no_data_yet">Schlie\u00dfe dein erstes Training ab, um RPG-Attribute freizuschalten</string>
+    <string name="rpg_no_data_yet">Schließe dein erstes Training ab, um RPG-Attribute freizuschalten</string>
     <!-- Just Lift exercise tagging -->
     <string name="action_tag">Zuordnen</string>
     <string name="action_change">Ändern</string>

@@ -420,6 +420,15 @@ data class RepEvent(
 )
 
 /**
+ * Issue #611: Vulgar encouragement tier. STRONG is the default per the original
+ * reporter request (closest match). MIX = random pick between MILD and STRONG
+ * on every cue. DOMINATRIX is NOT a tier — it is a separate mode that overrides
+ * the tier; the audio router handles the override, this enum only encodes the
+ * vulgar intensity choice.
+ */
+enum class VulgarTier { MILD, STRONG, MIX }
+
+/**
  * Haptic feedback event types for workout notifications
  *
  * Implemented as a sealed class to support parameterized variants (REP_COUNT_ANNOUNCED).
@@ -459,6 +468,9 @@ sealed class HapticEvent {
     /** Easter egg celebration sound */
     data object DISCO_MODE_UNLOCKED : HapticEvent()
 
+    /** Issue #611: Dominatrix easter-egg unlock celebration (whip crack SFX) */
+    data object DOMINATRIX_MODE_UNLOCKED : HapticEvent()
+
     /** Strong haptic + random badge celebration sound */
     data object BADGE_EARNED : HapticEvent()
 
@@ -473,6 +485,17 @@ sealed class HapticEvent {
 
     /** Issue #100: Countdown tick during last 10 seconds of rest timer */
     data class COUNTDOWN_TICK(val secondsRemaining: Int) : HapticEvent()
+
+    /**
+     * Issue #611: Spoken encouragement at VBT-detected failure. Audio-only (no
+     * haptic). vulgarTier is the tier chosen by the user (STRONG default; MIX =
+     * random MILD|STRONG on every cue). dominatrixMode overrides vulgarTier:
+     * when true, router always plays from encouragementDominatrixCues.
+     */
+    data class VERBAL_ENCOURAGEMENT(
+        val vulgarTier: VulgarTier,
+        val dominatrixMode: Boolean,
+    ) : HapticEvent()
 }
 
 /**

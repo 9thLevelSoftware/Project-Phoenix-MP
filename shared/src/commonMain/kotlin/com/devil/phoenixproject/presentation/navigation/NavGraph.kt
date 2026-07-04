@@ -404,6 +404,20 @@ fun NavGraph(
                     defaultRoutineExerciseWeightPercentOfPR = userPreferences.defaultRoutineExerciseWeightPercentOfPR,
                     onDefaultRoutineExerciseUsePercentOfPRChange = { viewModel.setDefaultRoutineExerciseUsePercentOfPR(it) },
                     onDefaultRoutineExerciseWeightPercentOfPRChange = { viewModel.setDefaultRoutineExerciseWeightPercentOfPR(it) },
+                    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
+                    verbalEncouragementEnabled = userPreferences.verbalEncouragementEnabled,
+                    onVerbalEncouragementEnabledChange = { viewModel.setVerbalEncouragementEnabled(it) },
+                    vulgarModeEnabled = userPreferences.vulgarModeEnabled,
+                    onVulgarModeEnabledChange = { viewModel.setVulgarModeEnabled(it) },
+                    vulgarTier = userPreferences.vulgarTier,
+                    onVulgarTierChange = { viewModel.setVulgarTier(it) },
+                    dominatrixModeUnlocked = userPreferences.dominatrixModeUnlocked,
+                    onDominatrixModeUnlockedChange = { viewModel.setDominatrixModeUnlocked(it) },
+                    dominatrixModeActive = userPreferences.dominatrixModeActive,
+                    onDominatrixModeActiveChange = { viewModel.setDominatrixModeActive(it) },
+                    adultsOnlyConfirmed = userPreferences.adultsOnlyConfirmed,
+                    onAdultsOnlyConfirmedChange = { viewModel.setAdultsOnlyConfirmed(it) },
+                    onPlayDominatrixUnlockSound = { viewModel.emitDominatrixUnlockSound() },
                 )
             }
 
