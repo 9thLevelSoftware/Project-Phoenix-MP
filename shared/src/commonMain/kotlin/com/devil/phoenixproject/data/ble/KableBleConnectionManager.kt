@@ -636,6 +636,17 @@ class KableBleConnectionManager(
                                         withTimeout(BleConstants.CONNECTION_TIMEOUT_MS) {
                                             onDeviceReady()
                                         }
+                                        // Explicit disconnect/cancel may have torn the
+                                        // connection down while ready-up was in flight —
+                                        // don't resurrect Connected over a Disconnected UI.
+                                        if (peripheral == null || isExplicitDisconnect) {
+                                            if (!readyGate.isCompleted) {
+                                                readyGate.completeExceptionally(
+                                                    BleDeviceInitializationException("Connection torn down during initialization"),
+                                                )
+                                            }
+                                            return@launch
+                                        }
                                         reportConnectionState(
                                             ConnectionState.Connected(
                                                 deviceName = device.name,
@@ -1281,6 +1292,11 @@ class KableBleConnectionManager(
         log.i { "Disconnecting (explicit)" }
         isExplicitDisconnect = true // Mark as explicit disconnect to prevent auto-reconnect
 
+        // Issue #333: stop an in-flight ready-up so it cannot publish Connected
+        // after this explicit teardown reports Disconnected.
+        deviceReadyJob?.cancel()
+        deviceReadyJob = null
+
         // Cancel all polling jobs
         pollingEngine.stopAll()
 
@@ -1301,6 +1317,10 @@ class KableBleConnectionManager(
     suspend fun cancelConnection() {
         log.i { "Cancelling in-progress connection" }
         isExplicitDisconnect = true // Prevent auto-reconnect
+        // Issue #333: stop an in-flight ready-up so it cannot publish Connected
+        // after this cancellation reports Disconnected.
+        deviceReadyJob?.cancel()
+        deviceReadyJob = null
         try {
             peripheral?.disconnect()
         } catch (e: Exception) {

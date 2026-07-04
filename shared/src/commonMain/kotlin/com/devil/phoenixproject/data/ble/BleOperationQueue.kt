@@ -60,8 +60,14 @@ class BleOperationQueue {
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 lastException = e
+                // Issue #333: the vendored legacy write path (third_party Kable patch)
+                // reports every rejected writeCharacteristic() as "Write failed: Unknown"
+                // (pre-API-33 semantics — upstream Kable documents a busy GATT stack as
+                // the common cause). Treat it as transient so LED/init/CONFIG writes keep
+                // the same bounded busy-retry they had on the three-argument write API.
                 val isBusyError = e.message?.contains("Busy", ignoreCase = true) == true ||
-                    e.message?.contains("WriteRequestBusy", ignoreCase = true) == true
+                    e.message?.contains("WriteRequestBusy", ignoreCase = true) == true ||
+                    e.message?.contains("Write failed: Unknown", ignoreCase = true) == true
 
                 if (isBusyError && attempt < maxRetries - 1) {
                     // Exponential backoff: 50ms, 100ms, 150ms
