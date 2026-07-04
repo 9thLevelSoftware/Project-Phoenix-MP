@@ -321,6 +321,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             dominatrixModeUnlocked = settings.getBoolean(KEY_DOMINATRIX_MODE_UNLOCKED, false),
             dominatrixModeActive = settings.getBoolean(KEY_DOMINATRIX_MODE_ACTIVE, false),
             adultsOnlyConfirmed = settings.getBoolean(KEY_ADULTS_ONLY_CONFIRMED, false),
+            adultsOnlyPrompted = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false),
         )
     }
 
@@ -693,5 +694,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
      */
     override fun setAdultsOnlyPrompted(prompted: Boolean) {
         settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, prompted)
+        updateAndEmit { copy(adultsOnlyPrompted = prompted) }
     }
 }

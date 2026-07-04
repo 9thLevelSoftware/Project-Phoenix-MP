@@ -61,6 +61,7 @@ data class UserPreferences(
     val dominatrixModeUnlocked: Boolean = false, // Easter egg unlock flag (set true after 7-tap unlock)
     val dominatrixModeActive: Boolean = false, // User-toggled "on" state; only meaningful when unlocked + vulgar + adults
     val adultsOnlyConfirmed: Boolean = false, // One-shot gate set true after the 18+ modal is confirmed
+    val adultsOnlyPrompted: Boolean = false, // One-shot flag: true after the 18+ modal is shown (confirm or decline)
 ) {
     /**
      * Get the effective weight increment in the user's display unit.
