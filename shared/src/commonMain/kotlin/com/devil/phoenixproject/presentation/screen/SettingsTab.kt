@@ -3426,6 +3426,134 @@ private fun formatCount(count: Long): String = when {
     else -> count.toString()
 }
 
+@Composable
+private fun AdultModeDialogCard(
+    presentation: AdultModePresentation,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(8.dp, RoundedCornerShape(20.dp)),
+        colors = CardDefaults.cardColors(
+            containerColor = adultModeContainerColor(presentation.containerTone),
+        ),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        border = BorderStroke(2.dp, adultModeBorderColor(presentation)),
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun adultModeContainerColor(tone: AdultModeDialogTone): Color = when (tone) {
+    AdultModeDialogTone.ThemeSurface -> MaterialTheme.colorScheme.surfaceContainerHighest
+}
+
+@Composable
+private fun adultModeBorderColor(presentation: AdultModePresentation): Color = when {
+    // Keep the policy honest without reintroducing a bespoke palette: even if a
+    // future policy asks for a risky accent, map it back through theme tokens.
+    presentation.usesBespokePinkAccent -> MaterialTheme.colorScheme.error.copy(alpha = 0.24f)
+    presentation.usesBrandAccent -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+    else -> MaterialTheme.colorScheme.outlineVariant
+}
+
+@Composable
+private fun AdultModeActions(
+    presentation: AdultModePresentation,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    declineLabel: String? = null,
+    onDecline: (() -> Unit)? = null,
+) {
+    when (presentation.actionLayout) {
+        AdultModeActionLayout.SinglePrimary -> AdultModeActionButton(
+            label = confirmLabel,
+            tone = presentation.confirmTone,
+            onClick = onConfirm,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        AdultModeActionLayout.StackedFullWidth -> Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            AdultModeActionButton(
+                label = confirmLabel,
+                tone = presentation.confirmTone,
+                onClick = onConfirm,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (declineLabel != null && onDecline != null) {
+                AdultModeActionButton(
+                    label = declineLabel,
+                    tone = presentation.declineTone ?: AdultModeActionTone.Outline,
+                    onClick = onDecline,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdultModeActionButton(
+    label: String,
+    tone: AdultModeActionTone,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (tone) {
+        AdultModeActionTone.Primary -> Button(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 48.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) {
+            AdultModeActionLabel(
+                text = label,
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
+        AdultModeActionTone.Outline -> OutlinedButton(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 48.dp),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+            ),
+        ) {
+            AdultModeActionLabel(
+                text = label,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdultModeActionLabel(
+    text: String,
+    color: Color,
+    fontWeight: FontWeight = FontWeight.Medium,
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = fontWeight,
+        color = color,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
+}
+
 /**
  * Issue #611: Dominatrix Mode unlock celebration dialog. Uses the same Phoenix
  * Material 3 surface/card/button idioms as the rest of Settings instead of a
@@ -3456,17 +3584,7 @@ private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         modifier = Modifier.scale(scale),
     ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            ),
-            shape = RoundedCornerShape(20.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-        ) {
+        AdultModeDialogCard(presentation = presentation) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3502,27 +3620,11 @@ private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(Spacing.large))
 
-                when (presentation.actionLayout) {
-                    AdultModeActionLayout.SinglePrimary,
-                    AdultModeActionLayout.StackedFullWidth -> Button(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    ) {
-                        Text(
-                            text = stringResource(Res.string.action_ok),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                    }
-                }
+                AdultModeActions(
+                    presentation = presentation,
+                    confirmLabel = stringResource(Res.string.action_ok),
+                    onConfirm = onDismiss,
+                )
             }
         }
     }
@@ -3546,17 +3648,7 @@ private fun AdultsOnlyConfirmDialog(
     val presentation = AdultModePresentation.adultsOnlyConfirmation()
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            ),
-            shape = RoundedCornerShape(20.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-        ) {
+        AdultModeDialogCard(presentation = presentation) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3608,59 +3700,13 @@ private fun AdultsOnlyConfirmDialog(
                 }
                 Spacer(modifier = Modifier.height(Spacing.large))
 
-                when (presentation.actionLayout) {
-                    AdultModeActionLayout.StackedFullWidth -> Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
-                    ) {
-                        Button(
-                            onClick = onConfirm,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                            ),
-                        ) {
-                            Text(
-                                text = stringResource(Res.string.settings_adults_only_confirm),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = onDecline,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(
-                                1.dp,
-                                MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
-                            ),
-                        ) {
-                            Text(
-                                text = stringResource(Res.string.settings_adults_only_decline),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            )
-                        }
-                    }
-
-                    AdultModeActionLayout.SinglePrimary -> Button(
-                        onClick = onConfirm,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp),
-                        shape = RoundedCornerShape(20.dp),
-                    ) {
-                        Text(stringResource(Res.string.settings_adults_only_confirm))
-                    }
-                }
+                AdultModeActions(
+                    presentation = presentation,
+                    confirmLabel = stringResource(Res.string.settings_adults_only_confirm),
+                    onConfirm = onConfirm,
+                    declineLabel = stringResource(Res.string.settings_adults_only_decline),
+                    onDecline = onDecline,
+                )
             }
         }
     }
