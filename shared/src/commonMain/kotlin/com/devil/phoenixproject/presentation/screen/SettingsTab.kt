@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -2074,7 +2076,13 @@ fun SettingsTab(
                 }
 
                 // Issue #611: 7-tap hint pill (visible when master + vulgar on, dominatrix locked)
-                if (verbalEncouragementEnabled && vulgarModeEnabled && !dominatrixModeUnlocked) {
+                if (
+                    AdultModePresentation.shouldShowDominatrixHint(
+                        verbalEncouragementEnabled = verbalEncouragementEnabled,
+                        vulgarModeEnabled = vulgarModeEnabled,
+                        dominatrixModeUnlocked = dominatrixModeUnlocked,
+                    )
+                ) {
                     Spacer(modifier = Modifier.height(Spacing.small))
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -3418,10 +3426,140 @@ private fun formatCount(count: Long): String = when {
     else -> count.toString()
 }
 
+@Composable
+private fun AdultModeDialogCard(
+    presentation: AdultModePresentation,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(8.dp, RoundedCornerShape(20.dp)),
+        colors = CardDefaults.cardColors(
+            containerColor = adultModeContainerColor(presentation.containerTone),
+        ),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        border = BorderStroke(2.dp, adultModeBorderColor(presentation)),
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun adultModeContainerColor(tone: AdultModeDialogTone): Color = when (tone) {
+    AdultModeDialogTone.ThemeSurface -> MaterialTheme.colorScheme.surfaceContainerHighest
+}
+
+@Composable
+private fun adultModeBorderColor(presentation: AdultModePresentation): Color = when {
+    // Keep the policy honest without reintroducing a bespoke palette: even if a
+    // future policy asks for a risky accent, map it back through theme tokens.
+    presentation.usesBespokePinkAccent -> MaterialTheme.colorScheme.error.copy(alpha = 0.24f)
+    presentation.usesBrandAccent -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+    else -> MaterialTheme.colorScheme.outlineVariant
+}
+
+@Composable
+private fun AdultModeActions(
+    presentation: AdultModePresentation,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    declineLabel: String? = null,
+    onDecline: (() -> Unit)? = null,
+) {
+    when (presentation.actionLayout) {
+        AdultModeActionLayout.SinglePrimary -> AdultModeActionButton(
+            label = confirmLabel,
+            tone = presentation.confirmTone,
+            onClick = onConfirm,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        AdultModeActionLayout.StackedFullWidth -> Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            AdultModeActionButton(
+                label = confirmLabel,
+                tone = presentation.confirmTone,
+                onClick = onConfirm,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (declineLabel != null && onDecline != null) {
+                AdultModeActionButton(
+                    label = declineLabel,
+                    tone = presentation.declineTone ?: AdultModeActionTone.Outline,
+                    onClick = onDecline,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdultModeActionButton(
+    label: String,
+    tone: AdultModeActionTone,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (tone) {
+        AdultModeActionTone.Primary -> Button(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 48.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) {
+            AdultModeActionLabel(
+                text = label,
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
+        AdultModeActionTone.Outline -> OutlinedButton(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 48.dp),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+            ),
+        ) {
+            AdultModeActionLabel(
+                text = label,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdultModeActionLabel(
+    text: String,
+    color: Color,
+    fontWeight: FontWeight = FontWeight.Medium,
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = fontWeight,
+        color = color,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
+}
+
 /**
- * Issue #611: Dominatrix Mode unlock celebration dialog. Mirrors the disco-mode
- * unlock dialog shape (pop-in scale + 4s auto-dismiss) with a BOSS-pink accent.
+ * Issue #611: Dominatrix Mode unlock celebration dialog. Uses the same Phoenix
+ * Material 3 surface/card/button idioms as the rest of Settings instead of a
+ * bespoke dark + pink palette.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
     LaunchedEffect(Unit) {
@@ -3429,6 +3567,7 @@ private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
         onDismiss()
     }
 
+    val presentation = AdultModePresentation.dominatrixUnlock()
     var isVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { isVisible = true }
 
@@ -3441,38 +3580,54 @@ private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
         label = "dominatrix_dialog_scale",
     )
 
-    AlertDialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.scale(scale),
-        containerColor = Color(0xFF1A1A2E),
-        shape = RoundedCornerShape(28.dp),
-        title = {
+    ) {
+        AdultModeDialogCard(presentation = presentation) {
             Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.large),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(
-                    "👑",
-                    style = MaterialTheme.typography.displayLarge,
-                )
-                Spacer(modifier = Modifier.height(16.dp))
+                Surface(
+                    modifier = Modifier.size(72.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            "👑",
+                            style = MaterialTheme.typography.displayMedium,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(Spacing.medium))
                 Text(
                     text = stringResource(Res.string.settings_dominatrix_unlock_toast),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color(0xFFFF1493), // Deep pink — BOSS accent
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
+                Spacer(modifier = Modifier.height(Spacing.small))
+                Text(
+                    text = stringResource(Res.string.settings_dominatrix_mode_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(modifier = Modifier.height(Spacing.large))
+
+                AdultModeActions(
+                    presentation = presentation,
+                    confirmLabel = stringResource(Res.string.action_ok),
+                    onConfirm = onDismiss,
+                )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                // Issue #611 (PR-followup #613): use the localized OK label
-                // (matches every other dialog in SettingsTab).
-                Text(stringResource(Res.string.action_ok), color = Color.White)
-            }
-        },
-    )
+        }
+    }
 }
 
 /**
@@ -3483,56 +3638,78 @@ private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
  * the modal never re-prompts — see VerbalEncouragementPreferenceCascadeTest
  * "decline path leaves modal dormant on subsequent vulgar-on toggles".
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AdultsOnlyConfirmDialog(
     onConfirm: () -> Unit,
     onDecline: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1A1A2E),
-        shape = RoundedCornerShape(28.dp),
-        title = {
-            Text(
-                text = stringResource(Res.string.settings_adults_only_title),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-            )
-        },
-        text = {
-            Column {
+    val presentation = AdultModePresentation.adultsOnlyConfirmation()
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        AdultModeDialogCard(presentation = presentation) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.large),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            text = stringResource(Res.string.settings_adults_only_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(Spacing.medium))
                 Text(
                     text = stringResource(Res.string.settings_adults_only_body),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(Spacing.medium))
-                Text(
-                    text = stringResource(Res.string.settings_adults_only_compliance_footer),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.6f),
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    Text(
+                        text = stringResource(Res.string.settings_adults_only_compliance_footer),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(Spacing.medium),
+                    )
+                }
+                Spacer(modifier = Modifier.height(Spacing.large))
+
+                AdultModeActions(
+                    presentation = presentation,
+                    confirmLabel = stringResource(Res.string.settings_adults_only_confirm),
+                    onConfirm = onConfirm,
+                    declineLabel = stringResource(Res.string.settings_adults_only_decline),
+                    onDecline = onDecline,
                 )
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFF1493), // BOSS pink
-                    contentColor = Color.White,
-                ),
-            ) {
-                Text(stringResource(Res.string.settings_adults_only_confirm))
-            }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = onDecline) {
-                Text(stringResource(Res.string.settings_adults_only_decline), color = Color.White)
-            }
-        },
-    )
+        }
+    }
 }
 
 /**
