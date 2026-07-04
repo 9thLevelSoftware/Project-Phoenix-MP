@@ -114,7 +114,12 @@ class KableBleConnectionManager(
     // State variables (9 mutable fields + 1 map) — owned exclusively by this manager
     // -------------------------------------------------------------------------
 
-    /** THE central Peripheral reference — this manager owns it exclusively. */
+    /**
+     * THE central Peripheral reference — this manager owns it exclusively.
+     * @Volatile: cleared by disconnect()/cancelConnection() on the caller's
+     * dispatcher while the ready-up teardown guard reads it on [scope].
+     */
+    @Volatile
     private var peripheral: Peripheral? = null
 
     /** Public read-only accessor for the current Peripheral reference. */
@@ -164,7 +169,12 @@ class KableBleConnectionManager(
     /** Connected device address (for logging). */
     private var connectedDeviceAddress: String = ""
 
-    /** Flag to track explicit disconnect (to avoid auto-reconnect). */
+    /**
+     * Flag to track explicit disconnect (to avoid auto-reconnect).
+     * @Volatile: set by disconnect()/cancelConnection() on the caller's
+     * dispatcher while the ready-up teardown guard reads it on [scope].
+     */
+    @Volatile
     private var isExplicitDisconnect = false
 
     /**
