@@ -132,7 +132,9 @@ class KableBleConnectionManager(
     /**
      * Issue #333 (v10 ready gate): job running onDeviceReady() for the current
      * connection attempt. App-level Connected is not published until it completes.
+     * @Volatile for the same cross-dispatcher reassignment hazard as [readyGate].
      */
+    @Volatile
     private var deviceReadyJob: Job? = null
 
     /**
@@ -144,6 +146,17 @@ class KableBleConnectionManager(
      */
     @Volatile
     private var readyGate = CompletableDeferred<Unit>()
+
+    /**
+     * Issue #333: compatibility mode resolved ONCE per connection, at ready-up.
+     * The persisted setting can change while connected, but MTU/heartbeat/
+     * diagnostic choreography was already chosen for the live GATT connection —
+     * mixing modes mid-connection would, e.g., take the compat CONFIG branch on
+     * a connection that still has the large MTU. Setting changes apply on the
+     * next connection, matching the Settings UI wording.
+     */
+    @Volatile
+    private var compatibilityPathActive = false
 
     /** Connected device name (for logging). */
     private var connectedDeviceName: String = ""
@@ -834,7 +847,8 @@ class KableBleConnectionManager(
      */
     private suspend fun onDeviceReady() {
         val p = peripheral ?: return
-        val useCompatibilityPath = BleCompatibilityMode.isActive()
+        compatibilityPathActive = BleCompatibilityMode.isActive()
+        val useCompatibilityPath = compatibilityPathActive
 
         if (useCompatibilityPath) {
             // Issue #333: official small-MTU path. Android 14+ coerces the FIRST
@@ -1049,7 +1063,7 @@ class KableBleConnectionManager(
         }
         if (peripheral !== p) return // disconnected/replaced while we waited
 
-        if (BleCompatibilityMode.includePreReadyDiagnosticReads()) {
+        if (!compatibilityPathActive) {
             // Firmware/version reads (best effort, diagnostic only) — own coroutine so
             // their up-to-2s timeouts never delay polling start.
             scope.launch {
@@ -1074,7 +1088,7 @@ class KableBleConnectionManager(
 
         // ===== POLLING (delegated to MetricPollingEngine) =====
         discoMode.stop()
-        val includeHeartbeat = BleCompatibilityMode.includeHeartbeat()
+        val includeHeartbeat = !compatibilityPathActive
         if (!includeHeartbeat) {
             logRepo.info(
                 LogEventType.NOTIFICATION,
@@ -1367,7 +1381,8 @@ class KableBleConnectionManager(
 
         val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
         val isProgramConfig = command.size == 96 && command[0] == 0x04.toByte()
-        val useCompatibilityPath = BleCompatibilityMode.isActive()
+        // Per-connection snapshot, NOT the live setting — see [compatibilityPathActive].
+        val useCompatibilityPath = compatibilityPathActive
 
         if (useCompatibilityPath && isProgramConfig) {
             val maxWriteLength = try {

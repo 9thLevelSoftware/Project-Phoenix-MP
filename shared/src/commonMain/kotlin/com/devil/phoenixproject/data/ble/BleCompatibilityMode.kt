@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.ble
 
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.util.DeviceInfo
+import kotlin.concurrent.Volatile
 
 /**
  * Issue #333: BLE compatibility mode ("official small-MTU path").

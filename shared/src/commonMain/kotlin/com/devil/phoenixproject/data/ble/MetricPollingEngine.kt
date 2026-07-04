@@ -8,6 +8,7 @@ import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Peripheral
+import kotlin.concurrent.Volatile
 import com.juul.kable.WriteType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -188,6 +189,7 @@ class MetricPollingEngine(
      */
     fun startAll(peripheral: Peripheral, includeHeartbeat: Boolean = true) {
         log.i { "Starting polling loops (includeHeartbeat=$includeHeartbeat)" }
+        includeHeartbeatForSession = includeHeartbeat
         startMonitorPolling(peripheral)
         startDiagnosticPolling(peripheral)
         startHeuristicPolling(peripheral)
@@ -198,6 +200,16 @@ class MetricPollingEngine(
             log.i { "[#333 compat] Heartbeat loop disabled; skipping TX read and no-op write" }
         }
     }
+
+    /**
+     * Issue #333: heartbeat inclusion decided once per connection by
+     * [startAll] (from the connection's compatibility-mode snapshot). Restart
+     * paths consult this instead of the live setting so a mid-connection
+     * settings change cannot resurrect (or kill) the heartbeat until the next
+     * connection.
+     */
+    @Volatile
+    private var includeHeartbeatForSession = true
 
     /**
      * Start monitor polling loop for real-time position/load data.
@@ -508,7 +520,7 @@ class MetricPollingEngine(
             log.d { "Issue #222 v16: Restarting diagnostic polling" }
             startDiagnosticPolling(peripheral)
         }
-        if (heartbeatJob?.isActive != true && BleCompatibilityMode.includeHeartbeat()) {
+        if (heartbeatJob?.isActive != true && includeHeartbeatForSession) {
             log.d { "Issue #222 v16: Restarting heartbeat" }
             startHeartbeat(peripheral)
         }
@@ -533,7 +545,7 @@ class MetricPollingEngine(
 
         if (heartbeatJob?.isActive == true) {
             log.d { "Heartbeat already active - skip restart" }
-        } else if (BleCompatibilityMode.includeHeartbeat()) {
+        } else if (includeHeartbeatForSession) {
             startHeartbeat(peripheral)
         } else {
             log.d { "[#333 compat] Heartbeat suppressed on small-MTU compatibility path" }
