@@ -10,6 +10,7 @@ version = "0.43.1"
 kotlin {
     sourceSets.all {
         languageSettings.optIn("kotlin.uuid.ExperimentalUuidApi")
+        languageSettings.optIn("com.juul.kable.ExperimentalApi")
     }
 
     compilerOptions {
