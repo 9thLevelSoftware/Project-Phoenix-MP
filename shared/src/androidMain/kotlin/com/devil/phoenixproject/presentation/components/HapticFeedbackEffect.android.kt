@@ -428,8 +428,11 @@ internal object AndroidCueResources {
         // Dominatrix always overrides the tier; tier routes to mild/strong/MIX;
         // empty pool falls through silently (matches missing-asset fallback).
         is HapticEvent.VERBAL_ENCOURAGEMENT -> when {
+            // When vulgar mode is off, always use neutral pool
+            !event.vulgarMode -> if (encouragementCues.isNotEmpty()) encouragementCues[Random.nextInt(encouragementCues.size)] else null
             event.dominatrixMode && dominatrixCues.isNotEmpty() ->
                 dominatrixCues[Random.nextInt(dominatrixCues.size)]
+            event.dominatrixMode -> null // dominatrix pool empty: silent no-op
             event.vulgarTier == VulgarTier.MILD && vulgarMildCues.isNotEmpty() ->
                 vulgarMildCues[Random.nextInt(vulgarMildCues.size)]
             event.vulgarTier == VulgarTier.STRONG && vulgarStrongCues.isNotEmpty() ->
@@ -438,7 +441,7 @@ internal object AndroidCueResources {
                 val combined = vulgarMildCues + vulgarStrongCues
                 if (combined.isNotEmpty()) combined[Random.nextInt(combined.size)] else null
             }
-            else -> encouragementCues[Random.nextInt(encouragementCues.size)]
+            else -> if (encouragementCues.isNotEmpty()) encouragementCues[Random.nextInt(encouragementCues.size)] else null
         }
         else -> eventCues[event]
     }

@@ -685,7 +685,6 @@
     <!-- ==================== Verbal Encouragement (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Verbal Encouragement</string>
     <string name="settings_verbal_encouragement_description">Spoken push at muscular failure (VBT %)</string>
-    <string name="settings_verbal_encouragement_beeps_disabled">Enable audio cues in Workout Settings to use verbal encouragement</string>
     <string name="settings_vulgar_mode_title">Vulgar Mode</string>
     <string name="settings_vulgar_mode_description">Uses profanity instead of neutral phrasing. Off by default.</string>
     <string name="settings_vulgar_mode_headphone_warning">Headphone use strongly recommended.</string>

@@ -2211,11 +2211,7 @@ fun SettingsTab(
                             // (see SettingsPreferencesManager.setVerbalEncouragementEnabled).
                             // When the user is enabling the master for the first time, the
                             // existing audio cues master switch (beepsEnabled) gates everything.
-                            if (!checked) {
-                                onVerbalEncouragementEnabledChange(false)
-                            } else {
-                                onVerbalEncouragementEnabledChange(true)
-                            }
+                            onVerbalEncouragementEnabledChange(checked)
                         },
                     )
                 }
@@ -3001,11 +2997,9 @@ fun SettingsTab(
             },
             onDecline = {
                 showAdultsOnlyDialog = false
-                // Decline: ONLY mark the one-shot prompt gate. Persisting
-                // confirmed=false (the old behavior) would re-arm the gate on the
-                // next vulgar-on toggle and re-prompt the modal — violating
-                // architecture §3's "once per install" promise.
-                onAdultsOnlyConfirmedChange(false)
+                // Decline: ONLY mark the one-shot prompt gate. The cascade
+                // invariant now checks prompted (not confirmed), so declining
+                // does not block future vulgar-on attempts.
                 onAdultsOnlyPromptedChange(true)
             },
             onDismiss = {

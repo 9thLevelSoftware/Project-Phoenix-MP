@@ -594,7 +594,6 @@
     <!-- ==================== Verbale aanmoediging (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Verbale aanmoediging</string>
     <string name="settings_verbal_encouragement_description">Gesproken aanmoediging bij spierfalen (VBT %)</string>
-    <string name="settings_verbal_encouragement_beeps_disabled">Schakel audio-cues in de Workout-instellingen in om verbale aanmoediging te gebruiken</string>
     <string name="settings_vulgar_mode_title">Vulgaire modus</string>
     <string name="settings_vulgar_mode_description">Gebruikt krachttermen in plaats van neutrale formulering. Standaard uit.</string>
     <string name="settings_vulgar_mode_headphone_warning">Koptelefoongebruik sterk aanbevolen.</string>

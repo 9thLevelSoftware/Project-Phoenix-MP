@@ -415,10 +415,19 @@ private class IosSoundManager {
             // Issue #611: Verbal encouragement pool routing. Mirrors Android cueForEvent.
             is HapticEvent.VERBAL_ENCOURAGEMENT -> {
                 when {
+                    // When vulgar mode is off, always use neutral pool
+                    !event.vulgarMode -> if (encouragementNeutralSoundPlayers.isNotEmpty()) {
+                        encouragementNeutralSoundPlayers[
+                            kotlin.random.Random.nextInt(encouragementNeutralSoundPlayers.size),
+                        ]
+                    } else {
+                        null
+                    }
                     event.dominatrixMode && encouragementDominatrixSoundPlayers.isNotEmpty() ->
                         encouragementDominatrixSoundPlayers[
                             kotlin.random.Random.nextInt(encouragementDominatrixSoundPlayers.size),
                         ]
+                    event.dominatrixMode -> null // dominatrix pool empty: silent no-op, don't fall through to vulgar
                     event.vulgarTier == VulgarTier.MILD && encouragementMildSoundPlayers.isNotEmpty() ->
                         encouragementMildSoundPlayers[
                             kotlin.random.Random.nextInt(encouragementMildSoundPlayers.size),

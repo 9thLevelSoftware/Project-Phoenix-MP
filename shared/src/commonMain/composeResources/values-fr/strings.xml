@@ -614,22 +614,21 @@
 
     <!-- ==================== Encouragement verbal (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Encouragement verbal</string>
-    <string name="settings_verbal_encouragement_description">Motivation parlée à l'échec musculaire (VBT %)</string>
-    <string name="settings_verbal_encouragement_beeps_disabled">Active les signaux audio dans les paramètres d'entraînement pour utiliser l'encouragement verbal</string>
+    <string name="settings_verbal_encouragement_description">Motivation parlée à l\'échec musculaire (VBT %)</string>
     <string name="settings_vulgar_mode_title">Mode vulgaire</string>
     <string name="settings_vulgar_mode_description">Utilise des grossièretés au lieu de formulations neutres. Désactivé par défaut.</string>
-    <string name="settings_vulgar_mode_headphone_warning">Utilisation d'un casque fortement recommandée.</string>
+    <string name="settings_vulgar_mode_headphone_warning">Utilisation d\'un casque fortement recommandée.</string>
     <string name="settings_vulgar_mode_tier_label">Niveau de grossièreté</string>
     <string name="settings_vulgar_mode_tier_mild">Doux</string>
     <string name="settings_vulgar_mode_tier_strong">Fort</string>
     <string name="settings_vulgar_mode_tier_mix">Mixte</string>
     <string name="settings_dominatrix_mode_title">Mode Dominatrix</string>
-    <string name="settings_dominatrix_mode_description">Commandes vocales de Charlotte. Remplace le pool vulgaire lorsqu'il est actif.</string>
-    <string name="settings_dominatrix_unlock_hint">Tape 7× sur l'en-tête pour déverrouiller</string>
+    <string name="settings_dominatrix_mode_description">Commandes vocales de Charlotte. Remplace le pool vulgaire lorsqu\'il est actif.</string>
+    <string name="settings_dominatrix_unlock_hint">Tape 7× sur l\'en-tête pour déverrouiller</string>
     <string name="settings_dominatrix_unlock_toast">Mode patron déverrouillé</string>
     <string name="settings_adults_only_title">Réservé aux adultes</string>
     <string name="settings_adults_only_body">Le mode vulgaire contient des grossièretés et des thèmes adultes. Avez-vous 18 ans ou plus ?</string>
-    <string name="settings_adults_only_confirm">J'ai 18+ et mamie ne m'entend pas</string>
+    <string name="settings_adults_only_confirm">J\'ai 18+ et mamie ne m\'entend pas</string>
     <string name="settings_adults_only_decline">Garder propre</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC : Langage grossier + Thèmes suggestifs</string>
 

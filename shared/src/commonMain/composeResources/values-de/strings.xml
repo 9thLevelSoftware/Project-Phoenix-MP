@@ -615,7 +615,6 @@
     <!-- ==================== Verbale Ermutigung (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Verbale Ermutigung</string>
     <string name="settings_verbal_encouragement_description">Gesprochene Motivation bei Muskelversagen (VBT %)</string>
-    <string name="settings_verbal_encouragement_beeps_disabled">Aktiviere Audio-Cues in den Workout-Einstellungen, um verbale Ermutigung zu nutzen</string>
     <string name="settings_vulgar_mode_title">Vulgärer Modus</string>
     <string name="settings_vulgar_mode_description">Verwendet Kraftausdrücke statt neutraler Formulierungen. Standardmäßig aus.</string>
     <string name="settings_vulgar_mode_headphone_warning">Kopfhörer dringend empfohlen.</string>

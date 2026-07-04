@@ -615,7 +615,6 @@
     <!-- ==================== Ánimo verbal (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Ánimo verbal</string>
     <string name="settings_verbal_encouragement_description">Empujón hablado al fallo muscular (VBT %)</string>
-    <string name="settings_verbal_encouragement_beeps_disabled">Activa las señales de audio en los ajustes de entrenamiento para usar el ánimo verbal</string>
     <string name="settings_vulgar_mode_title">Modo vulgar</string>
     <string name="settings_vulgar_mode_description">Usa groserías en lugar de frases neutras. Apagado por defecto.</string>
     <string name="settings_vulgar_mode_headphone_warning">Se recomienda usar auriculares.</string>

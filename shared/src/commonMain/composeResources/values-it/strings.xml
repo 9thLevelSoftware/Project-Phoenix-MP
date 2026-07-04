@@ -44,7 +44,6 @@
     <!-- ==================== Incoraggiamento verbale (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Incoraggiamento verbale</string>
     <string name="settings_verbal_encouragement_description">Spinta vocale al cedimento muscolare (VBT %)</string>
-    <string name="settings_verbal_encouragement_beeps_disabled">Attiva i segnali audio nelle impostazioni di allenamento per usare l\'incoraggiamento verbale</string>
     <string name="settings_vulgar_mode_title">Modalità volgare</string>
     <string name="settings_vulgar_mode_description">Usa parolacce invece di formulazioni neutre. Disattivata per impostazione predefinita.</string>
     <string name="settings_vulgar_mode_headphone_warning">Si consiglia vivamente l\'uso delle cuffie.</string>

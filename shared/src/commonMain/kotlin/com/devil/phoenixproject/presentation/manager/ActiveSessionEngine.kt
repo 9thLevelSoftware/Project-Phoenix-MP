@@ -1313,14 +1313,15 @@ class ActiveSessionEngine(
                 // semantics per set. The vulgar-on gate here is the master "encouragement fires"
                 // gate; the tier + dominatrix fields carry the routing info to the audio router.
                 val prefs = settingsManager.userPreferences.value
-                if (prefs.beepsEnabled && prefs.verbalEncouragementEnabled && prefs.vulgarModeEnabled) {
+                if (prefs.beepsEnabled && prefs.verbalEncouragementEnabled) {
                     coordinator._hapticEvents.emit(
                         HapticEvent.VERBAL_ENCOURAGEMENT(
                             vulgarTier = prefs.vulgarTier,
                             dominatrixMode = prefs.dominatrixModeActive,
+                            vulgarMode = prefs.vulgarModeEnabled,
                         ),
                     )
-                    Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${prefs.vulgarTier}, dominatrix=${prefs.dominatrixModeActive})" }
+                    Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${prefs.vulgarTier}, dominatrix=${prefs.dominatrixModeActive}, vulgar=${prefs.vulgarModeEnabled})" }
                 }
             }
 

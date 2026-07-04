@@ -495,6 +495,7 @@ sealed class HapticEvent {
     data class VERBAL_ENCOURAGEMENT(
         val vulgarTier: VulgarTier,
         val dominatrixMode: Boolean,
+        val vulgarMode: Boolean = true, // false = route to neutral pool only
     ) : HapticEvent()
 }
 

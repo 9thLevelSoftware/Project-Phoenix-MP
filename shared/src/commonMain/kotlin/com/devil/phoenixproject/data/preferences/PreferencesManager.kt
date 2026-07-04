@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.preferences
 
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
@@ -16,7 +17,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import co.touchlab.kermit.Logger
 
 /**
  * Single exercise defaults for saving/loading exercise configurations
@@ -627,10 +627,11 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     override suspend fun setVulgarModeEnabled(enabled: Boolean) {
-        // Cascade invariant: adultsOnlyConfirmed gates first vulgar-on activation.
+        // Cascade invariant: prompted gates first vulgar-on activation.
         // UI must invoke the 18+ modal flow BEFORE calling this setter with enabled=true.
-        if (enabled && !_preferencesFlow.value.adultsOnlyConfirmed) {
-            Logger.w { "VBT: setVulgarModeEnabled(true) blocked — adultsOnlyConfirmed=false; UI must show 18+ modal first" }
+        // Checks prompted (not confirmed) so that users who declined can still enable later.
+        if (enabled && !isAdultsOnlyPrompted()) {
+            Logger.w { "VBT: setVulgarModeEnabled(true) blocked — adultsOnlyPrompted=false; UI must show 18+ modal first" }
             return
         }
         settings.putBoolean(KEY_VULGAR_MODE_ENABLED, enabled)
