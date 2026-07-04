@@ -1,10 +1,12 @@
 package com.devil.phoenixproject.data.preferences
 
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupDestination.Companion.toJson
@@ -164,6 +166,22 @@ interface PreferencesManager {
     // Issue #517: Run-once flag for velocity 1RM backfill
     suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean)
 
+    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
+    suspend fun setVerbalEncouragementEnabled(enabled: Boolean)
+    suspend fun setVulgarModeEnabled(enabled: Boolean)
+    suspend fun setVulgarTier(tier: VulgarTier)
+    suspend fun setDominatrixModeUnlocked(unlocked: Boolean)
+    suspend fun setDominatrixModeActive(active: Boolean)
+    suspend fun setAdultsOnlyConfirmed(confirmed: Boolean)
+
+    // Issue #611 (PR-followup #613): One-shot decline-remember gate for the 18+
+    // Adults Only modal. The modal must not re-prompt on subsequent vulgar-on toggles
+    // once either confirm OR decline has been recorded (architecture §3 — follow
+    // DiscoModeUnlockDialog pattern). Booleans stored in
+    // KEY_ADULTS_ONLY_PROMPTED; not exposed via UserPreferences.
+    fun isAdultsOnlyPrompted(): Boolean
+    fun setAdultsOnlyPrompted(prompted: Boolean)
+
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
     suspend fun clearAllSingleExerciseDefaults()
@@ -227,6 +245,16 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_DEFAULT_ROUTINE_EXERCISE_WEIGHT_PERCENT_OF_PR = "default_routine_exercise_weight_percent_of_pr"
         private const val KEY_VELOCITY_1RM_BACKFILL_DONE = "velocity_1rm_backfill_done"
 
+        // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
+        private const val KEY_VERBAL_ENCOURAGEMENT_ENABLED = "verbal_encouragement_enabled"
+        private const val KEY_VULGAR_MODE_ENABLED = "vulgar_mode_enabled"
+        private const val KEY_VULGAR_TIER = "vulgar_tier"
+        private const val KEY_DOMINATRIX_MODE_UNLOCKED = "dominatrix_mode_unlocked"
+        private const val KEY_DOMINATRIX_MODE_ACTIVE = "dominatrix_mode_active"
+        private const val KEY_ADULTS_ONLY_CONFIRMED = "adults_only_confirmed"
+        // One-shot decline-remember flag, read at the modal-call site only (not in UserPreferences).
+        private const val KEY_ADULTS_ONLY_PROMPTED = "adults_only_prompted"
+
         // Permissions onboarding (health + microphone)
         private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
     }
@@ -284,6 +312,16 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
                 80,
             ).coerceIn(50, 120),
             velocityOneRepMaxBackfillDone = settings.getBoolean(KEY_VELOCITY_1RM_BACKFILL_DONE, false),
+            // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
+            verbalEncouragementEnabled = settings.getBoolean(KEY_VERBAL_ENCOURAGEMENT_ENABLED, false),
+            vulgarModeEnabled = settings.getBoolean(KEY_VULGAR_MODE_ENABLED, false),
+            vulgarTier = settings.getStringOrNull(KEY_VULGAR_TIER)?.let {
+                runCatching { VulgarTier.valueOf(it) }.getOrNull()
+            } ?: VulgarTier.STRONG,
+            dominatrixModeUnlocked = settings.getBoolean(KEY_DOMINATRIX_MODE_UNLOCKED, false),
+            dominatrixModeActive = settings.getBoolean(KEY_DOMINATRIX_MODE_ACTIVE, false),
+            adultsOnlyConfirmed = settings.getBoolean(KEY_ADULTS_ONLY_CONFIRMED, false),
+            adultsOnlyPrompted = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false),
         )
     }
 
@@ -568,5 +606,94 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     override suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
         settings.putBoolean(KEY_VELOCITY_1RM_BACKFILL_DONE, done)
         updateAndEmit { copy(velocityOneRepMaxBackfillDone = done) }
+    }
+
+    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
+    override suspend fun setVerbalEncouragementEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_VERBAL_ENCOURAGEMENT_ENABLED, enabled)
+        // Cascade invariant: master-off forces both vulgar-off AND dominatrix-off.
+        if (!enabled) {
+            settings.putBoolean(KEY_VULGAR_MODE_ENABLED, false)
+            settings.putBoolean(KEY_DOMINATRIX_MODE_ACTIVE, false)
+            updateAndEmit {
+                copy(
+                    verbalEncouragementEnabled = false,
+                    vulgarModeEnabled = false,
+                    dominatrixModeActive = false,
+                )
+            }
+        } else {
+            updateAndEmit { copy(verbalEncouragementEnabled = true) }
+        }
+    }
+
+    override suspend fun setVulgarModeEnabled(enabled: Boolean) {
+        // Cascade invariant: prompted gates first vulgar-on activation.
+        // UI must invoke the 18+ modal flow BEFORE calling this setter with enabled=true.
+        // Checks prompted (not confirmed) so that users who declined can still enable later.
+        if (enabled && !isAdultsOnlyPrompted()) {
+            Logger.w { "VBT: setVulgarModeEnabled(true) blocked — adultsOnlyPrompted=false; UI must show 18+ modal first" }
+            return
+        }
+        settings.putBoolean(KEY_VULGAR_MODE_ENABLED, enabled)
+        // Cascade invariant: vulgar-off forces dominatrix-off.
+        if (!enabled) {
+            settings.putBoolean(KEY_DOMINATRIX_MODE_ACTIVE, false)
+            updateAndEmit {
+                copy(
+                    vulgarModeEnabled = false,
+                    dominatrixModeActive = false,
+                )
+            }
+        } else {
+            updateAndEmit { copy(vulgarModeEnabled = true) }
+        }
+    }
+
+    override suspend fun setVulgarTier(tier: VulgarTier) {
+        settings.putString(KEY_VULGAR_TIER, tier.name)
+        updateAndEmit { copy(vulgarTier = tier) }
+    }
+
+    override suspend fun setDominatrixModeUnlocked(unlocked: Boolean) {
+        settings.putBoolean(KEY_DOMINATRIX_MODE_UNLOCKED, unlocked)
+        updateAndEmit { copy(dominatrixModeUnlocked = unlocked) }
+    }
+
+    override suspend fun setDominatrixModeActive(active: Boolean) {
+        // Cascade invariant: dominatrix-on requires vulgar-on AND adultsConfirmed AND unlocked.
+        if (active) {
+            val current = _preferencesFlow.value
+            if (!current.dominatrixModeUnlocked || !current.vulgarModeEnabled || !current.adultsOnlyConfirmed) {
+                Logger.w {
+                    "VBT: setDominatrixModeActive(true) blocked — unlock=${current.dominatrixModeUnlocked}" +
+                        " vulgar=${current.vulgarModeEnabled} adultsConfirmed=${current.adultsOnlyConfirmed}"
+                }
+                return
+            }
+        }
+        settings.putBoolean(KEY_DOMINATRIX_MODE_ACTIVE, active)
+        updateAndEmit { copy(dominatrixModeActive = active) }
+    }
+
+    override suspend fun setAdultsOnlyConfirmed(confirmed: Boolean) {
+        settings.putBoolean(KEY_ADULTS_ONLY_CONFIRMED, confirmed)
+        // Confirmed implies prompted (the one-shot decline-remember flag is irrelevant after confirm).
+        settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, true)
+        updateAndEmit { copy(adultsOnlyConfirmed = confirmed) }
+    }
+
+    override fun isAdultsOnlyPrompted(): Boolean = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false)
+
+    /**
+     * Issue #611 (PR-followup #613): Persist the one-shot decline-remember flag
+     * without touching the `adultsOnlyConfirmed` boolean. Used by the 18+ modal
+     * decline path so the modal never re-appears for this install. Symmetric with
+     * [setAdultsOnlyConfirmed] which writes `KEY_ADULTS_ONLY_PROMPTED = true` on
+     * the confirm path; this setter covers the decline path.
+     */
+    override fun setAdultsOnlyPrompted(prompted: Boolean) {
+        settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, prompted)
+        updateAndEmit { copy(adultsOnlyPrompted = prompted) }
     }
 }

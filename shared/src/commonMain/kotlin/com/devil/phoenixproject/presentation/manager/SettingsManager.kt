@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.format
 import kotlinx.coroutines.CoroutineScope
@@ -180,6 +181,43 @@ class SettingsManager(
 
     fun setVelocityOneRepMaxBackfillDone(done: Boolean) {
         scope.launch { preferencesManager.setVelocityOneRepMaxBackfillDone(done) }
+    }
+
+    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
+    fun setVerbalEncouragementEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setVerbalEncouragementEnabled(enabled) }
+    }
+
+    fun setVulgarModeEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setVulgarModeEnabled(enabled) }
+    }
+
+    fun setVulgarTier(tier: VulgarTier) {
+        scope.launch { preferencesManager.setVulgarTier(tier) }
+    }
+
+    fun setDominatrixModeUnlocked(unlocked: Boolean) {
+        scope.launch { preferencesManager.setDominatrixModeUnlocked(unlocked) }
+    }
+
+    fun setDominatrixModeActive(active: Boolean) {
+        scope.launch { preferencesManager.setDominatrixModeActive(active) }
+    }
+
+    fun setAdultsOnlyConfirmed(confirmed: Boolean) {
+        scope.launch { preferencesManager.setAdultsOnlyConfirmed(confirmed) }
+    }
+
+    // Issue #611 (PR-followup #613): One-shot decline-remember gate accessors for
+    // the 18+ Adults Only modal. Non-suspend so the modal-call site can read the
+    // gate on the main thread without dispatching into the preference scope.
+    fun isAdultsOnlyPrompted(): Boolean = preferencesManager.isAdultsOnlyPrompted()
+
+    fun setAdultsOnlyPrompted(prompted: Boolean) {
+        // Synchronous write is acceptable — KEY_ADULTS_ONLY_PROMPTED is a single
+        // boolean backed by NSUserDefaults/SharedPreferences putBoolean which both
+        // platforms guarantee immediate visibility to subsequent reads.
+        preferencesManager.setAdultsOnlyPrompted(prompted)
     }
 
     fun setColorScheme(schemeIndex: Int) {

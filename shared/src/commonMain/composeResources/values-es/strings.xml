@@ -610,7 +610,27 @@
     <string name="settings_calibration_mic_error">No se pudo acceder al micr\u00f3fono. Verifica los permisos e int\u00e9ntalo de nuevo.</string>
     <string name="settings_calibration_open_settings">Abrir configuración</string>
     <string name="cd_voice_stop">Parada de emergencia por voz</string>
-    <string name="cd_calibration_check">Verificaci\u00f3n de calibraci\u00f3n</string>
+    <string name="cd_calibration_check">Verificación de calibración</string>
+
+    <!-- ==================== Ánimo verbal (Issue #611) ==================== -->
+    <string name="settings_verbal_encouragement_title">Ánimo verbal</string>
+    <string name="settings_verbal_encouragement_description">Empujón hablado al fallo muscular (VBT %)</string>
+    <string name="settings_vulgar_mode_title">Modo vulgar</string>
+    <string name="settings_vulgar_mode_description">Usa groserías en lugar de frases neutras. Apagado por defecto.</string>
+    <string name="settings_vulgar_mode_headphone_warning">Se recomienda usar auriculares.</string>
+    <string name="settings_vulgar_mode_tier_label">Nivel de grosería</string>
+    <string name="settings_vulgar_mode_tier_mild">Suave</string>
+    <string name="settings_vulgar_mode_tier_strong">Fuerte</string>
+    <string name="settings_vulgar_mode_tier_mix">Mezcla</string>
+    <string name="settings_dominatrix_mode_title">Modo Dominatrix</string>
+    <string name="settings_dominatrix_mode_description">Comandos de voz de Charlotte. Anula el grupo vulgar cuando está activo.</string>
+    <string name="settings_dominatrix_unlock_hint">Toca el encabezado 7 veces para desbloquear</string>
+    <string name="settings_dominatrix_unlock_toast">Modo jefe desbloqueado</string>
+    <string name="settings_adults_only_title">Solo para adultos</string>
+    <string name="settings_adults_only_body">El modo vulgar contiene groserías y temas maduros. ¿Tienes 18 años o más?</string>
+    <string name="settings_adults_only_confirm">Tengo 18+ y la abuela no me oye</string>
+    <string name="settings_adults_only_decline">Mantenlo limpio</string>
+    <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Lenguaje fuerte + Temas sugerentes</string>
 
     <!-- ==================== RPG Attributes ==================== -->
     <string name="rpg_no_data_yet">Completa tu primer entrenamiento para desbloquear atributos RPG</string>

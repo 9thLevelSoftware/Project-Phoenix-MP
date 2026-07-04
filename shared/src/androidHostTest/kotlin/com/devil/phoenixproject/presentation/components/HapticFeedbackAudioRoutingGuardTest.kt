@@ -107,4 +107,49 @@ class HapticFeedbackAudioRoutingGuardTest {
         assertTrue("rep_05" in registeredCueNames)
         assertTrue("boopbeepbeep" in registeredCueNames)
     }
+
+    /**
+     * Issue #611: Verbal encouragement cue reachability check. Every new pool
+     * asset (15 neutral + 12 mild + 12 strong + 12 dominatrix + 1 unlock) must be
+     * statically registered so release resource shrinking keeps it, and the
+     * cueForEvent routing must reference each pool.
+     */
+    @Test
+    fun verbalEncouragementCues_areReachableFromEventRouting() {
+        val source = hapticFeedbackSource.readText()
+
+        // Pool names: encouragement (15), vulgar_mild (12), vulgar_strong (12), dominatrix (12), dominatrix_unlock (1)
+        val registeredCueNames = registeredCueNames(source)
+        assertTrue("encouragement_01" in registeredCueNames, "encouragement_01 must be registered")
+        assertTrue("encouragement_15" in registeredCueNames, "encouragement_15 must be registered")
+        assertTrue("vulgar_mild_01" in registeredCueNames, "vulgar_mild_01 must be registered")
+        assertTrue("vulgar_mild_12" in registeredCueNames, "vulgar_mild_12 must be registered")
+        assertTrue("vulgar_strong_01" in registeredCueNames, "vulgar_strong_01 must be registered")
+        assertTrue("vulgar_strong_12" in registeredCueNames, "vulgar_strong_12 must be registered")
+        assertTrue("dominatrix_01" in registeredCueNames, "dominatrix_01 must be registered")
+        assertTrue("dominatrix_12" in registeredCueNames, "dominatrix_12 must be registered")
+        assertTrue("dominatrix_unlock" in registeredCueNames, "dominatrix_unlock must be registered")
+
+        // Pool list declarations must exist
+        assertTrue(source.contains("val encouragementCues: List<AndroidCueResource>"))
+        assertTrue(source.contains("val vulgarMildCues: List<AndroidCueResource>"))
+        assertTrue(source.contains("val vulgarStrongCues: List<AndroidCueResource>"))
+        assertTrue(source.contains("val dominatrixCues: List<AndroidCueResource>"))
+
+        // cueForEvent must route VERBAL_ENCOURAGEMENT through the pool router
+        assertTrue(source.contains("is HapticEvent.VERBAL_ENCOURAGEMENT ->"))
+        assertTrue(source.contains("dominatrixCues[Random.nextInt"))
+        assertTrue(source.contains("vulgarMildCues[Random.nextInt"))
+        assertTrue(source.contains("vulgarStrongCues[Random.nextInt"))
+        assertTrue(source.contains("encouragementCues[Random.nextInt"))
+
+        // Event mapping for dominatrix unlock SFX
+        assertTrue(source.contains("HapticEvent.DOMINATRIX_MODE_UNLOCKED to dominatrixUnlock"))
+
+        // All-cues union must include the new pools
+        assertTrue(source.contains("encouragementNeutralCues +") || source.contains("encouragementCues +"))
+        assertTrue(source.contains("vulgarMildCues +"))
+        assertTrue(source.contains("vulgarStrongCues +"))
+        assertTrue(source.contains("dominatrixCues +"))
+    }
 }

@@ -45,6 +45,7 @@ import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -360,6 +361,28 @@ class MainViewModel constructor(
     fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) =
         settingsManager.setDefaultRoutineExerciseWeightPercentOfPR(percent)
 
+    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
+    fun setVerbalEncouragementEnabled(enabled: Boolean) =
+        settingsManager.setVerbalEncouragementEnabled(enabled)
+    fun setVulgarModeEnabled(enabled: Boolean) =
+        settingsManager.setVulgarModeEnabled(enabled)
+    fun setVulgarTier(tier: VulgarTier) =
+        settingsManager.setVulgarTier(tier)
+    fun setDominatrixModeUnlocked(unlocked: Boolean) =
+        settingsManager.setDominatrixModeUnlocked(unlocked)
+    fun setDominatrixModeActive(active: Boolean) =
+        settingsManager.setDominatrixModeActive(active)
+    fun setAdultsOnlyConfirmed(confirmed: Boolean) =
+        settingsManager.setAdultsOnlyConfirmed(confirmed)
+
+    // Issue #611 (PR-followup #613): one-shot decline-remember gate for the 18+
+    // Adults Only modal. Thin wrapper around SettingsManager; used by SettingsTab's
+    // modal decline path so the modal never re-prompts for this install.
+    fun setAdultsOnlyPrompted(prompted: Boolean) =
+        settingsManager.setAdultsOnlyPrompted(prompted)
+    fun isAdultsOnlyPrompted(): Boolean =
+        settingsManager.isAdultsOnlyPrompted()
+
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
     val backupStats: kotlinx.coroutines.flow.StateFlow<BackupStats?> = _backupStats
@@ -651,6 +674,13 @@ class MainViewModel constructor(
     fun emitDiscoSound() {
         viewModelScope.launch {
             _hapticEvents.emit(HapticEvent.DISCO_MODE_UNLOCKED)
+        }
+    }
+
+    /** Issue #611: Dominatrix 7-tap unlock → emit whip-crack SFX */
+    fun emitDominatrixUnlockSound() {
+        viewModelScope.launch {
+            _hapticEvents.emit(HapticEvent.DOMINATRIX_MODE_UNLOCKED)
         }
     }
 

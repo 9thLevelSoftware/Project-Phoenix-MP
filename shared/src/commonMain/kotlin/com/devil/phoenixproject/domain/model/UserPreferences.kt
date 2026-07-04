@@ -54,6 +54,14 @@ data class UserPreferences(
     val defaultRoutineExerciseWeightPercentOfPR: Int = 80,
     // Issue #517: Run-once flag — true after the velocity 1RM backfill has completed
     val velocityOneRepMaxBackfillDone: Boolean = false,
+    // Issue #611: Verbal encouragement at VBT failure with tiered vulgar pools + Dominatrix mode + 18+ gate
+    val verbalEncouragementEnabled: Boolean = false, // Master toggle, off by default
+    val vulgarModeEnabled: Boolean = false, // Sub-toggle, off by default; cascades off when master off
+    val vulgarTier: VulgarTier = VulgarTier.STRONG, // STRONG default = closest match to original reporter request
+    val dominatrixModeUnlocked: Boolean = false, // Easter egg unlock flag (set true after 7-tap unlock)
+    val dominatrixModeActive: Boolean = false, // User-toggled "on" state; only meaningful when unlocked + vulgar + adults
+    val adultsOnlyConfirmed: Boolean = false, // One-shot gate set true after the 18+ modal is confirmed
+    val adultsOnlyPrompted: Boolean = false, // One-shot flag: true after the 18+ modal is shown (confirm or decline)
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.presentation.manager.ExerciseCountdownCuePolicy
 import com.devil.phoenixproject.shared.R
 import com.devil.phoenixproject.util.DeviceInfo
@@ -238,6 +239,8 @@ internal object AndroidCueResources {
     private val discoMode = AndroidCueResource("discomode", R.raw.discomode)
     private val repCompleteStrong = AndroidCueResource("rep_complete_strong", R.raw.rep_complete_strong)
     private val restOver = AndroidCueResource("restover", R.raw.restover)
+    // Issue #611: Dominatrix unlock SFX — must be declared before eventCues which references it
+    private val dominatrixUnlock = AndroidCueResource("dominatrix_unlock", R.raw.dominatrix_unlock)
 
     val eventCues: Map<HapticEvent, AndroidCueResource> = mapOf(
         HapticEvent.REP_COMPLETED to repCompleteStrong,
@@ -248,6 +251,7 @@ internal object AndroidCueResources {
         HapticEvent.WORKOUT_END to chirpChirp,
         HapticEvent.REST_ENDING to restOver,
         HapticEvent.DISCO_MODE_UNLOCKED to discoMode,
+        HapticEvent.DOMINATRIX_MODE_UNLOCKED to dominatrixUnlock, // Issue #611
         HapticEvent.WARMUP_TO_WORKING to beepBoop,
         HapticEvent.VELOCITY_THRESHOLD_REACHED to boopBeepBeep,
     )
@@ -384,8 +388,6 @@ internal object AndroidCueResources {
         AndroidCueResource("dominatrix_12", R.raw.dominatrix_12),
     )
 
-    private val dominatrixUnlock = AndroidCueResource("dominatrix_unlock", R.raw.dominatrix_unlock)
-
     val countdownTickCue: AndroidCueResource = beep
 
     val allCues: List<AndroidCueResource> = (
@@ -403,12 +405,44 @@ internal object AndroidCueResources {
         .distinctBy { it.name }
         .sortedBy { it.name }
 
+    // Issue #611 §9.4: One-time boot log asserting the 4 verbal-encouragement pool sizes
+    // match the PR #612 contract. Required by the implementation Gate 11-equivalent.
+    init {
+        co.touchlab.kermit.Logger.i {
+            "VBT: encouragement pool sizes — " +
+                "neutral=${encouragementCues.size} " +
+                "mild=${vulgarMildCues.size} " +
+                "strong=${vulgarStrongCues.size} " +
+                "dominatrix=${dominatrixCues.size} " +
+                "unlock=${if (dominatrixUnlock.name.isNotEmpty()) 1 else 0}"
+        }
+    }
+
     fun cueForEvent(event: HapticEvent): AndroidCueResource? = when (event) {
         is HapticEvent.BADGE_EARNED -> badgeCues[Random.nextInt(badgeCues.size)]
         is HapticEvent.PERSONAL_RECORD -> prCues[Random.nextInt(prCues.size)]
         is HapticEvent.REP_COUNT_ANNOUNCED -> repCountCues.getOrNull(event.repNumber - 1)
         is HapticEvent.COUNTDOWN_TICK -> countdownTickCue
         is HapticEvent.ERROR -> null
+        // Issue #611: Verbal encouragement pool routing.
+        // Dominatrix always overrides the tier; tier routes to mild/strong/MIX;
+        // empty pool falls through silently (matches missing-asset fallback).
+        is HapticEvent.VERBAL_ENCOURAGEMENT -> when {
+            // When vulgar mode is off, always use neutral pool
+            !event.vulgarMode -> if (encouragementCues.isNotEmpty()) encouragementCues[Random.nextInt(encouragementCues.size)] else null
+            event.dominatrixMode && dominatrixCues.isNotEmpty() ->
+                dominatrixCues[Random.nextInt(dominatrixCues.size)]
+            event.dominatrixMode -> null // dominatrix pool empty: silent no-op
+            event.vulgarTier == VulgarTier.MILD && vulgarMildCues.isNotEmpty() ->
+                vulgarMildCues[Random.nextInt(vulgarMildCues.size)]
+            event.vulgarTier == VulgarTier.STRONG && vulgarStrongCues.isNotEmpty() ->
+                vulgarStrongCues[Random.nextInt(vulgarStrongCues.size)]
+            event.vulgarTier == VulgarTier.MIX -> {
+                val combined = vulgarMildCues + vulgarStrongCues
+                if (combined.isNotEmpty()) combined[Random.nextInt(combined.size)] else null
+            }
+            else -> if (encouragementCues.isNotEmpty()) encouragementCues[Random.nextInt(encouragementCues.size)] else null
+        }
         else -> eventCues[event]
     }
 }
@@ -417,6 +451,8 @@ internal object AndroidCueResources {
 private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
     // REP_COUNT_ANNOUNCED has no haptic feedback - it's audio only
     if (event is HapticEvent.REP_COUNT_ANNOUNCED) return
+    // Issue #611: VERBAL_ENCOURAGEMENT is audio-only - no haptic feedback
+    if (event is HapticEvent.VERBAL_ENCOURAGEMENT) return
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         // Use VibrationEffect for better control
@@ -494,6 +530,11 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
                 )
             }
 
+            // Issue #611: Dominatrix unlock - sharper single-pulse to match the whip crack SFX
+            is HapticEvent.DOMINATRIX_MODE_UNLOCKED -> {
+                VibrationEffect.createOneShot(150, 255)
+            }
+
             is HapticEvent.BADGE_EARNED, is HapticEvent.PERSONAL_RECORD -> {
                 // Celebration pattern - escalating pulses for achievement
                 VibrationEffect.createWaveform(
@@ -530,6 +571,10 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
                 // Already handled above, but needed for exhaustive when
                 return
             }
+
+            // Issue #611: VERBAL_ENCOURAGEMENT is audio-only - early return at top of fn,
+            // but the exhaustive when requires an explicit arm.
+            is HapticEvent.VERBAL_ENCOURAGEMENT -> return
         }
         vibrator.vibrate(effect)
     } else {
@@ -568,6 +613,11 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
                 vibrator.vibrate(longArrayOf(0, 80, 60, 80, 60, 80, 60, 120, 80, 120), -1)
             }
 
+            // Issue #611: Dominatrix unlock - sharper single-pulse to match the whip crack SFX
+            is HapticEvent.DOMINATRIX_MODE_UNLOCKED -> {
+                vibrator.vibrate(longArrayOf(0, 150), -1)
+            }
+
             is HapticEvent.BADGE_EARNED, is HapticEvent.PERSONAL_RECORD -> {
                 vibrator.vibrate(longArrayOf(0, 100, 60, 120, 60, 150), -1)
             }
@@ -586,6 +636,11 @@ private fun playHapticFeedback(vibrator: Vibrator, event: HapticEvent) {
 
             is HapticEvent.REP_COUNT_ANNOUNCED -> {
                 // No haptic for rep count announcement - audio only
+            }
+
+            // Issue #611: VERBAL_ENCOURAGEMENT is audio-only.
+            is HapticEvent.VERBAL_ENCOURAGEMENT -> {
+                // No haptic for verbal encouragement - audio only
             }
         }
     }
