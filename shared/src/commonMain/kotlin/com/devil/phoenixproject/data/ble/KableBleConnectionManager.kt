@@ -84,6 +84,17 @@ class KableBleConnectionManager(
 ) {
     private val log = Logger.withTag("KableBleConnectionManager")
 
+    companion object {
+        /**
+         * Issue #333: bounded retry for the workout CONFIG write on the small-MTU
+         * compatibility path. Covers the transient "Write failed: Unknown"
+         * (legacy writeCharacteristic() returned false — GATT momentarily busy)
+         * seen on Pixel 6 Pro, which does NOT drop the connection.
+         */
+        internal const val CONFIG_WRITE_RETRY_COUNT = 2
+        internal const val CONFIG_WRITE_RETRY_DELAY_MS = 250L
+    }
+
     // -------------------------------------------------------------------------
     // Characteristic references from BleConstants
     // -------------------------------------------------------------------------
@@ -117,6 +128,12 @@ class KableBleConnectionManager(
 
     /** Active state observer job — must be cancelled before launching a new one. */
     private var stateObserverJob: Job? = null
+
+    /**
+     * Issue #333 (v10 ready gate): job running onDeviceReady() for the current
+     * connection attempt. App-level Connected is not published until it completes.
+     */
+    private var deviceReadyJob: Job? = null
 
     /** Connected device name (for logging). */
     private var connectedDeviceName: String = ""
@@ -563,6 +580,9 @@ class KableBleConnectionManager(
 
             // Cancel any stale state observer before launching a new one (H2 fix)
             stateObserverJob?.cancel()
+            deviceReadyJob?.cancel()
+            deviceReadyJob = null
+            var readyGate = CompletableDeferred<Unit>()
 
             // Observe connection state
             stateObserverJob = peripheral?.state
@@ -582,30 +602,62 @@ class KableBleConnectionManager(
                                 connectedDeviceName,
                                 connectedDeviceAddress,
                             )
-                            reportConnectionState(
-                                ConnectionState.Connected(
-                                    deviceName = device.name,
-                                    deviceAddress = device.address,
-                                    hardwareModel = HardwareDetection.detectModel(device.name),
-                                ),
-                            )
-                            // Launch onDeviceReady with error handling (H3 fix)
-                            scope.launch {
-                                try {
-                                    onDeviceReady()
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    log.e(e) { "onDeviceReady failed: ${e.message}" }
-                                    logRepo.error(
-                                        LogEventType.ERROR,
-                                        "Device initialization failed",
-                                        connectedDeviceName,
-                                        connectedDeviceAddress,
-                                        e.message,
-                                    )
-                                    cleanupExistingConnection()
-                                    reportConnectionState(ConnectionState.Disconnected)
+                            // Issue #333 (v10 ready gate): do not publish Connected until MTU,
+                            // services, critical notifications, and baseline polling are
+                            // initialized. The UI observes Connected and immediately restores
+                            // the saved LED color scheme, so publishing early injects a
+                            // 34-byte write directly into the ready-up GATT sequence.
+                            if (deviceReadyJob == null && !readyGate.isCompleted) {
+                                deviceReadyJob = scope.launch {
+                                    try {
+                                        withTimeout(BleConstants.CONNECTION_TIMEOUT_MS) {
+                                            onDeviceReady()
+                                        }
+                                        reportConnectionState(
+                                            ConnectionState.Connected(
+                                                deviceName = device.name,
+                                                deviceAddress = device.address,
+                                                hardwareModel = HardwareDetection.detectModel(device.name),
+                                            ),
+                                        )
+                                        readyGate.complete(Unit)
+                                    } catch (e: TimeoutCancellationException) {
+                                        val failure = BleDeviceInitializationException(
+                                            "Device initialization timeout after ${BleConstants.CONNECTION_TIMEOUT_MS}ms",
+                                            e,
+                                        )
+                                        log.e(e) { failure.message ?: "Device initialization timeout" }
+                                        logRepo.error(
+                                            LogEventType.ERROR,
+                                            "Device initialization timeout",
+                                            connectedDeviceName,
+                                            connectedDeviceAddress,
+                                            failure.message,
+                                        )
+                                        if (!readyGate.isCompleted) {
+                                            readyGate.completeExceptionally(failure)
+                                        }
+                                    } catch (e: CancellationException) {
+                                        readyGate.cancel(e)
+                                        throw e
+                                    } catch (e: Exception) {
+                                        log.e(e) { "onDeviceReady failed: ${e.message}" }
+                                        logRepo.error(
+                                            LogEventType.ERROR,
+                                            "Device initialization failed",
+                                            connectedDeviceName,
+                                            connectedDeviceAddress,
+                                            e.message,
+                                        )
+                                        if (!readyGate.isCompleted) {
+                                            readyGate.completeExceptionally(
+                                                BleDeviceInitializationException(
+                                                    "Device initialization failed: ${e.message}",
+                                                    e,
+                                                ),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -628,6 +680,17 @@ class KableBleConnectionManager(
 
                             // Only process disconnect if we were actually connected
                             if (hadConnection) {
+                                // Issue #333 (v10 ready gate): fail the gate so a connect
+                                // attempt waiting on ready-up surfaces the disconnect
+                                // instead of timing out.
+                                if (!readyGate.isCompleted) {
+                                    readyGate.completeExceptionally(
+                                        BleDeviceInitializationException("Device disconnected during initialization"),
+                                    )
+                                }
+                                deviceReadyJob?.cancel()
+                                deviceReadyJob = null
+
                                 logRepo.info(
                                     LogEventType.DISCONNECT,
                                     "Device disconnected",
@@ -679,6 +742,9 @@ class KableBleConnectionManager(
             for (attempt in 1..BleConstants.Timing.CONNECTION_RETRY_COUNT) {
                 try {
                     log.d { "Connection attempt $attempt of ${BleConstants.Timing.CONNECTION_RETRY_COUNT}" }
+                    readyGate = CompletableDeferred()
+                    deviceReadyJob?.cancel()
+                    deviceReadyJob = null
 
                     // Wrap connection in timeout to prevent zombie "Connecting" state
                     withTimeout(BleConstants.CONNECTION_TIMEOUT_MS) {
@@ -691,6 +757,14 @@ class KableBleConnectionManager(
                         log.i { "Connection established to ${device.name}" }
                     }
 
+                    // Issue #333 (v10 ready gate): connect() succeeding only means the
+                    // physical link is up. Wait for ready-up (MTU path, services, critical
+                    // notifications, polling) before reporting success to the caller.
+                    awaitBleReadyGate(readyGate) {
+                        deviceReadyJob?.cancel()
+                        deviceReadyJob = null
+                    }
+
                     return Result.success(Unit) // Success, exit retry loop
                 } catch (_: TimeoutCancellationException) {
                     lastException = Exception("Connection timeout after ${BleConstants.CONNECTION_TIMEOUT_MS}ms")
@@ -698,6 +772,12 @@ class KableBleConnectionManager(
                     if (attempt < BleConstants.Timing.CONNECTION_RETRY_COUNT) {
                         delay(BleConstants.Timing.CONNECTION_RETRY_DELAY_MS)
                     }
+                } catch (e: BleDeviceInitializationException) {
+                    // Ready-up failed with a bounded, descriptive error — retrying the
+                    // physical connection would repeat the same initialization failure.
+                    lastException = e
+                    log.w { "Connection attempt $attempt failed during device initialization: ${e.message}" }
+                    break
                 } catch (e: Exception) {
                     e.rethrowIfCancellation()
                     lastException = e
@@ -709,6 +789,8 @@ class KableBleConnectionManager(
             }
 
             // All retries failed - cleanup and return to disconnected state
+            deviceReadyJob?.cancel()
+            deviceReadyJob = null
             peripheral?.disconnect()
             peripheral = null
             reportConnectionState(ConnectionState.Disconnected)
@@ -742,31 +824,65 @@ class KableBleConnectionManager(
      */
     private suspend fun onDeviceReady() {
         val p = peripheral ?: return
+        val useCompatibilityPath = BleCompatibilityMode.isActive()
 
-        // Request High Connection Priority (Android only - via expect/actual extension)
-        // Critical for maintaining ~20Hz polling rate without lag
-        p.requestHighPriority()
-
-        // Request MTU negotiation (Android only - iOS handles automatically)
-        // CRITICAL: Without MTU negotiation, BLE uses default 23-byte MTU (20 usable)
-        // Vitruvian commands require up to 96 bytes for activation frames
-        val mtu = p.requestMtuIfSupported(BleConstants.Timing.DESIRED_MTU)
-        if (mtu != null) {
-            negotiatedMtu = mtu
-            log.i { "MTU negotiated: $mtu bytes (requested: ${BleConstants.Timing.DESIRED_MTU})" }
+        if (useCompatibilityPath) {
+            // Issue #333: official small-MTU path. Android 14+ coerces the FIRST
+            // app-side requestMtu() to ATT MTU 517, and at 517 the 96-byte workout
+            // CONFIG write goes out as a single large ATT PDU that wedges the
+            // BCM4389 controller on Pixel 6/7 (write lane stuck busy → GATT 133 →
+            // disconnect). Making NO MTU request keeps the default 23-byte MTU, so
+            // large writes are chunked by the ATT long-write procedure instead —
+            // the same path the official Vitruvian app uses.
+            negotiatedMtu = null
+            log.i { "[#333 compat] Small-MTU compatibility path active (${BleCompatibilityMode.summary()})" }
             logRepo.info(
                 LogEventType.MTU_CHANGED,
-                "MTU negotiated: $mtu bytes",
+                "[#333 compat] Skipping requestMtu() (small-MTU compatibility path)",
                 connectedDeviceName,
                 connectedDeviceAddress,
+                BleCompatibilityMode.summary(),
             )
+            try {
+                val maxWriteLength = p.maximumWriteValueLengthForType(WriteType.WithResponse)
+                log.i { "[#333 compat] WithResponse max write length: $maxWriteLength bytes" }
+                logRepo.debug(
+                    LogEventType.MTU_CHANGED,
+                    "[#333 compat] WithResponse max write length",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    "$maxWriteLength bytes",
+                )
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                log.w { "[#333 compat] Could not read WithResponse max write length: ${e.message}" }
+            }
         } else {
-            // iOS returns null (handled by OS), or Android negotiation failed
-            log.i { "MTU negotiation: using system default (iOS) or failed (Android)" }
-            logRepo.debug(
-                LogEventType.MTU_CHANGED,
-                "MTU using system default",
-            )
+            // Request High Connection Priority (Android only - via expect/actual extension)
+            // Critical for maintaining ~20Hz polling rate without lag
+            p.requestHighPriority()
+
+            // Request MTU negotiation (Android only - iOS handles automatically)
+            // CRITICAL: Without MTU negotiation, BLE uses default 23-byte MTU (20 usable)
+            // Vitruvian commands require up to 96 bytes for activation frames
+            val mtu = p.requestMtuIfSupported(BleConstants.Timing.DESIRED_MTU)
+            if (mtu != null) {
+                negotiatedMtu = mtu
+                log.i { "MTU negotiated: $mtu bytes (requested: ${BleConstants.Timing.DESIRED_MTU})" }
+                logRepo.info(
+                    LogEventType.MTU_CHANGED,
+                    "MTU negotiated: $mtu bytes",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                )
+            } else {
+                // iOS returns null (handled by OS), or Android negotiation failed
+                log.i { "MTU negotiation: using system default (iOS) or failed (Android)" }
+                logRepo.debug(
+                    LogEventType.MTU_CHANGED,
+                    "MTU using system default",
+                )
+            }
         }
 
         // Verify services are discovered and log GATT structure
@@ -849,9 +965,27 @@ class KableBleConnectionManager(
             )
         }
 
+        if (useCompatibilityPath) {
+            // Issue #333: on the compatibility path, request high priority only after
+            // service discovery — matching the tested v14 choreography, which keeps
+            // the ready-up window quiet until discovery completes.
+            p.requestHighPriority()
+            log.i { "[#333 compat] High connection priority requested after service discovery" }
+            logRepo.debug(
+                LogEventType.SERVICE_DISCOVERED,
+                "[#333 compat] High priority requested after service discovery",
+                connectedDeviceName,
+                connectedDeviceAddress,
+            )
+        }
+
         logRepo.info(
             LogEventType.SERVICE_DISCOVERED,
-            "Device ready, starting notifications and heartbeat",
+            if (useCompatibilityPath) {
+                "[#333 compat] Device ready, starting notifications without heartbeat"
+            } else {
+                "Device ready, starting notifications and heartbeat"
+            },
             connectedDeviceName,
             connectedDeviceAddress,
         )
@@ -863,7 +997,7 @@ class KableBleConnectionManager(
     // 6. startObservingNotifications()
     // -------------------------------------------------------------------------
 
-    private fun startObservingNotifications() {
+    private suspend fun startObservingNotifications() {
         val p = peripheral ?: return
 
         logRepo.info(
@@ -898,27 +1032,48 @@ class KableBleConnectionManager(
         // flood until reps is subscribed gives the critical CCCD write a
         // contention-free window, so it normally succeeds on the first attempt.
         // Fail-open: if reps never subscribes we still start polling after a timeout.
-        scope.launch {
-            withTimeoutOrNull(BleConstants.Timing.REPS_SUBSCRIBE_READY_TIMEOUT_MS) {
-                repsReady.await()
-            }
-            if (peripheral !== p) return@launch // disconnected/replaced while we waited
+        // Issue #333 (v10 ready gate): this runs inline (suspend) so the app-level
+        // Connected state is not published until notifications + polling are up.
+        withTimeoutOrNull(BleConstants.Timing.REPS_SUBSCRIBE_READY_TIMEOUT_MS) {
+            repsReady.await()
+        }
+        if (peripheral !== p) return // disconnected/replaced while we waited
 
+        if (BleCompatibilityMode.includePreReadyDiagnosticReads()) {
             // Firmware/version reads (best effort, diagnostic only) — own coroutine so
             // their up-to-2s timeouts never delay polling start.
             scope.launch {
                 tryReadFirmwareVersion(p)
                 tryReadVitruvianVersion(p)
             }
-
-            // Non-critical notifications (logging only): VERSION + MODE.
-            startNonCriticalObserve(p, versionCharacteristic, "VERSION")
-            startNonCriticalObserve(p, modeCharacteristic, "MODE")
-
-            // ===== POLLING (delegated to MetricPollingEngine) =====
-            discoMode.stop()
-            pollingEngine.startAll(p)
+        } else {
+            // Issue #333: the compatibility path stays quiet before ready-up —
+            // best-effort reads must not compete with critical notification setup.
+            log.i { "[#333 compat] Skipping pre-ready diagnostic version reads" }
+            logRepo.debug(
+                LogEventType.NOTIFICATION,
+                "[#333 compat] Skipping pre-ready diagnostic version reads",
+                connectedDeviceName,
+                connectedDeviceAddress,
+            )
         }
+
+        // Non-critical notifications (logging only): VERSION + MODE.
+        startNonCriticalObserve(p, versionCharacteristic, "VERSION")
+        startNonCriticalObserve(p, modeCharacteristic, "MODE")
+
+        // ===== POLLING (delegated to MetricPollingEngine) =====
+        discoMode.stop()
+        val includeHeartbeat = BleCompatibilityMode.includeHeartbeat()
+        if (!includeHeartbeat) {
+            logRepo.info(
+                LogEventType.NOTIFICATION,
+                "[#333 compat] BLE ready gate complete; starting polling without heartbeat",
+                connectedDeviceName,
+                connectedDeviceAddress,
+            )
+        }
+        pollingEngine.startAll(p, includeHeartbeat = includeHeartbeat)
     }
 
     /**
@@ -1157,6 +1312,8 @@ class KableBleConnectionManager(
         // Cancel stale state observer to prevent ghost callbacks (H2 fix)
         stateObserverJob?.cancel()
         stateObserverJob = null
+        deviceReadyJob?.cancel()
+        deviceReadyJob = null
 
         // Cancel all polling jobs (matches disconnect() behavior)
         pollingEngine.stopAll()
@@ -1190,25 +1347,84 @@ class KableBleConnectionManager(
             return Result.failure(IllegalStateException("Not connected"))
         }
 
+        val commandDetails = commandSummary(command)
         val commandHex = command.joinToString(" ") { it.toHexString() }
-        log.d { "Sending ${command.size}-byte command to NUS TX" }
+        log.d { "Sending $commandDetails to NUS TX" }
         log.d { "Command hex: $commandHex" }
 
         // Issue #222: Log queue state before acquiring for debugging
         log.d { "BLE queue locked: ${bleQueue.isLocked}, acquiring..." }
 
+        val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
+        val isProgramConfig = command.size == 96 && command[0] == 0x04.toByte()
+        val useCompatibilityPath = BleCompatibilityMode.isActive()
+
+        if (useCompatibilityPath && isProgramConfig) {
+            val maxWriteLength = try {
+                p.maximumWriteValueLengthForType(WriteType.WithResponse).toString()
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                "unavailable (${e.message})"
+            }
+            log.i { "[#333 compat] CONFIG write starting: $commandDetails, maxWriteLength=$maxWriteLength" }
+            logRepo.debug(
+                LogEventType.CHARACTERISTIC_WRITE,
+                "[#333 compat] CONFIG write starting",
+                connectedDeviceName,
+                connectedDeviceAddress,
+                "$commandDetails; writeType=WithResponse; maxWriteLength=$maxWriteLength",
+            )
+        }
+
         val attemptStart = currentTimeMillis()
-        val result = bleQueue.write(p, txCharacteristic, command, WriteType.WithResponse)
+        var result = bleQueue.write(p, txCharacteristic, command, WriteType.WithResponse)
+
+        // Issue #333: on the compatibility path the CONFIG long-write can fail
+        // transiently at initiation ("Write failed: Unknown" = legacy
+        // writeCharacteristic() returned false, GATT momentarily busy) WITHOUT
+        // dropping the connection — observed on Pixel 6 Pro in v14 testing. A
+        // short, bounded retry recovers it; the old wedged-lane failure mode
+        // (GATT 133 + disconnect) is gone at small MTU, so retrying is safe.
+        if (useCompatibilityPath && isProgramConfig) {
+            var retriesLeft = CONFIG_WRITE_RETRY_COUNT
+            while (result.isFailure && retriesLeft > 0 && peripheral === p) {
+                val attempt = CONFIG_WRITE_RETRY_COUNT - retriesLeft + 1
+                log.w {
+                    "[#333 compat] CONFIG write failed (${result.exceptionOrNull()?.message}); " +
+                        "retry $attempt of $CONFIG_WRITE_RETRY_COUNT in ${CONFIG_WRITE_RETRY_DELAY_MS}ms"
+                }
+                logRepo.warning(
+                    LogEventType.CHARACTERISTIC_WRITE,
+                    "[#333 compat] CONFIG write retry $attempt of $CONFIG_WRITE_RETRY_COUNT",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    result.exceptionOrNull()?.message,
+                )
+                delay(CONFIG_WRITE_RETRY_DELAY_MS)
+                result = bleQueue.write(p, txCharacteristic, command, WriteType.WithResponse)
+                retriesLeft--
+            }
+        }
 
         if (result.isSuccess) {
             val elapsedMs = currentTimeMillis() - attemptStart
-            log.d { "TX write ok: size=${command.size}, type=WithResponse, elapsed=${elapsedMs}ms" }
-            log.i { "Command sent via NUS TX: ${command.size} bytes" }
+            log.d { "TX write ok: $commandDetails, type=WithResponse, elapsed=${elapsedMs}ms" }
+            log.i { "Command sent via NUS TX: $commandDetails" }
+            if (useCompatibilityPath && isProgramConfig) {
+                log.i { "[#333 compat] CONFIG write succeeded, elapsed=${elapsedMs}ms" }
+                logRepo.info(
+                    LogEventType.COMMAND_SENT,
+                    "[#333 compat] CONFIG write succeeded",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    "$commandDetails; writeType=WithResponse; elapsed=${elapsedMs}ms",
+                )
+            }
 
             // Issue #222 v16 (optional): One-shot diagnostic read after CONFIG to catch early faults.
-            val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
-            val isProgramConfig = command.size == 96 && command[0] == 0x04.toByte()
-            if (isEchoConfig || isProgramConfig) {
+            // Issue #333: skipped on the compatibility path — post-CONFIG traffic stays quiet
+            // so nothing races the pending long-write completion on BCM4389.
+            if ((isEchoConfig || isProgramConfig) && !useCompatibilityPath) {
                 val delayMs = if (isProgramConfig) 350L else 200L
                 scope.launch {
                     delay(delayMs)
@@ -1227,28 +1443,91 @@ class KableBleConnectionManager(
                         log.w { "Post-CONFIG diagnostic read failed: ${e.message}" }
                     }
                 }
+            } else if (useCompatibilityPath && isProgramConfig) {
+                log.i { "[#333 compat] Skipping post-CONFIG diagnostic read" }
+                logRepo.debug(
+                    LogEventType.CHARACTERISTIC_READ,
+                    "[#333 compat] Skipped post-CONFIG diagnostic read",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                )
             }
 
             logRepo.debug(
                 LogEventType.COMMAND_SENT,
-                "Command sent (NUS TX)",
+                if (useCompatibilityPath && isProgramConfig) {
+                    "Command sent (NUS TX, small-MTU compatibility path)"
+                } else {
+                    "Command sent (NUS TX)"
+                },
                 connectedDeviceName,
                 connectedDeviceAddress,
-                "Size: ${command.size} bytes",
+                commandDetails,
             )
             return Result.success(Unit)
         } else {
             val ex = result.exceptionOrNull()
-            log.e { "Failed to send command after retries: ${ex?.message}" }
+            log.e { "Failed to send $commandDetails after retries: ${ex?.message}" }
+            if (useCompatibilityPath && isProgramConfig) {
+                logRepo.error(
+                    LogEventType.ERROR,
+                    "[#333 compat] CONFIG write failed after retries",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    "$commandDetails; error=${ex?.message}",
+                )
+            }
             logRepo.error(
                 LogEventType.ERROR,
                 "Failed to send command",
                 connectedDeviceName,
                 connectedDeviceAddress,
-                ex?.message,
+                "$commandDetails; error=${ex?.message}",
             )
             return Result.failure(ex ?: IllegalStateException("Unknown error"))
         }
+    }
+
+    /**
+     * Issue #333: human-readable command summary for connection logs — size,
+     * opcode, little-endian command id, first 8 bytes, and (for 96-byte CONFIG
+     * packets) the force-profile floats that matter when debugging workout start.
+     */
+    private fun commandSummary(command: ByteArray): String {
+        val opcode = command.firstOrNull()?.toInt()?.and(0xFF)
+        val opcodeText = opcode?.let { "0x${it.toString(16).padStart(2, '0').uppercase()}" } ?: "n/a"
+        val commandIdText = if (command.size >= 4) {
+            val commandId = (command[0].toInt() and 0xFF) or
+                ((command[1].toInt() and 0xFF) shl 8) or
+                ((command[2].toInt() and 0xFF) shl 16) or
+                ((command[3].toInt() and 0xFF) shl 24)
+            ", commandIdLE=$commandId"
+        } else {
+            ""
+        }
+        val preview = command.take(8).joinToString(" ") { it.toHexString() }
+        val configDetails = activationConfigSummary(command)
+        return "Size: ${command.size} bytes, opcode=$opcodeText$commandIdText, first8=$preview$configDetails"
+    }
+
+    private fun activationConfigSummary(command: ByteArray): String {
+        if (command.size < 96 || command[0] != 0x04.toByte()) {
+            return ""
+        }
+        return ", profileTail[0x48]=${readFloatLE(command, 0x48)}" +
+            ", profileTail[0x4C]=${readFloatLE(command, 0x4C)}" +
+            ", forceMin[0x50]=${readFloatLE(command, 0x50)}" +
+            ", forceMax[0x54]=${readFloatLE(command, 0x54)}" +
+            ", officialSoftMax[0x58]=${readFloatLE(command, 0x58)}" +
+            ", officialIncrement[0x5C]=${readFloatLE(command, 0x5C)}"
+    }
+
+    private fun readFloatLE(data: ByteArray, offset: Int): Float {
+        val bits = (data[offset].toInt() and 0xFF) or
+            ((data[offset + 1].toInt() and 0xFF) shl 8) or
+            ((data[offset + 2].toInt() and 0xFF) shl 16) or
+            ((data[offset + 3].toInt() and 0xFF) shl 24)
+        return Float.fromBits(bits)
     }
 
     // -------------------------------------------------------------------------

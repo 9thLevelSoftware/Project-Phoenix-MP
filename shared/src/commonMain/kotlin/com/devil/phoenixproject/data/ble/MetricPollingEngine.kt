@@ -179,13 +179,24 @@ class MetricPollingEngine(
 
     // ===== Public API =====
 
-    /** Start all 4 polling loops. Called from startObservingNotifications(). */
-    fun startAll(peripheral: Peripheral) {
-        log.i { "Starting all polling loops" }
+    /**
+     * Start all polling loops. Called from startObservingNotifications().
+     *
+     * Issue #333: on the small-MTU compatibility path the GATT heartbeat is
+     * suppressed — BLE link-layer keepalive happens at the connection interval,
+     * and the official Vitruvian app runs no GATT heartbeat at all.
+     */
+    fun startAll(peripheral: Peripheral, includeHeartbeat: Boolean = true) {
+        log.i { "Starting polling loops (includeHeartbeat=$includeHeartbeat)" }
         startMonitorPolling(peripheral)
         startDiagnosticPolling(peripheral)
         startHeuristicPolling(peripheral)
-        startHeartbeat(peripheral)
+        if (includeHeartbeat) {
+            startHeartbeat(peripheral)
+        } else {
+            cancelHeartbeat()
+            log.i { "[#333 compat] Heartbeat loop disabled; skipping TX read and no-op write" }
+        }
     }
 
     /**
@@ -406,6 +417,11 @@ class MetricPollingEngine(
         }
     }
 
+    private fun cancelHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+    }
+
     /**
      * Stop ALL polling loops and reset diagnostic state.
      * Maps to KableBleRepository.stopPolling().
@@ -492,7 +508,7 @@ class MetricPollingEngine(
             log.d { "Issue #222 v16: Restarting diagnostic polling" }
             startDiagnosticPolling(peripheral)
         }
-        if (heartbeatJob?.isActive != true) {
+        if (heartbeatJob?.isActive != true && BleCompatibilityMode.includeHeartbeat()) {
             log.d { "Issue #222 v16: Restarting heartbeat" }
             startHeartbeat(peripheral)
         }
@@ -515,10 +531,12 @@ class MetricPollingEngine(
             log.d { "Diagnostic polling already active - skip restart" }
         }
 
-        if (heartbeatJob?.isActive != true) {
+        if (heartbeatJob?.isActive == true) {
+            log.d { "Heartbeat already active - skip restart" }
+        } else if (BleCompatibilityMode.includeHeartbeat()) {
             startHeartbeat(peripheral)
         } else {
-            log.d { "Heartbeat already active - skip restart" }
+            log.d { "[#333 compat] Heartbeat suppressed on small-MTU compatibility path" }
         }
     }
 

@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.kotlin.parcelize) apply false
 
     // Compose Multiplatform
     alias(libs.plugins.compose.multiplatform) apply false
@@ -21,6 +22,16 @@ plugins {
 
 allprojects {
     // Common configuration for all projects
+    configurations.all {
+        resolutionStrategy.dependencySubstitution {
+            substitute(module("com.juul.kable:kable-core-android"))
+                .using(project(":third_party:kable-core-android-patched"))
+                .because("Phoenix #333: keep Kable's Android queue/callback path but use the official app's legacy GATT write shape")
+            substitute(module("com.juul.kable:kable-core-android-debug"))
+                .using(project(":third_party:kable-core-android-patched"))
+                .because("Phoenix #333: debug Android variant must use the same patched Kable write path")
+        }
+    }
 }
 
 spotless {

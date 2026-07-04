@@ -112,6 +112,7 @@ import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
 import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.VulgarTier
@@ -334,6 +335,9 @@ fun SettingsTab(
     // Gamification toggle
     gamificationEnabled: Boolean = true,
     onGamificationEnabledChange: (Boolean) -> Unit = {},
+    // Issue #333: BLE small-MTU compatibility path (Auto = on for Pixel 6/7 family)
+    bleCompatibilityMode: BleCompatibilitySetting = BleCompatibilitySetting.AUTO,
+    onBleCompatibilityModeChange: (BleCompatibilitySetting) -> Unit = {},
     // Auto-backup (Phase 36)
     autoBackupEnabled: Boolean = false,
     onAutoBackupEnabledChange: (Boolean) -> Unit = {},
@@ -2823,6 +2827,50 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "View Bluetooth connection debug logs to diagnose connectivity issues",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Issue #333: BLE small-MTU compatibility path (fixes Pixel 6/7
+                // GATT_ERROR(133) disconnect at workout start)
+                Text(
+                    "BLE Compatibility Mode",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Small-MTU write path that fixes workout-start disconnects on Pixel 6/7. " +
+                        "Auto enables it only on those devices" +
+                        if (DeviceInfo.isPixel6Or7()) " (this device is affected)." else ".",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(Spacing.small))
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    val options = listOf(
+                        BleCompatibilitySetting.AUTO to "Auto",
+                        BleCompatibilitySetting.ON to "On",
+                        BleCompatibilitySetting.OFF to "Off",
+                    )
+                    options.forEachIndexed { index, (setting, label) ->
+                        SegmentedButton(
+                            selected = bleCompatibilityMode == setting,
+                            onClick = { onBleCompatibilityModeChange(setting) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                        ) {
+                            Text(label, maxLines = 1)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Takes effect on the next connection. Reconnect to the trainer after changing.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

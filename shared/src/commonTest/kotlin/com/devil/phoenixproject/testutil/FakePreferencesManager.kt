@@ -230,6 +230,10 @@ class FakePreferencesManager : PreferencesManager {
         _adultsOnlyPrompted = true
     }
 
+    override suspend fun setBleCompatibilityMode(setting: com.devil.phoenixproject.domain.model.BleCompatibilitySetting) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(bleCompatibilityMode = setting)
+    }
+
     // Issue #611 (PR-followup #613): One-shot decline-remember backing field
     // for the 18+ Adults Only modal. Lives outside UserPreferences because the
     // modal-call site is the only consumer (architecture §3 — follow
