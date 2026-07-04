@@ -135,6 +135,16 @@ class KableBleConnectionManager(
      */
     private var deviceReadyJob: Job? = null
 
+    /**
+     * Issue #333 (v10 ready gate): completed when ready-up finishes for the
+     * current connection attempt. @Volatile because the connect retry loop
+     * reassigns it on the caller's dispatcher while the state observer
+     * coroutine reads it on [scope] — a stale read would complete the previous
+     * attempt's gate and force a spurious initialization timeout.
+     */
+    @Volatile
+    private var readyGate = CompletableDeferred<Unit>()
+
     /** Connected device name (for logging). */
     private var connectedDeviceName: String = ""
 
@@ -582,7 +592,7 @@ class KableBleConnectionManager(
             stateObserverJob?.cancel()
             deviceReadyJob?.cancel()
             deviceReadyJob = null
-            var readyGate = CompletableDeferred<Unit>()
+            readyGate = CompletableDeferred()
 
             // Observe connection state
             stateObserverJob = peripheral?.state
