@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.ShimmerBox
 import com.devil.phoenixproject.presentation.viewmodel.ExternalActivitiesViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -126,13 +127,9 @@ fun ExternalActivitiesScreen(onSetTitle: (String) -> Unit = {}, modifier: Modifi
 @Composable
 private fun ExternalActivityItem(activity: ExternalActivity) {
     var expanded by remember { mutableStateOf(false) }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
+    ExpressiveCard(
         onClick = { expanded = !expanded },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        ),
-        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {

@@ -67,6 +67,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
@@ -278,15 +279,12 @@ fun WorkoutHistoryCard(
     // Once tagged, exerciseId is non-null so the affordance disappears and the name shows.
     val canTagJustLift = session.isJustLift && session.exerciseId.isNullOrBlank()
 
-    Card(
+    ExpressiveCard(
         onClick = { isExpanded = !isExpanded },
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
+            .shadow(8.dp, MaterialTheme.shapes.medium),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
@@ -807,15 +805,12 @@ fun GroupedRoutineCard(
             }
     }
 
-    Card(
+    ExpressiveCard(
         onClick = { isExpanded = !isExpanded },
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
+            .shadow(8.dp, MaterialTheme.shapes.medium),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier

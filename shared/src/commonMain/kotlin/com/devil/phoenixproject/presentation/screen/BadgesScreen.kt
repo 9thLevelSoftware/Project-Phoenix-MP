@@ -5,7 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -399,12 +399,12 @@ private fun BadgeCard(badgeWithProgress: BadgeWithProgress, onClick: () -> Unit)
         label = "badge_scale",
     )
 
-    Card(
+    ExpressiveCard(
+        onClick = onClick,
         modifier = Modifier
             .aspectRatio(0.85f)
             .scale(scale)
-            .alpha(alpha)
-            .clickable(onClick = onClick),
+            .alpha(alpha),
         shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = if (isEarned) {

@@ -21,6 +21,17 @@ import com.devil.phoenixproject.presentation.util.tvSliderKeys
 import kotlin.math.roundToInt
 
 /**
+ * ## Card usage convention
+ *
+ * - **Interactive cards** (navigates, expands, selects): use [ExpressiveCard].
+ *   Provides press-scale spring animation, consistent 2dp border, and 8dp elevation.
+ * - **Static / informational cards** (no tap action): use plain `Card(
+ *   colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+ *   shape = MaterialTheme.shapes.medium,
+ * )`.
+ */
+
+/**
  * A Material 3 Expressive Card wrapper.
  * Features:
  * - 20dp rounded corners

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -471,9 +472,8 @@ fun ExternalMeasurementTrendsScreen(
 
 @Composable
 private fun HubCard(title: String, subtitle: String, icon: @Composable () -> Unit, onClick: () -> Unit) {
-    Card(
+    ExpressiveCard(
         onClick = onClick,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = MaterialTheme.shapes.extraSmall,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
@@ -554,9 +554,8 @@ private fun EntityCard(onClick: (() -> Unit)? = null, content: @Composable Colum
             content = cardContent,
         )
     } else {
-        Card(
+        ExpressiveCard(
             onClick = onClick,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
             shape = MaterialTheme.shapes.extraSmall,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             content = cardContent,

@@ -407,12 +407,7 @@ fun UpNextCompactWidget(
         routines.find { it.id == routineId }
     }
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
-        shape = MaterialTheme.shapes.medium,
+    ExpressiveCard(
         onClick = {
             if (currentCycleDay?.routineId != null) {
                 onStartWorkout(currentCycleDay.routineId, cycle.id, currentDay)
@@ -420,6 +415,10 @@ fun UpNextCompactWidget(
                 onViewCycles()
             }
         },
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        ),
     ) {
         Row(
             modifier = Modifier

@@ -3,7 +3,6 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -968,12 +967,9 @@ fun NextBadgeProgressCard(badgesWithProgress: List<BadgeWithProgress>, onBadgeCl
     // Don't show if no badges to display
     if (nextBadges.isEmpty()) return
 
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onBadgeClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
+    ExpressiveCard(
+        onClick = onBadgeClick,
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(

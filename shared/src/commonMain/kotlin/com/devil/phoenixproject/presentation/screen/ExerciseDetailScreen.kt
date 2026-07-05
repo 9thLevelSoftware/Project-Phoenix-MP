@@ -42,6 +42,7 @@ import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.ShimmerBox
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -721,13 +722,13 @@ private fun TableCell(text: String, modifier: Modifier = Modifier) {
 private fun SessionHistoryRow(session: WorkoutSession, weightUnit: WeightUnit, formatWeight: (Float, WeightUnit) -> String) {
     var isExpanded by remember { mutableStateOf(false) }
 
-    Card(
+    ExpressiveCard(
+        onClick = { isExpanded = !isExpanded },
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ),
-        shape = MaterialTheme.shapes.small,
-        onClick = { isExpanded = !isExpanded },
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
