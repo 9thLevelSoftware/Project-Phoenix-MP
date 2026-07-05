@@ -28,6 +28,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
@@ -41,7 +42,12 @@ import com.devil.phoenixproject.util.rememberHealthPermissionRequester
 import com.devil.phoenixproject.util.rememberHealthPermissionSettingsLauncher
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.disconnect
+import vitruvianprojectphoenix.shared.generated.resources.disconnect_integration_message
+import vitruvianprojectphoenix.shared.generated.resources.disconnect_integration_title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -256,6 +262,22 @@ fun IntegrationsScreen(
         )
     }
 
+    // ── Integration disconnect confirmation ───────────────────────────────────
+    var disconnectTarget by remember { mutableStateOf<IntegrationProvider?>(null) }
+    disconnectTarget?.let { provider ->
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.disconnect_integration_title),
+            message = stringResource(Res.string.disconnect_integration_message, provider.displayName),
+            confirmText = stringResource(Res.string.disconnect),
+            onConfirm = {
+                viewModel.disconnectProvider(provider)
+                disconnectTarget = null
+            },
+            onDismiss = { disconnectTarget = null },
+            icon = Icons.Default.LinkOff,
+        )
+    }
+
     // ── Weight unit toggle for CSV export ─────────────────────────────────────
     var csvWeightUnit by remember { mutableStateOf(weightUnit) }
 
@@ -392,9 +414,7 @@ fun IntegrationsScreen(
                                     }
                                 }
                                 TextButton(
-                                    onClick = {
-                                        viewModel.disconnectProvider(IntegrationProvider.HEVY)
-                                    },
+                                    onClick = { disconnectTarget = IntegrationProvider.HEVY },
                                     modifier = Modifier,
                                 ) {
                                     Text(
@@ -459,9 +479,7 @@ fun IntegrationsScreen(
                                     }
                                 }
                                 TextButton(
-                                    onClick = {
-                                        viewModel.disconnectProvider(IntegrationProvider.LIFTOSAUR)
-                                    },
+                                    onClick = { disconnectTarget = IntegrationProvider.LIFTOSAUR },
                                     modifier = Modifier,
                                 ) {
                                     Text(

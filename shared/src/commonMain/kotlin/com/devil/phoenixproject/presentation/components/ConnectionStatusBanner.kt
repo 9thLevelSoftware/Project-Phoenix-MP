@@ -13,6 +13,8 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.banner_action_connect
+import vitruvianprojectphoenix.shared.generated.resources.banner_not_connected_to_machine
 
 /**
  * Connection status banner that displays when not connected to the machine.
@@ -30,7 +32,7 @@ fun ConnectionStatusBanner(onConnect: () -> Unit, modifier: Modifier = Modifier)
             .fillMaxWidth()
             .padding(horizontal = Spacing.medium, vertical = Spacing.small),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            containerColor = MaterialTheme.colorScheme.errorContainer,
         ),
         shape = MaterialTheme.shapes.medium,
     ) {
@@ -50,13 +52,13 @@ fun ConnectionStatusBanner(onConnect: () -> Unit, modifier: Modifier = Modifier)
                 Icon(
                     imageVector = Icons.Default.Bluetooth,
                     contentDescription = stringResource(Res.string.cd_bluetooth_status),
-                    tint = MaterialTheme.colorScheme.error,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.size(24.dp),
                 )
                 Text(
-                    text = "Not connected to machine",
+                    text = stringResource(Res.string.banner_not_connected_to_machine),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
                     fontWeight = FontWeight.Medium,
                 )
             }
@@ -67,7 +69,7 @@ fun ConnectionStatusBanner(onConnect: () -> Unit, modifier: Modifier = Modifier)
                 modifier = Modifier.padding(start = Spacing.medium),
             ) {
                 Text(
-                    "Connect",
+                    stringResource(Res.string.banner_action_connect),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                 )

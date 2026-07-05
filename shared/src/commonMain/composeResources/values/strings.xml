@@ -112,7 +112,10 @@
     <string name="disconnect">Disconnect</string>
     <string name="disconnect_title">Disconnect?</string>
     <string name="disconnect_message">Are you sure you want to disconnect from the Vitruvian machine?</string>
-    <string name="disconnect_message_device">Are you sure you want to disconnect from %1$s?</string>
+    <string name="disconnect_integration_title">Disconnect integration?</string>
+    <string name="disconnect_integration_message">Are you sure you want to disconnect %1$s? This will remove the integration and may interrupt a scheduled sync.</string>
+    <string name="banner_not_connected_to_machine">Not connected to machine</string>
+    <string name="banner_action_connect">Connect</string>
 
     <!-- ==================== Settings screen ==================== -->
     <string name="settings_title">Settings</string>
