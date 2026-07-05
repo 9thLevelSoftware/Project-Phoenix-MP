@@ -278,7 +278,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             .weight(1f)
                             .height(48.dp),
                         enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
@@ -477,7 +477,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                         ),
@@ -597,7 +597,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 ) {
@@ -751,7 +751,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(96.dp)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .clip(MaterialTheme.shapes.small),
                 )
                 Spacer(Modifier.height(12.dp))
             }
@@ -896,7 +896,7 @@ private fun CurrentBodyweightPromptCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(SetReadyTestTags.SESSION_BODYWEIGHT_CARD),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
@@ -961,7 +961,7 @@ private fun HandledSessionBodyweightCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),

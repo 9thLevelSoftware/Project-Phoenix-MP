@@ -339,7 +339,7 @@ private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onS
                 onClick = onStopWorkout,
                 modifier = Modifier.semantics { contentDescription = stopWorkoutLabel },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
             ) {
                 Icon(Icons.Default.Stop, contentDescription = null)
@@ -779,7 +779,7 @@ private fun StatsPage(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -844,7 +844,7 @@ private fun StatsPage(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -911,7 +911,7 @@ private fun StatsPage(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -947,7 +947,7 @@ private fun StatsPage(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -1130,7 +1130,7 @@ private fun ExerciseTimerControls(
         // Pause/Resume toggle
         FilledTonalButton(
             onClick = if (isPaused) onResume else onPause,
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = if (isPaused) {
                 ButtonDefaults.filledTonalButtonColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -1155,7 +1155,7 @@ private fun ExerciseTimerControls(
         // Reset button
         OutlinedButton(
             onClick = onReset,
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Icon(
                 Icons.Default.Replay,

@@ -109,7 +109,7 @@ fun CountdownCard(
                 if (currentExerciseIndex != null && totalExercises != null && totalExercises > 1) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(
                             text = "Exercise ${currentExerciseIndex + 1} of $totalExercises",
@@ -215,7 +215,7 @@ fun CountdownCard(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     tonalElevation = 2.dp,
                 ) {
                     Column(
@@ -291,7 +291,7 @@ fun CountdownCard(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(
                         Icons.Default.PlayArrow,
