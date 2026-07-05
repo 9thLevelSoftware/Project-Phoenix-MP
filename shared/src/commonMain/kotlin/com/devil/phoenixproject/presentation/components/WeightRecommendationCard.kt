@@ -21,6 +21,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +51,9 @@ fun WeightRecommendationCard(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Prevent double-tap while BLE write is in flight (gap-3-2)
+    var isApplying by remember { mutableStateOf(false) }
+
     val icon = when (recommendation.direction) {
         WeightAdjustmentDirection.INCREASE -> Icons.Default.ArrowUpward
         WeightAdjustmentDirection.DECREASE -> Icons.Default.ArrowDownward
@@ -123,10 +130,16 @@ fun WeightRecommendationCard(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.small, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onDismiss) {
+                OutlinedButton(onClick = onDismiss, enabled = !isApplying) {
                     Text(stringResource(Res.string.action_dismiss))
                 }
-                Button(onClick = onApply) {
+                Button(
+                    onClick = {
+                        isApplying = true
+                        onApply()
+                    },
+                    enabled = !isApplying,
+                ) {
                     Text(stringResource(Res.string.action_apply))
                 }
             }
