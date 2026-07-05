@@ -457,6 +457,8 @@
     <string name="insights_days_ago">%1$d days ago</string>
     <string name="insights_need_more_sessions">Need more sessions across different days to identify your best window</string>
     <string name="insights_perform_best_in">Your highest average intensity is in the</string>
+    <string name="insights_error_title">Unable to Load Insights</string>
+    <string name="insights_error_message">An error occurred while loading your training data.</string>
 
     <!-- ==================== Issue 3: ExerciseConfigModal ==================== -->
     <string name="config_beast_mode">BEAST MODE</string>
