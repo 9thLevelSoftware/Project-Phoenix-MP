@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.presentation.components.cycle
 
-import androidx.compose.foundation.clickable
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -137,10 +137,9 @@ private fun TemplateCard(template: CycleTemplate, onClick: () -> Unit) {
         if (day.isRestDay) "Rest" else (day.routine?.name ?: day.name)
     }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+    ExpressiveCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),

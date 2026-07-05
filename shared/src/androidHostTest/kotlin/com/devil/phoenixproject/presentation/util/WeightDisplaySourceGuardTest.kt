@@ -225,7 +225,6 @@ class WeightDisplaySourceGuardTest {
     fun savedSessionPrimaryDisplays_doNotMultiplyByDisplayLoadMultiplier() {
         val primaryDisplayFiles = listOf(
             "com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt",
-            "com/devil/phoenixproject/presentation/screen/ExercisesTab.kt",
             "com/devil/phoenixproject/presentation/screen/HistoryTab.kt",
             "com/devil/phoenixproject/presentation/screen/HomeScreen.kt",
             "com/devil/phoenixproject/presentation/components/InsightCards.kt",

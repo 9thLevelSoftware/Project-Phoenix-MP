@@ -28,6 +28,9 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -198,7 +201,7 @@ fun IntegrationsScreen(
                     enabled = !uiState.isImporting,
                 ) {
                     if (uiState.isImporting) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        LoadingIndicator(LoadingIndicatorSize.Small)
                     } else {
                         Text("Import ${preview.activities.size} workout(s)")
                     }
@@ -332,7 +335,7 @@ fun IntegrationsScreen(
                                 modifier = Modifier,
                             ) {
                                 if (healthBusy) {
-                                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                    LoadingIndicator(LoadingIndicatorSize.Small)
                                 } else {
                                     Text("Sync previous", style = MaterialTheme.typography.labelMedium)
                                 }
@@ -383,7 +386,7 @@ fun IntegrationsScreen(
                                     modifier = Modifier,
                                 ) {
                                     if (hevyBusy) {
-                                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        LoadingIndicator(LoadingIndicatorSize.Small)
                                     } else {
                                         Text("Sync", style = MaterialTheme.typography.labelMedium)
                                     }
@@ -450,7 +453,7 @@ fun IntegrationsScreen(
                                     modifier = Modifier,
                                 ) {
                                     if (liftosaurBusy) {
-                                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        LoadingIndicator(LoadingIndicatorSize.Small)
                                     } else {
                                         Text("Sync", style = MaterialTheme.typography.labelMedium)
                                     }
@@ -560,7 +563,7 @@ fun IntegrationsScreen(
                             modifier = Modifier.weight(1f),
                         ) {
                             if (uiState.isExporting) {
-                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                LoadingIndicator(LoadingIndicatorSize.Small)
                             } else {
                                 Icon(
                                     Icons.Default.Upload,
@@ -581,7 +584,7 @@ fun IntegrationsScreen(
                             modifier = Modifier.weight(1f),
                         ) {
                             if (uiState.isImporting) {
-                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                LoadingIndicator(LoadingIndicatorSize.Small)
                             } else {
                                 Icon(
                                     Icons.Default.Download,
@@ -597,17 +600,12 @@ fun IntegrationsScreen(
             }
 
             // ── External Activities navigation link ───────────────────────────
-            Card(
+            ExpressiveCard(
+                onClick = onNavigateToExternalData,
                 modifier = Modifier
                     .fillMaxWidth()
                     .shadow(8.dp, MaterialTheme.shapes.medium),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ),
-                shape = MaterialTheme.shapes.medium,
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                onClick = onNavigateToExternalData,
             ) {
                 Row(
                     modifier = Modifier

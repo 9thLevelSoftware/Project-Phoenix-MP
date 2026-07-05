@@ -12,8 +12,8 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 fun DisconnectConfirmationDialog(deviceName: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "Disconnect Device?") },
-        text = { Text(text = "Are you sure you want to disconnect from $deviceName?") },
+        title = { Text(text = stringResource(Res.string.disconnect_title)) },
+        text = { Text(text = stringResource(Res.string.disconnect_message_device, deviceName)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(stringResource(Res.string.disconnect))

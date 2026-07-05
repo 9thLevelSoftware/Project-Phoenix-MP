@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -76,6 +75,7 @@ import com.devil.phoenixproject.domain.model.normalizeRoutine
 import com.devil.phoenixproject.domain.model.reorderExercisesInSuperset
 import com.devil.phoenixproject.domain.model.reorderRoutineItems
 import com.devil.phoenixproject.presentation.components.BulkWeightAdjustDialog
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExerciseRowInSuperset
 import com.devil.phoenixproject.presentation.components.ExerciseRowWithConnector
@@ -101,6 +101,7 @@ import vitruvianprojectphoenix.shared.generated.resources.cannot_be_undone
 import vitruvianprojectphoenix.shared.generated.resources.choose_color
 import vitruvianprojectphoenix.shared.generated.resources.delete_all
 import vitruvianprojectphoenix.shared.generated.resources.delete_selected_exercises
+import vitruvianprojectphoenix.shared.generated.resources.delete_superset_message
 import vitruvianprojectphoenix.shared.generated.resources.delete_superset_title
 import vitruvianprojectphoenix.shared.generated.resources.label_name
 import vitruvianprojectphoenix.shared.generated.resources.rename_superset
@@ -920,32 +921,15 @@ fun RoutineEditorScreen(
 
     // Delete Superset Confirmation Dialog
     supersetToDelete?.let { superset ->
-        AlertDialog(
-            onDismissRequest = { supersetToDelete = null },
-            title = { Text(stringResource(Res.string.delete_superset_title)) },
-            text = {
-                Text(
-                    "This will delete the superset \"${superset.name}\" and all ${superset.exerciseCount} exercises in it. This cannot be undone.",
-                )
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_superset_title),
+            message = stringResource(Res.string.delete_superset_message, superset.name, superset.exerciseCount),
+            confirmText = stringResource(Res.string.delete_all),
+            onConfirm = {
+                deleteSupersetWithExercises(superset.id)
+                supersetToDelete = null
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        deleteSupersetWithExercises(superset.id)
-                        supersetToDelete = null
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text(stringResource(Res.string.delete_all))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { supersetToDelete = null }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
+            onDismiss = { supersetToDelete = null },
         )
     }
 
@@ -975,27 +959,17 @@ fun RoutineEditorScreen(
 
     // Batch Delete Dialog
     if (showBatchDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showBatchDeleteDialog = false },
-            title = { Text(stringResource(Res.string.delete_selected_exercises, selectedExerciseIds.size)) },
-            text = { Text(stringResource(Res.string.cannot_be_undone)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val remaining = state.exercises.filter { it.id !in selectedExerciseIds }
-                        updateExercises(remaining)
-                        showBatchDeleteDialog = false
-                        clearSelection()
-                    },
-                ) {
-                    Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
-                }
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_selected_exercises, selectedExerciseIds.size),
+            message = stringResource(Res.string.cannot_be_undone),
+            confirmText = stringResource(Res.string.action_delete),
+            onConfirm = {
+                val remaining = state.exercises.filter { it.id !in selectedExerciseIds }
+                updateExercises(remaining)
+                showBatchDeleteDialog = false
+                clearSelection()
             },
-            dismissButton = {
-                TextButton(onClick = { showBatchDeleteDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
+            onDismiss = { showBatchDeleteDialog = false },
         )
     }
 

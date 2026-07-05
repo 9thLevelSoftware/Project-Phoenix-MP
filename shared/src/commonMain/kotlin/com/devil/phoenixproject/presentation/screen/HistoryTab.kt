@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -68,8 +67,11 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
+import com.devil.phoenixproject.presentation.components.WorkoutHistoryCardSkeleton
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
 import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
@@ -91,9 +93,15 @@ import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_delete
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_routine
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_workout
 import vitruvianprojectphoenix.shared.generated.resources.cd_workout_session_icon
+import vitruvianprojectphoenix.shared.generated.resources.delete_all_sets
+import vitruvianprojectphoenix.shared.generated.resources.delete_routine_session_message
+import vitruvianprojectphoenix.shared.generated.resources.delete_routine_session_title
+import vitruvianprojectphoenix.shared.generated.resources.delete_workout_message
+import vitruvianprojectphoenix.shared.generated.resources.delete_workout_title
 import vitruvianprojectphoenix.shared.generated.resources.detailed_metrics_not_captured
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_all
 import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_period
@@ -106,6 +114,7 @@ private val historyRackJson = Json { ignoreUnknownKeys = true }
 @Composable
 fun HistoryTab(
     groupedWorkoutHistory: List<HistoryItem>,
+    isLoading: Boolean = false,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
@@ -173,7 +182,16 @@ fun HistoryTab(
             }
         }
 
-        if (filteredHistory.isEmpty()) {
+        if (isLoading) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                contentPadding = PaddingValues(bottom = 96.dp),
+            ) {
+                items(3) {
+                    WorkoutHistoryCardSkeleton(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        } else if (filteredHistory.isEmpty()) {
             EmptyState(
                 icon = Icons.Default.History,
                 title = stringResource(Res.string.empty_no_history_title),
@@ -261,15 +279,12 @@ fun WorkoutHistoryCard(
     // Once tagged, exerciseId is non-null so the affordance disappears and the name shows.
     val canTagJustLift = session.isJustLift && session.exerciseId.isNullOrBlank()
 
-    Card(
+    ExpressiveCard(
         onClick = { isExpanded = !isExpanded },
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
+            .shadow(8.dp, MaterialTheme.shapes.medium),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
@@ -550,7 +565,7 @@ fun WorkoutHistoryCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        "Delete",
+                        stringResource(Res.string.action_delete),
                         style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
                         fontWeight = FontWeight.Bold,
                     )
@@ -561,54 +576,15 @@ fun WorkoutHistoryCard(
 
     // Material 3 Expressive: Delete dialog
     if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = {
-                Text(
-                    "Delete Workout?",
-                    style = MaterialTheme.typography.headlineSmall, // Material 3 Expressive: Larger
-                    fontWeight = FontWeight.Bold,
-                )
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_workout_title),
+            message = stringResource(Res.string.delete_workout_message),
+            confirmText = stringResource(Res.string.action_delete),
+            onConfirm = {
+                onDelete()
+                showDeleteDialog = false
             },
-            text = {
-                Text(
-                    "This action cannot be undone.",
-                    style = MaterialTheme.typography.bodyLarge, // Material 3 Expressive: Larger
-                )
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
-            shape = MaterialTheme.shapes.large, // Material 3 Expressive: Very rounded for dialogs (was 16dp)
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDelete()
-                        showDeleteDialog = false
-                    },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Delete",
-                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDeleteDialog = false },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Cancel",
-                        style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
+            onDismiss = { showDeleteDialog = false },
         )
     }
 }
@@ -829,15 +805,12 @@ fun GroupedRoutineCard(
             }
     }
 
-    Card(
+    ExpressiveCard(
         onClick = { isExpanded = !isExpanded },
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
+            .shadow(8.dp, MaterialTheme.shapes.medium),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
@@ -1160,7 +1133,7 @@ fun GroupedRoutineCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        "Delete All Sets",
+                        stringResource(Res.string.delete_all_sets),
                         style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
                         fontWeight = FontWeight.Bold,
                     )
@@ -1171,59 +1144,20 @@ fun GroupedRoutineCard(
 
     // Material 3 Expressive: Delete dialog
     if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = {
-                Text(
-                    "Delete Routine Session?",
-                    style = MaterialTheme.typography.headlineSmall, // Material 3 Expressive: Larger
-                    fontWeight = FontWeight.Bold,
-                )
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_routine_session_title),
+            message = stringResource(Res.string.delete_routine_session_message, groupedItem.sessions.size),
+            confirmText = stringResource(Res.string.action_delete),
+            onConfirm = {
+                // Issue #591 follow-up: delete the whole routine
+                // session by id so zero-rep ghost rows hidden by
+                // the History filter are cleaned up too. Looping
+                // over `groupedItem.sessions` would only delete
+                // the visible rows.
+                onDeleteRoutineGroup(groupedItem.routineSessionId)
+                showDeleteDialog = false
             },
-            text = {
-                Text(
-                    "This will delete all ${groupedItem.sessions.size} sets from this routine. This action cannot be undone.",
-                    style = MaterialTheme.typography.bodyLarge, // Material 3 Expressive: Larger
-                )
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
-            shape = MaterialTheme.shapes.large, // Material 3 Expressive: Very rounded for dialogs (was 16dp)
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        // Issue #591 follow-up: delete the whole routine
-                        // session by id so zero-rep ghost rows hidden by
-                        // the History filter are cleaned up too. Looping
-                        // over `groupedItem.sessions` would only delete
-                        // the visible rows.
-                        onDeleteRoutineGroup(groupedItem.routineSessionId)
-                        showDeleteDialog = false
-                    },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Delete",
-                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDeleteDialog = false },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Cancel",
-                        style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
+            onDismiss = { showDeleteDialog = false },
         )
     }
 }

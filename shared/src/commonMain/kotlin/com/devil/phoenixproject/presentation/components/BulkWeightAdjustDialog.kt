@@ -43,6 +43,10 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.bulk_adjust_hint_pr_scaled
+import vitruvianprojectphoenix.shared.generated.resources.bulk_weight_adjust_select_hint
 
 // ── Data types ──────────────────────────────────────────────────────
 
@@ -231,6 +235,24 @@ fun BulkWeightAdjustDialog(
                         absoluteValue = absoluteValue,
                         onValueChange = { absoluteValue = it },
                         unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg",
+                    )
+                }
+
+                // Show affordance hint whenever Apply is disabled (changeCount == 0).
+                // Two cases: no mode selected yet, or a mode is set but all exercises are PR-scaled.
+                if (changeCount == 0) {
+                    val hintText = if (currentMode == null) {
+                        stringResource(Res.string.bulk_weight_adjust_select_hint)
+                    } else {
+                        // currentMode is set but nothing changed — all adjustable exercises are
+                        // PR-scaled (changeCount counts only non-PR exercises that actually moved).
+                        stringResource(Res.string.bulk_adjust_hint_pr_scaled)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = hintText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 

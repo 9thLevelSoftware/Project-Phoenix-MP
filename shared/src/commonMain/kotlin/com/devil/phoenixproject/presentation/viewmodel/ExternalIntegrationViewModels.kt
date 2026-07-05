@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 
 data class ExternalActivitiesUiState(
     val activities: List<ExternalActivity> = emptyList(),
+    val isLoading: Boolean = true,
 )
 
 class ExternalActivitiesViewModel(
@@ -45,10 +46,10 @@ class ExternalActivitiesViewModel(
 
     val uiState: StateFlow<ExternalActivitiesUiState> = activeProfileId.flatMapLatest { profileId ->
         repository.getAll(profileId)
-            .map { activities -> ExternalActivitiesUiState(activities = activities) }
+            .map { activities -> ExternalActivitiesUiState(activities = activities, isLoading = false) }
     }.catch { e ->
         Logger.e("ExternalActivitiesVM", e) { "Activities flow failed: ${e.message}" }
-        emit(ExternalActivitiesUiState())
+        emit(ExternalActivitiesUiState(isLoading = false))
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ExternalActivitiesUiState())
 }
 

@@ -5,7 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -132,10 +132,10 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
         label = "expandRotation",
     )
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = canExpand) { onToggleExpand() },
+    ExpressiveCard(
+        onClick = { onToggleExpand() },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = canExpand,
         colors = CardDefaults.cardColors(
             containerColor = if (day.isRestDay) {
                 MaterialTheme.colorScheme.surfaceContainerHigh
@@ -143,7 +143,6 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                 MaterialTheme.colorScheme.surfaceContainer
             },
         ),
-        shape = MaterialTheme.shapes.medium,
     ) {
         Column {
             // Header row (always visible)

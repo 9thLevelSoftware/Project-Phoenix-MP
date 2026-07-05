@@ -112,6 +112,7 @@
     <string name="disconnect">Disconnect</string>
     <string name="disconnect_title">Disconnect?</string>
     <string name="disconnect_message">Are you sure you want to disconnect from the Vitruvian machine?</string>
+    <string name="disconnect_message_device">Are you sure you want to disconnect from %1$s?</string>
 
     <!-- ==================== Settings screen ==================== -->
     <string name="settings_title">Settings</string>
@@ -218,6 +219,8 @@
     <string name="delete_routine">Delete Routine</string>
     <string name="delete_routine_message">Are you sure you want to delete \'%1$s\'?</string>
     <string name="delete_selected_routines">Delete %1$d routines?</string>
+    <string name="delete_group_title">Delete Group</string>
+    <string name="delete_group_message">Delete group \"%1$s\"? Routines in this group will become ungrouped.</string>
     <string name="duplicate_selected_routines">Duplicate %1$d routines?</string>
     <string name="duplicate_routines_message">New copies will be created with \'(Copy)\' suffix.</string>
     <string name="move_to_profile">Move to Profile</string>
@@ -244,6 +247,7 @@
     <string name="copy_superset">Copy Superset</string>
     <string name="delete_superset">Delete Superset</string>
     <string name="delete_superset_title">Delete Superset?</string>
+    <string name="delete_superset_message">This will delete the superset \"%1$s\" and all %2$d exercises in it. This cannot be undone.</string>
     <string name="delete_selected_exercises">Delete %1$d exercises?</string>
 
     <!-- ==================== Exercise Picker ==================== -->
@@ -490,6 +494,8 @@
     <string name="empty_no_cycles_title">No Training Cycles Yet</string>
     <string name="empty_no_cycles_message">Create a rolling workout schedule that adapts to your life, not the calendar</string>
     <string name="empty_no_cycles_action">Create Your First Cycle</string>
+    <string name="empty_no_external_activities_title">No activities imported yet</string>
+    <string name="empty_no_external_activities_message">Connect Hevy, Liftosaur, or import a CSV from the Integrations screen.</string>
 
     <!-- ==================== Import/Export messages ==================== -->
     <string name="import_complete_title">Import Complete</string>
@@ -637,7 +643,6 @@
     <string name="cd_achievements">Achievements</string>
     <string name="cd_view_badges">View badges</string>
     <string name="cd_view_all_badges">View all badges</string>
-    <string name="cd_view_details">View details</string>
     <string name="cd_earned">Earned</string>
     <string name="cd_streak">Streak</string>
     <string name="cd_personal_record">Personal Record</string>
@@ -788,4 +793,20 @@
     <string name="cd_day_chip_current">Day %1$d, current</string>
     <string name="cd_day_chip_upcoming">Day %1$d, upcoming</string>
     <string name="cd_day_chip_rest">Day %1$d, rest day</string>
+
+    <!-- ==================== Exercise detail (task-3.5) ==================== -->
+    <string name="exercise_unknown">Unknown Exercise</string>
+
+    <!-- ==================== Destructive confirm dialogs (task-3.7) ==================== -->
+    <string name="delete_workout_title">Delete Workout?</string>
+    <string name="delete_workout_message">This action cannot be undone.</string>
+    <string name="delete_all_sets">Delete All Sets</string>
+    <string name="delete_routine_session_title">Delete Routine Session?</string>
+    <string name="delete_routine_session_message">This will delete all %1$d sets from this routine. This action cannot be undone.</string>
+    <string name="delete_all_workouts_title">Delete All Workouts?</string>
+    <string name="delete_all_workouts_message">This will permanently delete all workout history. This action cannot be undone.</string>
+
+    <!-- ==================== Dialog slot/hierarchy fixes (task-3.8) ==================== -->
+    <string name="bulk_weight_adjust_select_hint">Select a percentage or enter a value to enable Apply</string>
+    <string name="bulk_adjust_hint_pr_scaled">All exercises use PR-scaled weights — nothing to adjust</string>
 </resources>

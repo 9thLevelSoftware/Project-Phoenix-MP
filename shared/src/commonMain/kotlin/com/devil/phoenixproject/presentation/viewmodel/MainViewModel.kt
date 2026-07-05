@@ -287,6 +287,7 @@ class MainViewModel constructor(
     val workoutHistory: StateFlow<List<WorkoutSession>> get() = historyManager.workoutHistory
     val allWorkoutSessions: StateFlow<List<WorkoutSession>> get() = historyManager.allWorkoutSessions
     val groupedWorkoutHistory: StateFlow<List<HistoryItem>> get() = historyManager.groupedWorkoutHistory
+    val isHistoryLoading: StateFlow<Boolean> get() = historyManager.isHistoryLoading
     val allPersonalRecords: StateFlow<List<PersonalRecord>> get() = historyManager.allPersonalRecords
 
     @Suppress("unused")

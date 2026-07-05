@@ -222,6 +222,7 @@ fun ProgressTab(
 fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixproject.ui.theme.ThemeMode) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
+    val isHistoryLoading by viewModel.isHistoryLoading.collectAsState()
     val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
     val personalRecords by viewModel.allPersonalRecords.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
@@ -249,9 +250,10 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
         WindowWidthSizeClass.Compact -> 28.dp
     }
 
-    // Set global title
-    LaunchedEffect(Unit) {
-        viewModel.updateTopBarTitle("Analytics")
+    // Set global title (localized — was a hardcoded English literal)
+    val analyticsTitle = stringResource(Res.string.nav_analytics)
+    LaunchedEffect(analyticsTitle) {
+        viewModel.updateTopBarTitle(analyticsTitle)
     }
 
     // Pager state for swipe gestures
@@ -437,6 +439,7 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
 
                     2 -> HistoryTab(
                         groupedWorkoutHistory = groupedWorkoutHistory,
+                        isLoading = isHistoryLoading,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
                         kgToDisplay = viewModel::kgToDisplay,

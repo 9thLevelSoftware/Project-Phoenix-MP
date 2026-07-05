@@ -8,7 +8,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -32,7 +33,10 @@ import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.BackupDestination
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.insights_title
 
 /**
  * Main navigation graph for the app.
@@ -250,6 +254,12 @@ fun NavGraph(
                 enterTransition = { fadeIn(animationSpec = tween(200)) },
                 exitTransition = { fadeOut(animationSpec = tween(200)) },
             ) {
+                // Route never set a title, so the top bar showed whatever the
+                // previous screen left behind (stale-title bug).
+                val insightsTitle = stringResource(Res.string.insights_title)
+                LaunchedEffect(insightsTitle) {
+                    viewModel.updateTopBarTitle(insightsTitle)
+                }
                 SmartInsightsTab()
             }
 
@@ -545,7 +555,7 @@ fun NavGraph(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center,
                         ) {
-                            CircularProgressIndicator()
+                            LoadingIndicator(LoadingIndicatorSize.Large)
                         }
                     }
 

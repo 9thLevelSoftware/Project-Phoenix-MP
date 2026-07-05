@@ -1,8 +1,14 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -61,7 +67,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -118,6 +125,8 @@ import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupDestination
@@ -139,6 +148,9 @@ import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
 import vitruvianprojectphoenix.shared.generated.resources.action_ok
+import vitruvianprojectphoenix.shared.generated.resources.delete_all
+import vitruvianprojectphoenix.shared.generated.resources.delete_all_workouts_message
+import vitruvianprojectphoenix.shared.generated.resources.delete_all_workouts_title
 import vitruvianprojectphoenix.shared.generated.resources.action_save
 import vitruvianprojectphoenix.shared.generated.resources.action_share
 import vitruvianprojectphoenix.shared.generated.resources.backup_all_data
@@ -2919,54 +2931,15 @@ fun SettingsTab(
 
     // Material 3 Expressive: Delete All dialog
     if (showDeleteAllDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteAllDialog = false },
-            title = {
-                Text(
-                    "Delete All Workouts?",
-                    style = MaterialTheme.typography.headlineSmall, // Material 3 Expressive: Larger
-                    fontWeight = FontWeight.Bold,
-                )
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_all_workouts_title),
+            message = stringResource(Res.string.delete_all_workouts_message),
+            confirmText = stringResource(Res.string.delete_all),
+            onConfirm = {
+                onDeleteAllWorkouts()
+                showDeleteAllDialog = false
             },
-            text = {
-                Text(
-                    "This will permanently delete all workout history. This action cannot be undone.",
-                    style = MaterialTheme.typography.bodyLarge, // Material 3 Expressive: Larger
-                )
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
-            shape = MaterialTheme.shapes.large, // Material 3 Expressive: Very rounded for dialogs (was 16dp)
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteAllWorkouts()
-                        showDeleteAllDialog = false
-                    },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = MaterialTheme.shapes.extraLarge, // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Delete All",
-                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDeleteAllDialog = false },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = MaterialTheme.shapes.extraLarge, // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Cancel",
-                        style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
+            onDismiss = { showDeleteAllDialog = false },
         )
     }
 
@@ -3023,7 +2996,7 @@ fun SettingsTab(
     if (showBackupDialog) {
         AlertDialog(
             onDismissRequest = { showBackupDialog = false },
-            title = { Text(stringResource(Res.string.backup_all_data), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(Res.string.backup_all_data), style = MaterialTheme.typography.headlineSmall) },
             text = {
                 Text(stringResource(Res.string.backup_description))
             },
@@ -3098,7 +3071,7 @@ fun SettingsTab(
     if (showRestoreDialog) {
         AlertDialog(
             onDismissRequest = { showRestoreDialog = false },
-            title = { Text(stringResource(Res.string.restore_from_backup), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(Res.string.restore_from_backup), style = MaterialTheme.typography.headlineSmall) },
             text = {
                 Text(stringResource(Res.string.restore_description))
             },
@@ -3133,7 +3106,6 @@ fun SettingsTab(
                         else -> "Restore Complete"
                     },
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
                 )
             },
             text = {
@@ -3203,7 +3175,7 @@ fun SettingsTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
                     ) {
-                        CircularProgressIndicator()
+                        LoadingIndicator(LoadingIndicatorSize.Medium)
                         Text(stringResource(Res.string.label_please_wait))
                     }
                 }
@@ -3736,25 +3708,31 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
         label = "dialog_scale",
     )
 
-    // Rotating disco ball effect - use coroutine-based animation
-    var rotation by remember { mutableStateOf(0f) }
-    var glowAlpha by remember { mutableStateOf(0.3f) }
-    var glowUp by remember { mutableStateOf(true) }
+    // Rotating disco ball effect - rememberInfiniteTransition for variable-refresh compatibility
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val discoTransition = rememberInfiniteTransition(label = "disco")
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(16) // ~60fps
-            rotation = (rotation + 3f) % 360f
-            // Pulsing glow effect
-            if (glowUp) {
-                glowAlpha += 0.02f
-                if (glowAlpha >= 0.8f) glowUp = false
-            } else {
-                glowAlpha -= 0.02f
-                if (glowAlpha <= 0.3f) glowUp = true
-            }
-        }
-    }
+    // reduceMotion: bake the flag into targetValue so the channel settles at initial (no movement)
+    val rotation by discoTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = if (reduceMotion) 0f else 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1920, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "disco_rotation",
+    )
+
+    // 400ms half-cycle matches original +0.02f/frame @ 60fps (0.5 range ÷ 0.02 = 25 frames × 16ms)
+    val glowAlpha by discoTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = if (reduceMotion) 0.3f else 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "disco_glow",
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,

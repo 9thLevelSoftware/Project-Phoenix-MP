@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,6 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Superset
@@ -54,7 +58,9 @@ fun SupersetPickerDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = 48.dp)
                             .clip(MaterialTheme.shapes.extraSmall)
+                            .semantics(mergeDescendants = true) { role = Role.Button }
                             .clickable { onCreateNew() }
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -98,7 +104,9 @@ fun SupersetPickerDialog(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .heightIn(min = 48.dp)
                                 .clip(MaterialTheme.shapes.extraSmall)
+                                .semantics(mergeDescendants = true) { role = Role.Button }
                                 .clickable { onSelectExisting(superset) }
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -129,8 +137,7 @@ fun SupersetPickerDialog(
                 }
             }
         },
-        confirmButton = {},
-        dismissButton = {
+        confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }

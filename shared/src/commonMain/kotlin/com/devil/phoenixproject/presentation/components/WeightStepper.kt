@@ -3,7 +3,6 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Info
@@ -60,9 +59,8 @@ fun WeightStepper(
         ) {
             Text(
                 text = label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp,
             )
 
             // PR Indicator shown when prWeight is provided
@@ -82,12 +80,12 @@ fun WeightStepper(
                 .fillMaxWidth()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLow,
-                    RoundedCornerShape(Spacing.medium),
+                    MaterialTheme.shapes.medium,
                 )
                 .border(
                     1.dp,
                     MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                    RoundedCornerShape(Spacing.medium),
+                    MaterialTheme.shapes.medium,
                 )
                 .padding(Spacing.extraSmall),
             verticalAlignment = Alignment.CenterVertically,
@@ -149,7 +147,7 @@ fun WeightStepper(
         Spacer(modifier = Modifier.height(Spacing.small))
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(Spacing.small),
+            shape = MaterialTheme.shapes.extraSmall,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             Row(

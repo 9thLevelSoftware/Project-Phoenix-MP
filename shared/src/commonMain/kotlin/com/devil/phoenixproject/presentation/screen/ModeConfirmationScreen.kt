@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -260,10 +260,9 @@ private fun ConfigurableExerciseCard(
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { showConfigModal = true },
+    ExpressiveCard(
+        onClick = { showConfigModal = true },
+        modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,

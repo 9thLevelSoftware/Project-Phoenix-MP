@@ -28,23 +28,39 @@ class RoutineOverviewLocalizationGuardTest {
 
     @Test
     fun overviewEchoLevelSelectorUsesResourceLabelAndLocalizedChipText() {
-        val source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineOverviewScreen.kt")
+        // The three verbatim copies were unified into EchoLevelPillSelector (task 3.3).
+        // Localization assertions now target the shared component rather than RoutineOverviewScreen.
+        val componentSource = read(
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EchoLevelPillSelector.kt",
+        )
+        val overviewSource = read(
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineOverviewScreen.kt",
+        )
 
         assertTrue(
-            source.contains("stringResource(Res.string.rest_echo_level)"),
-            "Overview Echo Level label must use the Compose resource system.",
+            componentSource.contains("stringResource(Res.string.rest_echo_level)"),
+            "EchoLevelPillSelector label must use the Compose resource system.",
         )
         assertTrue(
-            source.contains("echoLevelLabel(level)"),
-            "Overview Echo Level chips must use localized EchoLevel labels instead of enum displayName.",
+            componentSource.contains("echoLevelLabel("),
+            "EchoLevelPillSelector chips must use localized EchoLevel labels instead of enum displayName.",
         )
         assertFalse(
-            source.contains("text = \"ECHO LEVEL\""),
-            "Overview Echo Level label must not be hard-coded English.",
+            componentSource.contains("text = \"ECHO LEVEL\""),
+            "EchoLevelPillSelector label must not be hard-coded English.",
         )
         assertFalse(
-            source.contains("text = level.displayName"),
-            "Overview Echo Level chips must not surface hard-coded enum displayName values.",
+            componentSource.contains("text = level.displayName"),
+            "EchoLevelPillSelector chips must not surface hard-coded enum displayName values.",
+        )
+        // Confirm RoutineOverviewScreen delegates to EchoLevelPillSelector rather than inlining.
+        assertTrue(
+            overviewSource.contains("EchoLevelPillSelector("),
+            "RoutineOverviewScreen must delegate to EchoLevelPillSelector.",
+        )
+        assertFalse(
+            overviewSource.contains("text = \"ECHO LEVEL\""),
+            "RoutineOverviewScreen must not contain a hard-coded Echo Level label.",
         )
     }
 

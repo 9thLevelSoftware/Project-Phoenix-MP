@@ -17,20 +17,25 @@ import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 
 /**
  * Test harness for constructing DefaultWorkoutSessionManager with all dependencies wired via fakes.
  *
- * MUST be constructed inside runTest {} so TestScope captures DWSM's init block coroutines.
+ * MUST be constructed inside runTest {} — the harness needs the TestScope's [kotlinx.coroutines.test.TestCoroutineScheduler]
+ * so advanceUntilIdle()/advanceTimeBy() control DWSM's virtual time.
  *
  * DWSM's init block launches long-running collectors (getAllRoutines, handleState, metricsFlow, etc.)
  * that never complete. To prevent [kotlinx.coroutines.test.UncompletedCoroutinesError], call [cleanup]
  * at the end of each test, or use the extension functions on [WorkoutStateFixtures] which handle this.
  *
- * The harness creates a child [CoroutineScope] of the TestScope so that advanceUntilIdle() and
- * advanceTimeBy() properly control virtual time for DWSM's coroutines, while [cleanup] can cancel
- * all DWSM coroutines without affecting the parent TestScope.
+ * The harness scope deliberately does NOT inherit the TestScope's full coroutineContext: it shares only
+ * the scheduler (via [StandardTestDispatcher]) and parents its [kotlinx.coroutines.Job] to the test's root
+ * job. Sharing the scheduler keeps virtual time coupled; dropping the rest of the context keeps runTest's
+ * internal completion tracking from counting DWSM's never-ending collectors as pending test work — full
+ * context inheritance caused order-dependent advanceUntilIdle() behavior (flaky in the full suite,
+ * green in isolation). [cleanup] cancels all DWSM coroutines without affecting the parent TestScope.
  */
 class FakeWorkoutServiceController : WorkoutServiceController {
     val snapshots = mutableListOf<WorkoutServiceSnapshot>()
@@ -70,10 +75,14 @@ class DWSMTestHarness(val testScope: TestScope) {
     val recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase()
     val applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase()
 
-    // Child scope of testScope: shares TestCoroutineScheduler so advanceUntilIdle() works,
-    // but can be cancelled independently via cleanup() to prevent UncompletedCoroutinesError.
+    // Child job of testScope so cleanup() cancels DWSM without affecting the parent TestScope.
+    // dwsmScope uses StandardTestDispatcher(testScope.testScheduler) directly — NOT the full
+    // testScope.coroutineContext — so that TestScopeElement is NOT inherited. Inheriting
+    // TestScopeElement caused runTest's internal completion tracking to see dwsmScope's
+    // long-running init collectors as "pending", interleaving teardown ordering in the
+    // full test suite and making advanceUntilIdle() return before init work was truly settled.
     private val dwsmJob = Job(testScope.coroutineContext[Job])
-    private val dwsmScope = CoroutineScope(testScope.coroutineContext + dwsmJob)
+    private val dwsmScope = CoroutineScope(StandardTestDispatcher(testScope.testScheduler) + dwsmJob)
 
     val settingsManager = SettingsManager(fakePrefsManager, fakeBleRepo, dwsmScope)
     val gamificationManager = GamificationManager(

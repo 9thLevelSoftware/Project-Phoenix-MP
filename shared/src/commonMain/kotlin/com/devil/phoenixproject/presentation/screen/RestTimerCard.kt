@@ -60,6 +60,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.percentLabel
+import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
@@ -75,7 +76,6 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_skip_rest
 import vitruvianprojectphoenix.shared.generated.resources.rest_complete_announcement
 import vitruvianprojectphoenix.shared.generated.resources.rest_continue
 import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
-import vitruvianprojectphoenix.shared.generated.resources.rest_echo_level
 import vitruvianprojectphoenix.shared.generated.resources.rest_end_workout
 import vitruvianprojectphoenix.shared.generated.resources.rest_exercise_of
 import vitruvianprojectphoenix.shared.generated.resources.rest_mode
@@ -470,7 +470,7 @@ fun RestTimerCard(
 
                         if (isEchoMode) {
                             // Echo mode: Show Echo Level selector + Eccentric Load slider
-                            RestTimerEchoLevelSelector(
+                            EchoLevelPillSelector(
                                 selectedLevel = editedEchoLevel,
                                 onLevelChange = { newLevel ->
                                     editedEchoLevel = newLevel
@@ -661,64 +661,6 @@ fun WorkoutParamItem(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-/**
- * Echo Level selector for Rest Timer - Row of 4 buttons (Hard/Harder/Hardest/Epic)
- */
-@Composable
-private fun RestTimerEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (EchoLevel) -> Unit) {
-    Column {
-        Text(
-            text = stringResource(Res.string.rest_echo_level),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp,
-        )
-
-        Spacer(modifier = Modifier.height(Spacing.small))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium),
-                )
-                .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
-        ) {
-            EchoLevel.entries.forEach { level ->
-                val isSelected = level == selectedLevel
-
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(Spacing.small),
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerLowest
-                    },
-                    onClick = { onLevelChange(level) },
-                ) {
-                    Text(
-                        text = level.displayName,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = Spacing.small),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        }
     }
 }
 

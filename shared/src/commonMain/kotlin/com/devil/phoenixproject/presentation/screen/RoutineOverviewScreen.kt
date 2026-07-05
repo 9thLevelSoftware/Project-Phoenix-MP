@@ -70,13 +70,13 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
+import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
@@ -95,7 +95,6 @@ import vitruvianprojectphoenix.shared.generated.resources.action_stop
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
 import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
-import vitruvianprojectphoenix.shared.generated.resources.rest_echo_level
 import vitruvianprojectphoenix.shared.generated.resources.start_exercise
 import vitruvianprojectphoenix.shared.generated.resources.target_reps
 
@@ -654,7 +653,7 @@ private fun ExerciseOverviewCard(
 
                             if (isEchoMode) {
                                 // Echo mode: Show Echo Level + Eccentric Load + Reps
-                                OverviewEchoLevelSelector(
+                                EchoLevelPillSelector(
                                     selectedLevel = echoLevel,
                                     onLevelChange = onEchoLevelChange,
                                 )
@@ -766,64 +765,6 @@ private fun ExerciseOverviewCard(
                         "Completed",
                         modifier = Modifier.size(80.dp),
                         tint = MaterialTheme.colorScheme.tertiary,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Echo Level selector for Overview - Row of 4 buttons matching RestTimerCard style
- */
-@Composable
-private fun OverviewEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (EchoLevel) -> Unit) {
-    Column {
-        Text(
-            text = stringResource(Res.string.rest_echo_level),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp,
-        )
-
-        Spacer(modifier = Modifier.height(Spacing.small))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium),
-                )
-                .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
-        ) {
-            EchoLevel.entries.forEach { level ->
-                val isSelected = level == selectedLevel
-
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(Spacing.small),
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerLowest
-                    },
-                    onClick = { onLevelChange(level) },
-                ) {
-                    Text(
-                        text = echoLevelLabel(level),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = Spacing.small),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        textAlign = TextAlign.Center,
                     )
                 }
             }
