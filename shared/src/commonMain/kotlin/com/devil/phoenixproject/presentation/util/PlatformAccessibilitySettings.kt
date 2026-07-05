@@ -5,6 +5,7 @@ import androidx.compose.runtime.compositionLocalOf
 
 data class PlatformAccessibilitySettings(
     val boldTextEnabled: Boolean = false,
+    val reduceMotion: Boolean = false,
 )
 
 val LocalPlatformAccessibilitySettings = compositionLocalOf { PlatformAccessibilitySettings() }

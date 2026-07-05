@@ -23,6 +23,12 @@ val Typography = Typography(
         lineHeight = 58.sp, // Expressive: Increased from 52sp
         letterSpacing = 0.sp,
     ),
+    displaySmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 40.sp,
+        lineHeight = 48.sp,
+    ),
 
     // Headline styles (screen titles) - Expressive: Larger and bolder
     headlineLarge = TextStyle(

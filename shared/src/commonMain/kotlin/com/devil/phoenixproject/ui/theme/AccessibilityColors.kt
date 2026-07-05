@@ -55,10 +55,10 @@ data class AccessibilityColors(
  * Cyan=Explosive, Green=Fast, Amber=Moderate, Orange=Slow, Red=Grind.
  */
 val StandardPalette = AccessibilityColors(
-    // Semantic status (from Color.kt SignalSuccess/Error/Warning)
-    success = Color(0xFF22C55E),
-    error = Color(0xFFEF4444),
-    warning = Color(0xFFF59E0B),
+    // Semantic status (single source of truth: Color.kt)
+    success = SignalSuccess,
+    error = SignalError,
+    warning = SignalWarning,
     neutral = Color(0xFF9E9E9E),
 
     // Velocity zones (BiomechanicsHistoryCard canonical mapping)
@@ -68,14 +68,14 @@ val StandardPalette = AccessibilityColors(
     zoneSlow = Color(0xFFF97316), // Orange
     zoneGrind = Color(0xFFEF4444), // Red -- near failure
 
-    // Asymmetry severity
-    asymmetryGood = Color(0xFF4CAF50),
-    asymmetryCaution = Color(0xFFFFC107),
-    asymmetryBad = Color(0xFFF44336),
+    // Asymmetry severity — align to Signal family (was 4CAF50/FFC107/F44336)
+    asymmetryGood = SignalSuccess,
+    asymmetryCaution = SignalWarning,
+    asymmetryBad = SignalError,
 
     // Rep quality
-    qualityExcellent = Color(0xFF00E676),
-    qualityGood = Color(0xFF43A047),
+    qualityExcellent = Color(0xFF22C55E), // was 00E676 (poor dark-surface contrast)
+    qualityGood = Color(0xFF16A34A),      // was 43A047 — green-600, distinct from excellent
     qualityFair = Color(0xFFFDD835),
     qualityBelowAverage = Color(0xFFFF9800),
     qualityPoor = Color(0xFFE53935),

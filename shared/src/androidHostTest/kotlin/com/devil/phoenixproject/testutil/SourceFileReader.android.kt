@@ -11,7 +11,7 @@ import java.io.File
 actual fun readProjectFile(relativePath: String): String? {
     val file = File(relativePath)
     if (file.exists() && file.isFile) {
-        return file.readText()
+        return file.readText().replace("\r\n", "\n")
     }
     // Walk up the directory tree looking for the project root.
     var dir: File? = File(".").absoluteFile
@@ -19,12 +19,12 @@ actual fun readProjectFile(relativePath: String): String? {
         if (dir == null) return@repeat
         val candidate = File(dir, "shared/$relativePath")
         if (candidate.exists() && candidate.isFile) {
-            return candidate.readText()
+            return candidate.readText().replace("\r\n", "\n")
         }
         if (File(dir, ".git").exists() || File(dir, "settings.gradle.kts").exists()) {
             val rootCandidate = File(dir, relativePath)
             if (rootCandidate.exists() && rootCandidate.isFile) {
-                return rootCandidate.readText()
+                return rootCandidate.readText().replace("\r\n", "\n")
             }
         }
         dir = dir.parentFile
