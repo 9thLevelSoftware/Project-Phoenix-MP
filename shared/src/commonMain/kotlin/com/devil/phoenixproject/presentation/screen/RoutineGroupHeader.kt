@@ -42,7 +42,7 @@ fun RoutineGroupHeader(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onToggleExpand() },
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 1.dp,
     ) {

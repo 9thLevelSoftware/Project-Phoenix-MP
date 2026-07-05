@@ -120,7 +120,7 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
             // Stats card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
@@ -158,7 +158,7 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(stringResource(Res.string.label_done), fontWeight = FontWeight.Bold)
             }

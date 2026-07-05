@@ -504,7 +504,7 @@ private fun RoutineOverviewActionBar(
                     .weight(1f)
                     .heightIn(min = sizing.actionButtonMinHeight)
                     .testTag(TestTags.ACTION_START_ROUTINE_EXERCISE),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 contentPadding = PaddingValues(
                     horizontal = if (sizing.isReducedViewport) 12.dp else 16.dp,
                     vertical = 10.dp,
@@ -552,7 +552,7 @@ private fun ExerciseOverviewCard(
 
     Card(
         modifier = Modifier.fillMaxSize(),
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -600,7 +600,7 @@ private fun ExerciseOverviewCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(sizing.videoHeight)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .clip(MaterialTheme.shapes.small),
                 )
 
                 // Mode indicator (read-only) - Issue #222: Hide for bodyweight exercises
@@ -628,7 +628,7 @@ private fun ExerciseOverviewCard(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                         ),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.medium,
                         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                     ) {
                         Column(

@@ -538,7 +538,7 @@ fun RoutineEditorScreen(
                                         val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
                                         SupersetContainer(
                                             colorIndex = superset.colorIndex,
-                                            modifier = Modifier.shadow(elevation, RoundedCornerShape(12.dp)),
+                                            modifier = Modifier.shadow(elevation, MaterialTheme.shapes.small),
                                         ) {
                                             // Header
                                             SupersetHeader(
@@ -601,7 +601,7 @@ fun RoutineEditorScreen(
                                                     Row(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
-                                                            .shadow(innerElevation, RoundedCornerShape(10.dp)),
+                                                            .shadow(innerElevation, MaterialTheme.shapes.small),
                                                         verticalAlignment = Alignment.CenterVertically,
                                                     ) {
                                                         // Drag handle for intra-superset reorder
