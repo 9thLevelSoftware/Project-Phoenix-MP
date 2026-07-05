@@ -73,7 +73,7 @@ fun EditProfileDialog(profile: UserProfile, profileRepository: UserProfileReposi
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     ProfileColors.forEachIndexed { index, color ->
-                        val colorName = colorNames.getOrElse(index) { "Color ${index + 1}" }
+                        val colorName = colorNames[index]
                         val colorDesc = selectColorTemplate.replace("%1\$s", colorName)
                         val isThisSelected = index == selectedColorIndex
                         Box(

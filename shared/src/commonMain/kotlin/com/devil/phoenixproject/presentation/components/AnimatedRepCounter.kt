@@ -41,6 +41,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.cd_phase_concentric
+import vitruvianprojectphoenix.shared.generated.resources.cd_phase_eccentric
+import vitruvianprojectphoenix.shared.generated.resources.cd_phase_idle
 import vitruvianprojectphoenix.shared.generated.resources.cd_rep_counter
 
 /**
@@ -81,7 +84,13 @@ fun AnimatedRepCounter(
     val fillColor = MaterialTheme.colorScheme.primary
 
     // Accessibility: live-region description announced by TalkBack on each rep change
-    val repCounterDesc = stringResource(Res.string.cd_rep_counter, confirmedReps, targetReps, phase.name.lowercase())
+    // Phase name resolved from string resources for locale-awareness
+    val phaseDesc = when (phase) {
+        RepPhase.IDLE -> stringResource(Res.string.cd_phase_idle)
+        RepPhase.CONCENTRIC -> stringResource(Res.string.cd_phase_concentric)
+        RepPhase.ECCENTRIC -> stringResource(Res.string.cd_phase_eccentric)
+    }
+    val repCounterDesc = stringResource(Res.string.cd_rep_counter, confirmedReps, targetReps, phaseDesc)
 
     // Track the previous confirmedReps to detect when a rep is completed
     var lastConfirmedReps by remember { mutableIntStateOf(confirmedReps) }

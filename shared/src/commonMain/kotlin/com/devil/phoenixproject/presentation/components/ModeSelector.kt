@@ -20,6 +20,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.mode_echo
+import vitruvianprojectphoenix.shared.generated.resources.mode_eccentric_only
+import vitruvianprojectphoenix.shared.generated.resources.mode_old_school
+import vitruvianprojectphoenix.shared.generated.resources.mode_pump
+import vitruvianprojectphoenix.shared.generated.resources.mode_tut
 
 /**
  * Segmented pill selector for workout modes.
@@ -35,6 +42,15 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
         ProgramMode.Pump,
         ProgramMode.EccentricOnly,
         ProgramMode.Echo,
+    )
+
+    // Resolve mode names from string resources so they're locale-aware
+    val modeNames = mapOf(
+        ProgramMode.OldSchool to stringResource(Res.string.mode_old_school),
+        ProgramMode.TUT to stringResource(Res.string.mode_tut),
+        ProgramMode.Pump to stringResource(Res.string.mode_pump),
+        ProgramMode.EccentricOnly to stringResource(Res.string.mode_eccentric_only),
+        ProgramMode.Echo to stringResource(Res.string.mode_echo),
     )
 
     Column(modifier = modifier) {
@@ -77,7 +93,7 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
                         .semantics(mergeDescendants = true) {
                             role = Role.RadioButton
                             selected = isSelected
-                            contentDescription = mode.displayName
+                            contentDescription = modeNames[mode] ?: mode.displayName
                         }
                         .clickable { onModeSelected(mode) }
                         .padding(vertical = Spacing.small, horizontal = Spacing.extraSmall),

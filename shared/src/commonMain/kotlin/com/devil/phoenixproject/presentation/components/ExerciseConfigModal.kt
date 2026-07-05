@@ -26,6 +26,10 @@ import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.ui.theme.Spacing
+import vitruvianprojectphoenix.shared.generated.resources.echo_level_epic
+import vitruvianprojectphoenix.shared.generated.resources.echo_level_hard
+import vitruvianprojectphoenix.shared.generated.resources.echo_level_harder
+import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -348,6 +352,14 @@ private fun EchoConfigPanel(
     onEccentricPercentChange: (Int) -> Unit,
 ) {
     // Echo Level selector
+    // Resolve level names from string resources so they're locale-aware
+    val echoLevelNames = mapOf(
+        EchoLevel.HARD to stringResource(Res.string.echo_level_hard),
+        EchoLevel.HARDER to stringResource(Res.string.echo_level_harder),
+        EchoLevel.HARDEST to stringResource(Res.string.echo_level_hardest),
+        EchoLevel.EPIC to stringResource(Res.string.echo_level_epic),
+    )
+
     Column {
         Text(
             text = stringResource(Res.string.config_echo_level),
@@ -375,7 +387,7 @@ private fun EchoConfigPanel(
                 Surface(
                     modifier = Modifier.weight(1f).semantics {
                         role = Role.RadioButton
-                        contentDescription = level.displayName
+                        contentDescription = echoLevelNames[level] ?: level.displayName
                         selected = isSelected
                     },
                     shape = RoundedCornerShape(Spacing.small),

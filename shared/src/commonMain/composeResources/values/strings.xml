@@ -776,6 +776,9 @@
 
     <!-- ==================== Accessibility: rep counter live region (task-1.2) ==================== -->
     <string name="cd_rep_counter">%1$d of %2$d reps, %3$s</string>
+    <string name="cd_phase_idle">idle</string>
+    <string name="cd_phase_concentric">concentric</string>
+    <string name="cd_phase_eccentric">eccentric</string>
 
     <!-- ==================== Accessibility: day chip merged description (task-1.2) ==================== -->
     <string name="cd_day_chip_completed">Day %1$d, completed</string>
