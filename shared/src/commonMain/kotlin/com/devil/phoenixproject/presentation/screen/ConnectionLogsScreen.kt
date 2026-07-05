@@ -172,7 +172,7 @@ fun ConnectionLogsScreen(
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             )

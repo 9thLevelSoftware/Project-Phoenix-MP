@@ -328,7 +328,7 @@ fun IntegrationsScreen(
                             OutlinedButton(
                                 onClick = { viewModel.syncPreviousHealthWorkouts() },
                                 enabled = !healthBusy,
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                                 modifier = Modifier,
                             ) {
                                 if (healthBusy) {
@@ -379,7 +379,7 @@ fun IntegrationsScreen(
                                         viewModel.syncProvider(IntegrationProvider.HEVY)
                                     },
                                     enabled = !hevyBusy,
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = MaterialTheme.shapes.small,
                                     modifier = Modifier,
                                 ) {
                                     if (hevyBusy) {
@@ -407,7 +407,7 @@ fun IntegrationsScreen(
                                     apiKeyInput = ""
                                     showHevyApiKeyDialog = true
                                 },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                                 modifier = Modifier,
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
@@ -446,7 +446,7 @@ fun IntegrationsScreen(
                                         viewModel.syncProvider(IntegrationProvider.LIFTOSAUR)
                                     },
                                     enabled = !liftosaurBusy,
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = MaterialTheme.shapes.small,
                                     modifier = Modifier,
                                 ) {
                                     if (liftosaurBusy) {
@@ -474,7 +474,7 @@ fun IntegrationsScreen(
                                     apiKeyInput = ""
                                     showLiftosaurApiKeyDialog = true
                                 },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                                 modifier = Modifier,
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
@@ -488,11 +488,11 @@ fun IntegrationsScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(8.dp, RoundedCornerShape(20.dp)),
+                    .shadow(8.dp, MaterialTheme.shapes.medium),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 ),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
             ) {
@@ -556,7 +556,7 @@ fun IntegrationsScreen(
                                 viewModel.exportCsv(csvWeightUnit)
                             },
                             enabled = !uiState.isExporting,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             modifier = Modifier.weight(1f),
                         ) {
                             if (uiState.isExporting) {
@@ -577,7 +577,7 @@ fun IntegrationsScreen(
                                 triggerCsvImport = true
                             },
                             enabled = !uiState.isImporting,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             modifier = Modifier.weight(1f),
                         ) {
                             if (uiState.isImporting) {
@@ -600,11 +600,11 @@ fun IntegrationsScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(8.dp, RoundedCornerShape(20.dp)),
+                    .shadow(8.dp, MaterialTheme.shapes.medium),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 ),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                 onClick = onNavigateToExternalData,
@@ -627,7 +627,7 @@ fun IntegrationsScreen(
                                     Brush.linearGradient(
                                         colors = listOf(Color(0xFF10B981), Color(0xFF06B6D4)),
                                     ),
-                                    RoundedCornerShape(12.dp),
+                                    MaterialTheme.shapes.small,
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -678,7 +678,7 @@ private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector,
                 .size(36.dp)
                 .background(
                     Brush.linearGradient(iconGradient),
-                    RoundedCornerShape(10.dp),
+                    MaterialTheme.shapes.small,
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -710,11 +710,11 @@ private fun IntegrationCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)),
+            .shadow(8.dp, MaterialTheme.shapes.medium),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
@@ -815,7 +815,7 @@ private fun ApiKeyInputDialog(
                     label = { Text(hint) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                 )
             }
         },
