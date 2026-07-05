@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -46,21 +47,25 @@ fun AlphabetStrip(letters: List<Char>, onLetterTap: (Char) -> Unit, modifier: Mo
         ) {
             letters.forEach { letter ->
                 val letterDesc = stringResource(Res.string.cd_jump_to_letter, letter.toString())
-                Text(
-                    text = letter.toString(),
+                Box(
                     modifier = Modifier
+                        .defaultMinSize(minWidth = 32.dp, minHeight = 48.dp)
                         .semantics {
                             contentDescription = letterDesc
                             role = Role.Button
                         }
-                        .clickable { onLetterTap(letter) }
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                        .clickable { onLetterTap(letter) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = letter.toString(),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

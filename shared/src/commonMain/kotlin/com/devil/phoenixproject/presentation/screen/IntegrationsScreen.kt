@@ -319,7 +319,7 @@ fun IntegrationsScreen(
                             TextButton(
                                 onClick = { viewModel.retryHealthPermissions() },
                                 enabled = !healthBusy,
-                                modifier = Modifier.height(32.dp),
+                                modifier = Modifier,
                             ) {
                                 Text("Retry permissions", style = MaterialTheme.typography.labelMedium)
                             }
@@ -329,7 +329,7 @@ fun IntegrationsScreen(
                                 onClick = { viewModel.syncPreviousHealthWorkouts() },
                                 enabled = !healthBusy,
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp),
+                                modifier = Modifier,
                             ) {
                                 if (healthBusy) {
                                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -380,7 +380,7 @@ fun IntegrationsScreen(
                                     },
                                     enabled = !hevyBusy,
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.height(36.dp),
+                                    modifier = Modifier,
                                 ) {
                                     if (hevyBusy) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -392,7 +392,7 @@ fun IntegrationsScreen(
                                     onClick = {
                                         viewModel.disconnectProvider(IntegrationProvider.HEVY)
                                     },
-                                    modifier = Modifier.height(36.dp),
+                                    modifier = Modifier,
                                 ) {
                                     Text(
                                         "Disconnect",
@@ -408,7 +408,7 @@ fun IntegrationsScreen(
                                     showHevyApiKeyDialog = true
                                 },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp),
+                                modifier = Modifier,
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
                             }
@@ -447,7 +447,7 @@ fun IntegrationsScreen(
                                     },
                                     enabled = !liftosaurBusy,
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.height(36.dp),
+                                    modifier = Modifier,
                                 ) {
                                     if (liftosaurBusy) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -459,7 +459,7 @@ fun IntegrationsScreen(
                                     onClick = {
                                         viewModel.disconnectProvider(IntegrationProvider.LIFTOSAUR)
                                     },
-                                    modifier = Modifier.height(36.dp),
+                                    modifier = Modifier,
                                 ) {
                                     Text(
                                         "Disconnect",
@@ -475,7 +475,7 @@ fun IntegrationsScreen(
                                     showLiftosaurApiKeyDialog = true
                                 },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp),
+                                modifier = Modifier,
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
                             }

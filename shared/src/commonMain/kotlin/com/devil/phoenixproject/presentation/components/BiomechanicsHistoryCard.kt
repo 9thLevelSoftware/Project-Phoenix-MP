@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -219,16 +220,22 @@ fun BiomechanicsHistorySummary(
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
-            // "View Per-Rep" expand trigger
-            Text(
-                "View Per-Rep Details",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
+            // "View Per-Rep" expand trigger — min 48dp touch target (analytics-history-4)
+            Row(
                 modifier = Modifier
-                    .clickable(onClick = onExpandReps)
-                    .padding(vertical = Spacing.extraSmall),
-            )
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clickable(onClick = onExpandReps),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "View Per-Rep Details",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(vertical = Spacing.extraSmall),
+                )
+            }
         }
     }
 }

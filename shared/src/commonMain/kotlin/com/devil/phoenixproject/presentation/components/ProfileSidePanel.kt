@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
-private val HANDLE_WIDTH = 24.dp
+private val HANDLE_WIDTH = 48.dp
 private val HANDLE_HEIGHT = 48.dp
 private val EDGE_SWIPE_THRESHOLD = 20.dp
 

@@ -490,7 +490,7 @@ fun CompactWeightAdjustment(
             IconButton(
                 onClick = { onWeightChange((currentWeightKg - incrementKg).coerceAtLeast(0f)) },
                 enabled = enabled && currentWeightKg > 0,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(48.dp), // workout-widgets-2: 48dp min touch target
             ) {
                 Icon(
                     imageVector = Icons.Default.Remove,
@@ -515,7 +515,7 @@ fun CompactWeightAdjustment(
             IconButton(
                 onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(Constants.MAX_WEIGHT_PER_CABLE_KG)) },
                 enabled = enabled && currentWeightKg < Constants.MAX_WEIGHT_PER_CABLE_KG,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(48.dp), // workout-widgets-2: 48dp min touch target
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
