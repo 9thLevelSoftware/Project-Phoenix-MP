@@ -59,26 +59,25 @@ class DesignSystemRatchetTest {
 
     @Test
     fun rawRoundedCornerShapes_doNotIncrease() {
-        // Baseline 2026-07-04: 449.
+        // Baseline 2026-07-05: 375 (down from 449 after Phase 1 shape-token sweep).
         // Phase 2 (task 2.1) will drive this down to ~30 (component-shape tokens).
         val count = countMatches(Regex("""RoundedCornerShape\(\d+\.dp"""))
         assertTrue(
-            count <= 449,
-            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 449. " +
+            count <= 375,
+            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 375. " +
                 "Use MaterialTheme.shapes or a named shape token instead.",
         )
     }
 
     @Test
     fun hardcodedBasicColors_doNotIncrease() {
-        // Baseline 2026-07-04: 66 (regex match count; grep wc -l gives 62 because
-        // multiple matches on the same line are collapsed by line counting).
-        // Phase 1 (task 1.1) will sweep semantic replacements to near 0.
+        // Baseline 2026-07-05: 38 (down from 66 after Phase 1 semantic-color sweep).
+        // Phase 2 will sweep semantic replacements to near 0.
         val count = countMatches(Regex("""\bColor\.(White|Black|Red|Green|Gray|LightGray)\b"""))
         assertTrue(
-            count <= 66,
+            count <= 38,
             "Hardcoded Color.(White|Black|Red|Green|Gray|LightGray) usages increased: " +
-                "found $count, baseline ≤ 66. Use MaterialTheme.colorScheme or Phoenix tokens instead.",
+                "found $count, baseline ≤ 38. Use MaterialTheme.colorScheme or Phoenix tokens instead.",
         )
     }
 }
