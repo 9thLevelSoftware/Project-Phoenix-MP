@@ -18,9 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import kotlinx.coroutines.delay
 
@@ -92,8 +90,7 @@ fun RepQualityIndicator(latestRepQualityScore: Int?, modifier: Modifier = Modifi
             ) {
                 Text(
                     text = "$displayedScore",
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineLarge,
                     color = scoreColor(displayedScore),
                 )
             }

@@ -437,9 +437,10 @@ fun ConnectionLogsScreen(
                                     exportContent.take(2000) +
                                         if (exportContent.length > 2000) "\n..." else "",
                                 modifier = Modifier.padding(8.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                ),
                             )
                         }
                     }

@@ -602,10 +602,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     ) {
                         Text(
                             if (isEchoMode) "ECHO SETTINGS" else "SET CONFIGURATION",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp,
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp,
                         )
 
                         if (isEchoMode) {
@@ -1021,9 +1022,8 @@ private fun SetReadyEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (
     Column {
         Text(
             text = "ECHO LEVEL",
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -1084,14 +1084,12 @@ private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
         ) {
             Text(
                 text = "ECCENTRIC LOAD",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp,
             )
             Text(
                 text = "$percent%",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.primary,
             )
         }

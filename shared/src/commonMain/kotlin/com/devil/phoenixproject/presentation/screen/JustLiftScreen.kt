@@ -1134,7 +1134,6 @@ fun AutoStartStopCard(
                         Text(
                             text = "$count",
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
                             color = primaryColor,
                         )
                     }

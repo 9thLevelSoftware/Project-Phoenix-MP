@@ -38,6 +38,7 @@ import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
+import com.devil.phoenixproject.ui.theme.workoutCounterStyle
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
@@ -510,16 +511,14 @@ private fun ExecutionPage(
         if (isCurrentExerciseBodyweight) {
             Text(
                 "TIME",
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp,
             )
 
             val remainingSeconds = timedExerciseRemainingSeconds
             Text(
                 text = remainingSeconds?.let { "${it}s" } ?: "—",
-                style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
-                fontWeight = FontWeight.Black,
+                style = workoutCounterStyle,
                 color = if ((remainingSeconds ?: Int.MAX_VALUE) <= 5) {
                     MaterialTheme.colorScheme.error
                 } else {
@@ -543,16 +542,14 @@ private fun ExecutionPage(
             val remainingSeconds = timedExerciseRemainingSeconds
             Text(
                 "TIME",
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp,
             )
 
             // Large countdown display
             Text(
                 text = "${remainingSeconds}s",
-                style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
-                fontWeight = FontWeight.Black,
+                style = workoutCounterStyle,
                 color = if (remainingSeconds <= 5) {
                     MaterialTheme.colorScheme.error // Highlight last 5 seconds
                 } else {

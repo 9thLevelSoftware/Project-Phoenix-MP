@@ -24,9 +24,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -88,10 +86,7 @@ fun AlphabetStrip(letters: List<Char>, onLetterTap: (Char) -> Unit, modifier: Mo
                 Text(
                     text = letter.toString(),
                     modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                    ),
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
