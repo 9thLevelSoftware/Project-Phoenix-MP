@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.presentation.components.ShimmerBox
 import com.devil.phoenixproject.presentation.viewmodel.ExternalActivitiesViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -77,8 +78,24 @@ fun ExternalActivitiesScreen(onSetTitle: (String) -> Unit = {}, modifier: Modifi
         }
 
         // ── Content ───────────────────────────────────────────────────────────
-        if (filteredActivities.isEmpty()) {
-            // Empty state
+        if (uiState.isLoading) {
+            // Shimmer placeholders while repository populates the first emission
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.medium),
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
+                repeat(3) {
+                    ShimmerBox(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp),
+                    )
+                }
+            }
+        } else if (filteredActivities.isEmpty()) {
+            // Empty state — only shown after loading completes
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,

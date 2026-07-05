@@ -42,6 +42,7 @@ import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import com.devil.phoenixproject.presentation.components.ShimmerBox
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -66,11 +67,12 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
             .sortedByDescending { it.timestamp }
     }
 
-    // Get exercise name
-    var exerciseName by remember { mutableStateOf("Loading...") }
+    // Get exercise name — null while the repository call is in flight
+    val unknownExerciseLabel = stringResource(Res.string.exercise_unknown)
+    var exerciseName by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(exerciseId) {
         val exercise = viewModel.exerciseRepository.getExerciseById(exerciseId)
-        exerciseName = exercise?.name ?: "Unknown Exercise"
+        exerciseName = exercise?.name ?: unknownExerciseLabel
         // Clear topbar title to allow dynamic title from EnhancedMainScreen
         viewModel.updateTopBarTitle("")
     }
@@ -132,6 +134,24 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
                     .padding(horizontal = Spacing.medium),
                 verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             ) {
+                // Exercise name hero title — shimmer while resolving from repository
+                item {
+                    if (exerciseName == null) {
+                        ShimmerBox(
+                            modifier = Modifier
+                                .width(180.dp)
+                                .height(32.dp),
+                        )
+                    } else {
+                        Text(
+                            exerciseName!!,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+
                 // 1RM Hero Card
                 item {
                     OneRepMaxCard(

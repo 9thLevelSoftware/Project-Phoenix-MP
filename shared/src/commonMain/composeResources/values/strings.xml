@@ -788,4 +788,7 @@
     <string name="cd_day_chip_current">Day %1$d, current</string>
     <string name="cd_day_chip_upcoming">Day %1$d, upcoming</string>
     <string name="cd_day_chip_rest">Day %1$d, rest day</string>
+
+    <!-- ==================== Exercise detail (task-3.5) ==================== -->
+    <string name="exercise_unknown">Unknown Exercise</string>
 </resources>

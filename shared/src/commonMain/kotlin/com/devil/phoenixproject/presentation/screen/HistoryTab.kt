@@ -70,6 +70,7 @@ import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
+import com.devil.phoenixproject.presentation.components.WorkoutHistoryCardSkeleton
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
 import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
@@ -106,6 +107,7 @@ private val historyRackJson = Json { ignoreUnknownKeys = true }
 @Composable
 fun HistoryTab(
     groupedWorkoutHistory: List<HistoryItem>,
+    isLoading: Boolean = false,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
@@ -173,7 +175,16 @@ fun HistoryTab(
             }
         }
 
-        if (filteredHistory.isEmpty()) {
+        if (isLoading) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                contentPadding = PaddingValues(bottom = 96.dp),
+            ) {
+                items(3) {
+                    WorkoutHistoryCardSkeleton(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        } else if (filteredHistory.isEmpty()) {
             EmptyState(
                 icon = Icons.Default.History,
                 title = stringResource(Res.string.empty_no_history_title),
