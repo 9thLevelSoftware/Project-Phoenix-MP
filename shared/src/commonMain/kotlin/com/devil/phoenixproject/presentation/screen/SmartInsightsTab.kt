@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -27,7 +26,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,7 +54,10 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.ReadinessEngine
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.InsightContextBlock
+import com.devil.phoenixproject.presentation.components.InsightSectionHeader
 import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
+import com.devil.phoenixproject.presentation.components.TimeframeBadge
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.format
@@ -223,21 +224,21 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             )
         }
 
-        item { InsightHierarchyHeader("1. Snapshot", "Current status") }
+        item { InsightSectionHeader("1. Snapshot", "Current status") }
 
         // Section A: Weekly Volume (SUGG-01)
         item {
             WeeklyVolumeCard(weeklyVolume)
         }
 
-        item { InsightHierarchyHeader("2. Trends", "How it changed") }
+        item { InsightSectionHeader("2. Trends", "How it changed") }
 
         // Section B: Balance Analysis (SUGG-02)
         item {
             BalanceAnalysisCard(balanceAnalysis)
         }
 
-        item { InsightHierarchyHeader("3. Diagnostics", "Why") }
+        item { InsightSectionHeader("3. Diagnostics", "Why") }
 
         // Section C: Neglected Exercises (SUGG-03)
         item {
@@ -249,7 +250,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             PlateauDetectionCard(plateaus)
         }
 
-        item { InsightHierarchyHeader("4. Actions", "What to do next") }
+        item { InsightSectionHeader("4. Actions", "What to do next") }
 
         // Section E: Optimal Training Time (SUGG-05)
         item {
@@ -656,43 +657,6 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
     }
 }
 
-// ---- Shared Components ----
-
-@Composable
-private fun InsightContextBlock(
-    title: String,
-    definition: String,
-    timeframe: String,
-    soWhat: String,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text(definition, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TimeframeBadge(timeframe)
-        Text("So what? $soWhat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-private fun InsightHierarchyHeader(title: String, subtitle: String) {
-    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
-@Composable
-private fun TimeframeBadge(label: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = CircleShape,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
-        )
-    }
-}
 
 @Composable
 private fun InsightCard(

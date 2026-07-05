@@ -83,7 +83,7 @@ import vitruvianprojectphoenix.shared.generated.resources.select_exercise
 /**
  * Map display equipment names back to database values for filtering
  */
-private fun getEquipmentDatabaseValues(displayName: String): List<String> = when (displayName) {
+internal fun getEquipmentDatabaseValues(displayName: String): List<String> = when (displayName) {
     "Long Bar" -> listOf("BAR", "LONG_BAR", "BARBELL")
     "Short Bar" -> listOf("SHORT_BAR")
     "Ankle Strap" -> listOf("ANKLE_STRAP", "STRAPS")
