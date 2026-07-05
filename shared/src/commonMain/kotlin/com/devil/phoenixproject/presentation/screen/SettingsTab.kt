@@ -485,9 +485,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -500,12 +500,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFFFFD700), Color(0xFFFFA500)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -547,9 +547,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -562,12 +562,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF06B6D4), Color(0xFF3B82F6)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -593,7 +593,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -658,7 +658,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -690,9 +690,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
         ) {
@@ -705,12 +705,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF8B5CF6), Color(0xFF9333EA)),
                                 ),
-                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1045,9 +1045,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -1060,12 +1060,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF6366F1), Color(0xFFA855F7)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1135,9 +1135,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -1150,12 +1150,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF10B981), Color(0xFF059669)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1241,9 +1241,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
         ) {
@@ -1256,12 +1256,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6)),
                                 ),
-                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1742,7 +1742,7 @@ fun SettingsTab(
                         placeholder = { Text(stringResource(Res.string.settings_safe_word_hint)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     )
@@ -1818,9 +1818,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -1854,7 +1854,7 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = if (discoModeActive) {
@@ -1871,7 +1871,7 @@ fun SettingsTab(
                                         listOf(Color(0xFF3B82F6), Color(0xFF6366F1))
                                     },
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2010,9 +2010,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -2050,12 +2050,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF10B981), Color(0xFF059669)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2340,9 +2340,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border, error color for destructive action
         ) {
@@ -2355,12 +2355,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFFF97316), Color(0xFFEF4444)),
                                 ),
-                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2563,7 +2563,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -2590,7 +2590,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.secondary,
                     ),
@@ -2616,7 +2616,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
+                    shape = MaterialTheme.shapes.extraLarge, // Material 3 Expressive: More rounded
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
@@ -2643,9 +2643,9 @@ fun SettingsTab(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(8.dp, RoundedCornerShape(20.dp)),
+                    .shadow(8.dp, MaterialTheme.shapes.medium),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
             ) {
@@ -2658,12 +2658,12 @@ fun SettingsTab(
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .shadow(8.dp, RoundedCornerShape(20.dp))
+                                .shadow(8.dp, MaterialTheme.shapes.medium)
                                 .background(
                                     Brush.linearGradient(
                                         colors = listOf(Color(0xFFFFD700), Color(0xFFFFA500)),
                                     ),
-                                    RoundedCornerShape(20.dp),
+                                    MaterialTheme.shapes.medium,
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -2689,7 +2689,7 @@ fun SettingsTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.primary,
                         ),
@@ -2722,9 +2722,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
         ) {
@@ -2737,12 +2737,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFFF59E0B), Color(0xFFEF4444)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2768,7 +2768,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -2801,7 +2801,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -2834,7 +2834,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -2866,9 +2866,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
         ) {
@@ -2881,12 +2881,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF22C55E), Color(0xFF3B82F6)),
                                 ),
-                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2943,7 +2943,7 @@ fun SettingsTab(
                         showDeleteAllDialog = false
                     },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
+                    shape = MaterialTheme.shapes.extraLarge, // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Delete All",
@@ -2957,7 +2957,7 @@ fun SettingsTab(
                 TextButton(
                     onClick = { showDeleteAllDialog = false },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
+                    shape = MaterialTheme.shapes.extraLarge, // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Cancel",
@@ -3317,7 +3317,7 @@ private fun SafeWordCalibrationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         title = {
             Text(
                 stringResource(Res.string.settings_calibration_title),
@@ -3434,11 +3434,11 @@ private fun AdultModeDialogCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)),
+            .shadow(8.dp, MaterialTheme.shapes.medium),
         colors = CardDefaults.cardColors(
             containerColor = adultModeContainerColor(presentation.containerTone),
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(2.dp, adultModeBorderColor(presentation)),
     ) {
@@ -3509,7 +3509,7 @@ private fun AdultModeActionButton(
         AdultModeActionTone.Primary -> Button(
             onClick = onClick,
             modifier = modifier.heightIn(min = 48.dp),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -3525,7 +3525,7 @@ private fun AdultModeActionButton(
         AdultModeActionTone.Outline -> OutlinedButton(
             onClick = onClick,
             modifier = modifier.heightIn(min = 48.dp),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             border = BorderStroke(
                 1.dp,
                 MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
@@ -3759,8 +3759,8 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.scale(scale),
-        containerColor = Color(0xFF1A1A2E),
-        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = MaterialTheme.shapes.extraLarge,
         title = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -3792,7 +3792,7 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
                     "DISCO MODE UNLOCKED!",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.background(
                         Brush.linearGradient(
                             colors = listOf(
@@ -3818,13 +3818,13 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
                     "🕺 Time to get funky! 💃",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "Toggle Disco Mode in the LED Color Scheme section to make your trainer party!",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )
             }
@@ -3833,13 +3833,13 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
             TextButton(
                 onClick = onDismiss,
                 modifier = Modifier.height(48.dp),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.extraLarge,
             ) {
                 Text(
                     "🎉 Let's Party!",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD700), // Gold
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         },

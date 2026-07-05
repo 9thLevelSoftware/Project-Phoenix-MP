@@ -15,6 +15,12 @@ object ExpressiveShapeValues {
     val Medium = RoundedCornerShape(20.dp) // Standard: 12dp (much more rounded)
     val Large = RoundedCornerShape(28.dp) // Standard: 16dp (very rounded)
     val ExtraLarge = RoundedCornerShape(32.dp) // Pill-shaped for buttons
+
+    // Non-M3-slot values needed by specific components (chips, badges, inner cards).
+    // 16dp falls between Small(12) and Medium(20) — use for interior chip/badge containers.
+    val ExtraMedium = RoundedCornerShape(16.dp)
+    // 24dp falls between Medium(20) and Large(28) — use for section header / drawer-style panels.
+    val SemiLarge = RoundedCornerShape(24.dp)
 }
 
 /**

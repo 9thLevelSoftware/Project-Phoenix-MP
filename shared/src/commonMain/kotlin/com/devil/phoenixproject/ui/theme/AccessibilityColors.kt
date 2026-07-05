@@ -47,6 +47,10 @@ data class AccessibilityColors(
     val statusGreen: Color,
     val statusYellow: Color,
     val statusRed: Color,
+
+    // Integration / log colors
+    val connectedGreen: Color,  // Emerald 0xFF10B981 — "Connected" badge distinct from success lime
+    val info: Color,            // Informational blue for log/diagnostic INFO level
 )
 
 /**
@@ -84,6 +88,10 @@ val StandardPalette = AccessibilityColors(
     statusGreen = Color(0xFF22C55E),
     statusYellow = Color(0xFFF59E0B),
     statusRed = Color(0xFFEF4444),
+
+    // Integration / log colors
+    connectedGreen = Color(0xFF10B981), // Emerald — distinct from success lime #22C55E
+    info = Color(0xFF2196F3),           // Material Blue — informational, not a semantic status
 )
 
 /**
