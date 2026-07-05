@@ -104,7 +104,7 @@ fun UnifiedCycleCreationSheet(
             OutlinedButton(
                 onClick = onCreateCustom,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
                 contentPadding = PaddingValues(vertical = 14.dp),
             ) {
                 Icon(
@@ -144,7 +144,7 @@ private fun TemplateCard(template: CycleTemplate, onClick: () -> Unit) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     ) {
         Row(
             modifier = Modifier

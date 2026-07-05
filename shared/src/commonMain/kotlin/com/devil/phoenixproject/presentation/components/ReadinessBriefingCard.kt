@@ -35,7 +35,7 @@ fun ReadinessBriefingCard(readinessResult: ReadinessResult, modifier: Modifier =
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -130,7 +130,7 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
             // Status badge
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(MaterialTheme.shapes.extraSmall)
                     .background(statusColor.copy(alpha = 0.15f))
                     .padding(horizontal = 10.dp, vertical = 4.dp),
             ) {

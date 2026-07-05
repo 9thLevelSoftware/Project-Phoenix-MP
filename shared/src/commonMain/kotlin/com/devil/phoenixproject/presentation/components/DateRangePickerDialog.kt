@@ -115,7 +115,7 @@ fun DateRangePickerDialog(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                     ),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                 ) {
                     Row(
                         modifier = Modifier
@@ -143,7 +143,7 @@ fun DateRangePickerDialog(
             Button(
                 onClick = { onDateRangeSelected(startDate, endDate) },
                 enabled = previewCount > 0,
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(
                     "Export",
@@ -155,13 +155,13 @@ fun DateRangePickerDialog(
         dismissButton = {
             TextButton(
                 onClick = onDismiss,
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(stringResource(Res.string.action_cancel))
             }
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.large,
     )
 }
 
@@ -176,7 +176,7 @@ private fun DateRangeOptionRow(option: DateRangeOption, isSelected: Boolean, onC
         } else {
             MaterialTheme.colorScheme.surface
         },
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     ) {
         Row(
             modifier = Modifier

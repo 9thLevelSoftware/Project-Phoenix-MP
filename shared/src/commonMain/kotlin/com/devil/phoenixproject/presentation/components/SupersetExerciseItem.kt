@@ -115,7 +115,7 @@ fun SupersetExerciseItem(
             modifier = Modifier
                 .weight(1f)
                 .clickable(onClick = onClick),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.extraSmall,
             color = if (isDragging) {
                 MaterialTheme.colorScheme.surfaceVariant
             } else {

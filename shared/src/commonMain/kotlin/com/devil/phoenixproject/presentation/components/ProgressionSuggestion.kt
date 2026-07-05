@@ -58,7 +58,7 @@ fun ProgressionSuggestionBanner(
             colors = CardDefaults.cardColors(
                 containerColor = cardColor.copy(alpha = 0.15f),
             ),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Column(
                 modifier = Modifier
@@ -105,7 +105,7 @@ fun ProgressionSuggestionBanner(
                         .fillMaxWidth()
                         .background(
                             cardColor.copy(alpha = 0.1f),
-                            RoundedCornerShape(12.dp),
+                            MaterialTheme.shapes.small,
                         )
                         .padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -178,7 +178,7 @@ fun ProgressionSuggestionBanner(
                             onDismiss()
                         },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
@@ -189,7 +189,7 @@ fun ProgressionSuggestionBanner(
                     OutlinedButton(
                         onClick = { showModifyDialog = true },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
                     ) {
                         Icon(
                             Icons.Default.Edit,
@@ -206,7 +206,7 @@ fun ProgressionSuggestionBanner(
                             onAccept()
                         },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = cardColor,
                         ),
@@ -287,7 +287,7 @@ private fun ModifyWeightDialog(
 
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         modifier = Modifier.padding(horizontal = 16.dp),
                     ) {
                         Text(
@@ -357,7 +357,7 @@ fun ProgressionIndicator(
     Surface(
         onClick = onClick,
         color = AccessibilityTheme.colors.success.copy(alpha = 0.2f),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
         modifier = modifier,
     ) {
         Row(

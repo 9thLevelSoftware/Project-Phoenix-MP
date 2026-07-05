@@ -87,7 +87,7 @@ fun ExerciseRowWithConnector(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .shadow(elevation, RoundedCornerShape(12.dp))
+            .shadow(elevation, MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surface)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -150,7 +150,7 @@ fun ExerciseRowWithConnector(
                     MaterialTheme.colorScheme.surfaceContainer
                 },
             ),
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.small,
         ) {
             Row(
                 modifier = Modifier.padding(12.dp),

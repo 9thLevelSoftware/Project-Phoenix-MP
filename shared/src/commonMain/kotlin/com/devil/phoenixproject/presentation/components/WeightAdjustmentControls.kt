@@ -86,7 +86,7 @@ fun WeightAdjustmentControls(
                         contentDescription = weightTapDescription
                         role = Role.Button
                     }
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .clickable(enabled = enabled) { showWeightPicker = true }
                     .padding(horizontal = Spacing.medium, vertical = Spacing.small),
             ) {
@@ -480,7 +480,7 @@ fun CompactWeightAdjustment(
 
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
     ) {
         Row(

@@ -85,7 +85,7 @@ fun ShimmerBox(modifier: Modifier = Modifier, showShimmer: Boolean = true) {
         modifier = modifier
             .background(
                 brush = shimmerBrush(showShimmer = showShimmer),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
             ),
     )
 }
@@ -101,7 +101,7 @@ fun WorkoutHistoryCardSkeleton(modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .height(responsiveDimension(160.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
     ) {
         Column(
@@ -185,7 +185,7 @@ fun PersonalRecordCardSkeleton(modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .height(responsiveDimension(100.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
     ) {
         Row(
@@ -243,7 +243,7 @@ fun RoutineCardSkeleton(modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .height(responsiveDimension(140.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
     ) {
         Column(

@@ -140,7 +140,7 @@ fun ProfileSidePanel(
                             }
                         }
                     },
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 shadowElevation = 8.dp,
             ) {

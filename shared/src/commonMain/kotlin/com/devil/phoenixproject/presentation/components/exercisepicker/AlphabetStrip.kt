@@ -60,7 +60,7 @@ fun AlphabetStrip(letters: List<Char>, onLetterTap: (Char) -> Unit, modifier: Mo
     Box(
         modifier = modifier
             .width(48.dp) // gesture surface ≥48dp wide (a11y minimum)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f))
             .onSizeChanged { size -> stripHeightPx = size.height.toFloat() }
             .pointerInput(letters) {

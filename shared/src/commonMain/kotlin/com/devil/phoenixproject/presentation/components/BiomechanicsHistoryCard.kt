@@ -95,7 +95,7 @@ fun BiomechanicsHistorySummary(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     ) {
         Column(
             modifier = Modifier
@@ -247,7 +247,7 @@ fun BiomechanicsHistorySummary(
 private fun VelocityZoneChip(zone: BiomechanicsVelocityZone) {
     Surface(
         color = velocityZoneColor(zone).copy(alpha = 0.15f),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
     ) {
         Text(
             velocityZoneLabel(zone),
@@ -329,7 +329,7 @@ private fun RepBiomechanicsRow(rep: BiomechanicsRepResult, showAsymmetry: Boolea
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
     ) {
         Column(
             modifier = Modifier

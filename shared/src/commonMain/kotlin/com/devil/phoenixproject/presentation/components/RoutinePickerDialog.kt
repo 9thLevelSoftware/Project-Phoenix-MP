@@ -39,7 +39,7 @@ fun RoutinePickerDialog(routines: List<Routine>, onSelectRoutine: (Routine) -> U
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = maxDialogHeight),
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.large,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
@@ -77,7 +77,7 @@ fun RoutinePickerDialog(routines: List<Routine>, onSelectRoutine: (Routine) -> U
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 ),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { onSelectRoutine(routine) },

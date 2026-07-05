@@ -64,7 +64,7 @@ fun AutoStopOverlay(autoStopState: AutoStopUiState, isJustLift: Boolean, modifie
             modifier = Modifier
                 .scale(pulse)
                 .widthIn(max = dialogMaxWidth),
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.errorContainer,
             ),
@@ -142,7 +142,7 @@ fun AutoStopIndicatorBar(autoStopState: AutoStopUiState, modifier: Modifier = Mo
     ) {
         Surface(
             color = MaterialTheme.colorScheme.errorContainer,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.small,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
@@ -204,7 +204,7 @@ fun AutoStartOverlay(isActive: Boolean, secondsRemaining: Int, modifier: Modifie
 
         Card(
             modifier = Modifier.widthIn(max = dialogMaxWidth),
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
             ),
