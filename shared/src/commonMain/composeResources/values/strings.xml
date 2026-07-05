@@ -808,4 +808,7 @@
     <string name="delete_routine_session_message">This will delete all %1$d sets from this routine. This action cannot be undone.</string>
     <string name="delete_all_workouts_title">Delete All Workouts?</string>
     <string name="delete_all_workouts_message">This will permanently delete all workout history. This action cannot be undone.</string>
+
+    <!-- ==================== Dialog slot/hierarchy fixes (task-3.8) ==================== -->
+    <string name="bulk_weight_adjust_select_hint">Select a percentage or enter a value to enable Apply</string>
 </resources>

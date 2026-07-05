@@ -43,6 +43,9 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.bulk_weight_adjust_select_hint
 
 // ── Data types ──────────────────────────────────────────────────────
 
@@ -231,6 +234,15 @@ fun BulkWeightAdjustDialog(
                         absoluteValue = absoluteValue,
                         onValueChange = { absoluteValue = it },
                         unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg",
+                    )
+                }
+
+                if (currentMode == null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(Res.string.bulk_weight_adjust_select_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 

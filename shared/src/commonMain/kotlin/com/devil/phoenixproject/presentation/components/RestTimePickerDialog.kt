@@ -68,8 +68,7 @@ fun RestTimePickerDialog(
                 }
             }
         },
-        confirmButton = {},
-        dismissButton = {
+        confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }

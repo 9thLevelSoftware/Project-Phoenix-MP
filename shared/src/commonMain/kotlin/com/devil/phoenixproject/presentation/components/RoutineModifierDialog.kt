@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,7 +65,7 @@ fun RoutineModifierDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(AppliedRoutineModifier(type, selectedPercent)) }) {
+            Button(onClick = { onConfirm(AppliedRoutineModifier(type, selectedPercent)) }) {
                 Text(stringResource(Res.string.routine_modifier_start))
             }
         },

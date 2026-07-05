@@ -1,8 +1,14 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -118,6 +124,7 @@ import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.ui.theme.*
@@ -2988,7 +2995,7 @@ fun SettingsTab(
     if (showBackupDialog) {
         AlertDialog(
             onDismissRequest = { showBackupDialog = false },
-            title = { Text(stringResource(Res.string.backup_all_data), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(Res.string.backup_all_data), style = MaterialTheme.typography.headlineSmall) },
             text = {
                 Text(stringResource(Res.string.backup_description))
             },
@@ -3063,7 +3070,7 @@ fun SettingsTab(
     if (showRestoreDialog) {
         AlertDialog(
             onDismissRequest = { showRestoreDialog = false },
-            title = { Text(stringResource(Res.string.restore_from_backup), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(Res.string.restore_from_backup), style = MaterialTheme.typography.headlineSmall) },
             text = {
                 Text(stringResource(Res.string.restore_description))
             },
@@ -3098,7 +3105,6 @@ fun SettingsTab(
                         else -> "Restore Complete"
                     },
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
                 )
             },
             text = {
@@ -3701,25 +3707,31 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
         label = "dialog_scale",
     )
 
-    // Rotating disco ball effect - use coroutine-based animation
-    var rotation by remember { mutableStateOf(0f) }
-    var glowAlpha by remember { mutableStateOf(0.3f) }
-    var glowUp by remember { mutableStateOf(true) }
+    // Rotating disco ball effect - rememberInfiniteTransition for variable-refresh compatibility
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val discoTransition = rememberInfiniteTransition(label = "disco")
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(16) // ~60fps
-            rotation = (rotation + 3f) % 360f
-            // Pulsing glow effect
-            if (glowUp) {
-                glowAlpha += 0.02f
-                if (glowAlpha >= 0.8f) glowUp = false
-            } else {
-                glowAlpha -= 0.02f
-                if (glowAlpha <= 0.3f) glowUp = true
-            }
-        }
-    }
+    val animatedRotation by discoTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1920, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "disco_rotation",
+    )
+    // When reduceMotion is on, freeze rotation at 0; glow may still pulse (non-spatial motion)
+    val rotation = if (reduceMotion) 0f else animatedRotation
+
+    val glowAlpha by discoTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "disco_glow",
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
