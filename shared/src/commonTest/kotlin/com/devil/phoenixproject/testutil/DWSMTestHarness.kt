@@ -17,6 +17,7 @@ import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 
 /**
@@ -70,10 +71,14 @@ class DWSMTestHarness(val testScope: TestScope) {
     val recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase()
     val applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase()
 
-    // Child scope of testScope: shares TestCoroutineScheduler so advanceUntilIdle() works,
-    // but can be cancelled independently via cleanup() to prevent UncompletedCoroutinesError.
+    // Child job of testScope so cleanup() cancels DWSM without affecting the parent TestScope.
+    // dwsmScope uses StandardTestDispatcher(testScope.testScheduler) directly — NOT the full
+    // testScope.coroutineContext — so that TestScopeElement is NOT inherited. Inheriting
+    // TestScopeElement caused runTest's internal completion tracking to see dwsmScope's
+    // long-running init collectors as "pending", interleaving teardown ordering in the
+    // full test suite and making advanceUntilIdle() return before init work was truly settled.
     private val dwsmJob = Job(testScope.coroutineContext[Job])
-    private val dwsmScope = CoroutineScope(testScope.coroutineContext + dwsmJob)
+    private val dwsmScope = CoroutineScope(StandardTestDispatcher(testScope.testScheduler) + dwsmJob)
 
     val settingsManager = SettingsManager(fakePrefsManager, fakeBleRepo, dwsmScope)
     val gamificationManager = GamificationManager(

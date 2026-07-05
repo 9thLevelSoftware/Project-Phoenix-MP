@@ -103,7 +103,7 @@ class SetReadyScreenScrollWiringTest {
         //
         // The implementation file is allowed to mention `Modifier.weight(...)`
         // inside a comment that documents why the call site was removed, and
-        // other components in the same file (e.g. SetReadyEchoLevelSelector's
+        // other components in the same file (e.g. EchoLevelPillSelector's
         // inner Row) are allowed to keep horizontal `Modifier.weight(1f)` —
         // those are legal in Row scopes. So this test checks only the body
         // Column's children (the `Column { ... }` block inside the Scaffold

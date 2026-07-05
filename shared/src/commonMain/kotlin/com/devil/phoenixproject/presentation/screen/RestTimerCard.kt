@@ -60,6 +60,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.percentLabel
+import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
@@ -75,7 +76,6 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_skip_rest
 import vitruvianprojectphoenix.shared.generated.resources.rest_complete_announcement
 import vitruvianprojectphoenix.shared.generated.resources.rest_continue
 import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
-import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import vitruvianprojectphoenix.shared.generated.resources.rest_end_workout
 import vitruvianprojectphoenix.shared.generated.resources.rest_exercise_of
 import vitruvianprojectphoenix.shared.generated.resources.rest_mode
