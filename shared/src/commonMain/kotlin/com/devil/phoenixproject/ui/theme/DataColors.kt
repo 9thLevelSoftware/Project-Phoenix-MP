@@ -11,11 +11,11 @@ object DataColors {
     /** Training volume trends - Blue */
     val Volume = Color(0xFF3B82F6)
 
-    /** Intensity/effort metrics - Amber */
-    val Intensity = Color(0xFFF59E0B)
+    /** Intensity/effort metrics - Yellow (distinct from SignalWarning amber) */
+    val Intensity = Color(0xFFEAB308)
 
-    /** Heart rate / cardio data - Red (use with icons for accessibility) */
-    val HeartRate = Color(0xFFEF4444)
+    /** Heart rate / cardio data - Rose (distinct from SignalError red) */
+    val HeartRate = Color(0xFFF43F5E)
 
     /** Time-based metrics - Emerald */
     val Duration = Color(0xFF10B981)
@@ -28,8 +28,8 @@ object DataColors {
 
     // Workout metrics chart colors (for WorkoutMetricsDetailChart)
 
-    /** Load A (left cable) - Blue */
-    val LoadA = Color(0xFF3B82F6)
+    /** Load A (left cable) - Indigo-blue (distinct from Volume blue) */
+    val LoadA = Color(0xFF2563EB)
 
     /** Load B (right cable) - Orange */
     val LoadB = Color(0xFFF97316)
