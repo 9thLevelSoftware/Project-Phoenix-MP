@@ -72,8 +72,8 @@ fun DayStrip(
 ) {
     val listState = rememberLazyListState()
 
-    // Auto-scroll to current day on initial display
-    LaunchedEffect(progress.currentDayNumber) {
+    // Auto-scroll to current day on initial display only (Unit key = one-shot; gap-1-3)
+    LaunchedEffect(Unit) {
         val currentIndex = days.indexOfFirst { it.dayNumber == progress.currentDayNumber }
         if (currentIndex >= 0) {
             // Scroll to make the current day visible, centered if possible
