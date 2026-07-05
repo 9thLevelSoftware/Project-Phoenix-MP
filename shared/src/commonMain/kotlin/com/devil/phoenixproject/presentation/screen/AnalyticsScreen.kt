@@ -250,9 +250,10 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
         WindowWidthSizeClass.Compact -> 28.dp
     }
 
-    // Set global title
-    LaunchedEffect(Unit) {
-        viewModel.updateTopBarTitle("Analytics")
+    // Set global title (localized — was a hardcoded English literal)
+    val analyticsTitle = stringResource(Res.string.nav_analytics)
+    LaunchedEffect(analyticsTitle) {
+        viewModel.updateTopBarTitle(analyticsTitle)
     }
 
     // Pager state for swipe gestures
