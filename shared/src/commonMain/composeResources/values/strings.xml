@@ -812,4 +812,8 @@
     <!-- ==================== Dialog slot/hierarchy fixes (task-3.8) ==================== -->
     <string name="bulk_weight_adjust_select_hint">Select a percentage or enter a value to enable Apply</string>
     <string name="bulk_adjust_hint_pr_scaled">All exercises use PR-scaled weights — nothing to adjust</string>
+
+    <!-- ==================== Unsaved-changes guard (task-4A.2) ==================== -->
+    <string name="discard_changes_title">Discard changes?</string>
+    <string name="discard_changes_message">You have unsaved changes. Going back will discard them.</string>
 </resources>

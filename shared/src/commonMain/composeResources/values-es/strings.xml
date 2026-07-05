@@ -693,4 +693,8 @@
     <string name="cd_equipment_rack">Rack de equipamiento</string>
     <string name="bodyweight_effective_load_includes">Incluye: %1$s</string>
     <string name="bodyweight_effective_load_more">+%1$d más</string>
+
+    <!-- ==================== Cambios no guardados (task-4A.2) ==================== -->
+    <string name="discard_changes_title">¿Descartar cambios?</string>
+    <string name="discard_changes_message">Tienes cambios sin guardar. Si vuelves atrás, se descartarán.</string>
 </resources>

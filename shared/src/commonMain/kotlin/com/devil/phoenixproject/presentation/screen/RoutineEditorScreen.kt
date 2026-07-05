@@ -74,6 +74,7 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.normalizeRoutine
 import com.devil.phoenixproject.domain.model.reorderExercisesInSuperset
 import com.devil.phoenixproject.domain.model.reorderRoutineItems
+import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.BulkWeightAdjustDialog
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
@@ -94,6 +95,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
 import vitruvianprojectphoenix.shared.generated.resources.action_delete
+import vitruvianprojectphoenix.shared.generated.resources.action_discard
 import vitruvianprojectphoenix.shared.generated.resources.action_edit
 import vitruvianprojectphoenix.shared.generated.resources.action_save
 import vitruvianprojectphoenix.shared.generated.resources.add_exercise
@@ -103,6 +105,8 @@ import vitruvianprojectphoenix.shared.generated.resources.delete_all
 import vitruvianprojectphoenix.shared.generated.resources.delete_selected_exercises
 import vitruvianprojectphoenix.shared.generated.resources.delete_superset_message
 import vitruvianprojectphoenix.shared.generated.resources.delete_superset_title
+import vitruvianprojectphoenix.shared.generated.resources.discard_changes_message
+import vitruvianprojectphoenix.shared.generated.resources.discard_changes_title
 import vitruvianprojectphoenix.shared.generated.resources.label_name
 import vitruvianprojectphoenix.shared.generated.resources.rename_superset
 import vitruvianprojectphoenix.shared.generated.resources.routine_name
@@ -187,6 +191,16 @@ fun RoutineEditorScreen(
     // Overflow menu for routine-level actions
     var showOverflowMenu by remember { mutableStateOf(false) }
 
+    // Dirty-state snapshot vars (content-only: routineName + exercises + supersets)
+    // UI-only fields (collapsedSupersets, showAddMenu) are intentionally excluded.
+    var snapshotName by remember { mutableStateOf("") }
+    var snapshotExercises by remember { mutableStateOf<List<RoutineExercise>>(emptyList()) }
+    var snapshotSupersets by remember { mutableStateOf<List<Superset>>(emptyList()) }
+    var hasSnapshot by remember { mutableStateOf(false) }
+
+    // Discard-changes dialog state (back-navigation guard)
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
     // Superset being edited (for add exercise flow)
     var supersetForAddExercise by remember { mutableStateOf<Superset?>(null) }
 
@@ -217,6 +231,27 @@ fun RoutineEditorScreen(
             hasInitialized = true
         }
     }
+
+    // Capture snapshot once initialization is complete (post-load), so existing routines
+    // don't open dirty. The snapshot uses the state written by LaunchedEffect(routineId).
+    LaunchedEffect(hasInitialized) {
+        if (hasInitialized && !hasSnapshot) {
+            snapshotName = state.routineName
+            snapshotExercises = state.exercises
+            snapshotSupersets = state.supersets
+            hasSnapshot = true
+        }
+    }
+
+    // isDirty: true only after snapshot is taken and any content field diverges from it.
+    // Superset.exercises is always emptyList() in state (populated transiently in getItems()
+    // only for display), so the Superset comparison is safe. Superset.isCollapsed is also
+    // always false in state; collapse UI uses state.collapsedSupersets instead.
+    val isDirty = hasSnapshot && (
+        state.routineName != snapshotName ||
+        state.exercises != snapshotExercises ||
+        state.supersets != snapshotSupersets
+    )
 
     // Drag and Drop State
     val lazyListState = rememberLazyListState()
@@ -397,6 +432,10 @@ fun RoutineEditorScreen(
             reorderRoutineItems(it, fromIndex, toIndex)
         }
     }
+
+    // Back-navigation guard: intercept back only when there are unsaved changes.
+    // When clean (isDirty == false), back falls through to the host default (navigateUp).
+    BackHandler(enabled = isDirty) { showDiscardDialog = true }
 
     Scaffold(
         contentWindowInsets = WindowInsets.navigationBars,
@@ -970,6 +1009,21 @@ fun RoutineEditorScreen(
                 clearSelection()
             },
             onDismiss = { showBatchDeleteDialog = false },
+        )
+    }
+
+    // Discard Changes Dialog (back-navigation guard)
+    // onConfirm: navigate back without saving. onDismiss: stay in the editor.
+    if (showDiscardDialog) {
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.discard_changes_title),
+            message = stringResource(Res.string.discard_changes_message),
+            confirmText = stringResource(Res.string.action_discard),
+            onConfirm = {
+                showDiscardDialog = false
+                navController.popBackStack()
+            },
+            onDismiss = { showDiscardDialog = false },
         )
     }
 
