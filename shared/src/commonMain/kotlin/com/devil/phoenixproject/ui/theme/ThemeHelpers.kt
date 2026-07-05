@@ -36,3 +36,33 @@ fun screenBackgroundBrush(): Brush {
         )
     }
 }
+
+/**
+ * Returns a vertical gradient brush for celebration screens (e.g. RoutineCompleteScreen).
+ * Uses the flame triplet (FlameOrange / FlameYellow / FlameRed) at low alpha over the
+ * surface base colour, mirroring screenBackgroundBrush()'s dark/light split.
+ *
+ * Dark mode: colours are slightly more opaque so the warm fire glow reads against dark slate.
+ * Light mode: colours are kept very translucent so the gradient stays tasteful on white.
+ */
+@Composable
+fun celebrationBackgroundBrush(): Brush {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    return if (isDark) {
+        Brush.verticalGradient(
+            0.00f to MaterialTheme.colorScheme.surfaceContainerLowest,
+            0.25f to FlameOrange.copy(alpha = 0.20f),
+            0.50f to FlameYellow.copy(alpha = 0.15f),
+            0.75f to FlameRed.copy(alpha = 0.15f),
+            1.00f to MaterialTheme.colorScheme.surfaceContainerLowest,
+        )
+    } else {
+        Brush.verticalGradient(
+            0.00f to MaterialTheme.colorScheme.surfaceContainerLowest,
+            0.25f to FlameOrange.copy(alpha = 0.10f),
+            0.50f to FlameYellow.copy(alpha = 0.08f),
+            0.75f to FlameRed.copy(alpha = 0.08f),
+            1.00f to MaterialTheme.colorScheme.surface,
+        )
+    }
+}

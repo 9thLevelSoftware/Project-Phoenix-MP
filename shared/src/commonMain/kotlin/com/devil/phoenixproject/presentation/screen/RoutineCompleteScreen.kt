@@ -12,8 +12,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
+import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.domain.model.RoutineFlowState
@@ -63,15 +63,7 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.tertiaryContainer,
-                        MaterialTheme.colorScheme.background,
-                    ),
-                ),
-            )
+            .background(celebrationBackgroundBrush())
             .systemBarsPadding(),
         contentAlignment = Alignment.Center,
     ) {

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -21,6 +22,7 @@ import com.devil.phoenixproject.presentation.components.cycle.SwipeableCycleItem
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -92,6 +94,7 @@ fun CycleEditorScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(screenBackgroundBrush())
                 .padding(padding),
         ) {
             // Editable cycle name with Preview button
