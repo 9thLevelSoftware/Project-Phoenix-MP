@@ -10,15 +10,20 @@ import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.UIKit.UIAccessibilityBoldTextStatusDidChangeNotification
 import platform.UIKit.UIAccessibilityIsBoldTextEnabled
+import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
+import platform.UIKit.UIAccessibilityReduceMotionStatusDidChangeNotification
 
 @Composable
 actual fun rememberPlatformAccessibilitySettings(): PlatformAccessibilitySettings {
     var boldTextEnabled by remember {
         mutableStateOf(UIAccessibilityIsBoldTextEnabled())
     }
+    var reduceMotion by remember {
+        mutableStateOf(UIAccessibilityIsReduceMotionEnabled())
+    }
 
     DisposableEffect(Unit) {
-        val observer = NSNotificationCenter.defaultCenter.addObserverForName(
+        val boldObserver = NSNotificationCenter.defaultCenter.addObserverForName(
             name = UIAccessibilityBoldTextStatusDidChangeNotification,
             `object` = null,
             queue = NSOperationQueue.mainQueue(),
@@ -26,11 +31,23 @@ actual fun rememberPlatformAccessibilitySettings(): PlatformAccessibilitySetting
                 boldTextEnabled = UIAccessibilityIsBoldTextEnabled()
             },
         )
+        val reduceMotionObserver = NSNotificationCenter.defaultCenter.addObserverForName(
+            name = UIAccessibilityReduceMotionStatusDidChangeNotification,
+            `object` = null,
+            queue = NSOperationQueue.mainQueue(),
+            usingBlock = {
+                reduceMotion = UIAccessibilityIsReduceMotionEnabled()
+            },
+        )
 
         onDispose {
-            NSNotificationCenter.defaultCenter.removeObserver(observer)
+            NSNotificationCenter.defaultCenter.removeObserver(boldObserver)
+            NSNotificationCenter.defaultCenter.removeObserver(reduceMotionObserver)
         }
     }
 
-    return PlatformAccessibilitySettings(boldTextEnabled = boldTextEnabled)
+    return PlatformAccessibilitySettings(
+        boldTextEnabled = boldTextEnabled,
+        reduceMotion = reduceMotion,
+    )
 }
