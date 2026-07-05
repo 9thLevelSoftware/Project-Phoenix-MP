@@ -82,6 +82,7 @@ import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
+import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -611,7 +612,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
                         if (isEchoMode) {
                             // Echo Level selector - matching RestTimerCard style
-                            SetReadyEchoLevelSelector(
+                            EchoLevelPillSelector(
                                 selectedLevel = setReadyState.echoLevel ?: EchoLevel.HARDER,
                                 onLevelChange = { viewModel.updateSetReadyEchoLevel(it) },
                             )
@@ -1011,63 +1012,6 @@ private fun parseBodyWeightInputKg(input: String, weightUnit: WeightUnit): Float
     return when (weightUnit) {
         WeightUnit.KG -> displayValue
         WeightUnit.LB -> UnitConverter.lbToKg(displayValue)
-    }
-}
-
-/**
- * Echo Level selector - Row of 4 buttons matching RestTimerCard style
- */
-@Composable
-private fun SetReadyEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (EchoLevel) -> Unit) {
-    Column {
-        Text(
-            text = "ECHO LEVEL",
-            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Spacer(modifier = Modifier.height(Spacing.small))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium),
-                )
-                .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
-        ) {
-            EchoLevel.entries.forEach { level ->
-                val isSelected = level == selectedLevel
-
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(Spacing.small),
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerLowest
-                    },
-                    onClick = { onLevelChange(level) },
-                ) {
-                    Text(
-                        text = level.displayName,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = Spacing.small),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        }
     }
 }
 
