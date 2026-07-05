@@ -61,7 +61,4 @@
     <string name="settings_adults_only_decline">Mantienilo pulito</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Linguaggio forte + Temi suggestivi</string>
 
-    <!-- ==================== Modifiche non salvate (task-4A.2) ==================== -->
-    <string name="discard_changes_title">Scartare le modifiche?</string>
-    <string name="discard_changes_message">Hai modifiche non salvate. Tornare indietro le scarterà.</string>
 </resources>

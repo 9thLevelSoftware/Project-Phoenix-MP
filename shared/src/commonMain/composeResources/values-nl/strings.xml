@@ -673,7 +673,4 @@
     <string name="bodyweight_effective_load_includes">Inclusief: %1$s</string>
     <string name="bodyweight_effective_load_more">+%1$d meer</string>
 
-    <!-- ==================== Niet-opgeslagen wijzigingen (task-4A.2) ==================== -->
-    <string name="discard_changes_title">Wijzigingen verwerpen?</string>
-    <string name="discard_changes_message">Je hebt niet-opgeslagen wijzigingen. Teruggaan zal ze verwerpen.</string>
 </resources>

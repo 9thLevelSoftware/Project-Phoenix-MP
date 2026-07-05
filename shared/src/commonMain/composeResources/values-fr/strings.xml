@@ -694,7 +694,4 @@
     <string name="bodyweight_effective_load_includes">Inclus : %1$s</string>
     <string name="bodyweight_effective_load_more">+%1$d de plus</string>
 
-    <!-- ==================== Modifications non enregistrées (task-4A.2) ==================== -->
-    <string name="discard_changes_title">Abandonner les modifications ?</string>
-    <string name="discard_changes_message">Vous avez des modifications non enregistrées. Revenir en arrière les abandonnera.</string>
 </resources>
