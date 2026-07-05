@@ -153,7 +153,7 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
                         },
                         enabled = isConnected,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(
                             text = if (isConnected) "Assess 1RM" else "Assess 1RM (Connect to trainer first)",
@@ -271,11 +271,11 @@ private fun OneRepMaxCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)),
+            .shadow(8.dp, MaterialTheme.shapes.medium),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -379,7 +379,7 @@ private fun ProgressionChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -401,7 +401,7 @@ private fun ProgressionChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
                         .height(150.dp)
                         .background(
                             MaterialTheme.colorScheme.surface,
-                            RoundedCornerShape(8.dp),
+                            MaterialTheme.shapes.extraSmall,
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -489,7 +489,7 @@ private fun WeightTrendChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -507,7 +507,7 @@ private fun WeightTrendChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
                     .height(150.dp)
                     .background(
                         MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(8.dp),
+                        MaterialTheme.shapes.extraSmall,
                     ),
                 contentAlignment = Alignment.Center,
             ) {
@@ -533,7 +533,7 @@ private fun VolumeChartCard(sessions: List<WorkoutSession>, weightUnit: WeightUn
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -571,7 +571,7 @@ private fun ExerciseHistoryTable(sessions: List<WorkoutSession>, weightUnit: Wei
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -706,7 +706,7 @@ private fun SessionHistoryRow(session: WorkoutSession, weightUnit: WeightUnit, f
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
         onClick = { isExpanded = !isExpanded },
     ) {
         Column(

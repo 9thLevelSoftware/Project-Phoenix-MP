@@ -161,7 +161,7 @@ private fun ExerciseSelectionContent(
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.cd_search)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.small,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -175,7 +175,7 @@ private fun ExerciseSelectionContent(
                 Card(
                     onClick = { onExerciseSelected(exercise) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -246,7 +246,7 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(220.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 VideoPlayer(
                     videoUrl = videoToShow.videoUrl,
@@ -259,7 +259,7 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
         // Instructions card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
@@ -309,7 +309,7 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text(
                 "Begin Assessment",
@@ -363,7 +363,7 @@ private fun ProgressiveLoadingContent(
         // Suggested weight card (total weight = both cables combined)
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
             ),
@@ -413,7 +413,7 @@ private fun ProgressiveLoadingContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 2.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -452,7 +452,7 @@ private fun ProgressiveLoadingContent(
         if (step.shouldStop) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                 ),
@@ -516,7 +516,7 @@ private fun BleVelocityCaptureSection(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -548,7 +548,7 @@ private fun BleVelocityCaptureSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
                         "Start Set",
@@ -598,7 +598,7 @@ private fun BleVelocityCaptureSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.tertiary,
                     ),
@@ -640,7 +640,7 @@ private fun ManualInputSection(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     )
 
     Spacer(modifier = Modifier.height(Spacing.small))
@@ -652,7 +652,7 @@ private fun ManualInputSection(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     )
 
     Spacer(modifier = Modifier.height(Spacing.medium))
@@ -671,7 +671,7 @@ private fun ManualInputSection(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Text(
             "Log Set",
@@ -705,7 +705,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
         // Estimated 1RM card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
             ),
@@ -746,7 +746,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
 
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.small,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
@@ -788,7 +788,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 2.dp),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
@@ -832,7 +832,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.small,
         )
 
         Spacer(modifier = Modifier.height(Spacing.medium))
@@ -846,7 +846,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text(
                 "Accept & Save",
@@ -933,7 +933,7 @@ private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(
                     "Done",

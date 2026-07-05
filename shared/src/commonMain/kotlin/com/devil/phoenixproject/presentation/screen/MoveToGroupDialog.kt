@@ -51,7 +51,7 @@ fun MoveToGroupDialog(
                                 onGroupSelected(group.id)
                             }
                         },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = if (isCurrentGroup) {
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                         } else {
@@ -93,7 +93,7 @@ fun MoveToGroupDialog(
                 // "New Group..." option
                 Surface(
                     onClick = onCreateNewGroup,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     Row(
@@ -122,7 +122,7 @@ fun MoveToGroupDialog(
                 if (currentGroupId != null) {
                     Surface(
                         onClick = onRemoveFromGroup,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
                         Row(
