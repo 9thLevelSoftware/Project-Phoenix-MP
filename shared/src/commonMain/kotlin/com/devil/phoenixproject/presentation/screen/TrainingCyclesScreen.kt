@@ -84,6 +84,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
@@ -640,30 +641,17 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 
     // Delete Confirmation Dialog
     showDeleteConfirmDialog?.let { cycle ->
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmDialog = null },
-            title = { Text(stringResource(Res.string.delete_cycle_title)) },
-            text = { Text(stringResource(Res.string.delete_cycle_message, cycle.name)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            cycleRepository.deleteCycle(cycle.id)
-                            showDeleteConfirmDialog = null
-                        }
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text(stringResource(Res.string.action_delete))
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_cycle_title),
+            message = stringResource(Res.string.delete_cycle_message, cycle.name),
+            confirmText = stringResource(Res.string.action_delete),
+            onConfirm = {
+                scope.launch {
+                    cycleRepository.deleteCycle(cycle.id)
+                    showDeleteConfirmDialog = null
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = null }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
+            onDismiss = { showDeleteConfirmDialog = null },
         )
     }
 

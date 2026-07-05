@@ -218,6 +218,8 @@
     <string name="delete_routine">Delete Routine</string>
     <string name="delete_routine_message">Are you sure you want to delete \'%1$s\'?</string>
     <string name="delete_selected_routines">Delete %1$d routines?</string>
+    <string name="delete_group_title">Delete Group</string>
+    <string name="delete_group_message">Delete group \"%1$s\"? Routines in this group will become ungrouped.</string>
     <string name="duplicate_selected_routines">Duplicate %1$d routines?</string>
     <string name="duplicate_routines_message">New copies will be created with \'(Copy)\' suffix.</string>
     <string name="move_to_profile">Move to Profile</string>
@@ -244,6 +246,7 @@
     <string name="copy_superset">Copy Superset</string>
     <string name="delete_superset">Delete Superset</string>
     <string name="delete_superset_title">Delete Superset?</string>
+    <string name="delete_superset_message">This will delete the superset \"%1$s\" and all %2$d exercises in it. This cannot be undone.</string>
     <string name="delete_selected_exercises">Delete %1$d exercises?</string>
 
     <!-- ==================== Exercise Picker ==================== -->
@@ -795,4 +798,13 @@
 
     <!-- ==================== Exercise detail (task-3.5) ==================== -->
     <string name="exercise_unknown">Unknown Exercise</string>
+
+    <!-- ==================== Destructive confirm dialogs (task-3.7) ==================== -->
+    <string name="delete_workout_title">Delete Workout?</string>
+    <string name="delete_workout_message">This action cannot be undone.</string>
+    <string name="delete_all_sets">Delete All Sets</string>
+    <string name="delete_routine_session_title">Delete Routine Session?</string>
+    <string name="delete_routine_session_message">This will delete all %1$d sets from this routine. This action cannot be undone.</string>
+    <string name="delete_all_workouts_title">Delete All Workouts?</string>
+    <string name="delete_all_workouts_message">This will permanently delete all workout history. This action cannot be undone.</string>
 </resources>

@@ -118,6 +118,7 @@ import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupDestination
@@ -139,6 +140,9 @@ import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
 import vitruvianprojectphoenix.shared.generated.resources.action_ok
+import vitruvianprojectphoenix.shared.generated.resources.delete_all
+import vitruvianprojectphoenix.shared.generated.resources.delete_all_workouts_message
+import vitruvianprojectphoenix.shared.generated.resources.delete_all_workouts_title
 import vitruvianprojectphoenix.shared.generated.resources.action_save
 import vitruvianprojectphoenix.shared.generated.resources.action_share
 import vitruvianprojectphoenix.shared.generated.resources.backup_all_data
@@ -2919,54 +2923,15 @@ fun SettingsTab(
 
     // Material 3 Expressive: Delete All dialog
     if (showDeleteAllDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteAllDialog = false },
-            title = {
-                Text(
-                    "Delete All Workouts?",
-                    style = MaterialTheme.typography.headlineSmall, // Material 3 Expressive: Larger
-                    fontWeight = FontWeight.Bold,
-                )
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_all_workouts_title),
+            message = stringResource(Res.string.delete_all_workouts_message),
+            confirmText = stringResource(Res.string.delete_all),
+            onConfirm = {
+                onDeleteAllWorkouts()
+                showDeleteAllDialog = false
             },
-            text = {
-                Text(
-                    "This will permanently delete all workout history. This action cannot be undone.",
-                    style = MaterialTheme.typography.bodyLarge, // Material 3 Expressive: Larger
-                )
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
-            shape = MaterialTheme.shapes.large, // Material 3 Expressive: Very rounded for dialogs (was 16dp)
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteAllWorkouts()
-                        showDeleteAllDialog = false
-                    },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = MaterialTheme.shapes.extraLarge, // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Delete All",
-                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDeleteAllDialog = false },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = MaterialTheme.shapes.extraLarge, // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Cancel",
-                        style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
+            onDismiss = { showDeleteAllDialog = false },
         )
     }
 
