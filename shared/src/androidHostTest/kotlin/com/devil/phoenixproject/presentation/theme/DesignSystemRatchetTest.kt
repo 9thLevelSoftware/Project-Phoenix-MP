@@ -59,12 +59,13 @@ class DesignSystemRatchetTest {
 
     @Test
     fun rawRoundedCornerShapes_doNotIncrease() {
-        // Baseline 2026-07-05: 375 (down from 449 after Phase 1 shape-token sweep).
-        // Phase 2 (task 2.1) will drive this down to ~30 (component-shape tokens).
+        // Baseline 2026-07-05: 37 (down from 375 after Phase 2 task-2.1 shape-token sweep).
+        // All 37 remaining are exempt: ≤6dp decor, intentional 0dp flat edges,
+        // unmapped mid-values (SetReadyScreen 14dp, SettingsTab 40dp, SmartInsightsTab 7dp).
         val count = countMatches(Regex("""RoundedCornerShape\(\d+\.dp"""))
         assertTrue(
-            count <= 375,
-            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 375. " +
+            count <= 37,
+            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 37. " +
                 "Use MaterialTheme.shapes or a named shape token instead.",
         )
     }

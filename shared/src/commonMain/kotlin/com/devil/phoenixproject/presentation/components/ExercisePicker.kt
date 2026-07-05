@@ -479,7 +479,7 @@ fun ExercisePickerContent(
                     null
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialTheme.shapes.large,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             )
@@ -513,7 +513,7 @@ fun ExercisePickerContent(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 8.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -632,7 +632,7 @@ fun ExerciseVideoDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f),
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
             ) {
                 if (enableVideoPlayback) {
                     VideoPlayer(

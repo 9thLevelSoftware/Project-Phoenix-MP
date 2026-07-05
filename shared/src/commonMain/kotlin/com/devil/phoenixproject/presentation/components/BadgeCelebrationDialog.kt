@@ -103,7 +103,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
                 .fillMaxWidth()
                 .scale(scale)
                 .alpha(alpha),
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),
@@ -173,7 +173,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
                 // Tier badge
                 Surface(
                     color = tierColor.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
                     modifier = Modifier.padding(vertical = 8.dp),
                 ) {
                     Text(
@@ -328,7 +328,7 @@ fun BatchedBadgeCelebrationDialog(
                 .fillMaxWidth(0.9f)
                 .scale(scale)
                 .alpha(alpha),
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),
@@ -418,7 +418,7 @@ fun BatchedBadgeCelebrationDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 16.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(MaterialTheme.shapes.small)
                                 .background(
                                     MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                 )
@@ -548,7 +548,7 @@ private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit
         modifier = Modifier
             .alpha(itemAlpha)
             .scale(displayScale)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .clickable(onClick = onClick)
             .padding(4.dp)
             .semantics {

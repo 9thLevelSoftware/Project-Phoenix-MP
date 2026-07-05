@@ -32,7 +32,7 @@ fun ExpressiveCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = RoundedCornerShape(20.dp),
+    shape: Shape = MaterialTheme.shapes.medium,
     colors: CardColors = CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
     ),

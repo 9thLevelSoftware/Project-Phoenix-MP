@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -57,6 +58,7 @@ import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -202,9 +204,9 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 16.dp),
+            .padding(horizontal = Spacing.medium),
+        verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        contentPadding = PaddingValues(vertical = Spacing.medium),
     ) {
         item {
             Text(
@@ -213,7 +215,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
             Text(
                 text = stringResource(Res.string.insights_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
@@ -282,7 +284,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 4.dp),
+                    .padding(bottom = Spacing.extraSmall),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
@@ -321,7 +323,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                 thickness = 1.dp,
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
 
             report.volumes.forEach { vol ->
                 Row(
@@ -385,14 +387,14 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                 fraction =
                     analysis.pushVolume / total,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
             BalanceBar(
                 label = stringResource(Res.string.insights_pull),
                 percentage = pullPct,
                 fraction =
                     analysis.pullVolume / total,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
             BalanceBar(
                 label = stringResource(Res.string.insights_legs),
                 percentage = legsPct,
@@ -400,7 +402,7 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                     analysis.legsVolume / total,
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
 
             if (analysis.imbalances.isEmpty()) {
                 Text(
@@ -421,7 +423,7 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                             tint = AccessibilityTheme.colors.warning,
                             modifier = Modifier.size(16.dp),
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
                             imbalance.suggestion,
                             style = MaterialTheme.typography.bodySmall,
@@ -451,18 +453,18 @@ private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
             modifier = Modifier
                 .weight(1f)
                 .height(20.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(MaterialTheme.shapes.small)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(fraction.coerceIn(0f, 1f))
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(MaterialTheme.colorScheme.primary),
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(Spacing.small))
         Text(
             "$percentage%",
             style = MaterialTheme.typography.labelMedium,
@@ -491,7 +493,7 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                        .padding(vertical = Spacing.extraSmall),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -535,7 +537,7 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                        .padding(vertical = Spacing.extraSmall),
                     verticalAlignment = Alignment.Top,
                 ) {
                     Icon(
@@ -544,7 +546,7 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(Spacing.small))
                     Column {
                         val displayWeight = if (plateau.currentWeightKg % 1f == 0f) {
                             "${plateau.currentWeightKg.toInt()}kg"
@@ -597,7 +599,7 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
                 color = MaterialTheme.colorScheme.primary,
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
 
             // Session count bars per window
             val maxCount = analysis.windowCounts.values.maxOrNull()?.toFloat() ?: 1f
@@ -640,7 +642,7 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
                                 ),
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "$count",
                         style = MaterialTheme.typography.labelSmall,
@@ -663,7 +665,7 @@ private fun InsightContextBlock(
     timeframe: String,
     soWhat: String,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(definition, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TimeframeBadge(timeframe)
@@ -681,13 +683,13 @@ private fun InsightHierarchyHeader(title: String, subtitle: String) {
 private fun TimeframeBadge(label: String) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = RoundedCornerShape(999.dp),
+        shape = CircleShape,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
         )
     }
 }
@@ -705,12 +707,12 @@ private fun InsightCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(Spacing.medium),
         ) {
             Text(
                 title,
@@ -718,13 +720,13 @@ private fun InsightCard(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
             Text(definition, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
             TimeframeBadge(timeframe)
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
             Text("So what? $soWhat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
             content()
         }
     }

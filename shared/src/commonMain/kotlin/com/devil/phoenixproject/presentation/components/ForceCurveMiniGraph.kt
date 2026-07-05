@@ -43,7 +43,7 @@ fun ForceCurveMiniGraph(forceCurveResult: ForceCurveResult, onTapToExpand: () ->
     Box(
         modifier = modifier
             .height(80.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable { onTapToExpand() },
     ) {
@@ -136,7 +136,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                 // Strength profile badge
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
                         text = strengthProfile.name.replace("_", " "),
@@ -177,7 +177,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(240.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(MaterialTheme.shapes.extraSmall)
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                             .padding(16.dp),
                     ) {
@@ -257,7 +257,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                         val roundedPct = pct.toInt()
                         Surface(
                             color = errorColor.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = MaterialTheme.shapes.extraSmall,
                         ) {
                             Text(
                                 text = "Sticking point: $roundedPct% ROM",

@@ -1790,7 +1790,7 @@ fun SettingsTab(
                                 }
                             },
                             enabled = localSafeWord.isNotBlank(),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Text(stringResource(Res.string.settings_calibrate_button))
                         }
@@ -2085,7 +2085,7 @@ fun SettingsTab(
                 ) {
                     Spacer(modifier = Modifier.height(Spacing.small))
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -2414,7 +2414,7 @@ fun SettingsTab(
                         .fillMaxWidth()
                         .background(
                             MaterialTheme.colorScheme.surfaceContainerLow,
-                            RoundedCornerShape(12.dp),
+                            MaterialTheme.shapes.small,
                         )
                         .padding(horizontal = Spacing.medium, vertical = Spacing.small),
                     verticalAlignment = Alignment.CenterVertically,
@@ -2451,7 +2451,7 @@ fun SettingsTab(
                     OutlinedButton(
                         onClick = { showLocationPicker = true },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
@@ -2472,7 +2472,7 @@ fun SettingsTab(
                         OutlinedButton(
                             onClick = { onBackupDestinationChange(BackupDestination.Default) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             ),
@@ -2510,7 +2510,7 @@ fun SettingsTab(
                                 .fillMaxWidth()
                                 .background(
                                     MaterialTheme.colorScheme.surfaceContainerLow,
-                                    RoundedCornerShape(12.dp),
+                                    MaterialTheme.shapes.small,
                                 )
                                 .padding(horizontal = Spacing.medium, vertical = Spacing.small),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -2535,7 +2535,7 @@ fun SettingsTab(
                         OutlinedButton(
                             onClick = onOpenBackupFolder,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             ),
@@ -3339,7 +3339,7 @@ private fun SafeWordCalibrationDialog(
                         )
                         OutlinedButton(
                             onClick = { com.devil.phoenixproject.util.openAppSettings() },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Text(stringResource(Res.string.settings_calibration_open_settings))
                         }
@@ -3655,7 +3655,7 @@ private fun AdultsOnlyConfirmDialog(
                     .padding(Spacing.large),
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.errorContainer,
                 ) {
                     Row(
@@ -3688,7 +3688,7 @@ private fun AdultsOnlyConfirmDialog(
                 Spacer(modifier = Modifier.height(Spacing.medium))
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     Text(
@@ -3804,7 +3804,7 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
                                 Color(0xFF8B00FF),
                             ),
                         ),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
                     ).padding(horizontal = 12.dp, vertical = 4.dp),
                 )
             }

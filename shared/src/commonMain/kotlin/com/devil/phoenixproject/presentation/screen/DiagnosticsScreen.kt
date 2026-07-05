@@ -164,7 +164,7 @@ private fun DiagnosticsHeader(uiState: DiagnosticsUiState, onCopy: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
     ) {
         Column(
             modifier = Modifier
@@ -219,7 +219,7 @@ private fun DiagnosticsHeader(uiState: DiagnosticsUiState, onCopy: () -> Unit) {
             OutlinedButton(
                 onClick = onCopy,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
                 enabled = uiState.packet != null,
             ) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -343,7 +343,7 @@ private fun DetailSection(title: String, content: @Composable ColumnScope.() -> 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
     ) {
         Column(
             modifier = Modifier
@@ -391,7 +391,7 @@ private fun StatusPill(text: String, isWarning: Boolean) {
     Surface(
         color = color.copy(alpha = 0.12f),
         contentColor = color,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
     ) {
         Text(
             text = text,

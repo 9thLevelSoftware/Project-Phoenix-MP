@@ -39,7 +39,6 @@ fun ConnectionLostDialog(onReconnect: () -> Unit, onDismiss: () -> Unit) {
             Text(
                 "Connection Lost",
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
             )
         },
         text = {

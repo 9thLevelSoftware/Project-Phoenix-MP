@@ -84,8 +84,7 @@ fun SupersetHeader(
             ) {
                 Text(
                     text = superset.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = color,
                 )
                 Text(

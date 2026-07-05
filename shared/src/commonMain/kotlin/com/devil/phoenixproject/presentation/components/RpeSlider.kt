@@ -63,7 +63,7 @@ fun RpeIndicator(currentRpe: Int?, onRpeChanged: (Int) -> Unit, modifier: Modifi
             val rpeInfo = rpeScale.find { it.value == currentRpe } ?: rpeScale.last()
             Surface(
                 onClick = { expanded = !expanded },
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
                 color = getRpeColor(currentRpe).copy(alpha = 0.2f),
                 modifier = Modifier.height(40.dp),
             ) {
@@ -87,7 +87,7 @@ fun RpeIndicator(currentRpe: Int?, onRpeChanged: (Int) -> Unit, modifier: Modifi
         } else {
             OutlinedButton(
                 onClick = { expanded = true },
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 modifier = Modifier.height(40.dp),
             ) {
@@ -133,7 +133,7 @@ fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss: () -> U
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -180,7 +180,7 @@ fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss: () -> U
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(MaterialTheme.shapes.extraSmall)
                             .clickable { sliderValue = rpeInfo.value.toFloat() }
                             .background(
                                 if (isSelected) {
@@ -232,14 +232,14 @@ fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss: () -> U
                 OutlinedButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                 ) {
                     Text(stringResource(Res.string.action_cancel))
                 }
                 Button(
                     onClick = { onRpeSelected(sliderValue.roundToInt()) },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = getRpeColor(sliderValue.roundToInt()),
                     ),
@@ -264,7 +264,7 @@ fun RpeQuickSelect(selectedRpe: Int?, onRpeSelected: (Int) -> Unit, modifier: Mo
             val isSelected = selectedRpe == rpeInfo.value
             Surface(
                 onClick = { onRpeSelected(rpeInfo.value) },
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
                 color = if (isSelected) {
                     getRpeColor(rpeInfo.value).copy(alpha = 0.3f)
                 } else {

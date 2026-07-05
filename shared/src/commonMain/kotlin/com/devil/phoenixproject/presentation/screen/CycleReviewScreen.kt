@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import kotlin.math.roundToInt
@@ -72,7 +73,7 @@ fun CycleReviewScreen(
                     Button(
                         onClick = onSave,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(
                             text = "Confirm & Finish",
@@ -84,31 +85,37 @@ fun CycleReviewScreen(
             }
         },
     ) { padding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(vertical = 16.dp),
+                .background(screenBackgroundBrush()),
         ) {
-            itemsIndexed(days, key = { _, day -> day.id }) { _, day ->
-                val routine = day.routineId?.let { routineId ->
-                    routines.find { it.id == routineId }
-                }
-                val isExpanded = expandedDays[day.id] ?: false
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(vertical = 16.dp),
+            ) {
+                itemsIndexed(days, key = { _, day -> day.id }) { _, day ->
+                    val routine = day.routineId?.let { routineId ->
+                        routines.find { it.id == routineId }
+                    }
+                    val isExpanded = expandedDays[day.id] ?: false
 
-                CycleReviewDayCard(
-                    day = day,
-                    routine = routine,
-                    isExpanded = isExpanded,
-                    onToggleExpand = {
-                        // Only allow expanding for non-rest days with a routine
-                        if (!day.isRestDay && routine != null) {
-                            expandedDays[day.id] = !isExpanded
-                        }
-                    },
-                )
+                    CycleReviewDayCard(
+                        day = day,
+                        routine = routine,
+                        isExpanded = isExpanded,
+                        onToggleExpand = {
+                            // Only allow expanding for non-rest days with a routine
+                            if (!day.isRestDay && routine != null) {
+                                expandedDays[day.id] = !isExpanded
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -136,7 +143,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                 MaterialTheme.colorScheme.surfaceContainer
             },
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column {
             // Header row (always visible)

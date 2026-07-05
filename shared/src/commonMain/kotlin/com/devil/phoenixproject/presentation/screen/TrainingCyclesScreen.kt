@@ -829,7 +829,7 @@ private fun ActiveCycleCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
     ) {
@@ -861,7 +861,7 @@ private fun ActiveCycleCard(
 
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
                 ) {
                     Text(
                         "Day $displayedDayNumber of ${cycle.days.size}",
@@ -950,7 +950,7 @@ private fun ActiveCycleCard(
                     OutlinedButton(
                         onClick = onEditCycle,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -961,7 +961,7 @@ private fun ActiveCycleCard(
                         OutlinedButton(
                             onClick = onAdvanceDay,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Icon(Icons.Default.SkipNext, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -972,7 +972,7 @@ private fun ActiveCycleCard(
                         OutlinedButton(
                             onClick = { onJumpToDay(displayedDayNumber) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Icon(Icons.Default.SkipNext, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -985,7 +985,7 @@ private fun ActiveCycleCard(
                             Button(
                                 onClick = { onStartWorkout(displayedCycleDay.routineId, cycle.id, displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -995,7 +995,7 @@ private fun ActiveCycleCard(
                             OutlinedButton(
                                 onClick = onEditCycle,
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.Edit, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -1008,7 +1008,7 @@ private fun ActiveCycleCard(
                             OutlinedButton(
                                 onClick = { onJumpToDay(displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.SkipNext, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -1017,7 +1017,7 @@ private fun ActiveCycleCard(
                             Button(
                                 onClick = { onStartWorkout(displayedCycleDay.routineId, cycle.id, displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -1027,7 +1027,7 @@ private fun ActiveCycleCard(
                             OutlinedButton(
                                 onClick = { onJumpToDay(displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.SkipNext, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -1068,7 +1068,7 @@ private fun CycleListItem(
                 MaterialTheme.colorScheme.surfaceContainerHigh
             },
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         border = if (isActive) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1196,7 +1196,7 @@ private fun CycleListItem(
                         FilledTonalButton(
                             onClick = if (isActive) onDeactivate else onActivate,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = MaterialTheme.shapes.extraSmall,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = if (isActive) {
@@ -1222,7 +1222,7 @@ private fun CycleListItem(
                         FilledTonalButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = MaterialTheme.shapes.extraSmall,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -1240,7 +1240,7 @@ private fun CycleListItem(
                         FilledTonalButton(
                             onClick = onDelete,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = MaterialTheme.shapes.extraSmall,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = MaterialTheme.colorScheme.errorContainer,

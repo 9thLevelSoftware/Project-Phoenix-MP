@@ -177,7 +177,7 @@ fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges: Int, m
         modifier = modifier
             .fillMaxWidth()
             .scale(scale),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
         ),
@@ -405,7 +405,7 @@ private fun BadgeCard(badgeWithProgress: BadgeWithProgress, onClick: () -> Unit)
             .scale(scale)
             .alpha(alpha)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = if (isEarned) {
                 MaterialTheme.colorScheme.surfaceVariant

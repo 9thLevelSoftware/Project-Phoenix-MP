@@ -54,7 +54,7 @@ fun SupersetPickerDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(MaterialTheme.shapes.extraSmall)
                             .clickable { onCreateNew() }
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -98,7 +98,7 @@ fun SupersetPickerDialog(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(MaterialTheme.shapes.extraSmall)
                                 .clickable { onSelectExisting(superset) }
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,

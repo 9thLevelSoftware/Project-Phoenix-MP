@@ -122,3 +122,12 @@ val Typography = Typography(
         letterSpacing = 0.5.sp,
     ),
 )
+
+/**
+ * Large workout counter style — used for timed exercise and rep-count displays.
+ * Defined as a top-level token so all HUD countdown widgets stay in sync.
+ * Derives from Typography.displayLarge so scale changes propagate automatically.
+ * Note: PlatformTextStyle (includeFontPadding) is android-only and cannot be
+ * used in commonMain; apply it at the call site in androidMain if needed.
+ */
+val workoutCounterStyle = Typography.displayLarge.copy(fontSize = 120.sp, fontWeight = FontWeight.Black, lineHeight = 128.sp)

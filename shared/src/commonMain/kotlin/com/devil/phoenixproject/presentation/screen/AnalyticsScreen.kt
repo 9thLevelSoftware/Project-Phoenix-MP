@@ -472,7 +472,7 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                 .align(Alignment.BottomEnd)
                 .padding(Spacing.large),
             containerColor = MaterialTheme.colorScheme.primary,
-            shape = RoundedCornerShape(28.dp), // Material 3 Expressive: Very rounded FAB
+            shape = MaterialTheme.shapes.large, // Material 3 Expressive: Very rounded FAB
             elevation = FloatingActionButtonDefaults.elevation(
                 defaultElevation = 8.dp, // Material 3 Expressive: Higher elevation
                 pressedElevation = 4.dp,
@@ -609,7 +609,7 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                     onClick = { showExportMenu = false },
                     enabled = !isExporting && !isImporting,
                     modifier = Modifier.height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
                         stringResource(Res.string.action_cancel),
@@ -619,7 +619,7 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                 }
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.large,
         )
     }
 
@@ -757,7 +757,7 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                 }
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.large,
         )
     }
 }

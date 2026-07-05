@@ -996,7 +996,7 @@ private fun ProfilePickerDialog(
                         val profileColor = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors[0] }
                         Surface(
                             onClick = { onProfileSelected(profile) },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
                             Row(
@@ -1092,7 +1092,7 @@ fun RoutineCard(
                     }
                 },
             ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
@@ -1214,7 +1214,7 @@ fun RoutineCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -1234,7 +1234,7 @@ fun RoutineCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
@@ -1257,7 +1257,7 @@ fun RoutineCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
@@ -1283,7 +1283,7 @@ fun RoutineCard(
                         OutlinedButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             contentPadding = if (useCompactAccessibility) {
                                 PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                             } else {
@@ -1307,7 +1307,7 @@ fun RoutineCard(
                         OutlinedButton(
                             onClick = onDuplicate,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             contentPadding = if (useCompactAccessibility) {
                                 PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                             } else {
@@ -1331,7 +1331,7 @@ fun RoutineCard(
                         OutlinedButton(
                             onClick = { showDeleteDialog = true },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             contentPadding = if (useCompactAccessibility) {
                                 PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                             } else {

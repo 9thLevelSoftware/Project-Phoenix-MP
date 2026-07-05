@@ -38,6 +38,7 @@ import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
+import com.devil.phoenixproject.ui.theme.workoutCounterStyle
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
@@ -339,7 +340,7 @@ private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onS
                 onClick = onStopWorkout,
                 modifier = Modifier.semantics { contentDescription = stopWorkoutLabel },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
             ) {
                 Icon(Icons.Default.Stop, contentDescription = null)
@@ -510,16 +511,14 @@ private fun ExecutionPage(
         if (isCurrentExerciseBodyweight) {
             Text(
                 "TIME",
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp,
             )
 
             val remainingSeconds = timedExerciseRemainingSeconds
             Text(
                 text = remainingSeconds?.let { "${it}s" } ?: "—",
-                style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
-                fontWeight = FontWeight.Black,
+                style = workoutCounterStyle,
                 color = if ((remainingSeconds ?: Int.MAX_VALUE) <= 5) {
                     MaterialTheme.colorScheme.error
                 } else {
@@ -543,16 +542,14 @@ private fun ExecutionPage(
             val remainingSeconds = timedExerciseRemainingSeconds
             Text(
                 "TIME",
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp,
             )
 
             // Large countdown display
             Text(
                 text = "${remainingSeconds}s",
-                style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
-                fontWeight = FontWeight.Black,
+                style = workoutCounterStyle,
                 color = if (remainingSeconds <= 5) {
                     MaterialTheme.colorScheme.error // Highlight last 5 seconds
                 } else {
@@ -641,8 +638,7 @@ private fun ExecutionPage(
                 // Warmup counter (non-animated)
                 Text(
                     text = "${repCount.warmupReps} / ${workoutParameters.warmupReps}",
-                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
-                    fontWeight = FontWeight.Black,
+                    style = workoutCounterStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -779,7 +775,7 @@ private fun StatsPage(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -844,7 +840,7 @@ private fun StatsPage(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -911,7 +907,7 @@ private fun StatsPage(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -947,7 +943,7 @@ private fun StatsPage(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -1130,7 +1126,7 @@ private fun ExerciseTimerControls(
         // Pause/Resume toggle
         FilledTonalButton(
             onClick = if (isPaused) onResume else onPause,
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = if (isPaused) {
                 ButtonDefaults.filledTonalButtonColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -1155,7 +1151,7 @@ private fun ExerciseTimerControls(
         // Reset button
         OutlinedButton(
             onClick = onReset,
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Icon(
                 Icons.Default.Replay,

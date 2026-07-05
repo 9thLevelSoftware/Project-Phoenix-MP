@@ -200,7 +200,7 @@ fun ExternalRoutineDetailScreen(
             Spacer(Modifier.height(8.dp))
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
             ) {
                 Text(
                     "Review exercise mappings before converting. External weights are preserved as informational until per-cable mapping is confirmed.",
@@ -308,7 +308,7 @@ fun ExternalProgramDetailScreen(
             }
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
             ) {
                 Text(
                     "Liftosaur conversion is read-only here. Manual Phoenix cycle conversion should happen only after validating Liftoscript mappings.",
@@ -473,7 +473,7 @@ private fun HubCard(title: String, subtitle: String, icon: @Composable () -> Uni
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
@@ -548,7 +548,7 @@ private fun EntityCard(onClick: (() -> Unit)? = null, content: @Composable Colum
     if (onClick == null) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.extraSmall,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             content = cardContent,
         )
@@ -556,7 +556,7 @@ private fun EntityCard(onClick: (() -> Unit)? = null, content: @Composable Colum
         Card(
             onClick = onClick,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.extraSmall,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             content = cardContent,
         )

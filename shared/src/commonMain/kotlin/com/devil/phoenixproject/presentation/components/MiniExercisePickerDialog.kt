@@ -66,7 +66,7 @@ fun MiniExercisePickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.large,
         title = {
             Text(
                 "Tag exercise",

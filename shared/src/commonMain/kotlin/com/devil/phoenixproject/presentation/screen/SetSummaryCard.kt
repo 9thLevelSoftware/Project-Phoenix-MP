@@ -129,7 +129,7 @@ fun SetSummaryCard(
         // Gradient header with Total Reps and Total Volume
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         ) {
             Box(
@@ -302,7 +302,7 @@ fun SetSummaryCard(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Row(
                         modifier = Modifier
@@ -331,7 +331,7 @@ fun SetSummaryCard(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Row(
                         modifier = Modifier
@@ -372,7 +372,7 @@ fun SetSummaryCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                 ),
@@ -402,7 +402,7 @@ private fun ExerciseTagSection(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         color = if (isUntagged) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
@@ -486,7 +486,7 @@ private fun SummaryStatCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -546,7 +546,7 @@ private fun SummaryForceCard(label: String, concentricValue: Float, eccentricVal
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -616,7 +616,7 @@ private fun EchoPhaseBreakdownCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -746,7 +746,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -975,7 +975,7 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -998,7 +998,7 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                 // Strength profile badge
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                 ) {
                     Text(
                         text = strengthProfileDisplayName(strengthProfile),
@@ -1190,7 +1190,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -1409,7 +1409,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -1778,7 +1778,7 @@ private fun WeakestComponentTip(quality: SetQualitySummary) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
         ),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     ) {
         Row(
             modifier = Modifier

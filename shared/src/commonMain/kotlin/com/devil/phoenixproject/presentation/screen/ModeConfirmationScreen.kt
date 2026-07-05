@@ -131,7 +131,7 @@ fun ModeConfirmationScreen(
                 item(key = "day_header_${day.dayNumber}") {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                         ),
@@ -230,7 +230,7 @@ fun ModeConfirmationScreen(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
                         "Create Cycle",
@@ -264,7 +264,7 @@ private fun ConfigurableExerciseCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { showConfigModal = true },
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),

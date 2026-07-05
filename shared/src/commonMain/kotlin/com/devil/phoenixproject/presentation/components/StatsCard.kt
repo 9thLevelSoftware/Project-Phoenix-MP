@@ -30,7 +30,7 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 @Composable
 fun StatsCard(label: String, value: String, icon: ImageVector, iconColor: Color, modifier: Modifier = Modifier) {
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),

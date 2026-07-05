@@ -108,7 +108,7 @@ fun ExercisesTab(
                     Icon(Icons.Default.Search, contentDescription = null)
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -195,7 +195,7 @@ private fun ExerciseSummaryRow(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     ) {
         Row(
             modifier = Modifier

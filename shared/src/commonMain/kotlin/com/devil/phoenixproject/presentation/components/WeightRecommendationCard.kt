@@ -105,8 +105,7 @@ fun WeightRecommendationCard(
                     Column {
                         Text(
                             text = headline,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                         Text(

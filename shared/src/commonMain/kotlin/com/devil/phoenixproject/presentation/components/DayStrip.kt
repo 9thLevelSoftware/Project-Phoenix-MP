@@ -242,8 +242,7 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = dayNumber.toString(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             textAlign = TextAlign.Center,
                         )
                     }
@@ -254,7 +253,6 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
                     Text(
                         text = dayNumber.toString(),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                     )
                 }

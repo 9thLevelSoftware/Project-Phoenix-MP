@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,9 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import kotlinx.coroutines.delay
 
@@ -84,15 +83,14 @@ fun RepQualityIndicator(latestRepQualityScore: Int?, modifier: Modifier = Modifi
             Box(
                 modifier = Modifier
                     .scale(pulseScale)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(MaterialTheme.shapes.medium)
                     .background(Color.Black.copy(alpha = 0.6f))
                     .padding(horizontal = 24.dp, vertical = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = "$displayedScore",
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineLarge,
                     color = scoreColor(displayedScore),
                 )
             }

@@ -313,7 +313,7 @@ fun ExerciseEditBottomSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(16f / 9f),
-                            shape = RoundedCornerShape(20.dp),
+                            shape = MaterialTheme.shapes.medium,
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             ),
@@ -331,7 +331,7 @@ fun ExerciseEditBottomSheet(
                 currentExercisePR?.let { pr ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                         ),
@@ -416,7 +416,7 @@ fun ExerciseEditBottomSheet(
                 if (isTutMode) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                         shadowElevation = 2.dp,
@@ -502,7 +502,7 @@ fun ExerciseEditBottomSheet(
                 // Per Set Rest Time toggle
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                     shadowElevation = 2.dp,
@@ -531,7 +531,7 @@ fun ExerciseEditBottomSheet(
                     // Stall Detection toggle
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                         shadowElevation = 2.dp,
@@ -566,7 +566,7 @@ fun ExerciseEditBottomSheet(
                     // Rep Count Timing toggle
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                         shadowElevation = 2.dp,
@@ -611,7 +611,7 @@ fun ExerciseEditBottomSheet(
                 if (shouldShowStopAtTopToggle(exerciseType, sets)) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                         shadowElevation = 2.dp,
@@ -686,7 +686,7 @@ fun ExerciseEditBottomSheet(
                 if (!perSetRestTime) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                         shadowElevation = 2.dp,
@@ -722,7 +722,7 @@ fun ExerciseEditBottomSheet(
                     modifier = Modifier
                         .weight(1f)
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
                         "Cancel",
@@ -740,7 +740,7 @@ fun ExerciseEditBottomSheet(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
                         pressedElevation = 2.dp,
@@ -852,7 +852,7 @@ fun SetsConfiguration(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Icon(
                 Icons.Default.Add,
@@ -889,7 +889,7 @@ fun SetRow(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
@@ -1103,7 +1103,7 @@ fun ModeSelector(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         shadowElevation = 8.dp,
@@ -1310,7 +1310,7 @@ fun WeightConfigurationCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
@@ -1484,7 +1484,7 @@ fun WeightConfigurationCard(
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
                     color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
                 ) {
                     Row(
@@ -1532,7 +1532,7 @@ fun WarmupSetsConfiguration(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(
             2.dp,
@@ -1667,7 +1667,7 @@ private fun WarmupSetRow(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {

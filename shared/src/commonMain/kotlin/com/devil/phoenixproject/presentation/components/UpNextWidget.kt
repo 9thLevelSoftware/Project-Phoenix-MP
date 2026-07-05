@@ -78,7 +78,7 @@ private fun NoActiveCycleWidget(onCreateCycle: () -> Unit, modifier: Modifier = 
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -113,7 +113,7 @@ private fun NoActiveCycleWidget(onCreateCycle: () -> Unit, modifier: Modifier = 
 
             Button(
                 onClick = onCreateCycle,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -144,7 +144,7 @@ private fun ActiveCycleWidget(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Box(
@@ -195,7 +195,7 @@ private fun ActiveCycleWidget(
                     Surface(
                         onClick = onViewDetails,
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -224,7 +224,7 @@ private fun ActiveCycleWidget(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(
                         modifier = Modifier
@@ -278,7 +278,7 @@ private fun ActiveCycleWidget(
                             // Day counter badge
                             Surface(
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Column(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -343,7 +343,7 @@ private fun ActiveCycleWidget(
                             Button(
                                 onClick = { onStartWorkout(currentCycleDay.routineId, cycle.id, currentDay) },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -353,7 +353,7 @@ private fun ActiveCycleWidget(
                             OutlinedButton(
                                 onClick = onViewDetails,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Text(stringResource(Res.string.view_cycle_details))
                             }
@@ -361,7 +361,7 @@ private fun ActiveCycleWidget(
                             OutlinedButton(
                                 onClick = onViewDetails,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.Warning, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -412,7 +412,7 @@ fun UpNextCompactWidget(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         onClick = {
             if (currentCycleDay?.routineId != null) {
                 onStartWorkout(currentCycleDay.routineId, cycle.id, currentDay)

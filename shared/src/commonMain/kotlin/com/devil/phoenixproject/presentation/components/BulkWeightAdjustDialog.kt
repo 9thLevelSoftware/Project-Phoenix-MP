@@ -306,7 +306,7 @@ private fun PercentageModeContent(
                 val label = if (preset > 0) "+${preset.toInt()}%" else "${preset.toInt()}%"
                 Surface(
                     modifier = Modifier.clickable { onPresetSelected(preset) },
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     color = if (isSelected) {
                         MaterialTheme.colorScheme.primaryContainer
                     } else {

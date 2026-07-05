@@ -52,7 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -278,7 +278,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             .weight(1f)
                             .height(48.dp),
                         enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
@@ -333,14 +333,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.surfaceVariant,
-                        ),
-                    ),
-                )
+                .background(screenBackgroundBrush())
                 .verticalScroll(setReadyScrollState)
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -477,7 +470,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                         ),
@@ -597,7 +590,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 ) {
@@ -609,10 +602,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     ) {
                         Text(
                             if (isEchoMode) "ECHO SETTINGS" else "SET CONFIGURATION",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp,
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp,
                         )
 
                         if (isEchoMode) {
@@ -751,7 +745,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(96.dp)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .clip(MaterialTheme.shapes.small),
                 )
                 Spacer(Modifier.height(12.dp))
             }
@@ -896,7 +890,7 @@ private fun CurrentBodyweightPromptCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(SetReadyTestTags.SESSION_BODYWEIGHT_CARD),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
@@ -961,7 +955,7 @@ private fun HandledSessionBodyweightCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
@@ -1028,9 +1022,8 @@ private fun SetReadyEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (
     Column {
         Text(
             text = "ECHO LEVEL",
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -1091,14 +1084,12 @@ private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
         ) {
             Text(
                 text = "ECCENTRIC LOAD",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp,
             )
             Text(
                 text = "$percent%",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.primary,
             )
         }

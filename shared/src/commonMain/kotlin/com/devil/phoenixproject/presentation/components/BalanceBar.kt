@@ -79,7 +79,7 @@ fun BalanceBar(asymmetryPercent: Float, dominantSide: String, showAlert: Boolean
         Modifier.border(
             width = 2.dp,
             color = alertBorderColor.copy(alpha = alertAlpha),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.extraSmall,
         )
     } else {
         Modifier
