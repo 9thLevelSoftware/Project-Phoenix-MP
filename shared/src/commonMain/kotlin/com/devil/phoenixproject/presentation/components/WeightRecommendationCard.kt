@@ -51,8 +51,9 @@ fun WeightRecommendationCard(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Prevent double-tap while BLE write is in flight (gap-3-2)
-    var isApplying by remember { mutableStateOf(false) }
+    // Prevent double-tap while BLE write is in flight (gap-3-2).
+    // Keyed to recommendation so a new/changed recommendation resets the latch.
+    var isApplying by remember(recommendation) { mutableStateOf(false) }
 
     val icon = when (recommendation.direction) {
         WeightAdjustmentDirection.INCREASE -> Icons.Default.ArrowUpward
@@ -130,7 +131,7 @@ fun WeightRecommendationCard(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.small, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onDismiss, enabled = !isApplying) {
+                OutlinedButton(onClick = onDismiss) {
                     Text(stringResource(Res.string.action_dismiss))
                 }
                 Button(
