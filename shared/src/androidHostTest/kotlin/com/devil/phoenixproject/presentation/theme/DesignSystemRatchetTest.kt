@@ -59,27 +59,28 @@ class DesignSystemRatchetTest {
 
     @Test
     fun rawRoundedCornerShapes_doNotIncrease() {
-        // Baseline 2026-07-05: 36 (down from 37 after task-3.4 deleted AlphaHeader pill literal).
-        // All 36 remaining are exempt: ≤6dp decor, intentional 0dp flat edges,
+        // Baseline 2026-07-05: 35 (down from 36 after task-3.10b deleted NextBadgeProgressCard
+        // which contained RoundedCornerShape(3.dp in LinearProgressIndicator clip).
+        // All 35 remaining are exempt: ≤6dp decor, intentional 0dp flat edges,
         // unmapped mid-values (SetReadyScreen 14dp, SettingsTab 40dp, SmartInsightsTab 7dp).
         val count = countMatches(Regex("""RoundedCornerShape\(\d+\.dp"""))
         assertTrue(
-            count <= 36,
-            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 36. " +
+            count <= 35,
+            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 35. " +
                 "Use MaterialTheme.shapes or a named shape token instead.",
         )
     }
 
     @Test
     fun hardcodedBasicColors_doNotIncrease() {
-        // Baseline 2026-07-05: 38 (down from 66 after Phase 1 semantic-color sweep).
-        // Phase 3 task-3.1: deleted 5 dead component files — those files contained 0 occurrences,
-        // so count is unchanged at 38. Phase 2 will sweep semantic replacements to near 0.
+        // Baseline 2026-07-05: 37 (down from 38 after task-3.10b deleted NextBadgeProgressCard
+        // which contained Color.White for badge icon tint).
+        // Phase 2 will sweep semantic replacements to near 0.
         val count = countMatches(Regex("""\bColor\.(White|Black|Red|Green|Gray|LightGray)\b"""))
         assertTrue(
-            count <= 38,
+            count <= 37,
             "Hardcoded Color.(White|Black|Red|Green|Gray|LightGray) usages increased: " +
-                "found $count, baseline ≤ 38. Use MaterialTheme.colorScheme or Phoenix tokens instead.",
+                "found $count, baseline ≤ 37. Use MaterialTheme.colorScheme or Phoenix tokens instead.",
         )
     }
 }
