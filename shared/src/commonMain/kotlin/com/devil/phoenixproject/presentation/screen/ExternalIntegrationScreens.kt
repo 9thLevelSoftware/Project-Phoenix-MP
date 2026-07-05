@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
@@ -566,7 +567,11 @@ private fun EntityCard(onClick: (() -> Unit)? = null, content: @Composable Colum
 @Composable
 private fun EmptyIntegrationState(message: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            modifier = Modifier.semantics(mergeDescendants = true) {},
+        ) {
             Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(40.dp))
             Text(message, style = MaterialTheme.typography.titleMedium)
         }

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
+import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.exercisepicker.LetterHeader
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -118,8 +119,11 @@ fun ExercisesTab(
         // Empty state
         if (exerciseSummaries.isEmpty()) {
             item {
-                Spacer(Modifier.height(Spacing.extraLarge))
-                EmptyExercisesState()
+                EmptyState(
+                    icon = Icons.Default.FitnessCenter,
+                    title = stringResource(Res.string.empty_no_exercises_title),
+                    message = stringResource(Res.string.empty_no_exercises_message),
+                )
             }
             return@LazyColumn
         }
@@ -263,36 +267,6 @@ private fun ExerciseSummaryRow(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun EmptyExercisesState() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            Icons.Default.FitnessCenter,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-        )
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "No Exercises Yet",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Complete workouts to see your exercise history here.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

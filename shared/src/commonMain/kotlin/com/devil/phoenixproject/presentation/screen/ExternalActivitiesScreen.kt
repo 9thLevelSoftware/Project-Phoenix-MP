@@ -18,11 +18,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ShimmerBox
 import com.devil.phoenixproject.presentation.viewmodel.ExternalActivitiesViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.empty_no_external_activities_message
+import vitruvianprojectphoenix.shared.generated.resources.empty_no_external_activities_title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,32 +101,11 @@ fun ExternalActivitiesScreen(onSetTitle: (String) -> Unit = {}, modifier: Modifi
             }
         } else if (filteredActivities.isEmpty()) {
             // Empty state — only shown after loading completes
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
-                ) {
-                    Icon(
-                        Icons.Default.CloudOff,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(48.dp),
-                    )
-                    Text(
-                        "No activities imported yet",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        "Connect Hevy, Liftosaur, or import a CSV\nfrom the Integrations screen.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            EmptyState(
+                icon = Icons.Default.CloudOff,
+                title = stringResource(Res.string.empty_no_external_activities_title),
+                message = stringResource(Res.string.empty_no_external_activities_message),
+            )
         } else {
             LazyColumn(
                 contentPadding = PaddingValues(

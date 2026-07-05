@@ -490,6 +490,10 @@
     <string name="empty_no_cycles_title">No Training Cycles Yet</string>
     <string name="empty_no_cycles_message">Create a rolling workout schedule that adapts to your life, not the calendar</string>
     <string name="empty_no_cycles_action">Create Your First Cycle</string>
+    <string name="empty_no_exercises_title">No Exercises Yet</string>
+    <string name="empty_no_exercises_message">Complete workouts to see your exercise history here.</string>
+    <string name="empty_no_external_activities_title">No activities imported yet</string>
+    <string name="empty_no_external_activities_message">Connect Hevy, Liftosaur, or import a CSV from the Integrations screen.</string>
 
     <!-- ==================== Import/Export messages ==================== -->
     <string name="import_complete_title">Import Complete</string>
