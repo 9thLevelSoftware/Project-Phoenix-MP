@@ -1,11 +1,9 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -19,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
+import com.devil.phoenixproject.presentation.components.exercisepicker.LetterHeader
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.OneRepMaxCalculator
@@ -160,8 +159,8 @@ fun ExercisesTab(
 
         // Alphabetical groups
         grouped.forEach { (letter, exercises) ->
-            item(key = "header_$letter") {
-                AlphaHeader(letter.toString())
+            stickyHeader(key = "header_$letter") {
+                LetterHeader(letter.toString())
             }
 
             items(exercises, key = { "all_${it.exerciseId}" }) { summary ->
@@ -264,28 +263,6 @@ private fun ExerciseSummaryRow(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun AlphaHeader(letter: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-    ) {
-        Text(
-            text = letter,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-            modifier = Modifier
-                .background(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                    RoundedCornerShape(4.dp),
-                )
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-        )
     }
 }
 
