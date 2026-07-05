@@ -28,6 +28,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
@@ -705,6 +706,7 @@ private fun IntegrationCard(
     badges: List<String> = emptyList(),
     trailingContent: @Composable () -> Unit,
 ) {
+    val connectedGreen = AccessibilityTheme.colors.connectedGreen // Emerald — distinct from success lime
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -737,7 +739,7 @@ private fun IntegrationCard(
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = if (statusConnected) {
-                            Color(0xFF10B981).copy(alpha = 0.15f)
+                            connectedGreen.copy(alpha = 0.15f)
                         } else {
                             MaterialTheme.colorScheme.surfaceVariant
                         },
@@ -746,7 +748,7 @@ private fun IntegrationCard(
                             if (statusConnected) "Connected" else "Not connected",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (statusConnected) {
-                                Color(0xFF10B981)
+                                connectedGreen
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },

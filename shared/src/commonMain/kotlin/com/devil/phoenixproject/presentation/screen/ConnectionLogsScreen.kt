@@ -609,7 +609,7 @@ private fun getLevelColor(level: LogLevel): Color {
     return when (level) {
         LogLevel.DEBUG -> colors.neutral
 
-        LogLevel.INFO -> Color(0xFF2196F3)
+        LogLevel.INFO -> colors.info
 
         // Blue (informational, not semantic status)
         LogLevel.WARNING -> colors.warning
