@@ -73,7 +73,8 @@ class DesignSystemRatchetTest {
     @Test
     fun hardcodedBasicColors_doNotIncrease() {
         // Baseline 2026-07-05: 38 (down from 66 after Phase 1 semantic-color sweep).
-        // Phase 2 will sweep semantic replacements to near 0.
+        // Phase 3 task-3.1: deleted 5 dead component files — those files contained 0 occurrences,
+        // so count is unchanged at 38. Phase 2 will sweep semantic replacements to near 0.
         val count = countMatches(Regex("""\bColor\.(White|Black|Red|Green|Gray|LightGray)\b"""))
         assertTrue(
             count <= 38,

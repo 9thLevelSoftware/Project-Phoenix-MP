@@ -96,38 +96,6 @@ private fun getEquipmentDatabaseValues(displayName: String): List<String> = when
 }
 
 /**
- * Format raw equipment string from database to user-friendly display
- */
-private fun formatEquipment(rawEquipment: String): String {
-    val equipmentMap = mapOf(
-        "BAR" to "Long Bar",
-        "LONG_BAR" to "Long Bar",
-        "BARBELL" to "Long Bar",
-        "SHORT_BAR" to "Short Bar",
-        "BENCH" to "Bench",
-        "HANDLES" to "Handles",
-        "SINGLE_HANDLE" to "Handles",
-        "BOTH_HANDLES" to "Handles",
-        "STRAPS" to "Ankle Strap",
-        "ANKLE_STRAP" to "Ankle Strap",
-        "BELT" to "Belt",
-        "ROPE" to "Rope",
-        "BODYWEIGHT" to "Bodyweight",
-    )
-
-    val filteredValues = rawEquipment
-        .split(",")
-        .map { it.trim().uppercase() }
-        .filter {
-            it !in listOf("BLACK_CABLES", "RED_CABLES", "GREY_CABLES", "CABLES", "CABLE", "NULL", "", "PUMP_HANDLES", "DUMBBELLS")
-        }
-        .mapNotNull { equipmentMap[it] }
-        .distinct()
-
-    return filteredValues.joinToString(", ")
-}
-
-/**
  * Exercise Picker Dialog - Streamlined exercise selection component
  */
 @OptIn(ExperimentalMaterial3Api::class)
