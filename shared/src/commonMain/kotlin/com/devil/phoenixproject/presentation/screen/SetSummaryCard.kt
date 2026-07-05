@@ -954,6 +954,7 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
     if (forceData.isEmpty()) return
 
     val primaryColor = MaterialTheme.colorScheme.primary
+    val errorColor = AccessibilityTheme.colors.error
     val stickingPointPct = avgForceCurve.stickingPointPct
 
     // Compute stats
@@ -1045,9 +1046,9 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                     val spIndex = pct.toInt().coerceIn(0, forceData.lastIndex)
                     val spY = canvasHeight - ((forceData[spIndex] - minForce) / forceRange) * canvasHeight
 
-                    // Dashed vertical red line
+                    // Dashed vertical error line
                     drawLine(
-                        color = Color.Red.copy(alpha = 0.6f),
+                        color = errorColor.copy(alpha = 0.6f),
                         start = Offset(spX, 0f),
                         end = Offset(spX, canvasHeight),
                         strokeWidth = 1.dp.toPx(),
@@ -1057,9 +1058,9 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                         ),
                     )
 
-                    // Red circle at sticking point on curve
+                    // Error-color circle at sticking point on curve
                     drawCircle(
-                        color = Color.Red,
+                        color = errorColor,
                         radius = 5.dp.toPx(),
                         center = Offset(spX, spY),
                     )
@@ -1105,7 +1106,7 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                         "${stickingPointPct?.toInt() ?: "--"}% ROM",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = if (stickingPointPct != null) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (stickingPointPct != null) errorColor else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 // Peak Force
