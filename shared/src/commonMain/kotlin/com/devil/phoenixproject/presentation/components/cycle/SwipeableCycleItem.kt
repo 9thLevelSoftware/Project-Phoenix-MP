@@ -89,11 +89,11 @@ fun SwipeableCycleItem(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         if (direction == SwipeToDismissBoxValue.StartToEnd) {
-                            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onError)
-                            Text(label, color = MaterialTheme.colorScheme.onError)
-                        } else {
-                            Text(label, color = MaterialTheme.colorScheme.onTertiary)
                             Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onTertiary)
+                            Text(label, color = MaterialTheme.colorScheme.onTertiary)
+                        } else {
+                            Text(label, color = MaterialTheme.colorScheme.onError)
+                            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onError)
                         }
                     }
                 }

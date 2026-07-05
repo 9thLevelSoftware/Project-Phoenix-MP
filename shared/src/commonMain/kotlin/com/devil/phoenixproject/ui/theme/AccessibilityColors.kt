@@ -48,6 +48,10 @@ data class AccessibilityColors(
     val statusYellow: Color,
     val statusRed: Color,
 
+    // Content colors for success/warning containers (M3-contract companions)
+    val onSuccess: Color,       // Text/icon on success containers — green-950 for >7:1 contrast
+    val onWarning: Color,       // Text/icon on warning containers — amber-950 for >7:1 contrast
+
     // Integration / log colors
     val connectedGreen: Color,  // Emerald 0xFF10B981 — "Connected" badge distinct from success lime
     val info: Color,            // Informational blue for log/diagnostic INFO level
@@ -88,6 +92,10 @@ val StandardPalette = AccessibilityColors(
     statusGreen = Color(0xFF22C55E),
     statusYellow = Color(0xFFF59E0B),
     statusRed = Color(0xFFEF4444),
+
+    // Content colors for success/warning containers
+    onSuccess = Color(0xFF052E16),      // Tailwind green-950 — >7:1 on success (#22C55E)
+    onWarning = Color(0xFF451A03),      // Tailwind amber-950 — >7:1 on warning (#F59E0B)
 
     // Integration / log colors
     connectedGreen = Color(0xFF10B981), // Emerald — distinct from success lime #22C55E

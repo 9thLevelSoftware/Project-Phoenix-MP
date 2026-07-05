@@ -130,7 +130,7 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
     }
 
     val contentColor = when (state) {
-        DayState.COMPLETED -> MaterialTheme.colorScheme.surface
+        DayState.COMPLETED -> AccessibilityTheme.colors.onSuccess
         DayState.MISSED -> MaterialTheme.colorScheme.onErrorContainer
         DayState.CURRENT -> MaterialTheme.colorScheme.onPrimary
         DayState.UPCOMING -> MaterialTheme.colorScheme.onSurfaceVariant

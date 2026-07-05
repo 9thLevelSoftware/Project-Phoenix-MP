@@ -158,7 +158,7 @@ fun ProgressionSuggestionBanner(
                                     incrementText,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.surface,
+                                    color = if (isDeload) AccessibilityTheme.colors.onWarning else AccessibilityTheme.colors.onSuccess,
                                 )
                             }
                         }
