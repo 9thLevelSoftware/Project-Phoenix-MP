@@ -124,8 +124,9 @@ fun MiniExercisePickerDialog(
                 )
             }
         },
-        confirmButton = {},
-        dismissButton = {
+        // Lone dismiss action lives in the confirmButton slot so M3 renders it
+        // right-aligned (lens-dialog-uniformity-6 pattern, matches RestTimePickerDialog).
+        confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }
