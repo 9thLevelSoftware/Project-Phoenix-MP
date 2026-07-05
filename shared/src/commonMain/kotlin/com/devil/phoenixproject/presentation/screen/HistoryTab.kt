@@ -265,9 +265,9 @@ fun WorkoutHistoryCard(
         onClick = { isExpanded = !isExpanded },
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+            .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
     ) {
@@ -472,7 +472,7 @@ fun WorkoutHistoryCard(
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                             ),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Row(
                                 modifier = Modifier
@@ -538,7 +538,7 @@ fun WorkoutHistoryCard(
                 TextButton(
                     onClick = { showDeleteDialog = true },
                     modifier = Modifier.height(48.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error,
                     ),
@@ -577,7 +577,7 @@ fun WorkoutHistoryCard(
                 )
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(28.dp), // Material 3 Expressive: Very rounded for dialogs (was 16dp)
+            shape = MaterialTheme.shapes.large, // Material 3 Expressive: Very rounded for dialogs (was 16dp)
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -585,7 +585,7 @@ fun WorkoutHistoryCard(
                         showDeleteDialog = false
                     },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
+                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Delete",
@@ -599,7 +599,7 @@ fun WorkoutHistoryCard(
                 TextButton(
                     onClick = { showDeleteDialog = false },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
+                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Cancel",
@@ -833,9 +833,9 @@ fun GroupedRoutineCard(
         onClick = { isExpanded = !isExpanded },
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+            .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
     ) {
@@ -1076,7 +1076,7 @@ fun GroupedRoutineCard(
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(Spacing.medium),
@@ -1148,7 +1148,7 @@ fun GroupedRoutineCard(
                 TextButton(
                     onClick = { showDeleteDialog = true },
                     modifier = Modifier.height(48.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error,
                     ),
@@ -1187,7 +1187,7 @@ fun GroupedRoutineCard(
                 )
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(28.dp), // Material 3 Expressive: Very rounded for dialogs (was 16dp)
+            shape = MaterialTheme.shapes.large, // Material 3 Expressive: Very rounded for dialogs (was 16dp)
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1200,7 +1200,7 @@ fun GroupedRoutineCard(
                         showDeleteDialog = false
                     },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
+                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Delete",
@@ -1214,7 +1214,7 @@ fun GroupedRoutineCard(
                 TextButton(
                     onClick = { showDeleteDialog = false },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
+                    shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Cancel",
@@ -1247,7 +1247,7 @@ fun WorkoutSessionCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Row(
