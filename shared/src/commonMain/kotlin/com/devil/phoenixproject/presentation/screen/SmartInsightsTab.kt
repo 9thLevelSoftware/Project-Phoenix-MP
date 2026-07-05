@@ -395,7 +395,7 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                         Icon(
                             Icons.Default.Warning,
                             contentDescription = null,
-                            tint = Color(0xFFF59E0B), // Amber warning
+                            tint = AccessibilityTheme.colors.warning,
                             modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -460,11 +460,10 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
             PlaceholderText(stringResource(Res.string.great_variety))
         } else {
             neglected.take(5).forEach { exercise ->
+                val neglectColors = AccessibilityTheme.colors
                 val color = when {
-                    exercise.daysSinceLastPerformed > 30 -> Color(0xFFF97316)
-
-                    // Orange
-                    else -> Color(0xFFEAB308) // Yellow
+                    exercise.daysSinceLastPerformed > 30 -> neglectColors.warning
+                    else -> MaterialTheme.colorScheme.secondary
                 }
                 Row(
                     modifier = Modifier

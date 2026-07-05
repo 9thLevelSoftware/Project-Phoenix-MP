@@ -47,7 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.luminance
+
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
@@ -68,8 +68,6 @@ import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseF
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseListEmptyState
 import com.devil.phoenixproject.presentation.components.exercisepicker.GroupedExerciseList
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
-import com.devil.phoenixproject.ui.theme.PhoenixOrangeDark
-import com.devil.phoenixproject.ui.theme.PhoenixOrangeLight
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -509,12 +507,6 @@ fun ExercisePickerContent(
                         "Create Custom Exercise"
                     }
                 }
-                val phoenixOrange = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-                    PhoenixOrangeDark
-                } else {
-                    PhoenixOrangeLight
-                }
-
                 OutlinedButton(
                     onClick = onCreateExercise,
                     modifier = Modifier
@@ -526,7 +518,7 @@ fun ExercisePickerContent(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = null,
-                        tint = phoenixOrange,
+                        tint = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
