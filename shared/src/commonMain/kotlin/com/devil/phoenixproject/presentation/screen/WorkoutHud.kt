@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -302,6 +304,7 @@ private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onS
         WindowWidthSizeClass.Medium -> 72.dp
         WindowWidthSizeClass.Compact -> 64.dp
     }
+    val stopWorkoutLabel = stringResource(Res.string.cd_stop_workout)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -334,6 +337,7 @@ private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onS
             // STOP Button (Prominent)
             Button(
                 onClick = onStopWorkout,
+                modifier = Modifier.semantics { contentDescription = stopWorkoutLabel },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 shape = RoundedCornerShape(20.dp),
                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),

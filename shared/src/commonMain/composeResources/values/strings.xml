@@ -762,4 +762,25 @@
     <string name="equipment_rack_save_override_confirm">Save</string>
     <string name="equipment_rack_save_override_dismiss">Just this time</string>
     <string name="cd_equipment_rack">Equipment rack</string>
+
+    <!-- ==================== Accessibility: profile color picker (task-1.2) ==================== -->
+    <string name="color_blue">Blue</string>
+    <string name="color_green">Green</string>
+    <string name="color_amber">Amber</string>
+    <string name="color_red">Red</string>
+    <string name="color_purple">Purple</string>
+    <string name="color_pink">Pink</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="color_orange">Orange</string>
+    <string name="cd_select_profile_color">Select %1$s profile color</string>
+
+    <!-- ==================== Accessibility: rep counter live region (task-1.2) ==================== -->
+    <string name="cd_rep_counter">%1$d of %2$d reps, %3$s</string>
+
+    <!-- ==================== Accessibility: day chip merged description (task-1.2) ==================== -->
+    <string name="cd_day_chip_completed">Day %1$d, completed</string>
+    <string name="cd_day_chip_missed">Day %1$d, missed</string>
+    <string name="cd_day_chip_current">Day %1$d, current</string>
+    <string name="cd_day_chip_upcoming">Day %1$d, upcoming</string>
+    <string name="cd_day_chip_rest">Day %1$d, rest day</string>
 </resources>

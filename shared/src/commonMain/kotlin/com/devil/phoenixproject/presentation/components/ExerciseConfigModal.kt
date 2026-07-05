@@ -4,12 +4,18 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -355,6 +361,7 @@ private fun EchoConfigPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .selectableGroup()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLowest,
                     RoundedCornerShape(Spacing.medium),
@@ -366,7 +373,11 @@ private fun EchoConfigPanel(
                 val isSelected = level == echoLevel
 
                 Surface(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).semantics {
+                        role = Role.RadioButton
+                        contentDescription = level.displayName
+                        selected = isSelected
+                    },
                     shape = RoundedCornerShape(Spacing.small),
                     color = if (isSelected) {
                         MaterialTheme.colorScheme.primaryContainer

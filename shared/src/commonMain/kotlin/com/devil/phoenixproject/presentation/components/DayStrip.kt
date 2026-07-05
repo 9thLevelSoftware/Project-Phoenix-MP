@@ -15,6 +15,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -151,9 +155,21 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
         else -> null
     }
 
+    // Accessibility: merged description so TalkBack announces the chip as a single unit
+    val chipDesc = when {
+        isRestDay -> stringResource(Res.string.cd_day_chip_rest, dayNumber)
+        state == DayState.COMPLETED -> stringResource(Res.string.cd_day_chip_completed, dayNumber)
+        state == DayState.MISSED -> stringResource(Res.string.cd_day_chip_missed, dayNumber)
+        state == DayState.CURRENT -> stringResource(Res.string.cd_day_chip_current, dayNumber)
+        else -> stringResource(Res.string.cd_day_chip_upcoming, dayNumber)
+    }
+
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(chipSize),
+        modifier = Modifier.size(chipSize).semantics(mergeDescendants = true) {
+            role = Role.Button
+            contentDescription = chipDesc
+        },
         shape = CircleShape,
         color = containerColor,
         contentColor = contentColor,

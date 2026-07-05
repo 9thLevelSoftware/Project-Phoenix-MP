@@ -3,12 +3,18 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
@@ -44,6 +50,7 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .selectableGroup()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLowest,
                     RoundedCornerShape(Spacing.medium),
@@ -67,6 +74,11 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
                                 MaterialTheme.colorScheme.surfaceContainerLowest
                             },
                         )
+                        .semantics(mergeDescendants = true) {
+                            role = Role.RadioButton
+                            selected = isSelected
+                            contentDescription = mode.displayName
+                        }
                         .clickable { onModeSelected(mode) }
                         .padding(vertical = Spacing.small, horizontal = Spacing.extraSmall),
                     contentAlignment = Alignment.Center,
