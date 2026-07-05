@@ -37,11 +37,16 @@ class DesignSystemRatchetTest {
         )
     }
 
-    private fun countMatches(regex: Regex): Int =
-        presentationDir
+    private fun countMatches(regex: Regex): Int {
+        require(presentationDir.isDirectory) {
+            "Presentation directory not found at ${presentationDir.absolutePath}. " +
+                "Path resolution is broken — ratchet counts cannot be trusted."
+        }
+        return presentationDir
             .walkTopDown()
             .filter { it.extension == "kt" }
             .sumOf { f -> regex.findAll(f.readText()).count() }
+    }
 
     @Test
     fun presentationDir_exists() {
