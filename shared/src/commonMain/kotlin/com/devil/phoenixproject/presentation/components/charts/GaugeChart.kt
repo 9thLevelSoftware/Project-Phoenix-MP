@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -60,10 +61,12 @@ fun GaugeChart(
     )
 
     val percentage = (animatedProgress * 100).toInt()
+    // Heat-ramp semantics: low progress = error (red), mid = warning (amber), high = success/primary
+    val accessColors = AccessibilityTheme.colors
     val gaugeColor = when {
-        animatedProgress >= 0.8f -> MaterialTheme.colorScheme.primary
-        animatedProgress >= 0.5f -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.tertiary
+        animatedProgress >= 0.8f -> accessColors.success
+        animatedProgress >= 0.5f -> accessColors.warning
+        else -> accessColors.error
     }
 
     val surfaceContainerHighestColor = MaterialTheme.colorScheme.surfaceContainerHighest

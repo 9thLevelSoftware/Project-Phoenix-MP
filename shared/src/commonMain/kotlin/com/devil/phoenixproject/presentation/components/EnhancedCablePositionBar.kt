@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 
 /**
  * Movement phase for the cable - determines indicator coloring
@@ -79,12 +80,14 @@ fun EnhancedCablePositionBar(
         }
     }
 
-    // Phase-reactive colors
-    val concentricColor = Color(0xFF00E676) // Bright green
-    val eccentricColor = Color(0xFFFF7043) // Orange-red
-    val staticColor = Color(0xFF90CAF9) // Light blue
-    val inactiveColor = Color(0xFF616161) // Grey
-    val dangerColor = Color(0xFFFF1744) // Bright red for danger zone
+    // Phase-reactive colors — semantic tokens (hue change from raw literals is intentional)
+    val accessColors = AccessibilityTheme.colors
+    val concentricColor = accessColors.success                                        // was 0xFF00E676
+    val eccentricColor = MaterialTheme.colorScheme.secondary                          // was 0xFFFF7043
+    val staticColor = MaterialTheme.colorScheme.tertiary                              // was 0xFF90CAF9
+    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) // was 0xFF616161
+    val dangerColor = accessColors.error                                               // was 0xFFFF1744
+    val surfaceColor = MaterialTheme.colorScheme.surface
 
     // Animate color based on phase (danger zone overrides all)
     val activeColor by animateColorAsState(
@@ -252,6 +255,7 @@ fun EnhancedCablePositionBar(
                 barHeight = barHeight,
                 position = animatedPosition,
                 color = activeColor,
+                surfaceColor = surfaceColor,
             )
         }
 
@@ -342,15 +346,15 @@ private fun DrawScope.drawGlowEffect(centerX: Float, centerY: Float, radius: Flo
 /**
  * Draw the main position indicator - a pill/capsule shape
  */
-private fun DrawScope.drawPositionIndicator(barWidth: Float, barHeight: Float, position: Float, color: Color) {
+private fun DrawScope.drawPositionIndicator(barWidth: Float, barHeight: Float, position: Float, color: Color, surfaceColor: Color) {
     val indicatorHeight = 20f
     val indicatorWidth = barWidth - 8f
     val y = barHeight * (1f - position) - (indicatorHeight / 2)
     val x = 4f
 
-    // White inner fill
+    // Surface-color outer ring (adapts to theme; was Color.White)
     drawRoundRect(
-        color = Color.White,
+        color = surfaceColor,
         topLeft = Offset(x, y),
         size = Size(indicatorWidth, indicatorHeight),
         cornerRadius = CornerRadius(indicatorHeight / 2, indicatorHeight / 2),

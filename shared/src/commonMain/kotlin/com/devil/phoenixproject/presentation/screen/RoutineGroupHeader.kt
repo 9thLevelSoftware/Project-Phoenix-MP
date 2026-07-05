@@ -84,7 +84,6 @@ fun RoutineGroupHeader(
             Box {
                 IconButton(
                     onClick = { showOverflow = true },
-                    modifier = Modifier.size(32.dp),
                 ) {
                     Icon(
                         Icons.Default.MoreVert,

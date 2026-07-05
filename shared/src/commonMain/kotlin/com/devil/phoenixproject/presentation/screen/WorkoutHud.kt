@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -33,6 +35,7 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import kotlin.math.abs
@@ -301,6 +304,7 @@ private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onS
         WindowWidthSizeClass.Medium -> 72.dp
         WindowWidthSizeClass.Compact -> 64.dp
     }
+    val stopWorkoutLabel = stringResource(Res.string.cd_stop_workout)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -317,7 +321,7 @@ private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onS
                     .size(12.dp)
                     .clip(CircleShape)
                     .background(
-                        if (connectionState is ConnectionState.Connected) Color.Green else Color.Red,
+                        if (connectionState is ConnectionState.Connected) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
                     ),
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -333,6 +337,7 @@ private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onS
             // STOP Button (Prominent)
             Button(
                 onClick = onStopWorkout,
+                modifier = Modifier.semantics { contentDescription = stopWorkoutLabel },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 shape = RoundedCornerShape(20.dp),
                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
@@ -1005,11 +1010,12 @@ private fun VelocityLossIndicator(
     val fillFraction = (currentLossPercent / maxDisplayPercent).coerceIn(0f, 1f)
     val thresholdFraction = (thresholdPercent.toFloat() / maxDisplayPercent).coerceIn(0f, 1f)
 
+    val colors = AccessibilityTheme.colors
     val ratio = currentLossPercent / thresholdPercent
     val barColor = when {
-        ratio < 0.5f -> Color(0xFF10B981)
-        ratio < 0.8f -> Color(0xFFF59E0B)
-        else -> Color(0xFFDC2626)
+        ratio < 0.5f -> colors.success
+        ratio < 0.8f -> colors.warning
+        else -> colors.error
     }
 
     Column(modifier = modifier) {
@@ -1026,7 +1032,7 @@ private fun VelocityLossIndicator(
                 "${currentLossPercent.roundToInt()}% / $thresholdPercent%",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = if (shouldStopSet) FontWeight.Bold else FontWeight.Normal,
-                color = if (shouldStopSet) Color(0xFFDC2626) else MaterialTheme.colorScheme.onSurface,
+                color = if (shouldStopSet) colors.error else MaterialTheme.colorScheme.onSurface,
             )
         }
         Spacer(Modifier.height(4.dp))
@@ -1064,7 +1070,7 @@ private fun VelocityLossIndicator(
             Text(
                 "THRESHOLD REACHED",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFFDC2626),
+                color = colors.error,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(top = 4.dp),
             )

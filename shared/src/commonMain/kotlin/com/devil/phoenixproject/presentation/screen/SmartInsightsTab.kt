@@ -54,6 +54,7 @@ import com.devil.phoenixproject.domain.model.WeeklyVolumeReport
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.ReadinessEngine
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
+import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.format
@@ -63,7 +64,10 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_retry
 import vitruvianprojectphoenix.shared.generated.resources.great_variety
+import vitruvianprojectphoenix.shared.generated.resources.insights_error_message
+import vitruvianprojectphoenix.shared.generated.resources.insights_error_title
 import vitruvianprojectphoenix.shared.generated.resources.insights_best_window
 import vitruvianprojectphoenix.shared.generated.resources.insights_col_muscle_group
 import vitruvianprojectphoenix.shared.generated.resources.insights_col_reps
@@ -113,15 +117,18 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     val twentyEightDaysMs = 28L * 24 * 60 * 60 * 1000
 
     var isLoading by remember { mutableStateOf(true) }
+    var hasError by remember { mutableStateOf(false) }
+    var retryKey by remember { mutableStateOf(0) }
     var sessionSummaries by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
     var exerciseLastPerformed by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
     var weightHistory by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
 
-    LaunchedEffect(profileId) {
+    LaunchedEffect(profileId, retryKey) {
         // Option A: fetch a broad 28-day slice once, then compute every card's time window from
         // the exact same anchor timestamp. This avoids drift where query and computation use
         // slightly different "now" values.
         isLoading = true
+        hasError = false
         insightsAnchorNowMs = null
         sessionSummaries = emptyList()
         exerciseLastPerformed = emptyList()
@@ -142,12 +149,28 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             exerciseLastPerformed = fetchedLastPerformed
             weightHistory = fetchedWeightHistory
             insightsAnchorNowMs = snapshotNowMs
+        } catch (_: Exception) {
+            // DB or IO failure — surface error state instead of infinite spinner (lens-state-patterns-3)
+            hasError = true
         } finally {
             isLoading = false
         }
     }
 
     val anchorNowMs = insightsAnchorNowMs
+
+    if (hasError) {
+        EmptyState(
+            icon = Icons.Default.Warning,
+            title = stringResource(Res.string.insights_error_title),
+            message = stringResource(Res.string.insights_error_message),
+            actionText = stringResource(Res.string.action_retry),
+            onAction = { retryKey++ },
+            modifier = modifier,
+        )
+        return
+    }
+
     if (isLoading || anchorNowMs == null) {
         Box(
             modifier = modifier.fillMaxSize(),
@@ -395,7 +418,7 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                         Icon(
                             Icons.Default.Warning,
                             contentDescription = null,
-                            tint = Color(0xFFF59E0B), // Amber warning
+                            tint = AccessibilityTheme.colors.warning,
                             modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -460,11 +483,10 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
             PlaceholderText(stringResource(Res.string.great_variety))
         } else {
             neglected.take(5).forEach { exercise ->
+                val neglectColors = AccessibilityTheme.colors
                 val color = when {
-                    exercise.daysSinceLastPerformed > 30 -> Color(0xFFF97316)
-
-                    // Orange
-                    else -> Color(0xFFEAB308) // Yellow
+                    exercise.daysSinceLastPerformed > 30 -> neglectColors.warning
+                    else -> MaterialTheme.colorScheme.secondary
                 }
                 Row(
                     modifier = Modifier

@@ -880,13 +880,13 @@ fun ActiveStatusCard(
                     Box(
                         modifier = Modifier
                             .size(12.dp)
-                            .background(Color.Green.copy(alpha = alpha), CircleShape),
+                            .background(AccessibilityTheme.colors.success.copy(alpha = alpha), CircleShape),
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         stringResource(Res.string.label_live),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.Green,
+                        color = AccessibilityTheme.colors.success,
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -1133,8 +1133,8 @@ fun AutoStartStopCard(
                     ) { count ->
                         Text(
                             text = "$count",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Black,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
                             color = primaryColor,
                         )
                     }

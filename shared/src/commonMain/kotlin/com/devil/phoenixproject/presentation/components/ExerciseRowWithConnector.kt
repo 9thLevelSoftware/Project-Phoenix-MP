@@ -88,7 +88,7 @@ fun ExerciseRowWithConnector(
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
             .shadow(elevation, RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.surface)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

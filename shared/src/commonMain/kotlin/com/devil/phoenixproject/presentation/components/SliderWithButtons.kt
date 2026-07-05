@@ -134,7 +134,7 @@ fun SliderWithButtons(
                     val newValue = (value - step).coerceIn(valueRange)
                     onValueChange(newValue)
                 },
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(48.dp), // workout-widgets-3: 48dp min touch target
                 enabled = enabled && value > valueRange.start,
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -171,7 +171,7 @@ fun SliderWithButtons(
                     val newValue = (value + step).coerceIn(valueRange)
                     onValueChange(newValue)
                 },
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(48.dp), // workout-widgets-3: 48dp min touch target
                 enabled = enabled && value < valueRange.endInclusive,
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,

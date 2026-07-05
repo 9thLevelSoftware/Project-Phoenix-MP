@@ -28,6 +28,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
@@ -318,7 +319,7 @@ fun IntegrationsScreen(
                             TextButton(
                                 onClick = { viewModel.retryHealthPermissions() },
                                 enabled = !healthBusy,
-                                modifier = Modifier.height(32.dp),
+                                modifier = Modifier,
                             ) {
                                 Text("Retry permissions", style = MaterialTheme.typography.labelMedium)
                             }
@@ -328,7 +329,7 @@ fun IntegrationsScreen(
                                 onClick = { viewModel.syncPreviousHealthWorkouts() },
                                 enabled = !healthBusy,
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp),
+                                modifier = Modifier,
                             ) {
                                 if (healthBusy) {
                                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -379,7 +380,7 @@ fun IntegrationsScreen(
                                     },
                                     enabled = !hevyBusy,
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.height(36.dp),
+                                    modifier = Modifier,
                                 ) {
                                     if (hevyBusy) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -391,7 +392,7 @@ fun IntegrationsScreen(
                                     onClick = {
                                         viewModel.disconnectProvider(IntegrationProvider.HEVY)
                                     },
-                                    modifier = Modifier.height(36.dp),
+                                    modifier = Modifier,
                                 ) {
                                     Text(
                                         "Disconnect",
@@ -407,7 +408,7 @@ fun IntegrationsScreen(
                                     showHevyApiKeyDialog = true
                                 },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp),
+                                modifier = Modifier,
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
                             }
@@ -446,7 +447,7 @@ fun IntegrationsScreen(
                                     },
                                     enabled = !liftosaurBusy,
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.height(36.dp),
+                                    modifier = Modifier,
                                 ) {
                                     if (liftosaurBusy) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -458,7 +459,7 @@ fun IntegrationsScreen(
                                     onClick = {
                                         viewModel.disconnectProvider(IntegrationProvider.LIFTOSAUR)
                                     },
-                                    modifier = Modifier.height(36.dp),
+                                    modifier = Modifier,
                                 ) {
                                     Text(
                                         "Disconnect",
@@ -474,7 +475,7 @@ fun IntegrationsScreen(
                                     showLiftosaurApiKeyDialog = true
                                 },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp),
+                                modifier = Modifier,
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
                             }
@@ -705,6 +706,7 @@ private fun IntegrationCard(
     badges: List<String> = emptyList(),
     trailingContent: @Composable () -> Unit,
 ) {
+    val connectedGreen = AccessibilityTheme.colors.connectedGreen // Emerald — distinct from success lime
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -737,7 +739,7 @@ private fun IntegrationCard(
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = if (statusConnected) {
-                            Color(0xFF10B981).copy(alpha = 0.15f)
+                            connectedGreen.copy(alpha = 0.15f)
                         } else {
                             MaterialTheme.colorScheme.surfaceVariant
                         },
@@ -746,7 +748,7 @@ private fun IntegrationCard(
                             if (statusConnected) "Connected" else "Not connected",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (statusConnected) {
-                                Color(0xFF10B981)
+                                connectedGreen
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },

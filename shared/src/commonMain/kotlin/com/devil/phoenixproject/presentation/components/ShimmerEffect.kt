@@ -42,10 +42,11 @@ private operator fun Dp.times(factor: Float): Dp = (this.value * factor).dp
  */
 @Composable
 fun shimmerBrush(targetValue: Float = 1000f, showShimmer: Boolean = true): Brush = if (showShimmer) {
+    val onSurface = MaterialTheme.colorScheme.onSurface
     val shimmerColors = listOf(
-        Color.LightGray.copy(alpha = 0.6f),
-        Color.LightGray.copy(alpha = 0.2f),
-        Color.LightGray.copy(alpha = 0.6f),
+        onSurface.copy(alpha = 0.12f),
+        onSurface.copy(alpha = 0.06f),
+        onSurface.copy(alpha = 0.12f),
     )
 
     val transition = rememberInfiniteTransition(label = "shimmer")

@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ForceCurveResult
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -37,6 +38,7 @@ fun ForceCurveMiniGraph(forceCurveResult: ForceCurveResult, onTapToExpand: () ->
     val forceData = forceCurveResult.normalizedForceN
     val stickingPointPct = forceCurveResult.stickingPointPct
     val primaryColor = MaterialTheme.colorScheme.primary
+    val errorColor = AccessibilityTheme.colors.error // capture before Canvas (no @Composable in DrawScope)
 
     Box(
         modifier = modifier
@@ -74,7 +76,7 @@ fun ForceCurveMiniGraph(forceCurveResult: ForceCurveResult, onTapToExpand: () ->
                     val spIndex = pct.toInt().coerceIn(0, forceData.lastIndex)
                     val spY =
                         size.height - ((forceData[spIndex] - minForce) / forceRange) * size.height
-                    drawCircle(color = Color.Red, radius = 4.dp.toPx(), center = Offset(spX, spY))
+                    drawCircle(color = errorColor, radius = 4.dp.toPx(), center = Offset(spX, spY))
                 }
             }
 
@@ -110,6 +112,8 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
     val stickingPointPct = forceCurveResult.stickingPointPct
     val strengthProfile = forceCurveResult.strengthProfile
     val primaryColor = MaterialTheme.colorScheme.primary
+    val errorColor = AccessibilityTheme.colors.error   // capture before canvas lambdas
+    val outlineGridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f) // was Color.Gray
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -178,7 +182,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                             .padding(16.dp),
                     ) {
                         val forceRange = (maxForce - minForce).coerceAtLeast(1f)
-                        val gridColor = Color.Gray.copy(alpha = 0.3f)
+                        val gridColor = outlineGridColor
 
                         // Draw grid lines for X axis (ROM %)
                         for (pct in listOf(0, 25, 50, 75, 100)) {
@@ -219,7 +223,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                                 size.height -
                                     ((forceData[spIndex] - minForce) / forceRange) * size.height
                             drawCircle(
-                                color = Color.Red,
+                                color = errorColor,
                                 radius = 6.dp.toPx(),
                                 center = Offset(spX, spY),
                             )
@@ -252,14 +256,14 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                     stickingPointPct?.let { pct ->
                         val roundedPct = pct.toInt()
                         Surface(
-                            color = Color.Red.copy(alpha = 0.1f),
+                            color = errorColor.copy(alpha = 0.1f),
                             shape = RoundedCornerShape(8.dp),
                         ) {
                             Text(
                                 text = "Sticking point: $roundedPct% ROM",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
-                                color = Color.Red,
+                                color = errorColor,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             )
                         }

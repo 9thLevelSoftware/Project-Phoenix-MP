@@ -120,7 +120,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
                     text = "Achievement Unlocked!",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD700),
+                    color = MaterialTheme.colorScheme.secondary,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -365,7 +365,7 @@ fun BatchedBadgeCelebrationDialog(
                     },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD700),
+                    color = MaterialTheme.colorScheme.secondary,
                     textAlign = TextAlign.Center,
                 )
 
@@ -476,20 +476,19 @@ fun BatchedBadgeCelebrationDialog(
                         .fillMaxWidth()
                         .height(48.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFFD700),
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Celebration,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
-                        tint = Color.Black,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Awesome!",
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black,
                     )
                 }
             }

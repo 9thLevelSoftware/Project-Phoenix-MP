@@ -9,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -18,15 +17,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-// Theme colors matching the app
-private val DarkSlate = Color(0xFF0F172A)
-private val DeepNavy = Color(0xFF1E293B)
-private val FireOrange = Color(0xFFFF6B35)
-private val TextPrimary = Color(0xFFF1F5F9)
-private val TextSecondary = Color(0xFF94A3B8)
-private val SurfaceColor = Color(0xFF1E293B)
-private val WarningRed = Color(0xFFEF4444)
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 
 /**
  * Full-screen EULA acceptance screen.
@@ -64,14 +56,11 @@ fun EulaScreen(
 
     val canAccept = ageConfirmed && hasScrolledToBottom
 
+    val bgBrush = screenBackgroundBrush()
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(DarkSlate, DeepNavy, DarkSlate),
-                ),
-            ),
+            .background(bgBrush),
     ) {
         Column(
             modifier = Modifier
@@ -84,7 +73,7 @@ fun EulaScreen(
                 text = "End User License Agreement (EULA),\nSafety Disclaimer, and Assumption of Risk",
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontWeight = FontWeight.Bold,
-                    color = FireOrange,
+                    color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
                     lineHeight = 28.sp,
                 ),
@@ -98,8 +87,8 @@ fun EulaScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = SurfaceColor),
-                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                shape = MaterialTheme.shapes.small,
             ) {
                 Column(
                     modifier = Modifier
@@ -114,7 +103,7 @@ fun EulaScreen(
                     Text(
                         text = "— End of Agreement —",
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = TextSecondary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                         ),
                         modifier = Modifier.fillMaxWidth(),
@@ -127,7 +116,7 @@ fun EulaScreen(
                 Text(
                     text = "↓ Scroll down to read the full agreement ↓",
                     style = MaterialTheme.typography.bodySmall.copy(
-                        color = FireOrange,
+                        color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center,
                     ),
                     modifier = Modifier
@@ -149,15 +138,15 @@ fun EulaScreen(
                     checked = ageConfirmed,
                     onCheckedChange = { ageConfirmed = it },
                     colors = CheckboxDefaults.colors(
-                        checkedColor = FireOrange,
-                        uncheckedColor = TextSecondary,
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "I certify that I am at least 18 years of age.",
                     style = MaterialTheme.typography.bodyMedium.copy(
-                        color = TextPrimary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Medium,
                     ),
                 )
@@ -172,13 +161,7 @@ fun EulaScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = FireOrange,
-                    contentColor = Color.White,
-                    disabledContainerColor = Color.Gray.copy(alpha = 0.3f),
-                    disabledContentColor = Color.White.copy(alpha = 0.5f),
-                ),
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
             ) {
                 Text(
                     text = if (canAccept) {
@@ -203,7 +186,7 @@ fun EulaScreen(
             Text(
                 text = "You must accept these terms to use Project Phoenix.",
                 style = MaterialTheme.typography.bodySmall.copy(
-                    color = TextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 ),
                 modifier = Modifier.fillMaxWidth(),
@@ -217,6 +200,12 @@ fun EulaScreen(
  */
 @Composable
 private fun EulaContent() {
+    // Capture theme colors here — needed inside buildAnnotatedString lambdas (non-@Composable scope)
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val primary = MaterialTheme.colorScheme.primary
+    val errorColor = AccessibilityTheme.colors.error
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -224,24 +213,24 @@ private fun EulaContent() {
         // App info header
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = TextSecondary)) {
+                withStyle(SpanStyle(color = onSurfaceVariant)) {
                     append("App Name: ")
                 }
-                withStyle(SpanStyle(color = TextPrimary, fontWeight = FontWeight.Bold)) {
+                withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.Bold)) {
                     append("Project Phoenix")
                 }
                 append("\n")
-                withStyle(SpanStyle(color = TextSecondary)) {
+                withStyle(SpanStyle(color = onSurfaceVariant)) {
                     append("Developer: ")
                 }
-                withStyle(SpanStyle(color = TextPrimary, fontWeight = FontWeight.Bold)) {
+                withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.Bold)) {
                     append("9th Level Software")
                 }
             },
             style = MaterialTheme.typography.bodyMedium,
         )
 
-        HorizontalDivider(color = TextSecondary.copy(alpha = 0.3f))
+        HorizontalDivider(color = onSurfaceVariant.copy(alpha = 0.3f))
 
         // Section 1: Medical Warning
         EulaSection(
@@ -261,20 +250,20 @@ private fun EulaContent() {
         Text(
             text = "READ CAREFULLY: PROJECT PHOENIX CONTROLS THIRD-PARTY HARDWARE CAPABLE OF GENERATING SIGNIFICANT PHYSICAL FORCE.",
             style = MaterialTheme.typography.bodyMedium.copy(
-                color = WarningRed,
+                color = errorColor,
                 fontWeight = FontWeight.Bold,
             ),
         )
         Text(
             text = """By using Project Phoenix, you acknowledge that resistance training involves inherent risks of serious injury, permanent disability, paralysis, and death. You explicitly acknowledge that software-controlled resistance equipment carries unique risks, including but not limited to:""",
-            style = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+            style = MaterialTheme.typography.bodyMedium.copy(color = onSurface),
         )
         BulletPoint("Sudden Resistance Changes: Software bugs, Bluetooth latency, or connection drops may cause the equipment to apply sudden, unexpected force or fail to release force when required.")
         BulletPoint("Hardware Unresponsiveness: The \"safety features\" of the hardware (e.g., spotting) may fail to engage due to communication errors between this App and the hardware.")
         Text(
             text = "YOU KNOWINGLY AND FREELY ASSUME ALL SUCH RISKS, both known and unknown, even if arising from the negligence of the Developer, and assume full responsibility for your participation.",
             style = MaterialTheme.typography.bodyMedium.copy(
-                color = WarningRed,
+                color = errorColor,
                 fontWeight = FontWeight.Bold,
             ),
         )
@@ -288,7 +277,7 @@ private fun EulaContent() {
         Text(
             text = "Project Phoenix is an independent, community-developed project. IT IS NOT AFFILIATED WITH, ENDORSED BY, AUTHORIZED BY, OR SUPPORTED BY VITRUVIAN INVESTMENTS PTY LTD (IN LIQUIDATION), MANAGED BY MERCHANTS ADVISORY, OR ANY OTHER EQUIPMENT MANUFACTURER.",
             style = MaterialTheme.typography.bodyMedium.copy(
-                color = TextPrimary,
+                color = onSurface,
                 fontWeight = FontWeight.Bold,
             ),
         )
@@ -328,12 +317,12 @@ WE DO NOT WARRANT THAT THE FUNCTIONS CONTAINED IN THE APPLICATION WILL MEET YOUR
         )
         Text(
             text = """You and 9th Level Software agree that any dispute arising out of or relating to this Agreement or the App shall be legally settled by binding arbitration.""",
-            style = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+            style = MaterialTheme.typography.bodyMedium.copy(color = onSurface),
         )
         Text(
             text = "YOU AGREE THAT YOU ARE WAIVING THE RIGHT TO A TRIAL BY JURY OR TO PARTICIPATE AS A PLAINTIFF OR CLASS MEMBER IN ANY CLASS ACTION PROCEEDING.",
             style = MaterialTheme.typography.bodyMedium.copy(
-                color = WarningRed,
+                color = errorColor,
                 fontWeight = FontWeight.Bold,
             ),
         )
@@ -356,7 +345,7 @@ private fun EulaSection(
             text = "$number. $title",
             style = MaterialTheme.typography.titleSmall.copy(
                 fontWeight = FontWeight.Bold,
-                color = if (isWarning) WarningRed else FireOrange,
+                color = if (isWarning) AccessibilityTheme.colors.error else MaterialTheme.colorScheme.primary,
             ),
         )
         if (content != null) {
@@ -364,7 +353,7 @@ private fun EulaSection(
             Text(
                 text = content,
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    color = TextPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = if (isAllCaps) FontWeight.Medium else FontWeight.Normal,
                 ),
             )
@@ -385,14 +374,14 @@ private fun BulletPoint(text: String) {
         Text(
             text = "•",
             style = MaterialTheme.typography.bodyMedium.copy(
-                color = FireOrange,
+                color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
             ),
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+            style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
         )
     }
 }
