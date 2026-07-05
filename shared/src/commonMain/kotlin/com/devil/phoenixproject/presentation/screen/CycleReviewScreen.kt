@@ -72,7 +72,7 @@ fun CycleReviewScreen(
                     Button(
                         onClick = onSave,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(
                             text = "Confirm & Finish",
@@ -136,7 +136,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                 MaterialTheme.colorScheme.surfaceContainer
             },
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column {
             // Header row (always visible)
