@@ -3,7 +3,6 @@ package com.devil.phoenixproject.ui.theme
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -53,7 +52,7 @@ fun expressiveCardColors() = CardDefaults.cardColors(
  * Material 3 Expressive Card Shape
  * More rounded corners (20dp vs standard 16dp)
  */
-val expressiveCardShape = RoundedCornerShape(20.dp)
+val expressiveCardShape = ExpressiveShapeValues.Medium
 
 /**
  * Material 3 Expressive Card Elevation
@@ -78,7 +77,7 @@ fun expressiveCardBorder() = BorderStroke(
  * Material 3 Expressive Button Shape
  * More rounded corners
  */
-val expressiveButtonShape = RoundedCornerShape(16.dp)
+val expressiveButtonShape = ExpressiveShapeValues.Medium
 
 /**
  * Material 3 Expressive Button Elevation
