@@ -2935,7 +2935,7 @@ fun SettingsTab(
                 )
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(28.dp), // Material 3 Expressive: Very rounded for dialogs (was 16dp)
+            shape = MaterialTheme.shapes.large, // Material 3 Expressive: Very rounded for dialogs (was 16dp)
             confirmButton = {
                 TextButton(
                     onClick = {
