@@ -69,3 +69,27 @@ All 5 locale files (de, es, fr, it, nl) fall back to English base for the new ke
 
 - `./gradlew :androidApp:assembleDebug` → BUILD SUCCESSFUL
 - `./gradlew :shared:testAndroidHostTest --rerun-tasks` → 2,296 tests executed, 0 failed
+
+## Fix wave
+
+### Item 1 — Unused import (`RoutineEditorScreen.kt`)
+
+Verified zero `ButtonDefaults.` usages remain in the file (grep returned no matches). Removed `import androidx.compose.material3.ButtonDefaults` from line 39.
+
+### Item 2 — Localize `DisconnectConfirmationDialog`
+
+**Hardcoded strings found:**
+- Title: `"Disconnect Device?"` (hardcoded, no resource reference)
+- Message: `"Are you sure you want to disconnect from $deviceName?"` (hardcoded with Kotlin string interpolation)
+
+**Strings audit:**
+- `disconnect_title` = "Disconnect?" already exists and is used in `WorkoutTab.kt`. **Reused** for the title (minor text change: "Disconnect Device?" → "Disconnect?"; functionally equivalent).
+- `disconnect_message` = "Are you sure you want to disconnect from the Vitruvian machine?" — lacks a `%1$s` placeholder for `deviceName`, and is in use in `WorkoutTab.kt`. **Not repurposed.**
+- **Minted** `disconnect_message_device` = "Are you sure you want to disconnect from %1$s?" in `values/strings.xml` only; 5 locale files fall back to English.
+
+**Keys reused:** `disconnect_title`  
+**Keys minted:** `disconnect_message_device`
+
+**Verification:**
+- `./gradlew :androidApp:assembleDebug` → BUILD SUCCESSFUL (28s)
+- `./gradlew :shared:testAndroidHostTest --rerun-tasks` → 2,296 tests executed, 0 failed
