@@ -34,3 +34,12 @@ All targeted dialog fixes implemented and verified. Build: PASS. Tests: 2,296 pa
 
 - `./gradlew :androidApp:assembleDebug`: BUILD SUCCESSFUL
 - `./gradlew :shared:testAndroidHostTest --rerun-tasks`: BUILD SUCCESSFUL — **2,296 tests passed, 0 failed**
+
+## Fix wave (post-review)
+
+| # | Issue | Fix |
+|---|---|---|
+| 1 | Glow pulse rate wrong — `tween(800)` with `Reverse` = 1600ms full cycle vs original 800ms | Changed to `tween(durationMillis = 400)`. Original loop: ±0.02f/frame @ 16ms = 25 frames × 16ms = 400ms half-cycle; `Reverse` doubles to 800ms full cycle. |
+| 2 | BulkWeightAdjustDialog hint gate `currentMode == null` misses all-PR-scaled case | Gate changed to `changeCount == 0`. When `currentMode == null` shows `bulk_weight_adjust_select_hint` (existing); when mode set but nothing changed (all PR-scaled) shows new `bulk_adjust_hint_pr_scaled` key. `changeCount` derivation already excludes PR-scaled exercises — no condition duplication. New string added to `values/strings.xml`. |
+| 3 | reduceMotion post-processed via `val rotation = if (reduceMotion)…` after the animated value | Moved into `targetValue = if (reduceMotion) 0f else 360f` on rotation channel and `targetValue = if (reduceMotion) 0.3f else 0.8f` on glow channel. Both channels settle at initial value under reduceMotion. Removed intermediate `animatedRotation` local. |
+| 4 | Re-verify | `./gradlew :androidApp:assembleDebug`: BUILD SUCCESSFUL. `./gradlew :shared:testAndroidHostTest --rerun-tasks`: BUILD SUCCESSFUL — **2,296 tests passed, 0 failed** (22 tasks executed, none cached). |

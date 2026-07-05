@@ -3711,23 +3711,23 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     val discoTransition = rememberInfiniteTransition(label = "disco")
 
-    val animatedRotation by discoTransition.animateFloat(
+    // reduceMotion: bake the flag into targetValue so the channel settles at initial (no movement)
+    val rotation by discoTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 360f,
+        targetValue = if (reduceMotion) 0f else 360f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1920, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "disco_rotation",
     )
-    // When reduceMotion is on, freeze rotation at 0; glow may still pulse (non-spatial motion)
-    val rotation = if (reduceMotion) 0f else animatedRotation
 
+    // 400ms half-cycle matches original +0.02f/frame @ 60fps (0.5 range ÷ 0.02 = 25 frames × 16ms)
     val glowAlpha by discoTransition.animateFloat(
         initialValue = 0.3f,
-        targetValue = 0.8f,
+        targetValue = if (reduceMotion) 0.3f else 0.8f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800, easing = LinearEasing),
+            animation = tween(durationMillis = 400, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "disco_glow",
