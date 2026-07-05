@@ -392,7 +392,7 @@ fun RoutinesTab(
                     onClick = onCreateRoutine,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                 ) {
                     Icon(
                         Icons.Default.Add,
@@ -1017,7 +1017,7 @@ private fun ProfilePickerDialog(
                                             text = profile.name.take(1).uppercase(),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onPrimary,
                                         )
                                     }
                                 }

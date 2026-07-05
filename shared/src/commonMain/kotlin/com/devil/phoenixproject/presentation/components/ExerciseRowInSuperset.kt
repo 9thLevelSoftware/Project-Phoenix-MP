@@ -67,7 +67,7 @@ fun ExerciseRowInSuperset(
                     }
                 },
             ),
-        shape = RoundedCornerShape(10.dp),
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
