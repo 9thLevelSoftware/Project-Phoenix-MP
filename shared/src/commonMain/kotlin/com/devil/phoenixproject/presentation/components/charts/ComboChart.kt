@@ -77,6 +77,7 @@ fun ComboChart(
 
     val labels = (columnData.map { it.first } + lineData.map { it.first }).distinct()
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    val innerDotColor = MaterialTheme.colorScheme.surface // was Color.White — adapts to theme
     val density = LocalDensity.current
 
     Column(modifier = modifier.padding(16.dp)) {
@@ -218,7 +219,7 @@ fun ComboChart(
                                 center = Offset(x, y),
                             )
                             drawCircle(
-                                color = Color.White,
+                                color = innerDotColor,
                                 radius = 3.dp.toPx(),
                                 center = Offset(x, y),
                             )

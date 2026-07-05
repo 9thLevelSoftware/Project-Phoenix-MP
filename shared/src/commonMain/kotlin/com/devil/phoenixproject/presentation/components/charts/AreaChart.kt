@@ -69,6 +69,7 @@ fun AreaChart(
     val valueRange = (maxValue - minValue).coerceAtLeast(1f)
 
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    val innerDotColor = MaterialTheme.colorScheme.surface // was Color.White — adapts to theme
     val density = LocalDensity.current
 
     val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 200.dp)
@@ -205,7 +206,7 @@ fun AreaChart(
                         center = point,
                     )
                     drawCircle(
-                        color = Color.White,
+                        color = innerDotColor,
                         radius = 3.dp.toPx(),
                         center = point,
                     )
