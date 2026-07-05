@@ -22,6 +22,7 @@ import com.devil.phoenixproject.presentation.components.cycle.SwipeableCycleItem
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -101,9 +102,9 @@ fun CycleEditorScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = Spacing.medium, vertical = Spacing.small),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 OutlinedTextField(
                     value = uiState.cycleName,
@@ -127,7 +128,7 @@ fun CycleEditorScreen(
                 label = { Text(stringResource(Res.string.label_description_optional)) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = Spacing.medium, vertical = Spacing.small),
                 singleLine = true,
             )
 
@@ -135,7 +136,7 @@ fun CycleEditorScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = Spacing.medium, vertical = Spacing.small),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -158,7 +159,7 @@ fun CycleEditorScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(32.dp),
+                        .padding(Spacing.extraLarge),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -171,8 +172,8 @@ fun CycleEditorScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Spacer(modifier = Modifier.height(Spacing.large))
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
                             OutlinedButton(
                                 onClick = { cycleEditorViewModel.showAddDaySheet(true) },
                             ) {
@@ -188,8 +189,8 @@ fun CycleEditorScreen(
                 LazyColumn(
                     state = lazyListState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = Spacing.medium, vertical = Spacing.small),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     itemsIndexed(uiState.items, key = { _, item -> item.id }) { index, item ->
                         ReorderableItem(reorderState, key = item.id) { isDragging ->
