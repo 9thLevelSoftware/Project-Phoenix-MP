@@ -18,7 +18,8 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -387,8 +388,8 @@ private fun LoginForm(
                     uiState !is LinkAccountUiState.Loading,
             ) {
                 if (uiState is LinkAccountUiState.Loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
+                    LoadingIndicator(
+                        size = LoadingIndicatorSize.Small,
                         color = MaterialTheme.colorScheme.onPrimary,
                     )
                 } else {
@@ -427,10 +428,7 @@ private fun LoginForm(
                     enabled = !anyLoading,
                 ) {
                     if (loadingProvider == OAuthProvider.GOOGLE) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                        )
+                        LoadingIndicator(LoadingIndicatorSize.Small)
                     } else {
                         GoogleIcon(modifier = Modifier.size(18.dp))
                     }
@@ -442,10 +440,7 @@ private fun LoginForm(
                     enabled = !anyLoading,
                 ) {
                     if (loadingProvider == OAuthProvider.APPLE) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                        )
+                        LoadingIndicator(LoadingIndicatorSize.Small)
                     } else {
                         AppleIcon(modifier = Modifier.size(18.dp))
                     }

@@ -3,7 +3,6 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,9 +45,7 @@ fun ConnectingOverlay(onCancel: () -> Unit = {}) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(48.dp),
-                    )
+                    LoadingIndicator(LoadingIndicatorSize.Large)
                     Text(
                         "Connecting to device...",
                         style = MaterialTheme.typography.titleMedium,

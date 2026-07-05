@@ -21,7 +21,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -268,10 +269,7 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                 enabled = !isLoading,
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                    )
+                    LoadingIndicator(LoadingIndicatorSize.Small)
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Text(if (authMode == AuthMode.SIGN_IN) "Sign In" else "Create Account")

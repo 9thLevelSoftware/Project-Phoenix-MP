@@ -43,7 +43,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -1422,7 +1423,7 @@ fun ConnectionCard(connectionState: ConnectionState, onScan: () -> Unit, onCance
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            LoadingIndicator(LoadingIndicatorSize.Medium)
                             Spacer(modifier = Modifier.width(Spacing.small))
                             Text(stringResource(Res.string.scanning_for_devices))
                         }
@@ -1439,7 +1440,7 @@ fun ConnectionCard(connectionState: ConnectionState, onScan: () -> Unit, onCance
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            LoadingIndicator(LoadingIndicatorSize.Medium)
                             Spacer(modifier = Modifier.width(Spacing.small))
                             Text(stringResource(Res.string.connecting))
                         }
