@@ -4,8 +4,8 @@
 
 | Metric | Value |
 |--------|-------|
-| Total tappable-card sites found | 19 |
-| Converted to ExpressiveCard | 16 |
+| Total tappable-card sites found | 20 |
+| Converted to ExpressiveCard | 17 |
 | Skipped | 3 |
 | Static cards surveyed (no action) | 9+ |
 
@@ -62,3 +62,31 @@
  *   shape = MaterialTheme.shapes.medium,
  * )`.
 ```
+
+(Convention block merged into ExpressiveCard's own KDoc in fix wave — the separate floating KDoc was removed.)
+
+---
+
+## Fix wave
+
+**Missed site (wave 1 rejection):**
+
+| # | File | Line | Component | Tap action | Verdict |
+|---|------|------|-----------|------------|---------|
+| 20 | `screen/IntegrationsScreen.kt` | 600 | External-data navigation link | Navigate to ExternalActivitiesScreen | **CONVERT** — `Card(onClick = onNavigateToExternalData)` with same HistoryTab styling pattern; colors default (dropped), shape medium default (dropped), elevation 8dp default (dropped), `.shadow(8.dp)` preserved on modifier, `border = BorderStroke(2.dp, primary.copy(alpha=0.2f))` passed through |
+
+**Re-sweep of IntegrationsScreen.kt (all Card sites):**
+
+| Line | onClick? | Verdict |
+|------|----------|---------|
+| 488 | No | Static — CSV integration section card |
+| 600 | **Yes** | Converted (site 20) |
+| 710 | No | Static — connected-provider summary card |
+
+Re-sweep result: **no further missed tappable cards**. IntegrationsScreen has exactly 1 tappable Card (line 600, now converted).
+
+**KDoc fix:** Merged the floating convention block into `ExpressiveCard`'s own KDoc (single `/** */` per function). No functional change.
+
+**Verification (fix wave):**
+- `./gradlew :androidApp:assembleDebug` → BUILD SUCCESSFUL
+- `./gradlew :shared:testAndroidHostTest --rerun-tasks` → BUILD SUCCESSFUL, **2,296 tests, 0 failures**

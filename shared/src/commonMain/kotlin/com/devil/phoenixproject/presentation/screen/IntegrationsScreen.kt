@@ -28,6 +28,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -597,17 +598,12 @@ fun IntegrationsScreen(
             }
 
             // ── External Activities navigation link ───────────────────────────
-            Card(
+            ExpressiveCard(
+                onClick = onNavigateToExternalData,
                 modifier = Modifier
                     .fillMaxWidth()
                     .shadow(8.dp, MaterialTheme.shapes.medium),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ),
-                shape = MaterialTheme.shapes.medium,
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                onClick = onNavigateToExternalData,
             ) {
                 Row(
                     modifier = Modifier

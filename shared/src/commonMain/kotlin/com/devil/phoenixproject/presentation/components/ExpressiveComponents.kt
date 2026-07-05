@@ -21,6 +21,12 @@ import com.devil.phoenixproject.presentation.util.tvSliderKeys
 import kotlin.math.roundToInt
 
 /**
+ * A Material 3 Expressive Card wrapper.
+ * Features:
+ * - 20dp rounded corners
+ * - Spring animation on press
+ * - Consistent elevation and border
+ *
  * ## Card usage convention
  *
  * - **Interactive cards** (navigates, expands, selects): use [ExpressiveCard].
@@ -29,14 +35,6 @@ import kotlin.math.roundToInt
  *   colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
  *   shape = MaterialTheme.shapes.medium,
  * )`.
- */
-
-/**
- * A Material 3 Expressive Card wrapper.
- * Features:
- * - 20dp rounded corners
- * - Spring animation on press
- * - Consistent elevation and border
  */
 @Composable
 fun ExpressiveCard(
