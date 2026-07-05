@@ -10,6 +10,14 @@ import androidx.compose.ui.graphics.luminance
  */
 
 /**
+ * Returns true when the current MaterialTheme background is dark (luminance < 0.5).
+ * Respects the app's ThemeMode setting rather than the system theme.
+ * Single source of truth for the dark/light threshold used by all background brushes.
+ */
+@Composable
+private fun isDarkBackground(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+/**
  * Returns a vertical gradient brush for screen backgrounds.
  * Dark mode: Slate with subtle plum accent in center
  * Light mode: Light with subtle mint wash
@@ -19,9 +27,7 @@ import androidx.compose.ui.graphics.luminance
  */
 @Composable
 fun screenBackgroundBrush(): Brush {
-    // Check if we're in dark mode by examining the background color luminance
-    // This respects the app's ThemeMode setting, not just system theme
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val isDark = isDarkBackground()
     return if (isDark) {
         Brush.verticalGradient(
             0.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -47,7 +53,7 @@ fun screenBackgroundBrush(): Brush {
  */
 @Composable
 fun celebrationBackgroundBrush(): Brush {
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val isDark = isDarkBackground()
     return if (isDark) {
         Brush.verticalGradient(
             0.00f to MaterialTheme.colorScheme.surfaceContainerLowest,

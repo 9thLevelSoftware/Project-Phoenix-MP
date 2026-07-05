@@ -205,7 +205,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = Spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+        verticalArrangement = Arrangement.spacedBy(Spacing.small),
         contentPadding = PaddingValues(vertical = Spacing.medium),
     ) {
         item {

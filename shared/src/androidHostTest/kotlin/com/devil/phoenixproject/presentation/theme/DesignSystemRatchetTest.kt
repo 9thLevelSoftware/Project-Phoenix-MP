@@ -60,7 +60,8 @@ class DesignSystemRatchetTest {
     @Test
     fun rawRoundedCornerShapes_doNotIncrease() {
         // Baseline 2026-07-05: 37 (down from 375 after Phase 2 task-2.1 shape-token sweep).
-        // All 37 remaining are exempt: ≤6dp decor, intentional 0dp flat edges, unmapped values.
+        // All 37 remaining are exempt: ≤6dp decor, intentional 0dp flat edges,
+        // unmapped mid-values (SetReadyScreen 14dp, SettingsTab 40dp, SmartInsightsTab 7dp).
         val count = countMatches(Regex("""RoundedCornerShape\(\d+\.dp"""))
         assertTrue(
             count <= 37,

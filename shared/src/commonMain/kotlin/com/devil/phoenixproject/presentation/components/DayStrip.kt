@@ -202,7 +202,8 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
                         )
                         Text(
                             text = dayNumber.toString(),
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
@@ -220,7 +221,8 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
                         )
                         Text(
                             text = dayNumber.toString(),
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }

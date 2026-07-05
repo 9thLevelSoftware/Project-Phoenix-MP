@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 
 /**
  * Countdown Card Component
@@ -85,14 +86,7 @@ fun CountdownCard(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    ),
-                ),
-            )
+            .background(screenBackgroundBrush())
             .systemBarsPadding()
             .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {

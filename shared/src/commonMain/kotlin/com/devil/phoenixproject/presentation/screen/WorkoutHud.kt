@@ -638,8 +638,7 @@ private fun ExecutionPage(
                 // Warmup counter (non-animated)
                 Text(
                     text = "${repCount.warmupReps} / ${workoutParameters.warmupReps}",
-                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
-                    fontWeight = FontWeight.Black,
+                    style = workoutCounterStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
