@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -122,14 +123,14 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
 
     // Determine colors based on state
     val containerColor = when (state) {
-        DayState.COMPLETED -> MaterialTheme.colorScheme.primaryContainer
+        DayState.COMPLETED -> AccessibilityTheme.colors.success
         DayState.MISSED -> MaterialTheme.colorScheme.errorContainer
         DayState.CURRENT -> MaterialTheme.colorScheme.primary
         DayState.UPCOMING -> Color.Transparent
     }
 
     val contentColor = when (state) {
-        DayState.COMPLETED -> MaterialTheme.colorScheme.onPrimaryContainer
+        DayState.COMPLETED -> MaterialTheme.colorScheme.surface
         DayState.MISSED -> MaterialTheme.colorScheme.onErrorContainer
         DayState.CURRENT -> MaterialTheme.colorScheme.onPrimary
         DayState.UPCOMING -> MaterialTheme.colorScheme.onSurfaceVariant
