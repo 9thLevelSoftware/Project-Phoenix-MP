@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -39,6 +40,11 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.FlameOrange
+import com.devil.phoenixproject.ui.theme.FlameRed
+import com.devil.phoenixproject.ui.theme.FlameYellow
+import com.devil.phoenixproject.ui.theme.Slate50
+import com.devil.phoenixproject.ui.theme.Slate900
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -156,17 +162,13 @@ fun BadgesScreen(
 
 @Composable
 fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges: Int, modifier: Modifier = Modifier) {
+    // lens-state-patterns-14: map streak tiers to Color.kt flame constants so the
+    // widget stays aligned with other fire-gradient uses in the app.
     val fireColor = when {
-        streakInfo.currentStreak >= 30 -> Color(0xFFFF4500)
-
-        // Orange-red for long streaks
-        streakInfo.currentStreak >= 7 -> Color(0xFFFF8C00)
-
-        // Dark orange
-        streakInfo.currentStreak >= 3 -> Color(0xFFFFA500)
-
-        // Orange
-        else -> Color(0xFFFFD700) // Gold
+        streakInfo.currentStreak >= 30 -> FlameRed        // most intense — outer flame
+        streakInfo.currentStreak >= 7 -> FlameOrange      // sustained — core flame
+        streakInfo.currentStreak >= 3 -> FlameYellow      // warming up — inner flame
+        else -> MaterialTheme.colorScheme.secondary       // baseline glow
     }
 
     val scale by animateFloatAsState(
@@ -236,7 +238,7 @@ fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges: Int, m
                     Text(
                         text = "At Risk!",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFFFF4500),
+                        color = FlameRed,
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -394,6 +396,9 @@ private fun BadgeCard(badgeWithProgress: BadgeWithProgress, onClick: () -> Unit)
     val isSecret = badge.isSecret && !isEarned
 
     val tierColor = Color(badge.tier.colorHex.toInt())
+    // analytics-history-18: choose icon tint by luminance so light-tier gradients
+    // (bronze, silver) still pass WCAG AA contrast. Slate900 on light bg, Slate50 on dark.
+    val badgeIconTint = if (tierColor.luminance() > 0.4f) Slate900 else Slate50
     val alpha = if (isEarned) 1f else 0.5f
     val scale by animateFloatAsState(
         targetValue = if (isEarned) 1f else 0.95f,
@@ -442,14 +447,15 @@ private fun BadgeCard(badgeWithProgress: BadgeWithProgress, onClick: () -> Unit)
                     Icon(
                         imageVector = Icons.Default.Lock,
                         contentDescription = null,
-                        tint = Color.White,
+                        // Lock icon is on a gray background (luminance ~0.22) → Slate50 gives safe contrast
+                        tint = Slate50,
                         modifier = Modifier.size(24.dp),
                     )
                 } else {
                     Icon(
                         imageVector = getBadgeIcon(badge.iconResource),
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = badgeIconTint,
                         modifier = Modifier.size(24.dp),
                     )
                 }
@@ -506,6 +512,8 @@ private fun BadgeDetailDialog(badgeWithProgress: BadgeWithProgress, onDismiss: (
     val badge = badgeWithProgress.badge
     val isEarned = badgeWithProgress.isEarned
     val tierColor = Color(badge.tier.colorHex.toInt())
+    // analytics-history-18: luminance-based tint for dialog icon (same logic as BadgeCard).
+    val dialogIconTint = if (tierColor.luminance() > 0.4f) Slate900 else Slate50
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -526,7 +534,7 @@ private fun BadgeDetailDialog(badgeWithProgress: BadgeWithProgress, onDismiss: (
                 Icon(
                     imageVector = getBadgeIcon(badge.iconResource),
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = if (isEarned) dialogIconTint else Slate50,
                     modifier = Modifier.size(40.dp),
                 )
             }
