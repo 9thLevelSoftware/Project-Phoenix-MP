@@ -515,10 +515,10 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                             onClick = {
                                 // lens-navigation-ux-2: read destination BEFORE stopWorkout().
                                 // stopWorkout(exitingWorkout=true) clears _routineFlowState to
-                                // NotInRoutine inline (does NOT call exitRoutineFlow), but does
-                                // NOT clear routineLaunchOrigin — origin is cleared only by
-                                // exitRoutineFlow(). Read first so the correct destination is
-                                // captured before state is torn down.
+                                // NotInRoutine inline (does NOT call exitRoutineFlow) AND clears
+                                // routineLaunchOrigin to null asynchronously. Read destination
+                                // first so the correct route is captured before the async
+                                // cleanup block runs and nulls out the origin.
                                 val dest = viewModel.routineExitDestination()
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false

@@ -141,10 +141,13 @@ class WorkoutCoordinator(
      *
      * Lifecycle:
      * - Set to DAILY_ROUTINES by RoutineFlowManager.loadRoutine / loadRoutineAsync (daily path).
+     * - Set to DAILY_ROUTINES by RoutineFlowManager.enterRoutineOverview (overview entry path).
      * - Set to TRAINING_CYCLES by ActiveSessionEngine.loadRoutineFromCycle /
      *   loadRoutineFromCycleAsync (cycle path) — written AFTER the flowDelegate call so it
      *   overwrites the DAILY_ROUTINES set by RoutineFlowManager.
-     * - Cleared (null) ONLY in RoutineFlowManager.exitRoutineFlow().
+     * - Cleared (null) in RoutineFlowManager.exitRoutineFlow() AND in
+     *   ActiveSessionEngine.stopWorkout(exitingWorkout=true) — safe because callers read
+     *   routineExitDestination() before calling stopWorkout.
      * - NOT cleared in updateCycleProgressIfNeeded() — the activeCycleId lifecycle is separate.
      */
     @Volatile

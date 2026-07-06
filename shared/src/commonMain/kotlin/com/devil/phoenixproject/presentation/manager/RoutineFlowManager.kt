@@ -962,6 +962,10 @@ class RoutineFlowManager(
      * Enter routine overview mode.
      */
     fun enterRoutineOverview(routine: Routine) {
+        // Mark as DAILY_ROUTINES synchronously before the async weight-resolution coroutine,
+        // mirroring loadRoutine(). This ensures routineExitDestination() returns the correct
+        // destination even if the user exits before the coroutine completes.
+        coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         scope.launch {
             enterRoutineOverviewInternal(resolveRoutineWeights(routine))
         }
@@ -971,6 +975,10 @@ class RoutineFlowManager(
      * Enter routine overview with a one-shot launch modifier applied after PR% weights resolve.
      */
     fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) {
+        // Mark as DAILY_ROUTINES synchronously before the async weight-resolution coroutine,
+        // mirroring loadRoutine(). This ensures routineExitDestination() returns the correct
+        // destination even if the user exits before the coroutine completes.
+        coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         scope.launch {
             val resolvedRoutine = resolveRoutineWeights(routine)
             val adjustedRoutine = applyRoutineModifierUseCase(resolvedRoutine, modifier, resolvedRoutine.profileId)

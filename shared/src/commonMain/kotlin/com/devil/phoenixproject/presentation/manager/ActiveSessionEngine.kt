@@ -3112,6 +3112,12 @@ class ActiveSessionEngine(
                 coordinator.currentRoutineId = null
                 coordinator.routineAccumulatedCalories = 0f
                 coordinator._completedRoutineSetKeys.value = emptySet()
+                // Safe to clear origin here: every call site (e.g. ActiveWorkoutScreen) reads
+                // routineExitDestination() BEFORE invoking stopWorkout(exitingWorkout=true), so
+                // the navigation decision is already captured before this async block runs.
+                // Clearing prevents a stale TRAINING_CYCLES origin from bleeding into the next
+                // session when the user subsequently enters via DailyRoutinesScreen.
+                coordinator.routineLaunchOrigin = null
             } else {
                 coordinator._workoutState.value = persistedSummary
             }

@@ -12,7 +12,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 
 /**
- * Unit tests for the RoutineLaunchOrigin lifecycle (task 4B.2).
+ * Unit tests for the RoutineLaunchOrigin lifecycle (task 4B.2 + 4B fix).
  *
  * Verifies:
  * (a) Cycle launch (loadRoutineFromCycleAsync) sets TRAINING_CYCLES origin.
@@ -23,6 +23,8 @@ import kotlinx.coroutines.test.runTest
  *     DAILY_ROUTINES and null → daily_routines route.
  * (e) Normal loadRoutine() sets DAILY_ROUTINES origin.
  * (f) Cycle load after daily load overwrites origin to TRAINING_CYCLES.
+ * (g) enterRoutineOverview(routine) stamps DAILY_ROUTINES origin (DailyRoutinesScreen path).
+ * (h) stopWorkout(exitingWorkout=true) clears origin to null after a cycle load.
  *
  * Each test calls harness.cleanup() to prevent UncompletedCoroutinesError from DWSM's
  * long-running init collectors (see DWSMTestHarness KDoc).
@@ -255,6 +257,61 @@ class DWSMLaunchOriginTest {
             RoutineLaunchOrigin.TRAINING_CYCLES,
             harness.coordinator.routineLaunchOrigin,
             "Cycle load after daily load must overwrite origin to TRAINING_CYCLES",
+        )
+        harness.cleanup()
+    }
+
+    // ===== (g) enterRoutineOverview stamps DAILY_ROUTINES =====
+
+    @Test
+    fun enterRoutineOverview_sets_DAILY_ROUTINES_origin() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine()
+        harness.seedRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.enterRoutineOverview(routine)
+        advanceUntilIdle()
+
+        assertEquals(
+            RoutineLaunchOrigin.DAILY_ROUTINES,
+            harness.coordinator.routineLaunchOrigin,
+            "enterRoutineOverview(routine) must stamp DAILY_ROUTINES origin (DailyRoutinesScreen path)",
+        )
+        harness.cleanup()
+    }
+
+    // ===== (h) stopWorkout(exitingWorkout=true) clears origin to null =====
+
+    @Test
+    fun stopWorkout_exitingWorkout_true_clears_origin_to_null() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createTestRoutine()
+        harness.seedRoutine(routine)
+        advanceUntilIdle()
+
+        // Load via cycle path to stamp TRAINING_CYCLES origin
+        harness.dwsm.loadRoutineFromCycleAsync(
+            routineId = routine.id,
+            cycleId = "cycle-1",
+            dayNumber = 1,
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            RoutineLaunchOrigin.TRAINING_CYCLES,
+            harness.coordinator.routineLaunchOrigin,
+            "Precondition: cycle load must set TRAINING_CYCLES",
+        )
+
+        // Simulate "End Workout" — callers always read routineExitDestination() before this call,
+        // so the async origin clear is safe (see ActiveSessionEngine stopWorkout comment).
+        harness.dwsm.stopWorkout(exitingWorkout = true)
+        advanceUntilIdle()
+
+        assertNull(
+            harness.coordinator.routineLaunchOrigin,
+            "stopWorkout(exitingWorkout=true) must clear routineLaunchOrigin to null",
         )
         harness.cleanup()
     }

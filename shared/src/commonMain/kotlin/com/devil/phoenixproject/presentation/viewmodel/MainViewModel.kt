@@ -570,9 +570,9 @@ class MainViewModel constructor(
      *
      * *** ORDERING CONTRACT — READ THIS BEFORE CALLING exitRoutineFlow() ***
      * This function MUST be called BEFORE [exitRoutineFlow] (or [stopWorkout] with
-     * exitingWorkout=true, which performs equivalent state cleanup). [exitRoutineFlow]
-     * clears [routineLaunchOrigin] to null; calling routineExitDestination() afterwards
-     * always returns the default DailyRoutines destination, silently breaking cycle return.
+     * exitingWorkout=true). Both paths clear [routineLaunchOrigin] to null; calling
+     * routineExitDestination() afterwards always returns the default DailyRoutines
+     * destination, silently breaking cycle return.
      *
      * Correct call pattern at every exit site:
      *   val dest = viewModel.routineExitDestination()   // 1. read origin FIRST
