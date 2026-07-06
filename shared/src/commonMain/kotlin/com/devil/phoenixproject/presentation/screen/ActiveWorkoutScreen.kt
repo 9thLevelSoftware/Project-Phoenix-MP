@@ -512,10 +512,17 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                         // than passing color directly to Text)
                         OutlinedButton(
                             onClick = {
+                                // lens-navigation-ux-2: read destination BEFORE stopWorkout().
+                                // stopWorkout(exitingWorkout=true) clears _routineFlowState to
+                                // NotInRoutine inline (does NOT call exitRoutineFlow), but does
+                                // NOT clear routineLaunchOrigin — origin is cleared only by
+                                // exitRoutineFlow(). Read first so the correct destination is
+                                // captured before state is torn down.
+                                val dest = viewModel.routineExitDestination()
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false
                                 navController.popBackStack(
-                                    NavigationRoutes.DailyRoutines.route,
+                                    dest,
                                     inclusive = false,
                                 )
                             },

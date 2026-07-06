@@ -173,6 +173,19 @@ sealed class RoutineFlowState {
 }
 
 /**
+ * Identifies which screen launched the current routine flow.
+ * Set when a routine is loaded; cleared only in exitRoutineFlow().
+ * Used by routineExitDestination() to return the user to the correct screen.
+ */
+enum class RoutineLaunchOrigin {
+    /** Routine was launched from the Daily Routines screen. */
+    DAILY_ROUTINES,
+
+    /** Routine was launched from the Training Cycles screen. */
+    TRAINING_CYCLES,
+}
+
+/**
  * Program modes used by Phoenix workout setup.
  *
  * Non-Echo modes start with the 96-byte activation/config frame (command 0x04).
