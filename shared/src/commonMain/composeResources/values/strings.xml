@@ -827,4 +827,7 @@
     <string name="strength_assessment_cta_subtitle">Find your 1RM with velocity-based testing</string>
     <string name="cd_strength_assessment_cta">Open Strength Assessment picker</string>
     <string name="cd_exercise_history_detail">View exercise history and 1RM</string>
+
+    <!-- ==================== Video Player ==================== -->
+    <string name="video_preview_unavailable">Video preview unavailable</string>
 </resources>

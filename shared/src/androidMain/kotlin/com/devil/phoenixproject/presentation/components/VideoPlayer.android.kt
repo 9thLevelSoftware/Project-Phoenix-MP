@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,6 +42,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import co.touchlab.kermit.Logger
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.video_preview_unavailable
 
 /**
  * Android video player implementation using Media3 ExoPlayer.
@@ -63,7 +69,6 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
     val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
 
     // Create ExoPlayer instance with proper lifecycle management
     // Uses short timeouts to prevent ANR when network is unreachable (Issue #178)
@@ -104,7 +109,6 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
         Logger.d("VideoPlayer") { "Setting media item: $videoUrl" }
         isLoading = true
         hasError = false
-        errorMessage = ""
 
         val mediaItem = MediaItem.fromUri(videoUrl)
         exoPlayer.setMediaItem(mediaItem)
@@ -137,12 +141,11 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Logger.e("VideoPlayer") {
-                    "Player error: ${error.errorCodeName} - ${error.message}"
+                Logger.e("VideoPlayer", throwable = error) {
+                    "Video load failed [${error.errorCodeName}]: ${error.message}"
                 }
                 isLoading = false
                 hasError = true
-                errorMessage = error.message ?: "Unknown error"
             }
         }
 
@@ -192,7 +195,7 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
             }
         }
 
-        // Error state with background
+        // Error state — friendly fallback; full details logged via Logger.e above
         if (hasError) {
             Box(
                 modifier = Modifier
@@ -205,21 +208,15 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(16.dp),
                 ) {
-                    Text(
-                        text = "Failed to load video",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
+                    Icon(
+                        imageVector = Icons.Default.VideocamOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (errorMessage.isNotBlank()) {
-                        Text(
-                            text = errorMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
                     Text(
-                        text = "URL: ${videoUrl.take(50)}...",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = stringResource(Res.string.video_preview_unavailable),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
