@@ -72,6 +72,8 @@
     <string name="just_lift">Just Lift</string>
     <string name="finish_at_top">Finish At Top</string>
     <string name="amrap_mode">AMRAP Mode</string>
+    <string name="amrap_description">As Many Reps As Possible</string>
+    <string name="workout_setup_title">Workout Setup</string>
     <string name="target_reps">Target Reps</string>
     <string name="stop_label">STOP</string>
     <string name="waiting_for_data">Waiting for data…</string>
@@ -837,4 +839,9 @@
 
     <!-- ==================== Video Player ==================== -->
     <string name="video_preview_unavailable">Video preview unavailable</string>
+
+    <!-- ==================== Just Lift auto-start honesty (task-5B.3) ==================== -->
+    <string name="autostart_connect_prompt">Connect to enable auto-start</string>
+    <string name="autostart_ready">AUTO-START READY</string>
+    <string name="autostart_grab_handles">Grab handles to start</string>
 </resources>

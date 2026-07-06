@@ -3,7 +3,6 @@ package com.devil.phoenixproject.presentation.screen
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -21,6 +20,7 @@ import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.ui.theme.Spacing
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -28,7 +28,8 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 internal const val WorkoutSetupTargetRepsRemoteStep = 1f
 
 /**
- * Workout Setup Dialog - Full configuration dialog for workout parameters
+ * Workout setup presented as a modal bottom sheet. The composable keeps its historical
+ * WorkoutSetupDialog name for call-site stability.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,22 +57,35 @@ fun WorkoutSetupDialog(
         selectedExercise = if (id != null) exerciseRepository.getExerciseById(id) else null
     }
 
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = MaterialTheme.shapes.large,
-        title = {
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.medium),
+        ) {
+            // Sheet title
             Text(
-                "Workout Setup",
+                stringResource(Res.string.workout_setup_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = Spacing.small),
             )
-        },
-        text = {
+
+            // Scrollable content — all controls unchanged.
+            // weight(1f) bounds the scroll area so the Start/Cancel buttons below
+            // stay pinned on-screen (5B.2 review Important; house pattern).
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
@@ -409,7 +423,7 @@ fun WorkoutSetupDialog(
                     Column {
                         Text(stringResource(Res.string.amrap_mode))
                         Text(
-                            "As Many Reps As Possible",
+                            stringResource(Res.string.amrap_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -423,23 +437,38 @@ fun WorkoutSetupDialog(
                     )
                 }
             }
-        },
-        confirmButton = {
+
+            Spacer(modifier = Modifier.height(Spacing.medium))
+
+            // Bottom action buttons — full-width per finding rec (confirm = filled Button, cancel = TextButton)
             Button(
-                onClick = onStartWorkout,
+                onClick = {
+                    onStartWorkout()
+                    scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) onDismiss()
+                    }
+                },
                 enabled = selectedExercise != null,
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = stringResource(Res.string.cd_start_workout))
                 Spacer(modifier = Modifier.width(Spacing.small))
                 Text(stringResource(Res.string.start_workout))
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = {
+                    scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) onDismiss()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Text(stringResource(Res.string.action_cancel))
             }
-        },
-    )
+
+            Spacer(modifier = Modifier.height(Spacing.small))
+        }
+    }
 
     // Exercise Picker Dialog — uses canonical ExercisePickerContent via components version
     ExercisePickerDialog(

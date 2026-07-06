@@ -440,6 +440,10 @@ class MainViewModel constructor(
 
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)
+
+    // Issue #627: Delegates read-only stop-in-progress flag to suppress resume-bounce.
+    fun isStoppingWorkout(): Boolean = workoutSessionManager.isStoppingWorkout
+
     fun stopAndReturnToSetReady() = workoutSessionManager.stopAndReturnToSetReady()
     fun stopAndSkipCurrentExercise() = workoutSessionManager.stopAndSkipCurrentExercise()
     fun pauseWorkout() = workoutSessionManager.pauseWorkout()
