@@ -80,6 +80,12 @@ fun GroupedExerciseList(
         }
     }
 
+    val exerciseDetailLabel = if (onViewExerciseDetail != null) {
+        stringResource(Res.string.cd_exercise_history_detail)
+    } else {
+        null
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
@@ -104,6 +110,10 @@ fun GroupedExerciseList(
                             exercise.isCustom && onEditExercise != null -> { { onEditExercise(exercise) } }
                             onViewExerciseDetail != null -> { { onViewExerciseDetail(exercise) } }
                             else -> null
+                        },
+                        onLongPressLabel = when {
+                            exercise.isCustom && onEditExercise != null -> null
+                            else -> exerciseDetailLabel
                         },
                         isRevealed = exercise.id == revealedExerciseId,
                         onRevealChange = { revealed ->
@@ -144,6 +154,7 @@ private fun ExerciseItemWithVideo(
     onToggleFavorite: () -> Unit,
     onShowVideo: (List<ExerciseVideoEntity>) -> Unit,
     onLongPress: (() -> Unit)? = null,
+    onLongPressLabel: String? = null,
     isRevealed: Boolean = false,
     onRevealChange: (Boolean) -> Unit = {},
 ) {
@@ -180,6 +191,7 @@ private fun ExerciseItemWithVideo(
         onSelect = onSelect,
         onToggleFavorite = onToggleFavorite,
         onLongPress = onLongPress,
+        onLongPressLabel = onLongPressLabel,
         onThumbnailClick = if (videos.isNotEmpty()) {
             { onShowVideo(videos) }
         } else {

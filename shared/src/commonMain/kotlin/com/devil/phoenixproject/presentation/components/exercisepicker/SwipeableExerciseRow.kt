@@ -49,6 +49,7 @@ fun SwipeableExerciseRow(
     onSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
     onLongPress: (() -> Unit)? = null,
+    onLongPressLabel: String? = null,
     onThumbnailClick: (() -> Unit)? = null,
     isRevealed: Boolean = false,
     onRevealChange: (Boolean) -> Unit = {},
@@ -163,6 +164,7 @@ fun SwipeableExerciseRow(
                     }
                 },
                 onLongPress = onLongPress,
+                onLongPressLabel = onLongPressLabel,
                 onThumbnailClick = onThumbnailClick,
             )
         }
