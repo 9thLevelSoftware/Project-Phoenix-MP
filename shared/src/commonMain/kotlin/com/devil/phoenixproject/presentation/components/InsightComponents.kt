@@ -41,20 +41,25 @@ fun TimeframeBadge(label: String) {
  * Two-line section header used to separate insight sections (Snapshot / Trends /
  * Diagnostics / Actions). Unified from [InsightSectionHeader] (InsightsTab) and
  * [InsightHierarchyHeader] (SmartInsightsTab) which were structurally identical.
+ *
+ * @param modifier Optional modifier applied to the outer [Column] container; provides a layout
+ *   anchor consistent with sibling components (e.g. padding, alignment, test tags).
  */
 @Composable
-fun InsightSectionHeader(title: String, subtitle: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
-    Text(
-        text = subtitle,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+fun InsightSectionHeader(title: String, subtitle: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 /**
