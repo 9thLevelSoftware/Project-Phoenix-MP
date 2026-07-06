@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -12,8 +14,13 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -24,7 +31,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -125,6 +134,21 @@ fun DayStrip(
 fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boolean, onClick: () -> Unit) {
     val chipSize = 48.dp
 
+    // gap-1-17: CURRENT chip entrance spring — starts at 0f scale, overshoots to ~1.15f, settles
+    // at 1.0f via SpringBouncy. Non-CURRENT chips and reduceMotion stay at scale 1.0 throughout.
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    var scaledIn by remember(state) { mutableStateOf(state != DayState.CURRENT || reduceMotion) }
+    val chipScale by animateFloatAsState(
+        targetValue = if (scaledIn) 1f else 0f,
+        animationSpec = if (reduceMotion) snap() else ExpressiveMotion.SpringBouncy,
+        label = "dayChipScale",
+    )
+    LaunchedEffect(state) {
+        if (state == DayState.CURRENT && !reduceMotion) {
+            scaledIn = true
+        }
+    }
+
     // Determine colors based on state
     val containerColor = when (state) {
         DayState.COMPLETED -> AccessibilityTheme.colors.success
@@ -166,7 +190,7 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
 
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(chipSize).semantics(mergeDescendants = true) {
+        modifier = Modifier.size(chipSize).scale(chipScale).semantics(mergeDescendants = true) {
             role = Role.Button
             contentDescription = chipDesc
         },
