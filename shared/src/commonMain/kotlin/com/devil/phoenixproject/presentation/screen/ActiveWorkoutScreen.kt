@@ -206,9 +206,11 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
-    // Wire to system back (BackHandler) AND top-bar back — single code path for both sources
+    // Wire to system back (BackHandler) AND top-bar back — single code path for both sources.
+    // Keyed on onBack so a re-remembered lambda (viewModel/navController change) re-registers
+    // instead of leaving the top bar holding a stale callback (review finding 4B.1/IMPORTANT-1).
     BackHandler { onBack() }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(onBack) {
         viewModel.setTopBarBackAction(onBack)
     }
 
