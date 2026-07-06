@@ -33,15 +33,12 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -97,14 +94,10 @@ import com.devil.phoenixproject.util.setKeepScreenOn
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.cd_analytics
 import vitruvianprojectphoenix.shared.generated.resources.cd_back
 import vitruvianprojectphoenix.shared.generated.resources.cd_settings
 import vitruvianprojectphoenix.shared.generated.resources.cd_workouts
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
 import vitruvianprojectphoenix.shared.generated.resources.insights_title
 
 /**
@@ -228,9 +221,6 @@ fun EnhancedMainScreen(
         currentRoute != NavigationRoutes.Home.route
     }
 
-    // Exit confirmation dialog state for routine flow
-    var showExitRoutineConfirmation by remember { mutableStateOf(false) }
-
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
         val platformAccessibilitySettings = rememberPlatformAccessibilitySettings()
@@ -296,7 +286,7 @@ fun EnhancedMainScreen(
                                         onClick = {
                                             when (currentRoute) {
                                                 NavigationRoutes.RoutineOverview.route -> {
-                                                    showExitRoutineConfirmation = true
+                                                    topBarBackAction?.invoke()
                                                 }
 
                                                 NavigationRoutes.SetReady.route -> {
@@ -457,27 +447,6 @@ fun EnhancedMainScreen(
                     },
                     onDismiss = {
                         viewModel.dismissConnectionLostAlert()
-                    },
-                )
-            }
-
-            // Exit routine confirmation dialog
-            if (showExitRoutineConfirmation) {
-                AlertDialog(
-                    onDismissRequest = { showExitRoutineConfirmation = false },
-                    title = { Text(stringResource(Res.string.exit_routine_title)) },
-                    text = { Text(stringResource(Res.string.exit_routine_message)) },
-                    confirmButton = {
-                        Button(onClick = {
-                            showExitRoutineConfirmation = false
-                            viewModel.exitRoutineFlow()
-                            navController.navigateUp()
-                        }) { Text(stringResource(Res.string.action_exit)) }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showExitRoutineConfirmation = false }) {
-                            Text(stringResource(Res.string.action_cancel))
-                        }
                     },
                 )
             }
