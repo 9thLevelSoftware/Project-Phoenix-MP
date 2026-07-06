@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -108,16 +110,22 @@ fun AnimatedRepCounter(
             celebrationScale.snapTo(1f)
             celebrationAlpha.snapTo(1f)
 
-            // Animate scale down and fade out (explosion/burn away effect)
-            // Launch both animations in parallel within this coroutine scope
+            // workout-widgets-18: SpringBouncy pop for the celebration scale-up;
+            // NoBouncy spring for scale-down avoids negative-overshoot on collapse to 0.
             launch {
                 celebrationScale.animateTo(
-                    targetValue = 1.5f, // Scale up slightly first
-                    animationSpec = tween(durationMillis = 100),
+                    targetValue = 1.5f, // Scale up with satisfying spring pop
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioHighBouncy,
+                        stiffness = Spring.StiffnessLow,
+                    ),
                 )
                 celebrationScale.animateTo(
-                    targetValue = 0f, // Then scale down to nothing
-                    animationSpec = tween(durationMillis = 200),
+                    targetValue = 0f, // Snap cleanly to nothing
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessHigh,
+                    ),
                 )
             }
             launch {

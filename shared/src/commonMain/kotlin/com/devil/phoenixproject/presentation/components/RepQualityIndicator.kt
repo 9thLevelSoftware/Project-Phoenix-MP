@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import kotlinx.coroutines.delay
 
@@ -63,10 +66,15 @@ fun RepQualityIndicator(latestRepQualityScore: Int?, modifier: Modifier = Modifi
         }
     }
 
-    // Pulse animation for excellent reps (95+)
+    // charts-gauges-17: SpringBouncy pulse for excellent reps instead of flat tween.
+    // reduceMotion: target stays 1.0f so the channel never animates (settled immediately).
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     val pulseScale by animateFloatAsState(
-        targetValue = if (showScore && isExcellent) 1.15f else 1.0f,
-        animationSpec = tween(durationMillis = 400),
+        targetValue = if (showScore && isExcellent && !reduceMotion) 1.2f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioHighBouncy,
+            stiffness = Spring.StiffnessLow,
+        ),
         label = "qualityPulse",
     )
 
