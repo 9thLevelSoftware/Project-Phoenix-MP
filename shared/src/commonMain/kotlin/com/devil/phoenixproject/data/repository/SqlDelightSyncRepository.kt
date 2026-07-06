@@ -771,7 +771,7 @@ class SqlDelightSyncRepository(
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
                             description = portalCycle.description,
-                            is_active = 0L, // Don't set active yet
+                            is_active = existing.is_active, // Preserve; single-active enforcement runs at end
                             id = portalCycle.id,
                         )
                     }
@@ -1876,7 +1876,7 @@ class SqlDelightSyncRepository(
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
                             description = portalCycle.description,
-                            is_active = 0L,
+                            is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
                             id = portalCycle.id,
                         )
                     }

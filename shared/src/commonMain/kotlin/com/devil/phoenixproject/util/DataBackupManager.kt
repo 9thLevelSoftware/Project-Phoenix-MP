@@ -389,6 +389,7 @@ abstract class BaseDataBackupManager(
             // Wrap all imports in a transaction for atomicity
             database.transaction {
                 // Import workout sessions
+                val importedSessionIds = mutableSetOf<String>()
                 backup.data.workoutSessions.forEach { session ->
                     if (session.id !in existingSessionIds) {
                         // Sanitize eccentric load to prevent machine faults (hardware limit 150%)
@@ -460,7 +461,10 @@ abstract class BaseDataBackupManager(
                                 profile_id = session.profileId ?: "default",
                             )
                         }
-                        if (inserted != null) sessionsImported++
+                        if (inserted != null) {
+                            sessionsImported++
+                            importedSessionIds.add(session.id)
+                        }
                     } else {
                         // Adopt orphaned records into the active profile (fixes #324).
                         // Only adopt when the backup row has no explicit profile (legacy)
@@ -476,12 +480,7 @@ abstract class BaseDataBackupManager(
                     }
                 }
 
-                // Import metrics (only for imported sessions)
-                val importedSessionIds = backup.data.workoutSessions
-                    .filter { it.id !in existingSessionIds }
-                    .map { it.id }
-                    .toSet()
-
+                // Import metrics (only for sessions that were actually inserted above)
                 backup.data.metricSamples.forEach { metric ->
                     if (metric.sessionId in importedSessionIds) {
                         queries.insertMetric(
