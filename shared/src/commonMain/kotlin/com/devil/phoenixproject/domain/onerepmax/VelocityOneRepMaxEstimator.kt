@@ -43,7 +43,7 @@ class VelocityOneRepMaxEstimator(private val assessmentEngine: AssessmentEngine)
             LoadVelocityPoint(loadKg = it.loadPerCableKg, meanVelocityMs = it.mcvMmS / 1000f)
         }
 
-        // minSets=2 matches our gate; oneRmVelocityMs is the resolved MVT.
+        // minSets=MIN_DISTINCT_LOADS matches our gate; oneRmVelocityMs is the resolved MVT.
         val config = AssessmentConfig(minSets = MIN_DISTINCT_LOADS, oneRmVelocityMs = mvtMs)
         val assessment = assessmentEngine.estimateOneRepMax(lvPoints, config) ?: return null
 
@@ -61,7 +61,7 @@ class VelocityOneRepMaxEstimator(private val assessmentEngine: AssessmentEngine)
 
     companion object {
         const val R2_PASS_THRESHOLD = 0.8f
-        const val MIN_DISTINCT_LOADS = 2
+        const val MIN_DISTINCT_LOADS = 3
         const val LOAD_BUCKET_KG = 0.5f
     }
 }
