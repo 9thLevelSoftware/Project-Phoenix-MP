@@ -293,9 +293,6 @@ class MainViewModel constructor(
     val isHistoryLoading: StateFlow<Boolean> get() = historyManager.isHistoryLoading
     val allPersonalRecords: StateFlow<List<PersonalRecord>> get() = historyManager.allPersonalRecords
 
-    @Suppress("unused")
-    val personalBests: StateFlow<List<com.devil.phoenixproject.data.repository.PersonalRecordEntity>>
-        get() = historyManager.personalBests
     val completedWorkouts: StateFlow<Int?> get() = historyManager.completedWorkouts
     val workoutStreak: StateFlow<Int?> get() = historyManager.workoutStreak
     val progressPercentage: StateFlow<Int?> get() = historyManager.progressPercentage

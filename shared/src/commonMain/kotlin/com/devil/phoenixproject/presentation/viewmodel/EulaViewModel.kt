@@ -64,20 +64,6 @@ class EulaViewModel(private val settings: Settings) : ViewModel() {
         }
     }
 
-    /**
-     * Get the timestamp when EULA was accepted (for audit purposes).
-     * Returns null if EULA was never accepted.
-     */
-    @Suppress("unused") // Reserved for future audit/settings UI
-    fun getAcceptanceTimestamp(): Long? = settings.getLongOrNull(EULA_ACCEPTED_TIMESTAMP_KEY)
-
-    /**
-     * Get the version of EULA that was accepted.
-     * Returns 0 if EULA was never accepted.
-     */
-    @Suppress("unused") // Reserved for future audit/settings UI
-    fun getAcceptedVersion(): Int = settings.getIntOrNull(EULA_ACCEPTED_VERSION_KEY) ?: 0
-
     companion object {
         private const val EULA_ACCEPTED_VERSION_KEY = "eula_accepted_version"
         private const val EULA_ACCEPTED_TIMESTAMP_KEY = "eula_accepted_timestamp"

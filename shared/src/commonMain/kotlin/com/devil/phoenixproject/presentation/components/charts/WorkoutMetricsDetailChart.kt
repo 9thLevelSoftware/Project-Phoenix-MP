@@ -42,7 +42,6 @@ fun WorkoutMetricsDetailChart(
     modifier: Modifier = Modifier,
     showLoad: Boolean = true,
     showPosition: Boolean = true,
-    showPower: Boolean = true,
     animationDuration: Int = 1500,
 ) {
     // Data validation
@@ -248,6 +247,7 @@ fun WorkoutMetricsDetailChart(
             }
 
             // Time indicator
+            // TODO: extract "Time →" to a string resource
             Text(
                 text = "Time →",
                 style = MaterialTheme.typography.labelSmall,
@@ -267,6 +267,7 @@ fun WorkoutMetricsDetailChart(
         ) {
             if (showLoadA || showLoadB) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // TODO: extract "Max Load" to a string resource
                     Text(
                         text = "Max Load",
                         style = MaterialTheme.typography.labelSmall,
@@ -281,6 +282,7 @@ fun WorkoutMetricsDetailChart(
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // TODO: extract "Samples" to a string resource
                 Text(
                     text = "Samples",
                     style = MaterialTheme.typography.labelSmall,
@@ -295,6 +297,7 @@ fun WorkoutMetricsDetailChart(
 
             if (showPosA || showPosB) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // TODO: extract "Max ROM" to a string resource
                     Text(
                         text = "Max ROM",
                         style = MaterialTheme.typography.labelSmall,

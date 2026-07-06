@@ -534,8 +534,11 @@ fun AnalyticsScreen(
         }
     }
 
-    // Hoist format templates for use in coroutine callbacks (not composable scope)
-    // Use __PLACEHOLDER__ as a marker to replace at runtime since stringResource is composable-only
+    // Hoist format templates for use in coroutine callbacks (not composable scope).
+    // stringResource is composable-only and cannot be called from a coroutine lambda, so we
+    // resolve the full string here with a sentinel value and do a String.replace() at the
+    // call site. TODO: replace with a non-composable i18n helper once KMP multiplatform-
+    // resources provides one (tracked in https://github.com/JetBrains/compose-multiplatform/issues/3890).
     val exportSuccessTemplate = stringResource(Res.string.export_success, "__PLACEHOLDER__")
     val exportFailedTemplate = stringResource(Res.string.export_failed, "__PLACEHOLDER__")
 

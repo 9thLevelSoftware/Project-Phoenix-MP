@@ -404,15 +404,6 @@ fun WorkoutTab(
                         )
                     }
 
-                    is WorkoutState.Active -> {
-                        // NEW HUD LAYOUT
-                        // We intercept the Active state here and delegate everything to WorkoutHud
-                        // NOTE: WorkoutHud includes its own Scaffold, so it might conflict if nested deeply.
-                        // Ideally WorkoutTab should switch completely.
-                        // For now, we render it inside this column? No, that's bad (scaffold inside column).
-                        // Refactoring: We should lift WorkoutHud to be the root content of WorkoutTab when active.
-                    }
-
                     else -> {}
                 }
 
@@ -1113,44 +1104,6 @@ private fun CompletedCard(
                         fontWeight = FontWeight.Bold,
                     )
                 }
-            }
-        }
-    }
-}
-
-/**
- * Active Workout Card - shown during active workout
- */
-@Composable
-private fun ActiveWorkoutCard(workoutParameters: WorkoutParameters, onStopWorkout: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            Text(
-                "Workout Active",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            Button(
-                onClick = onStopWorkout,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            ) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_stop_workout))
-                Spacer(modifier = Modifier.width(Spacing.small))
-                Text(stringResource(Res.string.stop_workout))
             }
         }
     }

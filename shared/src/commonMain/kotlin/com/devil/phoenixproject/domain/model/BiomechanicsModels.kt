@@ -27,19 +27,16 @@ enum class BiomechanicsVelocityZone {
          * @return Corresponding velocity zone
          */
         fun fromMcv(mcvMmPerSec: Float): BiomechanicsVelocityZone = when {
-            mcvMmPerSec >= 1000f -> EXPLOSIVE
-
             // >= 1.0 m/s
-            mcvMmPerSec >= 750f -> FAST
-
+            mcvMmPerSec >= 1000f -> EXPLOSIVE
             // >= 0.75 m/s
-            mcvMmPerSec >= 500f -> MODERATE
-
+            mcvMmPerSec >= 750f -> FAST
             // >= 0.5 m/s
-            mcvMmPerSec >= 250f -> SLOW
-
+            mcvMmPerSec >= 500f -> MODERATE
             // >= 0.25 m/s
-            else -> GRIND // < 0.25 m/s
+            mcvMmPerSec >= 250f -> SLOW
+            // < 0.25 m/s
+            else -> GRIND
         }
     }
 }

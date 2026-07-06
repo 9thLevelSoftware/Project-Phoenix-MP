@@ -161,9 +161,6 @@ class ExerciseConfigViewModel constructor(
     private val _rackBehaviorOverrides = MutableStateFlow<Map<String, RackItemBehavior>>(emptyMap())
     val rackBehaviorOverrides: StateFlow<Map<String, RackItemBehavior>> = _rackBehaviorOverrides.asStateFlow()
 
-    init {
-    }
-
     fun initialize(
         exercise: RoutineExercise,
         unit: WeightUnit,
