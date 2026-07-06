@@ -1,6 +1,10 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -10,8 +14,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import androidx.compose.ui.unit.dp
@@ -20,6 +24,7 @@ import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -49,17 +54,25 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
         navController.safePopOrNavigate(dest)
     }
 
-    // Pulse animation for celebration
-    val infiniteTransition = rememberInfiniteTransition(label = "celebration")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = EaseInOutCubic),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "scale",
-    )
+    // workout-execution-16: staged reveal — icon → title → stats+button with ~100ms stagger.
+    // Uses charter SpringBouncy for the scale-in on each stage.
+    // reduceMotion: all stages visible immediately (channels start settled at 1f).
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    var iconVisible by remember { mutableStateOf(false) }
+    var titleVisible by remember { mutableStateOf(false) }
+    var statsVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (reduceMotion) {
+            iconVisible = true; titleVisible = true; statsVisible = true
+        } else {
+            iconVisible = true
+            delay(100L)
+            titleVisible = true
+            delay(100L)
+            statsVisible = true
+        }
+    }
 
     // Format duration
     val durationMinutes = (completeState.totalDurationMs / 60000).toInt()
@@ -84,87 +97,111 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceEvenly,
         ) {
-            // Celebration icon
-            Box(
-                modifier = Modifier
-                    .size(150.dp)
-                    .scale(scale)
-                    .background(
-                        MaterialTheme.colorScheme.primary,
-                        CircleShape,
-                    ),
-                contentAlignment = Alignment.Center,
+            // Stage 1: Celebration icon — one-shot SpringBouncy scale-in (replaces infinite tween)
+            val bouncySpring = spring<Float>(
+                dampingRatio = Spring.DampingRatioHighBouncy,
+                stiffness = Spring.StiffnessLow,
+            )
+            AnimatedVisibility(
+                visible = iconVisible,
+                enter = scaleIn(animationSpec = bouncySpring) + fadeIn(),
             ) {
-                Icon(
-                    Icons.Default.EmojiEvents,
-                    "Trophy",
-                    modifier = Modifier.size(80.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                )
-            }
-
-            // Congratulations text
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "ROUTINE COMPLETE!",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.height(Spacing.small))
-                Text(
-                    completeState.routineName,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-
-            // Stats card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-            ) {
-                Row(
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(Spacing.large),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                        .size(150.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary,
+                            CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    StatItem(
-                        icon = Icons.Default.FitnessCenter,
-                        value = "${completeState.totalExercises}",
-                        label = "Exercises",
-                    )
-                    StatItem(
-                        icon = Icons.Default.Repeat,
-                        value = "${completeState.totalSets}",
-                        label = "Sets",
-                    )
-                    StatItem(
-                        icon = Icons.Default.Timer,
-                        value = durationFormatted,
-                        label = "Duration",
+                    Icon(
+                        Icons.Default.EmojiEvents,
+                        "Trophy",
+                        modifier = Modifier.size(80.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary,
                     )
                 }
             }
 
-            // Done button
-            // lens-navigation-ux-2: read destination BEFORE exitRoutineFlow() clears the origin.
-            Button(
-                onClick = {
-                    val dest = viewModel.routineExitDestination()
-                    viewModel.exitRoutineFlow()
-                    navController.safePopOrNavigate(dest)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = MaterialTheme.shapes.medium,
+            // Stage 2: Congratulations title
+            AnimatedVisibility(
+                visible = titleVisible,
+                enter = scaleIn(animationSpec = bouncySpring) + fadeIn(),
             ) {
-                Text(stringResource(Res.string.label_done), fontWeight = FontWeight.Bold)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "ROUTINE COMPLETE!",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(Spacing.small))
+                    Text(
+                        completeState.routineName,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+
+            // Stage 3: Stats card + Done button cascade
+            AnimatedVisibility(
+                visible = statsVisible,
+                enter = scaleIn(animationSpec = bouncySpring) + fadeIn(),
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+                ) {
+                    // Stats card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.large),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                        ) {
+                            StatItem(
+                                icon = Icons.Default.FitnessCenter,
+                                value = "${completeState.totalExercises}",
+                                label = "Exercises",
+                            )
+                            StatItem(
+                                icon = Icons.Default.Repeat,
+                                value = "${completeState.totalSets}",
+                                label = "Sets",
+                            )
+                            StatItem(
+                                icon = Icons.Default.Timer,
+                                value = durationFormatted,
+                                label = "Duration",
+                            )
+                        }
+                    }
+
+                    // Done button
+                    // lens-navigation-ux-2: read destination BEFORE exitRoutineFlow() clears the origin.
+                    Button(
+                        onClick = {
+                            val dest = viewModel.routineExitDestination()
+                            viewModel.exitRoutineFlow()
+                            navController.safePopOrNavigate(dest)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Text(stringResource(Res.string.label_done), fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
     }
