@@ -1385,6 +1385,12 @@ class KableBleConnectionManager(
         }
 
         peripheral = null
+        // The state observer was cancelled above, so the State.Disconnected
+        // handler that normally resets this flag never runs. Left true, the
+        // NEXT connect's observer would treat the new peripheral's initial
+        // Disconnected emission as a real drop and tear the attempt down
+        // before connect() is even called (PR #622 review).
+        wasEverConnected = false
         // Connection-scoped snapshot — don't leak the previous connection's
         // choreography into the next one (PR #621 review). onDeviceReady()
         // re-resolves it for the new connection.
