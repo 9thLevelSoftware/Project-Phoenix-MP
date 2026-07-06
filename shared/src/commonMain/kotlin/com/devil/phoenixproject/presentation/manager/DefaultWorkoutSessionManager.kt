@@ -674,6 +674,12 @@ class DefaultWorkoutSessionManager(
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)
+
+    // Issue #627: Read-only exposure of the in-flight stop guard. True from the moment
+    // stopWorkout() is called (synchronous compareAndSet) until the next startWorkout()
+    // resets it (ActiveSessionEngine:2352). Zero writes from this property.
+    val isStoppingWorkout: Boolean get() = coordinator.stopWorkoutInProgress.value
+
     fun stopAndReturnToSetReady() = activeSessionEngine.stopAndReturnToSetReady()
     fun stopAndSkipCurrentExercise() = activeSessionEngine.stopAndSkipCurrentExercise()
     fun pauseWorkout() = activeSessionEngine.pauseWorkout()

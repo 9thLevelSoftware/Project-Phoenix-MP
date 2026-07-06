@@ -170,7 +170,17 @@ fun EnhancedMainScreen(
     }
 
     LaunchedEffect(currentRoute, workoutState, navController) {
-        if (shouldResumeActiveWorkout(workoutState) && currentRoute != NavigationRoutes.ActiveWorkout.route) {
+        // Issue #627: Guard against bouncing back to ActiveWorkout during async stop teardown.
+        // stopWorkout(exitingWorkout=true) sets stopWorkoutInProgress synchronously (before the
+        // scope.launch), but clears workoutState only inside that coroutine (~ActiveSessionEngine
+        // line 3104). During that async window, shouldResumeActiveWorkout() is still true, so
+        // without this guard the observer would navigate back to a dead screen after the pop.
+        // Once the stop coroutine completes, workoutState becomes Idle and
+        // shouldResumeActiveWorkout() returns false, so the guard is no longer needed anyway.
+        //
+        // Legitimate resume path (backgrounded mid-set, no stop pending):
+        // stopWorkoutInProgress is false → guard passes → navigation fires correctly.
+        if (shouldResumeActiveWorkout(workoutState) && currentRoute != NavigationRoutes.ActiveWorkout.route && !viewModel.isStoppingWorkout()) {
             navController.navigate(NavigationRoutes.ActiveWorkout.route) {
                 launchSingleTop = true
             }
