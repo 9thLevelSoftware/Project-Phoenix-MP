@@ -3,6 +3,9 @@ package com.devil.phoenixproject.data.ble
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.concurrent.Volatile
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * BLE Packet Capture Utility for Hardware Validation
@@ -46,7 +49,8 @@ object BlePacketCapture {
     private var capturing = false
     private var knownWeight = 0.0f
     private var description = ""
-    private val packets = mutableListOf<CapturedPacket>()
+    private val packetsLock = Mutex()
+    private val packets = mutableListOf<CapturedPacket>() // guarded by packetsLock
     private var maxPackets = 500 // Safety limit
     private var startTime = 0L
 
@@ -58,7 +62,7 @@ object BlePacketCapture {
      * @param maxCapture Maximum packets to capture before auto-stopping
      */
     fun startCapture(knownWeightKg: Float = 0f, desc: String = "", maxCapture: Int = 500) {
-        packets.clear()
+        runBlocking { packetsLock.withLock { packets.clear() } }
         knownWeight = knownWeightKg
         description = desc
         maxPackets = maxCapture
@@ -74,7 +78,7 @@ object BlePacketCapture {
     fun stopCapture(): List<CapturedPacket> {
         capturing = false
         val elapsed = currentTimeMillis() - startTime
-        val result = packets.toList()
+        val result = runBlocking { packetsLock.withLock { packets.toList() } }
 
         log.i { "=== CAPTURE STOPPED === ${result.size} packets in ${elapsed}ms" }
         log.i {
@@ -106,24 +110,28 @@ object BlePacketCapture {
     fun onPacket(data: ByteArray) {
         if (!capturing) return
 
-        if (packets.size >= maxPackets) {
-            capturing = false
-            log.w { "Auto-stopped: reached max capture limit ($maxPackets)" }
-            return
-        }
+        runBlocking {
+            packetsLock.withLock {
+                if (packets.size >= maxPackets) {
+                    capturing = false
+                    log.w { "Auto-stopped: reached max capture limit ($maxPackets)" }
+                    return@withLock
+                }
 
-        val hex = data.toHex()
-        val packet = CapturedPacket(
-            timestampMs = currentTimeMillis(),
-            rawBytes = data.copyOf(),
-            hex = hex,
-            size = data.size,
-        )
-        packets.add(packet)
+                val hex = data.toHex()
+                val packet = CapturedPacket(
+                    timestampMs = currentTimeMillis(),
+                    rawBytes = data.copyOf(),
+                    hex = hex,
+                    size = data.size,
+                )
+                packets.add(packet)
 
-        // Log every packet with dual interpretation for real-time monitoring
-        if (packets.size <= 10 || packets.size % 50 == 0) {
-            logDualInterpretation(data, hex, packets.size)
+                // Log every packet with dual interpretation for real-time monitoring
+                if (packets.size <= 10 || packets.size % 50 == 0) {
+                    logDualInterpretation(data, hex, packets.size)
+                }
+            }
         }
     }
 
@@ -139,7 +147,7 @@ object BlePacketCapture {
         // Hardware-validated packet layout (2026-02-17)
         val ticksLow = getUInt16LE(data, 0)
         val ticksHigh = getUInt16LE(data, 2)
-        val ticks = ticksLow + (ticksHigh shl 16)
+        val ticks = ticksLow.toLong() or (ticksHigh.toLong() shl 16)
         val pPosA = getInt16LE(data, 4) / 10.0f
         val skippedA = getInt16LE(data, 6) // Firmware velocity A
         val pLoadA = getUInt16LE(data, 8) / 100.0f

@@ -55,7 +55,7 @@ class WorkoutMetricTest {
             positionB = 500f,
         )
 
-        assertEquals(0, metric.ticks)
+        assertEquals(0L, metric.ticks)
         assertEquals(0.0, metric.velocityA)
         assertEquals(0.0, metric.velocityB)
         assertEquals(0, metric.status)

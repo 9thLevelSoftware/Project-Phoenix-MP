@@ -333,7 +333,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseMonitorPacket parses ticks correctly`() {
-        // ticks = ticksLow + (ticksHigh << 16)
+        // ticks = ticksLow.toLong() or (ticksHigh.toLong() shl 16)
         // ticksLow at 0-1, ticksHigh at 2-3
         val data = ByteArray(16)
         // ticksLow = 0x1234
@@ -347,7 +347,7 @@ class ProtocolParserTest {
         val result = parseMonitorPacket(data)
 
         assertNotNull(result)
-        assertEquals(70196, result.ticks)
+        assertEquals(70196L, result.ticks)
     }
 
     // ==================== parseDiagnosticPacket Tests ====================

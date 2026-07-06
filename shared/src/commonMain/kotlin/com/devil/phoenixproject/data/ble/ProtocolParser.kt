@@ -216,14 +216,14 @@ fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
     val f0 = getUInt16LE(data, 0) // ticks low
     val f1 = getUInt16LE(data, 2) // ticks high
     val posARaw = getInt16LE(data, 4) // Signed 16-bit for position
-    val velARaw = if (data.size >= 8) getInt16LE(data, 6) else 0 // Firmware velocity A
+    val velARaw = getInt16LE(data, 6) // Firmware velocity A
     val loadARaw = getUInt16LE(data, 8)
     val posBRaw = getInt16LE(data, 10) // Signed 16-bit for position
-    val velBRaw = if (data.size >= 14) getInt16LE(data, 12) else 0 // Firmware velocity B
+    val velBRaw = getInt16LE(data, 12) // Firmware velocity B
     val loadBRaw = getUInt16LE(data, 14)
 
-    // Reconstruct 32-bit tick counter
-    val ticks = f0 + (f1 shl 16)
+    // Reconstruct 32-bit tick counter using Long to avoid Int overflow when f1 >= 0x8000
+    val ticks = f0.toLong() or (f1.toLong() shl 16)
 
     // Position values scaled to millimeters
     val posA = posARaw / 10.0f
