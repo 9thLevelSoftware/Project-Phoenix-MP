@@ -374,6 +374,91 @@ fun ExerciseEditBottomSheet(
                     }
                 }
 
+                // Set Mode Toggle — placed above SetsConfiguration so the user can choose
+                // REPS vs DURATION before editing individual set values (routines-1).
+                if (showCableOnlyExerciseControls) {
+                    SetModeToggle(
+                        setMode = setMode,
+                        onModeChange = viewModel::onSetModeChange,
+                    )
+                }
+
+                // Sets Configuration — promoted to first configurable block per UX finding
+                // routines-1: most-edited fields should appear at the top of the sheet.
+                SetsConfiguration(
+                    sets = sets,
+                    setMode = setMode,
+                    exerciseType = exerciseType,
+                    weightSuffix = weightSuffix,
+                    maxWeight = maxWeight,
+                    weightStep = weightStep,
+                    isEchoMode = isEchoMode,
+                    perSetRestTime = perSetRestTime,
+                    onRepsChange = viewModel::updateReps,
+                    onWeightChange = viewModel::updateWeight,
+                    onDurationChange = viewModel::updateDuration,
+                    onRestChange = viewModel::updateRestTime,
+                    onAddSet = viewModel::addSet,
+                    onDeleteSet = viewModel::deleteSet,
+                )
+
+                // Per Set Rest Time toggle — immediately follows SetsConfiguration so rest
+                // config lives in the same primary zone as the sets it applies to.
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                    shadowElevation = 2.dp,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.small),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Per Set Rest Time",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (perSetRestTime) FontWeight.Bold else FontWeight.Normal,
+                            color = if (perSetRestTime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Switch(
+                            checked = perSetRestTime,
+                            onCheckedChange = viewModel::onPerSetRestTimeChange,
+                        )
+                    }
+                }
+
+                // Single rest time picker — kept adjacent to the Per Set Rest Time toggle
+                // (only visible when per-set rest is off).
+                if (!perSetRestTime) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                        shadowElevation = 2.dp,
+                    ) {
+                        Column(modifier = Modifier.padding(Spacing.small)) {
+                            Text(
+                                "Rest Time: ${rest}s",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = Spacing.extraSmall),
+                            )
+                            ExpressiveSlider(
+                                value = rest.toFloat(),
+                                onValueChange = { viewModel.onRestChange(it.toInt()) },
+                                valueRange = 0f..300f,
+                                steps = 59,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+
                 EquipmentRackSelectionCard(
                     rackItems = rackItems,
                     activeRackItemIds = defaultRackItemIds,
@@ -488,42 +573,6 @@ fun ExerciseEditBottomSheet(
                                 modifier = Modifier.padding(top = Spacing.small),
                             )
                         }
-                    }
-                }
-
-                // Set Mode Toggle
-                if (showCableOnlyExerciseControls) {
-                    SetModeToggle(
-                        setMode = setMode,
-                        onModeChange = viewModel::onSetModeChange,
-                    )
-                }
-
-                // Per Set Rest Time toggle
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                    shadowElevation = 2.dp,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.small),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "Per Set Rest Time",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (perSetRestTime) FontWeight.Bold else FontWeight.Normal,
-                            color = if (perSetRestTime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        )
-                        Switch(
-                            checked = perSetRestTime,
-                            onCheckedChange = viewModel::onPerSetRestTimeChange,
-                        )
                     }
                 }
 
@@ -662,51 +711,6 @@ fun ExerciseEditBottomSheet(
                         onApplyPreset = viewModel::applyClassicWarmupPreset,
                         onClearAll = viewModel::clearWarmupSets,
                     )
-                }
-
-                // Sets Configuration
-                SetsConfiguration(
-                    sets = sets,
-                    setMode = setMode,
-                    exerciseType = exerciseType,
-                    weightSuffix = weightSuffix,
-                    maxWeight = maxWeight,
-                    weightStep = weightStep,
-                    isEchoMode = isEchoMode,
-                    perSetRestTime = perSetRestTime,
-                    onRepsChange = viewModel::updateReps,
-                    onWeightChange = viewModel::updateWeight,
-                    onDurationChange = viewModel::updateDuration,
-                    onRestChange = viewModel::updateRestTime,
-                    onAddSet = viewModel::addSet,
-                    onDeleteSet = viewModel::deleteSet,
-                )
-
-                // Single rest time picker
-                if (!perSetRestTime) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                        shadowElevation = 2.dp,
-                    ) {
-                        Column(modifier = Modifier.padding(Spacing.small)) {
-                            Text(
-                                "Rest Time: ${rest}s",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(bottom = Spacing.extraSmall),
-                            )
-                            ExpressiveSlider(
-                                value = rest.toFloat(),
-                                onValueChange = { viewModel.onRestChange(it.toInt()) },
-                                valueRange = 0f..300f,
-                                steps = 59,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
                 }
             }
 

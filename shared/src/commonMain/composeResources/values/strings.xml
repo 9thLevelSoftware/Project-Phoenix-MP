@@ -112,7 +112,10 @@
     <string name="disconnect">Disconnect</string>
     <string name="disconnect_title">Disconnect?</string>
     <string name="disconnect_message">Are you sure you want to disconnect from the Vitruvian machine?</string>
-    <string name="disconnect_message_device">Are you sure you want to disconnect from %1$s?</string>
+    <string name="disconnect_integration_title">Disconnect integration?</string>
+    <string name="disconnect_integration_message">Are you sure you want to disconnect %1$s? This will remove the integration and may interrupt a scheduled sync.</string>
+    <string name="banner_not_connected_to_machine">Not connected to machine</string>
+    <string name="banner_action_connect">Connect</string>
 
     <!-- ==================== Settings screen ==================== -->
     <string name="settings_title">Settings</string>
@@ -359,6 +362,7 @@
     <string name="no_result_available">No result available.</string>
 
     <!-- ==================== Assessment Wizard ==================== -->
+    <string name="wizard_step_of">Step %1$d of %2$d</string>
     <string name="actual_weight_label">Actual Weight Used (kg)</string>
     <string name="mean_velocity_label">Mean Velocity (m/s)</string>
     <string name="cancel_assessment">Cancel Assessment</string>
@@ -809,4 +813,11 @@
     <!-- ==================== Dialog slot/hierarchy fixes (task-3.8) ==================== -->
     <string name="bulk_weight_adjust_select_hint">Select a percentage or enter a value to enable Apply</string>
     <string name="bulk_adjust_hint_pr_scaled">All exercises use PR-scaled weights — nothing to adjust</string>
+
+    <!-- ==================== Unsaved-changes guard (task-4A.2) ==================== -->
+    <string name="discard_changes_title">Discard changes?</string>
+    <string name="discard_changes_message">You have unsaved changes. Going back will discard them.</string>
+
+    <!-- ==================== Pager / overlay accessibility (task-4A.5) ==================== -->
+    <string name="pager_page_of">Page %1$d of %2$d</string>
 </resources>

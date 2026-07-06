@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -63,7 +62,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
@@ -88,6 +86,8 @@ import com.devil.phoenixproject.presentation.components.formatRackLoadContributi
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.labelAllCaps
+import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
@@ -342,7 +342,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             // Compact header - exercise, set picker, and mode/bodyweight context.
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.small,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                 ),
@@ -603,10 +603,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     ) {
                         Text(
                             if (isEchoMode) "ECHO SETTINGS" else "SET CONFIGURATION",
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp,
-                            ),
+                            style = labelAllCaps.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
 
@@ -1028,7 +1025,7 @@ private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
         ) {
             Text(
                 text = "ECCENTRIC LOAD",
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
+                style = labelSmallAllCaps,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(

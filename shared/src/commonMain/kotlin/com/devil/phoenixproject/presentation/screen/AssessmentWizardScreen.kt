@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +17,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -78,41 +81,105 @@ fun AssessmentWizardScreen(
             .fillMaxSize()
             .background(backgroundGradient),
     ) {
-        when (val step = currentStep) {
-            is AssessmentStep.ExerciseSelection -> ExerciseSelectionContent(
-                step = step,
-                exercises = exercises,
-                onSearchQueryChange = viewModel::updateSearchQuery,
-                onExerciseSelected = viewModel::selectExercise,
-            )
+        val stepNumber = when (currentStep) {
+            is AssessmentStep.ExerciseSelection -> 1
+            is AssessmentStep.Instruction -> 2
+            is AssessmentStep.ProgressiveLoading -> 3
+            is AssessmentStep.Results -> 4
+            else -> null
+        }
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (stepNumber != null) {
+                WizardStepIndicator(currentStep = stepNumber, totalSteps = 4)
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                when (val step = currentStep) {
+                    is AssessmentStep.ExerciseSelection -> ExerciseSelectionContent(
+                        step = step,
+                        exercises = exercises,
+                        onSearchQueryChange = viewModel::updateSearchQuery,
+                        onExerciseSelected = viewModel::selectExercise,
+                    )
 
-            is AssessmentStep.Instruction -> InstructionContent(
-                step = step,
-                onStartAssessment = viewModel::startAssessment,
-                onBack = viewModel::reset,
-            )
+                    is AssessmentStep.Instruction -> InstructionContent(
+                        step = step,
+                        onStartAssessment = viewModel::startAssessment,
+                        onBack = viewModel::reset,
+                    )
 
-            is AssessmentStep.ProgressiveLoading -> ProgressiveLoadingContent(
-                step = step,
-                onRecordSet = viewModel::recordSet,
-                onStartCapture = { metricsFlow?.let { viewModel.startVelocityCapture(it) } },
-                onStopCapture = { viewModel.stopVelocityCapture() },
-                hasBleMetrics = metricsFlow != null,
-                onCancel = viewModel::reset,
-            )
+                    is AssessmentStep.ProgressiveLoading -> ProgressiveLoadingContent(
+                        step = step,
+                        onRecordSet = viewModel::recordSet,
+                        onStartCapture = { metricsFlow?.let { viewModel.startVelocityCapture(it) } },
+                        onStopCapture = { viewModel.stopVelocityCapture() },
+                        hasBleMetrics = metricsFlow != null,
+                        onCancel = viewModel::reset,
+                    )
 
-            is AssessmentStep.Results -> ResultsContent(
-                step = step,
-                onAccept = viewModel::acceptResult,
-                onDiscard = viewModel::reset,
-            )
+                    is AssessmentStep.Results -> ResultsContent(
+                        step = step,
+                        onAccept = viewModel::acceptResult,
+                        onDiscard = viewModel::reset,
+                    )
 
-            is AssessmentStep.Saving -> SavingContent()
+                    is AssessmentStep.Saving -> SavingContent()
 
-            is AssessmentStep.Complete -> CompleteContent(
-                step = step,
-                onDone = onNavigateBack,
-            )
+                    is AssessmentStep.Complete -> CompleteContent(
+                        step = step,
+                        onDone = onNavigateBack,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------- Wizard Step Indicator ----------
+
+/**
+ * Compact step-progress indicator for the 4 user-visible assessment steps.
+ *
+ * Shows a localized "Step N of 4" label and a row of 4 dots.
+ * Active dot = primary, completed = primary @ 0.6 alpha, upcoming = outlineVariant.
+ * Hidden on Saving/Complete (transient/terminal steps).
+ */
+@Composable
+private fun WizardStepIndicator(
+    currentStep: Int,
+    totalSteps: Int,
+    modifier: Modifier = Modifier,
+) {
+    val stepLabel = stringResource(Res.string.wizard_step_of, currentStep, totalSteps)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.medium, vertical = Spacing.small)
+            .semantics(mergeDescendants = true) { contentDescription = stepLabel },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+    ) {
+        Text(
+            text = stepLabel,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            repeat(totalSteps) { index ->
+                val dotStep = index + 1
+                val dotColor = when {
+                    dotStep < currentStep -> MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    dotStep == currentStep -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.outlineVariant
+                }
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(color = dotColor, shape = CircleShape),
+                )
+            }
         }
     }
 }

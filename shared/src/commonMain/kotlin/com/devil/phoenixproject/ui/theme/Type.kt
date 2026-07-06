@@ -131,3 +131,13 @@ val Typography = Typography(
  * used in commonMain; apply it at the call site in androidMain if needed.
  */
 val workoutCounterStyle = Typography.displayLarge.copy(fontSize = 120.sp, fontWeight = FontWeight.Black, lineHeight = 128.sp)
+
+/**
+ * All-caps section header label styles.
+ * Combines the base label style with 1sp letter-spacing for the wide-track
+ * all-caps look used in SetReadyScreen and RoutineOverviewScreen section headers.
+ * Use these instead of inline `.copy(letterSpacing = 1.sp)` so the treatment
+ * stays in sync across screens.
+ */
+val labelAllCaps = Typography.labelLarge.copy(letterSpacing = 1.sp)
+val labelSmallAllCaps = Typography.labelSmall.copy(letterSpacing = 1.sp)

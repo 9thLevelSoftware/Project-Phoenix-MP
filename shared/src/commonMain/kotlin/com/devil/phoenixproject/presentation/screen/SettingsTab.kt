@@ -2998,40 +2998,11 @@ fun SettingsTab(
             onDismissRequest = { showBackupDialog = false },
             title = { Text(stringResource(Res.string.backup_all_data), style = MaterialTheme.typography.headlineSmall) },
             text = {
-                Text(stringResource(Res.string.backup_description))
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                    // Save to Files button (streaming export)
-                    Button(
-                        onClick = {
-                            showBackupDialog = false
-                            backupInProgress = true
-                            scope.launch {
-                                try {
-                                    val result = backupManager.exportToFile { progress ->
-                                        backupProgress = progress
-                                    }
-                                    result.onSuccess { path ->
-                                        backupResult = path
-                                        showResultDialog = true
-                                    }.onFailure { error ->
-                                        backupError = error.message ?: "Unknown error"
-                                        showResultDialog = true
-                                    }
-                                } catch (e: Exception) {
-                                    backupError = e.message ?: "Unknown database error"
-                                    showResultDialog = true
-                                } finally {
-                                    backupInProgress = false
-                                    backupProgress = null
-                                }
-                            }
-                        },
-                    ) {
-                        Text(stringResource(Res.string.action_save))
-                    }
-                    // Share button (streaming export)
+                // Description + Share button stacked vertically so both buttons
+                // fit without overflowing the narrow confirmButton slot.
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.medium)) {
+                    Text(stringResource(Res.string.backup_description))
+                    // Share button (streaming export) — full-width in text area
                     OutlinedButton(
                         onClick = {
                             showBackupDialog = false
@@ -3048,6 +3019,7 @@ fun SettingsTab(
                                 }
                             }
                         },
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(
                             Icons.Default.Share,
@@ -3057,6 +3029,37 @@ fun SettingsTab(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(stringResource(Res.string.action_share))
                     }
+                }
+            },
+            confirmButton = {
+                // Save to Files button (streaming export) — sole occupant of confirmButton slot
+                Button(
+                    onClick = {
+                        showBackupDialog = false
+                        backupInProgress = true
+                        scope.launch {
+                            try {
+                                val result = backupManager.exportToFile { progress ->
+                                    backupProgress = progress
+                                }
+                                result.onSuccess { path ->
+                                    backupResult = path
+                                    showResultDialog = true
+                                }.onFailure { error ->
+                                    backupError = error.message ?: "Unknown error"
+                                    showResultDialog = true
+                                }
+                            } catch (e: Exception) {
+                                backupError = e.message ?: "Unknown database error"
+                                showResultDialog = true
+                            } finally {
+                                backupInProgress = false
+                                backupProgress = null
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(Res.string.action_save))
                 }
             },
             dismissButton = {

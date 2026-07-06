@@ -693,4 +693,5 @@
     <string name="cd_equipment_rack">Rack d\'équipement</string>
     <string name="bodyweight_effective_load_includes">Inclus : %1$s</string>
     <string name="bodyweight_effective_load_more">+%1$d de plus</string>
+
 </resources>

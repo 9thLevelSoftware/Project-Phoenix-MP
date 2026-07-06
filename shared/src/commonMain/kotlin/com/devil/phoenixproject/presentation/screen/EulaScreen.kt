@@ -3,13 +3,14 @@ package com.devil.phoenixproject.presentation.screen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -127,16 +128,22 @@ fun EulaScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Age confirmation checkbox
+            // Age confirmation checkbox — full Row is clickable per M3 labeled-checkbox pattern
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .toggleable(
+                        value = ageConfirmed,
+                        role = Role.Checkbox,
+                        onValueChange = { ageConfirmed = it },
+                    )
+                    .heightIn(min = 48.dp)
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Checkbox(
                     checked = ageConfirmed,
-                    onCheckedChange = { ageConfirmed = it },
+                    onCheckedChange = null, // Row's toggleable handles semantics and clicks
                     colors = CheckboxDefaults.colors(
                         checkedColor = MaterialTheme.colorScheme.primary,
                         uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
