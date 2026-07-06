@@ -30,7 +30,7 @@ class MonitorDataProcessorTest {
         posB: Float = 10.0f,
         loadA: Float = 5.0f,
         loadB: Float = 5.0f,
-        ticks: Int = 0,
+        ticks: Long = 0L,
         status: Int = 0,
         firmwareVelA: Int = 0,
         firmwareVelB: Int = 0,
