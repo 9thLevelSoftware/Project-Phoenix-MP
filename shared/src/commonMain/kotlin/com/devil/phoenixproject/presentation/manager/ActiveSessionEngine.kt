@@ -3253,8 +3253,10 @@ class ActiveSessionEngine(
     fun resumeWorkout() {
         // #627 + PR-review: refuse resume while a stop teardown is in flight — the workout
         // is ending; resuming a dying session would also reopen the CAS guard and permit a
-        // concurrent duplicate teardown. The gate reopens via the teardown's own state
-        // transition (Idle/SetSummary) and the next startWorkout()'s reset.
+        // concurrent duplicate teardown. The flag itself is reset only by the next
+        // startWorkout() (~line 2352); after teardown the state is Idle/SetSummary anyway,
+        // so the `is Paused` check below would refuse the resume even without this guard —
+        // this early return exists for the in-flight window while state is still Paused.
         if (coordinator.stopWorkoutInProgress.value) return
         if (coordinator._workoutState.value is WorkoutState.Paused) {
             coordinator._workoutState.value = WorkoutState.Active
