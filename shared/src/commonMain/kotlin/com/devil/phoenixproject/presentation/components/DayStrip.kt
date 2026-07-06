@@ -17,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -137,7 +138,10 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
     // gap-1-17: CURRENT chip entrance spring — starts at 0f scale, overshoots to ~1.15f, settles
     // at 1.0f via SpringBouncy. Non-CURRENT chips and reduceMotion stay at scale 1.0 throughout.
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
-    var scaledIn by remember(state) { mutableStateOf(state != DayState.CURRENT || reduceMotion) }
+    // rememberSaveable so the entrance latch survives LazyRow item recycling —
+    // remember(state) alone replays the spring every time a long cycle's CURRENT
+    // chip scrolls back into view (5A.5 review finding).
+    var scaledIn by rememberSaveable(state.name) { mutableStateOf(state != DayState.CURRENT || reduceMotion) }
     val chipScale by animateFloatAsState(
         targetValue = if (scaledIn) 1f else 0f,
         animationSpec = if (reduceMotion) snap() else ExpressiveMotion.SpringBouncy,
