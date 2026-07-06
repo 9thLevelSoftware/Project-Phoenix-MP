@@ -41,6 +41,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -778,53 +779,64 @@ private fun ConnectionStatusIndicator(
     val greenColor = AccessibilityTheme.colors.success
     val redColor = AccessibilityTheme.colors.error
 
+    // Touch target wrapper: minimumInteractiveComponentSize ensures ≥48×48dp interactive area
+    // (transparent — no visual background here)
     Box(
         modifier = Modifier
-            .heightIn(min = 48.dp)
+            .minimumInteractiveComponentSize()
             .widthIn(max = if (compact) 124.dp else 180.dp)
             .padding(end = 8.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .then(
-                if (isConnecting) {
-                    // Animated gradient background for connecting state
-                    Modifier.background(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(
-                                blueColor,
-                                greenColor,
-                                blueColor,
-                                greenColor,
-                                blueColor,
-                            ),
-                            startX = -200f + (gradientOffset * 600f),
-                            endX = 200f + (gradientOffset * 600f),
-                        ),
-                    )
-                } else {
-                    // Static background for other states
-                    Modifier.background(
-                        color = when {
-                            isConnected -> greenColor
-                            isError -> redColor
-                            else -> blueColor
-                        },
-                    )
-                },
-            )
             .clickable(
                 onClick = onToggleConnection,
                 role = Role.Button,
-            )
-            .padding(horizontal = if (compact) 8.dp else 10.dp),
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = buttonText,
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        // Visual pill: restored to pre-Phase-1 32dp height.
+        // shapes.medium = 20dp radius; with height=32dp the radius exceeds height/2 (16dp),
+        // so path corners are clamped to 16dp → proper stadium/pill shape. Keep shapes.medium.
+        Box(
+            modifier = Modifier
+                .heightIn(min = 32.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .then(
+                    if (isConnecting) {
+                        // Animated gradient background for connecting state
+                        Modifier.background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    blueColor,
+                                    greenColor,
+                                    blueColor,
+                                    greenColor,
+                                    blueColor,
+                                ),
+                                startX = -200f + (gradientOffset * 600f),
+                                endX = 200f + (gradientOffset * 600f),
+                            ),
+                        )
+                    } else {
+                        // Static background for other states
+                        Modifier.background(
+                            color = when {
+                                isConnected -> greenColor
+                                isError -> redColor
+                                else -> blueColor
+                            },
+                        )
+                    },
+                )
+                .padding(horizontal = if (compact) 8.dp else 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = buttonText,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
