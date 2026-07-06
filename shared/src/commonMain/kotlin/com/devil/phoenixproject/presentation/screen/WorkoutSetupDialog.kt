@@ -69,17 +69,20 @@ fun WorkoutSetupDialog(
         ) {
             // Sheet title
             Text(
-                "Workout Setup",
+                stringResource(Res.string.workout_setup_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = Spacing.small),
             )
 
-            // Scrollable content — all controls unchanged
+            // Scrollable content — all controls unchanged.
+            // weight(1f) bounds the scroll area so the Start/Cancel buttons below
+            // stay pinned on-screen (5B.2 review Important; house pattern).
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
@@ -417,7 +420,7 @@ fun WorkoutSetupDialog(
                     Column {
                         Text(stringResource(Res.string.amrap_mode))
                         Text(
-                            "As Many Reps As Possible",
+                            stringResource(Res.string.amrap_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -72,6 +72,8 @@
     <string name="just_lift">Just Lift</string>
     <string name="finish_at_top">Finish At Top</string>
     <string name="amrap_mode">AMRAP Mode</string>
+    <string name="amrap_description">As Many Reps As Possible</string>
+    <string name="workout_setup_title">Workout Setup</string>
     <string name="target_reps">Target Reps</string>
     <string name="stop_label">STOP</string>
     <string name="waiting_for_data">Waiting for data…</string>
