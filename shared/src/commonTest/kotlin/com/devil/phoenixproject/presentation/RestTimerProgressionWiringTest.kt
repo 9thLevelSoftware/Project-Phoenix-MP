@@ -105,7 +105,7 @@ class RestTimerProgressionWiringTest {
             "WeightChangePerRepControl must convert the displayed clamp back to kg.",
         )
         assertTrue(
-            src.contains("LaunchedEffect(clampedValueKg, valueKg, weightUnit)") &&
+            src.contains("SideEffect") &&
                 src.contains("onValueChangeKg(clampedValueKg)"),
             "WeightChangePerRepControl must sync out-of-range parent values back to the displayed kg value.",
         )

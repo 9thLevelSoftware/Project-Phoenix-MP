@@ -14,8 +14,8 @@ class DiagnosticFaultDecoderTest {
             1 to "No comms",
             2 to "Init failure",
             4 to "TI restarted",
-            8 to "Message failure",
-            16 to "Message failure",
+            8 to "Message failure (RX)",
+            16 to "Message failure (TX)",
             32 to "Firmware update failure",
             64 to "Overtemp failure",
         )
@@ -35,7 +35,7 @@ class DiagnosticFaultDecoderTest {
         assertEquals("No comms, Init failure, Overtemp failure", decoded.label)
         assertEquals("0x0043", decoded.rawHex)
         assertTrue(decoded.hasFault)
-        assertEquals("Message failure", duplicateMessageFailureBits.label)
+        assertEquals("Message failure (RX), Message failure (TX)", duplicateMessageFailureBits.label)
     }
 
     @Test
