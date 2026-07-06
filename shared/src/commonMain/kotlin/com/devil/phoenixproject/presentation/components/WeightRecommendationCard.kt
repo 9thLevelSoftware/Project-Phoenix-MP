@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightAdjustmentDirection
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -54,6 +56,19 @@ fun WeightRecommendationCard(
     // Prevent double-tap while BLE write is in flight (gap-3-2).
     // Keyed to recommendation so a new/changed recommendation resets the latch.
     var isApplying by remember(recommendation) { mutableStateOf(false) }
+
+    // gap-3-3: direction-aware icon tint so the card is glanceable mid-workout.
+    // gap-3-14: same semantics applied to the Apply button container colour.
+    val iconTint = when (recommendation.direction) {
+        WeightAdjustmentDirection.INCREASE -> AccessibilityTheme.colors.success
+        WeightAdjustmentDirection.DECREASE -> AccessibilityTheme.colors.warning
+        WeightAdjustmentDirection.MAINTAIN -> MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    val applyButtonColor = when (recommendation.direction) {
+        WeightAdjustmentDirection.INCREASE -> AccessibilityTheme.colors.success
+        WeightAdjustmentDirection.DECREASE -> AccessibilityTheme.colors.warning
+        WeightAdjustmentDirection.MAINTAIN -> MaterialTheme.colorScheme.primary
+    }
 
     val icon = when (recommendation.direction) {
         WeightAdjustmentDirection.INCREASE -> Icons.Default.ArrowUpward
@@ -98,7 +113,7 @@ fun WeightRecommendationCard(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        tint = iconTint,
                         modifier = Modifier.size(22.dp),
                     )
                     Spacer(Modifier.width(Spacing.small))
@@ -139,6 +154,7 @@ fun WeightRecommendationCard(
                         onApply()
                     },
                     enabled = !isApplying,
+                    colors = ButtonDefaults.buttonColors(containerColor = applyButtonColor),
                 ) {
                     Text(stringResource(Res.string.action_apply))
                 }
