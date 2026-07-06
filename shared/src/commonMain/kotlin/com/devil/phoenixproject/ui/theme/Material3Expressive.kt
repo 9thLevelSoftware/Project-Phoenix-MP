@@ -59,6 +59,15 @@ object ExpressiveMotion {
         dampingRatio = Spring.DampingRatioLowBouncy,
         stiffness = Spring.StiffnessLow,
     )
+
+    /**
+     * Fast no-overshoot spring for collapsing a value to zero — use when scaling
+     * down to 0f, where any bounce would produce a negative-scale glitch.
+     */
+    val SpringCollapseToZero = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessHigh,
+    )
 }
 
 /**

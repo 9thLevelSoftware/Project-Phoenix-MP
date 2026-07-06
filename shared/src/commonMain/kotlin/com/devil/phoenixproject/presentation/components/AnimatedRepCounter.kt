@@ -1,9 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -132,10 +130,7 @@ fun AnimatedRepCounter(
                     )
                     celebrationScale.animateTo(
                         targetValue = 0f, // Snap cleanly to nothing
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessHigh,
-                        ),
+                        animationSpec = ExpressiveMotion.SpringCollapseToZero,
                     )
                 }
                 launch {
