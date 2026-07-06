@@ -73,14 +73,18 @@ class DesignSystemRatchetTest {
 
     @Test
     fun hardcodedBasicColors_doNotIncrease() {
-        // Baseline 2026-07-05: 37 (down from 38 after task-3.10b deleted NextBadgeProgressCard
-        // which contained Color.White for badge icon tint).
-        // Phase 2 will sweep semantic replacements to near 0.
+        // Baseline 2026-07-06: 33 (down from 37 after task-5A.4 replaced:
+        //   - BadgesScreen Color.White badge icon tints (BadgeCard x2, BadgeDetailDialog x1)
+        //     with luminance-based Slate50/Slate900 tokens (analytics-history-18);
+        //   - StreakWidget fire icon Color.White with the same luminance rule
+        //     (pre-existing WCAG fail on light tiers, 5A.4 review finding).
+        //   StreakWidget's fire-tier hexes -> Flame constants were Color(0xFFXX),
+        //   not basic-color literals, so they never counted here.)
         val count = countMatches(Regex("""\bColor\.(White|Black|Red|Green|Gray|LightGray)\b"""))
         assertTrue(
-            count <= 37,
+            count <= 33,
             "Hardcoded Color.(White|Black|Red|Green|Gray|LightGray) usages increased: " +
-                "found $count, baseline ≤ 37. Use MaterialTheme.colorScheme or Phoenix tokens instead.",
+                "found $count, baseline ≤ 33. Use MaterialTheme.colorScheme or Phoenix tokens instead.",
         )
     }
 }

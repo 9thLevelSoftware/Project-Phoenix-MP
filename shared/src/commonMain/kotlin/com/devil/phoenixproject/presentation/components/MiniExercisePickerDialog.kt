@@ -118,8 +118,13 @@ fun MiniExercisePickerDialog(
                     exerciseRepository = exerciseRepository,
                     enableVideoPlayback = false,
                     enableCustomExercises = false,
-                    // fullScreen = true suppresses ExercisePickerContent's own title row,
+                    // showTitle = false suppresses ExercisePickerContent's own title row,
                     // avoiding a double-title when hosted inside an AlertDialog.
+                    // fullScreen = true is used honestly for its height meaning only:
+                    // fillMaxHeight(1f) inside the heightIn(max=520.dp) cap reproduces the
+                    // pre-showTitle rendered height exactly (5A.5 review: 0.9f shrank the
+                    // list by ~one row on compact screens).
+                    showTitle = false,
                     fullScreen = true,
                 )
             }

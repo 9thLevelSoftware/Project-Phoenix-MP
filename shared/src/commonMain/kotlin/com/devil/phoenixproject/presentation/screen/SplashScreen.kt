@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.sin
 import kotlin.random.Random
 import kotlinx.coroutines.delay
+import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -51,6 +53,11 @@ private val DeepNavy = Color(0xFF1E293B)
  */
 @Composable
 fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
+    // home-shell-18: SplashScreen renders outside EnhancedMainScreen's CompositionLocalProvider,
+    // so LocalPlatformAccessibilitySettings would return the default (reduceMotion=false).
+    // Use rememberPlatformAccessibilitySettings() directly to query the platform setting.
+    val reduceMotion = rememberPlatformAccessibilitySettings().reduceMotion
+
     // Animation states
     var showLogo by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
@@ -109,12 +116,10 @@ fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
     )
 
     // Logo entrance animation
+    // home-shell-18: replace inline MediumBouncy with charter SpringBouncy (HighBouncy+StiffnessLow)
     val logoScale by animateFloatAsState(
         targetValue = if (showLogo) 1f else 0.3f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
+        animationSpec = if (reduceMotion) snap() else ExpressiveMotion.SpringBouncy,
         label = "logoScale",
     )
 

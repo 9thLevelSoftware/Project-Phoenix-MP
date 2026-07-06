@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -89,7 +91,9 @@ import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.delay
@@ -1044,6 +1048,8 @@ private fun CycleListItem(
     onDelete: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // training-cycles-14: gate expand animation on reduceMotion
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
     ExpressiveCard(
         onClick = { expanded = !expanded },
@@ -1105,8 +1111,8 @@ private fun CycleListItem(
 
             AnimatedVisibility(
                 visible = expanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
+                enter = if (reduceMotion) EnterTransition.None else fadeIn() + expandVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
+                exit = if (reduceMotion) ExitTransition.None else fadeOut() + shrinkVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
             ) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
                     HorizontalDivider()

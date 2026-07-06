@@ -1,5 +1,9 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -97,8 +101,10 @@ import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.flow.SharedFlow
@@ -1050,6 +1056,12 @@ private fun CompletedCard(
     onStartNextExercise: () -> Unit,
     onResetForNewWorkout: () -> Unit,
 ) {
+    // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
+    // reduceMotion: EnterTransition.None — icon appears instantly (complete static final state).
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    var iconVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { iconVisible = true }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
@@ -1064,12 +1076,18 @@ private fun CompletedCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
-            Icon(
-                Icons.Default.CheckCircle,
-                contentDescription = stringResource(Res.string.cd_workout_completed),
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp),
-            )
+            AnimatedVisibility(
+                visible = iconVisible,
+                enter = if (reduceMotion) EnterTransition.None
+                        else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
+            ) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = stringResource(Res.string.cd_workout_completed),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp),
+                )
+            }
             Text(
                 "Workout Completed!",
                 style = MaterialTheme.typography.titleLarge,

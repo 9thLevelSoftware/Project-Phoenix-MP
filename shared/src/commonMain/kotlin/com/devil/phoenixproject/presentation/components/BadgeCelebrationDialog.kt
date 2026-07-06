@@ -38,6 +38,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeCategory
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -57,21 +59,21 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
     LaunchedEffect(badge.id) {
         onSoundTrigger()
     }
+    // dialogs-overlays-10: HighBouncy reserved for celebratory moments; entrance spring upgraded.
+    // reduceMotion: OR with reduceMotion so targetValue is immediately 1f (channel settles at open).
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     val scale by animateFloatAsState(
-        targetValue = if (showDialog) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
+        targetValue = if (showDialog || reduceMotion) 1f else 0f,
+        animationSpec = ExpressiveMotion.SpringBouncy,
         label = "scale",
     )
     val alpha by animateFloatAsState(
-        targetValue = if (showDialog) 1f else 0f,
+        targetValue = if (showDialog || reduceMotion) 1f else 0f,
         animationSpec = tween(300),
         label = "alpha",
     )
 
-    // Badge icon animation
+    // Badge icon rock animation — gated: 0f when reduceMotion so icon is stationary.
     val infiniteTransition = rememberInfiniteTransition(label = "celebration")
     val rotation by infiniteTransition.animateFloat(
         initialValue = -5f,
@@ -82,6 +84,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
         ),
         label = "rotation",
     )
+    val effectiveRotation = if (reduceMotion) 0f else rotation
 
     // Start animation
     LaunchedEffect(Unit) {
@@ -141,7 +144,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
                     Box(
                         modifier = Modifier
                             .size(80.dp)
-                            .rotate(rotation)
+                            .rotate(effectiveRotation)
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(
@@ -293,16 +296,16 @@ fun BatchedBadgeCelebrationDialog(
         showDialog = true
     }
 
+    // dialogs-overlays-10: HighBouncy for the batched dialog entrance (same upgrade as single dialog).
+    // reduceMotion: OR with reduceMotion so targetValue is immediately 1f (channel settles at open).
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     val scale by animateFloatAsState(
-        targetValue = if (showDialog) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
+        targetValue = if (showDialog || reduceMotion) 1f else 0f,
+        animationSpec = ExpressiveMotion.SpringBouncy,
         label = "scale",
     )
     val alpha by animateFloatAsState(
-        targetValue = if (showDialog) 1f else 0f,
+        targetValue = if (showDialog || reduceMotion) 1f else 0f,
         animationSpec = tween(300),
         label = "alpha",
     )
@@ -517,12 +520,12 @@ private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit
         label = "itemAlpha",
     )
 
+    // dialogs-overlays-10: HighBouncy + StiffnessLow for the badge grid pop-in (properly festive).
+    // reduceMotion: OR with reduceMotion so target is immediately 1f (channel settles immediately).
+    val reduceMotionItem = LocalPlatformAccessibilitySettings.current.reduceMotion
     val itemScale by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0.5f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        targetValue = if (isVisible || reduceMotionItem) 1f else 0.5f,
+        animationSpec = ExpressiveMotion.SpringBouncy,
         label = "itemScale",
     )
 

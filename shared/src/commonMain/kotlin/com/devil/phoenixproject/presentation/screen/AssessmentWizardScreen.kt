@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,21 +18,26 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.flow.StateFlow
@@ -966,8 +972,21 @@ private fun SavingContent() {
 
 @Composable
 private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
+    // exercise-library-13: SpringBouncy entrance on icon + celebrationBackgroundBrush +
+    // hero metric at displayMedium. reduceMotion: iconReady OR reduceMotion = 1f immediately.
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    var iconReady by remember { mutableStateOf(false) }
+    val iconScale by animateFloatAsState(
+        targetValue = if (iconReady || reduceMotion) 1f else 0f,
+        animationSpec = ExpressiveMotion.SpringBouncy,
+        label = "iconScale",
+    )
+    LaunchedEffect(Unit) { iconReady = true }
+
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(celebrationBackgroundBrush()),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -975,12 +994,14 @@ private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             modifier = Modifier.padding(Spacing.large),
         ) {
-            // Success icon
+            // Success icon with SpringBouncy scale entrance
             Icon(
                 Icons.Default.Check,
                 contentDescription = stringResource(Res.string.cd_success),
                 tint = AccessibilityTheme.colors.success,
-                modifier = Modifier.size(72.dp),
+                modifier = Modifier
+                    .size(72.dp)
+                    .scale(iconScale),
             )
 
             Text(
@@ -990,10 +1011,20 @@ private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
                 color = MaterialTheme.colorScheme.onBackground,
             )
 
+            // Exercise name: headlineLarge with overflow guard for 360dp screens
             Text(
-                text = "${step.exerciseName}: ${KmpUtils.formatFloat(step.finalOneRepMaxKg, 1)} kg",
-                style = MaterialTheme.typography.titleLarge,
+                text = step.exerciseName,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // Hero metric: displayMedium per charter (was titleLarge) — 1RM value on its own line
+            Text(
+                text = "${KmpUtils.formatFloat(step.finalOneRepMaxKg, 1)} kg",
+                style = MaterialTheme.typography.displayMedium,
+                color = MaterialTheme.colorScheme.primary,
             )
 
             Spacer(modifier = Modifier.height(Spacing.large))

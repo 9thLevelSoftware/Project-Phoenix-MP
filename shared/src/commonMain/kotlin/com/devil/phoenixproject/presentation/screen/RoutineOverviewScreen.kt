@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,10 +51,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -82,6 +87,7 @@ import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
@@ -762,12 +768,25 @@ private fun ExerciseOverviewCard(
             }
 
             // Completed overlay
+            // routines-15: tertiary tint (0.15f alpha) instead of flat surface scrim so the card
+            // reads "accomplished" not "blocked". SpringBouncy scale-in on the CheckCircle.
+            // AnimatedVisibility is not used here (BoxScope extension ambiguity); scale+alpha
+            // modifier achieves identical visual.
             if (isCompleted) {
                 val completedDesc = stringResource(Res.string.cd_completed)
+                val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+                var iconReady by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { iconReady = true }
+                val iconProgress by animateFloatAsState(
+                    // reduceMotion: OR keeps target at 1f immediately (settled channel, no animation).
+                    targetValue = if (iconReady || reduceMotion) 1f else 0f,
+                    animationSpec = if (reduceMotion) snap() else ExpressiveMotion.SpringBouncy,
+                    label = "checkProgress",
+                )
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                        .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f))
                         .semantics(mergeDescendants = true) {
                             stateDescription = completedDesc
                         },
@@ -776,7 +795,10 @@ private fun ExerciseOverviewCard(
                     Icon(
                         Icons.Default.CheckCircle,
                         completedDesc,
-                        modifier = Modifier.size(80.dp),
+                        modifier = Modifier
+                            .size(80.dp)
+                            .scale(iconProgress)
+                            .alpha(iconProgress),
                         tint = MaterialTheme.colorScheme.tertiary,
                     )
                 }

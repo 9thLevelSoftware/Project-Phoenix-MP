@@ -346,6 +346,11 @@ fun ExercisePickerDialog(
 
 /**
  * Exercise Picker Content - The main content for exercise selection
+ *
+ * @param showTitle When false the "Select Exercise" title row is suppressed regardless of
+ *   [fullScreen]. Use this instead of [fullScreen] = true when the title is unwanted but the
+ *   height should still be capped by the caller (e.g. [MiniExercisePickerDialog]).
+ *   Defaults to true so existing call sites are unaffected.
  */
 @Composable
 fun ExercisePickerContent(
@@ -370,6 +375,7 @@ fun ExercisePickerContent(
     onCreateExercise: () -> Unit = {},
     onEditExercise: ((Exercise) -> Unit)? = null,
     onViewExerciseDetail: ((Exercise) -> Unit)? = null,
+    showTitle: Boolean = true,
     fullScreen: Boolean,
 ) {
     var showVideoDialog by remember { mutableStateOf(false) }
@@ -410,9 +416,9 @@ fun ExercisePickerContent(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            // Title (only in bottom sheet mode). Omit it in compact accessibility
-            // mode so search results keep usable space above the iOS keyboard.
-            if (!fullScreen && !useCompactAccessibility) {
+            // Title row: shown only when showTitle is true, not in fullScreen mode, and not in
+            // compact accessibility mode (to preserve space above the iOS keyboard).
+            if (showTitle && !fullScreen && !useCompactAccessibility) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

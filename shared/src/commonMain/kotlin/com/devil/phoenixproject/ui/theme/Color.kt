@@ -35,6 +35,9 @@ val Slate400 = Color(0xFF94A3B8) // Subtext
 val Slate200 = Color(0xFFE2E8F0) // Light mode surfaces
 val Slate50 = Color(0xFFF8FAFC) // Light mode background
 
+// --- BRAND ACCENT ---
+val ForgeGreen = Color(0xFF10B981) // Phoenix Forge Green — brand success/calibration tint
+
 // --- SIGNAL COLORS (Status) ---
 // Intentionally NOT orange to avoid confusion with primary
 val SignalSuccess = Color(0xFF22C55E) // Green

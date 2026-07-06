@@ -1,8 +1,10 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
@@ -77,7 +79,9 @@ import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.manager.lazyColumnKey
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.time.Instant
@@ -264,11 +268,13 @@ fun WorkoutHistoryCard(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isExpanded by remember { mutableStateOf(false) }
     var showExerciseTagPicker by remember { mutableStateOf(false) }
+    // analytics-history-13: gate all animations on reduceMotion
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
     // Chevron rotation animation
     val chevronRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
-        animationSpec = tween(300),
+        animationSpec = if (reduceMotion) snap() else ExpressiveMotion.SpringSnappy,
         label = "chevron",
     )
 
@@ -432,8 +438,8 @@ fun WorkoutHistoryCard(
             // Expandable summary section
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
+                enter = if (reduceMotion) EnterTransition.None else expandVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
+                exit = if (reduceMotion) ExitTransition.None else shrinkVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
             ) {
                 Column(
                     modifier = Modifier.padding(top = Spacing.medium),
@@ -775,11 +781,13 @@ fun GroupedRoutineCard(
     // Tracks which session's exercise-tag picker is open (null = none).
     // A nullable session id is used because multiple sessions render in the loop below.
     var taggingSessionId by remember { mutableStateOf<String?>(null) }
+    // analytics-history-13: gate all animations on reduceMotion
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
     // Chevron rotation animation
     val chevronRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
-        animationSpec = tween(300),
+        animationSpec = if (reduceMotion) snap() else ExpressiveMotion.SpringSnappy,
         label = "chevron",
     )
 
@@ -976,8 +984,8 @@ fun GroupedRoutineCard(
             // Expandable summary section
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
+                enter = if (reduceMotion) EnterTransition.None else expandVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
+                exit = if (reduceMotion) ExitTransition.None else shrinkVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
             ) {
                 Column(modifier = Modifier.padding(top = Spacing.medium)) {
                     HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
@@ -1351,6 +1359,8 @@ private fun BiomechanicsSection(session: WorkoutSession) {
     Spacer(modifier = Modifier.height(Spacing.medium))
 
     var isRepBiomechanicsExpanded by remember { mutableStateOf(false) }
+    // analytics-history-13: gate per-rep expand animation on reduceMotion
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
     BiomechanicsHistorySummary(
         avgMcvMmS = session.avgMcvMmS,
@@ -1364,8 +1374,8 @@ private fun BiomechanicsSection(session: WorkoutSession) {
     // Per-rep detail (lazy-loaded only when expanded)
     AnimatedVisibility(
         visible = isRepBiomechanicsExpanded,
-        enter = expandVertically(),
-        exit = shrinkVertically(),
+        enter = if (reduceMotion) EnterTransition.None else expandVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
+        exit = if (reduceMotion) ExitTransition.None else shrinkVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
     ) {
         val biomechanicsRepository: BiomechanicsRepository = koinInject()
         var repBiomechanics by remember { mutableStateOf<List<BiomechanicsRepResult>>(emptyList()) }

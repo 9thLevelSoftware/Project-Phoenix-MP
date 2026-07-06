@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -48,8 +49,12 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.ble.DiagnosticFault
 import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.viewmodel.DiagnosticsUiState
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.presentation.viewmodel.DiagnosticsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import org.jetbrains.compose.resources.stringResource
@@ -256,12 +261,30 @@ private fun DiagnosticsEmptyState() {
 
 @Composable
 private fun DiagnosticsWaitingState() {
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     DetailSection(title = stringResource(Res.string.diagnostics_waiting_title)) {
-        Text(
-            text = stringResource(Res.string.diagnostics_waiting_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            // Active polling indicator — static Icon when reduceMotion is on.
+            if (reduceMotion) {
+                Icon(
+                    imageVector = Icons.Default.Sync,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                // Phase 3 convention: LoadingIndicator is the only spinner component.
+                LoadingIndicator(size = LoadingIndicatorSize.Small)
+            }
+            Text(
+                text = stringResource(Res.string.diagnostics_waiting_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

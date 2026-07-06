@@ -19,8 +19,8 @@ private fun isDarkBackground(): Boolean = MaterialTheme.colorScheme.background.l
 
 /**
  * Returns a vertical gradient brush for screen backgrounds.
- * Dark mode: Slate with subtle plum accent in center
- * Light mode: Light with subtle mint wash
+ * Dark mode: Slate with subtle primary (orange) accent at centre — clear warm glow.
+ * Light mode: White with primary tint at 15% alpha — perceptible brand warmth (gap-2-12).
  *
  * Uses MaterialTheme.colorScheme to detect dark/light mode,
  * respecting the app's theme preference (not just system theme).
@@ -37,7 +37,7 @@ fun screenBackgroundBrush(): Brush {
     } else {
         Brush.verticalGradient(
             0.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
-            0.5f to MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
+            0.5f to MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
             1.0f to MaterialTheme.colorScheme.surface,
         )
     }

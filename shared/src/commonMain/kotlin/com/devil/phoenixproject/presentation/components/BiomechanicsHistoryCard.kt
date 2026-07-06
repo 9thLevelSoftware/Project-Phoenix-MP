@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
@@ -42,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.domain.model.StrengthProfile
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
@@ -316,6 +320,7 @@ fun RepBiomechanicsDetail(
 @Composable
 private fun RepBiomechanicsRow(rep: BiomechanicsRepResult, showAsymmetry: Boolean, showForceCurves: Boolean) {
     var isExpanded by remember { mutableStateOf(false) }
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     val zone = rep.velocity.zone
 
     Card(
@@ -409,8 +414,8 @@ private fun RepBiomechanicsRow(rep: BiomechanicsRepResult, showAsymmetry: Boolea
             if (showForceCurves) {
                 AnimatedVisibility(
                     visible = isExpanded,
-                    enter = expandVertically(),
-                    exit = shrinkVertically(),
+                    enter = if (reduceMotion) EnterTransition.None else expandVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
+                    exit = if (reduceMotion) ExitTransition.None else shrinkVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
                 ) {
                     Column(modifier = Modifier.padding(top = Spacing.small)) {
                         HorizontalDivider(
