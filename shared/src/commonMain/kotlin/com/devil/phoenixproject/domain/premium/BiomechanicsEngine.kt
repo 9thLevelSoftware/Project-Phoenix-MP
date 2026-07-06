@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.ForceCurveResult
 import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.VelocityResult
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import co.touchlab.kermit.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * @param velocityLossThresholdPercent Velocity loss percentage to trigger shouldStopSet (default 20%)
  */
 class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
+    private val log = Logger.withTag("BiomechanicsEngine")
     private val _latestRepResult = MutableStateFlow<BiomechanicsRepResult?>(null)
     private val velocityLossThresholdPercent = MutableStateFlow(velocityLossThresholdPercent)
 
@@ -236,7 +238,7 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
             if (mcv > 0f) {
                 firstRepMcv = mcv
             } else {
-                println("BiomechanicsEngine: rep $repNumber produced 0 MCV — firstRepMcv baseline not set (empty or zero concentric metrics)")
+                log.w { "rep $repNumber produced 0 MCV — firstRepMcv baseline not set (empty or zero concentric metrics)" }
             }
         }
 

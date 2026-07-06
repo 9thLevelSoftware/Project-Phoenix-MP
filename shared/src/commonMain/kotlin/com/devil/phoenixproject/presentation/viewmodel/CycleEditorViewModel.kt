@@ -62,6 +62,7 @@ class CycleEditorViewModel(
         var shouldProceed = false
         _uiState.update { current ->
             if (current.cycleId == cycleId && !current.isLoading) {
+                shouldProceed = false // Explicit reset — CAS retry may re-run this lambda
                 current // Already initialized — no-op
             } else {
                 shouldProceed = true

@@ -825,7 +825,7 @@ class KableBleConnectionManager(
                         // Finding [49]: disconnect before retry — Kable Peripheral may still be
                         // in State.Connecting after a timeout; a fresh connect() on a half-open
                         // Peripheral can wedge the GATT stack. Disconnect first to reset state.
-                        try { peripheral?.disconnect() } catch (_: Exception) {}
+                        try { peripheral?.disconnect() } catch (e: Exception) { e.rethrowIfCancellation() }
                         delay(BleConstants.Timing.CONNECTION_RETRY_DELAY_MS)
                     }
                 } catch (e: BleDeviceInitializationException) {
@@ -841,7 +841,7 @@ class KableBleConnectionManager(
                     if (attempt < BleConstants.Timing.CONNECTION_RETRY_COUNT) {
                         // Finding [49]: disconnect before retry to ensure Kable Peripheral
                         // is not stuck in State.Connecting before the next connect() call.
-                        try { peripheral?.disconnect() } catch (_: Exception) {}
+                        try { peripheral?.disconnect() } catch (e2: Exception) { e2.rethrowIfCancellation() }
                         delay(BleConstants.Timing.CONNECTION_RETRY_DELAY_MS)
                     }
                 }

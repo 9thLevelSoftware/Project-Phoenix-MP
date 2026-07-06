@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.SampleStatus
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.Constants
 import kotlin.math.abs
 
 /**
@@ -302,11 +303,11 @@ class MonitorDataProcessor(
             return false
         }
 
-        // Load validation - check against hardware max weight
-        if (loadA < 0f || loadA > BleConstants.Thresholds.MAX_TOTAL_WEIGHT_KG ||
-            loadB < 0f || loadB > BleConstants.Thresholds.MAX_TOTAL_WEIGHT_KG
+        // Load validation - check each cable against per-cable hardware max (110kg for Trainer+)
+        if (loadA < 0f || loadA > Constants.MAX_WEIGHT_PER_CABLE_KG ||
+            loadB < 0f || loadB > Constants.MAX_WEIGHT_PER_CABLE_KG
         ) {
-            log.w { "Load out of range: loadA=$loadA, loadB=$loadB (max=${BleConstants.Thresholds.MAX_TOTAL_WEIGHT_KG})" }
+            log.w { "Load out of range: loadA=$loadA, loadB=$loadB (max=${Constants.MAX_WEIGHT_PER_CABLE_KG})" }
             return false
         }
 
