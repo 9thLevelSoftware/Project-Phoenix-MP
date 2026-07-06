@@ -822,6 +822,10 @@ class KableBleConnectionManager(
                     lastException = Exception("Connection timeout after ${BleConstants.CONNECTION_TIMEOUT_MS}ms")
                     log.w { "Connection attempt $attempt timed out after ${BleConstants.CONNECTION_TIMEOUT_MS}ms" }
                     if (attempt < BleConstants.Timing.CONNECTION_RETRY_COUNT) {
+                        // Finding [49]: disconnect before retry — Kable Peripheral may still be
+                        // in State.Connecting after a timeout; a fresh connect() on a half-open
+                        // Peripheral can wedge the GATT stack. Disconnect first to reset state.
+                        try { peripheral?.disconnect() } catch (e: Exception) { e.rethrowIfCancellation() }
                         delay(BleConstants.Timing.CONNECTION_RETRY_DELAY_MS)
                     }
                 } catch (e: BleDeviceInitializationException) {
@@ -835,6 +839,9 @@ class KableBleConnectionManager(
                     lastException = e
                     log.w { "Connection attempt $attempt failed: ${e.message}" }
                     if (attempt < BleConstants.Timing.CONNECTION_RETRY_COUNT) {
+                        // Finding [49]: disconnect before retry to ensure Kable Peripheral
+                        // is not stuck in State.Connecting before the next connect() call.
+                        try { peripheral?.disconnect() } catch (e2: Exception) { e2.rethrowIfCancellation() }
                         delay(BleConstants.Timing.CONNECTION_RETRY_DELAY_MS)
                     }
                 }
@@ -843,11 +850,21 @@ class KableBleConnectionManager(
             // All retries failed - cleanup and return to disconnected state.
             // cleanupExistingConnection() swallows disconnect errors, so peripheral
             // is always released and Disconnected always reported (PR #621 review).
+            // Finding [48]: cleanupExistingConnection() early-returns when peripheral
+            // is already null (set by the State.Disconnected handler during retries),
+            // leaving stateObserverJob alive and subscribed to a dead Peripheral.
+            // Cancel it explicitly here to guarantee no ghost callbacks after throw.
+            stateObserverJob?.cancel()
+            stateObserverJob = null
             cleanupExistingConnection()
             reportConnectionState(ConnectionState.Disconnected)
             throw lastException ?: Exception("Connection failed after ${BleConstants.Timing.CONNECTION_RETRY_COUNT} attempts")
         } catch (e: Exception) {
             e.rethrowIfCancellation()
+            // Finding [48]: cancel stateObserverJob in the outer catch so ghost callbacks
+            // cannot fire on a half-torn-down Peripheral after an unexpected exception.
+            stateObserverJob?.cancel()
+            stateObserverJob = null
             log.e { "Connection failed: ${e.message}" }
             logRepo.error(
                 LogEventType.CONNECT_FAIL,

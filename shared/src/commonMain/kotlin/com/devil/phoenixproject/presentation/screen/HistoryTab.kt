@@ -129,9 +129,6 @@ fun HistoryTab(
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    @Suppress("UNUSED_VARIABLE") // Kept for future pull-to-refresh implementation
-    var isRefreshing by remember { mutableStateOf(false) }
-
     // M8: Hoist koinInject calls to parent composable scope (outside LazyColumn items).
     // Calling koinInject inside lazy item lambdas can cause stale scope issues during recomposition.
     val repMetricRepository: RepMetricRepository = koinInject()

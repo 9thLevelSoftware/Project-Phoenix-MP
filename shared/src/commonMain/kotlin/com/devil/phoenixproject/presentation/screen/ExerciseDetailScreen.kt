@@ -414,7 +414,6 @@ private fun ProgressionChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
 
             Spacer(Modifier.height(16.dp))
 
-            // Simple line representation (placeholder for actual chart)
             if (filteredData.size >= 2) {
                 Box(
                     modifier = Modifier
@@ -426,7 +425,6 @@ private fun ProgressionChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    // Chart placeholder - would use a proper charting library
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {

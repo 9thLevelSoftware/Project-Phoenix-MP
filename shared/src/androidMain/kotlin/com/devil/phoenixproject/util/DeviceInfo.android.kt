@@ -15,6 +15,7 @@ actual object DeviceInfo {
     // These are set via initialize() from the app module's BuildConfig
 
     private var _appVersionCode: Int = 1
+    private var _appVersionName: String = Constants.APP_VERSION
     private var _isDebugBuild: Boolean = false
     private var _initialized: Boolean = false
 
@@ -25,19 +26,25 @@ actual object DeviceInfo {
      * ```kotlin
      * DeviceInfo.initialize(
      *     versionCode = BuildConfig.VERSION_CODE,
-     *     isDebug = BuildConfig.DEBUG
+     *     isDebug = BuildConfig.DEBUG,
+     *     versionName = BuildConfig.VERSION_NAME,
      * )
      * ```
+     *
+     * [versionName] defaults to [Constants.APP_VERSION] for call sites that have not yet
+     * been updated to pass BuildConfig.VERSION_NAME.
      */
-    fun initialize(versionCode: Int, isDebug: Boolean) {
+    fun initialize(versionCode: Int, isDebug: Boolean, versionName: String = Constants.APP_VERSION) {
         _appVersionCode = versionCode
         _isDebugBuild = isDebug
+        _appVersionName = versionName
         _initialized = true
     }
 
     // ==================== App Build Info ====================
 
-    actual val appVersionName: String = Constants.APP_VERSION
+    actual val appVersionName: String
+        get() = _appVersionName
 
     actual val appVersionCode: Int
         get() = _appVersionCode

@@ -6,7 +6,7 @@ package com.devil.phoenixproject.data.ble
  * Created by parseMonitorPacket().
  */
 data class MonitorPacket(
-    val ticks: Int,
+    val ticks: Long,
     val posA: Float, // mm
     val posB: Float, // mm
     val loadA: Float, // kg

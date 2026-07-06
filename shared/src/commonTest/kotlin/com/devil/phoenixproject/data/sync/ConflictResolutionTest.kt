@@ -409,6 +409,41 @@ class ConflictResolutionTest {
         assertEquals(1L, localCycle.is_active, "Local active cycle should remain active")
     }
 
+    @Test
+    fun `mergePortalCycles - existing active cycle is not silently deactivated when same ID arrives as non-active`() = runTest {
+        // GIVEN: A local cycle exists and is active
+        val cycleId = "active-cycle-same-id"
+        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+            id = cycleId,
+            name = "Local Active Cycle",
+            description = null,
+            created_at = now,
+            is_active = 1L,
+            profile_id = testProfileId,
+        )
+
+        // WHEN: Portal sends the SAME cycle ID with status != "active"
+        // (regression: updateTrainingCycle previously hardcoded is_active = 0L here)
+        val portalCycles = listOf(
+            PullTrainingCycleDto(
+                id = cycleId,
+                name = "Updated Name From Portal",
+                status = "draft", // Not active — only single-active enforcement should change is_active
+                days = emptyList(),
+            ),
+        )
+        repository.mergePortalCycles(portalCycles, testProfileId)
+
+        // THEN: The cycle's is_active must still be 1 — the update must not have zeroed it out
+        val cycle = database.vitruvianDatabaseQueries
+            .selectTrainingCycleById(cycleId)
+            .executeAsOneOrNull()
+        assertNotNull(cycle)
+        assertEquals(1L, cycle.is_active, "is_active must be preserved through metadata update")
+        // Metadata update should still have applied
+        assertEquals("Updated Name From Portal", cycle.name, "Name should be updated from portal")
+    }
+
     // ─── Badge Merge Tests (UNION) ─────────────────────────────────────
 
     @Test

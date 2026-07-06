@@ -19,6 +19,7 @@ import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaseline
@@ -42,7 +43,7 @@ enum class SetMode {
 }
 
 data class SetConfiguration(
-    val id: String = com.devil.phoenixproject.domain.model.generateUUID(), // Stable ID for Compose keys
+    val id: String = generateUUID(), // Stable ID for Compose keys
     val setNumber: Int,
     val reps: Int? = 10, // Nullable to support AMRAP (null = AMRAP)
     val weightPerCable: Float = 15.0f,
@@ -159,9 +160,6 @@ class ExerciseConfigViewModel constructor(
 
     private val _rackBehaviorOverrides = MutableStateFlow<Map<String, RackItemBehavior>>(emptyMap())
     val rackBehaviorOverrides: StateFlow<Map<String, RackItemBehavior>> = _rackBehaviorOverrides.asStateFlow()
-
-    init {
-    }
 
     fun initialize(
         exercise: RoutineExercise,
@@ -858,11 +856,6 @@ class ExerciseConfigViewModel constructor(
 
     override fun onCleared() {
         super.onCleared()
-    }
-
-    private fun generateUUID(): String {
-        // Fallback UUID generation using timestamp and random number
-        return "uuid-${KmpUtils.currentTimeMillis()}-${(0..999).random()}"
     }
 
     private fun logDebug(message: String) {

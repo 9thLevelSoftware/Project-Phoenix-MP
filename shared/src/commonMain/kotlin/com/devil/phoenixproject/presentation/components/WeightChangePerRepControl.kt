@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -43,7 +43,11 @@ fun WeightChangePerRepControl(
     val clampedValueKg = displayToKg(clampedDisplay, weightUnit)
     val valueText = formatProgressionPerRep(clampedDisplay, weightUnit)
 
-    LaunchedEffect(clampedValueKg, valueKg, weightUnit) {
+    // Notify the parent if the incoming valueKg was out of the clamp range.
+    // SideEffect runs after every successful composition — using it instead of
+    // LaunchedEffect avoids the extra coroutine launch and makes the semantics
+    // explicit: this is a synchronous side-effect, not async work.
+    SideEffect {
         if (abs(valueKg - clampedValueKg) > 0.0001f) {
             onValueChangeKg(clampedValueKg)
         }

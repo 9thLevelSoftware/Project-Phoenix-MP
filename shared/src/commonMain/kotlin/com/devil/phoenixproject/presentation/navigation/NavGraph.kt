@@ -327,7 +327,6 @@ fun NavGraph(
             ) {
                 val weightUnit by viewModel.weightUnit.collectAsState()
                 val userPreferences by viewModel.userPreferences.collectAsState()
-                val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
                 val connectionError by viewModel.connectionError.collectAsState()
                 val connectionState by viewModel.connectionState.collectAsState()
                 val discoModeActive by viewModel.discoModeActive.collectAsState()
@@ -369,7 +368,6 @@ fun NavGraph(
                     onNavigateToLinkAccount = { navController.navigate(NavigationRoutes.LinkAccount.route) },
                     onNavigateToIntegrations = { navController.navigate(NavigationRoutes.Integrations.route) },
                     onNavigateToEquipmentRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
-                    isAutoConnecting = isAutoConnecting,
                     connectionError = connectionError,
                     onClearConnectionError = { viewModel.clearConnectionError() },
                     onCancelAutoConnecting = { viewModel.cancelAutoConnecting() },

@@ -134,8 +134,6 @@ fun ExerciseConfigModal(
                                 stepKg = weightStepKg,
                             )
 
-                            ProgramMode.TUTBeast -> { /* Handled by TUT case above */ }
-
                             ProgramMode.Pump -> PumpConfigPanel(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
@@ -158,6 +156,8 @@ fun ExerciseConfigModal(
                                 eccentricPercent = config.eccentricLoadPercent,
                                 onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
                             )
+
+                            ProgramMode.TUTBeast -> Unit // Mapped to TUT at line 114; unreachable but required for exhaustiveness
                         }
                     }
                 }

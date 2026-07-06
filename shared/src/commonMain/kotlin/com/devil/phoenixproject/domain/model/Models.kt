@@ -379,7 +379,7 @@ data class WorkoutMetric(
     val loadB: Float,
     val positionA: Float, // Position in mm (changed from Int in Issue #197)
     val positionB: Float, // Position in mm (changed from Int in Issue #197)
-    val ticks: Int = 0,
+    val ticks: Long = 0L,
     val velocityA: Double = 0.0, // Velocity for handle detection (official app protocol)
     val velocityB: Double = 0.0, // Velocity for right handle detection (for single-handle exercises)
     val status: Int = 0, // Machine status flags (0x8000=Deload Occurred, 0x0040=Deload Warn)

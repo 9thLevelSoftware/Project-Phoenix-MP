@@ -151,8 +151,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     val weightUnit by viewModel.weightUnit.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
 
-    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
-    val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
     var selectedMode by remember { mutableStateOf(workoutParameters.programMode.toWorkoutMode(workoutParameters.echoLevel)) }

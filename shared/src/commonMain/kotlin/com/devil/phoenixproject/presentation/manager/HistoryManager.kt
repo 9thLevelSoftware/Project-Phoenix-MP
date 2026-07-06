@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
@@ -141,19 +140,6 @@ class HistoryManager(
                     Logger.d { "PR_DISPLAY: Got ${records.size} grouped PRs for profile=$profileId" }
                     records
                 }
-            }
-            .stateIn(
-                scope = scope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList(),
-            )
-
-    @Suppress("unused")
-    val personalBests: StateFlow<List<PersonalRecordEntity>> =
-        userProfileRepository.activeProfile
-            .flatMapLatest { profile ->
-                val profileId = profile?.id ?: "default"
-                workoutRepository.getAllPersonalRecords(profileId)
             }
             .stateIn(
                 scope = scope,

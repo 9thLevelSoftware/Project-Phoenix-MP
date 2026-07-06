@@ -398,7 +398,7 @@ private fun PreviewRow(
     val isPRScaled = exercise.usePercentOfPR
     val currentFormatted = formatWeight(exercise.weightPerCableKg, weightUnit)
     val isClamped = newWeight != null && (
-        newWeight <= Constants.MIN_WEIGHT_KG || newWeight >= Constants.MAX_WEIGHT_PER_CABLE_KG
+        newWeight <= Constants.MIN_WEIGHT_KG || newWeight > Constants.MAX_WEIGHT_PER_CABLE_KG
         )
     val hasChanged = newWeight != null && newWeight != exercise.weightPerCableKg
 

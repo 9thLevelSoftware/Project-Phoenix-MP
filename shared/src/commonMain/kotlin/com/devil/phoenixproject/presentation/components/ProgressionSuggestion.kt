@@ -51,12 +51,14 @@ fun ProgressionSuggestionBanner(
     ) {
         val isDeload = event.reason.isDeload
         // Semantic: deload → warning (amber); progression → success (lime)
-        val cardColor = if (isDeload) AccessibilityTheme.colors.warning else AccessibilityTheme.colors.success
+        val accentColor = if (isDeload) AccessibilityTheme.colors.warning else AccessibilityTheme.colors.success
+        val accentColorMid = accentColor.copy(alpha = 0.15f)
+        val accentColorDark = accentColor
 
         Card(
             modifier = modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = cardColor.copy(alpha = 0.15f),
+                containerColor = accentColorMid,
             ),
             shape = MaterialTheme.shapes.medium,
         ) {
@@ -72,7 +74,7 @@ fun ProgressionSuggestionBanner(
                     Icon(
                         if (isDeload) Icons.AutoMirrored.Filled.TrendingDown else Icons.AutoMirrored.Filled.TrendingUp,
                         contentDescription = null,
-                        tint = cardColor,
+                        tint = accentColor,
                         modifier = Modifier.size(24.dp),
                     )
                     Spacer(Modifier.width(8.dp))
@@ -81,7 +83,7 @@ fun ProgressionSuggestionBanner(
                             if (isDeload) "Deload Suggested" else "Weight Increase Suggested",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = cardColor,
+                            color = accentColor,
                         )
                         Text(
                             when (event.reason) {
@@ -92,7 +94,7 @@ fun ProgressionSuggestionBanner(
                                 ProgressionReason.PLATEAU_DETECTED -> "A plateau has been detected in your progress"
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = cardColor,
+                            color = accentColor,
                         )
                     }
                 }
@@ -104,7 +106,7 @@ fun ProgressionSuggestionBanner(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
-                            cardColor.copy(alpha = 0.1f),
+                            accentColor.copy(alpha = 0.1f),
                             MaterialTheme.shapes.small,
                         )
                         .padding(12.dp),
@@ -127,7 +129,7 @@ fun ProgressionSuggestionBanner(
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = null,
-                        tint = cardColor,
+                        tint = accentColor,
                         modifier = Modifier.size(20.dp),
                     )
 
@@ -135,18 +137,18 @@ fun ProgressionSuggestionBanner(
                         Text(
                             "Suggested",
                             style = MaterialTheme.typography.labelSmall,
-                            color = cardColor,
+                            color = accentColor,
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 formatWeight(event.suggestedWeightKg, weightUnit),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = cardColor,
+                                color = accentColor,
                             )
                             Spacer(Modifier.width(4.dp))
                             Surface(
-                                color = cardColor,
+                                color = accentColor,
                                 shape = RoundedCornerShape(4.dp),
                             ) {
                                 val incrementText = if (isDeload) {
@@ -208,7 +210,7 @@ fun ProgressionSuggestionBanner(
                         modifier = Modifier.weight(1f),
                         shape = MaterialTheme.shapes.extraSmall,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = cardColor,
+                            containerColor = accentColorDark,
                         ),
                     ) {
                         Icon(
@@ -312,12 +314,13 @@ private fun ModifyWeightDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     listOf(-1f, -0.5f, 0.5f, 1f, 2.5f).forEach { delta ->
+                        val displayLabel = if (delta > 0) "+${formatWeight(delta, weightUnit)}" else formatWeight(delta, weightUnit)
                         FilterChip(
                             selected = false,
                             onClick = { weight = (previousWeight + delta).coerceAtLeast(0f) },
                             label = {
                                 Text(
-                                    if (delta > 0) "+${delta}kg" else "${delta}kg",
+                                    displayLabel,
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             },

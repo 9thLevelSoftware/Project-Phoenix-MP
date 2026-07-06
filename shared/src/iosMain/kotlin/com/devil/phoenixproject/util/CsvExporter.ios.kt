@@ -181,12 +181,13 @@ class IosCsvExporter : CsvExporter {
 
         // Write content using NSString
         val nsContent = NSString.create(string = content)
-        nsContent.writeToFile(
+        val success = nsContent.writeToFile(
             filePath,
             atomically = true,
             encoding = NSUTF8StringEncoding,
             error = null,
         )
+        if (!success) throw IllegalStateException("Failed to write CSV to $filePath")
 
         return filePath
     }

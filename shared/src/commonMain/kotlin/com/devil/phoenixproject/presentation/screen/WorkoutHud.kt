@@ -240,10 +240,12 @@ fun WorkoutHud(
             } ?: false
 
             // Track if cable has ever been active (latching - once true, stays true for this set)
+            // Use guarded composition-time update instead of SideEffect to avoid
+            // redundant recomposition triggers (SideEffect + mutableState is an anti-pattern).
             var cableAEverActive by remember { mutableStateOf(false) }
             var cableBEverActive by remember { mutableStateOf(false) }
-            if (isCableACurrentlyActive) cableAEverActive = true
-            if (isCableBCurrentlyActive) cableBEverActive = true
+            if (isCableACurrentlyActive && !cableAEverActive) cableAEverActive = true
+            if (isCableBCurrentlyActive && !cableBEverActive) cableBEverActive = true
 
             val showCableA = cableAEverActive || isCableACurrentlyActive
             val showCableB = cableBEverActive || isCableBCurrentlyActive
@@ -621,7 +623,6 @@ private fun ExecutionPage(
                     phaseProgress = repCount.phaseProgress,
                     confirmedReps = repCount.workingReps,
                     targetReps = workoutParameters.reps,
-                    showStableCounter = false, // We show it separately below
                     size = 120.dp,
                 )
 

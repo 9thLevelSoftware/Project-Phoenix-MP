@@ -475,13 +475,14 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
             )
         }
 
-        // Serialize once to measure size. Reuse the serialized bytes so we
-        // do not pay the JSON cost twice.
+        // Serialize once to measure size. Cache the byte array so we do not
+        // pay the encoding cost twice (once for the size check, once for the error message).
         val serialized = json.encodeToString(PortalSyncPayload.serializer(), payload)
-        if (serialized.encodeToByteArray().size > SyncConfig.MAX_PAYLOAD_BYTES) {
+        val payloadBytes = serialized.encodeToByteArray()
+        if (payloadBytes.size > SyncConfig.MAX_PAYLOAD_BYTES) {
             return Result.failure(
                 PortalApiException(
-                    "Push payload is ${serialized.encodeToByteArray().size} bytes; " +
+                    "Push payload is ${payloadBytes.size} bytes; " +
                         "cap is ${SyncConfig.MAX_PAYLOAD_BYTES} bytes. Caller must split.",
                 ),
             )
@@ -616,9 +617,22 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
     /**
      * Force a token refresh regardless of local expiry state.
      * Used when server returns 401 despite local token appearing valid.
+     *
+     * [tokenThatFailed] is the access token that received the 401. After
+     * acquiring the mutex we re-read storage: if the stored token is already
+     * different, a concurrent coroutine completed the refresh while this one
+     * was blocked on the lock, so we return the fresh token immediately
+     * without making a second network call (double-check-after-lock pattern).
      */
-    private suspend fun forceRefresh(): String? {
+    private suspend fun forceRefresh(tokenThatFailed: String): String? {
         return refreshMutex.withLock {
+            // Double-check: another coroutine may have refreshed while we waited.
+            val currentToken = tokenStorage.getToken()
+            if (currentToken != null && currentToken != tokenThatFailed) {
+                Logger.d("PortalApiClient") { "forceRefresh: token already refreshed by concurrent coroutine, reusing" }
+                return@withLock currentToken
+            }
+
             val storedRefreshToken = tokenStorage.getRefreshToken() ?: run {
                 tokenStorage.clearAuthWithEvent(
                     AuthEvent.SessionExpired("Session expired - no refresh token available"),
@@ -671,9 +685,11 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
             Logger.d("PortalApiClient") { "AUTH REQUEST: tokenLen=${token.length}" }
             val response = block(token)
             if (response.status.value == 401) {
-                // Token was valid by our clock but server rejected — force one refresh
+                // Token was valid by our clock but server rejected — force one refresh.
+                // Pass the stale token so forceRefresh can skip the network call if a
+                // concurrent coroutine already completed the refresh (double-check pattern).
                 Logger.e("PortalApiClient") { "GOT 401 - attempting forceRefresh" }
-                val retryToken = forceRefresh()
+                val retryToken = forceRefresh(token)
                 if (retryToken == null) {
                     Logger.e("PortalApiClient") { "forceRefresh returned null - session expired" }
                     return Result.failure(

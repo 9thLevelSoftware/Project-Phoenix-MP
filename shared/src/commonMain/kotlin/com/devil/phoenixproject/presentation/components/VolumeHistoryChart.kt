@@ -19,7 +19,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.ui.theme.DataColors
 
-// Placeholder for TrendPoint if not resolved
 data class VolumePoint(
     val label: String, // e.g., "Mon", "Tue" or Date
     val volume: Float,

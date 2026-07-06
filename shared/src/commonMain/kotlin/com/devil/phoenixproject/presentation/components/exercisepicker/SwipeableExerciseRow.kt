@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -62,6 +63,8 @@ fun SwipeableExerciseRow(
 
     // Single animatable for smooth drag + animate
     val offsetX = remember { Animatable(0f) }
+    // Capture isRevealed without restarting pointerInput — avoids cancelling active gestures.
+    val currentIsRevealed = rememberUpdatedState(isRevealed)
 
     // Animate to target when isRevealed changes externally
     LaunchedEffect(isRevealed) {
@@ -133,7 +136,7 @@ fun SwipeableExerciseRow(
                         },
                         onDragCancel = {
                             scope.launch {
-                                val target = if (isRevealed) revealWidthPx else 0f
+                                val target = if (currentIsRevealed.value) revealWidthPx else 0f
                                 offsetX.animateTo(target, tween(150))
                             }
                         },

@@ -12,21 +12,16 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeGestures
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -95,7 +90,6 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
-import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
@@ -362,71 +356,14 @@ fun WorkoutTab(
             .fillMaxSize()
             .background(backgroundGradient),
     ) {
-        // Show position bars at edges only when workout is active and metric is available
-        val showPositionBars = connectionState is ConnectionState.Connected &&
-            workoutState is WorkoutState.Active &&
-            currentMetric != null
-
-        // Left edge bar (Cable A / Left hand) - Enhanced with phase-reactive coloring
-        // Uses safeGestures inset to avoid overlap with system back gesture areas
-        if (showPositionBars && currentMetric != null) { // null check for smart-cast
-            // Calculate danger zone status
-            val isDanger = repRanges?.isInDangerZone(currentMetric.positionA, currentMetric.positionB) ?: false
-
-            EnhancedCablePositionBar(
-                label = "L",
-                currentPosition = currentMetric.positionA,
-                velocity = currentMetric.velocityA,
-                minPosition = repRanges?.minPosA,
-                maxPosition = repRanges?.maxPosA,
-                // Ghost indicators: use last rep's positions
-                ghostMin = repRanges?.lastRepBottomA,
-                ghostMax = repRanges?.lastRepTopA,
-                // isActive defaults to true - bars only shown during Active state anyway
-                isDanger = isDanger,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .windowInsetsPadding(WindowInsets.safeGestures.only(WindowInsetsSides.Start))
-                    .width(40.dp)
-                    .fillMaxHeight(0.8f) // Don't stretch full height for better visual balance
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
-            )
-        }
-
-        // Right edge bar (Cable B / Right hand) - Enhanced with phase-reactive coloring
-        // Uses safeGestures inset to avoid overlap with system back gesture areas
-        if (showPositionBars && currentMetric != null) { // null check for smart-cast
-            // Calculate danger zone status
-            val isDanger = repRanges?.isInDangerZone(currentMetric.positionA, currentMetric.positionB) ?: false
-
-            EnhancedCablePositionBar(
-                label = "R",
-                currentPosition = currentMetric.positionB,
-                velocity = currentMetric.velocityB,
-                minPosition = repRanges?.minPosB,
-                maxPosition = repRanges?.maxPosB,
-                // Ghost indicators: use last rep's positions
-                ghostMin = repRanges?.lastRepBottomB,
-                ghostMax = repRanges?.lastRepTopB,
-                // isActive defaults to true - bars only shown during Active state anyway
-                isDanger = isDanger,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .windowInsetsPadding(WindowInsets.safeGestures.only(WindowInsetsSides.End))
-                    .width(40.dp)
-                    .fillMaxHeight(0.8f) // Don't stretch full height for better visual balance
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
-            )
-        }
-
         // Center content column
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding() // Issue #XXX: Prevent content from going behind soft nav buttons
                 .padding(
-                    start = if (showPositionBars) 56.dp else 20.dp,
-                    end = if (showPositionBars) 56.dp else 20.dp,
+                    start = 20.dp,
+                    end = 20.dp,
                     top = 0.dp,
                     bottom = 8.dp, // Small additional padding for visual breathing room
                 )
@@ -465,15 +402,6 @@ fun WorkoutTab(
                             onStartNextExercise = onStartNextExercise,
                             onResetForNewWorkout = onResetForNewWorkout,
                         )
-                    }
-
-                    is WorkoutState.Active -> {
-                        // NEW HUD LAYOUT
-                        // We intercept the Active state here and delegate everything to WorkoutHud
-                        // NOTE: WorkoutHud includes its own Scaffold, so it might conflict if nested deeply.
-                        // Ideally WorkoutTab should switch completely.
-                        // For now, we render it inside this column? No, that's bad (scaffold inside column).
-                        // Refactoring: We should lift WorkoutHud to be the root content of WorkoutTab when active.
                     }
 
                     else -> {}
@@ -1176,44 +1104,6 @@ private fun CompletedCard(
                         fontWeight = FontWeight.Bold,
                     )
                 }
-            }
-        }
-    }
-}
-
-/**
- * Active Workout Card - shown during active workout
- */
-@Composable
-private fun ActiveWorkoutCard(workoutParameters: WorkoutParameters, onStopWorkout: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            Text(
-                "Workout Active",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            Button(
-                onClick = onStopWorkout,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            ) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_stop_workout))
-                Spacer(modifier = Modifier.width(Spacing.small))
-                Text(stringResource(Res.string.stop_workout))
             }
         }
     }

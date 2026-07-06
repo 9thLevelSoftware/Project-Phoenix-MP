@@ -108,8 +108,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val isExerciseTimerPaused by viewModel.isExerciseTimerPaused.collectAsState()
     val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
 
-    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
-    val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
     val routineFlowState by viewModel.routineFlowState.collectAsState()

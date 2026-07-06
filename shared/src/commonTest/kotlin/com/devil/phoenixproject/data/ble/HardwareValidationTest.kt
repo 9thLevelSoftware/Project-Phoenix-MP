@@ -89,7 +89,7 @@ class HardwareValidationTest {
     data class PhoenixInterpretation(
         val ticksLow: Int, // unsigned 16-bit
         val ticksHigh: Int, // unsigned 16-bit
-        val ticks: Int, // combined 32-bit tick counter
+        val ticks: Long, // combined 32-bit tick counter
         val posA: Float, // mm (signed short / 10.0)
         val skippedA: Int, // bytes 6-7 (velocity in official interpretation)
         val loadA: Float, // kg (unsigned short / 100.0)
@@ -106,7 +106,7 @@ class HardwareValidationTest {
         return PhoenixInterpretation(
             ticksLow = ticksLow,
             ticksHigh = ticksHigh,
-            ticks = ticksLow + (ticksHigh shl 16),
+            ticks = ticksLow.toLong() or (ticksHigh.toLong() shl 16),
             posA = getInt16LE(data, 4) / 10.0f,
             skippedA = getInt16LE(data, 6), // What Phoenix skips (potential velA)
             loadA = getUInt16LE(data, 8) / 100.0f,
@@ -423,7 +423,7 @@ class HardwareValidationTest {
 
         val packet = parseMonitorPacket(data)
         assertNotNull(packet, "parseMonitorPacket should handle 18-byte packet")
-        assertEquals(1000, packet.ticks)
+        assertEquals(1000L, packet.ticks)
         assertEquals(150.0f, packet.posA, 0.1f)
         assertEquals(50.0f, packet.loadA, 0.01f)
         assertEquals(148.0f, packet.posB, 0.1f)

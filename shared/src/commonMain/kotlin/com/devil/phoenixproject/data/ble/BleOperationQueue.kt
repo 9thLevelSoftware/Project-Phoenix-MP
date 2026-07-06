@@ -32,7 +32,7 @@ class BleOperationQueue {
 
     /**
      * Execute a write operation with retry logic.
-     * Retries on "Busy" errors with exponential backoff (50ms, 100ms, 150ms).
+     * Retries on "Busy" errors with exponential backoff (50ms, 100ms, 200ms).
      *
      * @param peripheral The Kable peripheral to write to
      * @param characteristic The characteristic to write to
@@ -70,8 +70,8 @@ class BleOperationQueue {
                     e.message?.contains("Write failed: Unknown", ignoreCase = true) == true
 
                 if (isBusyError && attempt < maxRetries - 1) {
-                    // Exponential backoff: 50ms, 100ms, 150ms
-                    val delayMs = 50L * (attempt + 1)
+                    // Exponential backoff: 50ms, 100ms, 200ms
+                    val delayMs = 50L shl attempt
                     delay(delayMs)
                 } else {
                     break

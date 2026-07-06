@@ -330,15 +330,15 @@ class HandleStateDetector(
                 // Only check release on the handle(s) that were actually grabbed.
                 // This prevents premature release detection when unused cable is at rest.
                 val isReleased = when (activeHandlesMask) {
+                    // Only A was active - check A only
                     1 -> aReleased
 
-                    // Only A was active - check A only
+                    // Only B was active - check B only
                     2 -> bReleased
 
-                    // Only B was active - check B only
+                    // Both active - both must release
                     3 -> aReleased && bReleased
 
-                    // Both active - both must release
                     else -> aReleased || bReleased // Fallback (shouldn't happen)
                 }
 

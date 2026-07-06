@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.domain.assessment
 
+import com.devil.phoenixproject.util.Constants
 import kotlin.math.roundToInt
 
 /**
@@ -44,8 +45,10 @@ class AssessmentEngine {
 
         // Extrapolate load at 1RM velocity: load = (velocity - intercept) / slope
         // Clamp to at least 1 kg -- 1RM cannot be negative or zero
+        // Clamp to at most 110 kg -- MAX_WEIGHT_PER_CABLE_KG hardware ceiling (Trainer+)
         val estimatedLoad = ((config.oneRmVelocityMs.toDouble() - intercept) / slope)
             .coerceAtLeast(1.0)
+            .coerceAtMost(Constants.MAX_WEIGHT_PER_CABLE_KG.toDouble())
 
         // Compute R-squared
         val meanY = sumY / n

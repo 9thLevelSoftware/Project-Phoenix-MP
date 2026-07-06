@@ -36,8 +36,6 @@ fun DailyRoutinesScreen(
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
 
-    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
-    val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
     // Profile data for move/copy to profile feature (#330)

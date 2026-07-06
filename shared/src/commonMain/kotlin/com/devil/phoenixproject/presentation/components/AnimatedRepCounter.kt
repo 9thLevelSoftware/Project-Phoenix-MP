@@ -68,7 +68,6 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_rep_counter
  * @param phaseProgress Progress through current phase (0.0 to 1.0)
  * @param confirmedReps The confirmed completed rep count
  * @param targetReps Target rep count (for stable X/Y display)
- * @param showStableCounter Whether to show the stable "X / Y" counter below
  * @param size Size of the component
  */
 @Composable
@@ -78,7 +77,6 @@ fun AnimatedRepCounter(
     phaseProgress: Float,
     confirmedReps: Int,
     targetReps: Int,
-    showStableCounter: Boolean = true,
     size: Dp = 120.dp,
     modifier: Modifier = Modifier,
 ) {

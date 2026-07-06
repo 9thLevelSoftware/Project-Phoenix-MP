@@ -55,7 +55,7 @@ object BleConstants {
         const val STOP_COMMAND: Byte = 0x50 // Stop/halt (official app)
         const val RESET_COMMAND: Byte = 0x0A // Reset/init (web app stop) - recovery fallback
         const val REGULAR_COMMAND: Byte = 0x4F // 25-byte packet (79 decimal)
-        const val ECHO_COMMAND: Byte = 0x4E // 29-byte packet (78 decimal)
+        const val ECHO_COMMAND: Byte = 0x4E // 32-byte packet (78 decimal)
         const val ACTIVATION_COMMAND: Byte = 0x04 // 96-byte packet
         const val DEFAULT_ROM_REP_COUNT: Byte = 3
     }
@@ -220,8 +220,8 @@ object BleConstants {
         const val MAX_POSITION = 1000 // Valid position range
         const val POSITION_JUMP_THRESHOLD = 20.0f // Max allowed position change between samples (mm)
 
-        // Load validation
-        const val MAX_WEIGHT_KG = 220.0f // Trainer+ hardware limit
+        // Load validation — total two-cable limit for the Trainer+ (220 kg combined)
+        const val MAX_TOTAL_WEIGHT_KG = 220.0f
 
         // Handle state hysteresis - Issue #176: Dynamic baseline threshold for overhead pulley setups
         const val GRAB_DELTA_THRESHOLD = 10.0 // Position change (mm) to detect grab

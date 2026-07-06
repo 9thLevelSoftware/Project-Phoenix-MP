@@ -148,14 +148,15 @@ fun MuscleGroupCircleChart(
 
                 // Draw all donut segments
                 normalizedData.forEachIndexed { index, (_, percentage) ->
-                    val sweepAngle = percentage * 360f * animationProgress
+                    val fullSweep = percentage * 360f
+                    val animatedSweep = fullSweep * animationProgress
                     val color = colors[index % colors.size]
 
                     // Draw donut segment
                     drawArc(
                         color = color,
                         startAngle = startAngle,
-                        sweepAngle = maxOf(0f, sweepAngle - spacing),
+                        sweepAngle = maxOf(0f, animatedSweep - spacing),
                         useCenter = false,
                         topLeft = Offset(
                             center.x - radius,
@@ -168,7 +169,7 @@ fun MuscleGroupCircleChart(
                         ),
                     )
 
-                    startAngle += sweepAngle
+                    startAngle += fullSweep
                 }
 
                 // Draw inner circle once to create donut effect

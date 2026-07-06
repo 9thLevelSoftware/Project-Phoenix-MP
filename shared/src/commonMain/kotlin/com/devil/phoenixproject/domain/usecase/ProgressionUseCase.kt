@@ -130,7 +130,8 @@ class ProgressionUseCase(
 
         // Check if consistently below target
         val rpeDiff = targetRpe - avgRpe
-        val allBelowTarget = setsWithRpe.all { (it.loggedRpe ?: 10) < targetRpe }
+        // setsWithRpe already filters for non-null loggedRpe, so loggedRpe!! is safe here
+        val allBelowTarget = setsWithRpe.all { it.loggedRpe!! < targetRpe }
 
         return rpeDiff >= RPE_DIFF_THRESHOLD && allBelowTarget
     }

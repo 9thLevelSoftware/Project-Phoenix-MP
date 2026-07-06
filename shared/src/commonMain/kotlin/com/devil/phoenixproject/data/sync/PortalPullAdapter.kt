@@ -281,6 +281,7 @@ object PortalPullAdapter {
             totalVolumeKg = stats.totalVolumeKg,
             longestStreak = stats.longestStreak,
             currentStreak = stats.currentStreak,
+            totalTimeSeconds = stats.totalTimeSeconds.toLong(),
             updatedAt = now,
         )
     }

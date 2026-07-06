@@ -21,7 +21,8 @@ class ComputeVelocityOneRepMaxUseCaseTest {
     @Test fun `computes and persists an estimate from windowed points`() = runTest {
         val points = listOf(
             WorkoutVelocityPoint(40f, 1200f, timestampMs = 5L, workingReps = 5),
-            WorkoutVelocityPoint(80f, 600f, timestampMs = 6L, workingReps = 5),
+            WorkoutVelocityPoint(60f, 900f, timestampMs = 6L, workingReps = 5),
+            WorkoutVelocityPoint(80f, 600f, timestampMs = 7L, workingReps = 5),
         )
         val inserted = mutableListOf<VelocityOneRepMaxResult>()
         var capturedSinceMs = -1L
@@ -57,7 +58,7 @@ class ComputeVelocityOneRepMaxUseCaseTest {
         assertEquals(0, inserted.size)
     }
 
-    @Test fun `returns null and persists nothing when fewer than two loads`() = runTest {
+    @Test fun `returns null and persists nothing when fewer than three loads`() = runTest {
         val inserted = mutableListOf<VelocityOneRepMaxResult>()
         val useCase = ComputeVelocityOneRepMaxUseCase(
             workoutPoints = { _, _, _ -> listOf(WorkoutVelocityPoint(50f, 700f, 1L, 5)) },
@@ -74,7 +75,8 @@ class ComputeVelocityOneRepMaxUseCaseTest {
     @Test fun `respects custom windowDays parameter for point filtering`() = runTest {
         val points = listOf(
             WorkoutVelocityPoint(40f, 1200f, timestampMs = 5L, workingReps = 5),
-            WorkoutVelocityPoint(80f, 600f, timestampMs = 6L, workingReps = 5),
+            WorkoutVelocityPoint(60f, 900f, timestampMs = 6L, workingReps = 5),
+            WorkoutVelocityPoint(80f, 600f, timestampMs = 7L, workingReps = 5),
         )
         val inserted = mutableListOf<VelocityOneRepMaxResult>()
         var capturedSinceMs = -1L
