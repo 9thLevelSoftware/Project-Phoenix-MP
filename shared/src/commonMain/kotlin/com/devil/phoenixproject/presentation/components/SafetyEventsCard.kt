@@ -6,8 +6,8 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.SafetyEventSummary
@@ -68,7 +68,7 @@ fun SafetyEventsCard(summary: SafetyEventSummary, modifier: Modifier = Modifier)
                 SafetyEventRow(
                     label = "Spotter Activations",
                     count = summary.spotterActivations,
-                    color = Color(0xFF2196F3), // Blue
+                    color = AccessibilityTheme.colors.info,
                 )
             }
         }

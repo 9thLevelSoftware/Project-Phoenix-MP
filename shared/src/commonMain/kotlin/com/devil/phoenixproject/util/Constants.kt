@@ -39,8 +39,8 @@ object Constants {
  * Unit conversion utilities.
  */
 object UnitConverter {
-    private const val KG_TO_LB = 2.20462f
-    private const val LB_TO_KG = 0.453592f
+    const val KG_TO_LB = 2.20462f
+    const val LB_TO_KG = 0.453592f
 
     /**
      * Convert kilograms to pounds.

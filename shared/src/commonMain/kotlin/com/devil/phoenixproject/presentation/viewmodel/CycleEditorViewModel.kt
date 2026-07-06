@@ -56,11 +56,19 @@ class CycleEditorViewModel(
      * Initialize editor with existing cycle or template data.
      */
     fun initialize(cycleId: String, templateItems: List<CycleItem>? = null) {
-        if (_uiState.value.cycleId == cycleId && !_uiState.value.isLoading) {
-            return // Already initialized
+        // Atomic guard: fold the idempotency check and the state update into a single
+        // MutableStateFlow.update call so no two concurrent callers can both pass the
+        // check before either writes the in-progress marker.
+        var shouldProceed = false
+        _uiState.update { current ->
+            if (current.cycleId == cycleId && !current.isLoading) {
+                current // Already initialized — no-op
+            } else {
+                shouldProceed = true
+                current.copy(cycleId = cycleId, isLoading = true)
+            }
         }
-
-        _uiState.update { it.copy(cycleId = cycleId, isLoading = true) }
+        if (!shouldProceed) return
 
         viewModelScope.launch {
             try {

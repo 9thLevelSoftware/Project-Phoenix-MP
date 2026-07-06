@@ -24,7 +24,7 @@ actual class ConnectivityChecker {
     private val monitor = nw_path_monitor_create()
 
     @Volatile
-    private var isConnected = true
+    private var isConnected = false // Safe default: assume offline until NWPathMonitor confirms
 
     init {
         nw_path_monitor_set_update_handler(monitor) { path ->

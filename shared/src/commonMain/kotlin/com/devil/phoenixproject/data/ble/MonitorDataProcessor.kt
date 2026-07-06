@@ -303,10 +303,10 @@ class MonitorDataProcessor(
         }
 
         // Load validation - check against hardware max weight
-        if (loadA < 0f || loadA > BleConstants.Thresholds.MAX_WEIGHT_KG ||
-            loadB < 0f || loadB > BleConstants.Thresholds.MAX_WEIGHT_KG
+        if (loadA < 0f || loadA > BleConstants.Thresholds.MAX_TOTAL_WEIGHT_KG ||
+            loadB < 0f || loadB > BleConstants.Thresholds.MAX_TOTAL_WEIGHT_KG
         ) {
-            log.w { "Load out of range: loadA=$loadA, loadB=$loadB (max=${BleConstants.Thresholds.MAX_WEIGHT_KG})" }
+            log.w { "Load out of range: loadA=$loadA, loadB=$loadB (max=${BleConstants.Thresholds.MAX_TOTAL_WEIGHT_KG})" }
             return false
         }
 

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.util
 
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.format
 
 /**
@@ -12,8 +13,6 @@ import com.devil.phoenixproject.util.format
  * explicitly named total helper methods below.
  */
 object WeightDisplayFormatter {
-
-    private const val KG_TO_LB = 2.20462f
 
     /**
      * Convert per-cable kg to the user's selected display unit.
@@ -37,7 +36,7 @@ object WeightDisplayFormatter {
 
     fun toPerCableDisplayWeight(weightPerCableKg: Float, unit: WeightUnit): Float = when (unit) {
         WeightUnit.KG -> weightPerCableKg
-        WeightUnit.LB -> weightPerCableKg * KG_TO_LB
+        WeightUnit.LB -> weightPerCableKg * UnitConverter.KG_TO_LB
     }
 
     fun formatPerCableWeight(weightPerCableKg: Float, unit: WeightUnit): String =

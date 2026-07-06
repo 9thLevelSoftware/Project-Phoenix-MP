@@ -74,6 +74,8 @@ CHANGELOG.md
 .aider*
 /.devilmcp/
 /.cursor/hooks/state/
+opencode.json
+review-prompt.txt
 
 # Reference/decompiled code (not for distribution)
 /reference/
