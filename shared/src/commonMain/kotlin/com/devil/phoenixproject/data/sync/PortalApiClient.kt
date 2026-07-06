@@ -475,13 +475,14 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
             )
         }
 
-        // Serialize once to measure size. Reuse the serialized bytes so we
-        // do not pay the JSON cost twice.
+        // Serialize once to measure size. Cache the byte array so we do not
+        // pay the encoding cost twice (once for the size check, once for the error message).
         val serialized = json.encodeToString(PortalSyncPayload.serializer(), payload)
-        if (serialized.encodeToByteArray().size > SyncConfig.MAX_PAYLOAD_BYTES) {
+        val payloadBytes = serialized.encodeToByteArray()
+        if (payloadBytes.size > SyncConfig.MAX_PAYLOAD_BYTES) {
             return Result.failure(
                 PortalApiException(
-                    "Push payload is ${serialized.encodeToByteArray().size} bytes; " +
+                    "Push payload is ${payloadBytes.size} bytes; " +
                         "cap is ${SyncConfig.MAX_PAYLOAD_BYTES} bytes. Caller must split.",
                 ),
             )

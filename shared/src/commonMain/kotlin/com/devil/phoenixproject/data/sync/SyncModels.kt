@@ -41,7 +41,8 @@ data class WorkoutSessionSyncDto(
     val mode: String,
     val targetReps: Int,
     val weightPerCableKg: Float,
-    val duration: Int = 0,
+    /** Session duration in milliseconds. Matches [com.devil.phoenixproject.domain.model.WorkoutSession.duration]. */
+    val duration: Long = 0L,
     val totalReps: Int = 0,
     val exerciseId: String? = null,
     val exerciseName: String? = null,

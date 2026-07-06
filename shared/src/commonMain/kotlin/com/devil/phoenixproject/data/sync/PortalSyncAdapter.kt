@@ -133,7 +133,7 @@ object PortalSyncAdapter {
         val portalSessionId = routineSessionId ?: first.id
 
         // Aggregate metrics across all exercises in this workout
-        val totalDuration = sorted.sumOf { it.session.duration.toInt() / 1000 } // ms → s
+        val totalDuration = sorted.sumOf { (it.session.duration / 1000).toInt() } // ms → s
         // Portal expects per-cable volume and applies ×2 transform for display.
         // - Measured totalVolumeKg is TOTAL (both cables) → divide by cableCount
         // - Fallback weightPerCableKg × totalReps is already per-cable

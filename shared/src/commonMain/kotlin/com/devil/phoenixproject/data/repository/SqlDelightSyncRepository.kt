@@ -33,6 +33,7 @@ import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import kotlin.math.roundToLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
@@ -75,7 +76,7 @@ class SqlDelightSyncRepository(
                 mode = row.mode,
                 targetReps = row.targetReps.toInt(),
                 weightPerCableKg = row.weightPerCableKg.toFloat(),
-                duration = row.duration.toInt(),
+                duration = row.duration, // Long ms — no toInt() conversion needed
                 totalReps = row.totalReps.toInt(),
                 exerciseId = row.exerciseId,
                 exerciseName = row.exerciseName,
@@ -257,7 +258,7 @@ class SqlDelightSyncRepository(
                         targetReps = dto.targetReps.toLong(),
                         weightPerCableKg = dto.weightPerCableKg.toDouble(),
                         progressionKg = 0.0,
-                        duration = dto.duration.toLong(),
+                        duration = dto.duration, // Already Long ms
                         totalReps = dto.totalReps.toLong(),
                         warmupReps = 0L,
                         workingReps = dto.totalReps.toLong(),
@@ -501,7 +502,8 @@ class SqlDelightSyncRepository(
                 id = stableId,
                 totalWorkouts = stats.totalWorkouts.toLong(),
                 totalReps = stats.totalReps.toLong(),
-                totalVolumeKg = stats.totalVolumeKg.toLong(),
+                // Round (not truncate) to minimise systematic bias; column is INTEGER in schema.
+                totalVolumeKg = stats.totalVolumeKg.toDouble().roundToLong(),
                 longestStreak = stats.longestStreak.toLong(),
                 currentStreak = stats.currentStreak.toLong(),
                 uniqueExercisesUsed = existing?.uniqueExercisesUsed ?: 0L,
@@ -626,6 +628,9 @@ class SqlDelightSyncRepository(
                         portalActiveCycleId = portalCycle.id
                     }
 
+                    // Check existence BEFORE inserting so we can skip the redundant update for new rows.
+                    val existing = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+
                     // Upsert cycle (INSERT OR IGNORE — keeps local if exists)
                     queries.insertTrainingCycleIgnore(
                         id = portalCycle.id,
@@ -636,8 +641,8 @@ class SqlDelightSyncRepository(
                         profile_id = profileId,
                     )
 
-                    // For existing cycles, update metadata (but NOT is_active - enforce single-active at end)
-                    val existing = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+                    // For pre-existing cycles only: update metadata (but NOT is_active - enforce single-active at end).
+                    // Newly-inserted rows already have the correct values from insertTrainingCycleIgnore above.
                     if (existing != null) {
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
@@ -1616,6 +1621,9 @@ class SqlDelightSyncRepository(
                         portalActiveCycleId = portalCycle.id
                     }
 
+                    // Check existence BEFORE inserting to guard the update against newly-inserted rows.
+                    val existingCycle = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+
                     queries.insertTrainingCycleIgnore(
                         id = portalCycle.id,
                         name = portalCycle.name,
@@ -1625,7 +1633,7 @@ class SqlDelightSyncRepository(
                         profile_id = profileId,
                     )
 
-                    val existingCycle = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+                    // Only update pre-existing cycles; newly-inserted rows already have correct values.
                     if (existingCycle != null) {
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
@@ -1710,7 +1718,8 @@ class SqlDelightSyncRepository(
                         id = stableId,
                         totalWorkouts = gamificationStats.totalWorkouts.toLong(),
                         totalReps = gamificationStats.totalReps.toLong(),
-                        totalVolumeKg = gamificationStats.totalVolumeKg.toLong(),
+                        // Round (not truncate) to minimise systematic bias; column is INTEGER in schema.
+                        totalVolumeKg = gamificationStats.totalVolumeKg.toDouble().roundToLong(),
                         longestStreak = gamificationStats.longestStreak.toLong(),
                         currentStreak = gamificationStats.currentStreak.toLong(),
                         uniqueExercisesUsed = existingStats?.uniqueExercisesUsed ?: 0L,
@@ -1871,8 +1880,13 @@ class SqlDelightSyncRepository(
 
             for (session in sessions) {
                 val existingTs = existingUpdatedAtById[session.id]
-                val incomingTs = updatedAtBySessionId[session.id] ?: 0L
-                val accept = existingTs == null || incomingTs >= existingTs
+                val incomingTs = updatedAtBySessionId[session.id]
+                // Accept when: the local row is absent (first-time pull), OR the incoming has a
+                // real timestamp that is at least as recent as the local row. When a local row
+                // exists but incomingTs is absent from the map, we cannot determine recency —
+                // skip to preserve the existing local data (rather than the original 0L default
+                // which silently lost every LWW comparison against any non-zero existing timestamp).
+                val accept = existingTs == null || (incomingTs != null && incomingTs >= existingTs)
                 if (!accept) continue
 
                 // Issue #591: Preserve non-null detailed metric columns from
@@ -1936,7 +1950,9 @@ class SqlDelightSyncRepository(
                     dominantSide = preserved.dominantSide,
                     strengthProfile = preserved.strengthProfile,
                     formScore = preserved.formScore?.toLong(),
-                    updatedAt = incomingTs,
+                    // Stamp with the real incoming timestamp; fall back to 0L for new rows
+                    // that have no timestamp in the map (accept=true only when existingTs==null).
+                    updatedAt = incomingTs ?: 0L,
                     profile_id = preserved.profileId,
                     display_multiplier = preserved.displayMultiplier?.toLong(),
                     externalAddedLoadKg = preserved.externalAddedLoadKg.toDouble(),
