@@ -133,13 +133,14 @@ fun VolumeTrendChart(
 
     // Single shared scroll state so the bar canvas and X-axis labels scroll in lockstep
     val chartScrollState = rememberScrollState()
+    val periodSelectorScrollState = rememberScrollState()
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Period selector chips — scrollable for Bold Text accessibility
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(chartScrollState)
+                .horizontalScroll(periodSelectorScrollState)
                 .padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {

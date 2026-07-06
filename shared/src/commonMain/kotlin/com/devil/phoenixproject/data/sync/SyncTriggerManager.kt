@@ -42,7 +42,7 @@ data class RetryState(
  * - AUTH errors: Trigger re-login flow, don't retry
  *
  * Retry storm prevention:
- * - Max 3 consecutive retries before requiring manual intervention
+ * - Transient failures increase backoff
  * - Backoff resets on successful sync
  */
 class SyncTriggerManager(
@@ -52,7 +52,6 @@ class SyncTriggerManager(
 ) {
     companion object {
         private const val DEFAULT_THROTTLE_MILLIS = 5 * 60 * 1000L // 5 minutes
-        private const val MAX_CONSECUTIVE_FAILURES = 3
 
         /**
          * Exponential backoff schedule in minutes.
@@ -190,16 +189,8 @@ class SyncTriggerManager(
                         "SyncTrigger: Transient error, backoff index=$currentBackoffIndex, " +
                             "next delay=${BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) { BACKOFF_SCHEDULE_MINUTES.last() }} min"
                     }
-                    // Retry storm prevention: after MAX_CONSECUTIVE_FAILURES transient
-                    // failures in a row, latch the persistent error flag so auto-sync
-                    // stops until the user manually intervenes (clearError / manual sync).
-                    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                        _hasPersistentError.value = true
-                        Logger.e {
-                            "SyncTrigger: $MAX_CONSECUTIVE_FAILURES consecutive transient failures — " +
-                                "halting auto-sync until manual retry"
-                        }
-                    }
+                    // Transient failures only ratchet backoff. Persistent errors are
+                    // reserved for permanent/auth failures that need manual action.
                 }
 
                 SyncErrorCategory.PERMANENT -> {
