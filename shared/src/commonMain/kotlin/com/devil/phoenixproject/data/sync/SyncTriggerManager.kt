@@ -190,6 +190,16 @@ class SyncTriggerManager(
                         "SyncTrigger: Transient error, backoff index=$currentBackoffIndex, " +
                             "next delay=${BACKOFF_SCHEDULE_MINUTES.getOrElse(currentBackoffIndex - 1) { BACKOFF_SCHEDULE_MINUTES.last() }} min"
                     }
+                    // Retry storm prevention: after MAX_CONSECUTIVE_FAILURES transient
+                    // failures in a row, latch the persistent error flag so auto-sync
+                    // stops until the user manually intervenes (clearError / manual sync).
+                    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                        _hasPersistentError.value = true
+                        Logger.e {
+                            "SyncTrigger: $MAX_CONSECUTIVE_FAILURES consecutive transient failures — " +
+                                "halting auto-sync until manual retry"
+                        }
+                    }
                 }
 
                 SyncErrorCategory.PERMANENT -> {
@@ -212,14 +222,6 @@ class SyncTriggerManager(
                     _hasPersistentError.value = true
                 }
             }
-
-            // Note: a TRANSIENT retry storm (>= MAX_CONSECUTIVE_FAILURES consecutive
-            // 5xx) intentionally does NOT latch the persistent error flag anymore.
-            // Transient failures/backoff are non-actionable for the user — the
-            // backoff schedule alone suppresses further auto retries, and the
-            // next transient storm simply re-arms it. Only PERMANENT and AUTH
-            // errors set _hasPersistentError, which is what the Settings > Cloud
-            // Sync red row binds to. Issue #528.
         }
 
         updateRetryState()
@@ -302,10 +304,12 @@ class SyncTriggerManager(
             return
         }
 
-        // Check throttle/backoff (unless bypassed for workout complete)
+        // Check throttle/backoff (unless bypassed for workout complete).
+        // currentBackoffIndex is read inside the lock to avoid a race where
+        // onSyncFailure increments it between the read and the comparison.
         val now = Clock.System.now().toEpochMilliseconds()
-        val currentThrottle = getCurrentThrottleMillis()
         val shouldSkip = withPlatformLock(stateLock) {
+            val currentThrottle = getCurrentThrottleMillis()
             if (!bypassThrottle && (now - lastSyncAttemptMillis) < currentThrottle) {
                 true
             } else {
@@ -314,8 +318,9 @@ class SyncTriggerManager(
             }
         }
         if (shouldSkip) {
+            // Re-read under lock for the logging message only — accuracy is best-effort.
             val remainingSeconds = withPlatformLock(stateLock) {
-                ((lastSyncAttemptMillis + currentThrottle) - now) / 1000
+                ((lastSyncAttemptMillis + getCurrentThrottleMillis()) - now) / 1000
             }
             Logger.d { "SyncTrigger: Skipping sync - backoff active, ${remainingSeconds}s remaining" }
             return

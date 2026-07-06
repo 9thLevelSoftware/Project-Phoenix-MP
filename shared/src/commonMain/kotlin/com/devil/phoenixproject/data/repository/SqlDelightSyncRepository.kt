@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalPullAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
+import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
@@ -578,143 +579,13 @@ class SqlDelightSyncRepository(
                         val localScalingBasisByExerciseId = localExerciseRows
                             .associate { it.id to it.scalingBasis }
 
-                        // Replace routine exercises and supersets: delete existing then insert portal versions
-                        queries.deleteRoutineExercises(portalRoutine.id)
-                        queries.deleteSupersetsByRoutine(portalRoutine.id)
-
-                        // Create Superset rows BEFORE inserting exercises (FK constraint).
-                        // Group exercises by supersetId and create one Superset per group.
-                        val supersetGroups = portalRoutine.exercises
-                            .filter { it.supersetId != null }
-                            .groupBy { it.supersetId!! }
-
-                        // Issue 3.5: Reverse mapping from color name -> index for round-trip.
-                        // Portal sends color as name (e.g., "pink") from push adapter (PortalSyncAdapter).
-                        // Must map back to index for local Superset entity.
-                        val colorNameToIndex = mapOf(
-                            "indigo" to 0L, // SupersetColors.INDIGO
-                            "pink" to 1L, // SupersetColors.PINK
-                            "green" to 2L, // SupersetColors.GREEN
-                            "amber" to 3L, // SupersetColors.AMBER
+                        mergePortalExercisesForRoutine(
+                            routineId = portalRoutine.id,
+                            portalExercises = portalRoutine.exercises,
+                            localRackDefaultsByExerciseId = localRackDefaultsByExerciseId,
+                            localRackOverridesByExerciseId = localRackOverridesByExerciseId,
+                            localScalingBasisByExerciseId = localScalingBasisByExerciseId,
                         )
-
-                        var supersetOrderIdx = 0
-                        for ((ssId, ssExercises) in supersetGroups) {
-                            val colorStr = ssExercises.firstOrNull()?.supersetColor?.lowercase()
-                            val colorIndex = colorStr?.let { colorNameToIndex[it] }
-                                ?: colorStr?.toLongOrNull()
-                                ?: supersetOrderIdx.toLong()
-                            queries.insertSupersetIgnore(
-                                id = ssId,
-                                routineId = portalRoutine.id,
-                                name = "Superset ${supersetOrderIdx + 1}",
-                                colorIndex = colorIndex,
-                                restBetweenSeconds = 10L, // default
-                                orderIndex = supersetOrderIdx.toLong(),
-                            )
-                            supersetOrderIdx++
-                        }
-
-                        for (exercise in portalRoutine.exercises) {
-                            // Parse perSetReps JSON if available, otherwise reconstruct from scalar
-                            val setReps = exercise.perSetReps?.let { jsonStr ->
-                                try {
-                                    val parsed = Json.decodeFromString<List<Int?>>(jsonStr)
-                                    parsed.joinToString(",") { it?.toString() ?: "AMRAP" }
-                                } catch (_: Exception) {
-                                    null
-                                }
-                            } ?: run {
-                                // Fallback: reconstruct from scalar (old portal data without perSetReps)
-                                val repsList = List(exercise.sets) {
-                                    if (exercise.isAmrap && it == exercise.sets - 1) {
-                                        "AMRAP"
-                                    } else {
-                                        exercise.reps.toString()
-                                    }
-                                }
-                                repsList.joinToString(",")
-                            }
-
-                            // Convert perSetWeights JSON "[50,55,60]" to comma-separated "50.0,55.0,60.0"
-                            val setWeights = exercise.perSetWeights?.let { jsonStr ->
-                                try {
-                                    val parsed = Json.decodeFromString<List<Float>>(jsonStr)
-                                    parsed.joinToString(",") { it.toString() }
-                                } catch (_: Exception) {
-                                    ""
-                                }
-                            } ?: ""
-
-                            // perSetRest is already JSON array format, use as setRestSeconds
-                            val setRestSeconds = exercise.perSetRest ?: "[]"
-
-                            // Convert perSetEchoLevels from portal names to ordinal JSON
-                            val setEchoLevels = exercise.perSetEchoLevels?.let { jsonStr ->
-                                try {
-                                    val names = Json.decodeFromString<List<String?>>(jsonStr)
-                                    val ordinals = names.map { name ->
-                                        name?.let { PortalPullAdapter.parseEchoLevel(it).toInt() }
-                                    }
-                                    Json.encodeToString(ordinals)
-                                } catch (_: Exception) {
-                                    ""
-                                }
-                            } ?: ""
-
-                            val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
-
-                            // ID-first catalog lookup: use exerciseId when available, fall back to name (#404)
-                            val catalogExercise = exercise.exerciseId?.let { id ->
-                                queries.selectExerciseById(id).executeAsOneOrNull()
-                            } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
-
-                            val resolvedEquipment = when {
-                                exercise.isBodyweight -> "Bodyweight"
-                                catalogExercise != null -> catalogExercise.equipment
-                                else -> "Cable"
-                            }
-
-                            queries.insertRoutineExercise(
-                                id = exercise.id,
-                                routineId = portalRoutine.id,
-                                exerciseName = exercise.name,
-                                exerciseMuscleGroup = exercise.muscleGroup,
-                                exerciseEquipment = resolvedEquipment,
-                                exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
-                                exerciseId = catalogExercise?.id, // Link to catalog when available
-                                cableConfig = "DOUBLE",
-                                orderIndex = exercise.orderIndex.toLong(),
-                                setReps = setReps,
-                                weightPerCableKg = exercise.weight.toDouble(),
-                                setWeights = setWeights,
-                                mode = mobileMode,
-                                eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
-                                echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
-                                progressionKg = 0.0,
-                                restSeconds = exercise.restSeconds.toLong(),
-                                duration = null,
-                                setRestSeconds = setRestSeconds,
-                                perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
-                                isAMRAP = if (exercise.isAmrap) 1L else 0L,
-                                supersetId = exercise.supersetId,
-                                orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
-                                usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
-                                weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
-                                prTypeForScaling = "MAX_WEIGHT",
-                                setWeightsPercentOfPR = null,
-                                stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
-                                stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
-                                repCountTiming = exercise.repCountTiming ?: "TOP",
-                                setEchoLevels = setEchoLevels,
-                                warmupSets = exercise.warmupSets ?: "",
-                                defaultRackItemIds = localRackDefaultsByExerciseId[exercise.id] ?: "[]",
-                                rackBehaviorOverrides = exercise.rackBehaviorOverrides
-                                    ?: localRackOverridesByExerciseId[exercise.id]
-                                    ?: "{}",
-                                scalingBasis = localScalingBasisByExerciseId[exercise.id],
-                            )
-                        }
                     } else {
                         Logger.w("SyncRepository") {
                             "Skipping exercise merge for routine '${portalRoutine.name}' (${portalRoutine.id}): " +
@@ -1728,130 +1599,13 @@ class SqlDelightSyncRepository(
                         val localScalingBasisByExerciseId = localExerciseRows2
                             .associate { it.id to it.scalingBasis }
 
-                        queries.deleteRoutineExercises(portalRoutine.id)
-                        queries.deleteSupersetsByRoutine(portalRoutine.id)
-
-                        // Create supersets before exercises (FK constraint)
-                        val supersetGroups = portalRoutine.exercises
-                            .filter { it.supersetId != null }
-                            .groupBy { it.supersetId!! }
-                        // Issue 3.5: Reverse mapping from color name -> index for round-trip.
-                        // Portal sends color as name (e.g., "pink") from push adapter.
-                        val colorNameToIndex = mapOf(
-                            "indigo" to 0L, // SupersetColors.INDIGO
-                            "pink" to 1L, // SupersetColors.PINK
-                            "green" to 2L, // SupersetColors.GREEN
-                            "amber" to 3L, // SupersetColors.AMBER
+                        mergePortalExercisesForRoutine(
+                            routineId = portalRoutine.id,
+                            portalExercises = portalRoutine.exercises,
+                            localRackDefaultsByExerciseId = localRackDefaultsByExerciseId,
+                            localRackOverridesByExerciseId = localRackOverridesByExerciseId,
+                            localScalingBasisByExerciseId = localScalingBasisByExerciseId,
                         )
-
-                        var supersetOrderIdx = 0
-                        for ((ssId, ssExercises) in supersetGroups) {
-                            val colorStr = ssExercises.firstOrNull()?.supersetColor?.lowercase()
-                            val colorIndex = colorStr?.let { colorNameToIndex[it] }
-                                ?: colorStr?.toLongOrNull()
-                                ?: supersetOrderIdx.toLong()
-                            queries.insertSupersetIgnore(
-                                id = ssId,
-                                routineId = portalRoutine.id,
-                                name = "Superset ${supersetOrderIdx + 1}",
-                                colorIndex = colorIndex,
-                                restBetweenSeconds = 10L,
-                                orderIndex = supersetOrderIdx.toLong(),
-                            )
-                            supersetOrderIdx++
-                        }
-
-                        for (exercise in portalRoutine.exercises) {
-                            // Parse perSetReps JSON if available, otherwise reconstruct from scalar
-                            val setReps = exercise.perSetReps?.let { jsonStr ->
-                                try {
-                                    val parsed = Json.decodeFromString<List<Int?>>(jsonStr)
-                                    parsed.joinToString(",") { it?.toString() ?: "AMRAP" }
-                                } catch (_: Exception) {
-                                    null
-                                }
-                            } ?: run {
-                                val repsList = List(exercise.sets) {
-                                    if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP" else exercise.reps.toString()
-                                }
-                                repsList.joinToString(",")
-                            }
-
-                            // Convert perSetWeights JSON
-                            val setWeights = exercise.perSetWeights?.let { jsonStr ->
-                                try {
-                                    val parsed = Json.decodeFromString<List<Float>>(jsonStr)
-                                    parsed.joinToString(",") { it.toString() }
-                                } catch (_: Exception) {
-                                    ""
-                                }
-                            } ?: ""
-
-                            val setRestSeconds = exercise.perSetRest ?: "[]"
-
-                            // Convert perSetEchoLevels
-                            val setEchoLevels = exercise.perSetEchoLevels?.let { jsonStr ->
-                                try {
-                                    val names = Json.decodeFromString<List<String?>>(jsonStr)
-                                    val ordinals = names.map { name -> name?.let { PortalPullAdapter.parseEchoLevel(it).toInt() } }
-                                    Json.encodeToString(ordinals)
-                                } catch (_: Exception) {
-                                    ""
-                                }
-                            } ?: ""
-
-                            val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
-                            // ID-first catalog lookup (#404)
-                            val catalogExercise = exercise.exerciseId?.let { id ->
-                                queries.selectExerciseById(id).executeAsOneOrNull()
-                            } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
-
-                            val resolvedEquipmentBulk = when {
-                                exercise.isBodyweight -> "Bodyweight"
-                                catalogExercise != null -> catalogExercise.equipment
-                                else -> "Cable"
-                            }
-
-                            queries.insertRoutineExercise(
-                                id = exercise.id,
-                                routineId = portalRoutine.id,
-                                exerciseName = exercise.name,
-                                exerciseMuscleGroup = exercise.muscleGroup,
-                                exerciseEquipment = resolvedEquipmentBulk,
-                                exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
-                                exerciseId = catalogExercise?.id,
-                                cableConfig = "DOUBLE",
-                                orderIndex = exercise.orderIndex.toLong(),
-                                setReps = setReps,
-                                weightPerCableKg = exercise.weight.toDouble(),
-                                setWeights = setWeights,
-                                mode = mobileMode,
-                                eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
-                                echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
-                                progressionKg = 0.0,
-                                restSeconds = exercise.restSeconds.toLong(),
-                                duration = null,
-                                setRestSeconds = setRestSeconds,
-                                perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
-                                isAMRAP = if (exercise.isAmrap) 1L else 0L,
-                                supersetId = exercise.supersetId,
-                                orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
-                                usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
-                                weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
-                                prTypeForScaling = "MAX_WEIGHT",
-                                setWeightsPercentOfPR = null,
-                                stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
-                                stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
-                                repCountTiming = exercise.repCountTiming ?: "TOP",
-                                setEchoLevels = setEchoLevels,
-                                warmupSets = exercise.warmupSets ?: "",
-                                defaultRackItemIds = localRackDefaultsByExerciseId[exercise.id] ?: "[]",
-                                rackBehaviorOverrides = exercise.rackBehaviorOverrides
-                                    ?: localRackOverridesByExerciseId[exercise.id]
-                                    ?: "{}",
-                                scalingBasis = localScalingBasisByExerciseId[exercise.id],
-                            )
-                        }
                     }
                 }
 
@@ -2322,6 +2076,155 @@ class SqlDelightSyncRepository(
             strengthProfile = strengthProfile,
             formScore = formScore,
         )
+
+    /**
+     * Replace a routine's supersets and exercises with the version received from the portal.
+     * Deletes existing rows, recreates Superset entities (FK-first), then inserts each
+     * exercise with all field mappings applied.
+     *
+     * Must be called inside a [db.transaction] block. The caller is responsible for reading
+     * local rack/scaling rows BEFORE calling this function, because those rows are deleted
+     * as part of the replacement.
+     */
+    private fun mergePortalExercisesForRoutine(
+        routineId: String,
+        portalExercises: List<PullRoutineExerciseDto>,
+        localRackDefaultsByExerciseId: Map<String, String?>,
+        localRackOverridesByExerciseId: Map<String, String?>,
+        localScalingBasisByExerciseId: Map<String, String?>,
+    ) {
+        queries.deleteRoutineExercises(routineId)
+        queries.deleteSupersetsByRoutine(routineId)
+
+        // Create Superset rows BEFORE inserting exercises (FK constraint).
+        val supersetGroups = portalExercises
+            .filter { it.supersetId != null }
+            .groupBy { it.supersetId!! }
+
+        // Issue 3.5: Reverse mapping from color name -> index for round-trip.
+        // Portal sends color as name (e.g., "pink") from push adapter (PortalSyncAdapter).
+        // Must map back to index for local Superset entity.
+        val colorNameToIndex = mapOf(
+            "indigo" to 0L, // SupersetColors.INDIGO
+            "pink" to 1L, // SupersetColors.PINK
+            "green" to 2L, // SupersetColors.GREEN
+            "amber" to 3L, // SupersetColors.AMBER
+        )
+
+        var supersetOrderIdx = 0
+        for ((ssId, ssExercises) in supersetGroups) {
+            val colorStr = ssExercises.firstOrNull()?.supersetColor?.lowercase()
+            val colorIndex = colorStr?.let { colorNameToIndex[it] }
+                ?: colorStr?.toLongOrNull()
+                ?: supersetOrderIdx.toLong()
+            queries.insertSupersetIgnore(
+                id = ssId,
+                routineId = routineId,
+                name = "Superset ${supersetOrderIdx + 1}",
+                colorIndex = colorIndex,
+                restBetweenSeconds = 10L,
+                orderIndex = supersetOrderIdx.toLong(),
+            )
+            supersetOrderIdx++
+        }
+
+        for (exercise in portalExercises) {
+            // Parse perSetReps JSON if available, otherwise reconstruct from scalar
+            val setReps = exercise.perSetReps?.let { jsonStr ->
+                try {
+                    val parsed = Json.decodeFromString<List<Int?>>(jsonStr)
+                    parsed.joinToString(",") { it?.toString() ?: "AMRAP" }
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: run {
+                // Fallback: reconstruct from scalar (old portal data without perSetReps)
+                val repsList = List(exercise.sets) {
+                    if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP" else exercise.reps.toString()
+                }
+                repsList.joinToString(",")
+            }
+
+            // Convert perSetWeights JSON "[50,55,60]" to comma-separated "50.0,55.0,60.0"
+            val setWeights = exercise.perSetWeights?.let { jsonStr ->
+                try {
+                    val parsed = Json.decodeFromString<List<Float>>(jsonStr)
+                    parsed.joinToString(",") { it.toString() }
+                } catch (_: Exception) {
+                    ""
+                }
+            } ?: ""
+
+            // perSetRest is already JSON array format, use as setRestSeconds
+            val setRestSeconds = exercise.perSetRest ?: "[]"
+
+            // Convert perSetEchoLevels from portal names to ordinal JSON
+            val setEchoLevels = exercise.perSetEchoLevels?.let { jsonStr ->
+                try {
+                    val names = Json.decodeFromString<List<String?>>(jsonStr)
+                    val ordinals = names.map { name ->
+                        name?.let { PortalPullAdapter.parseEchoLevel(it).toInt() }
+                    }
+                    Json.encodeToString(ordinals)
+                } catch (_: Exception) {
+                    ""
+                }
+            } ?: ""
+
+            val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
+
+            // ID-first catalog lookup: use exerciseId when available, fall back to name (#404)
+            val catalogExercise = exercise.exerciseId?.let { id ->
+                queries.selectExerciseById(id).executeAsOneOrNull()
+            } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
+
+            val resolvedEquipment = when {
+                exercise.isBodyweight -> "Bodyweight"
+                catalogExercise != null -> catalogExercise.equipment
+                else -> "Cable"
+            }
+
+            queries.insertRoutineExercise(
+                id = exercise.id,
+                routineId = routineId,
+                exerciseName = exercise.name,
+                exerciseMuscleGroup = exercise.muscleGroup,
+                exerciseEquipment = resolvedEquipment,
+                exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
+                exerciseId = catalogExercise?.id,
+                cableConfig = "DOUBLE",
+                orderIndex = exercise.orderIndex.toLong(),
+                setReps = setReps,
+                weightPerCableKg = exercise.weight.toDouble(),
+                setWeights = setWeights,
+                mode = mobileMode,
+                eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
+                echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
+                progressionKg = 0.0,
+                restSeconds = exercise.restSeconds.toLong(),
+                duration = null,
+                setRestSeconds = setRestSeconds,
+                perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
+                isAMRAP = if (exercise.isAmrap) 1L else 0L,
+                supersetId = exercise.supersetId,
+                orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
+                usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
+                weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
+                prTypeForScaling = "MAX_WEIGHT",
+                setWeightsPercentOfPR = null,
+                stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
+                stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
+                repCountTiming = exercise.repCountTiming ?: "TOP",
+                setEchoLevels = setEchoLevels,
+                warmupSets = exercise.warmupSets ?: "",
+                defaultRackItemIds = localRackDefaultsByExerciseId[exercise.id] ?: "[]",
+                rackBehaviorOverrides = exercise.rackBehaviorOverrides
+                    ?: localRackOverridesByExerciseId[exercise.id]
+                    ?: "{}",
+                scalingBasis = localScalingBasisByExerciseId[exercise.id],
+            )
+        }
+    }
 
     override suspend fun mergeSessionNotes(
         notes: Map<String, SessionNotesEntry>,

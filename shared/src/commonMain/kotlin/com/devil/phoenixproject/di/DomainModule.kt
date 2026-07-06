@@ -87,8 +87,8 @@ val domainModule = module {
         )
     }
 
-    // Migration
-    single { MigrationManager(get(), get<UserProfileRepository>(), get<GamificationRepository>()) }
+    // Migration — settings is passed so one-time repairs are gated by a persisted version flag
+    single { MigrationManager(get(), get<UserProfileRepository>(), get<GamificationRepository>(), settings = get()) }
 
     // Voice / Safe Word (Issue #141)
     // SafeWordListenerFactory is provided by platformModule

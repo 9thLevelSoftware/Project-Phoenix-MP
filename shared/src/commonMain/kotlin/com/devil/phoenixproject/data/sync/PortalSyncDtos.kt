@@ -402,7 +402,7 @@ data class LocalProfileDto(val id: String, val name: String, val colorIndex: Int
 
 /**
  * Response from the mobile-sync-push Edge Function.
- * syncTime is ISO 8601 (not epoch millis like the legacy SyncPushResponse).
+ * syncTime is ISO 8601 (not epoch millis as in the original push wire format).
  * No idMappings — portal uses client-provided UUIDs.
  */
 @Serializable

@@ -17,6 +17,7 @@ import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
+import com.russhwolf.settings.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -39,8 +40,21 @@ class MigrationManager(
     private val userProfileRepository: UserProfileRepository? = null,
     private val gamificationRepository: GamificationRepository? = null,
     private val driver: SqlDriver? = null,
+    private val settings: Settings? = null,
 ) {
     private val log = Logger.withTag("MigrationManager")
+
+    companion object {
+        /**
+         * Bump this constant to force all one-time data-repair passes to re-run on every
+         * device that installs the new build. The stored value is compared on startup; if
+         * the stored value is less than [CURRENT_REPAIR_VERSION] the repairs execute and
+         * the new version is persisted afterwards.
+         */
+        private const val CURRENT_REPAIR_VERSION = 1
+        private const val KEY_REPAIR_VERSION = "migration_repair_version"
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val queries get() = database.vitruvianDatabaseQueries
     private val migrationMutex = Mutex()
@@ -186,13 +200,38 @@ class MigrationManager(
 
     private suspend fun runMigrations() {
         refreshProfilesIfAvailable()
+        runOneTimeRepairs()
+        auditAndRepairProfileScopedData()
+        // Issue #319: Check for orphaned PR records after all other migrations
+        checkAndRepairOrphanedData()
+    }
+
+    /**
+     * Run the suite of full-table-scan data-repair passes exactly once per
+     * [CURRENT_REPAIR_VERSION]. When [settings] is available the completed version is
+     * persisted so subsequent startups skip the work entirely. When [settings] is null
+     * (e.g. test environments) the repairs always run — matching the previous behaviour.
+     */
+    private suspend fun runOneTimeRepairs() {
+        val storedVersion = settings?.getIntOrNull(KEY_REPAIR_VERSION) ?: 0
+        if (storedVersion >= CURRENT_REPAIR_VERSION) {
+            log.d { "Skipping one-time data repairs — already at repair version $storedVersion" }
+            return
+        }
+
+        log.i { "Running one-time data repairs (stored=$storedVersion, current=$CURRENT_REPAIR_VERSION)" }
         cleanupFabricatedRoutineSessionIds()
         normalizeLegacyWorkoutModes()
         backfillLegacyWorkoutRoutineNames()
         repairPersonalRecordsFromWorkoutHistory()
-        auditAndRepairProfileScopedData()
-        // Issue #319: Check for orphaned PR records after all other migrations
-        checkAndRepairOrphanedData()
+
+        // Persist the completed version so this suite does not re-run next startup.
+        runCatching {
+            settings?.putInt(KEY_REPAIR_VERSION, CURRENT_REPAIR_VERSION)
+        }.onFailure { e ->
+            log.w(e) { "Failed to persist repair version; repairs will re-run on next startup" }
+        }
+        log.i { "One-time data repairs complete — persisted repair version $CURRENT_REPAIR_VERSION" }
     }
 
     private suspend fun auditAndRepairProfileScopedData() {

@@ -2,25 +2,12 @@ package com.devil.phoenixproject.data.sync
 
 import kotlinx.serialization.Serializable
 
-// === Push Request/Response ===
+// === Shared Data Structures ===
 
-@Serializable
-data class SyncPushRequest(
-    val deviceId: String,
-    val deviceName: String? = null,
-    val platform: String,
-    val lastSync: Long,
-    val sessions: List<WorkoutSessionSyncDto> = emptyList(),
-    val records: List<PersonalRecordSyncDto> = emptyList(),
-    val routines: List<RoutineSyncDto> = emptyList(),
-    val exercises: List<CustomExerciseSyncDto> = emptyList(),
-    val badges: List<EarnedBadgeSyncDto> = emptyList(),
-    val gamificationStats: GamificationStatsSyncDto? = null,
-)
-
-@Serializable
-data class SyncPushResponse(val syncTime: Long, val idMappings: IdMappings)
-
+// IdMappings is used by SyncRepository / SqlDelightSyncRepository to stamp server-assigned
+// UUIDs back onto locally-created rows after a successful push. It is NOT part of the wire
+// format for the current Edge Functions (which use client-provided UUIDs); it exists to
+// support legacy push flows and the updateServerIds() repository contract.
 @Serializable
 data class IdMappings(
     val sessions: Map<String, String> = emptyMap(),
@@ -28,22 +15,6 @@ data class IdMappings(
     val routines: Map<String, String> = emptyMap(),
     val exercises: Map<String, String> = emptyMap(),
     val badges: Map<String, String> = emptyMap(),
-)
-
-// === Pull Request/Response ===
-
-@Serializable
-data class SyncPullRequest(val deviceId: String, val lastSync: Long)
-
-@Serializable
-data class SyncPullResponse(
-    val syncTime: Long,
-    val sessions: List<WorkoutSessionSyncDto> = emptyList(),
-    val records: List<PersonalRecordSyncDto> = emptyList(),
-    val routines: List<RoutineSyncDto> = emptyList(),
-    val exercises: List<CustomExerciseSyncDto> = emptyList(),
-    val badges: List<EarnedBadgeSyncDto> = emptyList(),
-    val gamificationStats: GamificationStatsSyncDto? = null,
 )
 
 // === Auth DTOs ===
@@ -58,6 +29,9 @@ data class PortalAuthResponse(val token: String, val user: PortalUser)
 data class PortalUser(val id: String, val email: String, val displayName: String?, val isPremium: Boolean)
 
 // === Entity DTOs ===
+// NOTE: These types are internal data-transfer objects used between the sync layer and the
+// repository / merge logic. They are NOT wire-format types — the actual HTTP request/response
+// bodies are defined in PortalSyncDtos.kt (PortalSyncPushRequest, PortalSyncPullResponse, etc.).
 
 @Serializable
 data class WorkoutSessionSyncDto(
@@ -141,6 +115,11 @@ data class GamificationStatsSyncDto(
     val totalVolumeKg: Float = 0f,
     val longestStreak: Int = 0,
     val currentStreak: Int = 0,
+    // Received from mobile-sync-pull (total_time_seconds column on server).
+    // Carried through the DTO chain but not yet persisted locally — the GamificationStats
+    // SQLite table has no total_time_seconds column. Add a migration and wire it into
+    // upsertGamificationStats / getGamificationStatsForSync once the column lands.
+    val totalTimeSeconds: Long = 0L,
     val updatedAt: Long,
 )
 
