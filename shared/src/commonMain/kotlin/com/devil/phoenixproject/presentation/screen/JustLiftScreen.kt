@@ -129,6 +129,7 @@ import vitruvianprojectphoenix.shared.generated.resources.mode_echo
 import vitruvianprojectphoenix.shared.generated.resources.mode_old_school
 import vitruvianprojectphoenix.shared.generated.resources.mode_pump
 import vitruvianprojectphoenix.shared.generated.resources.mode_tut
+import vitruvianprojectphoenix.shared.generated.resources.autostart_connect_prompt
 import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing
 import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_bottom
 import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_top
@@ -343,6 +344,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             workoutState = workoutState,
                             autoStartCountdown = autoStartCountdown,
                             autoStopState = autoStopState,
+                            isConnected = connectionState is ConnectionState.Connected,
                             compact = true,
                             embedded = true,
                         )
@@ -978,6 +980,7 @@ fun AutoStartStopCard(
     workoutState: WorkoutState,
     autoStartCountdown: Int?,
     autoStopState: AutoStopUiState,
+    isConnected: Boolean,
     compact: Boolean = false,
     embedded: Boolean = false,
 ) {
@@ -1029,10 +1032,13 @@ fun AutoStartStopCard(
     val autoStartGreen = AccessibilityTheme.colors.success
     val countdownOrange = AccessibilityTheme.colors.warning
     val stopRed = AccessibilityTheme.colors.error
+    // Ready-state color: green when connected (BLE present to arm auto-start),
+    // onSurfaceVariant when not connected (indicator is informational only — nothing is armed).
+    val readyColor = if (isConnected) autoStartGreen else MaterialTheme.colorScheme.onSurfaceVariant
     val primaryColor = when {
         isStopping -> stopRed
         isCountingDown -> countdownOrange
-        else -> autoStartGreen
+        else -> readyColor
     }
     // Light variants computed by blending with white for gradient pairs
     val secondaryColor = primaryColor.copy(
@@ -1222,7 +1228,8 @@ fun AutoStartStopCard(
                         isStopping -> "AUTO-STOP"
                         isCountingDown -> "STARTING..."
                         isActive -> "AUTO-STOP READY"
-                        else -> "AUTO-START READY"
+                        isConnected -> "AUTO-START READY"
+                        else -> stringResource(Res.string.autostart_connect_prompt)
                     },
                     style = statusTitleStyle,
                     fontWeight = FontWeight.Bold,
@@ -1236,7 +1243,8 @@ fun AutoStartStopCard(
                         isStopping -> "Release handles to stop"
                         isCountingDown -> "Hold steady"
                         isActive -> "Release handles for 5s"
-                        else -> "Grab handles to start"
+                        isConnected -> "Grab handles to start"
+                        else -> ""
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

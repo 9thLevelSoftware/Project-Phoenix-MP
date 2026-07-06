@@ -839,4 +839,7 @@
 
     <!-- ==================== Video Player ==================== -->
     <string name="video_preview_unavailable">Video preview unavailable</string>
+
+    <!-- ==================== Just Lift auto-start honesty (task-5B.3) ==================== -->
+    <string name="autostart_connect_prompt">Connect to enable auto-start</string>
 </resources>
