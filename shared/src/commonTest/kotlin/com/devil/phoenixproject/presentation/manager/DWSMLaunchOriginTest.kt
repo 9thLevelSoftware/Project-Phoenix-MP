@@ -86,6 +86,11 @@ class DWSMLaunchOriginTest {
 
         // Simulate what updateCycleProgressIfNeeded() does: clears activeCycleId and
         // activeCycleDayNumber but must NOT touch routineLaunchOrigin.
+        // NOTE: updateCycleProgressIfNeeded() is private so we manually replicate its field
+        // clearing here rather than calling it directly. This means a future change that adds
+        // a routineLaunchOrigin clear *inside* that private function would not be caught by
+        // this test — only a direct-call or reflection-based test could detect that. Accepted
+        // trade-off given the function's narrow, well-documented invariant.
         harness.coordinator.activeCycleId = null
         harness.coordinator.activeCycleDayNumber = null
 

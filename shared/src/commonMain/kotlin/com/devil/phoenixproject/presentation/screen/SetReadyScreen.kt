@@ -84,6 +84,7 @@ import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
@@ -825,7 +826,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         showStopConfirmation = false
                         val dest = viewModel.routineExitDestination()
                         viewModel.exitRoutineFlow()
-                        navController.popBackStack(dest, false)
+                        navController.safePopOrNavigate(dest)
                     },
                 ) {
                     Text(stringResource(Res.string.action_exit))

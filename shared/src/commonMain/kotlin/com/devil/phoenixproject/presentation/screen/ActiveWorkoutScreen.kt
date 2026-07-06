@@ -44,6 +44,7 @@ import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
@@ -521,10 +522,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                                 val dest = viewModel.routineExitDestination()
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false
-                                navController.popBackStack(
-                                    dest,
-                                    inclusive = false,
-                                )
+                                navController.safePopOrNavigate(dest)
                             },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.outlinedButtonColors(

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -45,7 +46,7 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
     BackHandler {
         val dest = viewModel.routineExitDestination()
         viewModel.exitRoutineFlow()
-        navController.popBackStack(dest, false)
+        navController.safePopOrNavigate(dest)
     }
 
     // Pulse animation for celebration
@@ -156,7 +157,7 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
                 onClick = {
                     val dest = viewModel.routineExitDestination()
                     viewModel.exitRoutineFlow()
-                    navController.popBackStack(dest, false)
+                    navController.safePopOrNavigate(dest)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
