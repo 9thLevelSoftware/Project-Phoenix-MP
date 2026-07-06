@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.RepPhase
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -127,10 +128,7 @@ fun AnimatedRepCounter(
                 launch {
                     celebrationScale.animateTo(
                         targetValue = 1.5f, // Scale up with satisfying spring pop
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioHighBouncy,
-                            stiffness = Spring.StiffnessLow,
-                        ),
+                        animationSpec = ExpressiveMotion.SpringBouncy,
                     )
                     celebrationScale.animateTo(
                         targetValue = 0f, // Snap cleanly to nothing
