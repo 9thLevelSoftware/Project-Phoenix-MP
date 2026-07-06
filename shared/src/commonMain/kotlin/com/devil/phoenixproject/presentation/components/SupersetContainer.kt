@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.ui.theme.SupersetTheme
 
@@ -30,13 +31,14 @@ fun SupersetContainer(colorIndex: Int, modifier: Modifier = Modifier, content: @
             .fillMaxWidth()
             .height(IntrinsicSize.Min),
     ) {
-        // Colored left border stripe
+        // Colored left border stripe — vertical gradient fades toward the bottom for
+        // a brand-fire energy effect (supersets-bulk-edit-15).
         Box(
             modifier = Modifier
                 .width(4.dp)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(2.dp))
-                .background(color),
+                .background(Brush.verticalGradient(listOf(color, color.copy(alpha = 0.3f)))),
         )
 
         // Content (header + exercises)
