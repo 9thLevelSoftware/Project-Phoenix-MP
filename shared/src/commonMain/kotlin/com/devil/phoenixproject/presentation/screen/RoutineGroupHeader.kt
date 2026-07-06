@@ -1,9 +1,9 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -38,21 +38,34 @@ fun RoutineGroupHeader(
 
     var showOverflow by remember { mutableStateOf(false) }
 
-    Surface(
+    // routines-14: left accent border (secondary) + secondaryContainer tint signals
+    // hierarchy — follows the SupersetContainer stripe pattern.
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onToggleExpand() },
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 1.dp,
+            .height(IntrinsicSize.Min),
     ) {
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.secondary),
+        )
+        Surface(
+            modifier = Modifier
+                .weight(1f)
+                .clickable { onToggleExpand() },
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
+            tonalElevation = 1.dp,
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
             // Chevron
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
@@ -125,4 +138,5 @@ fun RoutineGroupHeader(
             }
         }
     }
+    } // end outer accent Row
 }
