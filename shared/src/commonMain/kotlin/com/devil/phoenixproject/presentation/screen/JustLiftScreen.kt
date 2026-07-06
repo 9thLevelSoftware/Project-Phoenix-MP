@@ -329,7 +329,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Column(
                     modifier = Modifier
@@ -490,7 +490,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(
                         modifier = Modifier
@@ -552,7 +552,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(
                         modifier = Modifier
@@ -588,7 +588,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(
                         modifier = Modifier
@@ -701,7 +701,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Column(
                     modifier = Modifier
@@ -750,7 +750,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         trailing = {
                             Surface(
                                 modifier = Modifier.clickable { showRestTimerDialog = true },
-                                shape = RoundedCornerShape(16.dp),
+                                shape = MaterialTheme.shapes.medium,
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                             ) {
                                 Text(
@@ -851,7 +851,7 @@ fun ActiveStatusCard(
                 MaterialTheme.colorScheme.surfaceVariant
             },
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
         Column(
@@ -880,13 +880,13 @@ fun ActiveStatusCard(
                     Box(
                         modifier = Modifier
                             .size(12.dp)
-                            .background(Color.Green.copy(alpha = alpha), CircleShape),
+                            .background(AccessibilityTheme.colors.success.copy(alpha = alpha), CircleShape),
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         stringResource(Res.string.label_live),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.Green,
+                        color = AccessibilityTheme.colors.success,
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -944,7 +944,7 @@ fun ActiveStatusCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                     ),
@@ -1133,8 +1133,7 @@ fun AutoStartStopCard(
                     ) { count ->
                         Text(
                             text = "$count",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Black,
+                            style = MaterialTheme.typography.titleLarge,
                             color = primaryColor,
                         )
                     }
@@ -1267,7 +1266,7 @@ fun AutoStartStopCard(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(
                 defaultElevation = if (isCountingDown || isStopping) 8.dp else 4.dp,
             ),
@@ -1361,7 +1360,7 @@ private fun JustLiftRestCountdownRow(secondsRemaining: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f))
             .padding(horizontal = Spacing.medium, vertical = Spacing.small),
         verticalAlignment = Alignment.CenterVertically,

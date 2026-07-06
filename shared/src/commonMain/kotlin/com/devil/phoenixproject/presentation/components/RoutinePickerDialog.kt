@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -39,7 +38,7 @@ fun RoutinePickerDialog(routines: List<Routine>, onSelectRoutine: (Routine) -> U
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = maxDialogHeight),
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.large,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
@@ -73,14 +72,13 @@ fun RoutinePickerDialog(routines: List<Routine>, onSelectRoutine: (Routine) -> U
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(routines) { routine ->
-                            Card(
+                            ExpressiveCard(
+                                onClick = { onSelectRoutine(routine) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.small,
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onSelectRoutine(routine) },
                             ) {
                                 Row(
                                     modifier = Modifier

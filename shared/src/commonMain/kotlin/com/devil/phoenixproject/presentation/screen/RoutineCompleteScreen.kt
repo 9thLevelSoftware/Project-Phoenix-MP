@@ -4,7 +4,6 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -12,8 +11,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
+import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.domain.model.RoutineFlowState
@@ -63,22 +63,14 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.tertiaryContainer,
-                        MaterialTheme.colorScheme.background,
-                    ),
-                ),
-            )
+            .background(celebrationBackgroundBrush())
             .systemBarsPadding(),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp),
+                .padding(Spacing.extraLarge),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceEvenly,
         ) {
@@ -109,7 +101,7 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Spacing.small))
                 Text(
                     completeState.routineName,
                     style = MaterialTheme.typography.titleLarge,
@@ -120,7 +112,7 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
             // Stats card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
@@ -128,7 +120,7 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(Spacing.large),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     StatItem(
@@ -158,7 +150,7 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(stringResource(Res.string.label_done), fontWeight = FontWeight.Bold)
             }
@@ -175,7 +167,7 @@ private fun StatItem(icon: androidx.compose.ui.graphics.vector.ImageVector, valu
             modifier = Modifier.size(32.dp),
             tint = MaterialTheme.colorScheme.primary,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Spacing.small))
         Text(
             value,
             style = MaterialTheme.typography.headlineSmall,

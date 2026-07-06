@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
@@ -200,7 +202,7 @@ fun ExternalRoutineDetailScreen(
             Spacer(Modifier.height(8.dp))
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
             ) {
                 Text(
                     "Review exercise mappings before converting. External weights are preserved as informational until per-cable mapping is confirmed.",
@@ -308,7 +310,7 @@ fun ExternalProgramDetailScreen(
             }
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
             ) {
                 Text(
                     "Liftosaur conversion is read-only here. Manual Phoenix cycle conversion should happen only after validating Liftoscript mappings.",
@@ -470,10 +472,9 @@ fun ExternalMeasurementTrendsScreen(
 
 @Composable
 private fun HubCard(title: String, subtitle: String, icon: @Composable () -> Unit, onClick: () -> Unit) {
-    Card(
+    ExpressiveCard(
         onClick = onClick,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
@@ -548,15 +549,14 @@ private fun EntityCard(onClick: (() -> Unit)? = null, content: @Composable Colum
     if (onClick == null) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.extraSmall,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             content = cardContent,
         )
     } else {
-        Card(
+        ExpressiveCard(
             onClick = onClick,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.extraSmall,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             content = cardContent,
         )
@@ -566,7 +566,11 @@ private fun EntityCard(onClick: (() -> Unit)? = null, content: @Composable Colum
 @Composable
 private fun EmptyIntegrationState(message: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            modifier = Modifier.semantics(mergeDescendants = true) {},
+        ) {
             Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(40.dp))
             Text(message, style = MaterialTheme.typography.titleMedium)
         }

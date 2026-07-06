@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,7 +22,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -224,9 +224,7 @@ fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
                 // "Project Phoenix" text
                 Text(
                     text = "PROJECT PHOENIX",
-                    style = TextStyle(
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineSmall.copy(
                         letterSpacing = 6.sp,
                         color = FireOrange,
                         shadow = Shadow(
@@ -245,8 +243,7 @@ fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
                 // Tagline
                 Text(
                     text = "Rise from the ashes",
-                    style = TextStyle(
-                        fontSize = 14.sp,
+                    style = MaterialTheme.typography.titleSmall.copy(
                         fontWeight = FontWeight.Light,
                         letterSpacing = 2.sp,
                         color = Color.White.copy(alpha = 0.7f),
@@ -381,9 +378,7 @@ fun SimpleSplashScreen(modifier: Modifier = Modifier) {
 
             Text(
                 text = "PROJECT PHOENIX",
-                style = TextStyle(
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineSmall.copy(
                     letterSpacing = 6.sp,
                     color = FireOrange,
                 ),

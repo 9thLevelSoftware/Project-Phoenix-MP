@@ -121,6 +121,17 @@ class HistoryManager(
         (groupedByRoutine + singleSessions).sortedByDescending { it.timestamp }
     }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /**
+     * True until the first emission from [historyVisibleSessions], false thereafter.
+     * Prevents [HistoryTab] from showing EmptyState before the initial DB query returns —
+     * the DB flow emits once (even an empty list) to flip this flag, making it an
+     * honest "not yet loaded" signal with no timers or artificial delays.
+     */
+    val isHistoryLoading: StateFlow<Boolean> =
+        historyVisibleSessions
+            .map { false }
+            .stateIn(scope, SharingStarted.WhileSubscribed(5000), initialValue = true)
+
     val allPersonalRecords: StateFlow<List<PersonalRecord>> =
         userProfileRepository.activeProfile
             .flatMapLatest { profile ->

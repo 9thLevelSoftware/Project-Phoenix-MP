@@ -35,6 +35,7 @@ fun ProgressionLineChart(
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val innerDotColor = MaterialTheme.colorScheme.surface // was Color.White — adapts to theme
 
     // Sort data by timestamp just in case
     val sortedData = remember(data) { data.sortedBy { it.first } }
@@ -91,7 +92,7 @@ fun ProgressionLineChart(
                 )
 
                 drawCircle(
-                    color = Color.White,
+                    color = innerDotColor,
                     radius = 2.dp.toPx(),
                     center = Offset(x, y),
                 )

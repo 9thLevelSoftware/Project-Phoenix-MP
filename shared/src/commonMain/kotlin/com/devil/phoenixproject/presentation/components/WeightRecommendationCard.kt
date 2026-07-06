@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -22,6 +21,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +51,10 @@ fun WeightRecommendationCard(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Prevent double-tap while BLE write is in flight (gap-3-2).
+    // Keyed to recommendation so a new/changed recommendation resets the latch.
+    var isApplying by remember(recommendation) { mutableStateOf(false) }
+
     val icon = when (recommendation.direction) {
         WeightAdjustmentDirection.INCREASE -> Icons.Default.ArrowUpward
         WeightAdjustmentDirection.DECREASE -> Icons.Default.ArrowDownward
@@ -68,7 +75,7 @@ fun WeightRecommendationCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
         ),
@@ -98,8 +105,7 @@ fun WeightRecommendationCard(
                     Column {
                         Text(
                             text = headline,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                         Text(
@@ -127,7 +133,13 @@ fun WeightRecommendationCard(
                 OutlinedButton(onClick = onDismiss) {
                     Text(stringResource(Res.string.action_dismiss))
                 }
-                Button(onClick = onApply) {
+                Button(
+                    onClick = {
+                        isApplying = true
+                        onApply()
+                    },
+                    enabled = !isApplying,
+                ) {
                     Text(stringResource(Res.string.action_apply))
                 }
             }

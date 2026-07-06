@@ -1,10 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
+import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
@@ -61,7 +59,7 @@ fun WorkoutSetupDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.large,
         title = {
             Text(
                 "Workout Setup",
@@ -82,7 +80,7 @@ fun WorkoutSetupDialog(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                 ) {
                     Column(
@@ -195,7 +193,7 @@ fun WorkoutSetupDialog(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                 ) {
                     Column(
@@ -262,7 +260,7 @@ fun WorkoutSetupDialog(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                 ) {
                     Column(
@@ -320,7 +318,7 @@ fun WorkoutSetupDialog(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.medium,
                         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                     ) {
                         Column(
@@ -443,17 +441,17 @@ fun WorkoutSetupDialog(
         },
     )
 
-    // Exercise Picker Dialog
-    if (showExercisePicker) {
-        ExercisePickerDialog(
-            exerciseRepository = exerciseRepository,
-            onDismiss = { showExercisePicker = false },
-            onExerciseSelected = { exercise ->
-                onUpdateParameters(workoutParameters.copy(selectedExerciseId = exercise.id))
-                showExercisePicker = false
-            },
-        )
-    }
+    // Exercise Picker Dialog — uses canonical ExercisePickerContent via components version
+    ExercisePickerDialog(
+        showDialog = showExercisePicker,
+        exerciseRepository = exerciseRepository,
+        onDismiss = { showExercisePicker = false },
+        onExerciseSelected = { exercise ->
+            onUpdateParameters(workoutParameters.copy(selectedExerciseId = exercise.id))
+            showExercisePicker = false
+        },
+        enableVideoPlayback = false,
+    )
 
     // Mode Sub-Selector Dialog
     if (showModeSubSelector && modeSubSelectorType != null) {
@@ -476,151 +474,4 @@ fun WorkoutSetupDialog(
             },
         )
     }
-}
-
-/**
- * Exercise Picker Dialog - Allows selecting an exercise from the library
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ExercisePickerDialog(exerciseRepository: ExerciseRepository, onDismiss: () -> Unit, onExerciseSelected: (Exercise) -> Unit) {
-    val exercises by exerciseRepository.getAllExercises().collectAsState(initial = emptyList())
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<ExerciseCategory?>(null) }
-
-    // Filter exercises
-    val filteredExercises = exercises.filter { exercise ->
-        val matchesSearch = searchQuery.isEmpty() ||
-            exercise.name.contains(searchQuery, ignoreCase = true)
-        val matchesCategory = selectedCategory == null ||
-            exercise.muscleGroup.equals(selectedCategory?.displayName, ignoreCase = true)
-        matchesSearch && matchesCategory
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(28.dp),
-        title = {
-            Text(
-                "Select Exercise",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-        },
-        text = {
-            BoxWithConstraints {
-                val maxSheetHeight = (maxHeight * 0.8f).coerceIn(300.dp, 600.dp)
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = maxSheetHeight),
-                ) {
-                    // Search field
-                    ConfirmEditTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        label = { Text(stringResource(Res.string.search_exercises_short)) },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-
-                    Spacer(modifier = Modifier.height(Spacing.small))
-
-                    // Muscle group filter chips
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
-                    ) {
-                        FilterChip(
-                            selected = selectedCategory == null,
-                            onClick = { selectedCategory = null },
-                            label = { Text(stringResource(Res.string.label_all)) },
-                        )
-                        ExerciseCategory.entries.forEach { category ->
-                            FilterChip(
-                                selected = selectedCategory == category,
-                                onClick = { selectedCategory = category },
-                                label = { Text(category.displayName) },
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(Spacing.small))
-
-                    // Exercise list
-                    if (filteredExercises.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f, fill = true),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "No exercises found",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f, fill = true),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
-                        ) {
-                            items(
-                                items = filteredExercises,
-                                key = { exercise -> exercise.id ?: exercise.name },
-                            ) { exercise ->
-                                Card(
-                                    onClick = { onExerciseSelected(exercise) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    ),
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(Spacing.medium),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                exercise.name,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = FontWeight.Medium,
-                                            )
-                                            Text(
-                                                exercise.muscleGroup,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                        Icon(
-                                            Icons.Default.ChevronRight,
-                                            contentDescription = stringResource(Res.string.cd_select),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(Res.string.action_cancel))
-            }
-        },
-    )
 }

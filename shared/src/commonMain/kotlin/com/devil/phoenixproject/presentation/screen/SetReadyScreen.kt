@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -52,7 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -63,7 +62,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
@@ -82,11 +80,14 @@ import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
+import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.labelAllCaps
+import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
@@ -278,7 +279,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             .weight(1f)
                             .height(48.dp),
                         enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
@@ -333,14 +334,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.surfaceVariant,
-                        ),
-                    ),
-                )
+                .background(screenBackgroundBrush())
                 .verticalScroll(setReadyScrollState)
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -348,7 +342,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             // Compact header - exercise, set picker, and mode/bodyweight context.
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.small,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                 ),
@@ -477,7 +471,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                         ),
@@ -597,7 +591,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 ) {
@@ -609,15 +603,13 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     ) {
                         Text(
                             if (isEchoMode) "ECHO SETTINGS" else "SET CONFIGURATION",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
+                            style = labelAllCaps.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp,
                         )
 
                         if (isEchoMode) {
                             // Echo Level selector - matching RestTimerCard style
-                            SetReadyEchoLevelSelector(
+                            EchoLevelPillSelector(
                                 selectedLevel = setReadyState.echoLevel ?: EchoLevel.HARDER,
                                 onLevelChange = { viewModel.updateSetReadyEchoLevel(it) },
                             )
@@ -751,7 +743,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(96.dp)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .clip(MaterialTheme.shapes.small),
                 )
                 Spacer(Modifier.height(12.dp))
             }
@@ -896,7 +888,7 @@ private fun CurrentBodyweightPromptCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(SetReadyTestTags.SESSION_BODYWEIGHT_CARD),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
@@ -961,7 +953,7 @@ private fun HandledSessionBodyweightCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
@@ -1021,64 +1013,6 @@ private fun parseBodyWeightInputKg(input: String, weightUnit: WeightUnit): Float
 }
 
 /**
- * Echo Level selector - Row of 4 buttons matching RestTimerCard style
- */
-@Composable
-private fun SetReadyEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (EchoLevel) -> Unit) {
-    Column {
-        Text(
-            text = "ECHO LEVEL",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp,
-        )
-
-        Spacer(modifier = Modifier.height(Spacing.small))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium),
-                )
-                .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
-        ) {
-            EchoLevel.entries.forEach { level ->
-                val isSelected = level == selectedLevel
-
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(Spacing.small),
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerLowest
-                    },
-                    onClick = { onLevelChange(level) },
-                ) {
-                    Text(
-                        text = level.displayName,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = Spacing.small),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
  * Eccentric Load slider matching RestTimerCard style (0-150%)
  */
 @Composable
@@ -1091,14 +1025,12 @@ private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
         ) {
             Text(
                 text = "ECCENTRIC LOAD",
-                style = MaterialTheme.typography.labelSmall,
+                style = labelSmallAllCaps,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp,
             )
             Text(
                 text = "$percent%",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.primary,
             )
         }

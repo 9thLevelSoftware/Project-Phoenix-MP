@@ -42,10 +42,11 @@ private operator fun Dp.times(factor: Float): Dp = (this.value * factor).dp
  */
 @Composable
 fun shimmerBrush(targetValue: Float = 1000f, showShimmer: Boolean = true): Brush = if (showShimmer) {
+    val onSurface = MaterialTheme.colorScheme.onSurface
     val shimmerColors = listOf(
-        Color.LightGray.copy(alpha = 0.6f),
-        Color.LightGray.copy(alpha = 0.2f),
-        Color.LightGray.copy(alpha = 0.6f),
+        onSurface.copy(alpha = 0.12f),
+        onSurface.copy(alpha = 0.06f),
+        onSurface.copy(alpha = 0.12f),
     )
 
     val transition = rememberInfiniteTransition(label = "shimmer")
@@ -84,7 +85,7 @@ fun ShimmerBox(modifier: Modifier = Modifier, showShimmer: Boolean = true) {
         modifier = modifier
             .background(
                 brush = shimmerBrush(showShimmer = showShimmer),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
             ),
     )
 }
@@ -100,7 +101,7 @@ fun WorkoutHistoryCardSkeleton(modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .height(responsiveDimension(160.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+        shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
     ) {
         Column(
@@ -174,112 +175,3 @@ fun WorkoutHistoryCardSkeleton(modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * Skeleton card for personal record loading state.
- */
-@Composable
-fun PersonalRecordCardSkeleton(modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(responsiveDimension(100.dp)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(Spacing.medium),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
-            ) {
-                // Rank placeholder
-                ShimmerBox(
-                    modifier = Modifier.size(responsiveDimension(40.dp)),
-                )
-
-                Spacer(modifier = Modifier.width(Spacing.medium))
-
-                Column {
-                    // Exercise name placeholder
-                    ShimmerBox(
-                        modifier = Modifier
-                            .width(responsiveDimension(140.dp))
-                            .height(responsiveDimension(20.dp)),
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    // Weight placeholder
-                    ShimmerBox(
-                        modifier = Modifier
-                            .width(responsiveDimension(100.dp))
-                            .height(responsiveDimension(18.dp)),
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    // Details placeholder
-                    ShimmerBox(
-                        modifier = Modifier
-                            .width(responsiveDimension(120.dp))
-                            .height(responsiveDimension(14.dp)),
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Skeleton for routine card loading state.
- */
-@Composable
-fun RoutineCardSkeleton(modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(responsiveDimension(140.dp)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(Spacing.medium),
-        ) {
-            // Title placeholder
-            ShimmerBox(
-                modifier = Modifier
-                    .width(responsiveDimension(160.dp))
-                    .height(responsiveDimension(24.dp)),
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            // Description placeholders
-            ShimmerBox(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(responsiveDimension(16.dp)),
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            ShimmerBox(
-                modifier = Modifier
-                    .fillMaxWidth(0.7f)
-                    .height(responsiveDimension(16.dp)),
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
-            // Exercise count placeholder
-            ShimmerBox(
-                modifier = Modifier
-                    .width(responsiveDimension(100.dp))
-                    .height(responsiveDimension(14.dp)),
-            )
-        }
-    }
-}

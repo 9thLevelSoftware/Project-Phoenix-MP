@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleItem
-import com.devil.phoenixproject.ui.theme.SignalError
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,9 +51,10 @@ fun SwipeableCycleItem(
         modifier = modifier,
         backgroundContent = {
             val direction = dismissState.dismissDirection
+            val colors = AccessibilityTheme.colors
             val color by animateColorAsState(
                 when (direction) {
-                    SwipeToDismissBoxValue.EndToStart -> SignalError
+                    SwipeToDismissBoxValue.EndToStart -> colors.error
                     SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.tertiary
                     else -> Color.Transparent
                 },
@@ -88,11 +89,11 @@ fun SwipeableCycleItem(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         if (direction == SwipeToDismissBoxValue.StartToEnd) {
-                            Icon(icon, contentDescription = label, tint = Color.White)
-                            Text(label, color = Color.White)
+                            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onTertiary)
+                            Text(label, color = MaterialTheme.colorScheme.onTertiary)
                         } else {
-                            Text(label, color = Color.White)
-                            Icon(icon, contentDescription = label, tint = Color.White)
+                            Text(label, color = MaterialTheme.colorScheme.onError)
+                            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onError)
                         }
                     }
                 }

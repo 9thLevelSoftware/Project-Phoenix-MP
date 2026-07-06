@@ -3,7 +3,6 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,23 +16,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -76,7 +62,6 @@ import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_view_all_badges
 
 /**
  * Insight card components for workout analytics
@@ -208,7 +193,7 @@ fun ThisWeekSummaryCard(
                     "This week summary: ${thisWeek.workouts} workouts, $volumeText volume, ${thisWeek.totalReps} reps, ${thisWeek.prsHit} PRs"
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -402,7 +387,7 @@ fun MuscleBalanceRadarCard(personalRecords: List<PersonalRecord>, exerciseReposi
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -453,7 +438,7 @@ fun ConsistencyGaugeCard(workoutSessions: List<WorkoutSession>, modifier: Modifi
                 contentDescription = "Monthly consistency: $stats workouts in the last 30 days, target is ${target.toInt()}"
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -511,7 +496,7 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -560,7 +545,7 @@ fun WorkoutModeDistributionCard(workoutSessions: List<WorkoutSession>, modifier:
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -605,7 +590,7 @@ fun TotalVolumeCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -819,7 +804,7 @@ fun LifetimeStatsCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -942,166 +927,6 @@ private fun LifetimeStatRow(label: String, value: String, subtext: String?, isFu
             }
         }
     }
-}
-
-/**
- * Next Badge Progress Card - shows the user's closest badges to being earned
- *
- * @param badgesWithProgress List of all badges with their progress
- * @param onBadgeClick Callback when a badge is tapped (navigates to Badges screen)
- * @param modifier Optional modifier
- */
-@Composable
-fun NextBadgeProgressCard(badgesWithProgress: List<BadgeWithProgress>, onBadgeClick: () -> Unit, modifier: Modifier = Modifier) {
-    // Filter and sort badges:
-    // 1. Exclude earned badges
-    // 2. Exclude secret badges (isSecret = true)
-    // 3. Sort by progress percentage descending
-    // 4. Take top 3
-    val nextBadges = remember(badgesWithProgress) {
-        badgesWithProgress
-            .filter { !it.isEarned && !it.badge.isSecret }
-            .sortedByDescending { it.progressPercent }
-            .take(3)
-    }
-
-    // Don't show if no badges to display
-    if (nextBadges.isEmpty()) return
-
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onBadgeClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        "Next Badges",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        "Your closest achievements",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = stringResource(Res.string.cd_view_all_badges),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                nextBadges.forEach { badgeWithProgress ->
-                    NextBadgeProgressItem(badgeWithProgress = badgeWithProgress)
-                }
-            }
-        }
-    }
-}
-
-/**
- * Individual badge progress item within the NextBadgeProgressCard
- */
-@Composable
-private fun NextBadgeProgressItem(badgeWithProgress: BadgeWithProgress, modifier: Modifier = Modifier) {
-    val badge = badgeWithProgress.badge
-    val tierColor = Color(badge.tier.colorHex)
-
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        // Badge icon
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        listOf(tierColor.copy(alpha = 0.8f), tierColor.copy(alpha = 0.3f)),
-                    ),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = getBadgeIconForProgress(badge.iconResource),
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-
-        // Badge info and progress
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = badge.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Text(
-                    text = badge.getProgressDescription(badgeWithProgress.currentProgress),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            // Progress bar with tier color
-            LinearProgressIndicator(
-                progress = { badgeWithProgress.progressPercent },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = tierColor,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
-        }
-    }
-}
-
-/**
- * Helper function to map badge icon resource to ImageVector
- */
-private fun getBadgeIconForProgress(iconResource: String): ImageVector = when (iconResource) {
-    "fire" -> Icons.Default.LocalFireDepartment
-    "trophy" -> Icons.Default.EmojiEvents
-    "dumbbell" -> Icons.Default.FitnessCenter
-    "repeat" -> Icons.Default.Repeat
-    "compass" -> Icons.Default.Explore
-    "calendar" -> Icons.Default.CalendarMonth
-    "sun" -> Icons.Default.WbSunny
-    "moon" -> Icons.Default.NightsStay
-    "weight" -> Icons.Default.FitnessCenter
-    "lightning" -> Icons.Default.Bolt
-    "body" -> Icons.Default.Accessibility
-    "phoenix" -> Icons.Default.LocalFireDepartment
-    "shield" -> Icons.Default.Shield
-    "list" -> Icons.Default.Checklist
-    else -> Icons.Default.Star
 }
 
 /**
@@ -1233,7 +1058,7 @@ fun CalendarHeatmapCard(workoutSessions: List<WorkoutSession>, weightUnit: Weigh
                 contentDescription = "Activity heatmap: $workoutDays workout days in the last 13 weeks"
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(

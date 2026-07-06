@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -46,7 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -59,6 +60,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.percentLabel
+import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
@@ -74,7 +76,6 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_skip_rest
 import vitruvianprojectphoenix.shared.generated.resources.rest_complete_announcement
 import vitruvianprojectphoenix.shared.generated.resources.rest_continue
 import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
-import vitruvianprojectphoenix.shared.generated.resources.rest_echo_level
 import vitruvianprojectphoenix.shared.generated.resources.rest_end_workout
 import vitruvianprojectphoenix.shared.generated.resources.rest_exercise_of
 import vitruvianprojectphoenix.shared.generated.resources.rest_mode
@@ -183,15 +184,7 @@ fun RestTimerCard(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surfaceVariant,
-                    ),
-                ),
-            )
+            .background(screenBackgroundBrush())
             .systemBarsPadding()
             .padding(20.dp),
     ) {
@@ -234,7 +227,7 @@ fun RestTimerCard(
                 if (isSupersetTransition && supersetLabel != null) {
                     // Show superset badge
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                     ) {
                         Text(
@@ -279,7 +272,7 @@ fun RestTimerCard(
                             } else {
                                 MaterialTheme.colorScheme.surfaceContainerHighest
                             },
-                            shape = RoundedCornerShape(200.dp),
+                            shape = CircleShape,
                         ),
                 )
 
@@ -316,7 +309,7 @@ fun RestTimerCard(
                 // +30s button
                 FilledTonalButton(
                     onClick = { onExtendRest(30) },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(
                         Icons.Default.Add,
@@ -334,7 +327,7 @@ fun RestTimerCard(
                 // Pause/Resume toggle
                 FilledTonalButton(
                     onClick = onToggleRestPause,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = if (isRestPaused) {
                         ButtonDefaults.filledTonalButtonColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -365,7 +358,7 @@ fun RestTimerCard(
                 // Reset button
                 FilledTonalButton(
                     onClick = onResetRest,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(
                         Icons.Default.Refresh,
@@ -442,7 +435,7 @@ fun RestTimerCard(
                 // Parameters config card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 ) {
@@ -477,7 +470,7 @@ fun RestTimerCard(
 
                         if (isEchoMode) {
                             // Echo mode: Show Echo Level selector + Eccentric Load slider
-                            RestTimerEchoLevelSelector(
+                            EchoLevelPillSelector(
                                 selectedLevel = editedEchoLevel,
                                 onLevelChange = { newLevel ->
                                     editedEchoLevel = newLevel
@@ -588,7 +581,7 @@ fun RestTimerCard(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
                         pressedElevation = 2.dp,
@@ -613,7 +606,7 @@ fun RestTimerCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(
                         Icons.Default.Close,
@@ -668,64 +661,6 @@ fun WorkoutParamItem(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-/**
- * Echo Level selector for Rest Timer - Row of 4 buttons (Hard/Harder/Hardest/Epic)
- */
-@Composable
-private fun RestTimerEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (EchoLevel) -> Unit) {
-    Column {
-        Text(
-            text = stringResource(Res.string.rest_echo_level),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp,
-        )
-
-        Spacer(modifier = Modifier.height(Spacing.small))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium),
-                )
-                .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
-        ) {
-            EchoLevel.entries.forEach { level ->
-                val isSelected = level == selectedLevel
-
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(Spacing.small),
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerLowest
-                    },
-                    onClick = { onLevelChange(level) },
-                ) {
-                    Text(
-                        text = level.displayName,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = Spacing.small),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        }
     }
 }
 

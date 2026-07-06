@@ -129,7 +129,7 @@ fun SetSummaryCard(
         // Gradient header with Total Reps and Total Volume
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         ) {
             Box(
@@ -302,7 +302,7 @@ fun SetSummaryCard(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Row(
                         modifier = Modifier
@@ -331,7 +331,7 @@ fun SetSummaryCard(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Row(
                         modifier = Modifier
@@ -372,7 +372,7 @@ fun SetSummaryCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                 ),
@@ -402,7 +402,7 @@ private fun ExerciseTagSection(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         color = if (isUntagged) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
@@ -486,7 +486,7 @@ private fun SummaryStatCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -546,7 +546,7 @@ private fun SummaryForceCard(label: String, concentricValue: Float, eccentricVal
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -616,7 +616,7 @@ private fun EchoPhaseBreakdownCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -746,7 +746,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -954,6 +954,7 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
     if (forceData.isEmpty()) return
 
     val primaryColor = MaterialTheme.colorScheme.primary
+    val errorColor = AccessibilityTheme.colors.error
     val stickingPointPct = avgForceCurve.stickingPointPct
 
     // Compute stats
@@ -974,7 +975,7 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -997,7 +998,7 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                 // Strength profile badge
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                 ) {
                     Text(
                         text = strengthProfileDisplayName(strengthProfile),
@@ -1045,9 +1046,9 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                     val spIndex = pct.toInt().coerceIn(0, forceData.lastIndex)
                     val spY = canvasHeight - ((forceData[spIndex] - minForce) / forceRange) * canvasHeight
 
-                    // Dashed vertical red line
+                    // Dashed vertical error line
                     drawLine(
-                        color = Color.Red.copy(alpha = 0.6f),
+                        color = errorColor.copy(alpha = 0.6f),
                         start = Offset(spX, 0f),
                         end = Offset(spX, canvasHeight),
                         strokeWidth = 1.dp.toPx(),
@@ -1057,9 +1058,9 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                         ),
                     )
 
-                    // Red circle at sticking point on curve
+                    // Error-color circle at sticking point on curve
                     drawCircle(
-                        color = Color.Red,
+                        color = errorColor,
                         radius = 5.dp.toPx(),
                         center = Offset(spX, spY),
                     )
@@ -1105,7 +1106,7 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                         "${stickingPointPct?.toInt() ?: "--"}% ROM",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = if (stickingPointPct != null) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (stickingPointPct != null) errorColor else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 // Peak Force
@@ -1189,7 +1190,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -1408,7 +1409,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -1777,7 +1778,7 @@ private fun WeakestComponentTip(quality: SetQualitySummary) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
         ),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     ) {
         Row(
             modifier = Modifier

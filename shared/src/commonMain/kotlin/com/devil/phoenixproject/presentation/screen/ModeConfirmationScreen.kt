@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -131,7 +131,7 @@ fun ModeConfirmationScreen(
                 item(key = "day_header_${day.dayNumber}") {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                         ),
@@ -230,7 +230,7 @@ fun ModeConfirmationScreen(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
                         "Create Cycle",
@@ -260,11 +260,10 @@ private fun ConfigurableExerciseCard(
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { showConfigModal = true },
-        shape = RoundedCornerShape(12.dp),
+    ExpressiveCard(
+        onClick = { showConfigModal = true },
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),

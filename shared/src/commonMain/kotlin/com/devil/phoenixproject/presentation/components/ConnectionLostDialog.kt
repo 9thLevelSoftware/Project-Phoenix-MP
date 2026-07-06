@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,7 +39,6 @@ fun ConnectionLostDialog(onReconnect: () -> Unit, onDismiss: () -> Unit) {
             Text(
                 "Connection Lost",
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
             )
         },
         text = {
@@ -56,7 +56,7 @@ fun ConnectionLostDialog(onReconnect: () -> Unit, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = onReconnect) {
+            Button(onClick = onReconnect) {
                 Text(
                     "Reconnect",
                     fontWeight = FontWeight.Bold,

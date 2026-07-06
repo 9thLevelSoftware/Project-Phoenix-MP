@@ -26,13 +26,22 @@ import kotlin.math.roundToInt
  * - 20dp rounded corners
  * - Spring animation on press
  * - Consistent elevation and border
+ *
+ * ## Card usage convention
+ *
+ * - **Interactive cards** (navigates, expands, selects): use [ExpressiveCard].
+ *   Provides press-scale spring animation, consistent 2dp border, and 8dp elevation.
+ * - **Static / informational cards** (no tap action): use plain `Card(
+ *   colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+ *   shape = MaterialTheme.shapes.medium,
+ * )`.
  */
 @Composable
 fun ExpressiveCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = RoundedCornerShape(20.dp),
+    shape: Shape = MaterialTheme.shapes.medium,
     colors: CardColors = CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
     ),

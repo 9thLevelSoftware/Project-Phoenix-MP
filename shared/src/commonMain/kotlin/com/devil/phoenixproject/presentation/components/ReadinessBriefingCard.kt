@@ -15,12 +15,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ReadinessResult
 import com.devil.phoenixproject.domain.model.ReadinessStatus
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.KmpUtils
-
-// Phoenix palette readiness colors
-private val ForgeGreen = Color(0xFF10B981)
-private val GoldYellow = Color(0xFFF59E0B)
-private val FlameRed = Color(0xFFDC2626)
 
 /**
  * Traffic-light readiness card showing ACWR-based training readiness.
@@ -39,7 +35,7 @@ fun ReadinessBriefingCard(readinessResult: ReadinessResult, modifier: Modifier =
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -85,10 +81,11 @@ private fun InsufficientDataContent() {
 
 @Composable
 private fun ReadyContent(result: ReadinessResult.Ready) {
+    val readinessColors = AccessibilityTheme.colors
     val statusColor = when (result.status) {
-        ReadinessStatus.GREEN -> ForgeGreen
-        ReadinessStatus.YELLOW -> GoldYellow
-        ReadinessStatus.RED -> FlameRed
+        ReadinessStatus.GREEN -> readinessColors.statusGreen
+        ReadinessStatus.YELLOW -> readinessColors.statusYellow
+        ReadinessStatus.RED -> readinessColors.statusRed
     }
 
     val statusLabel = when (result.status) {
@@ -133,7 +130,7 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
             // Status badge
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(MaterialTheme.shapes.extraSmall)
                     .background(statusColor.copy(alpha = 0.15f))
                     .padding(horizontal = 10.dp, vertical = 4.dp),
             ) {

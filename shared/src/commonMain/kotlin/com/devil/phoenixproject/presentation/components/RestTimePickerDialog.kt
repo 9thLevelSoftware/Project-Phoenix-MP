@@ -46,7 +46,7 @@ fun RestTimePickerDialog(
                     val isSelected = seconds == currentRestSeconds
                     Surface(
                         modifier = Modifier.clickable { onSelect(seconds) },
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.medium,
                         color = if (isSelected) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {
@@ -68,8 +68,7 @@ fun RestTimePickerDialog(
                 }
             }
         },
-        confirmButton = {},
-        dismissButton = {
+        confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }

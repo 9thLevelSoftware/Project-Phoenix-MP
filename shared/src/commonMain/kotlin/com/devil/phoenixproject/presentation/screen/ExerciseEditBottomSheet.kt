@@ -313,7 +313,7 @@ fun ExerciseEditBottomSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(16f / 9f),
-                            shape = RoundedCornerShape(20.dp),
+                            shape = MaterialTheme.shapes.medium,
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             ),
@@ -331,7 +331,7 @@ fun ExerciseEditBottomSheet(
                 currentExercisePR?.let { pr ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                         ),
@@ -370,6 +370,91 @@ fun ExerciseEditBottomSheet(
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+
+                // Set Mode Toggle — placed above SetsConfiguration so the user can choose
+                // REPS vs DURATION before editing individual set values (routines-1).
+                if (showCableOnlyExerciseControls) {
+                    SetModeToggle(
+                        setMode = setMode,
+                        onModeChange = viewModel::onSetModeChange,
+                    )
+                }
+
+                // Sets Configuration — promoted to first configurable block per UX finding
+                // routines-1: most-edited fields should appear at the top of the sheet.
+                SetsConfiguration(
+                    sets = sets,
+                    setMode = setMode,
+                    exerciseType = exerciseType,
+                    weightSuffix = weightSuffix,
+                    maxWeight = maxWeight,
+                    weightStep = weightStep,
+                    isEchoMode = isEchoMode,
+                    perSetRestTime = perSetRestTime,
+                    onRepsChange = viewModel::updateReps,
+                    onWeightChange = viewModel::updateWeight,
+                    onDurationChange = viewModel::updateDuration,
+                    onRestChange = viewModel::updateRestTime,
+                    onAddSet = viewModel::addSet,
+                    onDeleteSet = viewModel::deleteSet,
+                )
+
+                // Per Set Rest Time toggle — immediately follows SetsConfiguration so rest
+                // config lives in the same primary zone as the sets it applies to.
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                    shadowElevation = 2.dp,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.small),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Per Set Rest Time",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (perSetRestTime) FontWeight.Bold else FontWeight.Normal,
+                            color = if (perSetRestTime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Switch(
+                            checked = perSetRestTime,
+                            onCheckedChange = viewModel::onPerSetRestTimeChange,
+                        )
+                    }
+                }
+
+                // Single rest time picker — kept adjacent to the Per Set Rest Time toggle
+                // (only visible when per-set rest is off).
+                if (!perSetRestTime) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                        shadowElevation = 2.dp,
+                    ) {
+                        Column(modifier = Modifier.padding(Spacing.small)) {
+                            Text(
+                                "Rest Time: ${rest}s",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = Spacing.extraSmall),
+                            )
+                            ExpressiveSlider(
+                                value = rest.toFloat(),
+                                onValueChange = { viewModel.onRestChange(it.toInt()) },
+                                valueRange = 0f..300f,
+                                steps = 59,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                     }
                 }
@@ -416,7 +501,7 @@ fun ExerciseEditBottomSheet(
                 if (isTutMode) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                         shadowElevation = 2.dp,
@@ -491,47 +576,11 @@ fun ExerciseEditBottomSheet(
                     }
                 }
 
-                // Set Mode Toggle
-                if (showCableOnlyExerciseControls) {
-                    SetModeToggle(
-                        setMode = setMode,
-                        onModeChange = viewModel::onSetModeChange,
-                    )
-                }
-
-                // Per Set Rest Time toggle
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                    shadowElevation = 2.dp,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.small),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "Per Set Rest Time",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (perSetRestTime) FontWeight.Bold else FontWeight.Normal,
-                            color = if (perSetRestTime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        )
-                        Switch(
-                            checked = perSetRestTime,
-                            onCheckedChange = viewModel::onPerSetRestTimeChange,
-                        )
-                    }
-                }
-
                 if (showCableOnlyExerciseControls) {
                     // Stall Detection toggle
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                         shadowElevation = 2.dp,
@@ -566,7 +615,7 @@ fun ExerciseEditBottomSheet(
                     // Rep Count Timing toggle
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                         shadowElevation = 2.dp,
@@ -611,7 +660,7 @@ fun ExerciseEditBottomSheet(
                 if (shouldShowStopAtTopToggle(exerciseType, sets)) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
                         shadowElevation = 2.dp,
@@ -663,51 +712,6 @@ fun ExerciseEditBottomSheet(
                         onClearAll = viewModel::clearWarmupSets,
                     )
                 }
-
-                // Sets Configuration
-                SetsConfiguration(
-                    sets = sets,
-                    setMode = setMode,
-                    exerciseType = exerciseType,
-                    weightSuffix = weightSuffix,
-                    maxWeight = maxWeight,
-                    weightStep = weightStep,
-                    isEchoMode = isEchoMode,
-                    perSetRestTime = perSetRestTime,
-                    onRepsChange = viewModel::updateReps,
-                    onWeightChange = viewModel::updateWeight,
-                    onDurationChange = viewModel::updateDuration,
-                    onRestChange = viewModel::updateRestTime,
-                    onAddSet = viewModel::addSet,
-                    onDeleteSet = viewModel::deleteSet,
-                )
-
-                // Single rest time picker
-                if (!perSetRestTime) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                        shadowElevation = 2.dp,
-                    ) {
-                        Column(modifier = Modifier.padding(Spacing.small)) {
-                            Text(
-                                "Rest Time: ${rest}s",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(bottom = Spacing.extraSmall),
-                            )
-                            ExpressiveSlider(
-                                value = rest.toFloat(),
-                                onValueChange = { viewModel.onRestChange(it.toInt()) },
-                                valueRange = 0f..300f,
-                                steps = 59,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -722,7 +726,7 @@ fun ExerciseEditBottomSheet(
                     modifier = Modifier
                         .weight(1f)
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
                         "Cancel",
@@ -740,7 +744,7 @@ fun ExerciseEditBottomSheet(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
                         pressedElevation = 2.dp,
@@ -852,7 +856,7 @@ fun SetsConfiguration(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Icon(
                 Icons.Default.Add,
@@ -889,7 +893,7 @@ fun SetRow(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
@@ -1103,7 +1107,7 @@ fun ModeSelector(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         shadowElevation = 8.dp,
@@ -1310,7 +1314,7 @@ fun WeightConfigurationCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
@@ -1484,7 +1488,7 @@ fun WeightConfigurationCard(
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
                     color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
                 ) {
                     Row(
@@ -1532,7 +1536,7 @@ fun WarmupSetsConfiguration(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(
             2.dp,
@@ -1667,7 +1671,7 @@ private fun WarmupSetRow(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {

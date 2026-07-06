@@ -4,12 +4,18 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -20,6 +26,10 @@ import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.ui.theme.Spacing
+import vitruvianprojectphoenix.shared.generated.resources.echo_level_epic
+import vitruvianprojectphoenix.shared.generated.resources.echo_level_hard
+import vitruvianprojectphoenix.shared.generated.resources.echo_level_harder
+import vitruvianprojectphoenix.shared.generated.resources.echo_level_hardest
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -342,6 +352,14 @@ private fun EchoConfigPanel(
     onEccentricPercentChange: (Int) -> Unit,
 ) {
     // Echo Level selector
+    // Resolve level names from string resources so they're locale-aware
+    val echoLevelNames = mapOf(
+        EchoLevel.HARD to stringResource(Res.string.echo_level_hard),
+        EchoLevel.HARDER to stringResource(Res.string.echo_level_harder),
+        EchoLevel.HARDEST to stringResource(Res.string.echo_level_hardest),
+        EchoLevel.EPIC to stringResource(Res.string.echo_level_epic),
+    )
+
     Column {
         Text(
             text = stringResource(Res.string.config_echo_level),
@@ -355,6 +373,7 @@ private fun EchoConfigPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .selectableGroup()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLowest,
                     RoundedCornerShape(Spacing.medium),
@@ -366,7 +385,11 @@ private fun EchoConfigPanel(
                 val isSelected = level == echoLevel
 
                 Surface(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).semantics {
+                        role = Role.RadioButton
+                        contentDescription = echoLevelNames[level] ?: level.displayName
+                        selected = isSelected
+                    },
                     shape = RoundedCornerShape(Spacing.small),
                     color = if (isSelected) {
                         MaterialTheme.colorScheme.primaryContainer

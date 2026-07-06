@@ -15,11 +15,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -67,8 +72,8 @@ fun DayStrip(
 ) {
     val listState = rememberLazyListState()
 
-    // Auto-scroll to current day on initial display
-    LaunchedEffect(progress.currentDayNumber) {
+    // Auto-scroll to current day on initial display only (Unit key = one-shot; gap-1-3)
+    LaunchedEffect(Unit) {
         val currentIndex = days.indexOfFirst { it.dayNumber == progress.currentDayNumber }
         if (currentIndex >= 0) {
             // Scroll to make the current day visible, centered if possible
@@ -122,14 +127,14 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
 
     // Determine colors based on state
     val containerColor = when (state) {
-        DayState.COMPLETED -> MaterialTheme.colorScheme.primaryContainer
+        DayState.COMPLETED -> AccessibilityTheme.colors.success
         DayState.MISSED -> MaterialTheme.colorScheme.errorContainer
         DayState.CURRENT -> MaterialTheme.colorScheme.primary
         DayState.UPCOMING -> Color.Transparent
     }
 
     val contentColor = when (state) {
-        DayState.COMPLETED -> MaterialTheme.colorScheme.onPrimaryContainer
+        DayState.COMPLETED -> AccessibilityTheme.colors.onSuccess
         DayState.MISSED -> MaterialTheme.colorScheme.onErrorContainer
         DayState.CURRENT -> MaterialTheme.colorScheme.onPrimary
         DayState.UPCOMING -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -150,9 +155,21 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
         else -> null
     }
 
+    // Accessibility: merged description so TalkBack announces the chip as a single unit
+    val chipDesc = when {
+        isRestDay -> stringResource(Res.string.cd_day_chip_rest, dayNumber)
+        state == DayState.COMPLETED -> stringResource(Res.string.cd_day_chip_completed, dayNumber)
+        state == DayState.MISSED -> stringResource(Res.string.cd_day_chip_missed, dayNumber)
+        state == DayState.CURRENT -> stringResource(Res.string.cd_day_chip_current, dayNumber)
+        else -> stringResource(Res.string.cd_day_chip_upcoming, dayNumber)
+    }
+
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(chipSize),
+        modifier = Modifier.size(chipSize).semantics(mergeDescendants = true) {
+            role = Role.Button
+            contentDescription = chipDesc
+        },
         shape = CircleShape,
         color = containerColor,
         contentColor = contentColor,
@@ -225,8 +242,7 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = dayNumber.toString(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             textAlign = TextAlign.Center,
                         )
                     }
@@ -237,7 +253,6 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
                     Text(
                         text = dayNumber.toString(),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                     )
                 }

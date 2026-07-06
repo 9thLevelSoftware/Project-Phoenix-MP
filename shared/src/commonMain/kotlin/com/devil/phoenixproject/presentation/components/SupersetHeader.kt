@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.ui.theme.SupersetTheme
@@ -64,8 +65,8 @@ fun SupersetHeader(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = SupersetTheme.backgroundTint(superset.colorIndex, false),
+        shape = MaterialTheme.shapes.extraSmall,
+        color = SupersetTheme.backgroundTint(superset.colorIndex, MaterialTheme.colorScheme.background.luminance() < 0.5f),
         tonalElevation = 1.dp,
     ) {
         Row(
@@ -83,8 +84,7 @@ fun SupersetHeader(
             ) {
                 Text(
                     text = superset.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = color,
                 )
                 Text(

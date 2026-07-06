@@ -77,7 +77,7 @@ fun ProfileSpeedDial(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         shadowElevation = 4.dp,
                     ) {
@@ -110,7 +110,7 @@ fun ProfileSpeedDial(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = MaterialTheme.shapes.extraSmall,
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
                             shadowElevation = 4.dp,
                         ) {

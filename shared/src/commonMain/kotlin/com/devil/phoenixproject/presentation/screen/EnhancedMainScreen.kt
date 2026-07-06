@@ -585,7 +585,7 @@ private fun PhoenixBottomNavigationItem(
             modifier = Modifier
                 .height(48.dp)
                 .widthIn(min = 64.dp, max = 112.dp)
-                .clip(RoundedCornerShape(24.dp))
+                .clip(MaterialTheme.shapes.large)
                 .background(selectedContainerColor)
                 .clickable(role = Role.Tab, onClick = onClick)
                 .clearAndSetSemantics {
@@ -809,10 +809,10 @@ private fun ConnectionStatusIndicator(
 
     Box(
         modifier = Modifier
-            .heightIn(min = 32.dp)
+            .heightIn(min = 48.dp)
             .widthIn(max = if (compact) 124.dp else 180.dp)
             .padding(end = 8.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(MaterialTheme.shapes.medium)
             .then(
                 if (isConnecting) {
                     // Animated gradient background for connecting state

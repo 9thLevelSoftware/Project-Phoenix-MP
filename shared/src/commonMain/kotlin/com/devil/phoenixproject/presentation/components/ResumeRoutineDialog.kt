@@ -2,12 +2,14 @@ package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +44,13 @@ fun ResumeRoutineDialog(progressInfo: ResumableProgressInfo, onResume: () -> Uni
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = onRestart,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(Res.string.restart_from_set_1))
+                }
             }
         },
         confirmButton = {
@@ -50,8 +59,8 @@ fun ResumeRoutineDialog(progressInfo: ResumableProgressInfo, onResume: () -> Uni
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onRestart) {
-                Text(stringResource(Res.string.restart_from_set_1))
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.action_cancel))
             }
         },
     )

@@ -679,4 +679,5 @@
     <string name="cd_equipment_rack">Equipment rack</string>
     <string name="bodyweight_effective_load_includes">Inclusief: %1$s</string>
     <string name="bodyweight_effective_load_more">+%1$d meer</string>
+
 </resources>

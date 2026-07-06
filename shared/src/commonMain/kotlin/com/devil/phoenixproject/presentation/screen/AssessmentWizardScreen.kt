@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -16,10 +17,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
@@ -75,41 +81,105 @@ fun AssessmentWizardScreen(
             .fillMaxSize()
             .background(backgroundGradient),
     ) {
-        when (val step = currentStep) {
-            is AssessmentStep.ExerciseSelection -> ExerciseSelectionContent(
-                step = step,
-                exercises = exercises,
-                onSearchQueryChange = viewModel::updateSearchQuery,
-                onExerciseSelected = viewModel::selectExercise,
-            )
+        val stepNumber = when (currentStep) {
+            is AssessmentStep.ExerciseSelection -> 1
+            is AssessmentStep.Instruction -> 2
+            is AssessmentStep.ProgressiveLoading -> 3
+            is AssessmentStep.Results -> 4
+            else -> null
+        }
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (stepNumber != null) {
+                WizardStepIndicator(currentStep = stepNumber, totalSteps = 4)
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                when (val step = currentStep) {
+                    is AssessmentStep.ExerciseSelection -> ExerciseSelectionContent(
+                        step = step,
+                        exercises = exercises,
+                        onSearchQueryChange = viewModel::updateSearchQuery,
+                        onExerciseSelected = viewModel::selectExercise,
+                    )
 
-            is AssessmentStep.Instruction -> InstructionContent(
-                step = step,
-                onStartAssessment = viewModel::startAssessment,
-                onBack = viewModel::reset,
-            )
+                    is AssessmentStep.Instruction -> InstructionContent(
+                        step = step,
+                        onStartAssessment = viewModel::startAssessment,
+                        onBack = viewModel::reset,
+                    )
 
-            is AssessmentStep.ProgressiveLoading -> ProgressiveLoadingContent(
-                step = step,
-                onRecordSet = viewModel::recordSet,
-                onStartCapture = { metricsFlow?.let { viewModel.startVelocityCapture(it) } },
-                onStopCapture = { viewModel.stopVelocityCapture() },
-                hasBleMetrics = metricsFlow != null,
-                onCancel = viewModel::reset,
-            )
+                    is AssessmentStep.ProgressiveLoading -> ProgressiveLoadingContent(
+                        step = step,
+                        onRecordSet = viewModel::recordSet,
+                        onStartCapture = { metricsFlow?.let { viewModel.startVelocityCapture(it) } },
+                        onStopCapture = { viewModel.stopVelocityCapture() },
+                        hasBleMetrics = metricsFlow != null,
+                        onCancel = viewModel::reset,
+                    )
 
-            is AssessmentStep.Results -> ResultsContent(
-                step = step,
-                onAccept = viewModel::acceptResult,
-                onDiscard = viewModel::reset,
-            )
+                    is AssessmentStep.Results -> ResultsContent(
+                        step = step,
+                        onAccept = viewModel::acceptResult,
+                        onDiscard = viewModel::reset,
+                    )
 
-            is AssessmentStep.Saving -> SavingContent()
+                    is AssessmentStep.Saving -> SavingContent()
 
-            is AssessmentStep.Complete -> CompleteContent(
-                step = step,
-                onDone = onNavigateBack,
-            )
+                    is AssessmentStep.Complete -> CompleteContent(
+                        step = step,
+                        onDone = onNavigateBack,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------- Wizard Step Indicator ----------
+
+/**
+ * Compact step-progress indicator for the 4 user-visible assessment steps.
+ *
+ * Shows a localized "Step N of 4" label and a row of 4 dots.
+ * Active dot = primary, completed = primary @ 0.6 alpha, upcoming = outlineVariant.
+ * Hidden on Saving/Complete (transient/terminal steps).
+ */
+@Composable
+private fun WizardStepIndicator(
+    currentStep: Int,
+    totalSteps: Int,
+    modifier: Modifier = Modifier,
+) {
+    val stepLabel = stringResource(Res.string.wizard_step_of, currentStep, totalSteps)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.medium, vertical = Spacing.small)
+            .semantics(mergeDescendants = true) { contentDescription = stepLabel },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+    ) {
+        Text(
+            text = stepLabel,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            repeat(totalSteps) { index ->
+                val dotStep = index + 1
+                val dotColor = when {
+                    dotStep < currentStep -> MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    dotStep == currentStep -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.outlineVariant
+                }
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(color = dotColor, shape = CircleShape),
+                )
+            }
         }
     }
 }
@@ -161,7 +231,7 @@ private fun ExerciseSelectionContent(
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.cd_search)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.small,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -172,10 +242,10 @@ private fun ExerciseSelectionContent(
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             items(filteredExercises, key = { it.id ?: it.name }) { exercise ->
-                Card(
+                ExpressiveCard(
                     onClick = { onExerciseSelected(exercise) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -246,7 +316,7 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(220.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 VideoPlayer(
                     videoUrl = videoToShow.videoUrl,
@@ -259,7 +329,7 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
         // Instructions card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
@@ -309,7 +379,7 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text(
                 "Begin Assessment",
@@ -363,7 +433,7 @@ private fun ProgressiveLoadingContent(
         // Suggested weight card (total weight = both cables combined)
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
             ),
@@ -413,7 +483,7 @@ private fun ProgressiveLoadingContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 2.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -452,7 +522,7 @@ private fun ProgressiveLoadingContent(
         if (step.shouldStop) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                 ),
@@ -516,7 +586,7 @@ private fun BleVelocityCaptureSection(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -548,7 +618,7 @@ private fun BleVelocityCaptureSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
                         "Start Set",
@@ -598,7 +668,7 @@ private fun BleVelocityCaptureSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.tertiary,
                     ),
@@ -640,7 +710,7 @@ private fun ManualInputSection(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     )
 
     Spacer(modifier = Modifier.height(Spacing.small))
@@ -652,7 +722,7 @@ private fun ManualInputSection(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     )
 
     Spacer(modifier = Modifier.height(Spacing.medium))
@@ -671,7 +741,7 @@ private fun ManualInputSection(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Text(
             "Log Set",
@@ -705,7 +775,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
         // Estimated 1RM card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
             ),
@@ -746,7 +816,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
 
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.small,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
@@ -788,7 +858,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 2.dp),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
@@ -832,7 +902,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.small,
         )
 
         Spacer(modifier = Modifier.height(Spacing.medium))
@@ -846,7 +916,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text(
                 "Accept & Save",
@@ -879,8 +949,8 @@ private fun SavingContent() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(48.dp),
+            LoadingIndicator(
+                size = LoadingIndicatorSize.Large,
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
@@ -933,7 +1003,7 @@ private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(
                     "Done",

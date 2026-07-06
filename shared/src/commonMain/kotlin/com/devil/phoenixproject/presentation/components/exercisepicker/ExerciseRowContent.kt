@@ -144,7 +144,7 @@ private fun ExerciseThumbnailEnhanced(
         Modifier.border(
             width = 2.dp,
             color = MaterialTheme.colorScheme.tertiary,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.small,
         )
     } else {
         Modifier
@@ -154,7 +154,7 @@ private fun ExerciseThumbnailEnhanced(
         modifier = modifier
             .size(64.dp)
             .then(borderModifier)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {

@@ -42,7 +42,7 @@ fun RoutineGroupHeader(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onToggleExpand() },
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 1.dp,
     ) {
@@ -84,7 +84,6 @@ fun RoutineGroupHeader(
             Box {
                 IconButton(
                     onClick = { showOverflow = true },
-                    modifier = Modifier.size(32.dp),
                 ) {
                     Icon(
                         Icons.Default.MoreVert,

@@ -37,7 +37,7 @@ fun ModeSubSelectorDialog(
                     )
                 },
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialTheme.shapes.large,
                 text = {
                     Column(
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
@@ -96,7 +96,7 @@ fun ModeSubSelectorDialog(
                     )
                 },
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialTheme.shapes.large,
                 text = {
                     Column(
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),

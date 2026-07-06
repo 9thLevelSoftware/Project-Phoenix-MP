@@ -47,6 +47,14 @@ data class AccessibilityColors(
     val statusGreen: Color,
     val statusYellow: Color,
     val statusRed: Color,
+
+    // Content colors for success/warning containers (M3-contract companions)
+    val onSuccess: Color,       // Text/icon on success containers — green-950 for >7:1 contrast
+    val onWarning: Color,       // Text/icon on warning containers — amber-950 for >7:1 contrast
+
+    // Integration / log colors
+    val connectedGreen: Color,  // Emerald 0xFF10B981 — "Connected" badge distinct from success lime
+    val info: Color,            // Informational blue for log/diagnostic INFO level
 )
 
 /**
@@ -55,10 +63,10 @@ data class AccessibilityColors(
  * Cyan=Explosive, Green=Fast, Amber=Moderate, Orange=Slow, Red=Grind.
  */
 val StandardPalette = AccessibilityColors(
-    // Semantic status (from Color.kt SignalSuccess/Error/Warning)
-    success = Color(0xFF22C55E),
-    error = Color(0xFFEF4444),
-    warning = Color(0xFFF59E0B),
+    // Semantic status (single source of truth: Color.kt)
+    success = SignalSuccess,
+    error = SignalError,
+    warning = SignalWarning,
     neutral = Color(0xFF9E9E9E),
 
     // Velocity zones (BiomechanicsHistoryCard canonical mapping)
@@ -68,14 +76,14 @@ val StandardPalette = AccessibilityColors(
     zoneSlow = Color(0xFFF97316), // Orange
     zoneGrind = Color(0xFFEF4444), // Red -- near failure
 
-    // Asymmetry severity
-    asymmetryGood = Color(0xFF4CAF50),
-    asymmetryCaution = Color(0xFFFFC107),
-    asymmetryBad = Color(0xFFF44336),
+    // Asymmetry severity — align to Signal family (was 4CAF50/FFC107/F44336)
+    asymmetryGood = SignalSuccess,
+    asymmetryCaution = SignalWarning,
+    asymmetryBad = SignalError,
 
     // Rep quality
-    qualityExcellent = Color(0xFF00E676),
-    qualityGood = Color(0xFF43A047),
+    qualityExcellent = Color(0xFF22C55E), // was 00E676 (poor dark-surface contrast)
+    qualityGood = Color(0xFF16A34A),      // was 43A047 — green-600, distinct from excellent
     qualityFair = Color(0xFFFDD835),
     qualityBelowAverage = Color(0xFFFF9800),
     qualityPoor = Color(0xFFE53935),
@@ -84,6 +92,14 @@ val StandardPalette = AccessibilityColors(
     statusGreen = Color(0xFF22C55E),
     statusYellow = Color(0xFFF59E0B),
     statusRed = Color(0xFFEF4444),
+
+    // Content colors for success/warning containers
+    onSuccess = Color(0xFF052E16),      // Tailwind green-950 — >7:1 on success (#22C55E)
+    onWarning = Color(0xFF451A03),      // Tailwind amber-950 — >7:1 on warning (#F59E0B)
+
+    // Integration / log colors
+    connectedGreen = Color(0xFF10B981), // Emerald — distinct from success lime #22C55E
+    info = Color(0xFF2196F3),           // Material Blue — informational, not a semantic status
 )
 
 /**

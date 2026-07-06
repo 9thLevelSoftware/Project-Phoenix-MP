@@ -22,11 +22,11 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,8 +54,13 @@ import com.devil.phoenixproject.domain.model.WeeklyVolumeReport
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.ReadinessEngine
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
+import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.InsightContextBlock
+import com.devil.phoenixproject.presentation.components.InsightSectionHeader
 import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
+import com.devil.phoenixproject.presentation.components.TimeframeBadge
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -63,7 +68,10 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_retry
 import vitruvianprojectphoenix.shared.generated.resources.great_variety
+import vitruvianprojectphoenix.shared.generated.resources.insights_error_message
+import vitruvianprojectphoenix.shared.generated.resources.insights_error_title
 import vitruvianprojectphoenix.shared.generated.resources.insights_best_window
 import vitruvianprojectphoenix.shared.generated.resources.insights_col_muscle_group
 import vitruvianprojectphoenix.shared.generated.resources.insights_col_reps
@@ -113,15 +121,18 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     val twentyEightDaysMs = 28L * 24 * 60 * 60 * 1000
 
     var isLoading by remember { mutableStateOf(true) }
+    var hasError by remember { mutableStateOf(false) }
+    var retryKey by remember { mutableStateOf(0) }
     var sessionSummaries by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
     var exerciseLastPerformed by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
     var weightHistory by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
 
-    LaunchedEffect(profileId) {
+    LaunchedEffect(profileId, retryKey) {
         // Option A: fetch a broad 28-day slice once, then compute every card's time window from
         // the exact same anchor timestamp. This avoids drift where query and computation use
         // slightly different "now" values.
         isLoading = true
+        hasError = false
         insightsAnchorNowMs = null
         sessionSummaries = emptyList()
         exerciseLastPerformed = emptyList()
@@ -142,18 +153,34 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             exerciseLastPerformed = fetchedLastPerformed
             weightHistory = fetchedWeightHistory
             insightsAnchorNowMs = snapshotNowMs
+        } catch (_: Exception) {
+            // DB or IO failure — surface error state instead of infinite spinner (lens-state-patterns-3)
+            hasError = true
         } finally {
             isLoading = false
         }
     }
 
     val anchorNowMs = insightsAnchorNowMs
+
+    if (hasError) {
+        EmptyState(
+            icon = Icons.Default.Warning,
+            title = stringResource(Res.string.insights_error_title),
+            message = stringResource(Res.string.insights_error_message),
+            actionText = stringResource(Res.string.action_retry),
+            onAction = { retryKey++ },
+            modifier = modifier,
+        )
+        return
+    }
+
     if (isLoading || anchorNowMs == null) {
         Box(
             modifier = modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
-            CircularProgressIndicator()
+            LoadingIndicator(LoadingIndicatorSize.Large)
         }
         return
     }
@@ -179,9 +206,9 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 16.dp),
+            .padding(horizontal = Spacing.medium),
+        verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        contentPadding = PaddingValues(vertical = Spacing.medium),
     ) {
         item {
             Text(
@@ -190,7 +217,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
             Text(
                 text = stringResource(Res.string.insights_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
@@ -198,21 +225,21 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             )
         }
 
-        item { InsightHierarchyHeader("1. Snapshot", "Current status") }
+        item { InsightSectionHeader("1. Snapshot", "Current status") }
 
         // Section A: Weekly Volume (SUGG-01)
         item {
             WeeklyVolumeCard(weeklyVolume)
         }
 
-        item { InsightHierarchyHeader("2. Trends", "How it changed") }
+        item { InsightSectionHeader("2. Trends", "How it changed") }
 
         // Section B: Balance Analysis (SUGG-02)
         item {
             BalanceAnalysisCard(balanceAnalysis)
         }
 
-        item { InsightHierarchyHeader("3. Diagnostics", "Why") }
+        item { InsightSectionHeader("3. Diagnostics", "Why") }
 
         // Section C: Neglected Exercises (SUGG-03)
         item {
@@ -224,7 +251,7 @@ private fun SmartInsightsContent(modifier: Modifier = Modifier) {
             PlateauDetectionCard(plateaus)
         }
 
-        item { InsightHierarchyHeader("4. Actions", "What to do next") }
+        item { InsightSectionHeader("4. Actions", "What to do next") }
 
         // Section E: Optimal Training Time (SUGG-05)
         item {
@@ -259,7 +286,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 4.dp),
+                    .padding(bottom = Spacing.extraSmall),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
@@ -298,7 +325,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                 thickness = 1.dp,
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
 
             report.volumes.forEach { vol ->
                 Row(
@@ -362,14 +389,14 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                 fraction =
                     analysis.pushVolume / total,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
             BalanceBar(
                 label = stringResource(Res.string.insights_pull),
                 percentage = pullPct,
                 fraction =
                     analysis.pullVolume / total,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
             BalanceBar(
                 label = stringResource(Res.string.insights_legs),
                 percentage = legsPct,
@@ -377,7 +404,7 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                     analysis.legsVolume / total,
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
 
             if (analysis.imbalances.isEmpty()) {
                 Text(
@@ -395,10 +422,10 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                         Icon(
                             Icons.Default.Warning,
                             contentDescription = null,
-                            tint = Color(0xFFF59E0B), // Amber warning
+                            tint = AccessibilityTheme.colors.warning,
                             modifier = Modifier.size(16.dp),
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
                             imbalance.suggestion,
                             style = MaterialTheme.typography.bodySmall,
@@ -428,18 +455,18 @@ private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
             modifier = Modifier
                 .weight(1f)
                 .height(20.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(MaterialTheme.shapes.small)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(fraction.coerceIn(0f, 1f))
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(MaterialTheme.colorScheme.primary),
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(Spacing.small))
         Text(
             "$percentage%",
             style = MaterialTheme.typography.labelMedium,
@@ -460,16 +487,15 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
             PlaceholderText(stringResource(Res.string.great_variety))
         } else {
             neglected.take(5).forEach { exercise ->
+                val neglectColors = AccessibilityTheme.colors
                 val color = when {
-                    exercise.daysSinceLastPerformed > 30 -> Color(0xFFF97316)
-
-                    // Orange
-                    else -> Color(0xFFEAB308) // Yellow
+                    exercise.daysSinceLastPerformed > 30 -> neglectColors.warning
+                    else -> MaterialTheme.colorScheme.secondary
                 }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                        .padding(vertical = Spacing.extraSmall),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -513,7 +539,7 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                        .padding(vertical = Spacing.extraSmall),
                     verticalAlignment = Alignment.Top,
                 ) {
                     Icon(
@@ -522,7 +548,7 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(Spacing.small))
                     Column {
                         val displayWeight = if (plateau.currentWeightKg % 1f == 0f) {
                             "${plateau.currentWeightKg.toInt()}kg"
@@ -575,7 +601,7 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
                 color = MaterialTheme.colorScheme.primary,
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
 
             // Session count bars per window
             val maxCount = analysis.windowCounts.values.maxOrNull()?.toFloat() ?: 1f
@@ -618,7 +644,7 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
                                 ),
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "$count",
                         style = MaterialTheme.typography.labelSmall,
@@ -632,43 +658,6 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
     }
 }
 
-// ---- Shared Components ----
-
-@Composable
-private fun InsightContextBlock(
-    title: String,
-    definition: String,
-    timeframe: String,
-    soWhat: String,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text(definition, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TimeframeBadge(timeframe)
-        Text("So what? $soWhat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-private fun InsightHierarchyHeader(title: String, subtitle: String) {
-    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
-@Composable
-private fun TimeframeBadge(label: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = RoundedCornerShape(999.dp),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-        )
-    }
-}
 
 @Composable
 private fun InsightCard(
@@ -683,12 +672,12 @@ private fun InsightCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(Spacing.medium),
         ) {
             Text(
                 title,
@@ -696,13 +685,13 @@ private fun InsightCard(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
             Text(definition, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
             TimeframeBadge(timeframe)
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
             Text("So what? $soWhat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.small))
             content()
         }
     }

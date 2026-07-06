@@ -66,7 +66,7 @@ fun CreateExerciseDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth().wrapContentHeight(),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
         ) {
             Box(modifier = Modifier.fillMaxWidth().background(backgroundGradient)) {
@@ -266,7 +266,7 @@ fun CreateExerciseDialog(
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
                             ),
-                            shape = RoundedCornerShape(20.dp),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(
                                 if (isEditMode) "Save" else "Create",

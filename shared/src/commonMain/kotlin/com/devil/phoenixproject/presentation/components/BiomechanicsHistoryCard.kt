@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,7 +23,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -94,7 +94,7 @@ fun BiomechanicsHistorySummary(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.small,
     ) {
         Column(
             modifier = Modifier
@@ -219,16 +219,22 @@ fun BiomechanicsHistorySummary(
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
-            // "View Per-Rep" expand trigger
-            Text(
-                "View Per-Rep Details",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
+            // "View Per-Rep" expand trigger — min 48dp touch target (analytics-history-4)
+            Row(
                 modifier = Modifier
-                    .clickable(onClick = onExpandReps)
-                    .padding(vertical = Spacing.extraSmall),
-            )
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clickable(onClick = onExpandReps),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "View Per-Rep Details",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(vertical = Spacing.extraSmall),
+                )
+            }
         }
     }
 }
@@ -240,7 +246,7 @@ fun BiomechanicsHistorySummary(
 private fun VelocityZoneChip(zone: BiomechanicsVelocityZone) {
     Surface(
         color = velocityZoneColor(zone).copy(alpha = 0.15f),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
     ) {
         Text(
             velocityZoneLabel(zone),
@@ -283,10 +289,7 @@ fun RepBiomechanicsDetail(
                     .padding(Spacing.medium),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp,
-                )
+                LoadingIndicator(LoadingIndicatorSize.Medium)
             }
         } else if (repResults.isEmpty()) {
             Text(
@@ -322,7 +325,7 @@ private fun RepBiomechanicsRow(rep: BiomechanicsRepResult, showAsymmetry: Boolea
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.extraSmall,
     ) {
         Column(
             modifier = Modifier

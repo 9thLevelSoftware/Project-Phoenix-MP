@@ -51,7 +51,7 @@ fun ExerciseNavigator(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
@@ -95,11 +95,11 @@ fun ExerciseNavigator(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Previous button
+                // Previous button — 48dp touch target (lens-accessibility-2)
                 FilledTonalIconButton(
                     onClick = { onNavigateToExercise(currentIndex - 1) },
                     enabled = canGoBack,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
@@ -115,11 +115,11 @@ fun ExerciseNavigator(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                // Skip/Next button
+                // Skip/Next button — 48dp touch target (lens-accessibility-2)
                 FilledTonalIconButton(
                     onClick = { onNavigateToExercise(currentIndex + 1) },
                     enabled = canSkipForward,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowForward,
@@ -152,11 +152,11 @@ private fun ExerciseDot(index: Int, isCurrent: Boolean, isCompleted: Boolean, is
         label = "dotSize",
     )
 
+    // 48dp-tall touch cell; width follows visual dot size (workout-widgets-1, lens-accessibility-1)
     Box(
         modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(backgroundColor)
+            .height(48.dp)
+            .width(size)
             .clickable(onClick = onClick)
             .semantics {
                 role = Role.Button
@@ -171,13 +171,21 @@ private fun ExerciseDot(index: Int, isCurrent: Boolean, isCompleted: Boolean, is
             },
         contentAlignment = Alignment.Center,
     ) {
-        if (isCompleted && !isCurrent) {
-            Icon(
-                Icons.Default.Check,
-                contentDescription = stringResource(Res.string.cd_completed),
-                tint = MaterialTheme.colorScheme.onTertiary,
-                modifier = Modifier.size(8.dp),
-            )
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(backgroundColor),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isCompleted && !isCurrent) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = stringResource(Res.string.cd_completed),
+                    tint = MaterialTheme.colorScheme.onTertiary,
+                    modifier = Modifier.size(8.dp),
+                )
+            }
         }
     }
 }

@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 
 /**
  * Countdown Card Component
@@ -85,14 +86,7 @@ fun CountdownCard(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    ),
-                ),
-            )
+            .background(screenBackgroundBrush())
             .systemBarsPadding()
             .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
@@ -109,7 +103,7 @@ fun CountdownCard(
                 if (currentExerciseIndex != null && totalExercises != null && totalExercises > 1) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(
                             text = "Exercise ${currentExerciseIndex + 1} of $totalExercises",
@@ -215,7 +209,7 @@ fun CountdownCard(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     tonalElevation = 2.dp,
                 ) {
                     Column(
@@ -291,7 +285,7 @@ fun CountdownCard(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(
                         Icons.Default.PlayArrow,

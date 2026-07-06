@@ -8,7 +8,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -32,7 +33,10 @@ import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.BackupDestination
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.insights_title
 
 /**
  * Main navigation graph for the app.
@@ -235,8 +239,10 @@ fun NavGraph(
             // Analytics screen - history, PRs, trends
             composable(
                 route = NavigationRoutes.Analytics.route,
-                enterTransition = { fadeIn(animationSpec = tween(200)) },
-                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                enterTransition = { NavTransitions.tabFadeEnter() },
+                exitTransition = { NavTransitions.tabFadeExit() },
+                popEnterTransition = { NavTransitions.tabFadeEnter() },
+                popExitTransition = { NavTransitions.tabFadeExit() },
             ) {
                 AnalyticsScreen(
                     viewModel = viewModel,
@@ -247,9 +253,17 @@ fun NavGraph(
             // Smart Insights screen - training suggestions and readiness
             composable(
                 route = NavigationRoutes.SmartInsights.route,
-                enterTransition = { fadeIn(animationSpec = tween(200)) },
-                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                enterTransition = { NavTransitions.tabFadeEnter() },
+                exitTransition = { NavTransitions.tabFadeExit() },
+                popEnterTransition = { NavTransitions.tabFadeEnter() },
+                popExitTransition = { NavTransitions.tabFadeExit() },
             ) {
+                // Route never set a title, so the top bar showed whatever the
+                // previous screen left behind (stale-title bug).
+                val insightsTitle = stringResource(Res.string.insights_title)
+                LaunchedEffect(insightsTitle) {
+                    viewModel.updateTopBarTitle(insightsTitle)
+                }
                 SmartInsightsTab()
             }
 
@@ -303,8 +317,10 @@ fun NavGraph(
             // Settings screen
             composable(
                 route = NavigationRoutes.Settings.route,
-                enterTransition = { fadeIn(animationSpec = tween(200)) },
-                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                enterTransition = { NavTransitions.tabFadeEnter() },
+                exitTransition = { NavTransitions.tabFadeExit() },
+                popEnterTransition = { NavTransitions.tabFadeEnter() },
+                popExitTransition = { NavTransitions.tabFadeExit() },
             ) {
                 val weightUnit by viewModel.weightUnit.collectAsState()
                 val userPreferences by viewModel.userPreferences.collectAsState()
@@ -429,12 +445,64 @@ fun NavGraph(
             }
 
             // Equipment Rack screen - local accessories and active load context
-            composable(NavigationRoutes.EquipmentRack.route) {
+            composable(
+                route = NavigationRoutes.EquipmentRack.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
                 EquipmentRackScreen(viewModel = viewModel)
             }
 
             // Connection Logs screen - debug BLE connections
-            composable(NavigationRoutes.ConnectionLogs.route) {
+            composable(
+                route = NavigationRoutes.ConnectionLogs.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
                 ConnectionLogsScreen(
                     onNavigateBack = { navController.popBackStack() },
                     mainViewModel = viewModel,
@@ -442,7 +510,33 @@ fun NavGraph(
             }
 
             // Diagnostics screen - official-style machine diagnostics
-            composable(NavigationRoutes.Diagnostics.route) {
+            composable(
+                route = NavigationRoutes.Diagnostics.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
                 DiagnosticsScreen(
                     mainViewModel = viewModel,
                 )
@@ -455,15 +549,25 @@ fun NavGraph(
                     slideIntoContainer(
                         towards = AnimatedContentTransitionScope.SlideDirection.Left,
                         animationSpec = tween(300),
-                    ) + fadeIn(animationSpec = tween(300))
+                    )
                 },
-                exitTransition = { fadeOut(animationSpec = tween(200)) },
-                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
                 popExitTransition = {
                     slideOutOfContainer(
                         towards = AnimatedContentTransitionScope.SlideDirection.Right,
                         animationSpec = tween(300),
-                    ) + fadeOut(animationSpec = tween(300))
+                    )
                 },
             ) {
                 BadgesScreen(
@@ -548,7 +652,7 @@ fun NavGraph(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center,
                         ) {
-                            CircularProgressIndicator()
+                            LoadingIndicator(LoadingIndicatorSize.Large)
                         }
                     }
 

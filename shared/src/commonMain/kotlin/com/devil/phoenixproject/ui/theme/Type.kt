@@ -23,6 +23,12 @@ val Typography = Typography(
         lineHeight = 58.sp, // Expressive: Increased from 52sp
         letterSpacing = 0.sp,
     ),
+    displaySmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 40.sp,
+        lineHeight = 48.sp,
+    ),
 
     // Headline styles (screen titles) - Expressive: Larger and bolder
     headlineLarge = TextStyle(
@@ -116,3 +122,22 @@ val Typography = Typography(
         letterSpacing = 0.5.sp,
     ),
 )
+
+/**
+ * Large workout counter style — used for timed exercise and rep-count displays.
+ * Defined as a top-level token so all HUD countdown widgets stay in sync.
+ * Derives from Typography.displayLarge so scale changes propagate automatically.
+ * Note: PlatformTextStyle (includeFontPadding) is android-only and cannot be
+ * used in commonMain; apply it at the call site in androidMain if needed.
+ */
+val workoutCounterStyle = Typography.displayLarge.copy(fontSize = 120.sp, fontWeight = FontWeight.Black, lineHeight = 128.sp)
+
+/**
+ * All-caps section header label styles.
+ * Combines the base label style with 1sp letter-spacing for the wide-track
+ * all-caps look used in SetReadyScreen and RoutineOverviewScreen section headers.
+ * Use these instead of inline `.copy(letterSpacing = 1.sp)` so the treatment
+ * stays in sync across screens.
+ */
+val labelAllCaps = Typography.labelLarge.copy(letterSpacing = 1.sp)
+val labelSmallAllCaps = Typography.labelSmall.copy(letterSpacing = 1.sp)

@@ -23,7 +23,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,6 +40,9 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.presentation.components.ConsistencyGaugeCard
+import com.devil.phoenixproject.presentation.components.InsightContextBlock
+import com.devil.phoenixproject.presentation.components.InsightSectionHeader
+import com.devil.phoenixproject.presentation.components.TimeframeBadge
 import com.devil.phoenixproject.presentation.components.MuscleBalanceRadarCard
 import com.devil.phoenixproject.presentation.components.ThisWeekSummaryCard
 import com.devil.phoenixproject.presentation.components.TotalVolumeCard
@@ -80,53 +82,6 @@ private fun ResponsiveCardWrapper(modifier: Modifier = Modifier, content: @Compo
     }
 }
 
-@Composable
-private fun InsightSectionHeader(title: String, subtitle: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
-    Text(
-        text = subtitle,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-@Composable
-private fun InsightMetadata(definition: String, timeframe: String, soWhat: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = definition,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        TimeframeBadge(timeframe)
-        Text(
-            text = "So what? $soWhat",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Medium,
-        )
-    }
-}
-
-@Composable
-private fun TimeframeBadge(label: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = RoundedCornerShape(999.dp),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-        )
-    }
-}
 
 /**
  * Improved Insights Tab - Clear, actionable analytics with proper formatting
@@ -247,7 +202,7 @@ fun InsightsTab(
 
         // This Week Summary Card - week-over-week comparison
         item {
-            InsightMetadata("Summary of completed sessions and personal records.", selectedPeriod.label, "Check if this period is on track before changing your plan.")
+            InsightContextBlock("Summary of completed sessions and personal records.", selectedPeriod.label, "Check if this period is on track before changing your plan.")
             ResponsiveCardWrapper {
                 ThisWeekSummaryCard(
                     workoutSessions = filteredSessions,
@@ -266,7 +221,7 @@ fun InsightsTab(
         // 1. Muscle Balance Radar Chart (Replaces linear progress bars)
         if (prs.isNotEmpty()) {
             item {
-                InsightMetadata("Distribution of PR coverage by muscle group.", "All-time PRs", "Spot overtrained and undertrained regions before plateaus happen.")
+                InsightContextBlock("Distribution of PR coverage by muscle group.", "All-time PRs", "Spot overtrained and undertrained regions before plateaus happen.")
             }
             item {
                 ResponsiveCardWrapper {
@@ -286,7 +241,7 @@ fun InsightsTab(
 
         // 2. Workout Consistency Gauge (Replaces circular progress)
         item {
-            InsightMetadata("Session frequency consistency score.", selectedPeriod.label, "Inconsistency usually explains stalled progress more than load choices.")
+            InsightContextBlock("Session frequency consistency score.", selectedPeriod.label, "Inconsistency usually explains stalled progress more than load choices.")
             ResponsiveCardWrapper {
                 ConsistencyGaugeCard(
                     workoutSessions = filteredSessions,
@@ -303,7 +258,7 @@ fun InsightsTab(
         // 3. Volume vs Intensity Combo Chart (New Metric)
         if (filteredSessions.isNotEmpty()) {
             item {
-                InsightMetadata("How training load (volume) and effort (intensity) move together.", selectedPeriod.label, "If intensity rises while volume crashes, schedule a lighter recovery microcycle.")
+                InsightContextBlock("How training load (volume) and effort (intensity) move together.", selectedPeriod.label, "If intensity rises while volume crashes, schedule a lighter recovery microcycle.")
             }
             item {
                 ResponsiveCardWrapper {
@@ -319,7 +274,7 @@ fun InsightsTab(
         // 4. Total Volume Trend (User Request)
         if (filteredSessions.isNotEmpty()) {
             item {
-                InsightMetadata("Total lifted workload trend.", selectedPeriod.label, "Increase volume gradually (5–10%) to avoid spikes and fatigue.")
+                InsightContextBlock("Total lifted workload trend.", selectedPeriod.label, "Increase volume gradually (5–10%) to avoid spikes and fatigue.")
             }
             item {
                 ResponsiveCardWrapper {
@@ -336,7 +291,7 @@ fun InsightsTab(
         // Mode drill-down detail (kept as allocation context, not duplicate primary metric)
         if (filteredSessions.isNotEmpty()) {
             item {
-                InsightMetadata("Workout mode allocation drill-down.", selectedPeriod.label, "Use this as context after adjusting volume/intensity, not as a primary KPI.")
+                InsightContextBlock("Workout mode allocation drill-down.", selectedPeriod.label, "Use this as context after adjusting volume/intensity, not as a primary KPI.")
             }
             item {
                 ResponsiveCardWrapper {

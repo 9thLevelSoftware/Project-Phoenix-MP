@@ -438,7 +438,7 @@ private fun CycleContextRow(cycle: TrainingCycle, dayNumber: Int, dayName: Strin
         onClick = onClick,
         color = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -585,7 +585,7 @@ private fun RecentActivitySummary(
                     Surface(
                         onClick = { onExerciseClick(replayExerciseId) },
                         color = MaterialTheme.colorScheme.surfaceContainer,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         RecentActivityRowContent(
@@ -597,7 +597,7 @@ private fun RecentActivitySummary(
                 } else {
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainer,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         RecentActivityRowContent(

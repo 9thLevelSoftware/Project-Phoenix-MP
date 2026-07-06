@@ -103,7 +103,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
                 .fillMaxWidth()
                 .scale(scale)
                 .alpha(alpha),
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),
@@ -120,7 +120,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
                     text = "Achievement Unlocked!",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD700),
+                    color = MaterialTheme.colorScheme.secondary,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -173,7 +173,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
                 // Tier badge
                 Surface(
                     color = tierColor.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
                     modifier = Modifier.padding(vertical = 8.dp),
                 ) {
                     Text(
@@ -328,7 +328,7 @@ fun BatchedBadgeCelebrationDialog(
                 .fillMaxWidth(0.9f)
                 .scale(scale)
                 .alpha(alpha),
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),
@@ -365,7 +365,7 @@ fun BatchedBadgeCelebrationDialog(
                     },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD700),
+                    color = MaterialTheme.colorScheme.secondary,
                     textAlign = TextAlign.Center,
                 )
 
@@ -418,7 +418,7 @@ fun BatchedBadgeCelebrationDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 16.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(MaterialTheme.shapes.small)
                                 .background(
                                     MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                 )
@@ -476,20 +476,19 @@ fun BatchedBadgeCelebrationDialog(
                         .fillMaxWidth()
                         .height(48.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFFD700),
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Celebration,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
-                        tint = Color.Black,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Awesome!",
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black,
                     )
                 }
             }
@@ -549,7 +548,7 @@ private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit
         modifier = Modifier
             .alpha(itemAlpha)
             .scale(displayScale)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .clickable(onClick = onClick)
             .padding(4.dp)
             .semantics {

@@ -28,6 +28,11 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
@@ -37,7 +42,12 @@ import com.devil.phoenixproject.util.rememberHealthPermissionRequester
 import com.devil.phoenixproject.util.rememberHealthPermissionSettingsLauncher
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.disconnect
+import vitruvianprojectphoenix.shared.generated.resources.disconnect_integration_message
+import vitruvianprojectphoenix.shared.generated.resources.disconnect_integration_title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -197,7 +207,7 @@ fun IntegrationsScreen(
                     enabled = !uiState.isImporting,
                 ) {
                     if (uiState.isImporting) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        LoadingIndicator(LoadingIndicatorSize.Small)
                     } else {
                         Text("Import ${preview.activities.size} workout(s)")
                     }
@@ -249,6 +259,22 @@ fun IntegrationsScreen(
                 showLiftosaurApiKeyDialog = false
                 apiKeyInput = ""
             },
+        )
+    }
+
+    // ── Integration disconnect confirmation ───────────────────────────────────
+    var disconnectTarget by remember { mutableStateOf<IntegrationProvider?>(null) }
+    disconnectTarget?.let { provider ->
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.disconnect_integration_title),
+            message = stringResource(Res.string.disconnect_integration_message, provider.displayName),
+            confirmText = stringResource(Res.string.disconnect),
+            onConfirm = {
+                viewModel.disconnectProvider(provider)
+                disconnectTarget = null
+            },
+            onDismiss = { disconnectTarget = null },
+            icon = Icons.Default.LinkOff,
         )
     }
 
@@ -318,7 +344,7 @@ fun IntegrationsScreen(
                             TextButton(
                                 onClick = { viewModel.retryHealthPermissions() },
                                 enabled = !healthBusy,
-                                modifier = Modifier.height(32.dp),
+                                modifier = Modifier,
                             ) {
                                 Text("Retry permissions", style = MaterialTheme.typography.labelMedium)
                             }
@@ -327,11 +353,11 @@ fun IntegrationsScreen(
                             OutlinedButton(
                                 onClick = { viewModel.syncPreviousHealthWorkouts() },
                                 enabled = !healthBusy,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp),
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier,
                             ) {
                                 if (healthBusy) {
-                                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                    LoadingIndicator(LoadingIndicatorSize.Small)
                                 } else {
                                     Text("Sync previous", style = MaterialTheme.typography.labelMedium)
                                 }
@@ -378,20 +404,18 @@ fun IntegrationsScreen(
                                         viewModel.syncProvider(IntegrationProvider.HEVY)
                                     },
                                     enabled = !hevyBusy,
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.height(36.dp),
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier,
                                 ) {
                                     if (hevyBusy) {
-                                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        LoadingIndicator(LoadingIndicatorSize.Small)
                                     } else {
                                         Text("Sync", style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
                                 TextButton(
-                                    onClick = {
-                                        viewModel.disconnectProvider(IntegrationProvider.HEVY)
-                                    },
-                                    modifier = Modifier.height(36.dp),
+                                    onClick = { disconnectTarget = IntegrationProvider.HEVY },
+                                    modifier = Modifier,
                                 ) {
                                     Text(
                                         "Disconnect",
@@ -406,8 +430,8 @@ fun IntegrationsScreen(
                                     apiKeyInput = ""
                                     showHevyApiKeyDialog = true
                                 },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp),
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier,
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
                             }
@@ -445,20 +469,18 @@ fun IntegrationsScreen(
                                         viewModel.syncProvider(IntegrationProvider.LIFTOSAUR)
                                     },
                                     enabled = !liftosaurBusy,
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.height(36.dp),
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier,
                                 ) {
                                     if (liftosaurBusy) {
-                                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        LoadingIndicator(LoadingIndicatorSize.Small)
                                     } else {
                                         Text("Sync", style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
                                 TextButton(
-                                    onClick = {
-                                        viewModel.disconnectProvider(IntegrationProvider.LIFTOSAUR)
-                                    },
-                                    modifier = Modifier.height(36.dp),
+                                    onClick = { disconnectTarget = IntegrationProvider.LIFTOSAUR },
+                                    modifier = Modifier,
                                 ) {
                                     Text(
                                         "Disconnect",
@@ -473,8 +495,8 @@ fun IntegrationsScreen(
                                     apiKeyInput = ""
                                     showLiftosaurApiKeyDialog = true
                                 },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp),
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier,
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
                             }
@@ -487,11 +509,11 @@ fun IntegrationsScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(8.dp, RoundedCornerShape(20.dp)),
+                    .shadow(8.dp, MaterialTheme.shapes.medium),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 ),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
             ) {
@@ -555,11 +577,11 @@ fun IntegrationsScreen(
                                 viewModel.exportCsv(csvWeightUnit)
                             },
                             enabled = !uiState.isExporting,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             modifier = Modifier.weight(1f),
                         ) {
                             if (uiState.isExporting) {
-                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                LoadingIndicator(LoadingIndicatorSize.Small)
                             } else {
                                 Icon(
                                     Icons.Default.Upload,
@@ -576,11 +598,11 @@ fun IntegrationsScreen(
                                 triggerCsvImport = true
                             },
                             enabled = !uiState.isImporting,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             modifier = Modifier.weight(1f),
                         ) {
                             if (uiState.isImporting) {
-                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                LoadingIndicator(LoadingIndicatorSize.Small)
                             } else {
                                 Icon(
                                     Icons.Default.Download,
@@ -596,17 +618,12 @@ fun IntegrationsScreen(
             }
 
             // ── External Activities navigation link ───────────────────────────
-            Card(
+            ExpressiveCard(
+                onClick = onNavigateToExternalData,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(8.dp, RoundedCornerShape(20.dp)),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ),
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    .shadow(8.dp, MaterialTheme.shapes.medium),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                onClick = onNavigateToExternalData,
             ) {
                 Row(
                     modifier = Modifier
@@ -626,7 +643,7 @@ fun IntegrationsScreen(
                                     Brush.linearGradient(
                                         colors = listOf(Color(0xFF10B981), Color(0xFF06B6D4)),
                                     ),
-                                    RoundedCornerShape(12.dp),
+                                    MaterialTheme.shapes.small,
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -677,7 +694,7 @@ private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector,
                 .size(36.dp)
                 .background(
                     Brush.linearGradient(iconGradient),
-                    RoundedCornerShape(10.dp),
+                    MaterialTheme.shapes.small,
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -705,14 +722,15 @@ private fun IntegrationCard(
     badges: List<String> = emptyList(),
     trailingContent: @Composable () -> Unit,
 ) {
+    val connectedGreen = AccessibilityTheme.colors.connectedGreen // Emerald — distinct from success lime
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)),
+            .shadow(8.dp, MaterialTheme.shapes.medium),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
@@ -737,7 +755,7 @@ private fun IntegrationCard(
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = if (statusConnected) {
-                            Color(0xFF10B981).copy(alpha = 0.15f)
+                            connectedGreen.copy(alpha = 0.15f)
                         } else {
                             MaterialTheme.colorScheme.surfaceVariant
                         },
@@ -746,7 +764,7 @@ private fun IntegrationCard(
                             if (statusConnected) "Connected" else "Not connected",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (statusConnected) {
-                                Color(0xFF10B981)
+                                connectedGreen
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
@@ -813,7 +831,7 @@ private fun ApiKeyInputDialog(
                     label = { Text(hint) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                 )
             }
         },

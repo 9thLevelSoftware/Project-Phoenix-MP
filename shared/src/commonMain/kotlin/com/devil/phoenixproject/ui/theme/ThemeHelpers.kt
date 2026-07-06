@@ -10,6 +10,14 @@ import androidx.compose.ui.graphics.luminance
  */
 
 /**
+ * Returns true when the current MaterialTheme background is dark (luminance < 0.5).
+ * Respects the app's ThemeMode setting rather than the system theme.
+ * Single source of truth for the dark/light threshold used by all background brushes.
+ */
+@Composable
+private fun isDarkBackground(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+/**
  * Returns a vertical gradient brush for screen backgrounds.
  * Dark mode: Slate with subtle plum accent in center
  * Light mode: Light with subtle mint wash
@@ -19,9 +27,7 @@ import androidx.compose.ui.graphics.luminance
  */
 @Composable
 fun screenBackgroundBrush(): Brush {
-    // Check if we're in dark mode by examining the background color luminance
-    // This respects the app's ThemeMode setting, not just system theme
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val isDark = isDarkBackground()
     return if (isDark) {
         Brush.verticalGradient(
             0.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -33,6 +39,36 @@ fun screenBackgroundBrush(): Brush {
             0.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
             0.5f to MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
             1.0f to MaterialTheme.colorScheme.surface,
+        )
+    }
+}
+
+/**
+ * Returns a vertical gradient brush for celebration screens (e.g. RoutineCompleteScreen).
+ * Uses the flame triplet (FlameOrange / FlameYellow / FlameRed) at low alpha over the
+ * surface base colour, mirroring screenBackgroundBrush()'s dark/light split.
+ *
+ * Dark mode: colours are slightly more opaque so the warm fire glow reads against dark slate.
+ * Light mode: colours are kept very translucent so the gradient stays tasteful on white.
+ */
+@Composable
+fun celebrationBackgroundBrush(): Brush {
+    val isDark = isDarkBackground()
+    return if (isDark) {
+        Brush.verticalGradient(
+            0.00f to MaterialTheme.colorScheme.surfaceContainerLowest,
+            0.25f to FlameOrange.copy(alpha = 0.20f),
+            0.50f to FlameYellow.copy(alpha = 0.15f),
+            0.75f to FlameRed.copy(alpha = 0.15f),
+            1.00f to MaterialTheme.colorScheme.surfaceContainerLowest,
+        )
+    } else {
+        Brush.verticalGradient(
+            0.00f to MaterialTheme.colorScheme.surfaceContainerLowest,
+            0.25f to FlameOrange.copy(alpha = 0.10f),
+            0.50f to FlameYellow.copy(alpha = 0.08f),
+            0.75f to FlameRed.copy(alpha = 0.08f),
+            1.00f to MaterialTheme.colorScheme.surface,
         )
     }
 }

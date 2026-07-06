@@ -88,6 +88,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ProfileColors
 import com.devil.phoenixproject.presentation.components.RoutineModifierDialog
@@ -113,6 +114,8 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_expand
 import vitruvianprojectphoenix.shared.generated.resources.copy_routines_confirm
 import vitruvianprojectphoenix.shared.generated.resources.copy_to_profile
 import vitruvianprojectphoenix.shared.generated.resources.create_new_routine
+import vitruvianprojectphoenix.shared.generated.resources.delete_group_message
+import vitruvianprojectphoenix.shared.generated.resources.delete_group_title
 import vitruvianprojectphoenix.shared.generated.resources.delete_routine
 import vitruvianprojectphoenix.shared.generated.resources.delete_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.delete_selected_routines
@@ -392,7 +395,7 @@ fun RoutinesTab(
                     onClick = onCreateRoutine,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                 ) {
                     Icon(
                         Icons.Default.Add,
@@ -490,26 +493,16 @@ fun RoutinesTab(
 
     // Batch Delete Confirmation Dialog
     if (showBatchDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showBatchDeleteDialog = false },
-            title = { Text(stringResource(Res.string.delete_selected_routines, selectedIds.size)) },
-            text = { Text(stringResource(Res.string.cannot_be_undone)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteRoutines(selectedIds.toSet())
-                        showBatchDeleteDialog = false
-                        clearSelection()
-                    },
-                ) {
-                    Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
-                }
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_selected_routines, selectedIds.size),
+            message = stringResource(Res.string.cannot_be_undone),
+            confirmText = stringResource(Res.string.action_delete),
+            onConfirm = {
+                onDeleteRoutines(selectedIds.toSet())
+                showBatchDeleteDialog = false
+                clearSelection()
             },
-            dismissButton = {
-                TextButton(onClick = { showBatchDeleteDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
+            onDismiss = { showBatchDeleteDialog = false },
         )
     }
 
@@ -768,25 +761,15 @@ fun RoutinesTab(
 
     // Delete Group confirmation
     deleteGroupTarget?.let { group ->
-        AlertDialog(
-            onDismissRequest = { deleteGroupTarget = null },
-            title = { Text("Delete Group") },
-            text = {
-                Text("Delete group \"${group.name}\"? Routines in this group will become ungrouped.")
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_group_title),
+            message = stringResource(Res.string.delete_group_message, group.name),
+            confirmText = stringResource(Res.string.action_delete),
+            onConfirm = {
+                onDeleteGroup(group.id)
+                deleteGroupTarget = null
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDeleteGroup(group.id)
-                    deleteGroupTarget = null
-                }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteGroupTarget = null }) {
-                    Text("Cancel")
-                }
-            },
+            onDismiss = { deleteGroupTarget = null },
         )
     }
 
@@ -996,7 +979,7 @@ private fun ProfilePickerDialog(
                         val profileColor = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors[0] }
                         Surface(
                             onClick = { onProfileSelected(profile) },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
                             Row(
@@ -1017,7 +1000,7 @@ private fun ProfilePickerDialog(
                                             text = profile.name.take(1).uppercase(),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onPrimary,
                                         )
                                     }
                                 }
@@ -1092,7 +1075,7 @@ fun RoutineCard(
                     }
                 },
             ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
@@ -1214,7 +1197,7 @@ fun RoutineCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -1234,7 +1217,7 @@ fun RoutineCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
@@ -1257,7 +1240,7 @@ fun RoutineCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
@@ -1283,7 +1266,7 @@ fun RoutineCard(
                         OutlinedButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             contentPadding = if (useCompactAccessibility) {
                                 PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                             } else {
@@ -1307,7 +1290,7 @@ fun RoutineCard(
                         OutlinedButton(
                             onClick = onDuplicate,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             contentPadding = if (useCompactAccessibility) {
                                 PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                             } else {
@@ -1331,7 +1314,7 @@ fun RoutineCard(
                         OutlinedButton(
                             onClick = { showDeleteDialog = true },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             contentPadding = if (useCompactAccessibility) {
                                 PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                             } else {
@@ -1429,23 +1412,15 @@ fun RoutineCard(
     }
 
     if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text(stringResource(Res.string.delete_routine)) },
-            text = { Text(stringResource(Res.string.delete_routine_message, routine.name)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete()
-                    showDeleteDialog = false
-                }) {
-                    Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
-                }
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_routine),
+            message = stringResource(Res.string.delete_routine_message, routine.name),
+            confirmText = stringResource(Res.string.action_delete),
+            onConfirm = {
+                onDelete()
+                showDeleteDialog = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
+            onDismiss = { showDeleteDialog = false },
         )
     }
 }

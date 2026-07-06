@@ -51,7 +51,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -59,7 +62,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -70,13 +72,13 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
+import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
@@ -85,6 +87,8 @@ import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.labelAllCaps
+import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -94,8 +98,9 @@ import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.action_stop
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
+import vitruvianprojectphoenix.shared.generated.resources.cd_completed
+import vitruvianprojectphoenix.shared.generated.resources.pager_page_of
 import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
-import vitruvianprojectphoenix.shared.generated.resources.rest_echo_level
 import vitruvianprojectphoenix.shared.generated.resources.start_exercise
 import vitruvianprojectphoenix.shared.generated.resources.target_reps
 
@@ -242,14 +247,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.surfaceVariant,
-                        ),
-                    ),
-                ),
+                .background(screenBackgroundBrush()),
         ) {
             // Time estimate badge (Issue #225)
             timeEstimate?.let { estimate ->
@@ -343,11 +341,14 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                 )
             }
 
-            // Page indicators
+            // Page indicators — single semantics region announces current position to TalkBack
+            val totalPages = routine.exercises.size
+            val pageOfDesc = stringResource(Res.string.pager_page_of, pagerState.currentPage + 1, totalPages)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .semantics(mergeDescendants = true) { contentDescription = pageOfDesc },
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -511,7 +512,7 @@ private fun RoutineOverviewActionBar(
                     .weight(1f)
                     .heightIn(min = sizing.actionButtonMinHeight)
                     .testTag(TestTags.ACTION_START_ROUTINE_EXERCISE),
-                shape = RoundedCornerShape(16.dp),
+                shape = MaterialTheme.shapes.medium,
                 contentPadding = PaddingValues(
                     horizontal = if (sizing.isReducedViewport) 12.dp else 16.dp,
                     vertical = 10.dp,
@@ -559,7 +560,7 @@ private fun ExerciseOverviewCard(
 
     Card(
         modifier = Modifier.fillMaxSize(),
-        shape = RoundedCornerShape(24.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -607,7 +608,7 @@ private fun ExerciseOverviewCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(sizing.videoHeight)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .clip(MaterialTheme.shapes.small),
                 )
 
                 // Mode indicator (read-only) - Issue #222: Hide for bodyweight exercises
@@ -635,7 +636,7 @@ private fun ExerciseOverviewCard(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                         ),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.medium,
                         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                     ) {
                         Column(
@@ -646,10 +647,8 @@ private fun ExerciseOverviewCard(
                         ) {
                             Text(
                                 if (isEchoMode) "ECHO SETTINGS" else "SET CONFIGURATION",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
+                                style = labelAllCaps.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                letterSpacing = 1.sp,
                             )
 
                             Text(
@@ -661,7 +660,7 @@ private fun ExerciseOverviewCard(
 
                             if (isEchoMode) {
                                 // Echo mode: Show Echo Level + Eccentric Load + Reps
-                                OverviewEchoLevelSelector(
+                                EchoLevelPillSelector(
                                     selectedLevel = echoLevel,
                                     onLevelChange = onEchoLevelChange,
                                 )
@@ -762,75 +761,21 @@ private fun ExerciseOverviewCard(
 
             // Completed overlay
             if (isCompleted) {
+                val completedDesc = stringResource(Res.string.cd_completed)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)),
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                        .semantics(mergeDescendants = true) {
+                            stateDescription = completedDesc
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         Icons.Default.CheckCircle,
-                        "Completed",
+                        completedDesc,
                         modifier = Modifier.size(80.dp),
                         tint = MaterialTheme.colorScheme.tertiary,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Echo Level selector for Overview - Row of 4 buttons matching RestTimerCard style
- */
-@Composable
-private fun OverviewEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (EchoLevel) -> Unit) {
-    Column {
-        Text(
-            text = stringResource(Res.string.rest_echo_level),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp,
-        )
-
-        Spacer(modifier = Modifier.height(Spacing.small))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium),
-                )
-                .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
-        ) {
-            EchoLevel.entries.forEach { level ->
-                val isSelected = level == selectedLevel
-
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(Spacing.small),
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerLowest
-                    },
-                    onClick = { onLevelChange(level) },
-                ) {
-                    Text(
-                        text = echoLevelLabel(level),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = Spacing.small),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        textAlign = TextAlign.Center,
                     )
                 }
             }
@@ -851,9 +796,8 @@ private fun OverviewEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
         ) {
             Text(
                 text = stringResource(Res.string.rest_eccentric_load),
-                style = MaterialTheme.typography.labelSmall,
+                style = labelSmallAllCaps,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp,
             )
             Text(
                 text = percentLabel(percent),

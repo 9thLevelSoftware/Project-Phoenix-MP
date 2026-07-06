@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,7 +74,9 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.normalizeRoutine
 import com.devil.phoenixproject.domain.model.reorderExercisesInSuperset
 import com.devil.phoenixproject.domain.model.reorderRoutineItems
+import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.BulkWeightAdjustDialog
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExerciseRowInSuperset
 import com.devil.phoenixproject.presentation.components.ExerciseRowWithConnector
@@ -94,6 +95,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
 import vitruvianprojectphoenix.shared.generated.resources.action_delete
+import vitruvianprojectphoenix.shared.generated.resources.action_discard
 import vitruvianprojectphoenix.shared.generated.resources.action_edit
 import vitruvianprojectphoenix.shared.generated.resources.action_save
 import vitruvianprojectphoenix.shared.generated.resources.add_exercise
@@ -101,7 +103,10 @@ import vitruvianprojectphoenix.shared.generated.resources.cannot_be_undone
 import vitruvianprojectphoenix.shared.generated.resources.choose_color
 import vitruvianprojectphoenix.shared.generated.resources.delete_all
 import vitruvianprojectphoenix.shared.generated.resources.delete_selected_exercises
+import vitruvianprojectphoenix.shared.generated.resources.delete_superset_message
 import vitruvianprojectphoenix.shared.generated.resources.delete_superset_title
+import vitruvianprojectphoenix.shared.generated.resources.discard_changes_message
+import vitruvianprojectphoenix.shared.generated.resources.discard_changes_title
 import vitruvianprojectphoenix.shared.generated.resources.label_name
 import vitruvianprojectphoenix.shared.generated.resources.rename_superset
 import vitruvianprojectphoenix.shared.generated.resources.routine_name
@@ -186,6 +191,16 @@ fun RoutineEditorScreen(
     // Overflow menu for routine-level actions
     var showOverflowMenu by remember { mutableStateOf(false) }
 
+    // Dirty-state snapshot vars (content-only: routineName + exercises + supersets)
+    // UI-only fields (collapsedSupersets, showAddMenu) are intentionally excluded.
+    var snapshotName by remember { mutableStateOf("") }
+    var snapshotExercises by remember { mutableStateOf<List<RoutineExercise>>(emptyList()) }
+    var snapshotSupersets by remember { mutableStateOf<List<Superset>>(emptyList()) }
+    var hasSnapshot by remember { mutableStateOf(false) }
+
+    // Discard-changes dialog state (back-navigation guard)
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
     // Superset being edited (for add exercise flow)
     var supersetForAddExercise by remember { mutableStateOf<Superset?>(null) }
 
@@ -216,6 +231,27 @@ fun RoutineEditorScreen(
             hasInitialized = true
         }
     }
+
+    // Capture snapshot once initialization is complete (post-load), so existing routines
+    // don't open dirty. The snapshot uses the state written by LaunchedEffect(routineId).
+    LaunchedEffect(hasInitialized) {
+        if (hasInitialized && !hasSnapshot) {
+            snapshotName = state.routineName
+            snapshotExercises = state.exercises
+            snapshotSupersets = state.supersets
+            hasSnapshot = true
+        }
+    }
+
+    // isDirty: true only after snapshot is taken and any content field diverges from it.
+    // Superset.exercises is always emptyList() in state (populated transiently in getItems()
+    // only for display), so the Superset comparison is safe. Superset.isCollapsed is also
+    // always false in state; collapse UI uses state.collapsedSupersets instead.
+    val isDirty = hasSnapshot && (
+        state.routineName != snapshotName ||
+        state.exercises != snapshotExercises ||
+        state.supersets != snapshotSupersets
+    )
 
     // Drag and Drop State
     val lazyListState = rememberLazyListState()
@@ -397,6 +433,10 @@ fun RoutineEditorScreen(
         }
     }
 
+    // Back-navigation guard: intercept back only when there are unsaved changes.
+    // When clean (isDirty == false), back falls through to the host default (navigateUp).
+    BackHandler(enabled = isDirty) { showDiscardDialog = true }
+
     Scaffold(
         contentWindowInsets = WindowInsets.navigationBars,
         floatingActionButton = {
@@ -538,7 +578,7 @@ fun RoutineEditorScreen(
                                         val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
                                         SupersetContainer(
                                             colorIndex = superset.colorIndex,
-                                            modifier = Modifier.shadow(elevation, RoundedCornerShape(12.dp)),
+                                            modifier = Modifier.shadow(elevation, MaterialTheme.shapes.small),
                                         ) {
                                             // Header
                                             SupersetHeader(
@@ -601,7 +641,7 @@ fun RoutineEditorScreen(
                                                     Row(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
-                                                            .shadow(innerElevation, RoundedCornerShape(10.dp)),
+                                                            .shadow(innerElevation, MaterialTheme.shapes.small),
                                                         verticalAlignment = Alignment.CenterVertically,
                                                     ) {
                                                         // Drag handle for intra-superset reorder
@@ -920,32 +960,15 @@ fun RoutineEditorScreen(
 
     // Delete Superset Confirmation Dialog
     supersetToDelete?.let { superset ->
-        AlertDialog(
-            onDismissRequest = { supersetToDelete = null },
-            title = { Text(stringResource(Res.string.delete_superset_title)) },
-            text = {
-                Text(
-                    "This will delete the superset \"${superset.name}\" and all ${superset.exerciseCount} exercises in it. This cannot be undone.",
-                )
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_superset_title),
+            message = stringResource(Res.string.delete_superset_message, superset.name, superset.exerciseCount),
+            confirmText = stringResource(Res.string.delete_all),
+            onConfirm = {
+                deleteSupersetWithExercises(superset.id)
+                supersetToDelete = null
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        deleteSupersetWithExercises(superset.id)
-                        supersetToDelete = null
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text(stringResource(Res.string.delete_all))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { supersetToDelete = null }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
+            onDismiss = { supersetToDelete = null },
         )
     }
 
@@ -975,27 +998,32 @@ fun RoutineEditorScreen(
 
     // Batch Delete Dialog
     if (showBatchDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showBatchDeleteDialog = false },
-            title = { Text(stringResource(Res.string.delete_selected_exercises, selectedExerciseIds.size)) },
-            text = { Text(stringResource(Res.string.cannot_be_undone)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val remaining = state.exercises.filter { it.id !in selectedExerciseIds }
-                        updateExercises(remaining)
-                        showBatchDeleteDialog = false
-                        clearSelection()
-                    },
-                ) {
-                    Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
-                }
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_selected_exercises, selectedExerciseIds.size),
+            message = stringResource(Res.string.cannot_be_undone),
+            confirmText = stringResource(Res.string.action_delete),
+            onConfirm = {
+                val remaining = state.exercises.filter { it.id !in selectedExerciseIds }
+                updateExercises(remaining)
+                showBatchDeleteDialog = false
+                clearSelection()
             },
-            dismissButton = {
-                TextButton(onClick = { showBatchDeleteDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
+            onDismiss = { showBatchDeleteDialog = false },
+        )
+    }
+
+    // Discard Changes Dialog (back-navigation guard)
+    // onConfirm: navigate back without saving. onDismiss: stay in the editor.
+    if (showDiscardDialog) {
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.discard_changes_title),
+            message = stringResource(Res.string.discard_changes_message),
+            confirmText = stringResource(Res.string.action_discard),
+            onConfirm = {
+                showDiscardDialog = false
+                navController.popBackStack()
             },
+            onDismiss = { showDiscardDialog = false },
         )
     }
 

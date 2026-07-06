@@ -7,7 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,6 +84,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
@@ -640,30 +641,17 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 
     // Delete Confirmation Dialog
     showDeleteConfirmDialog?.let { cycle ->
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmDialog = null },
-            title = { Text(stringResource(Res.string.delete_cycle_title)) },
-            text = { Text(stringResource(Res.string.delete_cycle_message, cycle.name)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            cycleRepository.deleteCycle(cycle.id)
-                            showDeleteConfirmDialog = null
-                        }
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text(stringResource(Res.string.action_delete))
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_cycle_title),
+            message = stringResource(Res.string.delete_cycle_message, cycle.name),
+            confirmText = stringResource(Res.string.action_delete),
+            onConfirm = {
+                scope.launch {
+                    cycleRepository.deleteCycle(cycle.id)
+                    showDeleteConfirmDialog = null
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = null }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
+            onDismiss = { showDeleteConfirmDialog = null },
         )
     }
 
@@ -829,7 +817,7 @@ private fun ActiveCycleCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
     ) {
@@ -861,7 +849,7 @@ private fun ActiveCycleCard(
 
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(8.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
                 ) {
                     Text(
                         "Day $displayedDayNumber of ${cycle.days.size}",
@@ -950,7 +938,7 @@ private fun ActiveCycleCard(
                     OutlinedButton(
                         onClick = onEditCycle,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -961,7 +949,7 @@ private fun ActiveCycleCard(
                         OutlinedButton(
                             onClick = onAdvanceDay,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Icon(Icons.Default.SkipNext, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -972,7 +960,7 @@ private fun ActiveCycleCard(
                         OutlinedButton(
                             onClick = { onJumpToDay(displayedDayNumber) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Icon(Icons.Default.SkipNext, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -985,7 +973,7 @@ private fun ActiveCycleCard(
                             Button(
                                 onClick = { onStartWorkout(displayedCycleDay.routineId, cycle.id, displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -995,7 +983,7 @@ private fun ActiveCycleCard(
                             OutlinedButton(
                                 onClick = onEditCycle,
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.Edit, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -1008,7 +996,7 @@ private fun ActiveCycleCard(
                             OutlinedButton(
                                 onClick = { onJumpToDay(displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.SkipNext, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -1017,7 +1005,7 @@ private fun ActiveCycleCard(
                             Button(
                                 onClick = { onStartWorkout(displayedCycleDay.routineId, cycle.id, displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -1027,7 +1015,7 @@ private fun ActiveCycleCard(
                             OutlinedButton(
                                 onClick = { onJumpToDay(displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Icon(Icons.Default.SkipNext, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -1057,10 +1045,9 @@ private fun CycleListItem(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { expanded = !expanded },
+    ExpressiveCard(
+        onClick = { expanded = !expanded },
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = if (isActive) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
@@ -1068,7 +1055,6 @@ private fun CycleListItem(
                 MaterialTheme.colorScheme.surfaceContainerHigh
             },
         ),
-        shape = RoundedCornerShape(16.dp),
         border = if (isActive) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1196,7 +1182,7 @@ private fun CycleListItem(
                         FilledTonalButton(
                             onClick = if (isActive) onDeactivate else onActivate,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = MaterialTheme.shapes.extraSmall,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = if (isActive) {
@@ -1222,7 +1208,7 @@ private fun CycleListItem(
                         FilledTonalButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = MaterialTheme.shapes.extraSmall,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -1240,7 +1226,7 @@ private fun CycleListItem(
                         FilledTonalButton(
                             onClick = onDelete,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = MaterialTheme.shapes.extraSmall,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = MaterialTheme.colorScheme.errorContainer,

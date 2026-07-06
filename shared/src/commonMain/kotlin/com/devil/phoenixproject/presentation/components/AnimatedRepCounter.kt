@@ -27,6 +27,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -35,6 +39,12 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.RepPhase
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.cd_phase_concentric
+import vitruvianprojectphoenix.shared.generated.resources.cd_phase_eccentric
+import vitruvianprojectphoenix.shared.generated.resources.cd_phase_idle
+import vitruvianprojectphoenix.shared.generated.resources.cd_rep_counter
 
 /**
  * Issue #163: Animated Rep Counter
@@ -72,6 +82,15 @@ fun AnimatedRepCounter(
 ) {
     // Primary color for both outline stroke and fill
     val fillColor = MaterialTheme.colorScheme.primary
+
+    // Accessibility: live-region description announced by TalkBack on each rep change
+    // Phase name resolved from string resources for locale-awareness
+    val phaseDesc = when (phase) {
+        RepPhase.IDLE -> stringResource(Res.string.cd_phase_idle)
+        RepPhase.CONCENTRIC -> stringResource(Res.string.cd_phase_concentric)
+        RepPhase.ECCENTRIC -> stringResource(Res.string.cd_phase_eccentric)
+    }
+    val repCounterDesc = stringResource(Res.string.cd_rep_counter, confirmedReps, targetReps, phaseDesc)
 
     // Track the previous confirmedReps to detect when a rep is completed
     var lastConfirmedReps by remember { mutableIntStateOf(confirmedReps) }
@@ -115,7 +134,12 @@ fun AnimatedRepCounter(
 
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.size(size),
+        modifier = modifier
+            .size(size)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                contentDescription = repCounterDesc
+            },
     ) {
         // Show celebration animation if a rep was just completed
         // During celebration, ONLY the celebration is shown (no phase animation)

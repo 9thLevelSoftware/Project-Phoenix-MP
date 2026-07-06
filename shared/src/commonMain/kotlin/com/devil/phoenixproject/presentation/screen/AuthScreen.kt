@@ -21,7 +21,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,6 +84,10 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
     var showPassword by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    // Per-field error state — attributed per finding settings-profile-4
+    var emailError by remember { mutableStateOf(false) }
+    var passwordError by remember { mutableStateOf(false) }
+    var confirmPasswordError by remember { mutableStateOf(false) }
 
     // Navigate away when already authenticated — wrapped in LaunchedEffect to avoid
     // calling the navigation side-effect during composition (causes duplicate nav on recomposition).
@@ -135,6 +140,7 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                 onValueChange = {
                     email = it
                     errorMessage = null
+                    emailError = false
                 },
                 label = { Text(stringResource(Res.string.label_email)) },
                 leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
@@ -147,7 +153,7 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                 ),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                isError = errorMessage != null,
+                isError = emailError,
             )
 
             // Password field
@@ -156,6 +162,7 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                 onValueChange = {
                     password = it
                     errorMessage = null
+                    passwordError = false
                 },
                 label = { Text(stringResource(Res.string.label_password)) },
                 leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
@@ -178,7 +185,7 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                 ),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                isError = errorMessage != null,
+                isError = passwordError,
             )
 
             // Confirm password (sign up only)
@@ -188,6 +195,8 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                     onValueChange = {
                         confirmPassword = it
                         errorMessage = null
+                        confirmPasswordError = false
+                        passwordError = false
                     },
                     label = { Text(stringResource(Res.string.label_confirm_password)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
@@ -201,7 +210,7 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                     ),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    isError = errorMessage != null,
+                    isError = confirmPasswordError,
                 )
             }
 
@@ -222,15 +231,22 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                     scope.launch {
                         isLoading = true
                         errorMessage = null
+                        emailError = false
+                        passwordError = false
+                        confirmPasswordError = false
 
-                        // Validation
+                        // Validation — attribute isError per-field (settings-profile-4)
                         if (email.isBlank() || password.isBlank()) {
+                            emailError = email.isBlank()
+                            passwordError = password.isBlank()
                             errorMessage = "Please fill in all fields"
                             isLoading = false
                             return@launch
                         }
 
                         if (authMode == AuthMode.SIGN_UP && password != confirmPassword) {
+                            passwordError = true
+                            confirmPasswordError = true
                             errorMessage = "Passwords do not match"
                             isLoading = false
                             return@launch
@@ -253,10 +269,7 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                 enabled = !isLoading,
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                    )
+                    LoadingIndicator(LoadingIndicatorSize.Small)
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Text(if (authMode == AuthMode.SIGN_IN) "Sign In" else "Create Account")
@@ -278,6 +291,9 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                     onClick = {
                         authMode = if (authMode == AuthMode.SIGN_IN) AuthMode.SIGN_UP else AuthMode.SIGN_IN
                         errorMessage = null
+                        emailError = false
+                        passwordError = false
+                        confirmPasswordError = false
                     },
                 ) {
                     Text(if (authMode == AuthMode.SIGN_IN) "Sign Up" else "Sign In")

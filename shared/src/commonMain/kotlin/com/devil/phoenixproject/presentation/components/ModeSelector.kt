@@ -3,17 +3,30 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.mode_echo
+import vitruvianprojectphoenix.shared.generated.resources.mode_eccentric_only
+import vitruvianprojectphoenix.shared.generated.resources.mode_old_school
+import vitruvianprojectphoenix.shared.generated.resources.mode_pump
+import vitruvianprojectphoenix.shared.generated.resources.mode_tut
 
 /**
  * Segmented pill selector for workout modes.
@@ -31,6 +44,15 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
         ProgramMode.Echo,
     )
 
+    // Resolve mode names from string resources so they're locale-aware
+    val modeNames = mapOf(
+        ProgramMode.OldSchool to stringResource(Res.string.mode_old_school),
+        ProgramMode.TUT to stringResource(Res.string.mode_tut),
+        ProgramMode.Pump to stringResource(Res.string.mode_pump),
+        ProgramMode.EccentricOnly to stringResource(Res.string.mode_eccentric_only),
+        ProgramMode.Echo to stringResource(Res.string.mode_echo),
+    )
+
     Column(modifier = modifier) {
         Text(
             text = "WORKOUT MODE",
@@ -44,6 +66,7 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .selectableGroup()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLowest,
                     RoundedCornerShape(Spacing.medium),
@@ -67,6 +90,11 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
                                 MaterialTheme.colorScheme.surfaceContainerLowest
                             },
                         )
+                        .semantics(mergeDescendants = true) {
+                            role = Role.RadioButton
+                            selected = isSelected
+                            contentDescription = modeNames[mode] ?: mode.displayName
+                        }
                         .clickable { onModeSelected(mode) }
                         .padding(vertical = Spacing.small, horizontal = Spacing.extraSmall),
                     contentAlignment = Alignment.Center,

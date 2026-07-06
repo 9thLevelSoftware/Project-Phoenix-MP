@@ -67,4 +67,5 @@
     <string name="settings_ble_compat_on">Attivato</string>
     <string name="settings_ble_compat_off">Disattivato</string>
     <string name="settings_ble_compat_reconnect_hint">Ha effetto alla prossima connessione. Riconnettiti al trainer dopo la modifica.</string>
+
 </resources>

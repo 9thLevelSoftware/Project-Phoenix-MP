@@ -5,7 +5,9 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -116,7 +118,7 @@ fun BadgesScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CircularProgressIndicator()
+                    LoadingIndicator(LoadingIndicatorSize.Large)
                 }
             } else {
                 val windowSizeClass = LocalWindowSizeClass.current
@@ -177,7 +179,7 @@ fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges: Int, m
         modifier = modifier
             .fillMaxWidth()
             .scale(scale),
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
         ),
@@ -399,13 +401,13 @@ private fun BadgeCard(badgeWithProgress: BadgeWithProgress, onClick: () -> Unit)
         label = "badge_scale",
     )
 
-    Card(
+    ExpressiveCard(
+        onClick = onClick,
         modifier = Modifier
             .aspectRatio(0.85f)
             .scale(scale)
-            .alpha(alpha)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+            .alpha(alpha),
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = if (isEarned) {
                 MaterialTheme.colorScheme.surfaceVariant

@@ -1,8 +1,14 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -61,7 +67,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -119,6 +126,8 @@ import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupDestination
@@ -140,6 +149,9 @@ import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
 import vitruvianprojectphoenix.shared.generated.resources.action_ok
+import vitruvianprojectphoenix.shared.generated.resources.delete_all
+import vitruvianprojectphoenix.shared.generated.resources.delete_all_workouts_message
+import vitruvianprojectphoenix.shared.generated.resources.delete_all_workouts_title
 import vitruvianprojectphoenix.shared.generated.resources.action_save
 import vitruvianprojectphoenix.shared.generated.resources.action_share
 import vitruvianprojectphoenix.shared.generated.resources.backup_all_data
@@ -496,9 +508,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -511,12 +523,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFFFFD700), Color(0xFFFFA500)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -558,9 +570,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -573,12 +585,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF06B6D4), Color(0xFF3B82F6)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -604,7 +616,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -669,7 +681,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -701,9 +713,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
         ) {
@@ -716,12 +728,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF8B5CF6), Color(0xFF9333EA)),
                                 ),
-                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1056,9 +1068,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -1071,12 +1083,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF6366F1), Color(0xFFA855F7)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1146,9 +1158,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -1161,12 +1173,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF10B981), Color(0xFF059669)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1252,9 +1264,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
         ) {
@@ -1267,12 +1279,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6)),
                                 ),
-                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1753,7 +1765,7 @@ fun SettingsTab(
                         placeholder = { Text(stringResource(Res.string.settings_safe_word_hint)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     )
@@ -1801,7 +1813,7 @@ fun SettingsTab(
                                 }
                             },
                             enabled = localSafeWord.isNotBlank(),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Text(stringResource(Res.string.settings_calibrate_button))
                         }
@@ -1829,9 +1841,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -1865,7 +1877,7 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = if (discoModeActive) {
@@ -1882,7 +1894,7 @@ fun SettingsTab(
                                         listOf(Color(0xFF3B82F6), Color(0xFF6366F1))
                                     },
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2021,9 +2033,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)),
+                .shadow(8.dp, MaterialTheme.shapes.medium),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
@@ -2061,12 +2073,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF10B981), Color(0xFF059669)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2096,7 +2108,7 @@ fun SettingsTab(
                 ) {
                     Spacer(modifier = Modifier.height(Spacing.small))
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -2351,9 +2363,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border, error color for destructive action
         ) {
@@ -2366,12 +2378,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFFF97316), Color(0xFFEF4444)),
                                 ),
-                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2425,7 +2437,7 @@ fun SettingsTab(
                         .fillMaxWidth()
                         .background(
                             MaterialTheme.colorScheme.surfaceContainerLow,
-                            RoundedCornerShape(12.dp),
+                            MaterialTheme.shapes.small,
                         )
                         .padding(horizontal = Spacing.medium, vertical = Spacing.small),
                     verticalAlignment = Alignment.CenterVertically,
@@ -2462,7 +2474,7 @@ fun SettingsTab(
                     OutlinedButton(
                         onClick = { showLocationPicker = true },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.small,
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
@@ -2483,7 +2495,7 @@ fun SettingsTab(
                         OutlinedButton(
                             onClick = { onBackupDestinationChange(BackupDestination.Default) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             ),
@@ -2521,7 +2533,7 @@ fun SettingsTab(
                                 .fillMaxWidth()
                                 .background(
                                     MaterialTheme.colorScheme.surfaceContainerLow,
-                                    RoundedCornerShape(12.dp),
+                                    MaterialTheme.shapes.small,
                                 )
                                 .padding(horizontal = Spacing.medium, vertical = Spacing.small),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -2546,7 +2558,7 @@ fun SettingsTab(
                         OutlinedButton(
                             onClick = onOpenBackupFolder,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             ),
@@ -2574,7 +2586,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -2601,7 +2613,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.secondary,
                     ),
@@ -2627,7 +2639,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
+                    shape = MaterialTheme.shapes.extraLarge, // Material 3 Expressive: More rounded
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
@@ -2654,9 +2666,9 @@ fun SettingsTab(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(8.dp, RoundedCornerShape(20.dp)),
+                    .shadow(8.dp, MaterialTheme.shapes.medium),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
             ) {
@@ -2669,12 +2681,12 @@ fun SettingsTab(
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .shadow(8.dp, RoundedCornerShape(20.dp))
+                                .shadow(8.dp, MaterialTheme.shapes.medium)
                                 .background(
                                     Brush.linearGradient(
                                         colors = listOf(Color(0xFFFFD700), Color(0xFFFFA500)),
                                     ),
-                                    RoundedCornerShape(20.dp),
+                                    MaterialTheme.shapes.medium,
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -2700,7 +2712,7 @@ fun SettingsTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.primary,
                         ),
@@ -2733,9 +2745,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
         ) {
@@ -2748,12 +2760,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .shadow(8.dp, MaterialTheme.shapes.medium)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFFF59E0B), Color(0xFFEF4444)),
                                 ),
-                                RoundedCornerShape(20.dp),
+                                MaterialTheme.shapes.medium,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2779,7 +2791,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -2812,7 +2824,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -2893,7 +2905,7 @@ fun SettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -2925,9 +2937,9 @@ fun SettingsTab(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
         ) {
@@ -2940,12 +2952,12 @@ fun SettingsTab(
                     Box(
                         modifier = Modifier
                             .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF22C55E), Color(0xFF3B82F6)),
                                 ),
-                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2978,54 +2990,15 @@ fun SettingsTab(
 
     // Material 3 Expressive: Delete All dialog
     if (showDeleteAllDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteAllDialog = false },
-            title = {
-                Text(
-                    "Delete All Workouts?",
-                    style = MaterialTheme.typography.headlineSmall, // Material 3 Expressive: Larger
-                    fontWeight = FontWeight.Bold,
-                )
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.delete_all_workouts_title),
+            message = stringResource(Res.string.delete_all_workouts_message),
+            confirmText = stringResource(Res.string.delete_all),
+            onConfirm = {
+                onDeleteAllWorkouts()
+                showDeleteAllDialog = false
             },
-            text = {
-                Text(
-                    "This will permanently delete all workout history. This action cannot be undone.",
-                    style = MaterialTheme.typography.bodyLarge, // Material 3 Expressive: Larger
-                )
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
-            shape = RoundedCornerShape(28.dp), // Material 3 Expressive: Very rounded for dialogs (was 16dp)
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteAllWorkouts()
-                        showDeleteAllDialog = false
-                    },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Delete All",
-                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDeleteAllDialog = false },
-                    modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
-                ) {
-                    Text(
-                        "Cancel",
-                        style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
+            onDismiss = { showDeleteAllDialog = false },
         )
     }
 
@@ -3082,42 +3055,13 @@ fun SettingsTab(
     if (showBackupDialog) {
         AlertDialog(
             onDismissRequest = { showBackupDialog = false },
-            title = { Text(stringResource(Res.string.backup_all_data), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(Res.string.backup_all_data), style = MaterialTheme.typography.headlineSmall) },
             text = {
-                Text(stringResource(Res.string.backup_description))
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                    // Save to Files button (streaming export)
-                    Button(
-                        onClick = {
-                            showBackupDialog = false
-                            backupInProgress = true
-                            scope.launch {
-                                try {
-                                    val result = backupManager.exportToFile { progress ->
-                                        backupProgress = progress
-                                    }
-                                    result.onSuccess { path ->
-                                        backupResult = path
-                                        showResultDialog = true
-                                    }.onFailure { error ->
-                                        backupError = error.message ?: "Unknown error"
-                                        showResultDialog = true
-                                    }
-                                } catch (e: Exception) {
-                                    backupError = e.message ?: "Unknown database error"
-                                    showResultDialog = true
-                                } finally {
-                                    backupInProgress = false
-                                    backupProgress = null
-                                }
-                            }
-                        },
-                    ) {
-                        Text(stringResource(Res.string.action_save))
-                    }
-                    // Share button (streaming export)
+                // Description + Share button stacked vertically so both buttons
+                // fit without overflowing the narrow confirmButton slot.
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.medium)) {
+                    Text(stringResource(Res.string.backup_description))
+                    // Share button (streaming export) — full-width in text area
                     OutlinedButton(
                         onClick = {
                             showBackupDialog = false
@@ -3134,6 +3078,7 @@ fun SettingsTab(
                                 }
                             }
                         },
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(
                             Icons.Default.Share,
@@ -3143,6 +3088,37 @@ fun SettingsTab(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(stringResource(Res.string.action_share))
                     }
+                }
+            },
+            confirmButton = {
+                // Save to Files button (streaming export) — sole occupant of confirmButton slot
+                Button(
+                    onClick = {
+                        showBackupDialog = false
+                        backupInProgress = true
+                        scope.launch {
+                            try {
+                                val result = backupManager.exportToFile { progress ->
+                                    backupProgress = progress
+                                }
+                                result.onSuccess { path ->
+                                    backupResult = path
+                                    showResultDialog = true
+                                }.onFailure { error ->
+                                    backupError = error.message ?: "Unknown error"
+                                    showResultDialog = true
+                                }
+                            } catch (e: Exception) {
+                                backupError = e.message ?: "Unknown database error"
+                                showResultDialog = true
+                            } finally {
+                                backupInProgress = false
+                                backupProgress = null
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(Res.string.action_save))
                 }
             },
             dismissButton = {
@@ -3157,7 +3133,7 @@ fun SettingsTab(
     if (showRestoreDialog) {
         AlertDialog(
             onDismissRequest = { showRestoreDialog = false },
-            title = { Text(stringResource(Res.string.restore_from_backup), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(Res.string.restore_from_backup), style = MaterialTheme.typography.headlineSmall) },
             text = {
                 Text(stringResource(Res.string.restore_description))
             },
@@ -3192,7 +3168,6 @@ fun SettingsTab(
                         else -> "Restore Complete"
                     },
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
                 )
             },
             text = {
@@ -3262,7 +3237,7 @@ fun SettingsTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
                     ) {
-                        CircularProgressIndicator()
+                        LoadingIndicator(LoadingIndicatorSize.Medium)
                         Text(stringResource(Res.string.label_please_wait))
                     }
                 }
@@ -3376,7 +3351,7 @@ private fun SafeWordCalibrationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         title = {
             Text(
                 stringResource(Res.string.settings_calibration_title),
@@ -3398,7 +3373,7 @@ private fun SafeWordCalibrationDialog(
                         )
                         OutlinedButton(
                             onClick = { com.devil.phoenixproject.util.openAppSettings() },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Text(stringResource(Res.string.settings_calibration_open_settings))
                         }
@@ -3493,11 +3468,11 @@ private fun AdultModeDialogCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)),
+            .shadow(8.dp, MaterialTheme.shapes.medium),
         colors = CardDefaults.cardColors(
             containerColor = adultModeContainerColor(presentation.containerTone),
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         border = BorderStroke(2.dp, adultModeBorderColor(presentation)),
     ) {
@@ -3568,7 +3543,7 @@ private fun AdultModeActionButton(
         AdultModeActionTone.Primary -> Button(
             onClick = onClick,
             modifier = modifier.heightIn(min = 48.dp),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -3584,7 +3559,7 @@ private fun AdultModeActionButton(
         AdultModeActionTone.Outline -> OutlinedButton(
             onClick = onClick,
             modifier = modifier.heightIn(min = 48.dp),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             border = BorderStroke(
                 1.dp,
                 MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
@@ -3714,7 +3689,7 @@ private fun AdultsOnlyConfirmDialog(
                     .padding(Spacing.large),
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.errorContainer,
                 ) {
                     Row(
@@ -3747,7 +3722,7 @@ private fun AdultsOnlyConfirmDialog(
                 Spacer(modifier = Modifier.height(Spacing.medium))
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     Text(
@@ -3795,31 +3770,37 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
         label = "dialog_scale",
     )
 
-    // Rotating disco ball effect - use coroutine-based animation
-    var rotation by remember { mutableStateOf(0f) }
-    var glowAlpha by remember { mutableStateOf(0.3f) }
-    var glowUp by remember { mutableStateOf(true) }
+    // Rotating disco ball effect - rememberInfiniteTransition for variable-refresh compatibility
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val discoTransition = rememberInfiniteTransition(label = "disco")
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(16) // ~60fps
-            rotation = (rotation + 3f) % 360f
-            // Pulsing glow effect
-            if (glowUp) {
-                glowAlpha += 0.02f
-                if (glowAlpha >= 0.8f) glowUp = false
-            } else {
-                glowAlpha -= 0.02f
-                if (glowAlpha <= 0.3f) glowUp = true
-            }
-        }
-    }
+    // reduceMotion: bake the flag into targetValue so the channel settles at initial (no movement)
+    val rotation by discoTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = if (reduceMotion) 0f else 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1920, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "disco_rotation",
+    )
+
+    // 400ms half-cycle matches original +0.02f/frame @ 60fps (0.5 range ÷ 0.02 = 25 frames × 16ms)
+    val glowAlpha by discoTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = if (reduceMotion) 0.3f else 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "disco_glow",
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.scale(scale),
-        containerColor = Color(0xFF1A1A2E),
-        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = MaterialTheme.shapes.extraLarge,
         title = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -3851,7 +3832,7 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
                     "DISCO MODE UNLOCKED!",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.background(
                         Brush.linearGradient(
                             colors = listOf(
@@ -3863,7 +3844,7 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
                                 Color(0xFF8B00FF),
                             ),
                         ),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
                     ).padding(horizontal = 12.dp, vertical = 4.dp),
                 )
             }
@@ -3877,13 +3858,13 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
                     "🕺 Time to get funky! 💃",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "Toggle Disco Mode in the LED Color Scheme section to make your trainer party!",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )
             }
@@ -3892,13 +3873,13 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
             TextButton(
                 onClick = onDismiss,
                 modifier = Modifier.height(48.dp),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.extraLarge,
             ) {
                 Text(
                     "🎉 Let's Party!",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD700), // Gold
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         },

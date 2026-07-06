@@ -172,7 +172,7 @@ fun ConnectionLogsScreen(
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             )
@@ -437,9 +437,10 @@ fun ConnectionLogsScreen(
                                     exportContent.take(2000) +
                                         if (exportContent.length > 2000) "\n..." else "",
                                 modifier = Modifier.padding(8.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                ),
                             )
                         }
                     }
@@ -609,7 +610,7 @@ private fun getLevelColor(level: LogLevel): Color {
     return when (level) {
         LogLevel.DEBUG -> colors.neutral
 
-        LogLevel.INFO -> Color(0xFF2196F3)
+        LogLevel.INFO -> colors.info
 
         // Blue (informational, not semantic status)
         LogLevel.WARNING -> colors.warning
