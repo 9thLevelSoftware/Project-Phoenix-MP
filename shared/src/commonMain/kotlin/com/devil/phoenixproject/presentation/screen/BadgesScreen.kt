@@ -215,10 +215,12 @@ fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges: Int, m
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
+                    // Same luminance rule as the badge icons (analytics-history-18):
+                    // light tiers (FlameYellow, secondary) need a dark glyph for AA contrast.
                     Icon(
                         imageVector = Icons.Default.LocalFireDepartment,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = if (streakInfo.currentStreak > 0 && fireColor.luminance() > 0.4f) Slate900 else Slate50,
                         modifier = Modifier.size(32.dp),
                     )
                 }
