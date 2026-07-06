@@ -1,11 +1,17 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -22,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -31,11 +38,13 @@ import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
@@ -44,6 +53,7 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_continue_set
 import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.end_workout
 import vitruvianprojectphoenix.shared.generated.resources.exit_workout_message
@@ -174,47 +184,34 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     }
 
     // Handle Back Button (System + Top Bar)
-    // Issue #XXX: Different behavior for routine flow vs non-routine modes
-    LaunchedEffect(Unit) {
-        val onBack: () -> Unit = {
-            val workoutState = viewModel.workoutState.value
-            val isRoutineFlow = viewModel.routineFlowState.value != RoutineFlowState.NotInRoutine
-
-            // Check if workout is in an active state
-            val isWorkoutActive = workoutState is WorkoutState.Active ||
-                workoutState is WorkoutState.Resting ||
-                workoutState is WorkoutState.Countdown ||
-                workoutState is WorkoutState.SetSummary ||
-                workoutState is WorkoutState.BodyweightRepEntry
-
+    // Hoisted out of LaunchedEffect so BackHandler and setTopBarBackAction share one code path.
+    // Guard change (lens-navigation-ux-1): ALL active states show the confirmation dialog.
+    // UNSAFE states (Active/Countdown/Initializing): no machine command before user confirms.
+    // SAFE states (Resting/SetSummary/BodyweightRepEntry): machine is already stopped but dialog
+    // gives user access to Skip Exercise and End Workout — per lens-navigation-ux-1 recommendation
+    // to set showExitConfirmation = true unconditionally when isWorkoutActive is true.
+    val onBack: () -> Unit = remember(viewModel, navController) {
+        fun() {
+            val workoutStateValue = viewModel.workoutState.value
+            val isWorkoutActive = workoutStateValue is WorkoutState.Active ||
+                workoutStateValue is WorkoutState.Resting ||
+                workoutStateValue is WorkoutState.Countdown ||
+                workoutStateValue is WorkoutState.Initializing ||
+                workoutStateValue is WorkoutState.SetSummary ||
+                workoutStateValue is WorkoutState.BodyweightRepEntry
             if (isWorkoutActive) {
-                if (isRoutineFlow) {
-                    // Issue #320: When reps have been completed, stopAndReturnToSetReady
-                    // routes through handleSetCompletion (saves reps, shows summary,
-                    // auto-advances to rest timer). Only navigate to SetReady when
-                    // no reps were completed (true "retry from scratch" scenario).
-                    // Read fresh from StateFlow — the composed `repCount` is stale inside
-                    // this LaunchedEffect(Unit) callback.
-                    val hasCompletedReps = viewModel.repCount.value.workingReps > 0
-                    viewModel.stopAndReturnToSetReady()
-                    if (!hasCompletedReps) {
-                        navController.navigate(NavigationRoutes.SetReady.route) {
-                            // Issue #541: popUpTo(ActiveWorkout) inclusive replaces ActiveWorkout
-                            // with SetReady on the back stack, preserving the parent screen
-                            // (RoutineOverview for routines, TrainingCycles for cycles) so system
-                            // back from SetReady lands on the right place. This was previously
-                            // popUpTo(RoutineOverview), which is not on the cycle back stack.
-                            popUpTo(NavigationRoutes.ActiveWorkout.route) { inclusive = true }
-                        }
-                    }
-                } else {
-                    // Non-routine (Just Lift, Single Exercise): Show exit confirmation dialog
-                    showExitConfirmation = true
-                }
+                showExitConfirmation = true
             } else {
                 navController.navigateUp()
             }
         }
+    }
+
+    // Wire to system back (BackHandler) AND top-bar back — single code path for both sources.
+    // Keyed on onBack so a re-remembered lambda (viewModel/navController change) re-registers
+    // instead of leaving the top bar holding a stale callback (review finding 4B.1/IMPORTANT-1).
+    BackHandler { onBack() }
+    LaunchedEffect(onBack) {
         viewModel.setTopBarBackAction(onBack)
     }
 
@@ -467,60 +464,81 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     // Exit confirmation dialog
     if (showExitConfirmation) {
         if (isRoutineFlow) {
+            // Redesigned per workout-execution-4 + lens-navigation-ux-15:
+            // Primary safe action (Continue Set) in confirmButton; secondary actions
+            // (Stop Set / Skip Exercise / End Workout) as full-width OutlinedButtons in
+            // the text content area — matches ResumeRoutineDialog pattern, eliminates the
+            // M3 dismissButton Column-of-three layout violation.
             AlertDialog(
                 onDismissRequest = { showExitConfirmation = false },
                 title = { Text(stringResource(Res.string.stop_current_set_title)) },
-                text = { Text(stringResource(Res.string.stop_current_set_message)) },
-                containerColor = MaterialTheme.colorScheme.surface,
-                shape = MaterialTheme.shapes.medium,
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            // Issue #320: When reps completed, save and advance (no nav to SetReady)
-                            val hasCompletedReps = viewModel.repCount.value.workingReps > 0
-                            viewModel.stopAndReturnToSetReady()
-                            showExitConfirmation = false
-                            if (!hasCompletedReps) {
-                                navController.navigate(NavigationRoutes.SetReady.route) {
-                                    // Issue #541: see comment at the first SetReady nav site in this file.
-                                    popUpTo(NavigationRoutes.ActiveWorkout.route) {
-                                        inclusive = true
+                text = {
+                    Column {
+                        Text(stringResource(Res.string.stop_current_set_message))
+                        Spacer(Modifier.height(16.dp))
+                        // Issue #320: stopAndReturnToSetReady routes through handleSetCompletion
+                        // when reps > 0 (saves reps, auto-advances). Only nav to SetReady when
+                        // no reps were completed (true "retry from scratch" scenario).
+                        OutlinedButton(
+                            onClick = {
+                                val hasCompletedReps = viewModel.repCount.value.workingReps > 0
+                                viewModel.stopAndReturnToSetReady()
+                                showExitConfirmation = false
+                                if (!hasCompletedReps) {
+                                    navController.navigate(NavigationRoutes.SetReady.route) {
+                                        // Issue #541: see comment at the first SetReady nav site.
+                                        popUpTo(NavigationRoutes.ActiveWorkout.route) {
+                                            inclusive = true
+                                        }
                                     }
                                 }
-                            }
-                        },
-                    ) {
-                        Text(stringResource(Res.string.stop_set))
-                    }
-                },
-                dismissButton = {
-                    Column {
-                        TextButton(onClick = { showExitConfirmation = false }) {
-                            Text(stringResource(Res.string.action_cancel))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(Res.string.stop_set))
                         }
-                        TextButton(
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
                             onClick = {
                                 viewModel.stopAndSkipCurrentExercise()
                                 showExitConfirmation = false
                             },
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(stringResource(Res.string.skip_exercise))
                         }
-                        TextButton(
+                        Spacer(Modifier.height(8.dp))
+                        // Error-styled via ButtonDefaults token for proper touch-target semantics
+                        // (lens-navigation-ux-15: use ButtonDefaults.outlinedButtonColors rather
+                        // than passing color directly to Text)
+                        OutlinedButton(
                             onClick = {
+                                // lens-navigation-ux-2: read destination BEFORE stopWorkout().
+                                // stopWorkout(exitingWorkout=true) clears _routineFlowState to
+                                // NotInRoutine inline (does NOT call exitRoutineFlow) AND clears
+                                // routineLaunchOrigin to null asynchronously. Read destination
+                                // first so the correct route is captured before the async
+                                // cleanup block runs and nulls out the origin.
+                                val dest = viewModel.routineExitDestination()
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false
-                                navController.popBackStack(
-                                    NavigationRoutes.DailyRoutines.route,
-                                    inclusive = false,
-                                )
+                                navController.safePopOrNavigate(dest)
                             },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error,
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
                         ) {
-                            Text(
-                                stringResource(Res.string.end_workout),
-                                color = MaterialTheme.colorScheme.error,
-                            )
+                            Text(stringResource(Res.string.end_workout))
                         }
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = MaterialTheme.shapes.medium,
+                confirmButton = {
+                    Button(onClick = { showExitConfirmation = false }) {
+                        Text(stringResource(Res.string.action_continue_set))
                     }
                 },
             )

@@ -33,17 +33,15 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -97,14 +95,10 @@ import com.devil.phoenixproject.util.setKeepScreenOn
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.cd_analytics
 import vitruvianprojectphoenix.shared.generated.resources.cd_back
 import vitruvianprojectphoenix.shared.generated.resources.cd_settings
 import vitruvianprojectphoenix.shared.generated.resources.cd_workouts
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
 import vitruvianprojectphoenix.shared.generated.resources.insights_title
 
 /**
@@ -228,9 +222,6 @@ fun EnhancedMainScreen(
         currentRoute != NavigationRoutes.Home.route
     }
 
-    // Exit confirmation dialog state for routine flow
-    var showExitRoutineConfirmation by remember { mutableStateOf(false) }
-
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
         val platformAccessibilitySettings = rememberPlatformAccessibilitySettings()
@@ -296,7 +287,9 @@ fun EnhancedMainScreen(
                                         onClick = {
                                             when (currentRoute) {
                                                 NavigationRoutes.RoutineOverview.route -> {
-                                                    showExitRoutineConfirmation = true
+                                                    // Action is null during registration race windows (first
+                                                    // frame / nav-out); fall back so the tap is never swallowed.
+                                                    topBarBackAction?.invoke() ?: navController.navigateUp()
                                                 }
 
                                                 NavigationRoutes.SetReady.route -> {
@@ -457,27 +450,6 @@ fun EnhancedMainScreen(
                     },
                     onDismiss = {
                         viewModel.dismissConnectionLostAlert()
-                    },
-                )
-            }
-
-            // Exit routine confirmation dialog
-            if (showExitRoutineConfirmation) {
-                AlertDialog(
-                    onDismissRequest = { showExitRoutineConfirmation = false },
-                    title = { Text(stringResource(Res.string.exit_routine_title)) },
-                    text = { Text(stringResource(Res.string.exit_routine_message)) },
-                    confirmButton = {
-                        Button(onClick = {
-                            showExitRoutineConfirmation = false
-                            viewModel.exitRoutineFlow()
-                            navController.navigateUp()
-                        }) { Text(stringResource(Res.string.action_exit)) }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showExitRoutineConfirmation = false }) {
-                            Text(stringResource(Res.string.action_cancel))
-                        }
                     },
                 )
             }
@@ -807,53 +779,64 @@ private fun ConnectionStatusIndicator(
     val greenColor = AccessibilityTheme.colors.success
     val redColor = AccessibilityTheme.colors.error
 
+    // Touch target wrapper: minimumInteractiveComponentSize ensures ≥48×48dp interactive area
+    // (transparent — no visual background here)
     Box(
         modifier = Modifier
-            .heightIn(min = 48.dp)
+            .minimumInteractiveComponentSize()
             .widthIn(max = if (compact) 124.dp else 180.dp)
             .padding(end = 8.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .then(
-                if (isConnecting) {
-                    // Animated gradient background for connecting state
-                    Modifier.background(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(
-                                blueColor,
-                                greenColor,
-                                blueColor,
-                                greenColor,
-                                blueColor,
-                            ),
-                            startX = -200f + (gradientOffset * 600f),
-                            endX = 200f + (gradientOffset * 600f),
-                        ),
-                    )
-                } else {
-                    // Static background for other states
-                    Modifier.background(
-                        color = when {
-                            isConnected -> greenColor
-                            isError -> redColor
-                            else -> blueColor
-                        },
-                    )
-                },
-            )
             .clickable(
                 onClick = onToggleConnection,
                 role = Role.Button,
-            )
-            .padding(horizontal = if (compact) 8.dp else 10.dp),
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = buttonText,
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        // Visual pill: restored to pre-Phase-1 32dp height.
+        // shapes.medium = 20dp radius; with height=32dp the radius exceeds height/2 (16dp),
+        // so path corners are clamped to 16dp → proper stadium/pill shape. Keep shapes.medium.
+        Box(
+            modifier = Modifier
+                .heightIn(min = 32.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .then(
+                    if (isConnecting) {
+                        // Animated gradient background for connecting state
+                        Modifier.background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    blueColor,
+                                    greenColor,
+                                    blueColor,
+                                    greenColor,
+                                    blueColor,
+                                ),
+                                startX = -200f + (gradientOffset * 600f),
+                                endX = 200f + (gradientOffset * 600f),
+                            ),
+                        )
+                    } else {
+                        // Static background for other states
+                        Modifier.background(
+                            color = when {
+                                isConnected -> greenColor
+                                isError -> redColor
+                                else -> blueColor
+                            },
+                        )
+                    },
+                )
+                .padding(horizontal = if (compact) 8.dp else 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = buttonText,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

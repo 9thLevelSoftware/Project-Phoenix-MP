@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
@@ -134,6 +135,23 @@ class WorkoutCoordinator(
 
     internal val _routineFlowState = MutableStateFlow<RoutineFlowState>(RoutineFlowState.NotInRoutine)
     val routineFlowState: StateFlow<RoutineFlowState> = _routineFlowState.asStateFlow()
+
+    /**
+     * Tracks which screen launched the current routine (DAILY_ROUTINES or TRAINING_CYCLES).
+     *
+     * Lifecycle:
+     * - Set to DAILY_ROUTINES by RoutineFlowManager.loadRoutine / loadRoutineAsync (daily path).
+     * - Set to DAILY_ROUTINES by RoutineFlowManager.enterRoutineOverview (overview entry path).
+     * - Set to TRAINING_CYCLES by ActiveSessionEngine.loadRoutineFromCycle /
+     *   loadRoutineFromCycleAsync (cycle path) — written AFTER the flowDelegate call so it
+     *   overwrites the DAILY_ROUTINES set by RoutineFlowManager.
+     * - Cleared (null) in RoutineFlowManager.exitRoutineFlow() AND in
+     *   ActiveSessionEngine.stopWorkout(exitingWorkout=true) — safe because callers read
+     *   routineExitDestination() before calling stopWorkout.
+     * - NOT cleared in updateCycleProgressIfNeeded() — the activeCycleId lifecycle is separate.
+     */
+    @Volatile
+    internal var routineLaunchOrigin: RoutineLaunchOrigin? = null
 
     // Issue #600: once-per-session bodyweight prompt and resolved session override.
     internal val _sessionBodyweightState = MutableStateFlow(SessionBodyweightState())

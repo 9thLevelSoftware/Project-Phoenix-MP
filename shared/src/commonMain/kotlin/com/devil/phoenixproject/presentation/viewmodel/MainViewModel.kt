@@ -41,6 +41,8 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
@@ -567,6 +569,27 @@ class MainViewModel constructor(
     fun confirmSessionBodyWeight(weightKg: Float?, saveToProfile: Boolean) = workoutSessionManager.confirmSessionBodyWeight(weightKg, saveToProfile)
     fun skipSessionBodyWeightPrompt() = workoutSessionManager.skipSessionBodyWeightPrompt()
     fun returnToOverview() = workoutSessionManager.returnToOverview()
+    /**
+     * Returns the navigation route to pop to when exiting the current routine flow.
+     *
+     * *** ORDERING CONTRACT — READ THIS BEFORE CALLING exitRoutineFlow() ***
+     * This function MUST be called BEFORE [exitRoutineFlow] (or [stopWorkout] with
+     * exitingWorkout=true). Both paths clear [routineLaunchOrigin] to null; calling
+     * routineExitDestination() afterwards always returns the default DailyRoutines
+     * destination, silently breaking cycle return.
+     *
+     * Correct call pattern at every exit site:
+     *   val dest = viewModel.routineExitDestination()   // 1. read origin FIRST
+     *   viewModel.exitRoutineFlow()                     // 2. clears origin
+     *   navController.popBackStack(dest, false)         // 3. navigate
+     */
+    fun routineExitDestination(): String =
+        if (workoutSessionManager.coordinator.routineLaunchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES) {
+            NavigationRoutes.TrainingCycles.route
+        } else {
+            NavigationRoutes.DailyRoutines.route
+        }
+
     fun exitRoutineFlow() = workoutSessionManager.exitRoutineFlow()
     fun showRoutineComplete() = workoutSessionManager.showRoutineComplete()
     fun clearLoadedRoutine() = workoutSessionManager.clearLoadedRoutine()

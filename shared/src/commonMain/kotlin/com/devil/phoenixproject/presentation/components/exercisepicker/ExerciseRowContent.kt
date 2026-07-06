@@ -47,6 +47,7 @@ fun ExerciseRowContent(
     isLoadingThumbnail: Boolean,
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
+    onLongPressLabel: String? = null,
     onThumbnailClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -55,6 +56,7 @@ fun ExerciseRowContent(
             .fillMaxWidth()
             .combinedClickable(
                 onClick = onClick,
+                onLongClickLabel = onLongPressLabel,
                 onLongClick = onLongPress,
             ),
         color = MaterialTheme.colorScheme.surface,

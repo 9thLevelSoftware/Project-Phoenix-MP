@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.navigation
 
+import androidx.navigation.NavController
+
 /**
  * Navigation routes for the app.
  * These sealed classes define all possible navigation destinations.
@@ -80,6 +82,22 @@ private fun String.encodeRouteSegment(): String = buildString {
                     append((b.toInt() and 0xF).toString(16).uppercase())
                 }
             }
+        }
+    }
+}
+
+/**
+ * Pops the back stack to [dest]. If [dest] is not in the back stack (e.g. after process
+ * recreation or an unusual entry path), navigates to [dest] directly, preserving Home as
+ * the bottom entry so the user always has a back-path.
+ *
+ * Use this at every routine-exit site instead of bare `popBackStack(dest, false)` to prevent
+ * the user being stranded when the expected ancestor is absent (lens-navigation-ux-2/-3).
+ */
+fun NavController.safePopOrNavigate(dest: String) {
+    if (!popBackStack(dest, false)) {
+        navigate(dest) {
+            popUpTo(NavigationRoutes.Home.route) { inclusive = false }
         }
     }
 }

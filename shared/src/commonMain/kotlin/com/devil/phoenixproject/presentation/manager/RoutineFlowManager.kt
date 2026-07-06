@@ -19,6 +19,7 @@ import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineItem
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
@@ -918,6 +919,10 @@ class RoutineFlowManager(
             return
         }
 
+        // Mark as DAILY_ROUTINES (synchronous, before the async weight-resolution coroutine).
+        // If called via loadRoutineFromCycle, ActiveSessionEngine will overwrite this with
+        // TRAINING_CYCLES immediately after this function returns — see coordinator KDoc.
+        coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         scope.launch {
             val resolvedRoutine = resolveRoutineWeights(routine)
             loadRoutineInternal(resolvedRoutine)
@@ -937,6 +942,9 @@ class RoutineFlowManager(
             return false
         }
 
+        // Mark as DAILY_ROUTINES. If called via loadRoutineFromCycleAsync, ActiveSessionEngine
+        // will overwrite this with TRAINING_CYCLES immediately after this suspend call returns.
+        coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         val resolvedRoutine = resolveRoutineWeights(routine)
         loadRoutineInternal(resolvedRoutine)
         return true
@@ -954,6 +962,10 @@ class RoutineFlowManager(
      * Enter routine overview mode.
      */
     fun enterRoutineOverview(routine: Routine) {
+        // Mark as DAILY_ROUTINES synchronously before the async weight-resolution coroutine,
+        // mirroring loadRoutine(). This ensures routineExitDestination() returns the correct
+        // destination even if the user exits before the coroutine completes.
+        coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         scope.launch {
             enterRoutineOverviewInternal(resolveRoutineWeights(routine))
         }
@@ -963,6 +975,10 @@ class RoutineFlowManager(
      * Enter routine overview with a one-shot launch modifier applied after PR% weights resolve.
      */
     fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) {
+        // Mark as DAILY_ROUTINES synchronously before the async weight-resolution coroutine,
+        // mirroring loadRoutine(). This ensures routineExitDestination() returns the correct
+        // destination even if the user exits before the coroutine completes.
+        coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         scope.launch {
             val resolvedRoutine = resolveRoutineWeights(routine)
             val adjustedRoutine = applyRoutineModifierUseCase(resolvedRoutine, modifier, resolvedRoutine.profileId)
@@ -1280,6 +1296,11 @@ class RoutineFlowManager(
 
     /**
      * Exit routine flow and return to routines list.
+     *
+     * IMPORTANT — routineLaunchOrigin ordering contract: callers MUST read
+     * [com.devil.phoenixproject.presentation.viewmodel.MainViewModel.routineExitDestination]
+     * BEFORE calling this function. exitRoutineFlow() clears routineLaunchOrigin to null,
+     * so reading the destination afterwards always returns the default (DailyRoutines).
      */
     fun exitRoutineFlow() {
         coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
@@ -1295,6 +1316,8 @@ class RoutineFlowManager(
         coordinator.currentRoutineId = null
         coordinator.routineAccumulatedCalories = 0f
         coordinator._completedRoutineSetKeys.value = emptySet()
+        // Clear launch origin last so any concurrent read still sees the correct value.
+        coordinator.routineLaunchOrigin = null
     }
 
     /**

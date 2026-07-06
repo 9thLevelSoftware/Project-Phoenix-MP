@@ -40,6 +40,7 @@ import com.devil.phoenixproject.domain.model.RepType
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WeightAdjustmentInput
@@ -1824,7 +1825,9 @@ class ActiveSessionEngine(
             coordinator.activeCycleId = cycleId
             coordinator.activeCycleDayNumber = dayNumber
             Logger.d { "Loading routine from cycle: cycleId=$cycleId, dayNumber=$dayNumber" }
+            // flowDelegate.loadRoutine sets DAILY_ROUTINES synchronously; overwrite to TRAINING_CYCLES after.
             flowDelegate?.loadRoutine(routine)
+            coordinator.routineLaunchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES
         }
     }
 
@@ -1840,7 +1843,10 @@ class ActiveSessionEngine(
         coordinator.activeCycleId = cycleId
         coordinator.activeCycleDayNumber = dayNumber
         Logger.d { "Loading routine from cycle (async): cycleId=$cycleId, dayNumber=$dayNumber" }
-        return flowDelegate?.loadRoutineAsync(routine) ?: false
+        // flowDelegate.loadRoutineAsync sets DAILY_ROUTINES; overwrite to TRAINING_CYCLES after it returns.
+        val result = flowDelegate?.loadRoutineAsync(routine) ?: false
+        coordinator.routineLaunchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES
+        return result
     }
 
     fun clearCycleContext() {
@@ -3106,6 +3112,12 @@ class ActiveSessionEngine(
                 coordinator.currentRoutineId = null
                 coordinator.routineAccumulatedCalories = 0f
                 coordinator._completedRoutineSetKeys.value = emptySet()
+                // Safe to clear origin here: every call site (e.g. ActiveWorkoutScreen) reads
+                // routineExitDestination() BEFORE invoking stopWorkout(exitingWorkout=true), so
+                // the navigation decision is already captured before this async block runs.
+                // Clearing prevents a stale TRAINING_CYCLES origin from bleeding into the next
+                // session when the user subsequently enters via DailyRoutinesScreen.
+                coordinator.routineLaunchOrigin = null
             } else {
                 coordinator._workoutState.value = persistedSummary
             }

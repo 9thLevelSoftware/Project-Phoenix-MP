@@ -17,7 +17,8 @@ import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.domain.model.RoutineFlowState
-import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -37,6 +38,15 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
             navController.navigateUp()
         }
         return
+    }
+
+    // lens-navigation-ux-5: intercept system back so it mirrors Done and calls exitRoutineFlow()
+    // before navigating, preventing stale RoutineFlowState.Complete from persisting.
+    // Read destination BEFORE exitRoutineFlow() — exitRoutineFlow() clears the launch origin.
+    BackHandler {
+        val dest = viewModel.routineExitDestination()
+        viewModel.exitRoutineFlow()
+        navController.safePopOrNavigate(dest)
     }
 
     // Pulse animation for celebration
@@ -142,10 +152,12 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
             }
 
             // Done button
+            // lens-navigation-ux-2: read destination BEFORE exitRoutineFlow() clears the origin.
             Button(
                 onClick = {
+                    val dest = viewModel.routineExitDestination()
                     viewModel.exitRoutineFlow()
-                    navController.popBackStack(NavigationRoutes.DailyRoutines.route, false)
+                    navController.safePopOrNavigate(dest)
                 },
                 modifier = Modifier
                     .fillMaxWidth()

@@ -53,6 +53,7 @@ fun ProgressTab(
     exerciseRepository: ExerciseRepository,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
+    onNavigateToStrengthAssessment: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -91,6 +92,47 @@ fun ProgressTab(
             WorkoutModeDistributionCard(
                 workoutSessions = workoutSessions,
             )
+        }
+
+        // Strength Assessment entry point
+        item {
+            ExpressiveCard(
+                onClick = onNavigateToStrengthAssessment,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.medium),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.FitnessCenter,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(Res.string.strength_assessment_cta_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = stringResource(Res.string.strength_assessment_cta_subtitle),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = stringResource(Res.string.cd_strength_assessment_cta),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         item {
@@ -219,7 +261,11 @@ fun ProgressTab(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixproject.ui.theme.ThemeMode) {
+fun AnalyticsScreen(
+    viewModel: MainViewModel,
+    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
+    onNavigateToStrengthAssessment: () -> Unit,
+) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
     val isHistoryLoading by viewModel.isHistoryLoading.collectAsState()
@@ -434,6 +480,7 @@ fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixprojec
                         exerciseRepository = viewModel.exerciseRepository,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
+                        onNavigateToStrengthAssessment = onNavigateToStrengthAssessment,
                         modifier = Modifier.fillMaxSize(),
                     )
 

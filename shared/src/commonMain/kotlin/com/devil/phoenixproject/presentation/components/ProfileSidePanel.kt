@@ -32,7 +32,8 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
-private val HANDLE_WIDTH = 48.dp
+private val HANDLE_VISUAL_WIDTH = 24.dp   // visual tab width (pre-Phase-1)
+private val HANDLE_TOUCH_WIDTH = 48.dp   // touch-target width (≥48dp requirement)
 private val HANDLE_HEIGHT = 48.dp
 private val EDGE_SWIPE_THRESHOLD = 20.dp
 
@@ -106,26 +107,35 @@ fun ProfileSidePanel(
                 .offset { IntOffset(panelOffset.roundToPx(), 0) }
                 .zIndex(2f),
         ) {
-            // Chevron handle (visible when closed)
-            Surface(
+            // Chevron handle: 48dp-wide transparent touch Box (hit area extends inward),
+            // containing the 24dp visual Surface aligned flush to the right/panel edge.
+            // Offset and panel geometry unchanged — offset uses HANDLE_TOUCH_WIDTH (= old HANDLE_WIDTH = 48dp).
+            Box(
                 modifier = Modifier
-                    .offset(x = -HANDLE_WIDTH)
+                    .offset(x = -HANDLE_TOUCH_WIDTH)
                     .align(Alignment.CenterStart)
-                    .width(HANDLE_WIDTH)
+                    .width(HANDLE_TOUCH_WIDTH)
                     .height(HANDLE_HEIGHT)
                     .clickable { isOpen = !isOpen },
-                shape = RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp),
-                color = ProfileColors.getOrElse(activeProfile?.colorIndex ?: 0) {
-                    ProfileColors[0]
-                }.copy(alpha = 0.9f),
-                shadowElevation = 4.dp,
+                contentAlignment = Alignment.CenterEnd,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                        contentDescription = if (isOpen) "Close profiles" else "Open profiles",
-                        tint = Color.White,
-                    )
+                Surface(
+                    modifier = Modifier
+                        .width(HANDLE_VISUAL_WIDTH)
+                        .fillMaxHeight(),
+                    shape = RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp),
+                    color = ProfileColors.getOrElse(activeProfile?.colorIndex ?: 0) {
+                        ProfileColors[0]
+                    }.copy(alpha = 0.9f),
+                    shadowElevation = 4.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = if (isOpen) "Close profiles" else "Open profiles",
+                            tint = Color.White,
+                        )
+                    }
                 }
             }
 

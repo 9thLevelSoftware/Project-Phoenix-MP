@@ -374,8 +374,60 @@ fun ExerciseEditBottomSheet(
                     }
                 }
 
-                // Set Mode Toggle — placed above SetsConfiguration so the user can choose
-                // REPS vs DURATION before editing individual set values (routines-1).
+                // Mode Selector — leads the sheet because it gates which controls appear
+                // (TUT Beast toggle, Echo/Eccentric selectors, Weight Change Per Rep visibility).
+                if (showCableOnlyExerciseControls) {
+                    ModeSelector(
+                        selectedMode = selectedMode,
+                        onModeChange = viewModel::onSelectedModeChange,
+                    )
+                }
+
+                // TUT Beast toggle
+                if (isTutMode) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                        shadowElevation = 2.dp,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.small),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Beast Mode",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Switch(
+                                checked = selectedMode is WorkoutMode.TUTBeast,
+                                onCheckedChange = { isBeast ->
+                                    viewModel.onSelectedModeChange(if (isBeast) WorkoutMode.TUTBeast else WorkoutMode.TUT)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // Echo Mode options
+                if (isEchoMode) {
+                    EccentricLoadSelector(
+                        eccentricLoad = eccentricLoad,
+                        onLoadChange = viewModel::onEccentricLoadChange,
+                    )
+                    EchoLevelSelector(
+                        level = echoLevel,
+                        onLevelChange = viewModel::onEchoLevelChange,
+                    )
+                }
+
+                // Set Mode Toggle — mode now leads (above) because it gates dependent controls;
+                // sets & reps follow immediately after mode selection (routines-1).
                 if (showCableOnlyExerciseControls) {
                     SetModeToggle(
                         setMode = setMode,
@@ -383,8 +435,8 @@ fun ExerciseEditBottomSheet(
                     )
                 }
 
-                // Sets Configuration — promoted to first configurable block per UX finding
-                // routines-1: most-edited fields should appear at the top of the sheet.
+                // Sets Configuration — follows mode selection; mode leads because it gates
+                // dependent controls, and most-edited set/rep fields follow right after (routines-1).
                 SetsConfiguration(
                     sets = sets,
                     setMode = setMode,
@@ -486,57 +538,6 @@ fun ExerciseEditBottomSheet(
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
                         onWeightPercentOfPRChange = viewModel::onWeightPercentOfPRChange,
                         onScalingBasisChange = viewModel::onScalingBasisChange,
-                    )
-                }
-
-                // Mode Selector
-                if (showCableOnlyExerciseControls) {
-                    ModeSelector(
-                        selectedMode = selectedMode,
-                        onModeChange = viewModel::onSelectedModeChange,
-                    )
-                }
-
-                // TUT Beast toggle
-                if (isTutMode) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                        shadowElevation = 2.dp,
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(Spacing.small),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                "Beast Mode",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Switch(
-                                checked = selectedMode is WorkoutMode.TUTBeast,
-                                onCheckedChange = { isBeast ->
-                                    viewModel.onSelectedModeChange(if (isBeast) WorkoutMode.TUTBeast else WorkoutMode.TUT)
-                                },
-                            )
-                        }
-                    }
-                }
-
-                // Echo Mode options
-                if (isEchoMode) {
-                    EccentricLoadSelector(
-                        eccentricLoad = eccentricLoad,
-                        onLoadChange = viewModel::onEccentricLoadChange,
-                    )
-                    EchoLevelSelector(
-                        level = echoLevel,
-                        onLevelChange = viewModel::onEchoLevelChange,
                     )
                 }
 

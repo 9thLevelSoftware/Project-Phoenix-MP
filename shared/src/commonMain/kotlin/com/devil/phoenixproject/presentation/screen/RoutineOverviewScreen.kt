@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -40,8 +39,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -76,11 +75,13 @@ import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
@@ -93,7 +94,6 @@ import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
 import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.action_stop
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
@@ -207,9 +207,18 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
     // Stop routine confirmation dialog
     var showStopConfirmation by remember { mutableStateOf(false) }
 
-    // Handle system back press - show confirmation instead of silently exiting
-    BackHandler {
-        showStopConfirmation = true
+    // Wire to system back (BackHandler) AND top-bar back — single code path for both sources.
+    // Keyed on onBack so a re-remembered lambda re-registers if references change
+    // (mirrors the pattern in ActiveWorkoutScreen per review finding 4B.1/IMPORTANT-1).
+    val onBack: () -> Unit = remember { { showStopConfirmation = true } }
+    BackHandler { onBack() }
+    LaunchedEffect(onBack) {
+        viewModel.setTopBarBackAction(onBack)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearTopBarBackAction()
+        }
     }
 
     fun startCurrentExercise() {
@@ -374,28 +383,21 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
         }
     }
 
-    // Stop confirmation dialog
+    // Stop confirmation dialog — single source of truth (top-bar back + system back + Stop button).
+    // Uses origin-aware destination (4B.2 helper) so cycle-launched routines return to
+    // TrainingCycles rather than DailyRoutines.
     if (showStopConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showStopConfirmation = false },
-            title = { Text(stringResource(Res.string.exit_routine_title)) },
-            text = { Text(stringResource(Res.string.exit_routine_message)) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showStopConfirmation = false
-                        viewModel.exitRoutineFlow()
-                        navController.navigateUp()
-                    },
-                ) {
-                    Text(stringResource(Res.string.action_exit))
-                }
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.exit_routine_title),
+            message = stringResource(Res.string.exit_routine_message),
+            confirmText = stringResource(Res.string.action_exit),
+            onConfirm = {
+                showStopConfirmation = false
+                val dest = viewModel.routineExitDestination()
+                viewModel.exitRoutineFlow()
+                navController.safePopOrNavigate(dest)
             },
-            dismissButton = {
-                TextButton(onClick = { showStopConfirmation = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
+            onDismiss = { showStopConfirmation = false },
         )
     }
 }

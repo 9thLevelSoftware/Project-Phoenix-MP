@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -25,6 +28,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.interop.UIKitView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import co.touchlab.kermit.Logger
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.video_preview_unavailable
 import kotlinx.cinterop.readValue
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryAmbient
@@ -61,7 +68,6 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
 
     var isLoading by remember(videoUrl) { mutableStateOf(true) }
     var hasError by remember(videoUrl) { mutableStateOf(false) }
-    var errorMessage by remember(videoUrl) { mutableStateOf("") }
 
     Box(
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
@@ -78,9 +84,9 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
                             hasError = false
                         },
                         onError = { message ->
+                            Logger.e("VideoPlayer") { "Video load failed (iOS): $message" }
                             isLoading = false
                             hasError = true
-                            errorMessage = message
                         },
                     )
                 }
@@ -89,7 +95,6 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
                 // Reset state while reloading a new URL
                 isLoading = true
                 hasError = false
-                errorMessage = ""
                 view.load(
                     urlString = videoUrl,
                     onReady = {
@@ -97,9 +102,9 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
                         hasError = false
                     },
                     onError = { message ->
+                        Logger.e("VideoPlayer") { "Video load failed (iOS): $message" }
                         isLoading = false
                         hasError = true
-                        errorMessage = message
                     },
                 )
             },
@@ -119,6 +124,7 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
             }
         }
 
+        // Error state — friendly fallback; full details logged via Logger.e above
         if (hasError) {
             Box(
                 modifier = Modifier
@@ -131,20 +137,18 @@ actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(16.dp),
                 ) {
+                    Icon(
+                        imageVector = Icons.Default.VideocamOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Text(
-                        text = "Failed to load video",
+                        text = stringResource(Res.string.video_preview_unavailable),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                     )
-                    if (errorMessage.isNotBlank()) {
-                        Text(
-                            text = errorMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
                 }
             }
         }
