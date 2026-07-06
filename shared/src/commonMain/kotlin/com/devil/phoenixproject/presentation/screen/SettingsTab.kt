@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -7,6 +8,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -102,6 +104,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
@@ -3401,29 +3404,66 @@ private fun SafeWordCalibrationDialog(
                         )
 
                         // 3 circles showing progress
+                        // settings-profile-18: animateColorAsState + scale pop + animated Check icon.
+                        // AnimatedVisibility is not used here (scope ambiguity in Row>Box context);
+                        // scale+alpha modifier achieves identical visual with no overhead.
+                        // reduceMotion: snap colour, scale at 1f always, check appears instantly.
+                        val reduceMotionCalib = LocalPlatformAccessibilitySettings.current.reduceMotion
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
                             modifier = Modifier.padding(vertical = Spacing.small),
                         ) {
                             repeat(3) { index ->
                                 val filled = index < detectionCount
+                                val successGreen = Color(0xFF10B981)
+                                val bouncyColorSpec = spring<androidx.compose.ui.graphics.Color>(
+                                    dampingRatio = Spring.DampingRatioHighBouncy,
+                                    stiffness = Spring.StiffnessLow,
+                                )
+                                val circleColor by animateColorAsState(
+                                    targetValue = if (filled) successGreen
+                                                  else MaterialTheme.colorScheme.surfaceVariant,
+                                    animationSpec = if (reduceMotionCalib) snap() else bouncyColorSpec,
+                                    label = "circleColor$index",
+                                )
+                                val circleScale by animateFloatAsState(
+                                    // reduceMotion: always 1f — no scale change (settled channel)
+                                    targetValue = if (filled || reduceMotionCalib) 1.0f else 0.8f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioHighBouncy,
+                                        stiffness = Spring.StiffnessLow,
+                                    ),
+                                    label = "circleScale$index",
+                                )
+                                // Check icon animates in with scale+alpha spring (no AnimatedVisibility
+                                // to avoid RowScope extension ambiguity inside nested Box).
+                                val checkScale by animateFloatAsState(
+                                    targetValue = if (filled) 1.0f else 0.0f,
+                                    animationSpec = if (reduceMotionCalib) snap() else spring(
+                                        dampingRatio = Spring.DampingRatioHighBouncy,
+                                        stiffness = Spring.StiffnessLow,
+                                    ),
+                                    label = "checkScale$index",
+                                )
                                 Box(
                                     modifier = Modifier
                                         .size(40.dp)
+                                        .scale(circleScale)
                                         .background(
-                                            color = if (filled) Color(0xFF10B981) else MaterialTheme.colorScheme.surfaceVariant,
+                                            color = circleColor,
                                             shape = RoundedCornerShape(50),
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    if (filled) {
-                                        Icon(
-                                            Icons.Default.Check,
-                                            contentDescription = stringResource(Res.string.cd_calibration_check),
-                                            tint = Color.White,
-                                            modifier = Modifier.size(24.dp),
-                                        )
-                                    }
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = stringResource(Res.string.cd_calibration_check),
+                                        tint = Color.White,
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .scale(checkScale)
+                                            .alpha(checkScale),
+                                    )
                                 }
                             }
                         }
