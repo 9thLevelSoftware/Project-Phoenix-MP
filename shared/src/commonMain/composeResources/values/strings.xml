@@ -817,4 +817,7 @@
     <!-- ==================== Unsaved-changes guard (task-4A.2) ==================== -->
     <string name="discard_changes_title">Discard changes?</string>
     <string name="discard_changes_message">You have unsaved changes. Going back will discard them.</string>
+
+    <!-- ==================== Pager / overlay accessibility (task-4A.5) ==================== -->
+    <string name="pager_page_of">Page %1$d of %2$d</string>
 </resources>

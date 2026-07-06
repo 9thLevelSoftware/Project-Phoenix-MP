@@ -51,6 +51,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -95,6 +98,8 @@ import vitruvianprojectphoenix.shared.generated.resources.action_exit
 import vitruvianprojectphoenix.shared.generated.resources.action_stop
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
+import vitruvianprojectphoenix.shared.generated.resources.cd_completed
+import vitruvianprojectphoenix.shared.generated.resources.pager_page_of
 import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
 import vitruvianprojectphoenix.shared.generated.resources.start_exercise
 import vitruvianprojectphoenix.shared.generated.resources.target_reps
@@ -336,11 +341,14 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                 )
             }
 
-            // Page indicators
+            // Page indicators — single semantics region announces current position to TalkBack
+            val totalPages = routine.exercises.size
+            val pageOfDesc = stringResource(Res.string.pager_page_of, pagerState.currentPage + 1, totalPages)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .semantics(mergeDescendants = true) { contentDescription = pageOfDesc },
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -753,15 +761,19 @@ private fun ExerciseOverviewCard(
 
             // Completed overlay
             if (isCompleted) {
+                val completedDesc = stringResource(Res.string.cd_completed)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)),
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                        .semantics(mergeDescendants = true) {
+                            stateDescription = completedDesc
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         Icons.Default.CheckCircle,
-                        "Completed",
+                        completedDesc,
                         modifier = Modifier.size(80.dp),
                         tint = MaterialTheme.colorScheme.tertiary,
                     )
