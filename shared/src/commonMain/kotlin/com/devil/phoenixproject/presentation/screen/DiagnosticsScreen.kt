@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.ble.DiagnosticFault
 import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.viewmodel.DiagnosticsUiState
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
@@ -275,10 +276,8 @@ private fun DiagnosticsWaitingState() {
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                )
+                // Phase 3 convention: LoadingIndicator is the only spinner component.
+                LoadingIndicator(size = LoadingIndicatorSize.Small)
             }
             Text(
                 text = stringResource(Res.string.diagnostics_waiting_description),
