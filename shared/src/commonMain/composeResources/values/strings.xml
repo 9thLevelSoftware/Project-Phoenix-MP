@@ -820,4 +820,10 @@
 
     <!-- ==================== Pager / overlay accessibility (task-4A.5) ==================== -->
     <string name="pager_page_of">Page %1$d of %2$d</string>
+
+    <!-- ==================== VBT assessment entry points (task-4B.0) ==================== -->
+    <string name="strength_assessment_cta_title">Strength Assessment</string>
+    <string name="strength_assessment_cta_subtitle">Find your 1RM with velocity-based testing</string>
+    <string name="cd_strength_assessment_cta">Open Strength Assessment picker</string>
+    <string name="cd_exercise_history_detail">View exercise history and 1RM</string>
 </resources>

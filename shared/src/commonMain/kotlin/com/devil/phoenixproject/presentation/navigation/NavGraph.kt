@@ -247,6 +247,9 @@ fun NavGraph(
                 AnalyticsScreen(
                     viewModel = viewModel,
                     themeMode = themeMode,
+                    onNavigateToStrengthAssessment = {
+                        navController.navigate(NavigationRoutes.StrengthAssessmentPicker.route)
+                    },
                 )
             }
 

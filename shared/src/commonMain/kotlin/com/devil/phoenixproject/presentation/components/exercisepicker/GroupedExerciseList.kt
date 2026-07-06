@@ -48,6 +48,7 @@ fun GroupedExerciseList(
     onToggleFavorite: (Exercise) -> Unit,
     onShowVideo: (Exercise, List<ExerciseVideoEntity>) -> Unit,
     onEditExercise: ((Exercise) -> Unit)? = null,
+    onViewExerciseDetail: ((Exercise) -> Unit)? = null,
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
     emptyContent: @Composable () -> Unit = {},
@@ -99,10 +100,10 @@ fun GroupedExerciseList(
                         onSelect = { onExerciseSelected(exercise) },
                         onToggleFavorite = { onToggleFavorite(exercise) },
                         onShowVideo = { videos -> onShowVideo(exercise, videos) },
-                        onLongPress = if (exercise.isCustom && onEditExercise != null) {
-                            { onEditExercise(exercise) }
-                        } else {
-                            null
+                        onLongPress = when {
+                            exercise.isCustom && onEditExercise != null -> { { onEditExercise(exercise) } }
+                            onViewExerciseDetail != null -> { { onViewExerciseDetail(exercise) } }
+                            else -> null
                         },
                         isRevealed = exercise.id == revealedExerciseId,
                         onRevealChange = { revealed ->

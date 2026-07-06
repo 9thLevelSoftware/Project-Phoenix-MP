@@ -322,6 +322,11 @@ fun SingleExerciseScreen(
                 enableCustomExercises = true,
                 onCreateExercise = { showCreateDialog = true },
                 onEditExercise = { exercise -> exerciseToEdit = exercise },
+                onViewExerciseDetail = { exercise ->
+                    exercise.id?.let { id ->
+                        navController.navigate(NavigationRoutes.ExerciseDetail.createRoute(id))
+                    }
+                },
                 fullScreen = true,
             )
 

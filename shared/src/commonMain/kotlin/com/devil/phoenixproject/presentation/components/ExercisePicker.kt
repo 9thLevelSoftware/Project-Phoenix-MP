@@ -369,6 +369,7 @@ fun ExercisePickerContent(
     enableCustomExercises: Boolean = true,
     onCreateExercise: () -> Unit = {},
     onEditExercise: ((Exercise) -> Unit)? = null,
+    onViewExerciseDetail: ((Exercise) -> Unit)? = null,
     fullScreen: Boolean,
 ) {
     var showVideoDialog by remember { mutableStateOf(false) }
@@ -509,6 +510,7 @@ fun ExercisePickerContent(
                     showVideoDialog = true
                 },
                 onEditExercise = if (enableCustomExercises) onEditExercise else null,
+                onViewExerciseDetail = onViewExerciseDetail,
                 listState = listState,
                 modifier = Modifier.weight(1f),
                 emptyContent = {
