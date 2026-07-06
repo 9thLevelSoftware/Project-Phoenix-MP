@@ -579,6 +579,7 @@ fun RoutineEditorScreen(
                                         SupersetContainer(
                                             colorIndex = superset.colorIndex,
                                             modifier = Modifier.shadow(elevation, MaterialTheme.shapes.small),
+                                            isDragging = isDragging,
                                         ) {
                                             // Header
                                             SupersetHeader(
