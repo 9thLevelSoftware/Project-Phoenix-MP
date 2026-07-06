@@ -147,7 +147,9 @@ class KableBleConnectionManager(
      * current connection attempt. @Volatile because the connect retry loop
      * reassigns it on the caller's dispatcher while the state observer
      * coroutine reads it on [scope] — a stale read would complete the previous
-     * attempt's gate and force a spurious initialization timeout.
+     * attempt's gate and force a spurious initialization timeout. The ready-up
+     * coroutine captures a snapshot of this field at launch so its completions
+     * always target the attempt it was started for, never a later reassignment.
      */
     @Volatile
     private var readyGate = CompletableDeferred<Unit>()
@@ -255,6 +257,7 @@ class KableBleConnectionManager(
         detectedFirmwareVersion = null
         negotiatedMtu = null
         wasEverConnected = false
+        compatibilityPathActive = false
         if (clearScannedDevices) {
             discoveredAdvertisements.clear()
             onScannedDevicesChanged(emptyList())
@@ -641,6 +644,13 @@ class KableBleConnectionManager(
                             // the saved LED color scheme, so publishing early injects a
                             // 34-byte write directly into the ready-up GATT sequence.
                             if (deviceReadyJob == null && !readyGate.isCompleted) {
+                                // Snapshot the gate for THIS attempt: the connect retry
+                                // loop reassigns [readyGate] on the caller's dispatcher,
+                                // so reading the field from inside the coroutine could
+                                // complete/cancel a LATER attempt's gate (PR #621 review).
+                                // complete/completeExceptionally/cancel are no-ops on an
+                                // already-completed deferred, so no isCompleted guards.
+                                val gate = readyGate
                                 deviceReadyJob = scope.launch {
                                     try {
                                         withTimeout(BleConstants.CONNECTION_TIMEOUT_MS) {
@@ -650,11 +660,9 @@ class KableBleConnectionManager(
                                         // connection down while ready-up was in flight —
                                         // don't resurrect Connected over a Disconnected UI.
                                         if (peripheral == null || isExplicitDisconnect) {
-                                            if (!readyGate.isCompleted) {
-                                                readyGate.completeExceptionally(
-                                                    BleDeviceInitializationException("Connection torn down during initialization"),
-                                                )
-                                            }
+                                            gate.completeExceptionally(
+                                                BleDeviceInitializationException("Connection torn down during initialization"),
+                                            )
                                             return@launch
                                         }
                                         reportConnectionState(
@@ -664,7 +672,7 @@ class KableBleConnectionManager(
                                                 hardwareModel = HardwareDetection.detectModel(device.name),
                                             ),
                                         )
-                                        readyGate.complete(Unit)
+                                        gate.complete(Unit)
                                     } catch (e: TimeoutCancellationException) {
                                         val failure = BleDeviceInitializationException(
                                             "Device initialization timeout after ${BleConstants.CONNECTION_TIMEOUT_MS}ms",
@@ -678,11 +686,9 @@ class KableBleConnectionManager(
                                             connectedDeviceAddress,
                                             failure.message,
                                         )
-                                        if (!readyGate.isCompleted) {
-                                            readyGate.completeExceptionally(failure)
-                                        }
+                                        gate.completeExceptionally(failure)
                                     } catch (e: CancellationException) {
-                                        readyGate.cancel(e)
+                                        gate.cancel(e)
                                         throw e
                                     } catch (e: Exception) {
                                         log.e(e) { "onDeviceReady failed: ${e.message}" }
@@ -693,14 +699,12 @@ class KableBleConnectionManager(
                                             connectedDeviceAddress,
                                             e.message,
                                         )
-                                        if (!readyGate.isCompleted) {
-                                            readyGate.completeExceptionally(
-                                                BleDeviceInitializationException(
-                                                    "Device initialization failed: ${e.message}",
-                                                    e,
-                                                ),
-                                            )
-                                        }
+                                        gate.completeExceptionally(
+                                            BleDeviceInitializationException(
+                                                "Device initialization failed: ${e.message}",
+                                                e,
+                                            ),
+                                        )
                                     }
                                 }
                             }
@@ -832,11 +836,10 @@ class KableBleConnectionManager(
                 }
             }
 
-            // All retries failed - cleanup and return to disconnected state
-            deviceReadyJob?.cancel()
-            deviceReadyJob = null
-            peripheral?.disconnect()
-            peripheral = null
+            // All retries failed - cleanup and return to disconnected state.
+            // cleanupExistingConnection() swallows disconnect errors, so peripheral
+            // is always released and Disconnected always reported (PR #621 review).
+            cleanupExistingConnection()
             reportConnectionState(ConnectionState.Disconnected)
             throw lastException ?: Exception("Connection failed after ${BleConstants.Timing.CONNECTION_RETRY_COUNT} attempts")
         } catch (e: Exception) {
@@ -1382,6 +1385,10 @@ class KableBleConnectionManager(
         }
 
         peripheral = null
+        // Connection-scoped snapshot — don't leak the previous connection's
+        // choreography into the next one (PR #621 review). onDeviceReady()
+        // re-resolves it for the new connection.
+        compatibilityPathActive = false
         // Note: Don't update _connectionState here - we're about to connect
         // and the Connecting state will be set by the caller
     }
