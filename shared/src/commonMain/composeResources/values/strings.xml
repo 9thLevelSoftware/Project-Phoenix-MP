@@ -27,6 +27,7 @@
     <string name="action_login">Login</string>
     <string name="action_sign_up">Sign Up</string>
     <string name="action_continue">Continue</string>
+    <string name="action_continue_set">Continue Set</string>
     <string name="action_discard">Discard</string>
     <string name="action_modify">Modify</string>
     <string name="action_accept">Accept</string>
