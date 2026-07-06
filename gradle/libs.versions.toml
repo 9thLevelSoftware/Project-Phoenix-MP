@@ -17,6 +17,12 @@ compose-bom = "2026.05.01"
 compose-navigation = "2.9.8"
 activity-compose = "1.13.0"
 
+# Vendored Kable module deps (third_party/kable-core-android-patched, Phoenix #333)
+kotlinx-io = "0.8.0"
+atomicfu = "0.29.0"
+tuulbox = "8.1.0"
+androidx-startup = "1.2.0"
+
 # AndroidX
 junit-androidx = "1.3.0"
 espresso-androidx = "3.7.0"
@@ -96,6 +102,12 @@ compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-
 androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "junit-androidx" }
 androidx-test-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso-androidx" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
+androidx-startup-runtime = { module = "androidx.startup:startup-runtime", version.ref = "androidx-startup" }
+
+# Vendored Kable module deps (third_party/kable-core-android-patched, Phoenix #333)
+kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
+atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
+tuulbox-coroutines = { module = "com.juul.tuulbox:coroutines", version.ref = "tuulbox" }
 androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle-viewmodel-compose" }
@@ -186,6 +198,7 @@ android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "kotlin" }
 
 # Compose Multiplatform
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }

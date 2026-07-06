@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.preferences
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.BleCompatibilityMode
+import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
@@ -174,6 +176,9 @@ interface PreferencesManager {
     suspend fun setDominatrixModeActive(active: Boolean)
     suspend fun setAdultsOnlyConfirmed(confirmed: Boolean)
 
+    // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
+    suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting)
+
     // Issue #611 (PR-followup #613): One-shot decline-remember gate for the 18+
     // Adults Only modal. The modal must not re-prompt on subsequent vulgar-on toggles
     // once either confirm OR decline has been recorded (architecture §3 — follow
@@ -257,6 +262,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
         // Permissions onboarding (health + microphone)
         private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
+
+        // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
+        private const val KEY_BLE_COMPATIBILITY_MODE = "ble_compatibility_mode"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -322,6 +330,13 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             dominatrixModeActive = settings.getBoolean(KEY_DOMINATRIX_MODE_ACTIVE, false),
             adultsOnlyConfirmed = settings.getBoolean(KEY_ADULTS_ONLY_CONFIRMED, false),
             adultsOnlyPrompted = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false),
+            bleCompatibilityMode = BleCompatibilitySetting.fromStorage(
+                settings.getStringOrNull(KEY_BLE_COMPATIBILITY_MODE),
+            ).also {
+                // Issue #333: the BLE layer reads the resolved mode via this global
+                // before any preference flow is collected, so sync it at load time.
+                BleCompatibilityMode.setting = it
+            },
         )
     }
 
@@ -681,6 +696,12 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         // Confirmed implies prompted (the one-shot decline-remember flag is irrelevant after confirm).
         settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, true)
         updateAndEmit { copy(adultsOnlyConfirmed = confirmed) }
+    }
+
+    override suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting) {
+        settings.putString(KEY_BLE_COMPATIBILITY_MODE, setting.name)
+        BleCompatibilityMode.setting = setting
+        updateAndEmit { copy(bleCompatibilityMode = setting) }
     }
 
     override fun isAdultsOnlyPrompted(): Boolean = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false)

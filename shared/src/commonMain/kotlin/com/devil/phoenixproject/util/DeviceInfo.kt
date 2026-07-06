@@ -71,4 +71,10 @@ expect object DeviceInfo {
      * Get device info as structured JSON string for metadata storage
      */
     fun toJson(): String
+
+    /**
+     * Issue #333: true on the Pixel 6/7 family (Tensor G1/G2 + BCM4389 Bluetooth
+     * controller), the only devices where large-MTU acknowledged writes wedge.
+     */
+    fun isPixel6Or7(): Boolean
 }

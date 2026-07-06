@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
+import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -66,6 +67,11 @@ class SettingsManager(
         .map { it.summaryCountdownSeconds != 0 }
         .stateIn(scope, SharingStarted.Eagerly, true)
 
+    // Issue #333: BLE small-MTU compatibility path (Auto = on for Pixel 6/7 family)
+    val bleCompatibilityMode: StateFlow<BleCompatibilitySetting> = userPreferences
+        .map { it.bleCompatibilityMode }
+        .stateIn(scope, SharingStarted.Eagerly, BleCompatibilitySetting.AUTO)
+
     fun setWeightUnit(unit: WeightUnit) {
         scope.launch { preferencesManager.setWeightUnit(unit) }
     }
@@ -113,6 +119,11 @@ class SettingsManager(
 
     fun setGamificationEnabled(enabled: Boolean) {
         scope.launch { preferencesManager.setGamificationEnabled(enabled) }
+    }
+
+    // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
+    fun setBleCompatibilityMode(setting: BleCompatibilitySetting) {
+        scope.launch { preferencesManager.setBleCompatibilityMode(setting) }
     }
 
     fun setCountdownBeepsEnabled(enabled: Boolean) {

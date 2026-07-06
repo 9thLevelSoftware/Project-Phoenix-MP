@@ -119,6 +119,7 @@ import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
 import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.VulgarTier
@@ -196,6 +197,13 @@ import vitruvianprojectphoenix.shared.generated.resources.restore_description
 import vitruvianprojectphoenix.shared.generated.resources.restore_from_backup
 import vitruvianprojectphoenix.shared.generated.resources.select_file
 import vitruvianprojectphoenix.shared.generated.resources.settings_appearance
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_auto
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_description_affected
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_off
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_on
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_reconnect_hint
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibrate_button
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibrate_first
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibrated_badge
@@ -346,6 +354,9 @@ fun SettingsTab(
     // Gamification toggle
     gamificationEnabled: Boolean = true,
     onGamificationEnabledChange: (Boolean) -> Unit = {},
+    // Issue #333: BLE small-MTU compatibility path (Auto = on for Pixel 6/7 family)
+    bleCompatibilityMode: BleCompatibilitySetting = BleCompatibilitySetting.AUTO,
+    onBleCompatibilityModeChange: (BleCompatibilitySetting) -> Unit = {},
     // Auto-backup (Phase 36)
     autoBackupEnabled: Boolean = false,
     onAutoBackupEnabledChange: (Boolean) -> Unit = {},
@@ -2835,6 +2846,54 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "View Bluetooth connection debug logs to diagnose connectivity issues",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Issue #333: BLE small-MTU compatibility path (fixes Pixel 6/7
+                // GATT_ERROR(133) disconnect at workout start)
+                Text(
+                    stringResource(Res.string.settings_ble_compat_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    stringResource(
+                        if (DeviceInfo.isPixel6Or7()) {
+                            Res.string.settings_ble_compat_description_affected
+                        } else {
+                            Res.string.settings_ble_compat_description
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(Spacing.small))
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    val options = listOf(
+                        BleCompatibilitySetting.AUTO to stringResource(Res.string.settings_ble_compat_auto),
+                        BleCompatibilitySetting.ON to stringResource(Res.string.settings_ble_compat_on),
+                        BleCompatibilitySetting.OFF to stringResource(Res.string.settings_ble_compat_off),
+                    )
+                    options.forEachIndexed { index, (setting, label) ->
+                        SegmentedButton(
+                            selected = bleCompatibilityMode == setting,
+                            onClick = { onBleCompatibilityModeChange(setting) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                        ) {
+                            Text(label, maxLines = 1)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    stringResource(Res.string.settings_ble_compat_reconnect_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
