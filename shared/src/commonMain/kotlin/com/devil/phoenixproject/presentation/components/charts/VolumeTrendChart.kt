@@ -134,12 +134,15 @@ fun VolumeTrendChart(
     // Responsive chart height
     val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 250.dp)
 
+    // Single shared scroll state so the bar canvas and X-axis labels scroll in lockstep
+    val chartScrollState = rememberScrollState()
+
     Column(modifier = modifier.fillMaxWidth()) {
         // Period selector chips — scrollable for Bold Text accessibility
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(chartScrollState)
                 .padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -212,7 +215,7 @@ fun VolumeTrendChart(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .horizontalScroll(rememberScrollState()),
+                        .horizontalScroll(chartScrollState),
                 ) {
                     val barWidth = 40.dp
                     val barSpacing = 8.dp
@@ -280,7 +283,7 @@ fun VolumeTrendChart(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
+                    .horizontalScroll(chartScrollState)
                     .padding(start = columnWidth + 4.dp, top = 4.dp),
             ) {
                 volumeData.forEach { data ->
