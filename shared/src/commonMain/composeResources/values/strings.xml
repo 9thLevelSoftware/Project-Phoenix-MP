@@ -135,6 +135,13 @@
     <string name="settings_machine_diagnostics_description">View a redacted machine diagnostics snapshot: uptime, fault codes, temperatures, crash data, and warnings. This is not a full backup.</string>
     <string name="settings_weight_suggestions_title">Weight Suggestions</string>
     <string name="settings_weight_suggestions_description">Show Apply or Dismiss recommendations after completed sets</string>
+    <string name="settings_ble_compat_title">BLE Compatibility Mode</string>
+    <string name="settings_ble_compat_description">Small-MTU write path that fixes workout-start disconnects on Pixel 6/7. Auto enables it only on those devices.</string>
+    <string name="settings_ble_compat_description_affected">Small-MTU write path that fixes workout-start disconnects on Pixel 6/7. Auto enables it only on those devices (this device is affected).</string>
+    <string name="settings_ble_compat_auto">Auto</string>
+    <string name="settings_ble_compat_on">On</string>
+    <string name="settings_ble_compat_off">Off</string>
+    <string name="settings_ble_compat_reconnect_hint">Takes effect on the next connection. Reconnect to the trainer after changing.</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Machine Diagnostics</string>

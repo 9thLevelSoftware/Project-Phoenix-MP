@@ -185,6 +185,13 @@ import vitruvianprojectphoenix.shared.generated.resources.restore_description
 import vitruvianprojectphoenix.shared.generated.resources.restore_from_backup
 import vitruvianprojectphoenix.shared.generated.resources.select_file
 import vitruvianprojectphoenix.shared.generated.resources.settings_appearance
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_auto
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_description_affected
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_off
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_on
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_reconnect_hint
+import vitruvianprojectphoenix.shared.generated.resources.settings_ble_compat_title
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibrate_button
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibrate_first
 import vitruvianprojectphoenix.shared.generated.resources.settings_calibrated_badge
@@ -2836,16 +2843,20 @@ fun SettingsTab(
                 // Issue #333: BLE small-MTU compatibility path (fixes Pixel 6/7
                 // GATT_ERROR(133) disconnect at workout start)
                 Text(
-                    "BLE Compatibility Mode",
+                    stringResource(Res.string.settings_ble_compat_title),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Small-MTU write path that fixes workout-start disconnects on Pixel 6/7. " +
-                        "Auto enables it only on those devices" +
-                        if (DeviceInfo.isPixel6Or7()) " (this device is affected)." else ".",
+                    stringResource(
+                        if (DeviceInfo.isPixel6Or7()) {
+                            Res.string.settings_ble_compat_description_affected
+                        } else {
+                            Res.string.settings_ble_compat_description
+                        },
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -2854,9 +2865,9 @@ fun SettingsTab(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     val options = listOf(
-                        BleCompatibilitySetting.AUTO to "Auto",
-                        BleCompatibilitySetting.ON to "On",
-                        BleCompatibilitySetting.OFF to "Off",
+                        BleCompatibilitySetting.AUTO to stringResource(Res.string.settings_ble_compat_auto),
+                        BleCompatibilitySetting.ON to stringResource(Res.string.settings_ble_compat_on),
+                        BleCompatibilitySetting.OFF to stringResource(Res.string.settings_ble_compat_off),
                     )
                     options.forEachIndexed { index, (setting, label) ->
                         SegmentedButton(
@@ -2870,7 +2881,7 @@ fun SettingsTab(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Takes effect on the next connection. Reconnect to the trainer after changing.",
+                    stringResource(Res.string.settings_ble_compat_reconnect_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
