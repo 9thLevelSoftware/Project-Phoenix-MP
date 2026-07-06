@@ -174,7 +174,8 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
         color = containerColor,
         contentColor = contentColor,
         border = borderStroke,
-        shadowElevation = if (state == DayState.CURRENT) 4.dp else 0.dp,
+        // gap-1-17: stronger elevation separates the active chip from the row
+        shadowElevation = if (state == DayState.CURRENT) 8.dp else 0.dp,
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -227,25 +228,14 @@ fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelected: Boo
                     }
                 }
 
-                // Current day shows filled circle with number
+                // Current day: no inner dot (gap-1-8 — redundant, off-grid, crowds number);
+                // labelLarge bold so the active chip commands the most visual weight in the strip (gap-1-17).
                 state == DayState.CURRENT -> {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        // Filled circle indicator
-                        Surface(
-                            modifier = Modifier.size(6.dp),
-                            shape = CircleShape,
-                            color = contentColor,
-                        ) {}
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = dayNumber.toString(),
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
+                    Text(
+                        text = dayNumber.toString(),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                        textAlign = TextAlign.Center,
+                    )
                 }
 
                 // Upcoming days show just the number
