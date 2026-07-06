@@ -286,7 +286,9 @@ fun EnhancedMainScreen(
                                         onClick = {
                                             when (currentRoute) {
                                                 NavigationRoutes.RoutineOverview.route -> {
-                                                    topBarBackAction?.invoke()
+                                                    // Action is null during registration race windows (first
+                                                    // frame / nav-out); fall back so the tap is never swallowed.
+                                                    topBarBackAction?.invoke() ?: navController.navigateUp()
                                                 }
 
                                                 NavigationRoutes.SetReady.route -> {
