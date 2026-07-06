@@ -848,11 +848,11 @@ class MainViewModelTest {
         }
 
     @Test
-    fun `resumeWorkout resets isStoppingWorkout flag — gate invariant`() =
+    fun `resumeWorkout is refused while stop teardown in flight — refuse-guard contract`() =
         runTest(testCoroutineRule.dispatcher) {
-            // Scenario: stop-then-resume interleave. stopWorkout() arms the flag synchronously
-            // but its teardown coroutine is still queued. resumeWorkout() is called while
-            // workoutState is still Paused — without the fix the gate would be stuck closed.
+            // Part (a): resume during an in-flight stop teardown is a NO-OP.
+            // State stays Paused and the CAS guard (stopWorkoutInProgress) stays true,
+            // preventing a concurrent duplicate teardown (#627 PR-review).
             val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
             viewModel.updateWorkoutParameters(
                 WorkoutParameters(
@@ -871,18 +871,41 @@ class MainViewModelTest {
             viewModel.pauseWorkout()
             assertIs<WorkoutState.Paused>(viewModel.workoutState.value)
 
-            // stopWorkout() arms the flag synchronously before its scope.launch fires.
+            // stopWorkout() arms the CAS guard synchronously; teardown coroutine is queued but not yet run.
             viewModel.stopWorkout(exitingWorkout = true)
             assertTrue(viewModel.isStoppingWorkout(), "Flag armed by stopWorkout() while paused")
 
-            // resumeWorkout() must open the gate (ActiveSessionEngine:3253 fix).
-            // State is still Paused (stop coroutine queued, not yet run), so resumeWorkout()
-            // fires its Paused→Active branch.
+            // resumeWorkout() must be refused — NO-OP: state stays Paused, flag stays true.
             viewModel.resumeWorkout()
+            assertIs<WorkoutState.Paused>(
+                viewModel.workoutState.value,
+                "State must stay Paused — resume refused while stop teardown is in flight",
+            )
+            assertTrue(
+                viewModel.isStoppingWorkout(),
+                "CAS guard must stay true — resumeWorkout() must not clear it while teardown is in flight (#627)",
+            )
+
+            // Part (b): after teardown completes, startWorkout() resets the guard and resume behaves normally.
+            // exitingWorkout=true → state transitions to Idle; flag stays true until startWorkout() resets it.
+            advanceUntilIdle()
+            assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+
+            // startWorkout() unconditionally resets stopWorkoutInProgress (line 2352).
+            fakeBleRepository.emitMetric(metric)
+            viewModel.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
             assertFalse(
                 viewModel.isStoppingWorkout(),
-                "resumeWorkout() must reset the stop guard (gate invariant #627)",
+                "startWorkout() must reset the stop guard — gate reopens for next session (#627)",
             )
+            assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+
+            // pause then resume must now succeed normally.
+            viewModel.pauseWorkout()
+            assertIs<WorkoutState.Paused>(viewModel.workoutState.value)
+            viewModel.resumeWorkout()
+            assertEquals(WorkoutState.Active, viewModel.workoutState.value, "Resume must succeed after guard is reset by startWorkout()")
         }
 
     private fun forceAutoStopTimerElapsed() {

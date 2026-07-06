@@ -842,4 +842,6 @@
 
     <!-- ==================== Just Lift auto-start honesty (task-5B.3) ==================== -->
     <string name="autostart_connect_prompt">Connect to enable auto-start</string>
+    <string name="autostart_ready">AUTO-START READY</string>
+    <string name="autostart_grab_handles">Grab handles to start</string>
 </resources>

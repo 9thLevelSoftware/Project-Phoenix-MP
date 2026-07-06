@@ -20,6 +20,7 @@ import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.ui.theme.Spacing
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -27,7 +28,8 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 internal const val WorkoutSetupTargetRepsRemoteStep = 1f
 
 /**
- * Workout Setup Sheet - Full configuration bottom sheet for workout parameters
+ * Workout setup presented as a modal bottom sheet. The composable keeps its historical
+ * WorkoutSetupDialog name for call-site stability.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +58,7 @@ fun WorkoutSetupDialog(
     }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -439,7 +442,12 @@ fun WorkoutSetupDialog(
 
             // Bottom action buttons — full-width per finding rec (confirm = filled Button, cancel = TextButton)
             Button(
-                onClick = onStartWorkout,
+                onClick = {
+                    onStartWorkout()
+                    scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) onDismiss()
+                    }
+                },
                 enabled = selectedExercise != null,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -448,7 +456,11 @@ fun WorkoutSetupDialog(
                 Text(stringResource(Res.string.start_workout))
             }
             TextButton(
-                onClick = onDismiss,
+                onClick = {
+                    scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) onDismiss()
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(Res.string.action_cancel))

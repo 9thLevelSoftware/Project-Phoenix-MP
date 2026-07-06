@@ -130,6 +130,8 @@ import vitruvianprojectphoenix.shared.generated.resources.mode_old_school
 import vitruvianprojectphoenix.shared.generated.resources.mode_pump
 import vitruvianprojectphoenix.shared.generated.resources.mode_tut
 import vitruvianprojectphoenix.shared.generated.resources.autostart_connect_prompt
+import vitruvianprojectphoenix.shared.generated.resources.autostart_grab_handles
+import vitruvianprojectphoenix.shared.generated.resources.autostart_ready
 import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing
 import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_bottom
 import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_top
@@ -1228,7 +1230,7 @@ fun AutoStartStopCard(
                         isStopping -> "AUTO-STOP"
                         isCountingDown -> "STARTING..."
                         isActive -> "AUTO-STOP READY"
-                        isConnected -> "AUTO-START READY"
+                        isConnected -> stringResource(Res.string.autostart_ready)
                         else -> stringResource(Res.string.autostart_connect_prompt)
                     },
                     style = statusTitleStyle,
@@ -1243,7 +1245,7 @@ fun AutoStartStopCard(
                         isStopping -> "Release handles to stop"
                         isCountingDown -> "Hold steady"
                         isActive -> "Release handles for 5s"
-                        isConnected -> "Grab handles to start"
+                        isConnected -> stringResource(Res.string.autostart_grab_handles)
                         else -> ""
                     },
                     style = MaterialTheme.typography.bodySmall,

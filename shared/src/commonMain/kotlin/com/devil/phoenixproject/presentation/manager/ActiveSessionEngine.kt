@@ -3251,8 +3251,11 @@ class ActiveSessionEngine(
     }
 
     fun resumeWorkout() {
-        // #627 gate invariant: every resumable-state entry opens the stop guard (mirrors startWorkout:2352).
-        coordinator.stopWorkoutInProgress.value = false
+        // #627 + PR-review: refuse resume while a stop teardown is in flight — the workout
+        // is ending; resuming a dying session would also reopen the CAS guard and permit a
+        // concurrent duplicate teardown. The gate reopens via the teardown's own state
+        // transition (Idle/SetSummary) and the next startWorkout()'s reset.
+        if (coordinator.stopWorkoutInProgress.value) return
         if (coordinator._workoutState.value is WorkoutState.Paused) {
             coordinator._workoutState.value = WorkoutState.Active
 
