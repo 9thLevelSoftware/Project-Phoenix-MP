@@ -59,14 +59,14 @@ class DesignSystemRatchetTest {
 
     @Test
     fun rawRoundedCornerShapes_doNotIncrease() {
-        // Baseline 2026-07-05: 35 (down from 36 after task-3.10b deleted NextBadgeProgressCard
-        // which contained RoundedCornerShape(3.dp in LinearProgressIndicator clip).
-        // All 35 remaining are exempt: ≤6dp decor, intentional 0dp flat edges,
-        // unmapped mid-values (SetReadyScreen 14dp, SettingsTab 40dp, SmartInsightsTab 7dp).
+        // Baseline 2026-07-06: 34 (down from 35 after task-4A.5 replaced the last
+        // unaliased mid-value in SetReadyScreen (14dp → MaterialTheme.shapes.small)).
+        // All 34 remaining are exempt: ≤6dp decor, intentional 0dp flat edges,
+        // unmapped mid-values (SettingsTab 40dp, SmartInsightsTab 7dp).
         val count = countMatches(Regex("""RoundedCornerShape\(\d+\.dp"""))
         assertTrue(
-            count <= 35,
-            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 35. " +
+            count <= 34,
+            "RoundedCornerShape(N.dp) usages increased: found $count, baseline ≤ 34. " +
                 "Use MaterialTheme.shapes or a named shape token instead.",
         )
     }

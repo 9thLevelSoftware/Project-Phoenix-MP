@@ -59,7 +59,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -85,6 +84,8 @@ import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.labelAllCaps
+import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -638,10 +639,8 @@ private fun ExerciseOverviewCard(
                         ) {
                             Text(
                                 if (isEchoMode) "ECHO SETTINGS" else "SET CONFIGURATION",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
+                                style = labelAllCaps.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                letterSpacing = 1.sp,
                             )
 
                             Text(
@@ -785,9 +784,8 @@ private fun OverviewEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> 
         ) {
             Text(
                 text = stringResource(Res.string.rest_eccentric_load),
-                style = MaterialTheme.typography.labelSmall,
+                style = labelSmallAllCaps,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp,
             )
             Text(
                 text = percentLabel(percent),
