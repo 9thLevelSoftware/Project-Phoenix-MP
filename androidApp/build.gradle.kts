@@ -257,6 +257,21 @@ android {
     }
 }
 
+// Finding [13]: Fail fast when release builds lack an injected version code.
+// The defaultConfig fallback (versionCode = 5) is fine for debug but would produce
+// an APK with a lower versionCode than any Play Store release, making it
+// uninstallable as an upgrade. This guard fires only for release tasks.
+tasks.configureEach {
+    if (name.contains("Release", ignoreCase = true) && injectedVersionCode == null) {
+        doFirst {
+            throw GradleException(
+                "version.code property must be set for release builds. " +
+                    "Pass -Pversion.code=<int> (e.g., ./gradlew assembleRelease -Pversion.code=42).",
+            )
+        }
+    }
+}
+
 tasks.register<VerifyReleaseCueResourcesTask>("verifyReleaseCueResources") {
     group = "verification"
     description = "Fails if Android release artifacts are missing packaged workout cue audio resources."

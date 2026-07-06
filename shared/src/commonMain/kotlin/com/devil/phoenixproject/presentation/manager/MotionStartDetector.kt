@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 
@@ -33,7 +34,7 @@ sealed class MotionStartEvent {
  * so it can be reused for Routine and Single Exercise flows (Task 4).
  */
 class MotionStartDetector(private val loadThresholdKg: Float = 5f, private val holdDurationMs: Long = 1500L) {
-    private val _events = MutableSharedFlow<MotionStartEvent>(extraBufferCapacity = 1)
+    private val _events = MutableSharedFlow<MotionStartEvent>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val events: SharedFlow<MotionStartEvent> = _events
 
     private var holdStartMs: Long? = null

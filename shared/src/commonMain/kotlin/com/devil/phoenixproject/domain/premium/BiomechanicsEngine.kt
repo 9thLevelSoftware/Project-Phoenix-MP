@@ -47,6 +47,9 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
     // C2: Thread-safe snapshot list — processRep() runs on Dispatchers.Default while
     // getSetSummary()/reset() may be called from the main dispatcher
     private val repResults = kotlinx.coroutines.flow.MutableStateFlow<List<BiomechanicsRepResult>>(emptyList())
+    // FINDING-56: @Volatile ensures cross-dispatcher visibility — computeVelocity reads on
+    // Dispatchers.Default while reset() writes null from the main dispatcher.
+    @Volatile
     private var firstRepMcv: Float? = null
 
     /**
@@ -224,9 +227,17 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
         val zone = BiomechanicsVelocityZone.fromMcv(mcv)
 
         // VBT-03: Velocity loss tracking
-        // First rep establishes baseline
+        // First rep establishes baseline — only record it when MCV is non-zero.
+        // FINDING-57: If rep 1 produces empty concentric metrics (mcv == 0f), storing 0f as
+        // the baseline would cause the baseline > 0f guard to return null for every subsequent
+        // rep's velocityLossPercent, silently breaking velocity-loss tracking for the entire set.
+        // Leave firstRepMcv null and log a warning so the caller can investigate data quality.
         if (firstRepMcv == null) {
-            firstRepMcv = mcv
+            if (mcv > 0f) {
+                firstRepMcv = mcv
+            } else {
+                println("BiomechanicsEngine: rep $repNumber produced 0 MCV — firstRepMcv baseline not set (empty or zero concentric metrics)")
+            }
         }
 
         // For rep 1: velocity loss is null

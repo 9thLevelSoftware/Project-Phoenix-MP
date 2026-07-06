@@ -120,7 +120,7 @@ fun SwipeableExerciseRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .pointerInput(Unit) {
+                .pointerInput(isRevealed) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
                             scope.launch {

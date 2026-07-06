@@ -67,8 +67,6 @@ fun SingleExerciseScreen(
     val userPreferences by viewModel.userPreferences.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
 
-    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
-    val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
     var exerciseToConfig by remember { mutableStateOf<RoutineExercise?>(null) }

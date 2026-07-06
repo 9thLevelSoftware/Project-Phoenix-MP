@@ -340,8 +340,6 @@ fun SettingsTab(
     onNavigateToLinkAccount: () -> Unit = {},
     onNavigateToIntegrations: () -> Unit = {},
     onNavigateToEquipmentRack: () -> Unit = {},
-    @Suppress("UNUSED_PARAMETER") // Reserved for future connecting overlay
-    isAutoConnecting: Boolean = false,
     connectionError: String? = null,
     onClearConnectionError: () -> Unit = {},
     onCancelAutoConnecting: () -> Unit = {},

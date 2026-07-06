@@ -375,6 +375,7 @@ fun ExercisePickerContent(
     onCreateExercise: () -> Unit = {},
     onEditExercise: ((Exercise) -> Unit)? = null,
     onViewExerciseDetail: ((Exercise) -> Unit)? = null,
+    isLoading: Boolean = false,
     showTitle: Boolean = true,
     fullScreen: Boolean,
 ) {
@@ -527,6 +528,7 @@ fun ExercisePickerContent(
                         enableCustomExercises = enableCustomExercises,
                         onClearFilters = onClearAllFilters,
                         onCreateExercise = onCreateExercise,
+                        isLoading = isLoading,
                     )
                 },
             )

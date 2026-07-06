@@ -213,6 +213,7 @@ fun ExerciseListEmptyState(
     enableCustomExercises: Boolean,
     onClearFilters: () -> Unit,
     onCreateExercise: () -> Unit,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -262,14 +263,22 @@ fun ExerciseListEmptyState(
             }
 
             else -> {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    LoadingIndicator(LoadingIndicatorSize.Medium)
+                if (isLoading) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        LoadingIndicator(LoadingIndicatorSize.Medium)
+                        Text(
+                            text = "Loading exercises...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
                     Text(
-                        text = "Loading exercises...",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "No exercises found",
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

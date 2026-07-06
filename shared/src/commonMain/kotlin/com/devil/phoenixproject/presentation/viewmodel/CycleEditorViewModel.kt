@@ -295,6 +295,7 @@ class CycleEditorViewModel(
      * When editing existing cycles, the original profile ownership is preserved.
      */
     suspend fun saveCycle(): String? {
+        if (_uiState.value.isSaving) return null
         val state = _uiState.value
         val isNewCycle = state.cycleId == "new"
         // For new cycles: use active profile; for edits: preserve original ownership

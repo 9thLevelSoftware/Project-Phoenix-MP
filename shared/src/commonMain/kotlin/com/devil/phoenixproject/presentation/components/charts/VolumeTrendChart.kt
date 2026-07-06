@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.presentation.components.charts
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -110,17 +110,14 @@ fun VolumeTrendChart(
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-    // Animation for bars
-    var animationProgress by remember { mutableStateOf(0f) }
-    val animatedProgress by animateFloatAsState(
-        targetValue = animationProgress,
-        animationSpec = tween(durationMillis = 800),
-        label = "VolumeChartAnimation",
-    )
+    // Animation for bars — Animatable ensures snapTo(0f) and animateTo(1f) are
+    // never batched in the same frame, so the enter animation replays on every
+    // volumeData change (e.g. period switch).
+    val animatedProgress = remember { Animatable(0f) }
 
     LaunchedEffect(volumeData) {
-        animationProgress = 0f
-        animationProgress = 1f
+        animatedProgress.snapTo(0f)
+        animatedProgress.animateTo(1f, tween(800))
     }
 
     // Responsive column width for Y-axis labels
@@ -260,7 +257,7 @@ fun VolumeTrendChart(
                         // Draw bars
                         volumeData.forEachIndexed { index, data ->
                             val x = barSpacingPx + index * (barWidthPx + barSpacingPx)
-                            val normalizedHeight = (data.volume / maxVolume) * animatedProgress
+                            val normalizedHeight = (data.volume / maxVolume) * animatedProgress.value
                             val barHeight = normalizedHeight * usableHeight
                             val y = usableHeight - barHeight
 

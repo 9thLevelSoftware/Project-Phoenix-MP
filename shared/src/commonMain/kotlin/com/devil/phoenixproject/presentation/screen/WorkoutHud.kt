@@ -242,8 +242,10 @@ fun WorkoutHud(
             // Track if cable has ever been active (latching - once true, stays true for this set)
             var cableAEverActive by remember { mutableStateOf(false) }
             var cableBEverActive by remember { mutableStateOf(false) }
-            if (isCableACurrentlyActive) cableAEverActive = true
-            if (isCableBCurrentlyActive) cableBEverActive = true
+            SideEffect {
+                if (isCableACurrentlyActive) cableAEverActive = true
+                if (isCableBCurrentlyActive) cableBEverActive = true
+            }
 
             val showCableA = cableAEverActive || isCableACurrentlyActive
             val showCableB = cableBEverActive || isCableBCurrentlyActive
@@ -621,7 +623,6 @@ private fun ExecutionPage(
                     phaseProgress = repCount.phaseProgress,
                     confirmedReps = repCount.workingReps,
                     targetReps = workoutParameters.reps,
-                    showStableCounter = false, // We show it separately below
                     size = 120.dp,
                 )
 

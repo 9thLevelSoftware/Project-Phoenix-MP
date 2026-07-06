@@ -273,8 +273,6 @@ fun AnalyticsScreen(
     val personalRecords by viewModel.allPersonalRecords.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
 
-    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
-    val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
     // Responsive sizing based on window size class
