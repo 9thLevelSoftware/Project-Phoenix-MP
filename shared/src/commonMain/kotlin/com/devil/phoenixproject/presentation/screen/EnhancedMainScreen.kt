@@ -171,15 +171,21 @@ fun EnhancedMainScreen(
 
     LaunchedEffect(currentRoute, workoutState, navController) {
         // Issue #627: Guard against bouncing back to ActiveWorkout during async stop teardown.
-        // stopWorkout(exitingWorkout=true) sets stopWorkoutInProgress synchronously (before the
-        // scope.launch), but clears workoutState only inside that coroutine (~ActiveSessionEngine
-        // line 3104). During that async window, shouldResumeActiveWorkout() is still true, so
-        // without this guard the observer would navigate back to a dead screen after the pop.
-        // Once the stop coroutine completes, workoutState becomes Idle and
-        // shouldResumeActiveWorkout() returns false, so the guard is no longer needed anyway.
+        // stopWorkout() sets stopWorkoutInProgress synchronously (before the scope.launch), but
+        // clears workoutState only inside that coroutine (~ActiveSessionEngine line 3104). During
+        // that async window, shouldResumeActiveWorkout() is still true, so without this guard the
+        // observer would navigate back to a dead screen after the pop.
+        // When exitingWorkout=true, once the coroutine completes, workoutState becomes Idle and
+        // shouldResumeActiveWorkout() returns false. When exitingWorkout=false (Just Lift), the
+        // teardown lands on SetSummary (still resumable), so the guard stays load-bearing until
+        // the next startWorkout() resets it.
         //
         // Legitimate resume path (backgrounded mid-set, no stop pending):
         // stopWorkoutInProgress is false → guard passes → navigation fires correctly.
+        //
+        // Note: isStoppingWorkout() is read imperatively here, not as an effect key. Any reset
+        // path that doesn't also change workoutState or route won't re-trigger this effect; keep
+        // resets paired with state transitions to avoid missed re-evaluations.
         if (shouldResumeActiveWorkout(workoutState) && currentRoute != NavigationRoutes.ActiveWorkout.route && !viewModel.isStoppingWorkout()) {
             navController.navigate(NavigationRoutes.ActiveWorkout.route) {
                 launchSingleTop = true

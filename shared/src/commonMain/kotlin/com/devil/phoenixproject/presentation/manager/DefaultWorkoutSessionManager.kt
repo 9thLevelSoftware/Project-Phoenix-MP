@@ -676,8 +676,15 @@ class DefaultWorkoutSessionManager(
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)
 
     // Issue #627: Read-only exposure of the in-flight stop guard. True from the moment
-    // stopWorkout() is called (synchronous compareAndSet) until the next startWorkout()
-    // resets it (ActiveSessionEngine:2352). Zero writes from this property.
+    // stopWorkout() / stopAndReturnToSetReady() / stopAndSkipCurrentExercise() arm the
+    // compareAndSet. Reset to false at ALL of the following sites (zero writes from here):
+    //   - startWorkout()                       ActiveSessionEngine:2352  — primary; beginning of any new set
+    //   - stopAndReturnToSetReady()            ActiveSessionEngine:3145  — early release before delegating to handleSetCompletion
+    //   - stopAndReturnToSetReady() finally    ActiveSessionEngine:3178  — end of teardown coroutine
+    //   - stopAndSkipCurrentExercise() finally ActiveSessionEngine:3226  — end of skip coroutine
+    //   - warmup fast-path (next warmup set)   ActiveSessionEngine:3783  — before starting next warmup set
+    //   - warmup fast-path (to working sets)   ActiveSessionEngine:3801  — before transitioning to first working set
+    //   - resumeWorkout()                      ActiveSessionEngine:3253  — gate invariant: every resumable-state entry opens the guard
     val isStoppingWorkout: Boolean get() = coordinator.stopWorkoutInProgress.value
 
     fun stopAndReturnToSetReady() = activeSessionEngine.stopAndReturnToSetReady()

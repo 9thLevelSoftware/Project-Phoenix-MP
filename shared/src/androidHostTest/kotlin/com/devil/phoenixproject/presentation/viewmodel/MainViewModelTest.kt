@@ -813,6 +813,78 @@ class MainViewModelTest {
             )
         }
 
+    @Test
+    fun `isStoppingWorkout exitingWorkout=false — flag held and workoutState is SetSummary after teardown`() =
+        runTest(testCoroutineRule.dispatcher) {
+            // exitingWorkout=false is the Just Lift path: stopWorkout lands on SetSummary
+            // (resumable), not Idle. The guard must stay load-bearing for the full window
+            // between the pop and the next startWorkout() reset.
+            val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
+            viewModel.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 10,
+                    warmupReps = 0,
+                    weightPerCableKg = 20f,
+                ),
+            )
+            fakeBleRepository.emitMetric(metric)
+            viewModel.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+
+            viewModel.stopWorkout(exitingWorkout = false)
+            assertTrue(viewModel.isStoppingWorkout(), "Flag must be true immediately after stopWorkout(exitingWorkout=false)")
+
+            // Let teardown coroutine complete: state lands on SetSummary, not Idle.
+            advanceUntilIdle()
+            assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
+            // Flag is still true — SetSummary is resumable so shouldResumeActiveWorkout()
+            // returns true, and the guard remains the only bounce suppressor in this window.
+            assertTrue(
+                viewModel.isStoppingWorkout(),
+                "Flag must persist after teardown when workoutState is SetSummary (resumable) — guard stays load-bearing",
+            )
+        }
+
+    @Test
+    fun `resumeWorkout resets isStoppingWorkout flag — gate invariant`() =
+        runTest(testCoroutineRule.dispatcher) {
+            // Scenario: stop-then-resume interleave. stopWorkout() arms the flag synchronously
+            // but its teardown coroutine is still queued. resumeWorkout() is called while
+            // workoutState is still Paused — without the fix the gate would be stuck closed.
+            val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
+            viewModel.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 10,
+                    warmupReps = 0,
+                    weightPerCableKg = 20f,
+                ),
+            )
+            fakeBleRepository.emitMetric(metric)
+            viewModel.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+
+            // pauseWorkout() sets workoutState = Paused synchronously (BLE stop is async).
+            viewModel.pauseWorkout()
+            assertIs<WorkoutState.Paused>(viewModel.workoutState.value)
+
+            // stopWorkout() arms the flag synchronously before its scope.launch fires.
+            viewModel.stopWorkout(exitingWorkout = true)
+            assertTrue(viewModel.isStoppingWorkout(), "Flag armed by stopWorkout() while paused")
+
+            // resumeWorkout() must open the gate (ActiveSessionEngine:3253 fix).
+            // State is still Paused (stop coroutine queued, not yet run), so resumeWorkout()
+            // fires its Paused→Active branch.
+            viewModel.resumeWorkout()
+            assertFalse(
+                viewModel.isStoppingWorkout(),
+                "resumeWorkout() must reset the stop guard (gate invariant #627)",
+            )
+        }
+
     private fun forceAutoStopTimerElapsed() {
         val coordinator = viewModel.workoutSessionManager.coordinator
         val field = coordinator::class.java.getDeclaredField("autoStopStartTime")

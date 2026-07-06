@@ -3251,6 +3251,8 @@ class ActiveSessionEngine(
     }
 
     fun resumeWorkout() {
+        // #627 gate invariant: every resumable-state entry opens the stop guard (mirrors startWorkout:2352).
+        coordinator.stopWorkoutInProgress.value = false
         if (coordinator._workoutState.value is WorkoutState.Paused) {
             coordinator._workoutState.value = WorkoutState.Active
 
