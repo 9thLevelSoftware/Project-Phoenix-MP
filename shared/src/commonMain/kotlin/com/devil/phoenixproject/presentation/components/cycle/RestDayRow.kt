@@ -21,8 +21,10 @@ fun RestDayRow(rest: CycleItem.Rest, onTap: (() -> Unit)? = null, dragModifier: 
         modifier = modifier.fillMaxWidth().let { m ->
             if (onTap != null) m.clickable(onClick = onTap) else m
         },
+        // training-cycles-13: 0.15f alpha made rest-day cards near-invisible against the
+        // list background. Use full tertiaryContainer so the card reads as a tappable surface.
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f),
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
         ),
     ) {
         Row(
