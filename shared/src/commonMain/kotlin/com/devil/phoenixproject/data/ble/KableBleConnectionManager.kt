@@ -183,7 +183,11 @@ class KableBleConnectionManager(
      * Flag to track if we ever successfully connected (for auto-reconnect logic).
      * This prevents auto-reconnect from firing on the initial Disconnected state
      * when a Peripheral is first created (before connect() is even called).
+     * @Volatile: written by cleanupExistingConnection()/clearConnectionState()
+     * on the caller's dispatcher while the state observer reads and writes it
+     * on [scope] — same cross-dispatcher hazard as [isExplicitDisconnect].
      */
+    @Volatile
     private var wasEverConnected = false
 
     /** Detected firmware version (from DIS or proprietary characteristic). */
