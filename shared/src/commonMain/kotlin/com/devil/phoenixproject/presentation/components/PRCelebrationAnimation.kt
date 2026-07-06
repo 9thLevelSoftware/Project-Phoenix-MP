@@ -13,6 +13,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -79,19 +81,21 @@ private fun PRCelebrationContent(
     workoutMode: String? = null,
     phaseLabel: String? = null,
 ) {
-    // Animation states
-    val infiniteTransition = rememberInfiniteTransition(label = "celebration")
-
-    // Pulsing scale for "NEW PR!" text
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
+    // workout-widgets-18: spring-based ping-pong replaces flat infiniteRepeatable tween.
+    // Springs can't go inside infiniteRepeatable; state-driven flip via finishedListener achieves
+    // the same organic bounce feel with a real spring.
+    // reduceMotion: pulseTarget stays false so the channel never animates (scale = 1.0f, settled).
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    var pulseTarget by remember { mutableStateOf(false) }
+    val pulseScale by animateFloatAsState(
+        targetValue = if (pulseTarget) 1.2f else 1.0f,
+        animationSpec = ExpressiveMotion.SpringBouncy,
+        finishedListener = { _ -> if (!reduceMotion) pulseTarget = !pulseTarget },
         label = "pulse",
     )
+    LaunchedEffect(Unit) {
+        if (!reduceMotion) pulseTarget = true
+    }
 
     // Format the celebration title with workout mode context
     val celebrationTitle = if (workoutMode != null) {
@@ -131,11 +135,13 @@ private fun PRCelebrationContent(
             )
 
             // "NEW [MODE] PR!" text with mode context
+            // workout-widgets-15: secondary (EmberYellow gold) instead of tertiary (AshBlue)
+            // — gold is the universal trophy colour, and aligns with the charter's fire palette.
             Text(
                 celebrationTitle,
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.tertiary,
+                color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.scale(pulseScale),
             )
 
