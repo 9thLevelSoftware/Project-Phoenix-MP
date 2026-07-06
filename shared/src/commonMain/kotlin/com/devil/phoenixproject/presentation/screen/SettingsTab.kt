@@ -3409,40 +3409,35 @@ private fun SafeWordCalibrationDialog(
                         // scale+alpha modifier achieves identical visual with no overhead.
                         // reduceMotion: snap colour, scale at 1f always, check appears instantly.
                         val reduceMotionCalib = LocalPlatformAccessibilitySettings.current.reduceMotion
+                        // Hoisted out of repeat lambda — ForgeGreen is the brand calibration tint;
+                        // SpringBouncyColor is the typed spring<Color> preset.
+                        val calibFillColor = ForgeGreen
+                        val calibColorSpec = ExpressiveMotion.SpringBouncyColor
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
                             modifier = Modifier.padding(vertical = Spacing.small),
                         ) {
                             repeat(3) { index ->
                                 val filled = index < detectionCount
-                                val successGreen = Color(0xFF10B981)
-                                val bouncyColorSpec = spring<androidx.compose.ui.graphics.Color>(
-                                    dampingRatio = Spring.DampingRatioHighBouncy,
-                                    stiffness = Spring.StiffnessLow,
-                                )
                                 val circleColor by animateColorAsState(
-                                    targetValue = if (filled) successGreen
+                                    targetValue = if (filled) calibFillColor
                                                   else MaterialTheme.colorScheme.surfaceVariant,
-                                    animationSpec = if (reduceMotionCalib) snap() else bouncyColorSpec,
+                                    animationSpec = if (reduceMotionCalib) snap() else calibColorSpec,
                                     label = "circleColor$index",
                                 )
                                 val circleScale by animateFloatAsState(
                                     // reduceMotion: always 1f — no scale change (settled channel)
                                     targetValue = if (filled || reduceMotionCalib) 1.0f else 0.8f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioHighBouncy,
-                                        stiffness = Spring.StiffnessLow,
-                                    ),
+                                    animationSpec = if (reduceMotionCalib) snap()
+                                                    else ExpressiveMotion.SpringBouncy,
                                     label = "circleScale$index",
                                 )
                                 // Check icon animates in with scale+alpha spring (no AnimatedVisibility
                                 // to avoid RowScope extension ambiguity inside nested Box).
                                 val checkScale by animateFloatAsState(
                                     targetValue = if (filled) 1.0f else 0.0f,
-                                    animationSpec = if (reduceMotionCalib) snap() else spring(
-                                        dampingRatio = Spring.DampingRatioHighBouncy,
-                                        stiffness = Spring.StiffnessLow,
-                                    ),
+                                    animationSpec = if (reduceMotionCalib) snap()
+                                                    else ExpressiveMotion.SpringBouncy,
                                     label = "checkScale$index",
                                 )
                                 Box(
@@ -3455,9 +3450,11 @@ private fun SafeWordCalibrationDialog(
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
+                                    // a11y: null contentDescription when not filled — alpha=0 alone
+                                    // does not hide from screen readers; null suppresses the node.
                                     Icon(
                                         Icons.Default.Check,
-                                        contentDescription = stringResource(Res.string.cd_calibration_check),
+                                        contentDescription = if (filled) stringResource(Res.string.cd_calibration_check) else null,
                                         tint = Color.White,
                                         modifier = Modifier
                                             .size(24.dp)

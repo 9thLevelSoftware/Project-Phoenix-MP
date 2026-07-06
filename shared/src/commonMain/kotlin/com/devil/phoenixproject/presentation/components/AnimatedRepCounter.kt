@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.RepPhase
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -102,39 +103,51 @@ fun AnimatedRepCounter(
     val celebrationAlpha = remember { Animatable(1f) }
     var showingCelebration by remember { mutableIntStateOf(0) } // 0 = no celebration, >0 = celebrating that rep number
 
+    // workout-widgets-18: gate entire celebration chain; reduceMotion → snap to end state instantly.
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+
     // Detect when a rep is completed and trigger celebration
     LaunchedEffect(confirmedReps) {
         if (confirmedReps > lastConfirmedReps && confirmedReps > 0) {
             // A new rep was just confirmed - show celebration for this number
             showingCelebration = confirmedReps
-            celebrationScale.snapTo(1f)
-            celebrationAlpha.snapTo(1f)
-
-            // workout-widgets-18: SpringBouncy pop for the celebration scale-up;
-            // NoBouncy spring for scale-down avoids negative-overshoot on collapse to 0.
-            launch {
-                celebrationScale.animateTo(
-                    targetValue = 1.5f, // Scale up with satisfying spring pop
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioHighBouncy,
-                        stiffness = Spring.StiffnessLow,
-                    ),
-                )
-                celebrationScale.animateTo(
-                    targetValue = 0f, // Snap cleanly to nothing
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessHigh,
-                    ),
-                )
-            }
-            launch {
-                delay(50) // Slight delay before fade
-                celebrationAlpha.animateTo(
-                    targetValue = 0f,
-                    animationSpec = tween(durationMillis = 250),
-                )
-                showingCelebration = 0 // Clear celebration state
+            if (reduceMotion) {
+                // Static final frame: number briefly highlights then disappears
+                celebrationScale.snapTo(1f)
+                celebrationAlpha.snapTo(1f)
+                delay(200)
+                celebrationScale.snapTo(0f)
+                celebrationAlpha.snapTo(0f)
+                showingCelebration = 0
+            } else {
+                celebrationScale.snapTo(1f)
+                celebrationAlpha.snapTo(1f)
+                // SpringBouncy pop for the celebration scale-up;
+                // NoBouncy spring for scale-down avoids negative-overshoot on collapse to 0.
+                launch {
+                    celebrationScale.animateTo(
+                        targetValue = 1.5f, // Scale up with satisfying spring pop
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioHighBouncy,
+                            stiffness = Spring.StiffnessLow,
+                        ),
+                    )
+                    celebrationScale.animateTo(
+                        targetValue = 0f, // Snap cleanly to nothing
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessHigh,
+                        ),
+                    )
+                }
+                launch {
+                    delay(50) // Slight delay before fade
+                    celebrationAlpha.animateTo(
+                        targetValue = 0f,
+                        animationSpec = tween(durationMillis = 250),
+                    )
+                    showingCelebration = 0 // Clear celebration state
+                }
             }
         }
         lastConfirmedReps = confirmedReps

@@ -2,8 +2,6 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
@@ -106,6 +104,7 @@ import com.devil.phoenixproject.presentation.components.formatRackLoadContributi
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.flow.SharedFlow
@@ -1079,13 +1078,8 @@ private fun CompletedCard(
         ) {
             AnimatedVisibility(
                 visible = iconVisible,
-                enter = if (reduceMotion) EnterTransition.None else
-                    scaleIn(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioHighBouncy,
-                            stiffness = Spring.StiffnessLow,
-                        ),
-                    ) + fadeIn(),
+                enter = if (reduceMotion) EnterTransition.None
+                        else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
             ) {
                 Icon(
                     Icons.Default.CheckCircle,

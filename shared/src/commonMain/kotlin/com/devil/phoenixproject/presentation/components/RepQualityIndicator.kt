@@ -1,9 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -23,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import kotlinx.coroutines.delay
 
 /**
@@ -45,7 +44,8 @@ private fun scoreColor(score: Int): Color {
  * Overlay composable that displays the per-rep quality score on the workout HUD.
  *
  * Shows a prominent score number with color gradient after each rep,
- * auto-dismisses after 800ms. Excellent reps (95+) get a subtle pulse animation.
+ * auto-dismisses after 800ms. Excellent reps (95+) get a continuous SpringBouncy
+ * ping-pong pulse (1.0f↔1.2f via finishedListener flip); reduceMotion freezes at 1.0f.
  *
  * @param latestRepQualityScore The score to display (null = hidden / not available)
  */
@@ -66,17 +66,22 @@ fun RepQualityIndicator(latestRepQualityScore: Int?, modifier: Modifier = Modifi
         }
     }
 
-    // charts-gauges-17: SpringBouncy pulse for excellent reps instead of flat tween.
-    // reduceMotion: target stays 1.0f so the channel never animates (settled immediately).
+    // charts-gauges-17: SpringBouncy ping-pong pulse for excellent reps (continuous oscillation).
+    // finishedListener flips pulseTarget to create an organic 1.0f↔1.2f bounce loop while the
+    // score is displayed. reduceMotion: pulseTarget stays false, scale locked at 1.0f (settled).
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    var pulseTarget by remember { mutableStateOf(false) }
     val pulseScale by animateFloatAsState(
-        targetValue = if (showScore && isExcellent && !reduceMotion) 1.2f else 1.0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioHighBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
+        targetValue = if (pulseTarget && showScore && isExcellent && !reduceMotion) 1.2f else 1.0f,
+        animationSpec = ExpressiveMotion.SpringBouncy,
+        finishedListener = { _ ->
+            if (showScore && isExcellent && !reduceMotion) pulseTarget = !pulseTarget
+        },
         label = "qualityPulse",
     )
+    LaunchedEffect(showScore, isExcellent) {
+        pulseTarget = showScore && isExcellent && !reduceMotion
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),

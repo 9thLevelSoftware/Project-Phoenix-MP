@@ -2,6 +2,7 @@ package com.devil.phoenixproject.ui.theme
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +35,16 @@ object ExpressiveMotion {
      * Bouncy spring for emphasis (errors, attention grabbers)
      */
     val SpringBouncy = spring<Float>(
+        dampingRatio = Spring.DampingRatioHighBouncy,
+        stiffness = Spring.StiffnessLow,
+    )
+
+    /**
+     * Bouncy spring typed for Color — use with animateColorAsState.
+     * Same character as SpringBouncy but carries the Color type parameter
+     * so Kotlin inference works without extra casting.
+     */
+    val SpringBouncyColor = spring<Color>(
         dampingRatio = Spring.DampingRatioHighBouncy,
         stiffness = Spring.StiffnessLow,
     )

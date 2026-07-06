@@ -88,7 +88,7 @@ private fun PRCelebrationContent(
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     var pulseTarget by remember { mutableStateOf(false) }
     val pulseScale by animateFloatAsState(
-        targetValue = if (pulseTarget) 1.2f else 1.0f,
+        targetValue = if (pulseTarget && !reduceMotion) 1.2f else 1.0f,
         animationSpec = ExpressiveMotion.SpringBouncy,
         finishedListener = { _ -> if (!reduceMotion) pulseTarget = !pulseTarget },
         label = "pulse",

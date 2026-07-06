@@ -1,8 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
@@ -35,6 +34,7 @@ import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySett
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
@@ -978,10 +978,7 @@ private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
     var iconReady by remember { mutableStateOf(false) }
     val iconScale by animateFloatAsState(
         targetValue = if (iconReady || reduceMotion) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioHighBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
+        animationSpec = ExpressiveMotion.SpringBouncy,
         label = "iconScale",
     )
     LaunchedEffect(Unit) { iconReady = true }
@@ -1014,11 +1011,20 @@ private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
                 color = MaterialTheme.colorScheme.onBackground,
             )
 
-            // Hero metric: displayMedium per charter (was titleLarge)
+            // Exercise name: headlineLarge with overflow guard for 360dp screens
             Text(
-                text = "${step.exerciseName}: ${KmpUtils.formatFloat(step.finalOneRepMaxKg, 1)} kg",
-                style = MaterialTheme.typography.displayMedium,
+                text = step.exerciseName,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // Hero metric: displayMedium per charter (was titleLarge) — 1RM value on its own line
+            Text(
+                text = "${KmpUtils.formatFloat(step.finalOneRepMaxKg, 1)} kg",
+                style = MaterialTheme.typography.displayMedium,
+                color = MaterialTheme.colorScheme.primary,
             )
 
             Spacer(modifier = Modifier.height(Spacing.large))

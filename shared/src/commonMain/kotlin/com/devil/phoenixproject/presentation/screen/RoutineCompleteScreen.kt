@@ -1,8 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
@@ -16,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import androidx.compose.ui.unit.dp
@@ -98,13 +98,11 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
             verticalArrangement = Arrangement.SpaceEvenly,
         ) {
             // Stage 1: Celebration icon — one-shot SpringBouncy scale-in (replaces infinite tween)
-            val bouncySpring = spring<Float>(
-                dampingRatio = Spring.DampingRatioHighBouncy,
-                stiffness = Spring.StiffnessLow,
-            )
+            // reduceMotion: EnterTransition.None so icon is immediately visible (static final frame).
             AnimatedVisibility(
                 visible = iconVisible,
-                enter = scaleIn(animationSpec = bouncySpring) + fadeIn(),
+                enter = if (reduceMotion) EnterTransition.None
+                        else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
             ) {
                 Box(
                     modifier = Modifier
@@ -127,7 +125,8 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
             // Stage 2: Congratulations title
             AnimatedVisibility(
                 visible = titleVisible,
-                enter = scaleIn(animationSpec = bouncySpring) + fadeIn(),
+                enter = if (reduceMotion) EnterTransition.None
+                        else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -148,7 +147,8 @@ fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel
             // Stage 3: Stats card + Done button cascade
             AnimatedVisibility(
                 visible = statsVisible,
-                enter = scaleIn(animationSpec = bouncySpring) + fadeIn(),
+                enter = if (reduceMotion) EnterTransition.None
+                        else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,

@@ -1,9 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +57,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -781,10 +780,7 @@ private fun ExerciseOverviewCard(
                 val iconProgress by animateFloatAsState(
                     // reduceMotion: OR keeps target at 1f immediately (settled channel, no animation).
                     targetValue = if (iconReady || reduceMotion) 1f else 0f,
-                    animationSpec = if (reduceMotion) snap() else spring(
-                        dampingRatio = Spring.DampingRatioHighBouncy,
-                        stiffness = Spring.StiffnessLow,
-                    ),
+                    animationSpec = if (reduceMotion) snap() else ExpressiveMotion.SpringBouncy,
                     label = "checkProgress",
                 )
                 Box(

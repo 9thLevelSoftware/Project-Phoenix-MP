@@ -39,6 +39,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeCategory
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -63,10 +64,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     val scale by animateFloatAsState(
         targetValue = if (showDialog || reduceMotion) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioHighBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
+        animationSpec = ExpressiveMotion.SpringBouncy,
         label = "scale",
     )
     val alpha by animateFloatAsState(
@@ -75,7 +73,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
         label = "alpha",
     )
 
-    // Badge icon animation
+    // Badge icon rock animation — gated: 0f when reduceMotion so icon is stationary.
     val infiniteTransition = rememberInfiniteTransition(label = "celebration")
     val rotation by infiniteTransition.animateFloat(
         initialValue = -5f,
@@ -86,6 +84,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
         ),
         label = "rotation",
     )
+    val effectiveRotation = if (reduceMotion) 0f else rotation
 
     // Start animation
     LaunchedEffect(Unit) {
@@ -145,7 +144,7 @@ fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated
                     Box(
                         modifier = Modifier
                             .size(80.dp)
-                            .rotate(rotation)
+                            .rotate(effectiveRotation)
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(
@@ -302,10 +301,7 @@ fun BatchedBadgeCelebrationDialog(
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     val scale by animateFloatAsState(
         targetValue = if (showDialog || reduceMotion) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioHighBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
+        animationSpec = ExpressiveMotion.SpringBouncy,
         label = "scale",
     )
     val alpha by animateFloatAsState(
@@ -529,10 +525,7 @@ private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit
     val reduceMotionItem = LocalPlatformAccessibilitySettings.current.reduceMotion
     val itemScale by animateFloatAsState(
         targetValue = if (isVisible || reduceMotionItem) 1f else 0.5f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioHighBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
+        animationSpec = ExpressiveMotion.SpringBouncy,
         label = "itemScale",
     )
 
