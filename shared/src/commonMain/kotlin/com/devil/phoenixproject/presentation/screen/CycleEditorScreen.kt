@@ -16,6 +16,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.cycle.AddDaySheet
 import com.devil.phoenixproject.presentation.components.cycle.ProgressionSettingsSheet
 import com.devil.phoenixproject.presentation.components.cycle.SwipeableCycleItem
@@ -56,6 +58,41 @@ fun CycleEditorScreen(
     LaunchedEffect(cycleId) {
         cycleEditorViewModel.initialize(cycleId)
     }
+
+    // Dirty-state snapshot vars (content-only: cycleName + description + items + progression).
+    // UI-only fields (showAddDaySheet, showProgressionSheet, editingItemIndex, recentRoutineIds,
+    // currentRotation, isLoading, isSaving, saveError, lastDeletedItem) are intentionally excluded.
+    var snapshotCycleName by remember { mutableStateOf("") }
+    var snapshotDescription by remember { mutableStateOf("") }
+    var snapshotItems by remember { mutableStateOf<List<CycleItem>>(emptyList()) }
+    var snapshotProgression by remember { mutableStateOf<CycleProgression?>(null) }
+    var hasSnapshot by remember { mutableStateOf(false) }
+
+    // Discard-changes dialog state (back-navigation guard)
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    // Capture post-load snapshot so existing cycles open clean. isLoading transitions false→false
+    // only once, so hasSnapshot gate prevents re-capture during recompositions.
+    LaunchedEffect(uiState.isLoading) {
+        if (!uiState.isLoading && !hasSnapshot) {
+            snapshotCycleName = uiState.cycleName
+            snapshotDescription = uiState.description
+            snapshotItems = uiState.items
+            snapshotProgression = uiState.progression
+            hasSnapshot = true
+        }
+    }
+
+    // isDirty: true only after snapshot is taken and any content field diverges from snapshot.
+    val isDirty = hasSnapshot && (
+        uiState.cycleName != snapshotCycleName ||
+        uiState.description != snapshotDescription ||
+        uiState.items != snapshotItems ||
+        uiState.progression != snapshotProgression
+    )
+
+    // Back-navigation guard: intercept back only when there are unsaved changes.
+    BackHandler(enabled = isDirty) { showDiscardDialog = true }
 
     val lazyListState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
@@ -252,6 +289,21 @@ fun CycleEditorScreen(
                 onDismiss = { cycleEditorViewModel.showProgressionSheet(false) },
             )
         }
+    }
+
+    // Discard Changes Dialog (back-navigation guard)
+    // onConfirm: navigate back without saving. onDismiss: stay in the editor.
+    if (showDiscardDialog) {
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.discard_changes_title),
+            message = stringResource(Res.string.discard_changes_message),
+            confirmText = stringResource(Res.string.action_discard),
+            onConfirm = {
+                showDiscardDialog = false
+                navController.popBackStack()
+            },
+            onDismiss = { showDiscardDialog = false },
+        )
     }
 
     // Edit sheet - for workout days: change routine; for rest days: convert to workout
