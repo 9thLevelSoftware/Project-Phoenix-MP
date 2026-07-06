@@ -3,6 +3,8 @@ package com.devil.phoenixproject.data.ble
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 
 /**
  * BLE Packet Capture Utility for Hardware Validation
@@ -46,7 +48,8 @@ object BlePacketCapture {
     private var capturing = false
     private var knownWeight = 0.0f
     private var description = ""
-    private val packets = mutableListOf<CapturedPacket>() // guarded by synchronized(packets)
+    private val lock = reentrantLock()
+    private val packets = mutableListOf<CapturedPacket>() // guarded by lock
     private var maxPackets = 500 // Safety limit
     private var startTime = 0L
 
@@ -58,7 +61,7 @@ object BlePacketCapture {
      * @param maxCapture Maximum packets to capture before auto-stopping
      */
     fun startCapture(knownWeightKg: Float = 0f, desc: String = "", maxCapture: Int = 500) {
-        synchronized(packets) { packets.clear() }
+        lock.withLock { packets.clear() }
         knownWeight = knownWeightKg
         description = desc
         maxPackets = maxCapture
@@ -74,7 +77,7 @@ object BlePacketCapture {
     fun stopCapture(): List<CapturedPacket> {
         capturing = false
         val elapsed = currentTimeMillis() - startTime
-        val result = synchronized(packets) { packets.toList() }
+        val result = lock.withLock { packets.toList() }
 
         log.i { "=== CAPTURE STOPPED === ${result.size} packets in ${elapsed}ms" }
         log.i {
@@ -106,7 +109,7 @@ object BlePacketCapture {
     fun onPacket(data: ByteArray) {
         if (!capturing) return
 
-        synchronized(packets) {
+        val shouldLog = lock.withLock {
             if (packets.size >= maxPackets) {
                 capturing = false
                 log.w { "Auto-stopped: reached max capture limit ($maxPackets)" }
@@ -124,8 +127,14 @@ object BlePacketCapture {
 
             // Log every packet with dual interpretation for real-time monitoring
             if (packets.size <= 10 || packets.size % 50 == 0) {
-                logDualInterpretation(data, hex, packets.size)
+                Triple(data, hex, packets.size)
+            } else {
+                null
             }
+        }
+        // Log outside the lock to avoid holding it during I/O
+        if (shouldLog != null) {
+            logDualInterpretation(shouldLog.first, shouldLog.second, shouldLog.third)
         }
     }
 

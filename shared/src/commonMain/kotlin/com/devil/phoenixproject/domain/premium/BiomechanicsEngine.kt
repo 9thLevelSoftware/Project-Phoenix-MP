@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.VelocityResult
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import co.touchlab.kermit.Logger
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
