@@ -1,8 +1,12 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -36,6 +40,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -81,6 +87,8 @@ fun ExerciseRowWithConnector(
     onSelectionToggle: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    // supersets-bulk-edit-14: gate selection animation on reduceMotion
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -110,8 +118,8 @@ fun ExerciseRowWithConnector(
         // Selection checkbox (visible in selection mode)
         AnimatedVisibility(
             visible = isSelectionMode,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = if (reduceMotion) EnterTransition.None else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
+            exit = if (reduceMotion) ExitTransition.None else scaleOut(animationSpec = ExpressiveMotion.SpringSnappy) + fadeOut(),
         ) {
             Checkbox(
                 checked = isSelected,

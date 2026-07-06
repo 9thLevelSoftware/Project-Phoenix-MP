@@ -3,6 +3,7 @@ package com.devil.phoenixproject.ui.theme
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +47,16 @@ object ExpressiveMotion {
      */
     val SpringBouncyColor = spring<Color>(
         dampingRatio = Spring.DampingRatioHighBouncy,
+        stiffness = Spring.StiffnessLow,
+    )
+
+    /**
+     * Standard spring typed for IntSize — use with expandVertically() / shrinkVertically().
+     * Same character as SpringDefault but carries the IntSize type parameter
+     * required by expand/shrink enter/exit transitions.
+     */
+    val SpringDefaultIntSize = spring<IntSize>(
+        dampingRatio = Spring.DampingRatioLowBouncy,
         stiffness = Spring.StiffnessLow,
     )
 }
