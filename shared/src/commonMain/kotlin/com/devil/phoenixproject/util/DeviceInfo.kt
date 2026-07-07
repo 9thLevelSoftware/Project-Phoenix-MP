@@ -73,8 +73,9 @@ expect object DeviceInfo {
     fun toJson(): String
 
     /**
-     * Issue #333: true on the Pixel 6/7 family (Tensor G1/G2 + BCM4389 Bluetooth
-     * controller), the only devices where large-MTU acknowledged writes wedge.
+     * Issue #333: true on Pixel devices with the Broadcom BCM4389 Bluetooth
+     * controller (Tensor G1/G2 generation: Pixel 6/7 phones, Pixel Fold,
+     * Pixel Tablet), the only devices where large-MTU acknowledged writes wedge.
      */
-    fun isPixel6Or7(): Boolean
+    fun isBcm4389Pixel(): Boolean
 }

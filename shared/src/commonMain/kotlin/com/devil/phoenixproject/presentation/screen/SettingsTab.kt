@@ -2853,7 +2853,7 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
-                // Issue #333: BLE small-MTU compatibility path (fixes Pixel 6/7
+                // Issue #333: BLE small-MTU compatibility path (fixes BCM4389 Pixel
                 // GATT_ERROR(133) disconnect at workout start)
                 Text(
                     stringResource(Res.string.settings_ble_compat_title),
@@ -2864,7 +2864,7 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     stringResource(
-                        if (DeviceInfo.isPixel6Or7()) {
+                        if (DeviceInfo.isBcm4389Pixel()) {
                             Res.string.settings_ble_compat_description_affected
                         } else {
                             Res.string.settings_ble_compat_description

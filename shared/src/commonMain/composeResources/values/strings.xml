@@ -143,8 +143,8 @@
     <string name="settings_weight_suggestions_title">Weight Suggestions</string>
     <string name="settings_weight_suggestions_description">Show Apply or Dismiss recommendations after completed sets</string>
     <string name="settings_ble_compat_title">BLE Compatibility Mode</string>
-    <string name="settings_ble_compat_description">Small-MTU write path that fixes workout-start disconnects on Pixel 6/7. Auto enables it only on those devices.</string>
-    <string name="settings_ble_compat_description_affected">Small-MTU write path that fixes workout-start disconnects on Pixel 6/7. Auto enables it only on those devices (this device is affected).</string>
+    <string name="settings_ble_compat_description">Small-MTU write path that fixes workout-start disconnects on Pixel 6/7, Fold and Tablet. Auto enables it only on those devices.</string>
+    <string name="settings_ble_compat_description_affected">Small-MTU write path that fixes workout-start disconnects on Pixel 6/7, Fold and Tablet. Auto enables it only on those devices (this device is affected).</string>
     <string name="settings_ble_compat_auto">Auto</string>
     <string name="settings_ble_compat_on">On</string>
     <string name="settings_ble_compat_off">Off</string>

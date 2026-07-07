@@ -632,8 +632,8 @@
     <string name="settings_adults_only_decline">Sauber halten</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Starke Sprache + Anzügliche Themen</string>
     <string name="settings_ble_compat_title">BLE-Kompatibilitätsmodus</string>
-    <string name="settings_ble_compat_description">Schreibpfad mit kleiner MTU, der Verbindungsabbrüche beim Trainingsstart auf Pixel 6/7 behebt. Auto aktiviert ihn nur auf diesen Geräten.</string>
-    <string name="settings_ble_compat_description_affected">Schreibpfad mit kleiner MTU, der Verbindungsabbrüche beim Trainingsstart auf Pixel 6/7 behebt. Auto aktiviert ihn nur auf diesen Geräten (dieses Gerät ist betroffen).</string>
+    <string name="settings_ble_compat_description">Schreibpfad mit kleiner MTU, der Verbindungsabbrüche beim Trainingsstart auf Pixel 6/7, Fold und Tablet behebt. Auto aktiviert ihn nur auf diesen Geräten.</string>
+    <string name="settings_ble_compat_description_affected">Schreibpfad mit kleiner MTU, der Verbindungsabbrüche beim Trainingsstart auf Pixel 6/7, Fold und Tablet behebt. Auto aktiviert ihn nur auf diesen Geräten (dieses Gerät ist betroffen).</string>
     <string name="settings_ble_compat_auto">Auto</string>
     <string name="settings_ble_compat_on">Ein</string>
     <string name="settings_ble_compat_off">Aus</string>

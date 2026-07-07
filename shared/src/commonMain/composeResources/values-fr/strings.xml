@@ -632,8 +632,8 @@
     <string name="settings_adults_only_decline">Garder propre</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC : Langage grossier + Thèmes suggestifs</string>
     <string name="settings_ble_compat_title">Mode de compatibilité BLE</string>
-    <string name="settings_ble_compat_description">Chemin d\'écriture à petite MTU qui corrige les déconnexions au démarrage de l\'entraînement sur Pixel 6/7. Auto ne l\'active que sur ces appareils.</string>
-    <string name="settings_ble_compat_description_affected">Chemin d\'écriture à petite MTU qui corrige les déconnexions au démarrage de l\'entraînement sur Pixel 6/7. Auto ne l\'active que sur ces appareils (cet appareil est concerné).</string>
+    <string name="settings_ble_compat_description">Chemin d\'écriture à petite MTU qui corrige les déconnexions au démarrage de l\'entraînement sur Pixel 6/7, Fold et Tablet. Auto ne l\'active que sur ces appareils.</string>
+    <string name="settings_ble_compat_description_affected">Chemin d\'écriture à petite MTU qui corrige les déconnexions au démarrage de l\'entraînement sur Pixel 6/7, Fold et Tablet. Auto ne l\'active que sur ces appareils (cet appareil est concerné).</string>
     <string name="settings_ble_compat_auto">Auto</string>
     <string name="settings_ble_compat_on">Activé</string>
     <string name="settings_ble_compat_off">Désactivé</string>

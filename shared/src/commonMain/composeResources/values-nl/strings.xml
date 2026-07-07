@@ -611,8 +611,8 @@
     <string name="settings_adults_only_decline">Houd het netjes</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Krachtige taal + Suggestieve thema\'s</string>
     <string name="settings_ble_compat_title">BLE-compatibiliteitsmodus</string>
-    <string name="settings_ble_compat_description">Schrijfpad met kleine MTU dat verbroken verbindingen bij het starten van een workout op Pixel 6/7 verhelpt. Auto schakelt het alleen op die toestellen in.</string>
-    <string name="settings_ble_compat_description_affected">Schrijfpad met kleine MTU dat verbroken verbindingen bij het starten van een workout op Pixel 6/7 verhelpt. Auto schakelt het alleen op die toestellen in (dit toestel is getroffen).</string>
+    <string name="settings_ble_compat_description">Schrijfpad met kleine MTU dat verbroken verbindingen bij het starten van een workout op Pixel 6/7, Fold en Tablet verhelpt. Auto schakelt het alleen op die toestellen in.</string>
+    <string name="settings_ble_compat_description_affected">Schrijfpad met kleine MTU dat verbroken verbindingen bij het starten van een workout op Pixel 6/7, Fold en Tablet verhelpt. Auto schakelt het alleen op die toestellen in (dit toestel is getroffen).</string>
     <string name="settings_ble_compat_auto">Auto</string>
     <string name="settings_ble_compat_on">Aan</string>
     <string name="settings_ble_compat_off">Uit</string>

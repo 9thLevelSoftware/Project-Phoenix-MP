@@ -119,14 +119,22 @@ actual object DeviceInfo {
     fun isPixel(): Boolean = manufacturer.equals("Google", ignoreCase = true)
 
     /**
-     * Issue #333: Pixel 6/7 family (Tensor G1/G2 + BCM4389 Bluetooth controller).
+     * Issue #333: Pixel devices with the Broadcom BCM4389 Bluetooth controller
+     * (Tensor G1/G2 generation), where large-MTU acknowledged writes wedge.
      * Matched by Build.DEVICE codename — the only reliable discriminator across
      * carrier/regional model numbers:
      * oriole=Pixel 6, raven=Pixel 6 Pro, bluejay=Pixel 6a,
-     * panther=Pixel 7, cheetah=Pixel 7 Pro, lynx=Pixel 7a.
+     * panther=Pixel 7, cheetah=Pixel 7 Pro, lynx=Pixel 7a,
+     * felix=Pixel Fold, tangorpro=Pixel Tablet.
      */
-    actual fun isPixel6Or7(): Boolean =
-        isPixel() && device.lowercase() in setOf("oriole", "raven", "bluejay", "panther", "cheetah", "lynx")
+    private val isBcm4389: Boolean =
+        isPixel() && device.lowercase() in setOf(
+            "oriole", "raven", "bluejay",
+            "panther", "cheetah", "lynx",
+            "felix", "tangorpro",
+        )
+
+    actual fun isBcm4389Pixel(): Boolean = isBcm4389
 
     /**
      * Check if running on Amazon Fire OS (Fire Tablets, Fire TV)
