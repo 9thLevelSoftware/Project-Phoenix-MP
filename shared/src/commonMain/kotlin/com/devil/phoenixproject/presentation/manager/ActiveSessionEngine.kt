@@ -1904,12 +1904,14 @@ class ActiveSessionEngine(
                     cycle.weekNumber != targetWeek
                 ) {
                     try {
-                        regenerateFiveThreeOneUseCase?.execute(
-                            cycleId = cycleId,
-                            targetWeek = targetWeek,
-                            bumpTrainingMax = bumpTrainingMax,
-                        )
-                        regenerationSucceeded = true
+                        regenerateFiveThreeOneUseCase?.let { useCase ->
+                            useCase.execute(
+                                cycleId = cycleId,
+                                targetWeek = targetWeek,
+                                bumpTrainingMax = bumpTrainingMax,
+                            )
+                            regenerationSucceeded = true
+                        }
                     } catch (e: Exception) {
                         Logger.w(e) {
                             "5/3/1 regeneration failed after cycle completion: cycleId=$cycleId targetWeek=$targetWeek"

@@ -53,6 +53,30 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
     }
 
     @Test
+    fun `drifted main lift still regenerates and shared shoulder press accessory stays untouched`() = runTest {
+        seedFiveThreeOneCycle(
+            benchMainLiftPercentages = listOf(61, 70, 79),
+            squatAccessoryPressPercentages = listOf(65, 65, 65),
+        )
+
+        useCase.execute(cycleId = "cycle-531", targetWeek = 1, bumpTrainingMax = true)
+
+        val benchRoutine = workoutRepository.getRoutineById("routine-bench")
+        assertNotNull(benchRoutine)
+        val benchMainLift = benchRoutine.exercises.first()
+        assertEquals(listOf(59, 68, 77), benchMainLift.setWeightsPercentOfPR)
+        assertEquals(listOf(5, 5, null), benchMainLift.setReps)
+        assertEquals(101.25f + (1.25f / 0.9f), exerciseRepository.getExerciseById(BENCH_ID)?.oneRepMaxKg)
+
+        val squatRoutine = workoutRepository.getRoutineById("routine-squat")
+        assertNotNull(squatRoutine)
+        val accessoryShoulderPress = squatRoutine.exercises[1]
+        assertEquals(listOf(10, 10, 10), accessoryShoulderPress.setReps)
+        assertEquals(listOf(65, 65, 65), accessoryShoulderPress.setWeightsPercentOfPR)
+        assertFalse(accessoryShoulderPress.isAMRAP)
+    }
+
+    @Test
     fun `deload week rewrites main lifts to 36 45 54 with fixed five reps and no amrap`() = runTest {
         seedFiveThreeOneCycle()
 
@@ -117,7 +141,11 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         assertEquals(emptyList(), plank.setWeightsPercentOfPR)
     }
 
-    private fun seedFiveThreeOneCycle(includeNullShoulderPressOneRepMax: Boolean = false): TrainingCycle {
+    private fun seedFiveThreeOneCycle(
+        includeNullShoulderPressOneRepMax: Boolean = false,
+        benchMainLiftPercentages: List<Int> = listOf(59, 68, 77),
+        squatAccessoryPressPercentages: List<Int> = listOf(65, 65, 65),
+    ): TrainingCycle {
         val bench = mainLiftExercise(
             id = BENCH_ID,
             name = "Bench Press",
@@ -155,7 +183,7 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
             id = "routine-bench",
             name = "Bench Day",
             exercises = listOf(
-                mainLiftRoutineExercise(id = "re-bench", exercise = bench),
+                mainLiftRoutineExercise(id = "re-bench", exercise = bench, setWeightsPercentOfPR = benchMainLiftPercentages),
                 accessoryRoutineExercise(id = "re-incline", exercise = inclineBench),
                 accessoryRoutineExercise(id = "re-row", exercise = row),
                 accessoryRoutineExercise(id = "re-plank", exercise = plank, reps = listOf(null, null, null), usePercentOfPr = false, setWeightsPercentOfPR = emptyList()),
@@ -166,7 +194,7 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
             name = "Squat Day",
             exercises = listOf(
                 mainLiftRoutineExercise(id = "re-squat", exercise = squat),
-                accessoryRoutineExercise(id = "re-press-accessory", exercise = press),
+                accessoryRoutineExercise(id = "re-press-accessory", exercise = press, setWeightsPercentOfPR = squatAccessoryPressPercentages),
                 accessoryRoutineExercise(id = "re-face-pull", exercise = facePull, reps = listOf(15, 15, 15), setWeightsPercentOfPR = listOf(55, 55, 55)),
                 accessoryRoutineExercise(id = "re-lunge", exercise = lunge),
             ),
@@ -228,7 +256,11 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         oneRepMaxKg = 50f,
     )
 
-    private fun mainLiftRoutineExercise(id: String, exercise: Exercise): RoutineExercise = RoutineExercise(
+    private fun mainLiftRoutineExercise(
+        id: String,
+        exercise: Exercise,
+        setWeightsPercentOfPR: List<Int> = listOf(59, 68, 77),
+    ): RoutineExercise = RoutineExercise(
         id = id,
         exercise = exercise,
         orderIndex = 0,
@@ -237,7 +269,7 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         programMode = ProgramMode.OldSchool,
         isAMRAP = true,
         usePercentOfPR = true,
-        setWeightsPercentOfPR = listOf(59, 68, 77),
+        setWeightsPercentOfPR = setWeightsPercentOfPR,
     )
 
     private fun accessoryRoutineExercise(

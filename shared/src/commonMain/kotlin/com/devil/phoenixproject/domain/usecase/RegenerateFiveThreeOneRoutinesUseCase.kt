@@ -63,12 +63,14 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         targetWeek: Int,
         matchedLiftIds: MutableSet<String>,
     ): Routine {
+        val mainLiftSlot = routine.exercises.firstOrNull()
+        val shouldRewriteMainLift = mainLiftSlot?.isFiveThreeOneMainLiftSlot() == true
         var changed = false
         val targetSets = FiveThreeOneWeeks.forWeek(targetWeek)
         val targetPercentages = computeFiveThreeOneSetWeightsForWeek(targetWeek)
 
-        val updatedExercises = routine.exercises.map { exercise ->
-            if (!exercise.isCurrentFiveThreeOneMainLift()) {
+        val updatedExercises = routine.exercises.mapIndexed { index, exercise ->
+            if (index != 0 || !shouldRewriteMainLift) {
                 exercise
             } else {
                 matchedLiftIds += exercise.exercise.id.orEmpty()
@@ -91,11 +93,9 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         }
     }
 
-    private fun RoutineExercise.isCurrentFiveThreeOneMainLift(): Boolean {
+    private fun RoutineExercise.isFiveThreeOneMainLiftSlot(): Boolean {
         val exerciseId = exercise.id ?: return false
-        return usePercentOfPR &&
-            exerciseId in MAIN_LIFT_IDS &&
-            setWeightsPercentOfPR in FIVE_THREE_ONE_PERCENTAGES
+        return usePercentOfPR && exerciseId in MAIN_LIFT_IDS
     }
 
     private companion object {
@@ -106,12 +106,6 @@ class RegenerateFiveThreeOneRoutinesUseCase(
 
         val MAIN_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID, SQUAT_ID, DEADLIFT_ID)
         val UPPER_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID)
-        val FIVE_THREE_ONE_PERCENTAGES = setOf(
-            computeFiveThreeOneSetWeightsForWeek(1),
-            computeFiveThreeOneSetWeightsForWeek(2),
-            computeFiveThreeOneSetWeightsForWeek(3),
-            computeFiveThreeOneSetWeightsForWeek(4),
-        )
 
         const val UPPER_ONE_REP_MAX_BUMP_KG = 1.25f / 0.9f
         const val LOWER_ONE_REP_MAX_BUMP_KG = 2.5f / 0.9f
