@@ -89,6 +89,7 @@ import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
+import com.devil.phoenixproject.presentation.components.cycle.TemplatePreviewEditSheet
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
@@ -127,6 +128,9 @@ import vitruvianprojectphoenix.shared.generated.resources.start_workout
 sealed class CycleCreationState {
     object Idle : CycleCreationState()
     data class TemplateSelected(val template: CycleTemplate) : CycleCreationState()
+
+    /** Editable preview of the template's structure before creation (Phase 3, #620). */
+    data class Previewing(val template: CycleTemplate) : CycleCreationState()
     data class OneRepMaxInput(val template: CycleTemplate) : CycleCreationState()
     data class ModeConfirmation(
         val template: CycleTemplate,
@@ -484,10 +488,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 scope.launch {
                     creationSheetState.hide()
                     showCreationSheet = false
-                    // All templates flow through the 1RM step (skippable for non-5/3/1
-                    // templates) so live %-of-1RM weight resolution has a baseline and
-                    // new users never get 0kg routines. Then mode confirmation → create.
-                    creationState = CycleCreationState.OneRepMaxInput(template)
+                    // Flow: editable preview → 1RM input (skippable) → mode confirmation
+                    // → create. Live %-of-1RM resolution means new users never get 0kg.
+                    creationState = CycleCreationState.Previewing(template)
                 }
             },
             onCreateCustom = {
@@ -503,6 +506,19 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 
     // OneRepMaxInputScreen
     when (val state = creationState) {
+        is CycleCreationState.Previewing -> {
+            TemplatePreviewEditSheet(
+                template = state.template,
+                exerciseRepository = exerciseRepository,
+                onContinue = { editedTemplate ->
+                    creationState = CycleCreationState.OneRepMaxInput(editedTemplate)
+                },
+                onCancel = {
+                    creationState = CycleCreationState.Idle
+                },
+            )
+        }
+
         is CycleCreationState.OneRepMaxInput -> {
             // Extract exercise names from template - show all cable exercises (not just percentage-based)
             // This allows users to enter 1RM values for any exercise they want
