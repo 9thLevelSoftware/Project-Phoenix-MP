@@ -204,14 +204,23 @@ fun TemplatePreviewEditSheet(
             onDismiss = { pickingForDay = null },
             onExerciseSelected = { exercise ->
                 updateDay(dayNumber) { exercises ->
-                    exercises + TemplateExercise(
-                        exerciseName = exercise.name,
-                        sets = 3,
-                        reps = 10,
-                        suggestedMode = ProgramMode.OldSchool,
-                        exerciseId = exercise.id,
-                        percentOfOneRm = defaultPercentOfOneRmForReps(10),
-                    )
+                    // Same-day duplicates would collide on ModeConfirmationScreen's
+                    // name-keyed rows and configs — skip re-adding an existing exercise.
+                    if (exercises.any { it.exerciseName == exercise.name }) {
+                        exercises
+                    } else {
+                        exercises + TemplateExercise(
+                            exerciseName = exercise.name,
+                            sets = 3,
+                            reps = 10,
+                            // Preserve bodyweight semantics: suggestedMode == null is the
+                            // sentinel the 1RM/mode screens and TemplateConverter use to
+                            // exclude an exercise from cable %-of-1RM handling.
+                            suggestedMode = if (exercise.isBodyweight) null else ProgramMode.OldSchool,
+                            exerciseId = exercise.id,
+                            percentOfOneRm = defaultPercentOfOneRmForReps(10),
+                        )
+                    }
                 }
                 pickingForDay = null
             },

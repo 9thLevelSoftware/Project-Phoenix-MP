@@ -5,6 +5,7 @@ import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -169,10 +170,12 @@ fun ModeConfirmationScreen(
                 if (!day.isRestDay && day.routine != null) {
                     // Filter to only cable exercises (those with a suggested mode)
                     val cableExercises = day.routine.exercises.filter { it.suggestedMode != null }
-                    items(
+                    itemsIndexed(
                         items = cableExercises,
-                        key = { exercise -> "${day.dayNumber}_${exercise.exerciseName}" },
-                    ) { exercise ->
+                        // Index in the key guards against same-name duplicates on one day
+                        // (LazyColumn crashes on repeated keys). #633 review.
+                        key = { index, exercise -> "${day.dayNumber}_${index}_${exercise.exerciseName}" },
+                    ) { _, exercise ->
                         ConfigurableExerciseCard(
                             exercise = exercise,
                             config = exerciseConfigs[exercise.exerciseName] ?: ExerciseConfig.fromTemplate(
