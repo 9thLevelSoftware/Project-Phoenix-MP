@@ -198,19 +198,48 @@ class TemplateConverterTest {
         val converter = TemplateConverter(repositoryFor(*templates.toTypedArray()))
 
         for (template in templates) {
+            val bodyweightNames = template.days
+                .flatMap { it.routine?.exercises ?: emptyList() }
+                .filter { it.suggestedMode == null }
+                .map { it.exerciseName }
+                .toSet()
+
             val result = converter.convert(template)
             result.routines.flatMap { it.exercises }.forEach { exercise ->
-                assertTrue(
-                    exercise.usePercentOfPR,
-                    "${template.name}/${exercise.exercise.name}: must opt into live %-of-1RM resolution",
-                )
-                assertEquals(ScalingBasis.ESTIMATED_1RM, exercise.scalingBasis)
+                if (exercise.exercise.name in bodyweightNames) {
+                    // Bodyweight/core exercises (Plank, Crunch) never scale from 1RM
+                    assertFalse(
+                        exercise.usePercentOfPR,
+                        "${template.name}/${exercise.exercise.name}: bodyweight must not 1RM-scale",
+                    )
+                } else {
+                    assertTrue(
+                        exercise.usePercentOfPR,
+                        "${template.name}/${exercise.exercise.name}: must opt into live %-of-1RM resolution",
+                    )
+                    assertEquals(ScalingBasis.ESTIMATED_1RM, exercise.scalingBasis)
+                }
                 assertTrue(
                     exercise.weightPerCableKg > 0f,
                     "${template.name}/${exercise.exercise.name}: fallback weight must never be 0kg",
                 )
             }
         }
+    }
+
+    @Test
+    fun `production template percent prescriptions match the rep-range normalization rule`() = runTest {
+        CycleTemplates.all()
+            .flatMap { it.days }
+            .flatMap { it.routine?.exercises ?: emptyList() }
+            .filter { !it.isPercentageBased && it.suggestedMode != null }
+            .forEach { te ->
+                assertEquals(
+                    com.devil.phoenixproject.domain.model.defaultPercentOfOneRmForReps(te.reps),
+                    te.percentOfOneRm,
+                    "${te.exerciseName} (${te.reps} reps): declared % must match the normalization rule",
+                )
+            }
     }
 
     @Test
@@ -333,12 +362,115 @@ class TemplateConverterTest {
                 exerciseName = "Bicep Curl",
                 mode = ProgramMode.OldSchool,
                 weightPerCableKg = 12.5f,
+                userEditedWeight = true,
             ),
         )
 
         val exercise = converter.convert(template, configs).routines.first().exercises.first()
         assertEquals(12.5f, exercise.weightPerCableKg)
         assertFalse(exercise.usePercentOfPR, "User-pinned weight must not be overridden by live resolution")
+
+        // #633 review (P1): an auto-filled config weight (fromTemplate's 1RM×0.70,
+        // userEditedWeight = false) must NOT pin the exercise — live scaling stays on.
+        val autoConfigs = mapOf(
+            "Bicep Curl" to ExerciseConfig(
+                exerciseName = "Bicep Curl",
+                mode = ProgramMode.OldSchool,
+                weightPerCableKg = 28f, // auto-filled from 1RM, not user-edited
+            ),
+        )
+        val autoExercise = converter.convert(template, autoConfigs).routines.first().exercises.first()
+        assertTrue(
+            autoExercise.usePercentOfPR,
+            "Auto-filled 1RM default weights must not disable live %-of-1RM resolution",
+        )
+    }
+
+    @Test
+    fun `tiny one rep max never rounds fallback weight to zero`() = runTest {
+        val repository = FakeExerciseRepository().apply {
+            addExercise(
+                Exercise(
+                    id = "band-001",
+                    name = "Band Pull Apart",
+                    muscleGroup = "Back",
+                    muscleGroups = "Back",
+                    equipment = "SINGLE_HANDLE",
+                    oneRepMaxKg = 0.3f, // 0.3 × 70% = 0.21 → would round to 0kg without the floor
+                ),
+            )
+        }
+        val converter = TemplateConverter(repository)
+
+        val template = CycleTemplate(
+            id = "template-6",
+            name = "Test",
+            description = "Test",
+            days = listOf(
+                CycleDayTemplate.training(
+                    dayNumber = 1,
+                    name = "Day 1",
+                    routine = RoutineTemplate(
+                        name = "Bands",
+                        exercises = listOf(
+                            TemplateExercise(exerciseName = "Band Pull Apart", sets = 3, reps = 15),
+                        ),
+                    ),
+                ),
+            ),
+            progressionRule = null,
+        )
+
+        val exercise = converter.convert(template).routines.first().exercises.first()
+        assertTrue(
+            exercise.weightPerCableKg >= 0.5f,
+            "Fallback weight must floor at the 0.5kg machine increment, got ${exercise.weightPerCableKg}",
+        )
+    }
+
+    @Test
+    fun `bodyweight exercises get fixed light weight not one rep max scaling`() = runTest {
+        val repository = FakeExerciseRepository().apply {
+            addExercise(
+                Exercise(
+                    id = "plank-001",
+                    name = "Plank",
+                    muscleGroup = "Core",
+                    muscleGroups = "Core",
+                    equipment = "",
+                    oneRepMaxKg = 100f, // even with (nonsense) 1RM data present
+                ),
+            )
+        }
+        val converter = TemplateConverter(repository)
+
+        val template = CycleTemplate(
+            id = "template-7",
+            name = "Test",
+            description = "Test",
+            days = listOf(
+                CycleDayTemplate.training(
+                    dayNumber = 1,
+                    name = "Day 1",
+                    routine = RoutineTemplate(
+                        name = "Core",
+                        exercises = listOf(
+                            // suggestedMode = null is the bodyweight sentinel
+                            TemplateExercise(exerciseName = "Plank", sets = 3, reps = null, suggestedMode = null),
+                        ),
+                    ),
+                ),
+            ),
+            progressionRule = null,
+        )
+
+        val exercise = converter.convert(template).routines.first().exercises.first()
+        assertFalse(exercise.usePercentOfPR, "Bodyweight exercises must not scale from 1RM")
+        assertEquals(
+            TemplateConverter.DEFAULT_FALLBACK_WEIGHT_KG,
+            exercise.weightPerCableKg,
+            "Bodyweight exercises use the light fixed default, not 70% of 1RM",
+        )
     }
 
     @Test

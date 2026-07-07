@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.ConnectionState
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -235,29 +236,31 @@ class BleConnectionManager(
             return
         }
 
-        // If already connecting/scanning, cancel the stale attempt and start a fresh one with
-        // THIS caller's callbacks. Previously this path called cancelConnection() and returned,
-        // dropping both onConnected and onFailed — a silent "nothing happens" dead end
-        // (issue #620 secondary path). Teardown is sequenced inside the new connection
-        // coroutine so the fresh scan cannot race the async stopScanning().
+        // If already connecting/scanning, restart with THIS caller's callbacks. Previously
+        // this path called cancelConnection() and returned, dropping both onConnected and
+        // onFailed — a silent "nothing happens" dead end (issue #620 secondary path).
+        //
+        // Single cancellation path: the new connection coroutine cancelAndJoin()s the
+        // previous job — waiting for it (and any cleanup it performs) to fully unwind —
+        // BEFORE tearing down the radio state and starting the fresh scan. Nothing can
+        // interleave with the new scan.
         val staleAttemptInProgress = connectionState.value is ConnectionState.Connecting ||
             connectionState.value is ConnectionState.Scanning
         if (staleAttemptInProgress) {
-            Logger.d { "ensureConnection: Cancelling in-progress connection, restarting with new callbacks" }
-            connectionJob?.cancel()
-            connectionJob = null
+            Logger.d { "ensureConnection: Restarting in-progress connection with new callbacks" }
             _pendingConnectionCallback = null
             _isAutoConnecting.value = false
         }
 
         // Start new connection
-        connectionJob?.cancel()
+        val staleJob = connectionJob
         connectionJob = null
 
         connectionJob = scope.launch {
             try {
+                // Deterministic sequencing: previous attempt fully unwound first.
+                staleJob?.cancelAndJoin()
                 if (staleAttemptInProgress) {
-                    // Complete the teardown of the stale attempt before scanning again.
                     bleRepository.stopScanning()
                     bleRepository.cancelConnection()
                 }

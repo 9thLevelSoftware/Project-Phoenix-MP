@@ -47,6 +47,7 @@ import com.devil.phoenixproject.domain.model.CycleDayTemplate
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.TemplateExercise
+import com.devil.phoenixproject.domain.model.defaultPercentOfOneRmForReps
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.ui.theme.Spacing
 
@@ -147,7 +148,14 @@ fun TemplatePreviewEditSheet(
                             updateDay(day.dayNumber) { exercises ->
                                 exercises.mapIndexed { i, ex ->
                                     if (i == exerciseIndex && ex.reps != null) {
-                                        ex.copy(reps = (ex.reps + delta).coerceIn(1, 50))
+                                        val newReps = (ex.reps + delta).coerceIn(1, 50)
+                                        // Keep the %-of-1RM prescription consistent with the
+                                        // new rep range (5 reps → 75%, 10 → 65%, ...) so the
+                                        // resolved load matches the displayed reps.
+                                        ex.copy(
+                                            reps = newReps,
+                                            percentOfOneRm = defaultPercentOfOneRmForReps(newReps),
+                                        )
                                     } else {
                                         ex
                                     }
@@ -202,6 +210,7 @@ fun TemplatePreviewEditSheet(
                         reps = 10,
                         suggestedMode = ProgramMode.OldSchool,
                         exerciseId = exercise.id,
+                        percentOfOneRm = defaultPercentOfOneRmForReps(10),
                     )
                 }
                 pickingForDay = null

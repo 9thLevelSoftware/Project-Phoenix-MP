@@ -122,6 +122,17 @@ import vitruvianprojectphoenix.shared.generated.resources.label_error
 import vitruvianprojectphoenix.shared.generated.resources.skip_rest_day
 import vitruvianprojectphoenix.shared.generated.resources.start_workout
 
+// Shared failure copy for the fresh-start and restart workout paths (issue #620:
+// failures must always be surfaced, never silent).
+private const val WORKOUT_LOAD_FAILED_MESSAGE =
+    "Couldn't load this workout — routine data is missing. Try editing the cycle."
+private const val CONNECTION_FAILED_MESSAGE = "Machine connection failed — workout not started."
+
+/** Stable exercise-library IDs keyed by template exercise name, for ID-first lookups. */
+private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> =
+    days.flatMap { it.routine?.exercises ?: emptyList() }
+        .associate { it.exerciseName to it.exerciseId }
+
 /**
  * State machine for cycle creation flow
  */
@@ -356,19 +367,13 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                                         viewModel.enterSetReady(0, 0)
                                                         navController.navigate(NavigationRoutes.SetReady.route)
                                                     } else {
-                                                        // Issue #620: never fail silently — tell the user why
-                                                        // the workout didn't start.
-                                                        snackbarHostState.showSnackbar(
-                                                            "Couldn't load this workout — routine data is missing. Try editing the cycle.",
-                                                        )
+                                                        snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
                                                     }
                                                 }
                                             },
                                             onFailed = {
                                                 scope.launch {
-                                                    snackbarHostState.showSnackbar(
-                                                        "Machine connection failed — workout not started.",
-                                                    )
+                                                    snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
                                                 }
                                             },
                                         )
@@ -540,9 +545,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 
             // Template exercises carry stable library IDs — prefer ID-based lookup over the
             // fragile name-only findByName (names can be edited; IDs are stable).
-            val templateExerciseIds = state.template.days
-                .flatMap { it.routine?.exercises ?: emptyList() }
-                .associate { it.exerciseName to it.exerciseId }
+            val templateExerciseIds = state.template.exerciseIdsByName()
 
             // Load existing 1RM values - prioritize PR value over stored 1RM
             // Also load PR weight values for showing PR indicators in ModeConfirmation
@@ -615,9 +618,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     scope.launch {
                         try {
                             // 1. Update 1RM values in exercise repository if provided
-                            val modeTemplateExerciseIds = state.template.days
-                                .flatMap { it.routine?.exercises ?: emptyList() }
-                                .associate { it.exerciseName to it.exerciseId }
+                            val modeTemplateExerciseIds = state.template.exerciseIdsByName()
                             state.oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
                                 if (oneRepMax > 0f) {
                                     exerciseRepository.findByIdOrName(modeTemplateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
@@ -799,18 +800,13 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                         viewModel.enterSetReady(0, 0)
                                         navController.navigate(NavigationRoutes.SetReady.route)
                                     } else {
-                                        // Issue #620: surface the failure instead of a silent no-op.
-                                        snackbarHostState.showSnackbar(
-                                            "Couldn't load this workout — routine data is missing. Try editing the cycle.",
-                                        )
+                                        snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
                                     }
                                 }
                             },
                             onFailed = {
                                 scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        "Machine connection failed — workout not started.",
-                                    )
+                                    snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
                                 }
                             },
                         )

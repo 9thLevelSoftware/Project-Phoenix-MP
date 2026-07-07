@@ -40,6 +40,23 @@ object FiveThreeOneWeeks {
 }
 
 /**
+ * Default %-of-1RM working-weight prescription for a rep count, per the template
+ * normalization rules (see CycleTemplates): 5-6 reps → 75%, 8 → 70%, 10 → 65%,
+ * 12 → 60%, 15+ → 55%. Timed/unspecified reps default to 70%.
+ *
+ * Used to seed [TemplateExercise.percentOfOneRm] and to keep it consistent when
+ * the user edits reps in the template preview.
+ */
+fun defaultPercentOfOneRmForReps(reps: Int?): Int = when {
+    reps == null -> 70
+    reps <= 6 -> 75
+    reps <= 8 -> 70
+    reps <= 10 -> 65
+    reps <= 12 -> 60
+    else -> 55
+}
+
+/**
  * Calculate weight for a percentage-based set.
  * Uses 90% of 1RM as "training max" per Wendler's method.
  */

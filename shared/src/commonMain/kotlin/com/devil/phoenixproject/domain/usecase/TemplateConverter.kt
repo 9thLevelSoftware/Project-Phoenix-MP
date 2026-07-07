@@ -170,20 +170,32 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                     // mode PR → cross-mode PR) and grow with the user. weightPerCableKg is
                     // only the absolute FALLBACK used when that whole chain misses.
                     //
-                    // Exception: an explicit user-configured weight (ExerciseConfigModal)
-                    // pins the exercise to that absolute weight — respect the user's choice.
-                    val configuredWeight = config?.weightPerCableKg?.takeIf { it > 0f }
+                    // Exception: a weight the user EXPLICITLY edited (ExerciseConfigModal)
+                    // pins the exercise to that absolute value. ModeConfirmationScreen
+                    // auto-fills config weights from 1RM (ExerciseConfig.fromTemplate), so
+                    // the userEditedWeight flag — not mere presence of a weight — is the
+                    // pin signal. Without it, entering 1RMs would silently disable live
+                    // scaling for every exercise (#633 review, P1).
+                    val configuredWeight = config?.weightPerCableKg
+                        ?.takeIf { it > 0f && config.userEditedWeight }
+
+                    // Bodyweight/core exercises (suggestedMode == null: Plank, Crunch) never
+                    // scale from 1RM — they run at a light fixed weight the user can adjust.
+                    val isBodyweight = templateExercise.suggestedMode == null
 
                     // Fallback weight when no PR/1RM data exists anywhere: snapshot from the
                     // exercise's stored 1RM if present, else a conservative non-zero default.
                     // F381: use round(), not toInt() — toInt() truncates (70.9 → 70.5 not 71.0).
+                    // Floor at 0.5kg (machine increment): a tiny 1RM must never round to 0kg.
                     val oneRepMax = exercise.oneRepMaxKg ?: 0f
-                    val fallbackWeight = if (oneRepMax > 0f) {
-                        kotlin.math.round(
-                            (oneRepMax * (templateExercise.percentOfOneRm / 100f)) * 2,
-                        ).toInt() / 2f
-                    } else {
+                    val fallbackWeight = if (isBodyweight || oneRepMax <= 0f) {
                         DEFAULT_FALLBACK_WEIGHT_KG
+                    } else {
+                        (
+                            kotlin.math.round(
+                                (oneRepMax * (templateExercise.percentOfOneRm / 100f)) * 2,
+                            ).toInt() / 2f
+                            ).coerceAtLeast(0.5f)
                     }
 
                     val routineExercise = if (templateExercise.isPercentageBased) {
@@ -227,9 +239,10 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                             echoLevel = config?.echoLevel ?: EchoLevel.HARDER,
                             eccentricLoad = config?.eccentricLoadPercent?.toEccentricLoad()
                                 ?: EccentricLoad.LOAD_100,
-                            // User-pinned absolute weight disables live scaling; otherwise
-                            // resolve from the template's explicit %-of-1RM prescription.
-                            usePercentOfPR = configuredWeight == null,
+                            // User-pinned absolute weight disables live scaling; bodyweight
+                            // exercises never scale; otherwise resolve from the template's
+                            // explicit %-of-1RM prescription.
+                            usePercentOfPR = configuredWeight == null && !isBodyweight,
                             weightPercentOfPR = templateExercise.percentOfOneRm,
                             scalingBasis = ScalingBasis.ESTIMATED_1RM,
                         )

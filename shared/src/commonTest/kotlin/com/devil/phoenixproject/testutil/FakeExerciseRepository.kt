@@ -129,6 +129,9 @@ class FakeExerciseRepository : ExerciseRepository {
             exercises[id]?.let { return it }
         }
         val trimmed = name.trim()
+        // A blank name would fuzzy-match every exercise (everything contains "") —
+        // return null instead of an arbitrary first match.
+        if (trimmed.isEmpty()) return null
         exercises.values.find { it.name.trim() == trimmed }?.let { return it }
         return exercises.values.find { it.name.contains(trimmed, ignoreCase = true) }
     }

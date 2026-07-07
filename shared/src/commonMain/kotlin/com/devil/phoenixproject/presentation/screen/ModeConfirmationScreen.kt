@@ -185,7 +185,14 @@ fun ModeConfirmationScreen(
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
                             onConfigUpdated = { newConfig ->
-                                exerciseConfigs[exercise.exerciseName] = newConfig
+                                // Mark the weight as user-edited only when it actually changed
+                                // from the previous config — auto-filled 1RM defaults must not
+                                // pin the exercise to an absolute weight (#633 review, P1).
+                                val previous = exerciseConfigs[exercise.exerciseName]
+                                exerciseConfigs[exercise.exerciseName] = newConfig.copy(
+                                    userEditedWeight = (previous?.userEditedWeight == true) ||
+                                        (previous != null && newConfig.weightPerCableKg != previous.weightPerCableKg),
+                                )
                             },
                             weightStepKg = weightStepKg,
                         )
