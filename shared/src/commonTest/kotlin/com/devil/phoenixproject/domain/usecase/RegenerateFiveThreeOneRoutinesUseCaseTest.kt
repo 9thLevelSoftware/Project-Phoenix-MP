@@ -53,20 +53,32 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
     }
 
     @Test
-    fun `drifted main lift still regenerates and shared shoulder press accessory stays untouched`() = runTest {
+    fun `reordered expected main lift not in slot zero still regenerates and gets tm bump`() = runTest {
         seedFiveThreeOneCycle(
             benchMainLiftPercentages = listOf(61, 70, 79),
-            squatAccessoryPressPercentages = listOf(65, 65, 65),
+            benchMainLiftPosition = 1,
         )
 
         useCase.execute(cycleId = "cycle-531", targetWeek = 1, bumpTrainingMax = true)
 
         val benchRoutine = workoutRepository.getRoutineById("routine-bench")
         assertNotNull(benchRoutine)
-        val benchMainLift = benchRoutine.exercises.first()
+        val benchMainLift = benchRoutine.exercises[1]
         assertEquals(listOf(59, 68, 77), benchMainLift.setWeightsPercentOfPR)
         assertEquals(listOf(5, 5, null), benchMainLift.setReps)
         assertEquals(101.25f + (1.25f / 0.9f), exerciseRepository.getExerciseById(BENCH_ID)?.oneRepMaxKg)
+
+        val slotZeroAccessory = benchRoutine.exercises.first()
+        assertEquals("Incline Bench Press", slotZeroAccessory.exercise.name)
+        assertEquals(listOf(10, 10, 10), slotZeroAccessory.setReps)
+        assertEquals(listOf(65, 65, 65), slotZeroAccessory.setWeightsPercentOfPR)
+    }
+
+    @Test
+    fun `same id accessory on the wrong day remains untouched`() = runTest {
+        seedFiveThreeOneCycle(squatAccessoryPressPercentages = listOf(65, 65, 65))
+
+        useCase.execute(cycleId = "cycle-531", targetWeek = 2, bumpTrainingMax = false)
 
         val squatRoutine = workoutRepository.getRoutineById("routine-squat")
         assertNotNull(squatRoutine)
@@ -74,6 +86,12 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         assertEquals(listOf(10, 10, 10), accessoryShoulderPress.setReps)
         assertEquals(listOf(65, 65, 65), accessoryShoulderPress.setWeightsPercentOfPR)
         assertFalse(accessoryShoulderPress.isAMRAP)
+
+        val pressRoutine = workoutRepository.getRoutineById("routine-press")
+        assertNotNull(pressRoutine)
+        val pressMainLift = pressRoutine.exercises.first()
+        assertEquals(listOf(63, 72, 81), pressMainLift.setWeightsPercentOfPR)
+        assertEquals(listOf(3, 3, null), pressMainLift.setReps)
     }
 
     @Test
@@ -141,10 +159,41 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         assertEquals(emptyList(), plank.setWeightsPercentOfPR)
     }
 
+    @Test
+    fun `week sentinel does not advance when no expected main lifts are matched`() = runTest {
+        seedFiveThreeOneCycle(replaceExpectedMainLiftsWithAccessories = true)
+
+        assertFalse(useCase.execute(cycleId = "cycle-531", targetWeek = 2, bumpTrainingMax = false))
+
+        val cycle = trainingCycleRepository.getCycleById("cycle-531")
+        assertNotNull(cycle)
+        assertEquals(1, cycle.weekNumber)
+    }
+
+    @Test
+    fun `week sentinel does not advance or partially rewrite when one expected main lift is missing`() = runTest {
+        seedFiveThreeOneCycle(replaceBenchMainLiftWithAccessory = true)
+
+        assertFalse(useCase.execute(cycleId = "cycle-531", targetWeek = 2, bumpTrainingMax = false))
+
+        val cycle = trainingCycleRepository.getCycleById("cycle-531")
+        assertNotNull(cycle)
+        assertEquals(1, cycle.weekNumber)
+
+        val squatRoutine = workoutRepository.getRoutineById("routine-squat")
+        assertNotNull(squatRoutine)
+        val squatMainLift = squatRoutine.exercises.first()
+        assertEquals(listOf(59, 68, 77), squatMainLift.setWeightsPercentOfPR)
+        assertEquals(listOf(5, 5, null), squatMainLift.setReps)
+    }
+
     private fun seedFiveThreeOneCycle(
         includeNullShoulderPressOneRepMax: Boolean = false,
         benchMainLiftPercentages: List<Int> = listOf(59, 68, 77),
         squatAccessoryPressPercentages: List<Int> = listOf(65, 65, 65),
+        benchMainLiftPosition: Int = 0,
+        replaceExpectedMainLiftsWithAccessories: Boolean = false,
+        replaceBenchMainLiftWithAccessory: Boolean = false,
     ): TrainingCycle {
         val bench = mainLiftExercise(
             id = BENCH_ID,
@@ -179,21 +228,66 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         listOf(bench, squat, press, deadlift, inclineBench, row, plank, facePull, lunge, tricep, crunch, shrug, goodMorning)
             .forEach(exerciseRepository::addExercise)
 
+        val benchMainLift = if (replaceExpectedMainLiftsWithAccessories || replaceBenchMainLiftWithAccessory) {
+            accessoryRoutineExercise(id = "re-bench-missing", exercise = inclineBench)
+        } else {
+            mainLiftRoutineExercise(id = "re-bench", exercise = bench, setWeightsPercentOfPR = benchMainLiftPercentages)
+        }
+        val benchSlotZero = accessoryRoutineExercise(id = "re-incline", exercise = inclineBench)
+        val benchExercises = when (benchMainLiftPosition) {
+            0 -> orderedExercises(
+                benchMainLift,
+                accessoryRoutineExercise(id = "re-incline-2", exercise = inclineBench),
+                accessoryRoutineExercise(id = "re-row", exercise = row),
+                accessoryRoutineExercise(
+                    id = "re-plank",
+                    exercise = plank,
+                    reps = listOf(null, null, null),
+                    usePercentOfPr = false,
+                    setWeightsPercentOfPR = emptyList(),
+                ),
+            )
+            1 -> orderedExercises(
+                benchSlotZero,
+                benchMainLift,
+                accessoryRoutineExercise(id = "re-row", exercise = row),
+                accessoryRoutineExercise(
+                    id = "re-plank",
+                    exercise = plank,
+                    reps = listOf(null, null, null),
+                    usePercentOfPr = false,
+                    setWeightsPercentOfPR = emptyList(),
+                ),
+            )
+            else -> error("Unsupported benchMainLiftPosition=$benchMainLiftPosition")
+        }
+
+        val squatMainLift = if (replaceExpectedMainLiftsWithAccessories) {
+            accessoryRoutineExercise(id = "re-squat-missing", exercise = lunge)
+        } else {
+            mainLiftRoutineExercise(id = "re-squat", exercise = squat)
+        }
+        val pressMainLift = if (replaceExpectedMainLiftsWithAccessories) {
+            accessoryRoutineExercise(id = "re-press-missing", exercise = tricep)
+        } else {
+            mainLiftRoutineExercise(id = "re-press", exercise = press)
+        }
+        val deadliftMainLift = if (replaceExpectedMainLiftsWithAccessories) {
+            accessoryRoutineExercise(id = "re-deadlift-missing", exercise = goodMorning)
+        } else {
+            mainLiftRoutineExercise(id = "re-deadlift", exercise = deadlift)
+        }
+
         val benchRoutine = Routine(
             id = "routine-bench",
             name = "Bench Day",
-            exercises = listOf(
-                mainLiftRoutineExercise(id = "re-bench", exercise = bench, setWeightsPercentOfPR = benchMainLiftPercentages),
-                accessoryRoutineExercise(id = "re-incline", exercise = inclineBench),
-                accessoryRoutineExercise(id = "re-row", exercise = row),
-                accessoryRoutineExercise(id = "re-plank", exercise = plank, reps = listOf(null, null, null), usePercentOfPr = false, setWeightsPercentOfPR = emptyList()),
-            ),
+            exercises = benchExercises,
         )
         val squatRoutine = Routine(
             id = "routine-squat",
             name = "Squat Day",
-            exercises = listOf(
-                mainLiftRoutineExercise(id = "re-squat", exercise = squat),
+            exercises = orderedExercises(
+                squatMainLift,
                 accessoryRoutineExercise(id = "re-press-accessory", exercise = press, setWeightsPercentOfPR = squatAccessoryPressPercentages),
                 accessoryRoutineExercise(id = "re-face-pull", exercise = facePull, reps = listOf(15, 15, 15), setWeightsPercentOfPR = listOf(55, 55, 55)),
                 accessoryRoutineExercise(id = "re-lunge", exercise = lunge),
@@ -202,8 +296,8 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         val pressRoutine = Routine(
             id = "routine-press",
             name = "Press Day",
-            exercises = listOf(
-                mainLiftRoutineExercise(id = "re-press", exercise = press),
+            exercises = orderedExercises(
+                pressMainLift,
                 accessoryRoutineExercise(id = "re-tricep", exercise = tricep, reps = listOf(12, 12, 12), setWeightsPercentOfPR = listOf(60, 60, 60)),
                 accessoryRoutineExercise(id = "re-row-2", exercise = row),
                 accessoryRoutineExercise(id = "re-crunch", exercise = crunch, reps = listOf(15, 15, 15), usePercentOfPr = false, setWeightsPercentOfPR = emptyList()),
@@ -212,8 +306,8 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         val deadliftRoutine = Routine(
             id = "routine-deadlift",
             name = "Deadlift Day",
-            exercises = listOf(
-                mainLiftRoutineExercise(id = "re-deadlift", exercise = deadlift),
+            exercises = orderedExercises(
+                deadliftMainLift,
                 accessoryRoutineExercise(id = "re-incline-2", exercise = inclineBench),
                 accessoryRoutineExercise(id = "re-shrug", exercise = shrug, reps = listOf(12, 12, 12), setWeightsPercentOfPR = listOf(60, 60, 60)),
                 accessoryRoutineExercise(id = "re-good-morning", exercise = goodMorning, reps = listOf(12, 12, 12), setWeightsPercentOfPR = listOf(60, 60, 60)),
@@ -232,11 +326,17 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
                 CycleDay.create(id = "day-2", cycleId = "cycle-531", dayNumber = 2, name = "Squat", routineId = squatRoutine.id),
                 CycleDay.create(id = "day-3", cycleId = "cycle-531", dayNumber = 3, name = "Press", routineId = pressRoutine.id),
                 CycleDay.create(id = "day-4", cycleId = "cycle-531", dayNumber = 4, name = "Deadlift", routineId = deadliftRoutine.id),
+                CycleDay.restDay(id = "day-5", cycleId = "cycle-531", dayNumber = 5),
+                CycleDay.restDay(id = "day-6", cycleId = "cycle-531", dayNumber = 6),
+                CycleDay.restDay(id = "day-7", cycleId = "cycle-531", dayNumber = 7),
             ),
         )
         trainingCycleRepository.addCycle(cycle)
         return cycle
     }
+
+    private fun orderedExercises(vararg exercises: RoutineExercise): List<RoutineExercise> =
+        exercises.mapIndexed { index, exercise -> exercise.copy(orderIndex = index) }
 
     private fun mainLiftExercise(id: String, name: String, oneRepMaxKg: Float?): Exercise = Exercise(
         id = id,

@@ -164,46 +164,25 @@ class ActiveSessionEngineIntegrationTest {
     }
 
     @Test
-    fun rotationCompletionOnFiveThreeOneCycleEmitsNewWeekNumber() = runTest {
+    fun completing_day_four_of_real_seven_day_531_cycle_emits_new_week_number() = runTest {
         val harness = DWSMTestHarness(this)
         try {
             val cycle = seedFiveThreeOneCycle(harness)
             harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
             harness.fakeBleRepo.simulateConnect("Vee_Test")
 
-            val benchRoutine = harness.fakeWorkoutRepo.getRoutineById("routine-bench")
-            assertNotNull(benchRoutine)
-            harness.fakeExerciseRepo.addExercise(benchRoutine.exercises.first().exercise)
-            assertTrue(harness.dwsm.loadRoutineFromCycleAsync(benchRoutine.id, cycle.id, dayNumber = 4))
-            advanceUntilIdle()
-            harness.dwsm.enterSetReady(0, 0)
-            advanceUntilIdle()
-            harness.dwsm.startWorkout(skipCountdown = true)
-            advanceUntilIdle()
-
-            harness.coordinator._repCount.value = RepCount(
-                warmupReps = 0,
-                workingReps = 5,
-                totalReps = 5,
-                isWarmupComplete = true,
+            completeCycleWorkoutDay(
+                harness = harness,
+                routineId = "routine-deadlift",
+                cycleId = cycle.id,
+                dayNumber = 4,
+                engine = harness.activeSessionEngine,
             )
-            harness.coordinator.collectedMetrics.value = listOf(
-                WorkoutMetric(
-                    timestamp = 100L,
-                    loadA = 40f,
-                    loadB = 40f,
-                    positionA = 100f,
-                    positionB = 100f,
-                    velocityA = 50.0,
-                    velocityB = 50.0,
-                ),
-            )
-
-            harness.activeSessionEngine.handleSetCompletion()
             advanceUntilIdle()
 
             val completionEvent = harness.coordinator.cycleDayCompletionEvent.value
             assertNotNull(completionEvent)
+            assertTrue(completionEvent.isRotationComplete)
             assertEquals(2, completionEvent.newWeekNumber)
             assertFalse(completionEvent.tmBumped)
             assertEquals(2, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
@@ -220,39 +199,18 @@ class ActiveSessionEngineIntegrationTest {
             harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
             harness.fakeBleRepo.simulateConnect("Vee_Test")
 
-            val benchRoutine = harness.fakeWorkoutRepo.getRoutineById("routine-bench")
-            assertNotNull(benchRoutine)
-            harness.fakeExerciseRepo.addExercise(benchRoutine.exercises.first().exercise)
-            assertTrue(harness.dwsm.loadRoutineFromCycleAsync(benchRoutine.id, cycle.id, dayNumber = 4))
-            advanceUntilIdle()
-            harness.dwsm.enterSetReady(0, 0)
-            advanceUntilIdle()
-            harness.dwsm.startWorkout(skipCountdown = true)
-            advanceUntilIdle()
-
-            harness.coordinator._repCount.value = RepCount(
-                warmupReps = 0,
-                workingReps = 5,
-                totalReps = 5,
-                isWarmupComplete = true,
+            completeCycleWorkoutDay(
+                harness = harness,
+                routineId = "routine-deadlift",
+                cycleId = cycle.id,
+                dayNumber = 4,
+                engine = harness.activeSessionEngine,
             )
-            harness.coordinator.collectedMetrics.value = listOf(
-                WorkoutMetric(
-                    timestamp = 100L,
-                    loadA = 40f,
-                    loadB = 40f,
-                    positionA = 100f,
-                    positionB = 100f,
-                    velocityA = 50.0,
-                    velocityB = 50.0,
-                ),
-            )
-
-            harness.activeSessionEngine.handleSetCompletion()
             advanceUntilIdle()
 
             val completionEvent = harness.coordinator.cycleDayCompletionEvent.value
             assertNotNull(completionEvent)
+            assertTrue(completionEvent.isRotationComplete)
             assertNull(completionEvent.newWeekNumber)
             assertFalse(completionEvent.tmBumped)
             assertEquals(2, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
@@ -261,38 +219,124 @@ class ActiveSessionEngineIntegrationTest {
         }
     }
 
+    @Test
+    fun null_use_case_does_not_emit_new_week_or_tm_bumped() = runTest {
+        val harness = DWSMTestHarness(this)
+        var nullUseCaseEngine: ActiveSessionEngine? = null
+        try {
+            val cycle = seedFiveThreeOneCycle(harness)
+            harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+            nullUseCaseEngine = ActiveSessionEngine(
+                coordinator = harness.coordinator,
+                bleRepository = harness.fakeBleRepo,
+                workoutRepository = harness.fakeWorkoutRepo,
+                exerciseRepository = harness.fakeExerciseRepo,
+                personalRecordRepository = harness.fakePRRepo,
+                repCounter = harness.repCounter,
+                preferencesManager = harness.fakePrefsManager,
+                gamificationManager = harness.gamificationManager,
+                trainingCycleRepository = harness.fakeTrainingCycleRepo,
+                completedSetRepository = harness.fakeCompletedSetRepo,
+                syncTriggerManager = null,
+                repMetricRepository = harness.fakeRepMetricRepo,
+                biomechanicsRepository = harness.fakeBiomechanicsRepo,
+                recommendWeightAdjustmentUseCase = harness.recommendWeightAdjustmentUseCase,
+                equipmentRackRepository = harness.fakeEquipmentRackRepo,
+                applyEquipmentRackLoadUseCase = harness.applyEquipmentRackLoadUseCase,
+                settingsManager = harness.settingsManager,
+                userProfileRepository = harness.fakeUserProfileRepo,
+                scope = harness.workoutScope,
+                regenerateFiveThreeOneUseCase = null,
+                elapsedRealtimeProvider = { testScheduler.currentTime },
+            )
+            nullUseCaseEngine.flowDelegate = harness.activeSessionEngine.flowDelegate
+
+            completeCycleWorkoutDay(
+                harness = harness,
+                routineId = "routine-deadlift",
+                cycleId = cycle.id,
+                dayNumber = 4,
+                engine = nullUseCaseEngine,
+            )
+            advanceUntilIdle()
+
+            val completionEvent = harness.coordinator.cycleDayCompletionEvent.value
+            assertNotNull(completionEvent)
+            assertTrue(completionEvent.isRotationComplete)
+            assertNull(completionEvent.newWeekNumber)
+            assertFalse(completionEvent.tmBumped)
+            assertEquals(1, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
+        } finally {
+            nullUseCaseEngine?.cleanup()
+            harness.cleanup()
+        }
+    }
+
     private fun seedFiveThreeOneCycle(
         harness: DWSMTestHarness,
         weekNumber: Int = 1,
     ): TrainingCycle {
-        val bench = Exercise(
-            id = BENCH_ID,
-            name = "Bench Press",
-            muscleGroup = "Chest",
-            muscleGroups = "Chest",
-            equipment = "BAR",
-            oneRepMaxKg = 100f,
-        )
-        harness.fakeExerciseRepo.addExercise(bench)
+        val bench = seededMainLift(BENCH_ID, "Bench Press", 100f)
+        val squat = seededMainLift(SQUAT_ID, "Squat", 140f)
+        val press = seededMainLift(SHOULDER_PRESS_ID, "Shoulder Press", 90f)
+        val deadlift = seededMainLift(DEADLIFT_ID, "Conventional Deadlift", 160f)
+        val inclineBench = accessoryExercise("incline", "Incline Bench Press")
+        val row = accessoryExercise("row", "Bent Over Row")
+        val plank = Exercise(id = "plank", name = "Plank", muscleGroup = "Core", muscleGroups = "Core", equipment = "")
+        val facePull = accessoryExercise("face-pull", "Face Pull")
+        val lunge = accessoryExercise("lunge", "Lunge")
+        val tricep = accessoryExercise("tricep", "Overhead Tricep Extension")
+        val crunch = Exercise(id = "crunch", name = "Crunch", muscleGroup = "Core", muscleGroups = "Core", equipment = "")
+        val shrug = accessoryExercise("shrug", "Shrug")
+        val goodMorning = accessoryExercise("good-morning", "Good Morning")
 
-        val routine = Routine(
+        listOf(bench, squat, press, deadlift, inclineBench, row, plank, facePull, lunge, tricep, crunch, shrug, goodMorning)
+            .forEach(harness.fakeExerciseRepo::addExercise)
+
+        val benchRoutine = Routine(
             id = "routine-bench",
             name = "Bench Day",
-            exercises = listOf(
-                RoutineExercise(
-                    id = "re-bench",
-                    exercise = bench,
-                    orderIndex = 0,
-                    setReps = listOf(5, 5, null),
-                    weightPerCableKg = 40f,
-                    programMode = ProgramMode.OldSchool,
-                    isAMRAP = true,
-                    usePercentOfPR = true,
-                    setWeightsPercentOfPR = listOf(59, 68, 77),
-                ),
+            exercises = orderedExercises(
+                mainLiftRoutineExercise("re-bench", bench),
+                accessoryRoutineExercise("re-incline", inclineBench),
+                accessoryRoutineExercise("re-row", row),
+                accessoryRoutineExercise("re-plank", plank, reps = listOf(null, null, null), usePercentOfPr = false, setWeightsPercentOfPR = emptyList()),
             ),
         )
-        harness.fakeWorkoutRepo.addRoutine(routine)
+        val squatRoutine = Routine(
+            id = "routine-squat",
+            name = "Squat Day",
+            exercises = orderedExercises(
+                mainLiftRoutineExercise("re-squat", squat),
+                accessoryRoutineExercise("re-press-accessory", press, setWeightsPercentOfPR = listOf(65, 65, 65)),
+                accessoryRoutineExercise("re-face-pull", facePull, reps = listOf(15, 15, 15), setWeightsPercentOfPR = listOf(55, 55, 55)),
+                accessoryRoutineExercise("re-lunge", lunge),
+            ),
+        )
+        val pressRoutine = Routine(
+            id = "routine-press",
+            name = "Press Day",
+            exercises = orderedExercises(
+                mainLiftRoutineExercise("re-press", press),
+                accessoryRoutineExercise("re-tricep", tricep, reps = listOf(12, 12, 12), setWeightsPercentOfPR = listOf(60, 60, 60)),
+                accessoryRoutineExercise("re-row-2", row),
+                accessoryRoutineExercise("re-crunch", crunch, reps = listOf(15, 15, 15), usePercentOfPr = false, setWeightsPercentOfPR = emptyList()),
+            ),
+        )
+        val deadliftRoutine = Routine(
+            id = "routine-deadlift",
+            name = "Deadlift Day",
+            exercises = orderedExercises(
+                mainLiftRoutineExercise("re-deadlift", deadlift),
+                accessoryRoutineExercise("re-incline-2", inclineBench),
+                accessoryRoutineExercise("re-shrug", shrug, reps = listOf(12, 12, 12), setWeightsPercentOfPR = listOf(60, 60, 60)),
+                accessoryRoutineExercise("re-good-morning", goodMorning, reps = listOf(12, 12, 12), setWeightsPercentOfPR = listOf(60, 60, 60)),
+            ),
+        )
+
+        listOf(benchRoutine, squatRoutine, pressRoutine, deadliftRoutine).forEach(harness.fakeWorkoutRepo::addRoutine)
 
         val cycle = TrainingCycle.create(
             id = "cycle-531",
@@ -300,17 +344,113 @@ class ActiveSessionEngineIntegrationTest {
             weekNumber = weekNumber,
             templateId = "template_531",
             days = listOf(
-                CycleDay.create(id = "day-1", cycleId = "cycle-531", dayNumber = 1, name = "Bench", routineId = routine.id),
-                CycleDay.create(id = "day-2", cycleId = "cycle-531", dayNumber = 2, name = "Squat", routineId = null),
-                CycleDay.create(id = "day-3", cycleId = "cycle-531", dayNumber = 3, name = "Press", routineId = null),
-                CycleDay.create(id = "day-4", cycleId = "cycle-531", dayNumber = 4, name = "Deadlift", routineId = routine.id),
+                CycleDay.create(id = "day-1", cycleId = "cycle-531", dayNumber = 1, name = "Bench", routineId = benchRoutine.id),
+                CycleDay.create(id = "day-2", cycleId = "cycle-531", dayNumber = 2, name = "Squat", routineId = squatRoutine.id),
+                CycleDay.create(id = "day-3", cycleId = "cycle-531", dayNumber = 3, name = "Press", routineId = pressRoutine.id),
+                CycleDay.create(id = "day-4", cycleId = "cycle-531", dayNumber = 4, name = "Deadlift", routineId = deadliftRoutine.id),
+                CycleDay.restDay(id = "day-5", cycleId = "cycle-531", dayNumber = 5),
+                CycleDay.restDay(id = "day-6", cycleId = "cycle-531", dayNumber = 6),
+                CycleDay.restDay(id = "day-7", cycleId = "cycle-531", dayNumber = 7),
             ),
         )
         harness.fakeTrainingCycleRepo.addCycle(cycle)
         return cycle
     }
 
+    private suspend fun completeCycleWorkoutDay(
+        harness: DWSMTestHarness,
+        routineId: String,
+        cycleId: String,
+        dayNumber: Int,
+        engine: ActiveSessionEngine,
+    ) {
+        assertTrue(harness.dwsm.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber))
+        harness.testScope.advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        harness.testScope.advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        harness.testScope.advanceUntilIdle()
+
+        harness.coordinator._repCount.value = RepCount(
+            warmupReps = 0,
+            workingReps = 5,
+            totalReps = 5,
+            isWarmupComplete = true,
+        )
+        harness.coordinator.collectedMetrics.value = listOf(
+            WorkoutMetric(
+                timestamp = 100L,
+                loadA = 40f,
+                loadB = 40f,
+                positionA = 100f,
+                positionB = 100f,
+                velocityA = 50.0,
+                velocityB = 50.0,
+            ),
+        )
+
+        engine.handleSetCompletion()
+    }
+
+    private fun seededMainLift(id: String, name: String, oneRepMaxKg: Float): Exercise = Exercise(
+        id = id,
+        name = name,
+        muscleGroup = "Strength",
+        muscleGroups = "Strength",
+        equipment = "BAR",
+        oneRepMaxKg = oneRepMaxKg,
+    )
+
+    private fun accessoryExercise(id: String, name: String): Exercise = Exercise(
+        id = id,
+        name = name,
+        muscleGroup = "Accessory",
+        muscleGroups = "Accessory",
+        equipment = "BAR",
+        oneRepMaxKg = 50f,
+    )
+
+    private fun mainLiftRoutineExercise(
+        id: String,
+        exercise: Exercise,
+        setWeightsPercentOfPR: List<Int> = listOf(59, 68, 77),
+    ): RoutineExercise = RoutineExercise(
+        id = id,
+        exercise = exercise,
+        orderIndex = 0,
+        setReps = listOf(5, 5, null),
+        weightPerCableKg = 40f,
+        programMode = ProgramMode.OldSchool,
+        isAMRAP = true,
+        usePercentOfPR = true,
+        setWeightsPercentOfPR = setWeightsPercentOfPR,
+    )
+
+    private fun accessoryRoutineExercise(
+        id: String,
+        exercise: Exercise,
+        reps: List<Int?> = listOf(10, 10, 10),
+        usePercentOfPr: Boolean = true,
+        setWeightsPercentOfPR: List<Int> = listOf(65, 65, 65),
+    ): RoutineExercise = RoutineExercise(
+        id = id,
+        exercise = exercise,
+        orderIndex = 1,
+        setReps = reps,
+        weightPerCableKg = 25f,
+        programMode = ProgramMode.OldSchool,
+        isAMRAP = false,
+        usePercentOfPR = usePercentOfPr,
+        setWeightsPercentOfPR = setWeightsPercentOfPR,
+    )
+
+    private fun orderedExercises(vararg exercises: RoutineExercise): List<RoutineExercise> =
+        exercises.mapIndexed { index, exercise -> exercise.copy(orderIndex = index) }
+
     private companion object {
         const val BENCH_ID = "ZZ92N8QsBdp6HCh3"
+        const val SHOULDER_PRESS_ID = "0040d53f-85c7-4564-b14e-9b38c979b461"
+        const val SQUAT_ID = "UjIGHxCav-lS9B2I"
+        const val DEADLIFT_ID = "e64c7837-52e2-4b97-b771-cf08ab861af1"
     }
 }

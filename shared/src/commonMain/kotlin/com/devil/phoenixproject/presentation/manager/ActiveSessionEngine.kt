@@ -1891,26 +1891,33 @@ class ActiveSessionEngine(
                 trainingCycleRepository.updateCycleProgress(updated)
 
                 val completedDay = cycle.days.find { it.dayNumber == dayNumber }
-                // Rotation detection: check if this was the last day in the cycle
-                val isRotationComplete = dayNumber >= cycle.days.size
+                val lastWorkoutBearingDayNumber = cycle.days
+                    .asSequence()
+                    .filter { !it.isRestDay && it.routineId != null }
+                    .maxOfOrNull { it.dayNumber }
+                val isGenericRotationComplete = dayNumber >= cycle.days.size
+                val isFiveThreeOneWorkoutRotationComplete =
+                    cycle.templateId == TEMPLATE_531_ID &&
+                        lastWorkoutBearingDayNumber != null &&
+                        dayNumber == lastWorkoutBearingDayNumber
+                val isRotationComplete = isGenericRotationComplete || isFiveThreeOneWorkoutRotationComplete
                 val newRotationCount = if (isRotationComplete) progress.rotationCount + 1 else progress.rotationCount
                 val targetWeek = (newRotationCount % 4) + 1
                 val bumpTrainingMax = targetWeek == 1 && newRotationCount > 0
                 var regenerationSucceeded = false
 
                 if (
-                    isRotationComplete &&
+                    isFiveThreeOneWorkoutRotationComplete &&
                     cycle.templateId == TEMPLATE_531_ID &&
                     cycle.weekNumber != targetWeek
                 ) {
                     try {
                         regenerateFiveThreeOneUseCase?.let { useCase ->
-                            useCase.execute(
+                            regenerationSucceeded = useCase.execute(
                                 cycleId = cycleId,
                                 targetWeek = targetWeek,
                                 bumpTrainingMax = bumpTrainingMax,
                             )
-                            regenerationSucceeded = true
                         }
                     } catch (e: Exception) {
                         Logger.w(e) {
@@ -1930,7 +1937,7 @@ class ActiveSessionEngine(
 
                 Logger.d {
                     "Cycle progress updated: day $dayNumber completed, now on day ${updated.currentDayNumber}" +
-                        if (isRotationComplete) " (rotation ${updated.rotationCount} complete!)" else ""
+                        if (isRotationComplete) " (rotation $newRotationCount complete!)" else ""
                 }
             }
         } catch (e: Exception) {

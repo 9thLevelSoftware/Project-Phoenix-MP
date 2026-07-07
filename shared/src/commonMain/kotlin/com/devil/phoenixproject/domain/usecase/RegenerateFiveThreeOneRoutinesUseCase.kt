@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -14,22 +15,71 @@ class RegenerateFiveThreeOneRoutinesUseCase(
     private val workoutRepository: WorkoutRepository,
     private val exerciseRepository: ExerciseRepository,
 ) {
-    suspend fun execute(cycleId: String, targetWeek: Int, bumpTrainingMax: Boolean) {
-        val cycle = trainingCycleRepository.getCycleById(cycleId) ?: return
+    suspend fun execute(cycleId: String, targetWeek: Int, bumpTrainingMax: Boolean): Boolean {
+        val cycle = trainingCycleRepository.getCycleById(cycleId) ?: return false
         val matchedLiftIds = linkedSetOf<String>()
+        var matchedAnyExpectedMainLift = false
+        var failedExpectedMainLift = false
+        val routineUpdates = mutableListOf<Pair<Routine, Routine>>()
 
-        for (day in cycle.days) {
-            val routineId = day.routineId ?: continue
-            val routine = workoutRepository.getRoutineById(routineId)
-            if (routine == null) {
-                Logger.w { "5/3/1 regeneration skipped missing routine: cycleId=$cycleId routineId=$routineId" }
+        for (day in cycle.days.sortedBy { it.dayNumber }) {
+            val expectedMainLiftId = day.expectedFiveThreeOneMainLiftId()
+            if (expectedMainLiftId == null) {
+                if (!day.isRestDay && day.routineId != null) {
+                    Logger.w {
+                        "5/3/1 regeneration skipped unrecognized cycle day: cycleId=$cycleId dayNumber=${day.dayNumber} dayName=${day.name}"
+                    }
+                    failedExpectedMainLift = true
+                }
                 continue
             }
 
-            val updatedRoutine = regenerateRoutineForWeek(routine, targetWeek, matchedLiftIds)
-            if (updatedRoutine != routine) {
-                workoutRepository.updateRoutine(updatedRoutine)
+            val routineId = day.routineId
+            if (routineId == null) {
+                Logger.w {
+                    "5/3/1 regeneration could not find routine for expected main lift: cycleId=$cycleId dayNumber=${day.dayNumber} expectedExerciseId=$expectedMainLiftId"
+                }
+                failedExpectedMainLift = true
+                continue
             }
+
+            val routine = workoutRepository.getRoutineById(routineId)
+            if (routine == null) {
+                Logger.w { "5/3/1 regeneration skipped missing routine: cycleId=$cycleId routineId=$routineId" }
+                failedExpectedMainLift = true
+                continue
+            }
+
+            val updatedRoutine = regenerateRoutineForWeek(
+                day = day,
+                routine = routine,
+                expectedMainLiftId = expectedMainLiftId,
+                targetWeek = targetWeek,
+            )
+            if (updatedRoutine == null) {
+                Logger.w {
+                    "5/3/1 regeneration could not find expected main lift: cycleId=$cycleId dayNumber=${day.dayNumber} routineId=$routineId expectedExerciseId=$expectedMainLiftId"
+                }
+                failedExpectedMainLift = true
+                continue
+            }
+
+            matchedAnyExpectedMainLift = true
+            matchedLiftIds += expectedMainLiftId
+            if (updatedRoutine != routine) {
+                routineUpdates += routine to updatedRoutine
+            }
+        }
+
+        if (failedExpectedMainLift || !matchedAnyExpectedMainLift) {
+            Logger.w {
+                "5/3/1 regeneration aborted before advancing week sentinel: cycleId=$cycleId targetWeek=$targetWeek"
+            }
+            return false
+        }
+
+        for ((_, updatedRoutine) in routineUpdates) {
+            workoutRepository.updateRoutine(updatedRoutine)
         }
 
         if (bumpTrainingMax) {
@@ -56,24 +106,36 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         }
 
         trainingCycleRepository.updateWeekNumber(cycleId, targetWeek)
+        return true
     }
 
     private fun regenerateRoutineForWeek(
+        day: CycleDay,
         routine: Routine,
+        expectedMainLiftId: String,
         targetWeek: Int,
-        matchedLiftIds: MutableSet<String>,
-    ): Routine {
-        val mainLiftSlot = routine.exercises.firstOrNull()
-        val shouldRewriteMainLift = mainLiftSlot?.isFiveThreeOneMainLiftSlot() == true
+    ): Routine? {
+        val matchingIndexes = routine.exercises.mapIndexedNotNull { index, exercise ->
+            if (exercise.matchesExpectedFiveThreeOneMainLift(expectedMainLiftId)) index else null
+        }
+        if (matchingIndexes.isEmpty()) {
+            return null
+        }
+        if (matchingIndexes.size > 1) {
+            Logger.w {
+                "5/3/1 regeneration found multiple expected main lift matches; rewriting first match only: routineId=${routine.id} dayNumber=${day.dayNumber} expectedExerciseId=$expectedMainLiftId matches=${matchingIndexes.joinToString(",")}"
+            }
+        }
+
+        val mainLiftIndex = matchingIndexes.first()
         var changed = false
         val targetSets = FiveThreeOneWeeks.forWeek(targetWeek)
         val targetPercentages = computeFiveThreeOneSetWeightsForWeek(targetWeek)
 
         val updatedExercises = routine.exercises.mapIndexed { index, exercise ->
-            if (index != 0 || !shouldRewriteMainLift) {
+            if (index != mainLiftIndex) {
                 exercise
             } else {
-                matchedLiftIds += exercise.exercise.id.orEmpty()
                 val updatedExercise = exercise.copy(
                     setReps = targetSets.map { it.targetReps },
                     isAMRAP = targetSets.any { it.isAmrap },
@@ -86,16 +148,23 @@ class RegenerateFiveThreeOneRoutinesUseCase(
             }
         }
 
-        return if (changed) {
-            routine.copy(exercises = updatedExercises)
-        } else {
-            routine
+        return if (changed) routine.copy(exercises = updatedExercises) else routine
+    }
+
+    private fun CycleDay.expectedFiveThreeOneMainLiftId(): String? {
+        val normalizedName = name?.trim()?.lowercase().orEmpty()
+        return when {
+            "deadlift" in normalizedName -> DEADLIFT_ID
+            "squat" in normalizedName -> SQUAT_ID
+            "bench" in normalizedName -> BENCH_ID
+            "press" in normalizedName -> SHOULDER_PRESS_ID
+            else -> null
         }
     }
 
-    private fun RoutineExercise.isFiveThreeOneMainLiftSlot(): Boolean {
+    private fun RoutineExercise.matchesExpectedFiveThreeOneMainLift(expectedMainLiftId: String): Boolean {
         val exerciseId = exercise.id ?: return false
-        return usePercentOfPR && exerciseId in MAIN_LIFT_IDS
+        return usePercentOfPR && exerciseId == expectedMainLiftId
     }
 
     private companion object {
@@ -104,7 +173,6 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         const val SQUAT_ID = "UjIGHxCav-lS9B2I"
         const val DEADLIFT_ID = "e64c7837-52e2-4b97-b771-cf08ab861af1"
 
-        val MAIN_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID, SQUAT_ID, DEADLIFT_ID)
         val UPPER_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID)
 
         const val UPPER_ONE_REP_MAX_BUMP_KG = 1.25f / 0.9f
