@@ -511,8 +511,14 @@ class TemplateConverterTest {
 
         // BUG 2 regression: days must never silently vanish
         assertEquals(2, result.cycle.days.size, "Days with unresolvable exercises must be kept")
-        assertEquals(2, result.routines.size)
-        assertTrue(result.routines.all { it.exercises.isEmpty() })
+        // ...but they must be UNASSIGNED, not pointed at empty startable routines —
+        // the cycle card treats any non-null routineId as startable and an empty
+        // routine dead-ends at workout start (#633 review).
+        assertTrue(
+            result.cycle.days.all { it.routineId == null && !it.isRestDay },
+            "Unresolvable days must be kept unassigned for the Assign Routine repair flow",
+        )
+        assertTrue(result.routines.isEmpty(), "No empty routines should be created")
         assertTrue(
             result.warnings.any { it.contains("Ghost Day") },
             "Empty-day warning expected, got ${result.warnings}",

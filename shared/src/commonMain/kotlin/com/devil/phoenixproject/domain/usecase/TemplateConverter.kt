@@ -251,33 +251,45 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                     routineExercises.add(routineExercise)
                 }
 
-                // Always create the routine and cycle day — even if some (or all) exercises
-                // failed to resolve. Silently dropping the day shifted the cycle's day
-                // numbering with no explanation (issue #620 audit, BUG 2). An empty routine
-                // is visible and repairable by the user; a vanished day is not.
+                // Always keep the cycle day — silently dropping it shifted the cycle's day
+                // numbering with no explanation (issue #620 audit, BUG 2). But when NO
+                // exercise resolved, save the day UNASSIGNED (routineId = null) instead of
+                // pointing it at an empty routine: the cycle card treats any non-null
+                // routineId as startable, and starting an empty routine dead-ends, whereas
+                // an unassigned day gets the proper "No routine assigned" state with an
+                // "Assign Routine" repair affordance. (#633 review)
                 if (routineExercises.isEmpty()) {
                     Logger.e {
                         "Day ${dayTemplate.dayNumber} ('${dayTemplate.name}'): no exercises " +
-                            "resolved from the library — routine created empty for manual repair"
+                            "resolved from the library — day kept unassigned for manual repair"
                     }
                     warnings.add("${dayTemplate.name}: no exercises found in library")
-                }
-                val routine = Routine(
-                    id = routineId,
-                    name = routineTemplate.name,
-                    exercises = routineExercises,
-                )
-                routines.add(routine)
+                    cycleDays.add(
+                        CycleDay.create(
+                            cycleId = cycleId,
+                            dayNumber = dayTemplate.dayNumber,
+                            name = dayTemplate.name,
+                            routineId = null,
+                        ),
+                    )
+                } else {
+                    val routine = Routine(
+                        id = routineId,
+                        name = routineTemplate.name,
+                        exercises = routineExercises,
+                    )
+                    routines.add(routine)
 
-                // Create cycle day referencing this routine
-                cycleDays.add(
-                    CycleDay.create(
-                        cycleId = cycleId,
-                        dayNumber = dayTemplate.dayNumber,
-                        name = dayTemplate.name,
-                        routineId = routineId,
-                    ),
-                )
+                    // Create cycle day referencing this routine
+                    cycleDays.add(
+                        CycleDay.create(
+                            cycleId = cycleId,
+                            dayNumber = dayTemplate.dayNumber,
+                            name = dayTemplate.name,
+                            routineId = routineId,
+                        ),
+                    )
+                }
             }
         }
 
