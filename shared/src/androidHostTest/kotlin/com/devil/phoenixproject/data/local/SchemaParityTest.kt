@@ -496,10 +496,82 @@ class SchemaParityTest {
         assertEquals("", queryScalar(driver, "SELECT exerciseEquipment FROM RoutineExercise WHERE id = 'rex-sentinel-resilient'"))
     }
 
+    @Test
+    fun `migration 40 deletes personal record ghosts and backfills canonical uuids`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 40)
+
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord (
+                exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+                workoutMode, prType, volume, phase, cable_count
+            ) VALUES (
+                'bench', 'Bench Press', 100.0, 3, 110.0, 1700000000000,
+                'MAX_WEIGHT', 'MAX_WEIGHT', 300.0, 'COMBINED', 2
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord (
+                exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+                workoutMode, prType, volume, phase, cable_count
+            ) VALUES (
+                'bench-real', 'Bench Press', 105.0, 2, 112.0, 1700000000100,
+                'Old School', 'MAX_WEIGHT', 210.0, 'COMBINED', 2
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord (
+                exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+                workoutMode, prType, volume, phase, cable_count
+            ) VALUES (
+                'row-real-2', 'Row', 70.0, 8, 88.0, 1700000000200,
+                'Just Lift', 'MAX_VOLUME', 560.0, 'COMBINED', 2
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 40, 41)
+
+        assertEquals(true, columnExistsInDriver(driver, "PersonalRecord", "uuid"))
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord WHERE workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM')"))
+
+        val uuids = mutableListOf<String>()
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT uuid FROM PersonalRecord ORDER BY achievedAt",
+            mapper = { cursor ->
+                while (cursor.next().value) {
+                    uuids += cursor.getString(0).orEmpty()
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+
+        assertEquals(2, uuids.size)
+        assertEquals(2, uuids.toSet().size, "Each surviving PR should receive a distinct UUID")
+        uuids.forEach { uuid ->
+            assertEquals(true, CANONICAL_UUID_REGEX.matches(uuid), "Backfilled PR UUID must be canonical lowercase v4")
+        }
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 40L
+        private const val CURRENT_VERSION = 41L
+        private val CANONICAL_UUID_REGEX = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
         /**
          * Transient tables are intermediate artifacts of table-rebuild migrations

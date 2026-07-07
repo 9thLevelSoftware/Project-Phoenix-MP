@@ -157,6 +157,7 @@ class SqlDelightSyncRepositoryTest {
             phase = WorkoutPhase.CONCENTRIC.name,
             profile_id = "active-profile",
             cable_count = 2L,
+            uuid = null,
         )
 
         val records = repository.getFullPRsModifiedSince(0L, "active-profile")
@@ -165,6 +166,227 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("active-profile", record.profileId)
         assertEquals(2, record.cableCount)
         assertEquals(WorkoutPhase.CONCENTRIC, record.phase)
+    }
+
+    @Test
+    fun `mergePersonalRecords adopts server uuid on key match even when workoutMode differs`() = runTest {
+        val serverUuid = "12345678-1234-4abc-8def-1234567890ab"
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 85.0,
+            reps = 5L,
+            oneRepMax = 99.17,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 425.0,
+            phase = WorkoutPhase.COMBINED.name,
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = null,
+        )
+
+        repository.mergePersonalRecords(
+            records = listOf(
+                PersonalRecordSyncDto(
+                    clientId = serverUuid,
+                    serverId = serverUuid,
+                    exerciseId = "deadlift",
+                    exerciseName = "Deadlift",
+                    weight = 85f,
+                    reps = 5,
+                    oneRepMax = 99.17f,
+                    achievedAt = 1_700_000_000_000L,
+                    workoutMode = "MAX_WEIGHT",
+                    prType = PRType.MAX_WEIGHT.name,
+                    phase = WorkoutPhase.COMBINED.name,
+                    volume = 425f,
+                    cableCount = 2,
+                    createdAt = 1_700_000_000_000L,
+                    updatedAt = 1_700_000_000_100L,
+                ),
+            ),
+            profileId = "active-profile",
+        )
+
+        val rows = database.vitruvianDatabaseQueries
+            .selectAllRecords(profileId = "active-profile")
+            .executeAsList()
+
+        assertEquals(1, rows.size, "UUID adoption should prevent a duplicate row when only workoutMode drifts")
+        assertEquals(serverUuid, rows.single().uuid)
+        assertEquals("Old School", rows.single().workoutMode)
+    }
+
+    @Test
+    fun `mergePersonalRecords adopts server uuid onto one duplicate key candidate`() = runTest {
+        val serverUuid = "13345678-1234-4abc-8def-1234567890ab"
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 85.0,
+            reps = 5L,
+            oneRepMax = 99.17,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 425.0,
+            phase = WorkoutPhase.COMBINED.name,
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = null,
+        )
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 85.0,
+            reps = 5L,
+            oneRepMax = 99.17,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Echo",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 425.0,
+            phase = WorkoutPhase.COMBINED.name,
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = null,
+        )
+
+        repository.mergePersonalRecords(
+            records = listOf(
+                PersonalRecordSyncDto(
+                    clientId = serverUuid,
+                    serverId = serverUuid,
+                    exerciseId = "deadlift",
+                    exerciseName = "Deadlift",
+                    weight = 85f,
+                    reps = 5,
+                    oneRepMax = 99.17f,
+                    achievedAt = 1_700_000_000_000L,
+                    workoutMode = "MAX_WEIGHT",
+                    prType = PRType.MAX_WEIGHT.name,
+                    phase = WorkoutPhase.COMBINED.name,
+                    volume = 425f,
+                    cableCount = 2,
+                    createdAt = 1_700_000_000_000L,
+                    updatedAt = 1_700_000_000_100L,
+                ),
+            ),
+            profileId = "active-profile",
+        )
+
+        val rows = database.vitruvianDatabaseQueries
+            .selectAllRecords(profileId = "active-profile")
+            .executeAsList()
+
+        assertEquals(2, rows.size, "Adoption should not stamp the server UUID onto multiple local candidates")
+        assertEquals(1, rows.count { it.uuid == serverUuid })
+        assertEquals(1, rows.count { it.uuid == null })
+    }
+
+    @Test
+    fun `mergePersonalRecords inserts unknown server pr with server uuid`() = runTest {
+        val serverUuid = "22345678-1234-4abc-8def-1234567890ab"
+
+        repository.mergePersonalRecords(
+            records = listOf(
+                PersonalRecordSyncDto(
+                    clientId = serverUuid,
+                    serverId = serverUuid,
+                    exerciseId = "deadlift",
+                    exerciseName = "Deadlift",
+                    weight = 90f,
+                    reps = 3,
+                    oneRepMax = 99.17f,
+                    achievedAt = 1_700_000_000_500L,
+                    workoutMode = "MAX_WEIGHT",
+                    prType = PRType.MAX_WEIGHT.name,
+                    phase = WorkoutPhase.COMBINED.name,
+                    volume = 270f,
+                    cableCount = 2,
+                    createdAt = 1_700_000_000_500L,
+                    updatedAt = 1_700_000_000_600L,
+                ),
+            ),
+            profileId = "active-profile",
+        )
+
+        val row = database.vitruvianDatabaseQueries
+            .selectAllRecords(profileId = "active-profile")
+            .executeAsList()
+            .single()
+
+        assertEquals(serverUuid, row.uuid)
+    }
+
+    @Test
+    fun `mergePersonalRecords remerge is idempotent`() = runTest {
+        val serverUuid = "32345678-1234-4abc-8def-1234567890ab"
+        val dto = PersonalRecordSyncDto(
+            clientId = serverUuid,
+            serverId = serverUuid,
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 95f,
+            reps = 2,
+            oneRepMax = 99.17f,
+            achievedAt = 1_700_000_001_000L,
+            workoutMode = "MAX_WEIGHT",
+            prType = PRType.MAX_WEIGHT.name,
+            phase = WorkoutPhase.COMBINED.name,
+            volume = 190f,
+            cableCount = 2,
+            createdAt = 1_700_000_001_000L,
+            updatedAt = 1_700_000_001_100L,
+        )
+
+        repository.mergePersonalRecords(records = listOf(dto), profileId = "active-profile")
+        repository.mergePersonalRecords(records = listOf(dto), profileId = "active-profile")
+
+        val rows = database.vitruvianDatabaseQueries
+            .selectAllRecords(profileId = "active-profile")
+            .executeAsList()
+
+        assertEquals(1, rows.size, "Re-merging the same server PR must stay stable")
+        assertEquals(serverUuid, rows.single().uuid)
+    }
+
+    @Test
+    fun `getAllPersonalRecordIds returns canonical uuids only`() = runTest {
+        val canonicalUuid = "42345678-1234-4abc-8def-1234567890ab"
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 85.0,
+            reps = 5L,
+            oneRepMax = 99.17,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 425.0,
+            phase = WorkoutPhase.COMBINED.name,
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = canonicalUuid,
+        )
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 80.0,
+            reps = 6L,
+            oneRepMax = 96.0,
+            achievedAt = 1_700_000_000_100L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_VOLUME.name,
+            volume = 480.0,
+            phase = WorkoutPhase.COMBINED.name,
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = null,
+        )
+
+        assertEquals(listOf(canonicalUuid), repository.getAllPersonalRecordIds("active-profile"))
     }
 
     @Test

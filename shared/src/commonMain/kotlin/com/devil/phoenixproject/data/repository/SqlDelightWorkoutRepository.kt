@@ -918,6 +918,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             deletedAt,
             profileId_,
             cableCount,
+            uuid,
         ->
         PersonalRecordEntity(
             id = id,
@@ -926,6 +927,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             reps = reps.toInt(),
             timestamp = achievedAt,
             workoutMode = workoutMode,
+            uuid = uuid,
         )
     }.asFlow().mapToList(Dispatchers.IO)
 
@@ -981,6 +983,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     phase = combinedPhase,
                     profile_id = defaultProfileId,
                     cable_count = cableCount?.toLong(),
+                    uuid = currentWeightPR?.uuid ?: generateUUID(),
                 )
             }
 
@@ -998,6 +1001,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     phase = combinedPhase,
                     profile_id = defaultProfileId,
                     cable_count = cableCount?.toLong(),
+                    uuid = currentVolumePR?.uuid ?: generateUUID(),
                 )
             }
 

@@ -331,6 +331,7 @@ object PortalSyncAdapter {
             record.weightPerCableKg
         }
         return PortalPersonalRecordDto(
+            id = record.uuid,
             exerciseName = record.exerciseName.ifBlank { record.exerciseId },
             exerciseId = record.exerciseId,
             muscleGroup = muscleGroup.ifBlank { "General" },

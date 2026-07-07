@@ -7,6 +7,7 @@ import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -38,6 +39,8 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         profileId: String,
         // Cable-aware weight display (migration 28)
         cableCount: Long?,
+        // Stable parity UUID (migration 40)
+        uuid: String?,
     ): PersonalRecord = PersonalRecord(
         id = id,
         exerciseId = exerciseId,
@@ -59,6 +62,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         },
         profileId = profileId,
         cableCount = cableCount?.toInt(),
+        uuid = uuid,
     )
 
     override suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = withContext(Dispatchers.IO) {
@@ -345,6 +349,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     phase = phaseName,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
+                    uuid = currentWeightPR?.uuid ?: generateUUID(),
                 )
                 brokenPRs.add(PRType.MAX_WEIGHT)
             }
@@ -364,6 +369,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     phase = phaseName,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
+                    uuid = currentVolumePR?.uuid ?: generateUUID(),
                 )
                 brokenPRs.add(PRType.MAX_VOLUME)
             }

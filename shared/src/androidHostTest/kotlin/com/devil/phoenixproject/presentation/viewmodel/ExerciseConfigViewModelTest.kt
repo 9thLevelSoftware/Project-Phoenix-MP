@@ -385,6 +385,7 @@ class ExerciseConfigViewModelTest {
             phase = "COMBINED",
             profile_id = "default",
             cable_count = null,
+            uuid = null,
         )
         queries.insertRecord(
             exerciseId = "bench-1",
@@ -399,6 +400,7 @@ class ExerciseConfigViewModelTest {
             phase = "COMBINED",
             profile_id = "profile-b",
             cable_count = null,
+            uuid = null,
         )
 
         viewModel.initialize(
@@ -519,6 +521,7 @@ class ExerciseConfigViewModelTest {
             phase = "COMBINED",
             profile_id = "default",
             cable_count = null,
+            uuid = null,
         )
         queries.insertRecord(
             exerciseId = "bench-1",
@@ -533,6 +536,7 @@ class ExerciseConfigViewModelTest {
             phase = "COMBINED",
             profile_id = "default",
             cable_count = null,
+            uuid = null,
         )
 
         viewModel.initialize(
@@ -732,6 +736,7 @@ class ExerciseConfigViewModelTest {
             phase = phase.name,
             profile_id = "default",
             cable_count = null,
+            uuid = null,
         )
     }
 

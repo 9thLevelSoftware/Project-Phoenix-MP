@@ -29,6 +29,7 @@ internal data class SchemaIndexOperation(
     val name: String,
     val createSql: String,
     val preDropSql: String? = null,
+    val beforeCreateSql: List<String> = emptyList(),
 )
 
 internal enum class ReconciliationStatus { CREATED, ALREADY_PRESENT, TABLE_MISSING, FAILED }
@@ -139,38 +140,30 @@ internal fun applyColumnHeal(driver: SqlDriver, op: SchemaHealOperation): Reconc
 }
 
 internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): ReconciliationResult {
-    // Create-only path (no replacement): unchanged.
-    if (op.preDropSql == null) {
-        return try {
-            val alreadyExists = indexExists(driver, op.name)
-            driver.execute(identifier = null, sql = op.createSql, parameters = 0)
-            if (alreadyExists) {
-                ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
-            } else {
-                ReconciliationResult("index", op.name, ReconciliationStatus.CREATED)
-            }
-        } catch (e: Exception) {
-            ReconciliationResult("index", op.name, ReconciliationStatus.FAILED, e.message)
-        }
+    val alreadyExists = indexExists(driver, op.name)
+    if (alreadyExists && op.preDropSql == null) {
+        return ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
     }
 
-    // Replacement path (F012): drop+create must be atomic. The old code dropped
-    // the existing index and only then created the replacement; if the CREATE
-    // failed — most importantly for UNIQUE indexes like idx_pr_unique when the
-    // table still holds duplicate rows — the table was left with NO uniqueness
-    // constraint and could accumulate more duplicates. Wrap the drop+create in a
-    // SQLite SAVEPOINT so a failed create rolls back the drop, preserving the
-    // previous (working) constraint and reporting FAILED.
-    val savepoint = "idx_replace_${op.name}"
+    // Apply any data cleanup/backfill required before index creation in the same
+    // SAVEPOINT as the create so a failed index build cannot leave the repair in
+    // a partially-applied state.
+    val savepoint = if (op.preDropSql == null) "idx_create_${op.name}" else "idx_replace_${op.name}"
     return try {
         driver.execute(identifier = null, sql = "SAVEPOINT \"$savepoint\"", parameters = 0)
         try {
-            driver.execute(identifier = null, sql = op.preDropSql, parameters = 0)
+            op.beforeCreateSql.forEach { sql ->
+                driver.execute(identifier = null, sql = sql, parameters = 0)
+            }
+            op.preDropSql?.let { dropSql ->
+                driver.execute(identifier = null, sql = dropSql, parameters = 0)
+            }
             driver.execute(identifier = null, sql = op.createSql, parameters = 0)
             driver.execute(identifier = null, sql = "RELEASE \"$savepoint\"", parameters = 0)
             ReconciliationResult("index", op.name, ReconciliationStatus.CREATED)
         } catch (inner: Exception) {
-            // Roll the drop back so the prior constraint survives, then release.
+            // Roll back any pre-create repair plus the drop so the prior
+            // constraint/data survive together, then release.
             driver.execute(identifier = null, sql = "ROLLBACK TO \"$savepoint\"", parameters = 0)
             driver.execute(identifier = null, sql = "RELEASE \"$savepoint\"", parameters = 0)
             ReconciliationResult("index", op.name, ReconciliationStatus.FAILED, inner.message)
@@ -853,7 +846,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // PersonalRecord -- initial schema, full current shape
-    // Columns added by later migrations: sync fields (m11), phase (m19), profile_id (m21)
+    // Columns added by later migrations: sync fields (m11), phase (m19),
+    // profile_id (m21), cable_count (m28), uuid (m40)
     SchemaTableOperation(
         table = "PersonalRecord",
         createSql = """
@@ -873,7 +867,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 serverId TEXT,
                 deletedAt INTEGER,
                 profile_id TEXT NOT NULL DEFAULT 'default',
-                cable_count INTEGER
+                cable_count INTEGER,
+                uuid TEXT
             )
         """.trimIndent(),
     ),
@@ -1259,7 +1254,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("WorkoutSession", "counterweightKg", "ALTER TABLE WorkoutSession ADD COLUMN counterweightKg REAL NOT NULL DEFAULT 0"),
     SchemaHealOperation("WorkoutSession", "rackItemsJson", "ALTER TABLE WorkoutSession ADD COLUMN rackItemsJson TEXT NOT NULL DEFAULT '[]'"),
 
-    // ── PersonalRecord (6 columns) ──────────────────────────────────────
+    // ── PersonalRecord (7 columns) ──────────────────────────────────────
 
     // Migration 11: sync fields
     SchemaHealOperation("PersonalRecord", "updatedAt", "ALTER TABLE PersonalRecord ADD COLUMN updatedAt INTEGER"),
@@ -1271,6 +1266,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("PersonalRecord", "profile_id", "ALTER TABLE PersonalRecord ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
     // Migration 28: cable-aware weight display
     SchemaHealOperation("PersonalRecord", "cable_count", "ALTER TABLE PersonalRecord ADD COLUMN cable_count INTEGER"),
+    // Migration 40: stable UUID parity identity
+    SchemaHealOperation("PersonalRecord", "uuid", "ALTER TABLE PersonalRecord ADD COLUMN uuid TEXT"),
 
     // ── Routine (4 columns) ─────────────────────────────────────────────
 
@@ -1397,6 +1394,23 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         preDropSql = "DROP INDEX IF EXISTS idx_pr_unique",
     ),
     SchemaIndexOperation("idx_pr_profile", "CREATE INDEX IF NOT EXISTS idx_pr_profile ON PersonalRecord(profile_id)"),
+    SchemaIndexOperation(
+        name = "idx_pr_uuid",
+        createSql = "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_uuid ON PersonalRecord(uuid) WHERE uuid IS NOT NULL",
+        beforeCreateSql = listOf(
+            "DELETE FROM PersonalRecord WHERE uuid IS NULL AND workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM')",
+            """
+            UPDATE PersonalRecord
+            SET uuid = lower(hex(randomblob(4))) || '-' ||
+                       lower(hex(randomblob(2))) || '-4' ||
+                       substr(lower(hex(randomblob(2))), 2) || '-' ||
+                       substr('89ab', abs(random()) % 4 + 1, 1) ||
+                       substr(lower(hex(randomblob(2))), 2) || '-' ||
+                       lower(hex(randomblob(6)))
+            WHERE uuid IS NULL
+            """.trimIndent(),
+        ),
+    ),
 
     // ── Routine ─────────────────────────────────────────────────────────
     SchemaIndexOperation("idx_routine_profile", "CREATE INDEX IF NOT EXISTS idx_routine_profile ON Routine(profile_id)"),

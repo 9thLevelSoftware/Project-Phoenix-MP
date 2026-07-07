@@ -739,6 +739,28 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
             Result.failure(PortalApiException("Premium subscription required", null, 403))
         }
 
+        HttpStatusCode.TooManyRequests -> {
+            val errorBody = try {
+                response.body<PortalRateLimitResponse>()
+            } catch (_: Exception) {
+                PortalRateLimitResponse()
+            }
+            val retryAfterSeconds = response.headers["Retry-After"]?.trim()?.toIntOrNull() ?: errorBody.retryAfterSeconds
+            val message = errorBody.error.ifBlank { "Rate limited" }
+            Result.failure(PortalApiException(message, null, 429, retryAfterSeconds))
+        }
+
+        HttpStatusCode.ServiceUnavailable -> {
+            val errorBody = try {
+                response.body<PortalRateLimitResponse>()
+            } catch (_: Exception) {
+                PortalRateLimitResponse()
+            }
+            val retryAfterSeconds = response.headers["Retry-After"]?.trim()?.toIntOrNull() ?: 30
+            val message = errorBody.error.ifBlank { "Service unavailable" }
+            Result.failure(PortalApiException(message, null, 503, retryAfterSeconds))
+        }
+
         else -> {
             val error = try {
                 response.body<PortalErrorResponse>().error
@@ -750,4 +772,9 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
     }
 }
 
-class PortalApiException(message: String, cause: Throwable? = null, val statusCode: Int? = null) : Exception(message, cause)
+class PortalApiException(
+    message: String,
+    cause: Throwable? = null,
+    val statusCode: Int? = null,
+    val retryAfterSeconds: Int? = null,
+) : Exception(message, cause)

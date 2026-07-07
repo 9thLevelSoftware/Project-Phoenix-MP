@@ -48,6 +48,7 @@ data class PersonalRecord(
     val phase: WorkoutPhase = WorkoutPhase.COMBINED,
     val profileId: String = "default",
     val cableCount: Int? = null,
+    val uuid: String? = null,
 )
 
 /**

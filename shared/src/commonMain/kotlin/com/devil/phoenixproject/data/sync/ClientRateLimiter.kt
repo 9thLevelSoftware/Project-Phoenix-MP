@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.KmpUtils.currentTimeMillis
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -23,6 +24,8 @@ import kotlinx.coroutines.sync.withLock
  */
 class ClientRateLimiter(
     private val windowMillis: Long = SyncConfig.RATE_LIMIT_WINDOW_MS,
+    private val nowMs: () -> Long = { currentTimeMillis() },
+    private val waitFor: suspend (Long) -> Unit = { delay(it) },
 ) {
     private val mutex = Mutex()
     private val attempts: MutableMap<String, ArrayDeque<Long>> = mutableMapOf()
@@ -37,7 +40,7 @@ class ClientRateLimiter(
      * @param limit maximum attempts permitted within windowMillis
      */
     suspend fun tryAcquire(operation: String, limit: Int): Boolean = mutex.withLock {
-        val now = currentTimeMillis()
+        val now = nowMs()
         val cutoff = now - windowMillis
         val window = attempts.getOrPut(operation) { ArrayDeque() }
         // Drop timestamps that fell out of the sliding window.
@@ -52,6 +55,41 @@ class ClientRateLimiter(
                 "Denied $operation: ${window.size}/$limit used in last ${windowMillis}ms."
             }
             false
+        }
+    }
+
+    /**
+     * Wait until the sliding window has capacity, then record a successful acquisition.
+     * Uses the same shared window accounting as [tryAcquire].
+     */
+    suspend fun acquireWithWait(operation: String, limit: Int) {
+        while (true) {
+            val waitMillis = mutex.withLock {
+                val now = nowMs()
+                val cutoff = now - windowMillis
+                val window = attempts.getOrPut(operation) { ArrayDeque() }
+                // Waiting callers can grant capacity exactly on the window
+                // boundary; tryAcquire keeps the historic strict boundary.
+                while (window.isNotEmpty() && window.first() <= cutoff) {
+                    window.removeFirst()
+                }
+
+                if (window.size < limit) {
+                    window.addLast(now)
+                    null
+                } else {
+                    val delayMillis = (window.first() + windowMillis - now).coerceAtLeast(0L)
+                    Logger.w("ClientRateLimiter") {
+                        "Waiting ${delayMillis}ms for $operation: ${window.size}/$limit used in last ${windowMillis}ms."
+                    }
+                    delayMillis
+                }
+            }
+
+            if (waitMillis == null) {
+                return
+            }
+            waitFor(waitMillis)
         }
     }
 

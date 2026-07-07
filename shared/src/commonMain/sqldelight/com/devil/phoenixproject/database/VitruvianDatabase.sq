@@ -26,7 +26,7 @@ CREATE TABLE Exercise (
     aliases TEXT,
     defaultCableConfig TEXT NOT NULL,
     one_rep_max_kg REAL DEFAULT NULL,
-    -- Sync fields (added in migration 6)
+    -- Sync fields (added in migration 11)
     updatedAt INTEGER,
     serverId TEXT,
     deletedAt INTEGER,
@@ -103,7 +103,7 @@ CREATE TABLE WorkoutSession (
     strengthProfile TEXT,
     -- Form Check score (added in migration 16 - Phase 19 CV-06)
     formScore INTEGER,
-    -- Sync fields (added in migration 6)
+    -- Sync fields (added in migration 11)
     updatedAt INTEGER,
     serverId TEXT,
     deletedAt INTEGER,
@@ -153,18 +153,21 @@ CREATE TABLE PersonalRecord (
     prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
     volume REAL NOT NULL DEFAULT 0.0,
     phase TEXT NOT NULL DEFAULT 'COMBINED',
-    -- Sync fields (added in migration 6)
+    -- Sync fields (added in migration 11)
     updatedAt INTEGER,
     serverId TEXT,
     deletedAt INTEGER,
     -- Multi-profile support (added in migration 21)
     profile_id TEXT NOT NULL DEFAULT 'default',
     -- Cable-aware weight display (added in migration 28)
-    cable_count INTEGER
+    cable_count INTEGER,
+    -- Stable parity/push identity (added in migration 40, issue #634)
+    uuid TEXT
 );
 
 CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id);
 CREATE INDEX idx_pr_profile ON PersonalRecord(profile_id);
+CREATE UNIQUE INDEX idx_pr_uuid ON PersonalRecord(uuid) WHERE uuid IS NOT NULL;
 
 -- Routine Groups (local-only organizational buckets, added in migration 27)
 CREATE TABLE RoutineGroup (
@@ -185,7 +188,7 @@ CREATE TABLE Routine (
     createdAt INTEGER NOT NULL,
     lastUsed INTEGER,
     useCount INTEGER NOT NULL DEFAULT 0,
-    -- Sync fields (added in migration 6)
+    -- Sync fields (added in migration 11)
     updatedAt INTEGER,
     serverId TEXT,
     deletedAt INTEGER,
@@ -1040,24 +1043,43 @@ SELECT * FROM PersonalRecord WHERE profile_id = :profileId ORDER BY exerciseId, 
 
 -- Insert a new PR (with prType, volume, and phase support)
 insertRecord:
-INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert PR (insert or replace) - requires ID
 upsertRecord:
-INSERT OR REPLACE INTO PersonalRecord (id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PersonalRecord (id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert PR by unique key (exerciseId, workoutMode, prType, phase) - no ID required
 -- Uses INSERT OR REPLACE which replaces on unique index conflict (idx_pr_unique)
 upsertPR:
-INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert PR but ignore on conflict (local wins) - for portal pull merge
 insertPRIgnore:
-INSERT OR IGNORE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+adoptServerPrUuid:
+UPDATE PersonalRecord
+SET uuid = :uuid
+WHERE id = (
+  SELECT candidate.id
+  FROM PersonalRecord AS candidate
+  WHERE candidate.exerciseId = :exerciseId
+    AND candidate.prType = :prType
+    AND candidate.phase = :phase
+    AND candidate.profile_id = :profileId
+    AND candidate.achievedAt = :achievedAt
+    AND (candidate.uuid IS NULL OR candidate.uuid != :uuid)
+    AND NOT EXISTS (
+      SELECT 1 FROM PersonalRecord AS existing WHERE existing.uuid = :uuid
+    )
+  ORDER BY CASE WHEN candidate.uuid IS NULL THEN 0 ELSE 1 END, candidate.id
+  LIMIT 1
+);
 
 -- Delete PR by unique key (for upsert fallback)
 deletePRByKey:
@@ -1408,7 +1430,7 @@ CREATE TABLE EarnedBadge (
     badgeId TEXT NOT NULL,
     earnedAt INTEGER NOT NULL,
     celebratedAt INTEGER,
-    -- Sync fields (added in migration 6)
+    -- Sync fields (added in migration 11)
     updatedAt INTEGER,
     serverId TEXT,
     deletedAt INTEGER,
@@ -1443,7 +1465,7 @@ CREATE TABLE GamificationStats (
     lastWorkoutDate INTEGER,
     streakStartDate INTEGER,
     lastUpdated INTEGER NOT NULL,
-    -- Sync fields (added in migration 6)
+    -- Sync fields (added in migration 11)
     updatedAt INTEGER,
     serverId TEXT,
     -- Multi-profile support (added in migration 22)
@@ -2910,8 +2932,9 @@ SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NULL
 selectAllBadgeIdsByProfile:
 SELECT CAST(id AS TEXT) FROM EarnedBadge WHERE profile_id = :profileId;
 
-selectAllPersonalRecordIdsByProfile:
-SELECT CAST(id AS TEXT) FROM PersonalRecord WHERE profile_id = :profileId;
+selectAllPersonalRecordUuidsByProfile:
+SELECT uuid FROM PersonalRecord
+WHERE profile_id = :profileId AND uuid IS NOT NULL;
 
 -- Hard-delete cycles by IDs (used for parity reconciliation when server confirms deletion)
 hardDeleteCyclesByIds:

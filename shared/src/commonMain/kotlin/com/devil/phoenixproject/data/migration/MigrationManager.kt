@@ -16,6 +16,7 @@ import com.devil.phoenixproject.database.RoutineExercise
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.CoroutineScope
@@ -120,6 +121,7 @@ class MigrationManager(
         val volume: Double,
         val phase: String,
         val cable_count: Long? = null,
+        val uuid: String?,
     )
 
     private data class CanonicalEarnedBadge(
@@ -429,6 +431,7 @@ class MigrationManager(
                 volume = record.volume,
                 phase = record.phase,
                 cable_count = record.cable_count,
+                uuid = record.uuid,
             )
             val key = "${canonical.exerciseId}|${canonical.workoutMode}|${canonical.prType}|${canonical.phase}"
             val existing = canonicalByKey[key]
@@ -437,10 +440,12 @@ class MigrationManager(
 
                 shouldReplacePersonalRecord(canonical, existing) -> canonical.copy(
                     exerciseName = canonical.exerciseName.ifBlank { existing.exerciseName },
+                    uuid = canonical.uuid ?: existing.uuid,
                 )
 
                 else -> existing.copy(
                     exerciseName = existing.exerciseName.ifBlank { canonical.exerciseName },
+                    uuid = existing.uuid ?: canonical.uuid,
                 )
             }
         }
@@ -462,6 +467,7 @@ class MigrationManager(
                 phase = record.phase,
                 profile_id = toProfileId,
                 cable_count = record.cable_count,
+                uuid = record.uuid ?: generateUUID(),
             )
         }
     }
@@ -700,6 +706,7 @@ class MigrationManager(
                             phase = record.phase,
                             profile_id = recordProfileId,
                             cable_count = record.cable_count,
+                            uuid = canonicalRecord?.uuid ?: record.uuid ?: generateUUID(),
                         )
                         updated++
                     } else {

@@ -33,6 +33,7 @@ import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.generateUUID
 import kotlin.math.roundToLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -347,6 +348,7 @@ class SqlDelightSyncRepository(
                         phase = dto.phase,
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
                         cable_count = dto.cableCount?.toLong(),
+                        uuid = dto.clientId.ifBlank { generateUUID() },
                     )
                 }
             }
@@ -1328,6 +1330,7 @@ class SqlDelightSyncRepository(
                 },
                 profileId = row.profile_id,
                 cableCount = row.cable_count?.toInt(),
+                uuid = row.uuid,
             )
         }
     }
@@ -1449,26 +1452,40 @@ class SqlDelightSyncRepository(
     override suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                records.forEach { dto ->
-                    // INSERT OR IGNORE — local PRs win on conflict (same compound key)
-                    val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
-                    queries.insertPRIgnore(
-                        exerciseId = dto.exerciseId,
-                        exerciseName = dto.exerciseName,
-                        weight = dto.weight.toDouble(),
-                        reps = dto.reps.toLong(),
-                        oneRepMax = dto.oneRepMax.toDouble(),
-                        achievedAt = dto.achievedAt,
-                        workoutMode = dto.workoutMode,
-                        prType = dto.prType,
-                        volume = effectiveVolume.toDouble(),
-                        phase = dto.phase,
-                        profile_id = profileId,
-                        cable_count = dto.cableCount?.toLong(),
-                    )
-                }
+                mergePersonalRecordRows(records, profileId)
             }
             Logger.d { "Merged ${records.size} personal records from portal (profile=$profileId)" }
+        }
+    }
+
+    private fun mergePersonalRecordRows(records: List<PersonalRecordSyncDto>, profileId: String) {
+        records.forEach { dto ->
+            // INSERT OR IGNORE — local PRs win on conflict (same compound key)
+            val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
+            val prUuid = dto.clientId.ifBlank { generateUUID() }
+            queries.adoptServerPrUuid(
+                uuid = prUuid,
+                exerciseId = dto.exerciseId,
+                prType = dto.prType,
+                phase = dto.phase,
+                profileId = profileId,
+                achievedAt = dto.achievedAt,
+            )
+            queries.insertPRIgnore(
+                exerciseId = dto.exerciseId,
+                exerciseName = dto.exerciseName,
+                weight = dto.weight.toDouble(),
+                reps = dto.reps.toLong(),
+                oneRepMax = dto.oneRepMax.toDouble(),
+                achievedAt = dto.achievedAt,
+                workoutMode = dto.workoutMode,
+                prType = dto.prType,
+                volume = effectiveVolume.toDouble(),
+                phase = dto.phase,
+                profile_id = profileId,
+                cable_count = dto.cableCount?.toLong(),
+                uuid = prUuid,
+            )
         }
     }
 
@@ -1735,23 +1752,7 @@ class SqlDelightSyncRepository(
                 }
 
                 // 6. Personal records — INSERT OR IGNORE (local wins)
-                for (pr in personalRecords) {
-                    val effectiveVolume = if (pr.volume > 0f) pr.volume else pr.weight * pr.reps
-                    queries.insertPRIgnore(
-                        exerciseId = pr.exerciseId,
-                        exerciseName = pr.exerciseName,
-                        weight = pr.weight.toDouble(),
-                        reps = pr.reps.toLong(),
-                        oneRepMax = pr.oneRepMax.toDouble(),
-                        achievedAt = pr.achievedAt,
-                        workoutMode = pr.workoutMode,
-                        prType = pr.prType,
-                        volume = effectiveVolume.toDouble(),
-                        phase = pr.phase,
-                        profile_id = profileId,
-                        cable_count = pr.cableCount?.toLong(),
-                    )
-                }
+                mergePersonalRecordRows(personalRecords, profileId)
             }
 
             Logger.d {
@@ -1809,7 +1810,7 @@ class SqlDelightSyncRepository(
     }
 
     override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
-        queries.selectAllPersonalRecordIdsByProfile(profileId).executeAsList()
+        queries.selectAllPersonalRecordUuidsByProfile(profileId).executeAsList()
     }
 
     /**

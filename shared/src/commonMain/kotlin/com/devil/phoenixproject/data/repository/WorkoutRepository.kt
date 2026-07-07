@@ -15,6 +15,7 @@ data class PersonalRecordEntity(
     val reps: Int,
     val timestamp: Long,
     val workoutMode: String,
+    val uuid: String? = null,
 )
 
 /**

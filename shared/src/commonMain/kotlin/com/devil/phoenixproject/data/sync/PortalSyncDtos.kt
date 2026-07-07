@@ -503,6 +503,7 @@ data class ExternalActivityAckDto(
  */
 @Serializable
 data class PortalPersonalRecordDto(
+    val id: String? = null,
     val exerciseName: String,
     val exerciseId: String? = null,
     val muscleGroup: String = "General",
@@ -611,6 +612,12 @@ data class PortalSyncPullRequest(
     val pageSize: Int? = null,
     /** Entity IDs client already has. Server returns entities NOT in these lists. */
     val knownEntityIds: KnownEntityIds? = null,
+)
+
+@Serializable
+data class PortalRateLimitResponse(
+    val error: String = "",
+    val retryAfterSeconds: Int? = null,
 )
 
 /**
