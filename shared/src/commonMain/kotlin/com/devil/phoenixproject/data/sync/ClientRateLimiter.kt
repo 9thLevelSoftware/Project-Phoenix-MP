@@ -44,7 +44,7 @@ class ClientRateLimiter(
         val cutoff = now - windowMillis
         val window = attempts.getOrPut(operation) { ArrayDeque() }
         // Drop timestamps that fell out of the sliding window.
-        while (window.isNotEmpty() && window.first() <= cutoff) {
+        while (window.isNotEmpty() && window.first() < cutoff) {
             window.removeFirst()
         }
         return@withLock if (window.size < limit) {
