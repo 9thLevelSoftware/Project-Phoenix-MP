@@ -176,25 +176,30 @@ fun ModeConfirmationScreen(
                         // (LazyColumn crashes on repeated keys). #633 review.
                         key = { index, exercise -> "${day.dayNumber}_${index}_${exercise.exerciseName}" },
                     ) { _, exercise ->
-                        ConfigurableExerciseCard(
-                            exercise = exercise,
-                            config = exerciseConfigs[exercise.exerciseName] ?: ExerciseConfig.fromTemplate(
+                        // The exact config the card displays — also the baseline for
+                        // detecting a real user weight edit below. Falling back to
+                        // fromTemplate keeps edit detection correct even if this exercise
+                        // was never seeded into exerciseConfigs (#633 review, P2).
+                        val displayedConfig = exerciseConfigs[exercise.exerciseName]
+                            ?: ExerciseConfig.fromTemplate(
                                 exerciseName = exercise.exerciseName,
                                 suggestedMode = exercise.suggestedMode,
                                 oneRepMaxKg = oneRepMaxValues[exercise.exerciseName],
-                            ),
+                            )
+                        ConfigurableExerciseCard(
+                            exercise = exercise,
+                            config = displayedConfig,
                             oneRepMaxKg = oneRepMaxValues[exercise.exerciseName],
                             prWeight = prWeightValues[exercise.exerciseName],
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
                             onConfigUpdated = { newConfig ->
                                 // Mark the weight as user-edited only when it actually changed
-                                // from the previous config — auto-filled 1RM defaults must not
+                                // from what the card showed — auto-filled 1RM defaults must not
                                 // pin the exercise to an absolute weight (#633 review, P1).
-                                val previous = exerciseConfigs[exercise.exerciseName]
                                 exerciseConfigs[exercise.exerciseName] = newConfig.copy(
-                                    userEditedWeight = (previous?.userEditedWeight == true) ||
-                                        (previous != null && newConfig.weightPerCableKg != previous.weightPerCableKg),
+                                    userEditedWeight = displayedConfig.userEditedWeight ||
+                                        newConfig.weightPerCableKg != displayedConfig.weightPerCableKg,
                                 )
                             },
                             weightStepKg = weightStepKg,
