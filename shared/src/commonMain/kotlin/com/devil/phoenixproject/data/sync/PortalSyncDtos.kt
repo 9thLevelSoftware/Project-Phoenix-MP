@@ -614,6 +614,12 @@ data class PortalSyncPullRequest(
     val knownEntityIds: KnownEntityIds? = null,
 )
 
+@Serializable
+data class PortalRateLimitResponse(
+    val error: String = "",
+    val retryAfterSeconds: Int? = null,
+)
+
 /**
  * Response from the mobile-sync-pull Edge Function.
  * syncTime is epoch millis (Long), NOT ISO 8601 String like the push response.

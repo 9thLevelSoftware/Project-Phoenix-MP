@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.KmpUtils.currentTimeMillis
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -52,6 +53,39 @@ class ClientRateLimiter(
                 "Denied $operation: ${window.size}/$limit used in last ${windowMillis}ms."
             }
             false
+        }
+    }
+
+    /**
+     * Wait until the sliding window has capacity, then record a successful acquisition.
+     * Uses the same shared window accounting as [tryAcquire].
+     */
+    suspend fun acquireWithWait(operation: String, limit: Int) {
+        while (true) {
+            val waitMillis = mutex.withLock {
+                val now = currentTimeMillis()
+                val cutoff = now - windowMillis
+                val window = attempts.getOrPut(operation) { ArrayDeque() }
+                while (window.isNotEmpty() && window.first() < cutoff) {
+                    window.removeFirst()
+                }
+
+                if (window.size < limit) {
+                    window.addLast(now)
+                    null
+                } else {
+                    val delayMillis = (window.first() + windowMillis - now).coerceAtLeast(0L)
+                    Logger.w("ClientRateLimiter") {
+                        "Waiting ${delayMillis}ms for $operation: ${window.size}/$limit used in last ${windowMillis}ms."
+                    }
+                    delayMillis
+                }
+            }
+
+            if (waitMillis == null) {
+                return
+            }
+            delay(waitMillis)
         }
     }
 

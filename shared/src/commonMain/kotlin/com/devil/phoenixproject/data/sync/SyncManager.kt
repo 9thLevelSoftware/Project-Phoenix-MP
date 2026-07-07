@@ -19,6 +19,7 @@ import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.isIosPlatform
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -115,6 +116,9 @@ object SyncConfig {
 
     /** Maximum pull requests per minute (matches server-enforced rate limit). */
     const val PULL_RATE_LIMIT_PER_MIN = 20
+
+    /** Maximum Retry-After-driven retries allowed for a single pull page. */
+    const val MAX_RETRY_AFTER_ATTEMPTS_PER_PAGE = 3
 
     /** Rate-limit window in milliseconds (60 seconds). */
     const val RATE_LIMIT_WINDOW_MS = 60_000L
@@ -1120,18 +1124,6 @@ class SyncManager(
      * @return Result with final syncTime on success, or failure with classified error
      */
     private suspend fun pullRemoteChangesWithResult(): Result<Long> {
-        // fix(audit #9): self-throttle to match server 20/min limit.
-        if (!rateLimiter.tryAcquire("pull", SyncConfig.PULL_RATE_LIMIT_PER_MIN)) {
-            return Result.failure(
-                PortalApiException(
-                    "Client rate limit exceeded for pull (" +
-                        "${SyncConfig.PULL_RATE_LIMIT_PER_MIN}/min). Try again shortly.",
-                    null,
-                    429,
-                ),
-            )
-        }
-
         val deviceId = tokenStorage.getDeviceId()
         val activeProfileId = userProfileRepository.activeProfile.value?.id
         val mergeProfileId = activeProfileId ?: "default"
@@ -1234,26 +1226,56 @@ class SyncManager(
                     "cursor=$currentCursor"
             }
 
-            val pullResult = apiClient.pullPortalPayload(
-                knownEntityIds = knownEntityIds,
-                deviceId = deviceId,
-                profileId = mergeProfileId,
-                cursor = currentCursor,
-                pageSize = SyncConfig.DEFAULT_PAGE_SIZE,
-            )
+            val pullResponse = run {
+                var retryAttempts = 0
+                var firstRateLimitError: Throwable? = null
+                var successfulResponse: PortalSyncPullResponse? = null
 
-            if (pullResult.isFailure) {
-                val error = pullResult.exceptionOrNull() ?: PortalApiException("Pull failed")
-                Logger.w("SyncManager") {
-                    "Pull page ${pagesProcessed + 1} failed (cursor=$currentCursor): ${error.message}"
+                while (true) {
+                    rateLimiter.acquireWithWait("pull", SyncConfig.PULL_RATE_LIMIT_PER_MIN)
+
+                    val pullResult = apiClient.pullPortalPayload(
+                        knownEntityIds = knownEntityIds,
+                        deviceId = deviceId,
+                        profileId = mergeProfileId,
+                        cursor = currentCursor,
+                        pageSize = SyncConfig.DEFAULT_PAGE_SIZE,
+                    )
+
+                    if (pullResult.isSuccess) {
+                        successfulResponse = pullResult.getOrThrow()
+                        break
+                    }
+
+                    val error = pullResult.exceptionOrNull() ?: PortalApiException("Pull failed")
+                    Logger.w("SyncManager") {
+                        "Pull page ${pagesProcessed + 1} failed (cursor=$currentCursor): ${error.message}"
+                    }
+
+                    val portalError = error as? PortalApiException
+                    val isRetryAfterStatus = portalError?.statusCode == 429 || portalError?.statusCode == 503
+                    if (!isRetryAfterStatus) {
+                        return Result.failure(error)
+                    }
+
+                    retryAttempts++
+                    if (firstRateLimitError == null) {
+                        firstRateLimitError = error
+                    }
+                    if (retryAttempts > SyncConfig.MAX_RETRY_AFTER_ATTEMPTS_PER_PAGE) {
+                        return Result.failure(firstRateLimitError ?: error)
+                    }
+
+                    val retryDelayMs = portalError?.retryAfterSeconds?.toLong()?.coerceAtLeast(0L)?.times(1000L)
+                        ?: SyncConfig.RATE_LIMIT_WINDOW_MS
+                    Logger.w("SyncManager") {
+                        "Retrying pull page ${pagesProcessed + 1} after ${retryDelayMs}ms " +
+                            "(attempt $retryAttempts/${SyncConfig.MAX_RETRY_AFTER_ATTEMPTS_PER_PAGE}, cursor=$currentCursor)"
+                    }
+                    delay(retryDelayMs)
                 }
-                // Note: We don't store cursor for resume here - the caller (retryPull) will
-                // restart from the beginning. For resume-on-failure, we'd need to persist
-                // the cursor to storage, which is a more complex feature.
-                return Result.failure(error)
+                successfulResponse ?: return Result.failure(PortalApiException("Pull failed"))
             }
-
-            val pullResponse = pullResult.getOrThrow()
             pagesProcessed++
 
             // Count entities in this page

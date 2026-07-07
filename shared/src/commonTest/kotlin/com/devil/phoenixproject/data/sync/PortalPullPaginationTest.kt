@@ -10,9 +10,12 @@ import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -44,7 +47,7 @@ class PortalPullPaginationTest {
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
     private val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
 
-    private fun createManager() = SyncManager(
+    private fun createManager(rateLimiter: ClientRateLimiter = ClientRateLimiter()) = SyncManager(
         apiClient = fakeApi,
         tokenStorage = tokenStorage,
         syncRepository = fakeSyncRepo,
@@ -53,6 +56,7 @@ class PortalPullPaginationTest {
         userProfileRepository = fakeUserProfileRepo,
         externalActivityRepository = fakeExternalActivityRepo,
         velocityOneRepMaxRepository = fakeVelocityRepo,
+        rateLimiter = rateLimiter,
     )
 
     private fun authenticate(userId: String = "user-123") {
@@ -269,6 +273,142 @@ class PortalPullPaginationTest {
             initial,
             tokenStorage.getLastSyncTimestamp(),
             "A failed page keeps lastSync at its pre-sync value so next sync re-sends the cursor from scratch",
+        )
+    }
+
+    @Test
+    fun pull429WithRetryAfterRetriesSameCursorAndCompletes() = runTest {
+        authenticate()
+        val finalSyncTime = 3L
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "page-2",
+                    routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
+                ),
+            ),
+            Result.failure(PortalApiException("rate limited", null, 429, retryAfterSeconds = 1)),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = finalSyncTime,
+                    hasMore = false,
+                    routines = listOf(PullRoutineDto(id = "r2", name = "R2")),
+                ),
+            ),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess, "pull should resume after a 429 retry-after response")
+        assertEquals(3, fakeApi.pullCallCount, "retry should count as another pull request")
+        assertEquals(
+            listOf(null, "page-2", "page-2"),
+            fakeApi.pullCallCursors,
+            "429 retry must re-request the same page cursor",
+        )
+        assertEquals(finalSyncTime, tokenStorage.getLastSyncTimestamp(), "completed pull should advance lastSync")
+        assertTrue(currentTime >= 1_000L, "retry-after delay should be honored before the retry")
+    }
+
+    @Test
+    fun pull429BeyondRetryCapFailsAndKeepsLastSync() = runTest {
+        authenticate()
+        val initialSyncTime = 7_000L
+        tokenStorage.setLastSyncTimestamp(initialSyncTime)
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "page-2",
+                    routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
+                ),
+            ),
+            Result.failure(PortalApiException("rate limited", null, 429, retryAfterSeconds = 1)),
+            Result.failure(PortalApiException("rate limited", null, 429, retryAfterSeconds = 1)),
+            Result.failure(PortalApiException("rate limited", null, 429, retryAfterSeconds = 1)),
+            Result.failure(PortalApiException("rate limited", null, 429, retryAfterSeconds = 1)),
+        )
+
+        val result = createManager().retryPull()
+
+        assertTrue(result.isFailure, "retryPull should fail after exceeding the per-page retry-after cap")
+        val error = assertIs<PortalApiException>(result.exceptionOrNull())
+        assertEquals(429, error.statusCode)
+        assertEquals(1, error.retryAfterSeconds)
+        assertEquals(
+            listOf(null, "page-2", "page-2", "page-2", "page-2"),
+            fakeApi.pullCallCursors,
+            "every capped retry should stay on the same page cursor",
+        )
+        assertEquals(5, fakeApi.pullCallCount, "page 2 should be attempted once plus three retries after page 1")
+        assertEquals(initialSyncTime, tokenStorage.getLastSyncTimestamp(), "failed pull must not advance lastSync")
+        assertTrue(currentTime >= 3_000L, "only the capped retries should incur Retry-After waits")
+    }
+
+    @Test
+    fun pull503WithRetryAfterRetriesSameCursorAndCompletes() = runTest {
+        authenticate()
+        val finalSyncTime = 9L
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "page-2",
+                    routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
+                ),
+            ),
+            Result.failure(PortalApiException("service unavailable", null, 503, retryAfterSeconds = 1)),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = finalSyncTime,
+                    hasMore = false,
+                    routines = listOf(PullRoutineDto(id = "r2", name = "R2")),
+                ),
+            ),
+        )
+
+        val result = createManager().retryPull()
+
+        assertTrue(result.isSuccess, "503 with Retry-After should resume the same pull page")
+        assertEquals(3, fakeApi.pullCallCount)
+        assertEquals(
+            listOf(null, "page-2", "page-2"),
+            fakeApi.pullCallCursors,
+            "503 retry must re-request the same cursor",
+        )
+        assertEquals(finalSyncTime, tokenStorage.getLastSyncTimestamp())
+        assertTrue(currentTime >= 1_000L, "503 retry-after delay should be honored")
+    }
+
+    @Test
+    fun multiPagePullConsumesLimiterTokenPerPage() = runBlocking {
+        authenticate()
+        val pageCount = SyncConfig.PULL_RATE_LIMIT_PER_MIN + 1
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResultsQueue = MutableList(pageCount) { index ->
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_000L + index,
+                    hasMore = index < pageCount - 1,
+                    nextCursor = if (index < pageCount - 1) "cursor-${index + 1}" else null,
+                    routines = listOf(PullRoutineDto(id = "r$index", name = "Routine $index")),
+                ),
+            )
+        }
+
+        val result = createManager(rateLimiter = ClientRateLimiter(windowMillis = 250L)).sync()
+        val gaps = fakeApi.pullCallTimestampsMs.zipWithNext { a, b -> b - a }
+
+        assertTrue(result.isSuccess, "pagination should still complete under limiter pressure")
+        assertEquals(pageCount, fakeApi.pullCallCount, "every page should still be requested")
+        assertTrue(
+            (gaps.maxOrNull() ?: 0L) >= 150L,
+            "per-page limiter acquisition should create at least one noticeable wait between page calls: $gaps",
         )
     }
 

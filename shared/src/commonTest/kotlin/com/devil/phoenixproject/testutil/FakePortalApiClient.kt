@@ -13,6 +13,7 @@ import com.devil.phoenixproject.data.sync.PortalSyncPullResponse
 import com.devil.phoenixproject.data.sync.PortalSyncPushResponse
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.SupabaseConfig
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.russhwolf.settings.MapSettings
 
 /**
@@ -73,6 +74,8 @@ open class FakePortalApiClient :
     var lastPullDeviceId: String? = null
     var lastPullCursor: String? = null
     var lastPullPageSize: Int? = null
+    val pullCallCursors: MutableList<String?> = mutableListOf()
+    val pullCallTimestampsMs: MutableList<Long> = mutableListOf()
     var lastIntegrationSyncRequest: IntegrationSyncRequest? = null
     var lastPlaygroundSimulationRequest: IntegrationPlaygroundSimulationRequest? = null
 
@@ -109,6 +112,8 @@ open class FakePortalApiClient :
         lastPullDeviceId = deviceId
         lastPullCursor = cursor
         lastPullPageSize = pageSize
+        pullCallCursors += cursor
+        pullCallTimestampsMs += currentTimeMillis()
 
         // Use queue if available, otherwise fallback to pullResult
         val result = pullResultsQueue?.removeFirstOrNull() ?: pullResult
