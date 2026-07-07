@@ -1,11 +1,21 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import kotlin.test.Test
+import kotlin.test.assertNotNull
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -151,5 +161,156 @@ class ActiveSessionEngineIntegrationTest {
         )
 
         harness.cleanup()
+    }
+
+    @Test
+    fun rotationCompletionOnFiveThreeOneCycleEmitsNewWeekNumber() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val cycle = seedFiveThreeOneCycle(harness)
+            harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+            val benchRoutine = harness.fakeWorkoutRepo.getRoutineById("routine-bench")
+            assertNotNull(benchRoutine)
+            harness.fakeExerciseRepo.addExercise(benchRoutine.exercises.first().exercise)
+            assertTrue(harness.dwsm.loadRoutineFromCycleAsync(benchRoutine.id, cycle.id, dayNumber = 4))
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+
+            harness.coordinator._repCount.value = RepCount(
+                warmupReps = 0,
+                workingReps = 5,
+                totalReps = 5,
+                isWarmupComplete = true,
+            )
+            harness.coordinator.collectedMetrics.value = listOf(
+                WorkoutMetric(
+                    timestamp = 100L,
+                    loadA = 40f,
+                    loadB = 40f,
+                    positionA = 100f,
+                    positionB = 100f,
+                    velocityA = 50.0,
+                    velocityB = 50.0,
+                ),
+            )
+
+            harness.activeSessionEngine.handleSetCompletion()
+            advanceUntilIdle()
+
+            val completionEvent = harness.coordinator.cycleDayCompletionEvent.value
+            assertNotNull(completionEvent)
+            assertEquals(2, completionEvent.newWeekNumber)
+            assertFalse(completionEvent.tmBumped)
+            assertEquals(2, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun reCompletingLastDayWhenCycleAlreadyAtTargetWeekSkipsSecondRegeneration() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val cycle = seedFiveThreeOneCycle(harness, weekNumber = 2)
+            harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+            val benchRoutine = harness.fakeWorkoutRepo.getRoutineById("routine-bench")
+            assertNotNull(benchRoutine)
+            harness.fakeExerciseRepo.addExercise(benchRoutine.exercises.first().exercise)
+            assertTrue(harness.dwsm.loadRoutineFromCycleAsync(benchRoutine.id, cycle.id, dayNumber = 4))
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+
+            harness.coordinator._repCount.value = RepCount(
+                warmupReps = 0,
+                workingReps = 5,
+                totalReps = 5,
+                isWarmupComplete = true,
+            )
+            harness.coordinator.collectedMetrics.value = listOf(
+                WorkoutMetric(
+                    timestamp = 100L,
+                    loadA = 40f,
+                    loadB = 40f,
+                    positionA = 100f,
+                    positionB = 100f,
+                    velocityA = 50.0,
+                    velocityB = 50.0,
+                ),
+            )
+
+            harness.activeSessionEngine.handleSetCompletion()
+            advanceUntilIdle()
+
+            val completionEvent = harness.coordinator.cycleDayCompletionEvent.value
+            assertNotNull(completionEvent)
+            assertNull(completionEvent.newWeekNumber)
+            assertFalse(completionEvent.tmBumped)
+            assertEquals(2, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    private fun seedFiveThreeOneCycle(
+        harness: DWSMTestHarness,
+        weekNumber: Int = 1,
+    ): TrainingCycle {
+        val bench = Exercise(
+            id = BENCH_ID,
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            muscleGroups = "Chest",
+            equipment = "BAR",
+            oneRepMaxKg = 100f,
+        )
+        harness.fakeExerciseRepo.addExercise(bench)
+
+        val routine = Routine(
+            id = "routine-bench",
+            name = "Bench Day",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-bench",
+                    exercise = bench,
+                    orderIndex = 0,
+                    setReps = listOf(5, 5, null),
+                    weightPerCableKg = 40f,
+                    programMode = ProgramMode.OldSchool,
+                    isAMRAP = true,
+                    usePercentOfPR = true,
+                    setWeightsPercentOfPR = listOf(59, 68, 77),
+                ),
+            ),
+        )
+        harness.fakeWorkoutRepo.addRoutine(routine)
+
+        val cycle = TrainingCycle.create(
+            id = "cycle-531",
+            name = "5/3/1",
+            weekNumber = weekNumber,
+            templateId = "template_531",
+            days = listOf(
+                CycleDay.create(id = "day-1", cycleId = "cycle-531", dayNumber = 1, name = "Bench", routineId = routine.id),
+                CycleDay.create(id = "day-2", cycleId = "cycle-531", dayNumber = 2, name = "Squat", routineId = null),
+                CycleDay.create(id = "day-3", cycleId = "cycle-531", dayNumber = 3, name = "Press", routineId = null),
+                CycleDay.create(id = "day-4", cycleId = "cycle-531", dayNumber = 4, name = "Deadlift", routineId = routine.id),
+            ),
+        )
+        harness.fakeTrainingCycleRepo.addCycle(cycle)
+        return cycle
+    }
+
+    private companion object {
+        const val BENCH_ID = "ZZ92N8QsBdp6HCh3"
     }
 }

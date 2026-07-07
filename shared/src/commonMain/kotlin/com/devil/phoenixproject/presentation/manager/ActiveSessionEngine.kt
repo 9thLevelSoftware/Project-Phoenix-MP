@@ -54,6 +54,7 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
+import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
@@ -111,6 +112,7 @@ class ActiveSessionEngine(
     private val settingsManager: SettingsManager,
     private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope,
+    private val regenerateFiveThreeOneUseCase: RegenerateFiveThreeOneRoutinesUseCase? = null,
     private val dataBackupManager: DataBackupManager? = null,
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
@@ -1891,11 +1893,37 @@ class ActiveSessionEngine(
                 val completedDay = cycle.days.find { it.dayNumber == dayNumber }
                 // Rotation detection: check if this was the last day in the cycle
                 val isRotationComplete = dayNumber >= cycle.days.size
+                val newRotationCount = if (isRotationComplete) progress.rotationCount + 1 else progress.rotationCount
+                val targetWeek = (newRotationCount % 4) + 1
+                val bumpTrainingMax = targetWeek == 1 && newRotationCount > 0
+                var regenerationSucceeded = false
+
+                if (
+                    isRotationComplete &&
+                    cycle.templateId == TEMPLATE_531_ID &&
+                    cycle.weekNumber != targetWeek
+                ) {
+                    try {
+                        regenerateFiveThreeOneUseCase?.execute(
+                            cycleId = cycleId,
+                            targetWeek = targetWeek,
+                            bumpTrainingMax = bumpTrainingMax,
+                        )
+                        regenerationSucceeded = true
+                    } catch (e: Exception) {
+                        Logger.w(e) {
+                            "5/3/1 regeneration failed after cycle completion: cycleId=$cycleId targetWeek=$targetWeek"
+                        }
+                    }
+                }
+
                 coordinator._cycleDayCompletionEvent.value = CycleDayCompletionEvent(
                     dayNumber = dayNumber,
                     dayName = completedDay?.name,
                     isRotationComplete = isRotationComplete,
-                    rotationCount = if (isRotationComplete) progress.rotationCount + 1 else progress.rotationCount,
+                    rotationCount = newRotationCount,
+                    newWeekNumber = if (regenerationSucceeded) targetWeek else null,
+                    tmBumped = regenerationSucceeded && bumpTrainingMax,
                 )
 
                 Logger.d {
@@ -4924,5 +4952,9 @@ class ActiveSessionEngine(
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.repEventsCollectionJob?.cancel()
         coordinator.workoutJob?.cancel()
+    }
+
+    private companion object {
+        const val TEMPLATE_531_ID = "template_531"
     }
 }
