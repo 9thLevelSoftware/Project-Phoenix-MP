@@ -935,6 +935,8 @@ class DataBackupManagerRoutineNameTest {
             created_at = 1_700_000_000_000L,
             is_active = 0L,
             profile_id = "default",
+            template_id = null,
+            week_number = 1L,
         )
         queries.insertCycleDay(
             id = "day-drift",

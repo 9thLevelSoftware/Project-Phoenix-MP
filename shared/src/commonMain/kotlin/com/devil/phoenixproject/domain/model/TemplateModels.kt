@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.domain.model
 
+import kotlin.math.roundToInt
+
 /**
  * A single set defined by percentage of 1RM (for 5/3/1).
  */
@@ -37,6 +39,13 @@ object FiveThreeOneWeeks {
         4 -> WEEK_4_DELOAD
         else -> WEEK_1
     }
+}
+
+private const val FIVE_THREE_ONE_TRAINING_MAX_FACTOR = 0.9
+
+fun computeFiveThreeOneSetWeightsForWeek(weekNumber: Int): List<Int> = FiveThreeOneWeeks.forWeek(weekNumber).map { set ->
+    val percentOfOneRepMax = (set.percent * 100).roundToInt()
+    (percentOfOneRepMax * FIVE_THREE_ONE_TRAINING_MAX_FACTOR).roundToInt()
 }
 
 /**

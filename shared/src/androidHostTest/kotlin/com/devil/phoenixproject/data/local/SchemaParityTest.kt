@@ -567,10 +567,38 @@ class SchemaParityTest {
         }
     }
 
+    @Test
+    fun `migration 41 adds template and week columns to training cycles`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 41)
+
+        assertEquals(false, columnExistsInDriver(driver, "TrainingCycle", "template_id"))
+        assertEquals(false, columnExistsInDriver(driver, "TrainingCycle", "week_number"))
+
+        driver.execute(
+            null,
+            """
+            INSERT INTO TrainingCycle (
+                id, name, description, created_at, is_active
+            ) VALUES (
+                'cycle-531', '5/3/1', NULL, 1700000000000, 1
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 41, 42)
+
+        assertEquals(true, columnExistsInDriver(driver, "TrainingCycle", "template_id"))
+        assertEquals(true, columnExistsInDriver(driver, "TrainingCycle", "week_number"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(week_number AS TEXT) FROM TrainingCycle WHERE id = 'cycle-531'"))
+        assertEquals(null, queryScalar(driver, "SELECT template_id FROM TrainingCycle WHERE id = 'cycle-531'"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 41L
+        private const val CURRENT_VERSION = 42L
         private val CANONICAL_UUID_REGEX = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
         /**

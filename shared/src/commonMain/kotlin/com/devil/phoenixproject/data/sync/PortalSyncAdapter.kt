@@ -636,8 +636,6 @@ object PortalSyncAdapter {
      *  - CycleProgress.lastCompletedDate → lastUsedAt
      *  - CycleProgression → progressionSettings (JSON)
      *
-     * Note: weekNumber defaults to 1 since mobile DB has no week_number column.
-     * The portal's current_week is set to 1 unless CycleProgress tracks it.
      */
     fun toPortalTrainingCycle(ctx: CycleWithContext, userId: String): PortalTrainingCycleSyncDto {
         val cycle = ctx.cycle
@@ -684,6 +682,7 @@ object PortalSyncAdapter {
             userId = userId,
             name = cycle.name,
             description = cycle.description,
+            templateId = cycle.templateId,
             durationWeeks = durationWeeks,
             workoutDays = workoutDays,
             restDays = restDays,

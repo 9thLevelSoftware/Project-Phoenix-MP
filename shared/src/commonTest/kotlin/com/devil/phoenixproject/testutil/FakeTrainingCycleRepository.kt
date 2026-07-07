@@ -81,6 +81,12 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         updateFlows()
     }
 
+    override suspend fun updateWeekNumber(cycleId: String, weekNumber: Int) {
+        val cycle = cycles[cycleId] ?: return
+        cycles[cycleId] = cycle.copy(weekNumber = weekNumber)
+        updateFlows()
+    }
+
     override suspend fun setActiveCycle(cycleId: String, profileId: String) {
         activeCycleId = cycleId
         // Reset progress on activation so deactivate/reactivate starts fresh

@@ -122,7 +122,11 @@ internal fun getMigrationStatements(version: Int): List<String> = when (version)
             name TEXT NOT NULL,
             description TEXT,
             created_at INTEGER NOT NULL,
-            is_active INTEGER NOT NULL DEFAULT 0
+            is_active INTEGER NOT NULL DEFAULT 0,
+            profile_id TEXT NOT NULL DEFAULT 'default',
+            deletedAt INTEGER,
+            template_id TEXT,
+            week_number INTEGER NOT NULL DEFAULT 1
         )""",
         """CREATE TABLE IF NOT EXISTS CycleDay (
             id TEXT PRIMARY KEY NOT NULL,
@@ -284,7 +288,11 @@ internal fun getMigrationStatements(version: Int): List<String> = when (version)
             name TEXT NOT NULL,
             description TEXT,
             created_at INTEGER NOT NULL,
-            is_active INTEGER NOT NULL DEFAULT 0
+            is_active INTEGER NOT NULL DEFAULT 0,
+            profile_id TEXT NOT NULL DEFAULT 'default',
+            deletedAt INTEGER,
+            template_id TEXT,
+            week_number INTEGER NOT NULL DEFAULT 1
         )""",
         """CREATE TABLE IF NOT EXISTS CycleDay (
             id TEXT PRIMARY KEY NOT NULL,
@@ -949,6 +957,11 @@ WHERE gs.rowid = (
                lower(hex(randomblob(6)))
     WHERE uuid IS NULL""",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_uuid ON PersonalRecord(uuid) WHERE uuid IS NOT NULL",
+    )
+
+    41 -> listOf(
+        "ALTER TABLE TrainingCycle ADD COLUMN template_id TEXT",
+        "ALTER TABLE TrainingCycle ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1",
     )
 
     else -> emptyList()

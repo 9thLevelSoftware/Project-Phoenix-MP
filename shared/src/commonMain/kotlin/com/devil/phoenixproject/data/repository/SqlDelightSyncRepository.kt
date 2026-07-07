@@ -643,6 +643,8 @@ class SqlDelightSyncRepository(
                         created_at = currentTimeMillis(),
                         is_active = 0L, // Don't set active yet - enforce single-active at end
                         profile_id = profileId,
+                        template_id = portalCycle.templateId,
+                        week_number = portalCycle.currentWeek.toLong(),
                     )
 
                     // For pre-existing cycles only: update metadata (but NOT is_active - enforce single-active at end).
@@ -652,6 +654,8 @@ class SqlDelightSyncRepository(
                             name = portalCycle.name,
                             description = portalCycle.description,
                             is_active = existing.is_active, // Preserve; single-active enforcement runs at end
+                            template_id = portalCycle.templateId,
+                            week_number = portalCycle.currentWeek.toLong(),
                             id = portalCycle.id,
                         )
                     }
@@ -701,6 +705,8 @@ class SqlDelightSyncRepository(
                         name = cycles.first { it.id == portalActiveCycleId }.name,
                         description = cycles.first { it.id == portalActiveCycleId }.description,
                         is_active = 1L,
+                        template_id = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne().template_id,
+                        week_number = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne().week_number,
                         id = portalActiveCycleId,
                     )
                     Logger.d { "Set active cycle from portal: $portalActiveCycleId" }
@@ -719,6 +725,8 @@ class SqlDelightSyncRepository(
                             name = cycles.first { it.id == id }.name,
                             description = cycles.first { it.id == id }.description,
                             is_active = 1L,
+                            template_id = queries.selectTrainingCycleById(id).executeAsOne().template_id,
+                            week_number = queries.selectTrainingCycleById(id).executeAsOne().week_number,
                             id = id,
                         )
                     }
@@ -1129,6 +1137,9 @@ class SqlDelightSyncRepository(
                     days = days,
                     createdAt = row.created_at,
                     isActive = row.is_active == 1L,
+                    weekNumber = row.week_number.toInt(),
+                    profileId = row.profile_id,
+                    templateId = row.template_id,
                 ),
                 progress = progress,
                 progression = progression,
@@ -1651,6 +1662,8 @@ class SqlDelightSyncRepository(
                         created_at = currentTimeMillis(),
                         is_active = 0L,
                         profile_id = profileId,
+                        template_id = portalCycle.templateId,
+                        week_number = portalCycle.currentWeek.toLong(),
                     )
 
                     // Only update pre-existing cycles; newly-inserted rows already have correct values.
@@ -1659,6 +1672,8 @@ class SqlDelightSyncRepository(
                             name = portalCycle.name,
                             description = portalCycle.description,
                             is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
+                            template_id = portalCycle.templateId,
+                            week_number = portalCycle.currentWeek.toLong(),
                             id = portalCycle.id,
                         )
                     }
@@ -1704,6 +1719,8 @@ class SqlDelightSyncRepository(
                         name = activeCycle.name,
                         description = activeCycle.description,
                         is_active = 1L,
+                        template_id = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne().template_id,
+                        week_number = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne().week_number,
                         id = portalActiveCycleId,
                     )
                 }
@@ -1719,6 +1736,8 @@ class SqlDelightSyncRepository(
                             name = activeCycle.name,
                             description = activeCycle.description,
                             is_active = 1L,
+                            template_id = queries.selectTrainingCycleById(id).executeAsOne().template_id,
+                            week_number = queries.selectTrainingCycleById(id).executeAsOne().week_number,
                             id = id,
                         )
                     }

@@ -10,6 +10,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlin.math.abs
 import kotlin.test.Test
@@ -791,6 +792,24 @@ class PortalSyncAdapterTest {
 
         // estimateRoutineDuration: sets(3) * 120 + sum(60+60+60)=180 = 540
         assertEquals(540, result.estimatedDuration)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle maps templateId and persisted currentWeek`() {
+        val cycle = TrainingCycle.create(
+            id = "cycle-531",
+            name = "5/3/1 BBB",
+            templateId = "template_531",
+            weekNumber = 3,
+        )
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle),
+            userId = "user-1",
+        )
+
+        assertEquals("template_531", result.templateId)
+        assertEquals(3, result.currentWeek)
     }
 
     // ========== userId passthrough ==========

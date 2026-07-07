@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineTemplate
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.TemplateExercise
+import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeightsForWeek
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -254,11 +255,19 @@ class TemplateConverterTest {
             .filter { it.exercise.name in template.mainLifts && it.setWeightsPercentOfPR.isNotEmpty() }
 
         assertEquals(4, mainLifts.size, "All 4 main lifts must resolve")
+        assertEquals(template.id, result.cycle.templateId)
+        assertEquals(1, result.cycle.weekNumber)
         mainLifts.forEach { lift ->
             assertEquals(listOf(59, 68, 77), lift.setWeightsPercentOfPR, lift.exercise.name)
             assertEquals(listOf(5, 5, null), lift.setReps, lift.exercise.name)
             assertTrue(lift.isAMRAP, "${lift.exercise.name}: week 1-3 last set is AMRAP")
         }
+    }
+
+    @Test
+    fun `computeFiveThreeOneSetWeightsForWeek returns canonical folded percentages`() {
+        assertEquals(listOf(59, 68, 77), computeFiveThreeOneSetWeightsForWeek(1))
+        assertEquals(listOf(68, 77, 86), computeFiveThreeOneSetWeightsForWeek(3))
     }
 
     @Test

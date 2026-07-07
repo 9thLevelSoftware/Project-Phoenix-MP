@@ -961,7 +961,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // TrainingCycle -- migration 10, full current shape
-    // Columns added by later migrations: profile_id (m21), deletedAt (m27)
+    // Columns added by later migrations: profile_id (m21), deletedAt (m27),
+    // template_id/week_number (m41)
     SchemaTableOperation(
         table = "TrainingCycle",
         createSql = """
@@ -972,7 +973,9 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 created_at INTEGER NOT NULL,
                 is_active INTEGER NOT NULL DEFAULT 0,
                 profile_id TEXT NOT NULL DEFAULT 'default',
-                deletedAt INTEGER
+                deletedAt INTEGER,
+                template_id TEXT,
+                week_number INTEGER NOT NULL DEFAULT 1
             )
         """.trimIndent(),
     ),
@@ -1312,12 +1315,15 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("UserProfile", "subscription_expires_at", "ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER"),
     SchemaHealOperation("UserProfile", "last_auth_at", "ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER"),
 
-    // ── TrainingCycle (2 columns) ────────────────────────────────────────
+    // ── TrainingCycle (4 columns) ────────────────────────────────────────
 
     // Migration 21: multi-profile support
     SchemaHealOperation("TrainingCycle", "profile_id", "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
     // Migration 27: soft-delete for sync tombstone propagation
     SchemaHealOperation("TrainingCycle", "deletedAt", "ALTER TABLE TrainingCycle ADD COLUMN deletedAt INTEGER"),
+    // Migration 41: generated cycle template identity + persisted 5/3/1 week
+    SchemaHealOperation("TrainingCycle", "template_id", "ALTER TABLE TrainingCycle ADD COLUMN template_id TEXT"),
+    SchemaHealOperation("TrainingCycle", "week_number", "ALTER TABLE TrainingCycle ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1"),
 
     // ── AssessmentResult (1 column) ─────────────────────────────────────
 
