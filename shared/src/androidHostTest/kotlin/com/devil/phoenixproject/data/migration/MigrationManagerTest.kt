@@ -1,8 +1,11 @@
 package com.devil.phoenixproject.data.migration
 
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -344,6 +347,107 @@ class MigrationManagerTest {
                 PRType.MAX_WEIGHT.name,
                 phase = "COMBINED",
                 profileId = "default",
+            ).executeAsOneOrNull(),
+        )
+    }
+
+    @Test
+    fun `repairOrphanedPRRecords preserves target uuid when better orphan duplicate lacks one`() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        VitruvianDatabase.Schema.create(driver)
+        val localDatabase = VitruvianDatabase(driver)
+        val localMigrationManager = MigrationManager(localDatabase, driver = driver)
+        val queries = localDatabase.vitruvianDatabaseQueries
+        val stableUuid = "12345678-1234-4abc-8def-1234567890ab"
+
+        queries.insertProfile(
+            id = "target-profile",
+            name = "Target Profile",
+            colorIndex = 0L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+        queries.insertExercise(
+            id = "deadlift",
+            name = "Conventional Deadlift",
+            displayName = null,
+            description = null,
+            created = 0L,
+            muscleGroup = "Back",
+            muscleGroups = "Back",
+            muscles = null,
+            equipment = "BAR",
+            movement = null,
+            sidedness = null,
+            grip = null,
+            gripWidth = null,
+            minRepRange = null,
+            popularity = 0.0,
+            archived = 0L,
+            isFavorite = 0L,
+            isCustom = 0L,
+            timesPerformed = 0L,
+            lastPerformed = null,
+            aliases = null,
+            defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = null,
+            mvtOverrideMs = null,
+            isBodyweight = null,
+        )
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Conventional Deadlift",
+            weight = 60.0,
+            reps = 8,
+            oneRepMax = OneRepMaxCalculator.epley(60f, 8).toDouble(),
+            achievedAt = 1_700_000_000_000,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 480.0,
+            phase = "COMBINED",
+            profile_id = "target-profile",
+            cable_count = null,
+            uuid = stableUuid,
+        )
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Conventional Deadlift",
+            weight = 70.0,
+            reps = 8,
+            oneRepMax = OneRepMaxCalculator.epley(70f, 8).toDouble(),
+            achievedAt = 1_700_000_100_000,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 560.0,
+            phase = "COMBINED",
+            profile_id = "orphan-profile",
+            cable_count = null,
+            uuid = null,
+        )
+
+        val repaired = localMigrationManager.repairOrphanedPRRecords("target-profile")
+        val merged = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            phase = "COMBINED",
+            profileId = "target-profile",
+        ).executeAsOneOrNull()
+        val targetRows = queries.selectAllRecords(profileId = "target-profile").executeAsList()
+            .filter { it.exerciseId == "deadlift" && it.prType == PRType.MAX_WEIGHT.name }
+
+        assertEquals(1, repaired)
+        assertEquals(1, targetRows.size)
+        assertNotNull(merged)
+        assertEquals(70.0, merged.weight)
+        assertEquals(stableUuid, merged.uuid)
+        assertNull(
+            queries.selectPR(
+                "deadlift",
+                "Old School",
+                PRType.MAX_WEIGHT.name,
+                phase = "COMBINED",
+                profileId = "orphan-profile",
             ).executeAsOneOrNull(),
         )
     }

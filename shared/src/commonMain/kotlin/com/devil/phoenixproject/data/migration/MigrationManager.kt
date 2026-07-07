@@ -121,7 +121,7 @@ class MigrationManager(
         val volume: Double,
         val phase: String,
         val cable_count: Long? = null,
-        val uuid: String,
+        val uuid: String?,
     )
 
     private data class CanonicalEarnedBadge(
@@ -431,7 +431,7 @@ class MigrationManager(
                 volume = record.volume,
                 phase = record.phase,
                 cable_count = record.cable_count,
-                uuid = record.uuid ?: generateUUID(),
+                uuid = record.uuid,
             )
             val key = "${canonical.exerciseId}|${canonical.workoutMode}|${canonical.prType}|${canonical.phase}"
             val existing = canonicalByKey[key]
@@ -440,10 +440,12 @@ class MigrationManager(
 
                 shouldReplacePersonalRecord(canonical, existing) -> canonical.copy(
                     exerciseName = canonical.exerciseName.ifBlank { existing.exerciseName },
+                    uuid = canonical.uuid ?: existing.uuid,
                 )
 
                 else -> existing.copy(
                     exerciseName = existing.exerciseName.ifBlank { canonical.exerciseName },
+                    uuid = existing.uuid ?: canonical.uuid,
                 )
             }
         }
@@ -465,7 +467,7 @@ class MigrationManager(
                 phase = record.phase,
                 profile_id = toProfileId,
                 cable_count = record.cable_count,
-                uuid = record.uuid,
+                uuid = record.uuid ?: generateUUID(),
             )
         }
     }

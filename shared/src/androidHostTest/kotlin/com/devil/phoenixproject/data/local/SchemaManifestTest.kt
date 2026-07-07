@@ -254,6 +254,97 @@ class SchemaManifestTest {
         assertTrue(sql.contains("col1"), "Surviving index should be the original col1 index")
     }
 
+    @Test
+    fun `reconcileFullSchema replays migration 40 PR cleanup before creating uuid index`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                exerciseName TEXT NOT NULL,
+                weight REAL NOT NULL,
+                reps INTEGER NOT NULL,
+                oneRepMax REAL NOT NULL,
+                achievedAt INTEGER NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+                volume REAL NOT NULL DEFAULT 0.0,
+                phase TEXT NOT NULL DEFAULT 'COMBINED',
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                cable_count INTEGER
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord (
+                exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+                workoutMode, prType, volume, phase, profile_id, cable_count
+            ) VALUES (
+                'ghost-pr', 'Ghost PR', 100.0, 3, 110.0, 1700000000000,
+                'MAX_WEIGHT', 'MAX_WEIGHT', 300.0, 'COMBINED', 'default', 2
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord (
+                exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+                workoutMode, prType, volume, phase, profile_id, cable_count
+            ) VALUES (
+                'bench-real', 'Bench Press', 105.0, 2, 112.0, 1700000000100,
+                'Old School', 'MAX_WEIGHT', 210.0, 'COMBINED', 'default', 2
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord (
+                exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+                workoutMode, prType, volume, phase, profile_id, cable_count
+            ) VALUES (
+                'row-real-2', 'Row', 70.0, 8, 88.0, 1700000000200,
+                'Just Lift', 'MAX_VOLUME', 560.0, 'COMBINED', 'default', 2
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        reconcileFullSchema(driver)
+
+        assertTrue(columnNames(driver, "PersonalRecord").contains("uuid"))
+        assertTrue(indexExists(driver, "idx_pr_uuid"))
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord WHERE workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM')"))
+
+        val uuids = mutableListOf<String>()
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT uuid FROM PersonalRecord ORDER BY achievedAt",
+            mapper = { cursor ->
+                while (cursor.next().value) {
+                    uuids += cursor.getString(0).orEmpty()
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+
+        assertEquals(2, uuids.size)
+        assertEquals(2, uuids.toSet().size)
+        uuids.forEach { uuid ->
+            assertTrue(CANONICAL_UUID_REGEX.matches(uuid), "Backfilled PR UUID must be canonical lowercase v4")
+        }
+    }
+
     // ── Full Reconciliation Test ────────────────────────────────────────
 
     @Test
@@ -299,5 +390,25 @@ class SchemaManifestTest {
         val summary = report.logSummary()
         assertTrue(summary.contains("SchemaReconciliation:"))
         assertTrue(summary.contains("ops"))
+    }
+
+    private fun queryScalar(driver: SqlDriver, sql: String): String? {
+        var value: String? = null
+        driver.executeQuery(
+            identifier = null,
+            sql = sql,
+            mapper = { cursor ->
+                if (cursor.next().value) {
+                    value = cursor.getString(0)
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        return value
+    }
+
+    companion object {
+        private val CANONICAL_UUID_REGEX = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     }
 }

@@ -67,3 +67,45 @@ Notable debugging steps
 
 Residual concerns
 - None for Task 1 scope after the focused verification above.
+
+---
+
+Review follow-up fix: Task 1 reviewer findings on branch `codex/fix-634-pr-uuid-rate-limit`
+
+Scope fixed
+- Critical: schema reconciliation now replays migration 40 PersonalRecord cleanup/backfill before `idx_pr_uuid` reconciliation, so branch-gap / skipped-migration databases do not keep ghost PR rows or `uuid = NULL` survivors.
+- Important: profile-scope PR merges now preserve an existing stable destination UUID when a better duplicate row wins but arrives without a UUID.
+
+TDD red phase
+- Added `SchemaManifestTest.reconcileFullSchema replays migration 40 PR cleanup before creating uuid index`
+- Added `MigrationManagerTest.repairOrphanedPRRecords preserves target uuid when better orphan duplicate lacks one`
+- Red verification:
+  - `.\gradlew.bat --% :shared:testAndroidHostTest --tests com.devil.phoenixproject.data.local.SchemaManifestTest --console=plain`
+    - FAILED at `SchemaManifestTest.kt:325`
+    - failure showed reconciliation left 3 PR rows instead of deleting the ghost row / backfilling UUIDs
+  - `.\gradlew.bat --% :shared:testAndroidHostTest --tests com.devil.phoenixproject.data.migration.MigrationManagerTest --console=plain`
+    - FAILED at `MigrationManagerTest.kt:355`
+    - failure showed the merged PR UUID changed away from the existing stable destination UUID
+
+Implementation
+- `SchemaManifest.kt`
+  - extended `SchemaIndexOperation` with `beforeCreateSql`
+  - executes pre-create data repair inside the same savepoint as index creation
+  - wired `idx_pr_uuid` reconciliation to:
+    - delete ghost `PersonalRecord` rows with invalid `workoutMode`
+    - backfill canonical lowercase v4 UUIDs for surviving rows with `uuid IS NULL`
+- `MigrationManager.kt`
+  - made `CanonicalPersonalRecord.uuid` nullable during candidate selection
+  - preserved `existing.uuid` when a better replacement candidate lacks one
+  - deferred UUID generation until final reinsertion
+
+Green verification
+- `.\gradlew.bat --% :shared:testAndroidHostTest --tests com.devil.phoenixproject.data.local.SchemaManifestTest --console=plain`
+  - PASS
+- `.\gradlew.bat --% :shared:testAndroidHostTest --tests com.devil.phoenixproject.data.migration.MigrationManagerTest --console=plain`
+  - PASS
+- `.\gradlew.bat --% :shared:validateSchemaManifest --console=plain`
+  - PASS (`Schema manifest validated: 382 columns across 43 tables, all covered.`)
+- `git diff --check`
+  - PASS
+  - emitted LF->CRLF working-copy warnings only; no diff errors
