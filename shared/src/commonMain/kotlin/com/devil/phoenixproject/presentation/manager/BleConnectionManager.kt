@@ -235,13 +235,19 @@ class BleConnectionManager(
             return
         }
 
-        // If already connecting/scanning, cancel and return to disconnected
-        if (connectionState.value is ConnectionState.Connecting ||
+        // If already connecting/scanning, cancel the stale attempt and start a fresh one with
+        // THIS caller's callbacks. Previously this path called cancelConnection() and returned,
+        // dropping both onConnected and onFailed — a silent "nothing happens" dead end
+        // (issue #620 secondary path). Teardown is sequenced inside the new connection
+        // coroutine so the fresh scan cannot race the async stopScanning().
+        val staleAttemptInProgress = connectionState.value is ConnectionState.Connecting ||
             connectionState.value is ConnectionState.Scanning
-        ) {
-            Logger.d { "ensureConnection: Cancelling in-progress connection" }
-            cancelConnection()
-            return
+        if (staleAttemptInProgress) {
+            Logger.d { "ensureConnection: Cancelling in-progress connection, restarting with new callbacks" }
+            connectionJob?.cancel()
+            connectionJob = null
+            _pendingConnectionCallback = null
+            _isAutoConnecting.value = false
         }
 
         // Start new connection
@@ -250,6 +256,11 @@ class BleConnectionManager(
 
         connectionJob = scope.launch {
             try {
+                if (staleAttemptInProgress) {
+                    // Complete the teardown of the stale attempt before scanning again.
+                    bleRepository.stopScanning()
+                    bleRepository.cancelConnection()
+                }
                 _isAutoConnecting.value = true
                 _connectionError.value = null
                 _pendingConnectionCallback = onConnected

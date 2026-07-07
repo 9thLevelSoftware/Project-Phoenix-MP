@@ -162,6 +162,25 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     val activeCycle by cycleRepository.getActiveCycle(profileId).collectAsState(initial = null)
     val routines by viewModel.routines.collectAsState()
 
+    // Issue #620: template-created cycle routines ("cycle_routine_" prefix) are intentionally
+    // filtered out of viewModel.routines (Daily Routines list hygiene), so cycle cards could
+    // never render their exercise lists. Fetch any cycle-referenced routine missing from the
+    // StateFlow directly from the DB and merge for display.
+    var cycleRoutines by remember { mutableStateOf<Map<String, Routine>>(emptyMap()) }
+    LaunchedEffect(cycles, routines) {
+        val knownIds = routines.mapTo(mutableSetOf()) { it.id }
+        val missingIds = cycles.asSequence()
+            .flatMap { it.days }
+            .mapNotNull { it.routineId }
+            .distinct()
+            .filter { it !in knownIds }
+            .toList()
+        cycleRoutines = missingIds.mapNotNull { id ->
+            workoutRepository.getRoutineById(id)?.let { id to it }
+        }.toMap()
+    }
+    val allRoutines = remember(routines, cycleRoutines) { routines + cycleRoutines.values }
+
     // State
     val creationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showCreationSheet by remember { mutableStateOf(false) }
@@ -302,7 +321,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                         ActiveCycleCard(
                             cycle = activeCycle!!,
                             progress = cycleProgress[activeCycle!!.id],
-                            routines = routines,
+                            routines = allRoutines,
                             selectedDayNumber = selectedDayNumber,
                             onDaySelected = { dayNumber ->
                                 selectedDayNumber = dayNumber
@@ -332,10 +351,22 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                                     if (viewModel.loadRoutineFromCycleAsync(rid, cycleId, dayNumber)) {
                                                         viewModel.enterSetReady(0, 0)
                                                         navController.navigate(NavigationRoutes.SetReady.route)
+                                                    } else {
+                                                        // Issue #620: never fail silently — tell the user why
+                                                        // the workout didn't start.
+                                                        snackbarHostState.showSnackbar(
+                                                            "Couldn't load this workout — routine data is missing. Try editing the cycle.",
+                                                        )
                                                     }
                                                 }
                                             },
-                                            onFailed = { /* Error shown via StateFlow */ },
+                                            onFailed = {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        "Machine connection failed — workout not started.",
+                                                    )
+                                                }
+                                            },
                                         )
                                     }
                                 }
@@ -401,7 +432,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     CycleListItem(
                         cycle = cycle,
                         progress = cycleProgress[cycle.id],
-                        routines = routines,
+                        routines = allRoutines,
                         isActive = cycle.id == activeCycle?.id,
                         onActivate = {
                             scope.launch {
@@ -769,10 +800,21 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                     ) {
                                         viewModel.enterSetReady(0, 0)
                                         navController.navigate(NavigationRoutes.SetReady.route)
+                                    } else {
+                                        // Issue #620: surface the failure instead of a silent no-op.
+                                        snackbarHostState.showSnackbar(
+                                            "Couldn't load this workout — routine data is missing. Try editing the cycle.",
+                                        )
                                     }
                                 }
                             },
-                            onFailed = { /* Error shown via StateFlow */ },
+                            onFailed = {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        "Machine connection failed — workout not started.",
+                                    )
+                                }
+                            },
                         )
                     }
                 },
@@ -917,6 +959,24 @@ private fun ActiveCycleCard(
                         "No routine assigned",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (hasRoutine) {
+                // Issue #620: routineId is set but the routine couldn't be loaded from the
+                // StateFlow or the DB — data integrity problem. Never render a blank area.
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Routine data missing — edit the cycle to reassign it",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
