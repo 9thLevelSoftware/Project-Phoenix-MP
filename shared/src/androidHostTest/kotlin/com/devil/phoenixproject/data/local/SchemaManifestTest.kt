@@ -183,6 +183,28 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `applyIndexCreate skips beforeCreateSql when index already exists`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE TestTable (id INTEGER PRIMARY KEY, col1 TEXT)",
+            0,
+        )
+        driver.execute(null, "INSERT INTO TestTable (id, col1) VALUES (1, 'keep')", 0)
+        driver.execute(null, "CREATE INDEX idx_test_col1 ON TestTable(col1)", 0)
+
+        val op = SchemaIndexOperation(
+            name = "idx_test_col1",
+            createSql = "CREATE INDEX IF NOT EXISTS idx_test_col1 ON TestTable(col1)",
+            beforeCreateSql = listOf("DELETE FROM TestTable"),
+        )
+        val result = applyIndexCreate(driver, op)
+
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, result.status)
+        assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM TestTable"))
+    }
+
+    @Test
     fun `applyIndexCreate with preDropSql replaces existing index`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         driver.execute(
@@ -343,6 +365,53 @@ class SchemaManifestTest {
         uuids.forEach { uuid ->
             assertTrue(CANONICAL_UUID_REGEX.matches(uuid), "Backfilled PR UUID must be canonical lowercase v4")
         }
+    }
+
+    @Test
+    fun `reconcileFullSchema preserves uuid backed PR rows during uuid index replay`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        val serverUuid = "52345678-1234-4abc-8def-1234567890ab"
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                exerciseName TEXT NOT NULL,
+                weight REAL NOT NULL,
+                reps INTEGER NOT NULL,
+                oneRepMax REAL NOT NULL,
+                achievedAt INTEGER NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+                volume REAL NOT NULL DEFAULT 0.0,
+                phase TEXT NOT NULL DEFAULT 'COMBINED',
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                cable_count INTEGER,
+                uuid TEXT
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord (
+                exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+                workoutMode, prType, volume, phase, profile_id, cable_count, uuid
+            ) VALUES (
+                'pulled-pr', 'Pulled PR', 100.0, 3, 110.0, 1700000000000,
+                'MAX_WEIGHT', 'MAX_WEIGHT', 300.0, 'COMBINED', 'default', 2, '$serverUuid'
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        reconcileFullSchema(driver)
+
+        assertTrue(indexExists(driver, "idx_pr_uuid"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+        assertEquals(serverUuid, queryScalar(driver, "SELECT uuid FROM PersonalRecord WHERE exerciseId = 'pulled-pr'"))
     }
 
     // ── Full Reconciliation Test ────────────────────────────────────────

@@ -1063,10 +1063,23 @@ INSERT OR IGNORE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, on
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 adoptServerPrUuid:
-UPDATE PersonalRecord SET uuid = :uuid
-WHERE exerciseId = :exerciseId AND prType = :prType AND phase = :phase
-  AND profile_id = :profileId AND achievedAt = :achievedAt
-  AND (uuid IS NULL OR uuid != :uuid);
+UPDATE PersonalRecord
+SET uuid = :uuid
+WHERE id = (
+  SELECT candidate.id
+  FROM PersonalRecord AS candidate
+  WHERE candidate.exerciseId = :exerciseId
+    AND candidate.prType = :prType
+    AND candidate.phase = :phase
+    AND candidate.profile_id = :profileId
+    AND candidate.achievedAt = :achievedAt
+    AND (candidate.uuid IS NULL OR candidate.uuid != :uuid)
+    AND NOT EXISTS (
+      SELECT 1 FROM PersonalRecord AS existing WHERE existing.uuid = :uuid
+    )
+  ORDER BY CASE WHEN candidate.uuid IS NULL THEN 0 ELSE 1 END, candidate.id
+  LIMIT 1
+);
 
 -- Delete PR by unique key (for upsert fallback)
 deletePRByKey:
@@ -2919,7 +2932,7 @@ SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NULL
 selectAllBadgeIdsByProfile:
 SELECT CAST(id AS TEXT) FROM EarnedBadge WHERE profile_id = :profileId;
 
-selectAllPersonalRecordIdsByProfile:
+selectAllPersonalRecordUuidsByProfile:
 SELECT uuid FROM PersonalRecord
 WHERE profile_id = :profileId AND uuid IS NOT NULL;
 

@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -101,6 +102,32 @@ class SqlDelightWorkoutRepositoryTest {
         repository.getAllSessions("default").test {
             val sessions = awaitItem()
             assertTrue(sessions.isEmpty())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `getAllPersonalRecords preserves stable uuid`() = runTest {
+        val stableUuid = "62345678-1234-4abc-8def-1234567890ab"
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 85.0,
+            reps = 5L,
+            oneRepMax = 99.17,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 425.0,
+            phase = "COMBINED",
+            profile_id = "default",
+            cable_count = 2L,
+            uuid = stableUuid,
+        )
+
+        repository.getAllPersonalRecords("default").test {
+            val record = awaitItem().single()
+            assertEquals(stableUuid, record.uuid)
             cancelAndIgnoreRemainingEvents()
         }
     }

@@ -220,6 +220,72 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `mergePersonalRecords adopts server uuid onto one duplicate key candidate`() = runTest {
+        val serverUuid = "13345678-1234-4abc-8def-1234567890ab"
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 85.0,
+            reps = 5L,
+            oneRepMax = 99.17,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 425.0,
+            phase = WorkoutPhase.COMBINED.name,
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = null,
+        )
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 85.0,
+            reps = 5L,
+            oneRepMax = 99.17,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Echo",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 425.0,
+            phase = WorkoutPhase.COMBINED.name,
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = null,
+        )
+
+        repository.mergePersonalRecords(
+            records = listOf(
+                PersonalRecordSyncDto(
+                    clientId = serverUuid,
+                    serverId = serverUuid,
+                    exerciseId = "deadlift",
+                    exerciseName = "Deadlift",
+                    weight = 85f,
+                    reps = 5,
+                    oneRepMax = 99.17f,
+                    achievedAt = 1_700_000_000_000L,
+                    workoutMode = "MAX_WEIGHT",
+                    prType = PRType.MAX_WEIGHT.name,
+                    phase = WorkoutPhase.COMBINED.name,
+                    volume = 425f,
+                    cableCount = 2,
+                    createdAt = 1_700_000_000_000L,
+                    updatedAt = 1_700_000_000_100L,
+                ),
+            ),
+            profileId = "active-profile",
+        )
+
+        val rows = database.vitruvianDatabaseQueries
+            .selectAllRecords(profileId = "active-profile")
+            .executeAsList()
+
+        assertEquals(2, rows.size, "Adoption should not stamp the server UUID onto multiple local candidates")
+        assertEquals(1, rows.count { it.uuid == serverUuid })
+        assertEquals(1, rows.count { it.uuid == null })
+    }
+
+    @Test
     fun `mergePersonalRecords inserts unknown server pr with server uuid`() = runTest {
         val serverUuid = "22345678-1234-4abc-8def-1234567890ab"
 

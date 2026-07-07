@@ -141,6 +141,10 @@ internal fun applyColumnHeal(driver: SqlDriver, op: SchemaHealOperation): Reconc
 
 internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): ReconciliationResult {
     val alreadyExists = indexExists(driver, op.name)
+    if (alreadyExists && op.preDropSql == null) {
+        return ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
+    }
+
     // Apply any data cleanup/backfill required before index creation in the same
     // SAVEPOINT as the create so a failed index build cannot leave the repair in
     // a partially-applied state.
@@ -156,11 +160,7 @@ internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): Reco
             }
             driver.execute(identifier = null, sql = op.createSql, parameters = 0)
             driver.execute(identifier = null, sql = "RELEASE \"$savepoint\"", parameters = 0)
-            if (alreadyExists && op.preDropSql == null) {
-                ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
-            } else {
-                ReconciliationResult("index", op.name, ReconciliationStatus.CREATED)
-            }
+            ReconciliationResult("index", op.name, ReconciliationStatus.CREATED)
         } catch (inner: Exception) {
             // Roll back any pre-create repair plus the drop so the prior
             // constraint/data survive together, then release.
@@ -1398,7 +1398,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         name = "idx_pr_uuid",
         createSql = "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_uuid ON PersonalRecord(uuid) WHERE uuid IS NOT NULL",
         beforeCreateSql = listOf(
-            "DELETE FROM PersonalRecord WHERE workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM')",
+            "DELETE FROM PersonalRecord WHERE uuid IS NULL AND workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM')",
             """
             UPDATE PersonalRecord
             SET uuid = lower(hex(randomblob(4))) || '-' ||

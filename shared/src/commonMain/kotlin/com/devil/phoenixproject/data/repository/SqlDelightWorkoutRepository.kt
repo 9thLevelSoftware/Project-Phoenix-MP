@@ -927,6 +927,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             reps = reps.toInt(),
             timestamp = achievedAt,
             workoutMode = workoutMode,
+            uuid = uuid,
         )
     }.asFlow().mapToList(Dispatchers.IO)
 

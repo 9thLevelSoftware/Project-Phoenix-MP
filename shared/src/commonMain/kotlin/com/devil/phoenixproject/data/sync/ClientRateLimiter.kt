@@ -68,6 +68,8 @@ class ClientRateLimiter(
                 val now = nowMs()
                 val cutoff = now - windowMillis
                 val window = attempts.getOrPut(operation) { ArrayDeque() }
+                // Waiting callers can grant capacity exactly on the window
+                // boundary; tryAcquire keeps the historic strict boundary.
                 while (window.isNotEmpty() && window.first() <= cutoff) {
                     window.removeFirst()
                 }
