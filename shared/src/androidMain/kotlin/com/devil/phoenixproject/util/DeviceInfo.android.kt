@@ -127,12 +127,14 @@ actual object DeviceInfo {
      * panther=Pixel 7, cheetah=Pixel 7 Pro, lynx=Pixel 7a,
      * felix=Pixel Fold, tangorpro=Pixel Tablet.
      */
-    actual fun isBcm4389Pixel(): Boolean =
+    private val isBcm4389: Boolean =
         isPixel() && device.lowercase() in setOf(
             "oriole", "raven", "bluejay",
             "panther", "cheetah", "lynx",
             "felix", "tangorpro",
         )
+
+    actual fun isBcm4389Pixel(): Boolean = isBcm4389
 
     /**
      * Check if running on Amazon Fire OS (Fire Tablets, Fire TV)
