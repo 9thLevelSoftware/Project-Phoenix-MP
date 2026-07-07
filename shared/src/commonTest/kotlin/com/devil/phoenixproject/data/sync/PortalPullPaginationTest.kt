@@ -14,7 +14,6 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 
@@ -386,9 +385,11 @@ class PortalPullPaginationTest {
     }
 
     @Test
-    fun multiPagePullConsumesLimiterTokenPerPage() = runBlocking {
+    fun multiPagePullConsumesLimiterTokenPerPage() = runTest {
         authenticate()
         val pageCount = SyncConfig.PULL_RATE_LIMIT_PER_MIN + 1
+        var limiterClockMs = 0L
+        fakeApi.pullTimestampSourceMs = { limiterClockMs }
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         fakeApi.pullResultsQueue = MutableList(pageCount) { index ->
             Result.success(
@@ -401,14 +402,21 @@ class PortalPullPaginationTest {
             )
         }
 
-        val result = createManager(rateLimiter = ClientRateLimiter(windowMillis = 250L)).sync()
-        val gaps = fakeApi.pullCallTimestampsMs.zipWithNext { a, b -> b - a }
+        val result = createManager(
+            rateLimiter = ClientRateLimiter(
+                windowMillis = 250L,
+                nowMs = { limiterClockMs },
+                waitFor = { delayMs -> limiterClockMs += delayMs },
+            ),
+        ).sync()
+        val expectedTimestamps = List(SyncConfig.PULL_RATE_LIMIT_PER_MIN) { 0L } + listOf(250L)
 
         assertTrue(result.isSuccess, "pagination should still complete under limiter pressure")
         assertEquals(pageCount, fakeApi.pullCallCount, "every page should still be requested")
-        assertTrue(
-            (gaps.maxOrNull() ?: 0L) >= 150L,
-            "per-page limiter acquisition should create at least one noticeable wait between page calls: $gaps",
+        assertEquals(
+            expectedTimestamps,
+            fakeApi.pullCallTimestampsMs,
+            "per-page limiter acquisition should advance the shared manual clock only when the window is full",
         )
     }
 

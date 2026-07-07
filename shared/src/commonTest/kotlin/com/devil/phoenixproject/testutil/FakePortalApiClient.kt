@@ -76,6 +76,7 @@ open class FakePortalApiClient :
     var lastPullPageSize: Int? = null
     val pullCallCursors: MutableList<String?> = mutableListOf()
     val pullCallTimestampsMs: MutableList<Long> = mutableListOf()
+    var pullTimestampSourceMs: () -> Long = { currentTimeMillis() }
     var lastIntegrationSyncRequest: IntegrationSyncRequest? = null
     var lastPlaygroundSimulationRequest: IntegrationPlaygroundSimulationRequest? = null
 
@@ -113,7 +114,7 @@ open class FakePortalApiClient :
         lastPullCursor = cursor
         lastPullPageSize = pageSize
         pullCallCursors += cursor
-        pullCallTimestampsMs += currentTimeMillis()
+        pullCallTimestampsMs += pullTimestampSourceMs()
 
         // Use queue if available, otherwise fallback to pullResult
         val result = pullResultsQueue?.removeFirstOrNull() ?: pullResult

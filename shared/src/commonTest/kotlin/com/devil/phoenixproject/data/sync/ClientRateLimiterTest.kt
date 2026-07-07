@@ -1,43 +1,53 @@
 package com.devil.phoenixproject.data.sync
 
-import kotlin.system.measureTimeMillis
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 
 class ClientRateLimiterTest {
 
     @Test
-    fun acquireWithWaitReturnsImmediatelyWhenSlotIsFree() {
-        val limiter = ClientRateLimiter(windowMillis = 150L)
+    fun acquireWithWaitReturnsImmediatelyWhenSlotIsFree() = runTest {
+        var nowMs = 1_000L
+        val waitCalls = mutableListOf<Long>()
+        val limiter = ClientRateLimiter(
+            windowMillis = 150L,
+            nowMs = { nowMs },
+            waitFor = { delayMs ->
+                waitCalls += delayMs
+                nowMs += delayMs
+            },
+        )
 
-        val elapsed = measureTimeMillis {
-            runBlocking {
-                limiter.acquireWithWait("pull", limit = 1)
-            }
-        }
+        limiter.acquireWithWait("pull", limit = 1)
 
-        assertTrue(elapsed < 100L, "free slot should not wait, elapsed=${elapsed}ms")
+        assertEquals(emptyList(), waitCalls, "free slot should not wait")
         assertFalse(
-            runBlocking { limiter.tryAcquire("pull", limit = 1) },
+            limiter.tryAcquire("pull", limit = 1),
             "acquireWithWait should record the granted slot in the same sliding window",
         )
     }
 
     @Test
-    fun acquireWithWaitBlocksUntilWindowRemainderExpires() {
-        val limiter = ClientRateLimiter(windowMillis = 150L)
-        runBlocking {
-            assertTrue(limiter.tryAcquire("pull", limit = 1), "first slot fill should succeed")
-        }
+    fun acquireWithWaitBlocksUntilWindowRemainderExpires() = runTest {
+        var nowMs = 1_000L
+        val waitCalls = mutableListOf<Long>()
+        val limiter = ClientRateLimiter(
+            windowMillis = 150L,
+            nowMs = { nowMs },
+            waitFor = { delayMs ->
+                waitCalls += delayMs
+                nowMs += delayMs
+            },
+        )
 
-        val elapsed = measureTimeMillis {
-            runBlocking {
-                limiter.acquireWithWait("pull", limit = 1)
-            }
-        }
+        assertTrue(limiter.tryAcquire("pull", limit = 1), "first slot fill should succeed")
 
-        assertTrue(elapsed >= 110L, "full window should wait close to remainder, elapsed=${elapsed}ms")
+        limiter.acquireWithWait("pull", limit = 1)
+
+        assertEquals(listOf(150L), waitCalls, "full window should wait exactly the remaining window")
+        assertEquals(1_150L, nowMs, "wait path should advance to the first available instant")
     }
 }

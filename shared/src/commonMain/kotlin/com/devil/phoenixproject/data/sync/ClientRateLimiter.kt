@@ -24,6 +24,8 @@ import kotlinx.coroutines.sync.withLock
  */
 class ClientRateLimiter(
     private val windowMillis: Long = SyncConfig.RATE_LIMIT_WINDOW_MS,
+    private val nowMs: () -> Long = { currentTimeMillis() },
+    private val waitFor: suspend (Long) -> Unit = { delay(it) },
 ) {
     private val mutex = Mutex()
     private val attempts: MutableMap<String, ArrayDeque<Long>> = mutableMapOf()
@@ -38,11 +40,11 @@ class ClientRateLimiter(
      * @param limit maximum attempts permitted within windowMillis
      */
     suspend fun tryAcquire(operation: String, limit: Int): Boolean = mutex.withLock {
-        val now = currentTimeMillis()
+        val now = nowMs()
         val cutoff = now - windowMillis
         val window = attempts.getOrPut(operation) { ArrayDeque() }
         // Drop timestamps that fell out of the sliding window.
-        while (window.isNotEmpty() && window.first() < cutoff) {
+        while (window.isNotEmpty() && window.first() <= cutoff) {
             window.removeFirst()
         }
         return@withLock if (window.size < limit) {
@@ -63,10 +65,10 @@ class ClientRateLimiter(
     suspend fun acquireWithWait(operation: String, limit: Int) {
         while (true) {
             val waitMillis = mutex.withLock {
-                val now = currentTimeMillis()
+                val now = nowMs()
                 val cutoff = now - windowMillis
                 val window = attempts.getOrPut(operation) { ArrayDeque() }
-                while (window.isNotEmpty() && window.first() < cutoff) {
+                while (window.isNotEmpty() && window.first() <= cutoff) {
                     window.removeFirst()
                 }
 
@@ -85,7 +87,7 @@ class ClientRateLimiter(
             if (waitMillis == null) {
                 return
             }
-            delay(waitMillis)
+            waitFor(waitMillis)
         }
     }
 
