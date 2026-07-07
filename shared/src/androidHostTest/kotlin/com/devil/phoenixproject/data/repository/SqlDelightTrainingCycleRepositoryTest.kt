@@ -240,6 +240,7 @@ class SqlDelightTrainingCycleRepositoryTest {
             defaultRackItemIds = "[]",
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
+            isBodyweight = null,
         )
     }
 }

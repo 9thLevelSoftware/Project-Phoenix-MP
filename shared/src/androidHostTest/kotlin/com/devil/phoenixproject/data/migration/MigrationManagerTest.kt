@@ -524,6 +524,7 @@ class MigrationManagerTest {
             defaultCableConfig = "DOUBLE",
             one_rep_max_kg = oneRepMaxKg,
             mvtOverrideMs = null,
+            isBodyweight = null,
         )
     }
 
@@ -564,6 +565,7 @@ class MigrationManagerTest {
             defaultRackItemIds = "[]",
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
+            isBodyweight = null,
         )
     }
 

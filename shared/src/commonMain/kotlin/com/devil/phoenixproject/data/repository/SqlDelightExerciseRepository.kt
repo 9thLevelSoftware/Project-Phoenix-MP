@@ -49,6 +49,8 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
         deletedAt: Long?,
         // Per-exercise MVT override (migration 37)
         mvtOverrideMs: Double?,
+        // Explicit bodyweight classification (migration 39, #635); null = derive from equipment
+        isBodyweight: Long?,
     ): Exercise = Exercise(
         id = id,
         name = name,
@@ -66,6 +68,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
         ),
         displayName = displayName ?: name,
         mvtOverrideMs = mvtOverrideMs?.toFloat(),
+        isBodyweightOverride = isBodyweight?.let { it != 0L },
     )
 
     private fun resolveCableIntent(
@@ -221,6 +224,9 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
                 defaultCableConfig = "DOUBLE", // Legacy field - no longer used
                 one_rep_max_kg = exercise.oneRepMaxKg?.toDouble(),
                 mvtOverrideMs = exercise.mvtOverrideMs?.toDouble(),
+                // Custom exercises carry no explicit flag; classification derives from
+                // their equipment token (HANDLES/BODYWEIGHT set by CreateExerciseDialog).
+                isBodyweight = null,
             )
 
             Logger.d { "Created custom exercise: ${exercise.name} with ID: $customId" }

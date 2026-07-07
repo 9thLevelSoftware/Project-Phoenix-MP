@@ -31,8 +31,9 @@ class RestTimerProgressionWiringTest {
             "WorkoutTab.kt must guard Rest Timer progression for non-Echo next sets only.",
         )
         assertTrue(
-            src.contains("nextExercise?.exercise?.hasCableAccessory != true"),
-            "WorkoutTab.kt must use the canonical Exercise.hasCableAccessory bodyweight guard before showing Rest Timer progression.",
+            src.contains("nextExercise?.exercise?.isBodyweight != false"),
+            "WorkoutTab.kt must use the canonical Exercise.isBodyweight guard (explicit stored flag, #635) " +
+                "before showing Rest Timer progression — never re-derive from hasCableAccessory/equipment.",
         )
         assertFalse(
             src.contains("nextEquipment.isEmpty()") || src.contains("nextEquipment.equals(\"bodyweight\""),

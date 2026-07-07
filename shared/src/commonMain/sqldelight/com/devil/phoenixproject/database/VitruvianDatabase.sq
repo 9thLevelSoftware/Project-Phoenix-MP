@@ -31,7 +31,10 @@ CREATE TABLE Exercise (
     serverId TEXT,
     deletedAt INTEGER,
     -- Per-exercise MVT override (added in migration 37, issue #517)
-    mvtOverrideMs REAL
+    mvtOverrideMs REAL,
+    -- Explicit bodyweight classification (added in migration 39, issue #635)
+    -- NULL = derive from equipment; 0 = cable; 1 = bodyweight
+    isBodyweight INTEGER
 );
 
 CREATE INDEX idx_exercise_popularity ON Exercise(popularity DESC, name ASC);
@@ -251,6 +254,10 @@ CREATE TABLE RoutineExercise (
     warmupSets TEXT NOT NULL DEFAULT '',
     defaultRackItemIds TEXT NOT NULL DEFAULT '[]',
     rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}',
+    -- Explicit bodyweight classification (added in migration 39, issue #635)
+    -- NULL = derive from equipment; 0 = cable; 1 = bodyweight. Replaces the
+    -- legacy pull-sync 'Bodyweight' sentinel in exerciseEquipment.
+    isBodyweight INTEGER,
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
     FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -550,9 +557,9 @@ INSERT OR REPLACE INTO Exercise (
     id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
     equipment, movement, sidedness, grip, gripWidth, minRepRange,
     popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
-    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs
+    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs, isBodyweight
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 countExercises:
 SELECT COUNT(*) FROM Exercise;
@@ -1135,9 +1142,9 @@ INSERT INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides, scalingBasis
+    rackBehaviorOverrides, scalingBasis, isBodyweight
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert with IGNORE for import (won't overwrite existing)
 insertRoutineExerciseIgnore:
@@ -1148,9 +1155,9 @@ INSERT OR IGNORE INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides, scalingBasis
+    rackBehaviorOverrides, scalingBasis, isBodyweight
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;

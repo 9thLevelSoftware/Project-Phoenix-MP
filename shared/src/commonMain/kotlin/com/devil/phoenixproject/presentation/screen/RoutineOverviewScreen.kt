@@ -563,8 +563,8 @@ private fun ExerciseOverviewCard(
 ) {
     val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
 
-    // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
-    val isBodyweight = !exercise.exercise.hasCableAccessory
+    // #635: explicit stored flag with equipment-derivation fallback
+    val isBodyweight = exercise.exercise.isBodyweight
 
     Card(
         modifier = Modifier.fillMaxSize(),

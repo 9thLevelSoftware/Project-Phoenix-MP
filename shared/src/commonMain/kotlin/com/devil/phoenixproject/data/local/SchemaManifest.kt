@@ -712,7 +712,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // because applyColumnHeal handles "duplicate column" errors gracefully.
 
     // Exercise -- initial schema, full current shape
-    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11), displayName (m30), mvtOverrideMs (m37)
+    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11), displayName (m30), mvtOverrideMs (m37), isBodyweight (m39)
     SchemaTableOperation(
         table = "Exercise",
         createSql = """
@@ -743,7 +743,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 updatedAt INTEGER,
                 serverId TEXT,
                 deletedAt INTEGER,
-                mvtOverrideMs REAL
+                mvtOverrideMs REAL,
+                isBodyweight INTEGER
             )
         """.trimIndent(),
     ),
@@ -900,7 +901,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // RoutineExercise -- initial schema, full current shape
     // Columns added by later migrations: superset fields (m4), PR scaling (m7),
-    // routine programming (m18), behavior overrides (m20), scalingBasis (m38)
+    // routine programming (m18), behavior overrides (m20), scalingBasis (m38), isBodyweight (m39)
     SchemaTableOperation(
         table = "RoutineExercise",
         createSql = """
@@ -940,6 +941,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 warmupSets TEXT NOT NULL DEFAULT '',
                 defaultRackItemIds TEXT NOT NULL DEFAULT '[]',
                 rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}',
+                isBodyweight INTEGER,
                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
                 FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -1186,7 +1188,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 )
 
 // ============================================================
-// TASK 4: manifestColumns -- 71 column heal operations
+// TASK 4: manifestColumns -- column heal operations
 //
 // Every column added AFTER its table's initial creation. Each entry is a
 // complete ALTER TABLE ADD COLUMN statement. Comments trace provenance to
@@ -1195,7 +1197,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 // ============================================================
 
 internal val manifestColumns: List<SchemaHealOperation> = listOf(
-    // ── Exercise (5 columns) ────────────────────────────────────────────
+    // ── Exercise (7 columns) ────────────────────────────────────────────
 
     // Migration 1: one_rep_max_kg
     SchemaHealOperation("Exercise", "one_rep_max_kg", "ALTER TABLE Exercise ADD COLUMN one_rep_max_kg REAL DEFAULT NULL"),
@@ -1207,6 +1209,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("Exercise", "displayName", "ALTER TABLE Exercise ADD COLUMN displayName TEXT"),
     // Migration 37: per-exercise MVT override for velocity 1RM (issue #517)
     SchemaHealOperation("Exercise", "mvtOverrideMs", "ALTER TABLE Exercise ADD COLUMN mvtOverrideMs REAL"),
+    // Migration 39: explicit bodyweight classification (issue #635)
+    SchemaHealOperation("Exercise", "isBodyweight", "ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER"),
 
     // ── WorkoutSession (31 columns) ─────────────────────────────────────
 
@@ -1277,7 +1281,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 21: multi-profile support
     SchemaHealOperation("Routine", "profile_id", "ALTER TABLE Routine ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
 
-    // ── RoutineExercise (11 columns) ────────────────────────────────────
+    // ── RoutineExercise (15 columns) ────────────────────────────────────
 
     // Migration 4: superset container model
     SchemaHealOperation("RoutineExercise", "supersetId", "ALTER TABLE RoutineExercise ADD COLUMN supersetId TEXT"),
@@ -1296,6 +1300,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("RoutineExercise", "rackBehaviorOverrides", "ALTER TABLE RoutineExercise ADD COLUMN rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}'"),
     // Migration 38: velocity-based 1RM scaling basis (issue #517 Phase 3)
     SchemaHealOperation("RoutineExercise", "scalingBasis", "ALTER TABLE RoutineExercise ADD COLUMN scalingBasis TEXT"),
+    // Migration 39: explicit bodyweight classification (issue #635)
+    SchemaHealOperation("RoutineExercise", "isBodyweight", "ALTER TABLE RoutineExercise ADD COLUMN isBodyweight INTEGER"),
     // Migration 20 (healed outside .sqm): rep detection behavior
     SchemaHealOperation("RoutineExercise", "stallDetectionEnabled", "ALTER TABLE RoutineExercise ADD COLUMN stallDetectionEnabled INTEGER NOT NULL DEFAULT 1"),
     SchemaHealOperation("RoutineExercise", "stopAtTop", "ALTER TABLE RoutineExercise ADD COLUMN stopAtTop INTEGER NOT NULL DEFAULT 0"),

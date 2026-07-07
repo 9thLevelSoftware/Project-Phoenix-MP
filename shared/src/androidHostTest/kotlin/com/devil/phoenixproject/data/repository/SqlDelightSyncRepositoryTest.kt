@@ -199,6 +199,7 @@ class SqlDelightSyncRepositoryTest {
             "DUAL",
             null,
             null,
+            isBodyweight = null,
         )
 
         // Strategy 0: resolves by catalog id (unambiguous), ignoring name
@@ -427,6 +428,7 @@ class SqlDelightSyncRepositoryTest {
             defaultRackItemIds = """["vest"]""",
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
+            isBodyweight = null,
         )
 
         repository.mergePortalRoutines(
@@ -508,6 +510,7 @@ class SqlDelightSyncRepositoryTest {
             defaultRackItemIds = "[]",
             rackBehaviorOverrides = "{}",
             scalingBasis = "ESTIMATED_1RM",
+            isBodyweight = null,
         )
 
         repository.mergePortalRoutines(
@@ -539,6 +542,121 @@ class SqlDelightSyncRepositoryTest {
             .executeAsList()
             .single()
         assertEquals("ESTIMATED_1RM", exercise.scalingBasis)
+    }
+
+    @Test
+    fun `mergePortalRoutines stores isBodyweight flag without corrupting equipment`() = runTest {
+        // #635 regression: the pull path used to write a "Bodyweight" sentinel string
+        // into exerciseEquipment, which permanently poisoned classification because
+        // snapshot Exercises re-derived isBodyweight from the equipment string.
+        // Catalog cable lift with empty equipment and an explicit stored flag (Squat)
+        database.vitruvianDatabaseQueries.insertExercise(
+            id = "UjIGHxCav-lS9B2I",
+            name = "Squat",
+            displayName = "Squat",
+            description = null,
+            created = 0,
+            muscleGroup = "LEGS",
+            muscleGroups = "LEGS",
+            muscles = null,
+            equipment = "",
+            movement = null,
+            sidedness = null,
+            grip = null,
+            gripWidth = null,
+            minRepRange = null,
+            popularity = 0.0,
+            archived = 0,
+            isFavorite = 0,
+            isCustom = 0,
+            timesPerformed = 0,
+            lastPerformed = null,
+            aliases = null,
+            defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = null,
+            mvtOverrideMs = null,
+            isBodyweight = 0,
+        )
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-635",
+                    userId = "user",
+                    name = "Bodyweight Flag Routine",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-635-bw",
+                            routineId = "routine-635",
+                            name = "Push Up",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 10,
+                            weight = 0f,
+                            isBodyweight = true,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-635-cable",
+                            routineId = "routine-635",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 1,
+                            reps = 8,
+                            weight = 40f,
+                            isBodyweight = false,
+                        ),
+                        // Older Edge Function payloads omit the field entirely — the
+                        // stored flag must stay NULL (derive from catalog equipment),
+                        // never explicit cable.
+                        PullRoutineExerciseDto(
+                            id = "rex-635-omitted",
+                            routineId = "routine-635",
+                            name = "Plank",
+                            muscleGroup = "Core",
+                            orderIndex = 2,
+                            reps = 1,
+                            weight = 0f,
+                        ),
+                        // Omitted field + catalog exercise with an explicit stored flag:
+                        // must inherit the catalog classification (Squat = cable), or the
+                        // catalog-blind push snapshot re-derives bodyweight from the
+                        // empty equipment string and re-poisons the portal.
+                        PullRoutineExerciseDto(
+                            id = "rex-635-omitted-catalog",
+                            routineId = "routine-635",
+                            name = "Squat",
+                            muscleGroup = "LEGS",
+                            exerciseId = "UjIGHxCav-lS9B2I",
+                            orderIndex = 3,
+                            reps = 5,
+                            weight = 60f,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val exercises = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("routine-635")
+            .executeAsList()
+            .sortedBy { it.orderIndex }
+
+        val bodyweightRow = exercises[0]
+        assertEquals(1L, bodyweightRow.isBodyweight)
+        // Equipment must never carry the legacy sentinel
+        assertEquals("", bodyweightRow.exerciseEquipment)
+
+        val cableRow = exercises[1]
+        assertEquals(0L, cableRow.isBodyweight)
+        assertEquals("", cableRow.exerciseEquipment)
+
+        val omittedRow = exercises[2]
+        assertEquals(null, omittedRow.isBodyweight)
+
+        val omittedCatalogRow = exercises[3]
+        assertEquals(0L, omittedCatalogRow.isBodyweight)
     }
 
     private fun insertHistoricalSession(

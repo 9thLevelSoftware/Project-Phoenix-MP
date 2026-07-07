@@ -37,6 +37,7 @@ class SqlDelightPersonalMvtRepositoryTest {
             defaultCableConfig = "DOUBLE",
             one_rep_max_kg = null,
             mvtOverrideMs = null,
+            isBodyweight = null,
         )
     }
 

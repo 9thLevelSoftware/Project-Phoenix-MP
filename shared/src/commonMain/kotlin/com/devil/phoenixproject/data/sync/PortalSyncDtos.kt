@@ -762,7 +762,9 @@ data class PullRoutineExerciseDto(
     val perSetRest: String? = null,
     val perSetReps: String? = null,
     val isAmrap: Boolean = false,
-    val isBodyweight: Boolean = false,
+    // Nullable so payloads that omit the field (older Edge Function versions)
+    // keep the derived/NULL classification instead of forcing explicit cable (#635).
+    val isBodyweight: Boolean? = null,
     val prPercentage: Float? = null,
     val repCountTiming: String? = null,
     val stopAtPosition: String? = null,

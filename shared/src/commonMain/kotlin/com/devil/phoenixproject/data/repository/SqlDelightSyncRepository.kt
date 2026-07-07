@@ -440,6 +440,8 @@ class SqlDelightSyncRepository(
                         defaultCableConfig = dto.defaultCableConfig,
                         one_rep_max_kg = null,
                         mvtOverrideMs = null,
+                        // Custom exercises carry no explicit flag (#635); derive from equipment.
+                        isBodyweight = null,
                     )
 
                     if (dto.serverId != null) {
@@ -914,6 +916,7 @@ class SqlDelightSyncRepository(
                         muscleGroup = exRow.exerciseMuscleGroup,
                         muscleGroups = exRow.exerciseMuscleGroup,
                         equipment = exRow.exerciseEquipment,
+                        isBodyweightOverride = exRow.isBodyweight?.let { it != 0L },
                     )
 
                     val setReps: List<Int?> = try {
@@ -2194,11 +2197,11 @@ class SqlDelightSyncRepository(
                 queries.selectExerciseById(id).executeAsOneOrNull()
             } ?: queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
-            val resolvedEquipment = when {
-                exercise.isBodyweight -> "Bodyweight"
-                catalogExercise != null -> catalogExercise.equipment
-                else -> "Cable"
-            }
+            // #635: the explicit flag is stored in its own column — the portal's
+            // per-exercise toggle is honored directly. Equipment stays real catalog
+            // metadata (the old "Bodyweight"/"Cable" sentinel corrupted classification
+            // because reconstructed snapshot Exercises derived isBodyweight from it).
+            val resolvedEquipment = catalogExercise?.equipment ?: ""
 
             queries.insertRoutineExercise(
                 id = exercise.id,
@@ -2238,6 +2241,13 @@ class SqlDelightSyncRepository(
                     ?: localRackOverridesByExerciseId[exercise.id]
                     ?: "{}",
                 scalingBasis = localScalingBasisByExerciseId[exercise.id],
+                // Explicit portal flag when present; otherwise inherit the catalog's
+                // stored classification (e.g. Squat = cable despite empty equipment).
+                // Never coerce an omitted field to cable, and never leave a known
+                // catalog flag behind — the push snapshot builder reconstructs the
+                // Exercise from this row alone, without a catalog lookup (#635).
+                isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L }
+                    ?: catalogExercise?.isBodyweight,
             )
         }
     }

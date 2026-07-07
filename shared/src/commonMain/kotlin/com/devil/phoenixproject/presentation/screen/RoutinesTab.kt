@@ -1510,7 +1510,7 @@ private fun formatEstimatedDuration(routine: Routine): String {
 private fun estimateSetWorkSeconds(exercise: com.devil.phoenixproject.domain.model.RoutineExercise, setIndex: Int): Int {
     val reps = exercise.setReps.getOrNull(setIndex)
     return when {
-        !exercise.exercise.hasCableAccessory -> (exercise.duration ?: 30).coerceAtLeast(0)
+        exercise.exercise.isBodyweight -> (exercise.duration ?: 30).coerceAtLeast(0)
 
         reps == null -> 30
 

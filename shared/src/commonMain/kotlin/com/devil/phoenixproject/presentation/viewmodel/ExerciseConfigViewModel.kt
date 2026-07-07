@@ -179,7 +179,7 @@ class ExerciseConfigViewModel constructor(
         displayToKg = toKg
         activeProfileId = profileId
 
-        _exerciseType.value = if (!exercise.exercise.hasCableAccessory) {
+        _exerciseType.value = if (exercise.exercise.isBodyweight) {
             ExerciseType.BODYWEIGHT
         } else {
             ExerciseType.STANDARD

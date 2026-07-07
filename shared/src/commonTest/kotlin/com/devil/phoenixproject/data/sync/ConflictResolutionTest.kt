@@ -238,6 +238,7 @@ class ConflictResolutionTest {
             defaultRackItemIds = "[]",
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
+            isBodyweight = null,
         )
 
         // Verify exercise exists

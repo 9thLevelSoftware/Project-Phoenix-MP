@@ -213,14 +213,13 @@ fun TemplatePreviewEditSheet(
                             exerciseName = exercise.name,
                             sets = 3,
                             reps = 10,
-                            // Always stamp added exercises as cable (OldSchool). The catalog's
-                            // equipment metadata is unreliable for classification — Squat and
-                            // Good Morning ship with equipment=[] (isBodyweight=true!) while
-                            // Crunch ships with HANDLES — so trusting Exercise.isBodyweight
-                            // here silently disables live %-of-1RM scaling on major lifts.
-                            // Wrongly-cable is the safer failure: a visible, skippable 1RM
-                            // prompt and an editable weight, instead of silent no-scaling.
-                            suggestedMode = ProgramMode.OldSchool,
+                            // #635: Exercise.isBodyweight is now an explicit stored flag
+                            // (catalog column + migration 39), not an equipment-string
+                            // derivation, so it is safe to trust here. Bodyweight
+                            // exercises get suggestedMode = null (TemplateConverter's
+                            // bodyweight proxy); cable exercises get OldSchool with
+                            // %-of-1RM scaling.
+                            suggestedMode = if (exercise.isBodyweight) null else ProgramMode.OldSchool,
                             exerciseId = exercise.id,
                             percentOfOneRm = defaultPercentOfOneRmForReps(10),
                         )

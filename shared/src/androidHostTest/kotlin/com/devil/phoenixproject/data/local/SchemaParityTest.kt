@@ -331,10 +331,175 @@ class SchemaParityTest {
         assertEquals("{}", rackBehaviorOverrides)
     }
 
+    @Test
+    fun `migration 39 adds isBodyweight columns and backfills catalog and sentinel rows`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 39)
+
+        assertEquals(false, columnExistsInDriver(driver, "Exercise", "isBodyweight"))
+        assertEquals(false, columnExistsInDriver(driver, "RoutineExercise", "isBodyweight"))
+
+        // Squat: catalog cable lift shipping with empty equipment (#635)
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, created, muscleGroup, muscleGroups, equipment,
+                popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
+            ) VALUES (
+                'UjIGHxCav-lS9B2I', 'Squat', 0, 'LEGS', 'LEGS', '',
+                0, 0, 0, 0, 0, 'DOUBLE'
+            )
+            """.trimIndent(),
+            0,
+        )
+        // Genuinely bodyweight catalog entry with empty equipment — must stay NULL (derived)
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, created, muscleGroup, muscleGroups, equipment,
+                popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
+            ) VALUES (
+                'U9nn8f-vcAltrR-E', 'Plank', 0, 'CORE', 'CORE', '',
+                0, 0, 0, 0, 0, 'DOUBLE'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO Routine (id, name, createdAt) VALUES ('routine-635', 'BW Routine', 1)",
+            0,
+        )
+        // Row carrying the legacy pull-sync sentinel
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-sentinel', 'routine-635', 'Push Up', 'CHEST', 'Bodyweight', 0, 0.0
+            )
+            """.trimIndent(),
+            0,
+        )
+        // Row referencing a known misclassified cable lift
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, exerciseId, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-squat', 'routine-635', 'Squat', 'LEGS', '', 'UjIGHxCav-lS9B2I', 1, 40.0
+            )
+            """.trimIndent(),
+            0,
+        )
+        // Legacy name-only row (NULL exerciseId) for a known cable lift — the
+        // loader heals these by name, so the backfill must catch them too
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-squat-name-only', 'routine-635', 'Squat', 'LEGS', '', 2, 40.0
+            )
+            """.trimIndent(),
+            0,
+        )
+        // Legacy name-only bodyweight row — must stay NULL (derived)
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-plank-name-only', 'routine-635', 'Plank', 'CORE', '', 3, 0.0
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 39, 40)
+
+        assertEquals(true, columnExistsInDriver(driver, "Exercise", "isBodyweight"))
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "isBodyweight"))
+
+        // Squat backfilled to explicit cable (0); Plank untouched (NULL = derived)
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'UjIGHxCav-lS9B2I'"))
+        assertEquals(null, queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'U9nn8f-vcAltrR-E'"))
+
+        // Sentinel converted to explicit flag and cleared from equipment
+        assertEquals("1", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-sentinel'"))
+        assertEquals("", queryScalar(driver, "SELECT exerciseEquipment FROM RoutineExercise WHERE id = 'rex-sentinel'"))
+
+        // Routine exercise referencing the misclassified cable lift force-corrected
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-squat'"))
+
+        // Name-only legacy row (NULL exerciseId) force-corrected by name;
+        // name-only bodyweight row untouched (NULL = derived)
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-squat-name-only'"))
+        assertEquals(null, queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-plank-name-only'"))
+    }
+
+    @Test
+    fun `migration 39 backfill runs via resilient fallback when a column already exists`() {
+        // #636 review (Codex P2): when Schema.migrate throws on a drifted DB
+        // (e.g. isBodyweight already added by a heal), the resilient fallback must
+        // still run 39.sqm's data backfills — reconciliation only adds columns,
+        // it never re-runs data fixes.
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 39)
+
+        // Simulate schema drift: the Exercise column already exists, so the
+        // standard migrate path aborts on 39.sqm's first statement.
+        driver.execute(null, "ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER", 0)
+
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, created, muscleGroup, muscleGroups, equipment,
+                popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
+            ) VALUES (
+                'UjIGHxCav-lS9B2I', 'Squat', 0, 'LEGS', 'LEGS', '',
+                0, 0, 0, 0, 0, 'DOUBLE'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO Routine (id, name, createdAt) VALUES ('routine-635-resilient', 'BW', 1)",
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-sentinel-resilient', 'routine-635-resilient', 'Push Up', 'CHEST', 'Bodyweight', 0, 0.0
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        // Same path production takes: migrate throws (duplicate column) -> fallback.
+        migrateWithResilience(driver, 39, 40)
+
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "isBodyweight"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'UjIGHxCav-lS9B2I'"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-sentinel-resilient'"))
+        assertEquals("", queryScalar(driver, "SELECT exerciseEquipment FROM RoutineExercise WHERE id = 'rex-sentinel-resilient'"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 39L
+        private const val CURRENT_VERSION = 40L
 
         /**
          * Transient tables are intermediate artifacts of table-rebuild migrations
@@ -536,7 +701,9 @@ class SchemaParityTest {
             try {
                 VitruvianDatabase.Schema.migrate(driver, v, v + 1)
             } catch (_: Exception) {
-                applyMigrationResilient(driver, (v + 1).toInt())
+                // Keyed by the .sqm file number (the version migrated FROM) — matches
+                // the production DriverFactory callers.
+                applyMigrationResilient(driver, v.toInt())
             }
         }
     }
@@ -610,6 +777,23 @@ class SchemaParityTest {
             parameters = 0,
         )
         return exists
+    }
+
+    /** Returns the first column of the first row as a String, or null when NULL / no row. */
+    private fun queryScalar(driver: SqlDriver, sql: String): String? {
+        var value: String? = null
+        driver.executeQuery(
+            identifier = null,
+            sql = sql,
+            mapper = { cursor ->
+                if (cursor.next().value) {
+                    value = cursor.getString(0)
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        return value
     }
 
     private fun countExerciseVideos(driver: SqlDriver, isTutorial: Boolean): Long {

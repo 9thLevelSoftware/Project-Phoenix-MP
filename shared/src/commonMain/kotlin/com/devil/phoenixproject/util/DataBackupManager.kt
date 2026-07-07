@@ -166,6 +166,13 @@ abstract class BaseDataBackupManager(
         /** Batch size for metric sample transactions in streaming import. */
         const val IMPORT_BATCH_SIZE = 5_000
 
+        /**
+         * Legacy pull-sync sentinel written into RoutineExercise.exerciseEquipment before
+         * migration 39 (#635). Old backup files may still carry it; restore converts it
+         * to the explicit isBodyweight flag.
+         */
+        const val LEGACY_BODYWEIGHT_SENTINEL = "Bodyweight"
+
         /** Files at or above this size use streaming import to avoid OOM. */
         const val STREAMING_IMPORT_THRESHOLD = 50L * 1024 * 1024 // 50 MB
     }
@@ -581,7 +588,7 @@ abstract class BaseDataBackupManager(
                                 routineId = exercise.routineId,
                                 exerciseName = exercise.exerciseName,
                                 exerciseMuscleGroup = exercise.exerciseMuscleGroup,
-                                exerciseEquipment = exercise.exerciseEquipment,
+                                exerciseEquipment = resolveBackupEquipment(exercise),
                                 exerciseDefaultCableConfig = exercise.exerciseDefaultCableConfig,
                                 exerciseId = exercise.exerciseId,
                                 cableConfig = exercise.cableConfig,
@@ -614,6 +621,7 @@ abstract class BaseDataBackupManager(
                                 scalingBasis = exercise.scalingBasis?.let {
                                     runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
                                 }?.name,
+                                isBodyweight = resolveBackupIsBodyweight(exercise),
                             )
                         }
                         if (inserted != null) routineExercisesImported++
@@ -1337,7 +1345,7 @@ abstract class BaseDataBackupManager(
                                                         routineId = exercise.routineId,
                                                         exerciseName = exercise.exerciseName,
                                                         exerciseMuscleGroup = exercise.exerciseMuscleGroup,
-                                                        exerciseEquipment = exercise.exerciseEquipment,
+                                                        exerciseEquipment = resolveBackupEquipment(exercise),
                                                         exerciseDefaultCableConfig = exercise.exerciseDefaultCableConfig,
                                                         exerciseId = exercise.exerciseId,
                                                         cableConfig = exercise.cableConfig,
@@ -1370,6 +1378,7 @@ abstract class BaseDataBackupManager(
                                                         scalingBasis = exercise.scalingBasis?.let {
                                                             runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
                                                         }?.name,
+                                                        isBodyweight = resolveBackupIsBodyweight(exercise),
                                                     )
                                                 }
                                                 if (inserted != null) {
@@ -2368,7 +2377,24 @@ abstract class BaseDataBackupManager(
         rackBehaviorOverrides = exercise.rackBehaviorOverrides,
         // scalingBasis is stored as the enum name (TEXT) on the DB row; persist it verbatim.
         scalingBasis = exercise.scalingBasis,
+        // Explicit bodyweight flag (#635); null = derive from equipment.
+        isBodyweight = exercise.isBodyweight?.let { it != 0L },
     )
+
+    /**
+     * Resolve the explicit isBodyweight flag for a restored routine exercise (#635).
+     * Pre-migration-39 backups carried a 'Bodyweight' sentinel in exerciseEquipment
+     * instead of an explicit flag; convert it on restore just like migration 39 does.
+     */
+    private fun resolveBackupIsBodyweight(exercise: RoutineExerciseBackup): Long? = when {
+        exercise.isBodyweight != null -> if (exercise.isBodyweight) 1L else 0L
+        exercise.exerciseEquipment == LEGACY_BODYWEIGHT_SENTINEL -> 1L
+        else -> null
+    }
+
+    /** Strip the legacy 'Bodyweight' equipment sentinel from pre-migration-39 backups (#635). */
+    private fun resolveBackupEquipment(exercise: RoutineExerciseBackup): String =
+        if (exercise.exerciseEquipment == LEGACY_BODYWEIGHT_SENTINEL) "" else exercise.exerciseEquipment
 
     private fun decodeRackItemIds(encoded: String): List<String> = runCatching {
         if (encoded.isBlank()) {

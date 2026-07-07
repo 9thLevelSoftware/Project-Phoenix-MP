@@ -51,8 +51,10 @@ fun CreateExerciseDialog(
             } ?: ExerciseCategory.CHEST,
         )
     }
-    var usesCables by remember(existingExercise?.equipment) {
-        mutableStateOf(existingExercise?.hasCableAccessory ?: true)
+    // Key on the whole exercise: classification now also depends on
+    // isBodyweightOverride, not just the equipment string (#635).
+    var usesCables by remember(existingExercise) {
+        mutableStateOf(existingExercise?.let { !it.isBodyweight } ?: true)
     }
 
     var showMuscleGroupDropdown by remember { mutableStateOf(false) }
