@@ -549,6 +549,34 @@ class SqlDelightSyncRepositoryTest {
         // #635 regression: the pull path used to write a "Bodyweight" sentinel string
         // into exerciseEquipment, which permanently poisoned classification because
         // snapshot Exercises re-derived isBodyweight from the equipment string.
+        // Catalog cable lift with empty equipment and an explicit stored flag (Squat)
+        database.vitruvianDatabaseQueries.insertExercise(
+            id = "UjIGHxCav-lS9B2I",
+            name = "Squat",
+            displayName = "Squat",
+            description = null,
+            created = 0,
+            muscleGroup = "LEGS",
+            muscleGroups = "LEGS",
+            muscles = null,
+            equipment = "",
+            movement = null,
+            sidedness = null,
+            grip = null,
+            gripWidth = null,
+            minRepRange = null,
+            popularity = 0.0,
+            archived = 0,
+            isFavorite = 0,
+            isCustom = 0,
+            timesPerformed = 0,
+            lastPerformed = null,
+            aliases = null,
+            defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = null,
+            mvtOverrideMs = null,
+            isBodyweight = 0,
+        )
         repository.mergePortalRoutines(
             routines = listOf(
                 PullRoutineDto(
@@ -589,6 +617,20 @@ class SqlDelightSyncRepositoryTest {
                             reps = 1,
                             weight = 0f,
                         ),
+                        // Omitted field + catalog exercise with an explicit stored flag:
+                        // must inherit the catalog classification (Squat = cable), or the
+                        // catalog-blind push snapshot re-derives bodyweight from the
+                        // empty equipment string and re-poisons the portal.
+                        PullRoutineExerciseDto(
+                            id = "rex-635-omitted-catalog",
+                            routineId = "routine-635",
+                            name = "Squat",
+                            muscleGroup = "LEGS",
+                            exerciseId = "UjIGHxCav-lS9B2I",
+                            orderIndex = 3,
+                            reps = 5,
+                            weight = 60f,
+                        ),
                     ),
                 ),
             ),
@@ -612,6 +654,9 @@ class SqlDelightSyncRepositoryTest {
 
         val omittedRow = exercises[2]
         assertEquals(null, omittedRow.isBodyweight)
+
+        val omittedCatalogRow = exercises[3]
+        assertEquals(0L, omittedCatalogRow.isBodyweight)
     }
 
     private fun insertHistoricalSession(

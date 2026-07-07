@@ -2241,9 +2241,13 @@ class SqlDelightSyncRepository(
                     ?: localRackOverridesByExerciseId[exercise.id]
                     ?: "{}",
                 scalingBasis = localScalingBasisByExerciseId[exercise.id],
-                // Explicit portal flag when present; NULL (derive from catalog equipment)
-                // when the payload omits the field — never coerce absence to cable (#635).
-                isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L },
+                // Explicit portal flag when present; otherwise inherit the catalog's
+                // stored classification (e.g. Squat = cable despite empty equipment).
+                // Never coerce an omitted field to cable, and never leave a known
+                // catalog flag behind — the push snapshot builder reconstructs the
+                // Exercise from this row alone, without a catalog lookup (#635).
+                isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L }
+                    ?: catalogExercise?.isBodyweight,
             )
         }
     }
