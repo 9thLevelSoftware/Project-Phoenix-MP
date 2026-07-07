@@ -817,7 +817,7 @@ class ActiveSessionEngine(
         selectedVariant: BodyweightVariantOption? = null,
     ): WorkoutState.SetSummary {
         if (currentExercise == null) return summary
-        if (currentExercise.exercise.hasCableAccessory) return summary
+        if (!currentExercise.exercise.isBodyweight) return summary
         if (bodyWeightKg <= 0f) return summary
 
         val exerciseName = currentExercise.exercise.name

@@ -199,6 +199,7 @@ class SqlDelightSyncRepositoryTest {
             "DUAL",
             null,
             null,
+            isBodyweight = null,
         )
 
         // Strategy 0: resolves by catalog id (unambiguous), ignoring name
@@ -427,6 +428,7 @@ class SqlDelightSyncRepositoryTest {
             defaultRackItemIds = """["vest"]""",
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
+            isBodyweight = null,
         )
 
         repository.mergePortalRoutines(
@@ -508,6 +510,7 @@ class SqlDelightSyncRepositoryTest {
             defaultRackItemIds = "[]",
             rackBehaviorOverrides = "{}",
             scalingBasis = "ESTIMATED_1RM",
+            isBodyweight = null,
         )
 
         repository.mergePortalRoutines(
@@ -539,6 +542,61 @@ class SqlDelightSyncRepositoryTest {
             .executeAsList()
             .single()
         assertEquals("ESTIMATED_1RM", exercise.scalingBasis)
+    }
+
+    @Test
+    fun `mergePortalRoutines stores isBodyweight flag without corrupting equipment`() = runTest {
+        // #635 regression: the pull path used to write a "Bodyweight" sentinel string
+        // into exerciseEquipment, which permanently poisoned classification because
+        // snapshot Exercises re-derived isBodyweight from the equipment string.
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-635",
+                    userId = "user",
+                    name = "Bodyweight Flag Routine",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-635-bw",
+                            routineId = "routine-635",
+                            name = "Push Up",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 10,
+                            weight = 0f,
+                            isBodyweight = true,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-635-cable",
+                            routineId = "routine-635",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 1,
+                            reps = 8,
+                            weight = 40f,
+                            isBodyweight = false,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val exercises = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("routine-635")
+            .executeAsList()
+            .sortedBy { it.orderIndex }
+
+        val bodyweightRow = exercises[0]
+        assertEquals(1L, bodyweightRow.isBodyweight)
+        // Equipment must never carry the legacy sentinel
+        assertEquals("", bodyweightRow.exerciseEquipment)
+
+        val cableRow = exercises[1]
+        assertEquals(0L, cableRow.isBodyweight)
+        assertEquals("", cableRow.exerciseEquipment)
     }
 
     private fun insertHistoricalSession(

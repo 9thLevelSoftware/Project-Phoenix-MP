@@ -152,6 +152,7 @@ class SqlDelightCompletedSetRepositoryTest {
             defaultRackItemIds = "[]",
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
+            isBodyweight = null,
         )
     }
 

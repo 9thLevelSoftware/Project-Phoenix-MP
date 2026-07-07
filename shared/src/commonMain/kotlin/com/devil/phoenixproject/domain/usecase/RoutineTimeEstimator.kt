@@ -169,7 +169,7 @@ class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
         includeRest: Boolean = true,
     ): ExerciseEstimateResult {
         val exerciseId = exercise.exercise.id
-        val isBodyweight = !exercise.exercise.hasCableAccessory
+        val isBodyweight = exercise.exercise.isBodyweight
 
         // Try to get historical average set duration
         var historicalAvgMs: Long? = null

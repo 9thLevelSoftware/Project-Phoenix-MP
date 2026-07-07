@@ -16,7 +16,7 @@ fun buildDefaultRoutineExerciseForEditor(
     supersetId: String? = null,
     orderInSuperset: Int = 0,
 ): RoutineExercise {
-    val shouldSeedPercent = userPreferences.defaultRoutineExerciseUsePercentOfPR && selectedExercise.hasCableAccessory
+    val shouldSeedPercent = userPreferences.defaultRoutineExerciseUsePercentOfPR && !selectedExercise.isBodyweight
     val defaultPercent = userPreferences.defaultRoutineExerciseWeightPercentOfPR.coerceIn(50, 120)
     val defaultScalingBasis = userPreferences.defaultScalingBasis
 

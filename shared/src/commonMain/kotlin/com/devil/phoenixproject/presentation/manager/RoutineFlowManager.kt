@@ -1806,9 +1806,12 @@ class RoutineFlowManager(
     replaceWith = ReplaceWith("exercise?.exercise?.isBodyweight ?: false"),
 )
 internal fun isBodyweightExercise(exercise: RoutineExercise?): Boolean = exercise?.let {
-    val isBodyweight = !it.exercise.hasCableAccessory
+    // #635: delegate to the property so the explicit stored flag is honored;
+    // never re-derive from the equipment string here.
+    val isBodyweight = it.exercise.isBodyweight
     Logger.d {
-        "isBodyweightExercise: exercise=${it.exercise.name}, equipment='${it.exercise.equipment}', hasCableAccessory=${it.exercise.hasCableAccessory}, result=$isBodyweight"
+        "isBodyweightExercise: exercise=${it.exercise.name}, equipment='${it.exercise.equipment}', " +
+            "override=${it.exercise.isBodyweightOverride}, result=$isBodyweight"
     }
     isBodyweight
 } ?: false

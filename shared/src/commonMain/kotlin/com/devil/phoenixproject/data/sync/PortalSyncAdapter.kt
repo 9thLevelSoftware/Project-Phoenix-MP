@@ -554,7 +554,10 @@ object PortalSyncAdapter {
                 perSetReps = ex.setReps.takeIf { it.size > 1 || it.any { r -> r == null } }
                     ?.let { Json.encodeToString(ListSerializer(Int.serializer().nullable), it) },
                 isAmrap = ex.isAMRAP,
-                isBodyweight = !ex.exercise.hasCableAccessory,
+                // #635: stored flag (catalog/row) with equipment-derivation fallback —
+                // never derive directly from equipment, which is unreliable for
+                // empty-equipment catalog cable lifts.
+                isBodyweight = ex.exercise.isBodyweight,
                 prPercentage = if (ex.usePercentOfPR) ex.weightPercentOfPR.toFloat() else null,
                 repCountTiming = ex.repCountTiming.name,
                 stopAtPosition = if (ex.stopAtTop) "TOP" else null,

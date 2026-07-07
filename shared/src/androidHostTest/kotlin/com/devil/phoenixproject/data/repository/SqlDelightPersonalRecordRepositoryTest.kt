@@ -168,6 +168,7 @@ class SqlDelightPersonalRecordRepositoryTest {
             isFavorite = 0L, isCustom = 0L, timesPerformed = 0L,
             lastPerformed = null, aliases = null, defaultCableConfig = "DOUBLE",
             one_rep_max_kg = null, mvtOverrideMs = null,
+            isBodyweight = null,
         )
 
         // Trigger fires on the 1RM sync (third write in the transaction),
@@ -253,6 +254,7 @@ class SqlDelightPersonalRecordRepositoryTest {
             defaultCableConfig = "DOUBLE",
             one_rep_max_kg = null,
             mvtOverrideMs = null,
+            isBodyweight = null,
         )
     }
 }

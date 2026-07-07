@@ -19,8 +19,8 @@ fun routineExerciseDetailText(
     weightUnit: WeightUnit,
     kgToDisplay: (Float, WeightUnit) -> Float,
 ): String {
-    // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
-    val isBodyweight = !exercise.exercise.hasCableAccessory
+    // #635: explicit stored flag with equipment-derivation fallback
+    val isBodyweight = exercise.exercise.isBodyweight
 
     return if (isBodyweight) {
         // Bodyweight exercise - always duration, never reps (no cables engaged)

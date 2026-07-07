@@ -32,6 +32,13 @@ data class Exercise(
     val cableIntent: ExerciseCableIntent? = null, // Explicit single/dual cable metadata when known
     val displayName: String = name, // Disambiguated name from catalog; defaults to base name
     val mvtOverrideMs: Float? = null, // User-set Minimum Velocity Threshold override (m/s) for velocity-1RM
+    /**
+     * Explicit stored bodyweight classification (issue #635). Sourced from the catalog
+     * (Exercise.isBodyweight column / exercise_dump.json) or the RoutineExercise snapshot
+     * (portal per-exercise toggle). Null = no explicit flag; derive from [hasCableAccessory]
+     * (custom exercises and rows predating migration 39).
+     */
+    val isBodyweightOverride: Boolean? = null,
 ) {
     /**
      * Whether this exercise uses any cable accessory (handles, bar, rope, etc.).
@@ -41,11 +48,13 @@ data class Exercise(
         get() = equipment.split(",").any { it.trim().uppercase() in CABLE_ACCESSORIES }
 
     /**
-     * Whether this is a bodyweight exercise (no cable accessories attached).
-     * Inverse of [hasCableAccessory] for readability at call sites.
+     * Whether this is a bodyweight exercise.
+     * Uses the explicit stored flag when present ([isBodyweightOverride]); falls back to
+     * equipment derivation for custom exercises and pre-migration-39 rows. The derivation
+     * alone is unreliable: catalog cable lifts can ship with an empty equipment list (#635).
      */
     val isBodyweight: Boolean
-        get() = !hasCableAccessory
+        get() = isBodyweightOverride ?: !hasCableAccessory
 
     /**
      * Preferred cable count for summary calculations when the exercise metadata is explicit.

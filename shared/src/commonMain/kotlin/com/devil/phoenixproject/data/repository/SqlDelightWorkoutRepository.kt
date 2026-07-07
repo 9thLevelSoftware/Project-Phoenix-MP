@@ -268,6 +268,12 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     }
                 }
 
+                // #635: the per-routine-exercise flag (portal toggle / pull sync) overrides
+                // the catalog classification when explicitly stored on the row.
+                val exerciseWithBodyweightFlag = row.isBodyweight
+                    ?.let { exercise.copy(isBodyweightOverride = it != 0L) }
+                    ?: exercise
+
                 // Parse comma-separated setReps (supports "AMRAP" as null marker)
                 val setReps: List<Int?> = try {
                     row.setReps.split(",").map { value ->
@@ -381,7 +387,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
                 RoutineExercise(
                     id = row.id,
-                    exercise = exercise,
+                    exercise = exerciseWithBodyweightFlag,
                     orderIndex = row.orderIndex.toInt(),
                     setReps = setReps,
                     weightPerCableKg = row.weightPerCableKg.toFloat(),
@@ -741,6 +747,9 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 json.encodeToString(exercise.rackBehaviorOverrides)
             },
             scalingBasis = exercise.scalingBasis?.name,
+            // #635: persist the explicit flag so reloads and sync keep the exact
+            // classification (null = derive from equipment, pre-migration behavior)
+            isBodyweight = exercise.exercise.isBodyweightOverride?.let { if (it) 1L else 0L },
         )
     }
 

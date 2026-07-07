@@ -52,7 +52,7 @@ fun CreateExerciseDialog(
         )
     }
     var usesCables by remember(existingExercise?.equipment) {
-        mutableStateOf(existingExercise?.hasCableAccessory ?: true)
+        mutableStateOf(existingExercise?.let { !it.isBodyweight } ?: true)
     }
 
     var showMuscleGroupDropdown by remember { mutableStateOf(false) }

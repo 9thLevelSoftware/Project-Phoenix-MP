@@ -52,6 +52,70 @@ class ExerciseTest {
     }
 
     @Test
+    fun `isBodyweight override wins over equipment derivation in both directions`() {
+        // #635: Squat ships with equipment=[] but is a cable lift — explicit flag wins
+        val emptyEquipmentCableLift = Exercise(
+            name = "Squat",
+            muscleGroup = "Legs",
+            equipment = "",
+            isBodyweightOverride = false,
+        )
+        assertEquals(false, emptyEquipmentCableLift.isBodyweight)
+
+        // Inverse direction: explicit bodyweight despite a cable-accessory tag
+        val taggedBodyweight = Exercise(
+            name = "Weighted-tag Bodyweight",
+            muscleGroup = "Core",
+            equipment = "HANDLES",
+            isBodyweightOverride = true,
+        )
+        assertEquals(true, taggedBodyweight.isBodyweight)
+    }
+
+    @Test
+    fun `isBodyweight falls back to equipment derivation when override is null`() {
+        val noEquipment = Exercise(
+            name = "Push Up",
+            muscleGroup = "Chest",
+            equipment = "",
+        )
+        assertEquals(true, noEquipment.isBodyweight)
+
+        val cableEquipment = Exercise(
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR,BENCH",
+        )
+        assertEquals(false, cableEquipment.isBodyweight)
+
+        // BENCH alone is not a cable accessory
+        val benchOnly = Exercise(
+            name = "Tricep Dips",
+            muscleGroup = "Triceps",
+            equipment = "BENCH",
+        )
+        assertEquals(true, benchOnly.isBodyweight)
+    }
+
+    @Test
+    fun `isBodyweight override does not affect hasCableAccessory or display multiplier`() {
+        val exercise = Exercise(
+            name = "Squat",
+            muscleGroup = "Legs",
+            equipment = "",
+            cableIntent = ExerciseCableIntent.DUAL,
+            isBodyweightOverride = false,
+        )
+
+        // Equipment-based properties keep their original derivation semantics
+        assertEquals(false, exercise.hasCableAccessory)
+        assertEquals(false, exercise.usesUnifiedAttachment)
+        assertEquals(1, exercise.displayMultiplier)
+        // While classification honors the explicit flag
+        assertEquals(false, exercise.isBodyweight)
+    }
+
+    @Test
     fun `live unified accessory display multiplier doubles only dual bar or belt exercises`() {
         val dualBar = Exercise(
             name = "Bench Press",

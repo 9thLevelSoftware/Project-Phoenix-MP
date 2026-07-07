@@ -9640,6 +9640,7 @@
     {
         "id": "enuJ_FgAzXDLAweK",
         "name": "Good Morning",
+        "isBodyweight": false,
         "created": "2022-06-29T08:45:31.610Z",
         "description": "",
         "videos": [
@@ -11805,6 +11806,7 @@
     {
         "id": "fAglxv8VMaisUTyo",
         "name": "Just Lift exercise",
+        "isBodyweight": false,
         "created": "2023-06-14T02:04:31.780Z",
         "description": "",
         "videos": [],
@@ -11876,6 +11878,7 @@
     {
         "id": "2nTn2QR6MyezFYmK",
         "name": "Kneeling 45 Degree Kickback ",
+        "isBodyweight": false,
         "created": "2023-12-21T04:42:08.821Z",
         "description": "",
         "videos": [
@@ -13932,6 +13935,7 @@
     {
         "id": "KoL_gx00nuf2wncV",
         "name": "Medial Delt Twist",
+        "isBodyweight": false,
         "created": "2021-09-08T05:52:30.392Z",
         "description": "",
         "videos": [],
@@ -13964,6 +13968,7 @@
     {
         "id": "kSLyRg4bjLuzTeIM",
         "name": "Medial Delt Twist",
+        "isBodyweight": false,
         "created": "2021-08-26T08:37:32.901Z",
         "description": "",
         "videos": [
@@ -22205,6 +22210,7 @@
     {
         "id": "UjIGHxCav-lS9B2I",
         "name": "Squat",
+        "isBodyweight": false,
         "created": "2021-09-02T05:27:37.764Z",
         "description": "",
         "videos": [

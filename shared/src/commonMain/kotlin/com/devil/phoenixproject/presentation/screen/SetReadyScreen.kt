@@ -150,8 +150,8 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     val isEchoMode = currentExercise.programMode is ProgramMode.Echo
     val isAMRAP = currentExercise.isAMRAP
 
-    // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
-    val isBodyweight = !currentExercise.exercise.hasCableAccessory
+    // #635: explicit stored flag with equipment-derivation fallback
+    val isBodyweight = currentExercise.exercise.isBodyweight
     val matchingWeightRecommendation = weightRecommendation?.takeIf { recommendation ->
         !isBodyweight &&
             recommendation.targetExerciseId == currentExercise.exercise.id &&

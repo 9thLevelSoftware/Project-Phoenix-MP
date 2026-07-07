@@ -37,6 +37,7 @@ data class ExerciseJson(
     val archived: String? = null, // Date string when archived, null if active
     val range: RangeJson? = null,
     val popularity: Double? = null,
+    val isBodyweight: Boolean? = null, // Explicit classification (#635); null = derive from equipment
 )
 
 @Serializable
@@ -205,6 +206,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             defaultCableConfig = cableConfig,
                             one_rep_max_kg = null,
                             mvtOverrideMs = null,
+                            isBodyweight = resolveIsBodyweightFlag(exerciseJson),
                         )
                         importedCount++
 
@@ -256,11 +258,39 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         }
     }
 
+    /**
+     * Resolve the explicit isBodyweight flag for an imported exercise (#635).
+     * Priority: explicit JSON field > known-cable override set > null (derive from equipment).
+     * The override set exists because the GitHub refresh source is the upstream Vitruvian
+     * repo, which does not carry the isBodyweight field — without it, a manual library
+     * refresh would revert the 6 known empty-equipment cable lifts to derived (wrong)
+     * classification.
+     */
+    private fun resolveIsBodyweightFlag(exercise: ExerciseJson): Long? = when {
+        exercise.isBodyweight != null -> if (exercise.isBodyweight) 1L else 0L
+        exercise.id in KNOWN_NON_BODYWEIGHT_IDS -> 0L
+        else -> null
+    }
+
     companion object {
         // GitHub raw content URL for exercise data
         // Update this to point to your actual exercise data repository
         private const val GITHUB_EXERCISES_URL =
             "https://raw.githubusercontent.com/VitruvianFitness/exercise-library/main/exercise_dump.json"
+
+        /**
+         * Catalog entries that ship with equipment=[] but are cable lifts (#635).
+         * Must stay in sync with the UPDATE statements in migration 39.sqm and the
+         * "isBodyweight": false tags in the bundled exercise_dump.json.
+         */
+        private val KNOWN_NON_BODYWEIGHT_IDS = setOf(
+            "UjIGHxCav-lS9B2I", // Squat
+            "enuJ_FgAzXDLAweK", // Good Morning
+            "KoL_gx00nuf2wncV", // Medial Delt Twist
+            "kSLyRg4bjLuzTeIM", // Medial Delt Twist (duplicate catalog entry)
+            "2nTn2QR6MyezFYmK", // Kneeling 45 Degree Kickback
+            "fAglxv8VMaisUTyo", // Just Lift exercise
+        )
 
         private val FORCED_SINGLE_CABLE_EXERCISE_NAMES = setOf(
             // Explicit single-cable variants (SC/SA suffix)
@@ -348,6 +378,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         defaultCableConfig = mapSidednessToCableConfig(exercise.sidedness),
                         one_rep_max_kg = null,
                         mvtOverrideMs = null,
+                        isBodyweight = resolveIsBodyweightFlag(exercise),
                     )
 
                     // Insert videos

@@ -174,6 +174,9 @@ data class RoutineExerciseBackup(
     // Velocity-based 1RM scaling basis (issue #517 Phase 3); enum name or null.
     // Default null keeps pre-existing backup files loadable.
     val scalingBasis: String? = null,
+    // Explicit bodyweight classification (issue #635); null = derive from equipment.
+    // Default null keeps pre-existing backup files loadable.
+    val isBodyweight: Boolean? = null,
 )
 
 /**
