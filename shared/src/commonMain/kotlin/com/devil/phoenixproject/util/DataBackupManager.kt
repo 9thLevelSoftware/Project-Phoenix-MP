@@ -23,6 +23,7 @@ import com.devil.phoenixproject.database.UserProfile
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.BaseDataBackupManager.Companion.IMPORT_BATCH_SIZE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -648,6 +649,7 @@ abstract class BaseDataBackupManager(
                             phase = pr.phase ?: "COMBINED",
                             profile_id = pr.profileId ?: "default",
                             cable_count = pr.cableCount?.toLong(),
+                            uuid = pr.uuid ?: generateUUID(),
                         )
                         personalRecordsImported++
                     } catch (e: Exception) {
@@ -1417,6 +1419,7 @@ abstract class BaseDataBackupManager(
                                                     // F304: preserve cable count on streaming restore (the
                                                     // non-streaming path already passes pr.cableCount).
                                                     cable_count = pr.cableCount?.toLong(),
+                                                    uuid = pr.uuid ?: generateUUID(),
                                                 )
                                                 personalRecordsImported++
                                             } catch (e: Exception) {
@@ -2448,6 +2451,7 @@ abstract class BaseDataBackupManager(
         phase = pr.phase,
         profileId = pr.profile_id,
         cableCount = pr.cable_count?.toInt(),
+        uuid = pr.uuid,
     )
 
     private fun mapTrainingCycleToBackup(cycle: TrainingCycle): TrainingCycleBackup = TrainingCycleBackup(

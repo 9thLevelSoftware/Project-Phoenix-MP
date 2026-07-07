@@ -853,7 +853,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // PersonalRecord -- initial schema, full current shape
-    // Columns added by later migrations: sync fields (m11), phase (m19), profile_id (m21)
+    // Columns added by later migrations: sync fields (m11), phase (m19),
+    // profile_id (m21), cable_count (m28), uuid (m40)
     SchemaTableOperation(
         table = "PersonalRecord",
         createSql = """
@@ -873,7 +874,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 serverId TEXT,
                 deletedAt INTEGER,
                 profile_id TEXT NOT NULL DEFAULT 'default',
-                cable_count INTEGER
+                cable_count INTEGER,
+                uuid TEXT
             )
         """.trimIndent(),
     ),
@@ -1259,7 +1261,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("WorkoutSession", "counterweightKg", "ALTER TABLE WorkoutSession ADD COLUMN counterweightKg REAL NOT NULL DEFAULT 0"),
     SchemaHealOperation("WorkoutSession", "rackItemsJson", "ALTER TABLE WorkoutSession ADD COLUMN rackItemsJson TEXT NOT NULL DEFAULT '[]'"),
 
-    // ── PersonalRecord (6 columns) ──────────────────────────────────────
+    // ── PersonalRecord (7 columns) ──────────────────────────────────────
 
     // Migration 11: sync fields
     SchemaHealOperation("PersonalRecord", "updatedAt", "ALTER TABLE PersonalRecord ADD COLUMN updatedAt INTEGER"),
@@ -1271,6 +1273,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("PersonalRecord", "profile_id", "ALTER TABLE PersonalRecord ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
     // Migration 28: cable-aware weight display
     SchemaHealOperation("PersonalRecord", "cable_count", "ALTER TABLE PersonalRecord ADD COLUMN cable_count INTEGER"),
+    // Migration 40: stable UUID parity identity
+    SchemaHealOperation("PersonalRecord", "uuid", "ALTER TABLE PersonalRecord ADD COLUMN uuid TEXT"),
 
     // ── Routine (4 columns) ─────────────────────────────────────────────
 
@@ -1397,6 +1401,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         preDropSql = "DROP INDEX IF EXISTS idx_pr_unique",
     ),
     SchemaIndexOperation("idx_pr_profile", "CREATE INDEX IF NOT EXISTS idx_pr_profile ON PersonalRecord(profile_id)"),
+    SchemaIndexOperation("idx_pr_uuid", "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_uuid ON PersonalRecord(uuid) WHERE uuid IS NOT NULL"),
 
     // ── Routine ─────────────────────────────────────────────────────────
     SchemaIndexOperation("idx_routine_profile", "CREATE INDEX IF NOT EXISTS idx_routine_profile ON Routine(profile_id)"),

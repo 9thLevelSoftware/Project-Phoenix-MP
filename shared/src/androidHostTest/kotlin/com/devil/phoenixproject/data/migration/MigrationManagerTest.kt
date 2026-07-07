@@ -228,6 +228,7 @@ class MigrationManagerTest {
             phase = "COMBINED",
             profile_id = "default",
             cable_count = null,
+            uuid = null,
         )
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -242,6 +243,7 @@ class MigrationManagerTest {
             phase = "COMBINED",
             profile_id = "default",
             cable_count = null,
+            uuid = null,
         )
 
         migrationManager.checkAndRunMigrations()
@@ -291,6 +293,7 @@ class MigrationManagerTest {
             phase = "COMBINED",
             profile_id = "profile-b",
             cable_count = null,
+            uuid = null,
         )
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -305,6 +308,7 @@ class MigrationManagerTest {
             phase = "COMBINED",
             profile_id = "profile-b",
             cable_count = null,
+            uuid = null,
         )
 
         migrationManager.checkAndRunMigrations()

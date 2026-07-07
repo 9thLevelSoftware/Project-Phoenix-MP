@@ -437,6 +437,34 @@ class SyncManagerTest {
     }
 
     @Test
+    fun syncPushesStableUuidAsPortalPersonalRecordId() = runTest {
+        setupAuthenticated()
+        val prUuid = "12345678-1234-4abc-8def-1234567890ab"
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            makePersonalRecord(
+                id = 42,
+                exerciseId = "bench",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 100f,
+                reps = 3,
+                timestamp = 1_740_916_800_000L,
+                prType = PRType.MAX_WEIGHT,
+                phase = WorkoutPhase.COMBINED,
+                uuid = prUuid,
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertEquals(prUuid, payload.personalRecords.single().id)
+    }
+
+    @Test
     fun syncAttachesLatestPassingVelocityEstimateToExerciseDto() = runTest {
         // Issue #517 Phase 6: the push payload's exercise DTO carries the velocity-
         // based 1RM from getAllPassing, picking the LATEST passing estimate per
@@ -1587,6 +1615,7 @@ class SyncManagerTest {
         prType: PRType,
         phase: WorkoutPhase,
         volume: Float = weightPerCableKg * reps,
+        uuid: String? = null,
     ) = PersonalRecord(
         id = id,
         exerciseId = exerciseId,
@@ -1601,6 +1630,7 @@ class SyncManagerTest {
         phase = phase,
         profileId = "default",
         cableCount = 2,
+        uuid = uuid,
     )
 
     private fun makeRoutine(

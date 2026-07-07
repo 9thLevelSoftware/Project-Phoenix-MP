@@ -937,5 +937,19 @@ WHERE gs.rowid = (
     )""",
     )
 
+    40 -> listOf(
+        "ALTER TABLE PersonalRecord ADD COLUMN uuid TEXT",
+        "DELETE FROM PersonalRecord WHERE workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM')",
+        """UPDATE PersonalRecord
+    SET uuid = lower(hex(randomblob(4))) || '-' ||
+               lower(hex(randomblob(2))) || '-4' ||
+               substr(lower(hex(randomblob(2))), 2) || '-' ||
+               substr('89ab', abs(random()) % 4 + 1, 1) ||
+               substr(lower(hex(randomblob(2))), 2) || '-' ||
+               lower(hex(randomblob(6)))
+    WHERE uuid IS NULL""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_uuid ON PersonalRecord(uuid) WHERE uuid IS NOT NULL",
+    )
+
     else -> emptyList()
 }

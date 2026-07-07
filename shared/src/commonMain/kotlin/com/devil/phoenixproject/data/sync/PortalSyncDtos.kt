@@ -503,6 +503,7 @@ data class ExternalActivityAckDto(
  */
 @Serializable
 data class PortalPersonalRecordDto(
+    val id: String? = null,
     val exerciseName: String,
     val exerciseId: String? = null,
     val muscleGroup: String = "General",

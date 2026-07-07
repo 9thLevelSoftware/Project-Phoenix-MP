@@ -526,6 +526,7 @@ class ConflictResolutionTest {
             phase = "COMBINED",
             profile_id = testProfileId,
             cable_count = null,
+            uuid = null,
         )
 
         val prBefore = database.vitruvianDatabaseQueries.selectPR(
