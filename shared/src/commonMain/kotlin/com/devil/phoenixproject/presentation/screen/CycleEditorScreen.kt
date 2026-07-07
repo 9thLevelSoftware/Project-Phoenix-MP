@@ -323,6 +323,15 @@ fun CycleEditorScreen(
                         cycleEditorViewModel.setEditingItemIndex(null)
                     },
                     onDismiss = { cycleEditorViewModel.setEditingItemIndex(null) },
+                    // Post-creation customization (#620): edit this day's routine
+                    // exercises in the routine editor. Loads by ID from the DB, so
+                    // template-created "cycle_routine_" routines work too.
+                    onEditExercises = {
+                        cycleEditorViewModel.setEditingItemIndex(null)
+                        navController.navigate(
+                            NavigationRoutes.RoutineEditor.createRoute(item.routineId),
+                        )
+                    },
                 )
             }
 

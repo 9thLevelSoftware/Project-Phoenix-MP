@@ -123,9 +123,16 @@ class FakeExerciseRepository : ExerciseRepository {
     override suspend fun findByName(name: String): Exercise? = exercises.values.find { it.name == name }
 
     override suspend fun findByIdOrName(id: String?, name: String): Exercise? {
+        // Mirrors SqlDelightExerciseRepository's 3-strategy resolution:
+        // 1) direct ID lookup, 2) exact name (trim-tolerant), 3) fuzzy contains-search.
         if (id != null) {
             exercises[id]?.let { return it }
         }
-        return exercises.values.find { it.name == name }
+        val trimmed = name.trim()
+        // A blank name would fuzzy-match every exercise (everything contains "") —
+        // return null instead of an arbitrary first match.
+        if (trimmed.isEmpty()) return null
+        exercises.values.find { it.name.trim() == trimmed }?.let { return it }
+        return exercises.values.find { it.name.contains(trimmed, ignoreCase = true) }
     }
 }

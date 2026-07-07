@@ -471,7 +471,14 @@ class MainViewModel constructor(
 
     // ===== Routine Management Delegation =====
 
-    fun getRoutineById(routineId: String): Routine? = workoutSessionManager.getRoutineById(routineId)
+    /**
+     * Resolve a routine by ID. Checks the in-memory routines StateFlow first, then falls
+     * back to the DB — the StateFlow intentionally filters out "cycle_routine_"-prefixed
+     * template-cycle routines (issue #620), which must still be loadable for editing.
+     */
+    suspend fun getRoutineById(routineId: String): Routine? =
+        workoutSessionManager.getRoutineById(routineId)
+            ?: workoutRepository.getRoutineById(routineId)
     fun saveRoutine(routine: Routine) = workoutSessionManager.saveRoutine(routine)
     fun updateRoutine(routine: Routine) = workoutSessionManager.updateRoutine(routine)
     fun saveRackBehaviorOverridesForExercise(

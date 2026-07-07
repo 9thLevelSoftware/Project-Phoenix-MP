@@ -1820,6 +1820,9 @@ class ActiveSessionEngine(
     // ===== Training Cycles =====
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) {
+        // Template-created cycle routines (id prefix "cycle_routine_") are intentionally
+        // filtered out of coordinator._routines (Daily Routines UI hygiene), so a StateFlow
+        // miss must fall back to a direct DB lookup. See issue #620.
         val routine = coordinator._routines.value.find { it.id == routineId }
         if (routine != null) {
             coordinator.activeCycleId = cycleId
@@ -1828,6 +1831,19 @@ class ActiveSessionEngine(
             // flowDelegate.loadRoutine sets DAILY_ROUTINES synchronously; overwrite to TRAINING_CYCLES after.
             flowDelegate?.loadRoutine(routine)
             coordinator.routineLaunchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES
+        } else {
+            scope.launch {
+                val dbRoutine = workoutRepository.getRoutineById(routineId)
+                if (dbRoutine == null) {
+                    Logger.w { "Routine not found for cycle load (StateFlow or DB): $routineId" }
+                    return@launch
+                }
+                coordinator.activeCycleId = cycleId
+                coordinator.activeCycleDayNumber = dayNumber
+                Logger.d { "Loading routine from cycle via DB fallback: cycleId=$cycleId, dayNumber=$dayNumber" }
+                flowDelegate?.loadRoutine(dbRoutine)
+                coordinator.routineLaunchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES
+            }
         }
     }
 
@@ -1836,10 +1852,14 @@ class ActiveSessionEngine(
      * weight resolution finishes. Callers must await this before enterSetReady/startWorkout.
      */
     suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int): Boolean {
-        val routine = coordinator._routines.value.find { it.id == routineId } ?: run {
-            Logger.w { "Routine not found for cycle load: $routineId" }
-            return false
-        }
+        // DB fallback: template-created cycle routines ("cycle_routine_" prefix) are filtered
+        // out of coordinator._routines, so they can only be found via direct lookup. Issue #620.
+        val routine = coordinator._routines.value.find { it.id == routineId }
+            ?: workoutRepository.getRoutineById(routineId)
+            ?: run {
+                Logger.w { "Routine not found for cycle load (StateFlow or DB): $routineId" }
+                return false
+            }
         coordinator.activeCycleId = cycleId
         coordinator.activeCycleDayNumber = dayNumber
         Logger.d { "Loading routine from cycle (async): cycleId=$cycleId, dayNumber=$dayNumber" }

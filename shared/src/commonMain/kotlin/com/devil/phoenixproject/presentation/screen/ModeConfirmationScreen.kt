@@ -5,6 +5,7 @@ import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -169,23 +170,37 @@ fun ModeConfirmationScreen(
                 if (!day.isRestDay && day.routine != null) {
                     // Filter to only cable exercises (those with a suggested mode)
                     val cableExercises = day.routine.exercises.filter { it.suggestedMode != null }
-                    items(
+                    itemsIndexed(
                         items = cableExercises,
-                        key = { exercise -> "${day.dayNumber}_${exercise.exerciseName}" },
-                    ) { exercise ->
-                        ConfigurableExerciseCard(
-                            exercise = exercise,
-                            config = exerciseConfigs[exercise.exerciseName] ?: ExerciseConfig.fromTemplate(
+                        // Index in the key guards against same-name duplicates on one day
+                        // (LazyColumn crashes on repeated keys). #633 review.
+                        key = { index, exercise -> "${day.dayNumber}_${index}_${exercise.exerciseName}" },
+                    ) { _, exercise ->
+                        // The exact config the card displays — also the baseline for
+                        // detecting a real user weight edit below. Falling back to
+                        // fromTemplate keeps edit detection correct even if this exercise
+                        // was never seeded into exerciseConfigs (#633 review, P2).
+                        val displayedConfig = exerciseConfigs[exercise.exerciseName]
+                            ?: ExerciseConfig.fromTemplate(
                                 exerciseName = exercise.exerciseName,
                                 suggestedMode = exercise.suggestedMode,
                                 oneRepMaxKg = oneRepMaxValues[exercise.exerciseName],
-                            ),
+                            )
+                        ConfigurableExerciseCard(
+                            exercise = exercise,
+                            config = displayedConfig,
                             oneRepMaxKg = oneRepMaxValues[exercise.exerciseName],
                             prWeight = prWeightValues[exercise.exerciseName],
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
                             onConfigUpdated = { newConfig ->
-                                exerciseConfigs[exercise.exerciseName] = newConfig
+                                // Mark the weight as user-edited only when it actually changed
+                                // from what the card showed — auto-filled 1RM defaults must not
+                                // pin the exercise to an absolute weight (#633 review, P1).
+                                exerciseConfigs[exercise.exerciseName] = newConfig.copy(
+                                    userEditedWeight = displayedConfig.userEditedWeight ||
+                                        newConfig.weightPerCableKg != displayedConfig.weightPerCableKg,
+                                )
                             },
                             weightStepKg = weightStepKg,
                         )

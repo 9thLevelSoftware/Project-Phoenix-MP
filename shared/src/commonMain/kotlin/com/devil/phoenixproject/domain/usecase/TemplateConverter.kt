@@ -7,11 +7,14 @@ import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ExerciseConfig
+import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.generateUUID
+import kotlin.math.roundToInt
 
 /**
  * Convert eccentric load percentage to EccentricLoad enum.
@@ -67,6 +70,19 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
     companion object {
         /** Default percentage of 1RM used for starting weights (70%) */
         const val DEFAULT_STARTING_WEIGHT_PERCENT = 0.70f
+
+        /**
+         * Conservative per-cable fallback weight (kg) used when no 1RM/PR data exists
+         * anywhere for an exercise. Never 0 — a 0kg command confuses the machine and
+         * reads as a broken workout to the user. Clearly editable in Set Ready.
+         */
+        const val DEFAULT_FALLBACK_WEIGHT_KG = 10f
+
+        /**
+         * Wendler 5/3/1 training max: percentages are prescribed against 90% of 1RM.
+         * Double, not Float — Float arithmetic truncates (90% of TM → 80.999994 → 80).
+         */
+        const val TRAINING_MAX_FACTOR = 0.9
     }
 
     /**
@@ -86,12 +102,15 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
      * @param template The cycle template to convert
      * @param exerciseConfigs User-configured settings for exercises (mode, weight, echoLevel, eccentricLoad)
      * @param profileId Profile ID for multi-profile support (Issue #364 fix)
+     * @param weekNumber Active 5/3/1 week (1-4) selecting which percentage scheme applies to
+     *   percentage-based exercises. Week 1 uses the template's embedded percentageSets.
      * @return ConversionResult containing the cycle, routines, and any warnings
      */
     suspend fun convert(
         template: CycleTemplate,
         exerciseConfigs: Map<String, ExerciseConfig> = emptyMap(),
         profileId: String = "default",
+        weekNumber: Int = 1,
     ): ConversionResult {
         val cycleId = generateUUID()
         val warnings = mutableListOf<String>()
@@ -145,55 +164,115 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                         ?: templateExercise.suggestedMode
                         ?: ProgramMode.OldSchool
 
-                    // Calculate starting weight
-                    // For percentage-based exercises (5/3/1), weight varies per set so start at 0
-                    // For regular exercises, use configured weight or calculate from 1RM
-                    val startingWeight = if (templateExercise.isPercentageBased) {
-                        // Percentage-based exercises calculate weight per set during workout
-                        0f
+                    // Live %-of-1RM/PR resolution: template exercises opt into
+                    // ResolveRoutineWeightsUseCase (usePercentOfPR + scalingBasis), so working
+                    // weights resolve fresh at every workout start (VBT 1RM → stored 1RM →
+                    // mode PR → cross-mode PR) and grow with the user. weightPerCableKg is
+                    // only the absolute FALLBACK used when that whole chain misses.
+                    //
+                    // Exception: a weight the user EXPLICITLY edited (ExerciseConfigModal)
+                    // pins the exercise to that absolute value. ModeConfirmationScreen
+                    // auto-fills config weights from 1RM (ExerciseConfig.fromTemplate), so
+                    // the userEditedWeight flag — not mere presence of a weight — is the
+                    // pin signal. Without it, entering 1RMs would silently disable live
+                    // scaling for every exercise (#633 review, P1).
+                    val configuredWeight = config?.weightPerCableKg
+                        ?.takeIf { it > 0f && config.userEditedWeight }
+
+                    // Bodyweight/core exercises (suggestedMode == null: Plank, Crunch) never
+                    // scale from 1RM — they run at a light fixed weight the user can adjust.
+                    val isBodyweight = templateExercise.suggestedMode == null
+
+                    // Fallback weight when no PR/1RM data exists anywhere: snapshot from the
+                    // exercise's stored 1RM if present, else a conservative non-zero default.
+                    // F381: use round(), not toInt() — toInt() truncates (70.9 → 70.5 not 71.0).
+                    // Floor at 0.5kg (machine increment): a tiny 1RM must never round to 0kg.
+                    val oneRepMax = exercise.oneRepMaxKg ?: 0f
+                    val fallbackWeight = if (isBodyweight || oneRepMax <= 0f) {
+                        DEFAULT_FALLBACK_WEIGHT_KG
                     } else {
-                        // Use configured weight directly if available, otherwise calculate from 1RM
-                        config?.weightPerCableKg?.takeIf { it > 0f }
-                            ?: run {
-                                val oneRepMax = exercise.oneRepMaxKg ?: 0f
-                                if (oneRepMax > 0f) {
-                                    // Round to nearest 0.5kg for cleaner weights.
-                                    // F381: use round(), not toInt() — toInt() truncates
-                                    // (70.9 → 70.5 instead of 71.0).
-                                    kotlin.math.round((oneRepMax * DEFAULT_STARTING_WEIGHT_PERCENT) * 2).toInt() / 2f
-                                } else {
-                                    0f
-                                }
-                            }
+                        (
+                            kotlin.math.round(
+                                (oneRepMax * (templateExercise.percentOfOneRm / 100f)) * 2,
+                            ).toInt() / 2f
+                            ).coerceAtLeast(0.5f)
                     }
 
-                    // Create RoutineExercise with proper configuration
-                    val routineExercise = RoutineExercise(
-                        id = generateUUID(),
-                        exercise = exercise,
-                        orderIndex = index,
-                        setReps = if (templateExercise.isPercentageBased) {
-                            // For percentage-based sets (5/3/1), use target reps from percentage sets
-                            templateExercise.percentageSets?.map { it.targetReps }
-                                ?: listOf(templateExercise.reps)
-                        } else {
-                            // For regular sets, create list of same reps
-                            List(templateExercise.sets) { templateExercise.reps }
-                        },
-                        weightPerCableKg = startingWeight,
-                        programMode = selectedMode,
-                        echoLevel = config?.echoLevel ?: EchoLevel.HARDER,
-                        eccentricLoad =
-                            config?.eccentricLoadPercent?.toEccentricLoad()
+                    val routineExercise = if (templateExercise.isPercentageBased) {
+                        // Percentage-based main lifts (5/3/1): per-set percentages of the
+                        // training max (90% of 1RM), folded into %-of-1RM ints so the
+                        // existing per-set resolution applies them directly.
+                        // Week 1 uses the template's embedded sets; later weeks come from
+                        // the canonical FiveThreeOneWeeks table.
+                        val activeSets = templateExercise.percentageSets
+                            ?.takeIf { weekNumber == 1 }
+                            ?: FiveThreeOneWeeks.forWeek(weekNumber)
+                        RoutineExercise(
+                            id = generateUUID(),
+                            exercise = exercise,
+                            orderIndex = index,
+                            setReps = activeSets.map { it.targetReps },
+                            weightPerCableKg = fallbackWeight,
+                            programMode = selectedMode,
+                            echoLevel = config?.echoLevel ?: EchoLevel.HARDER,
+                            eccentricLoad = config?.eccentricLoadPercent?.toEccentricLoad()
                                 ?: EccentricLoad.LOAD_100,
-                        isAMRAP = templateExercise.percentageSets?.any { it.isAmrap } ?: false,
-                    )
+                            isAMRAP = activeSets.any { it.isAmrap },
+                            usePercentOfPR = true,
+                            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                            setWeightsPercentOfPR = activeSets.map {
+                                // Integer percent first, then the double TM factor — avoids
+                                // Float artifacts (90% of TM → 80.999994 → 80). roundToInt()
+                                // rounds ties up (58.5 → 59), unlike round()'s ties-to-even.
+                                val percentOfTm = (it.percent * 100).roundToInt()
+                                (percentOfTm * TRAINING_MAX_FACTOR).roundToInt()
+                            },
+                        )
+                    } else {
+                        RoutineExercise(
+                            id = generateUUID(),
+                            exercise = exercise,
+                            orderIndex = index,
+                            setReps = List(templateExercise.sets) { templateExercise.reps },
+                            weightPerCableKg = configuredWeight ?: fallbackWeight,
+                            programMode = selectedMode,
+                            echoLevel = config?.echoLevel ?: EchoLevel.HARDER,
+                            eccentricLoad = config?.eccentricLoadPercent?.toEccentricLoad()
+                                ?: EccentricLoad.LOAD_100,
+                            // User-pinned absolute weight disables live scaling; bodyweight
+                            // exercises never scale; otherwise resolve from the template's
+                            // explicit %-of-1RM prescription.
+                            usePercentOfPR = configuredWeight == null && !isBodyweight,
+                            weightPercentOfPR = templateExercise.percentOfOneRm,
+                            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+                        )
+                    }
 
                     routineExercises.add(routineExercise)
                 }
 
-                // Only create routine if we have at least one valid exercise
-                if (routineExercises.isNotEmpty()) {
+                // Always keep the cycle day — silently dropping it shifted the cycle's day
+                // numbering with no explanation (issue #620 audit, BUG 2). But when NO
+                // exercise resolved, save the day UNASSIGNED (routineId = null) instead of
+                // pointing it at an empty routine: the cycle card treats any non-null
+                // routineId as startable, and starting an empty routine dead-ends, whereas
+                // an unassigned day gets the proper "No routine assigned" state with an
+                // "Assign Routine" repair affordance. (#633 review)
+                if (routineExercises.isEmpty()) {
+                    Logger.e {
+                        "Day ${dayTemplate.dayNumber} ('${dayTemplate.name}'): no exercises " +
+                            "resolved from the library — day kept unassigned for manual repair"
+                    }
+                    warnings.add("${dayTemplate.name}: no exercises found in library")
+                    cycleDays.add(
+                        CycleDay.create(
+                            cycleId = cycleId,
+                            dayNumber = dayTemplate.dayNumber,
+                            name = dayTemplate.name,
+                            routineId = null,
+                        ),
+                    )
+                } else {
                     val routine = Routine(
                         id = routineId,
                         name = routineTemplate.name,
@@ -221,7 +300,7 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
             description = template.description,
             days = cycleDays,
             progressionRule = template.progressionRule,
-            weekNumber = 1, // Start at week 1
+            weekNumber = weekNumber,
             profileId = profileId,
         )
 

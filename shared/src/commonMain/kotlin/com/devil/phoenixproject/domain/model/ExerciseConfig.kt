@@ -20,6 +20,12 @@ data class ExerciseConfig(
 
     // Echo-specific
     val echoLevel: EchoLevel = EchoLevel.HARDER,
+
+    // True only when the USER explicitly changed the weight (ExerciseConfigModal).
+    // Auto-filled defaults (fromTemplate's 1RM×0.70) must NOT pin the exercise to an
+    // absolute weight — template exercises use live %-of-1RM resolution unless the
+    // user deliberately overrides it. (#633 review)
+    val userEditedWeight: Boolean = false,
 ) {
     companion object {
         /**

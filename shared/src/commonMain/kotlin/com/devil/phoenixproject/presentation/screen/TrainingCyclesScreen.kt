@@ -47,6 +47,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -65,7 +66,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -89,6 +89,7 @@ import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
+import com.devil.phoenixproject.presentation.components.cycle.TemplatePreviewEditSheet
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
@@ -121,12 +122,26 @@ import vitruvianprojectphoenix.shared.generated.resources.label_error
 import vitruvianprojectphoenix.shared.generated.resources.skip_rest_day
 import vitruvianprojectphoenix.shared.generated.resources.start_workout
 
+// Shared failure copy for the fresh-start and restart workout paths (issue #620:
+// failures must always be surfaced, never silent).
+private const val WORKOUT_LOAD_FAILED_MESSAGE =
+    "Couldn't load this workout — routine data is missing. Try editing the cycle."
+private const val CONNECTION_FAILED_MESSAGE = "Machine connection failed — workout not started."
+
+/** Stable exercise-library IDs keyed by template exercise name, for ID-first lookups. */
+private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> =
+    days.flatMap { it.routine?.exercises ?: emptyList() }
+        .associate { it.exerciseName to it.exerciseId }
+
 /**
  * State machine for cycle creation flow
  */
 sealed class CycleCreationState {
     object Idle : CycleCreationState()
     data class TemplateSelected(val template: CycleTemplate) : CycleCreationState()
+
+    /** Editable preview of the template's structure before creation (Phase 3, #620). */
+    data class Previewing(val template: CycleTemplate) : CycleCreationState()
     data class OneRepMaxInput(val template: CycleTemplate) : CycleCreationState()
     data class ModeConfirmation(
         val template: CycleTemplate,
@@ -161,6 +176,25 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     val cycles by cycleRepository.getAllCycles(profileId).collectAsState(initial = emptyList())
     val activeCycle by cycleRepository.getActiveCycle(profileId).collectAsState(initial = null)
     val routines by viewModel.routines.collectAsState()
+
+    // Issue #620: template-created cycle routines ("cycle_routine_" prefix) are intentionally
+    // filtered out of viewModel.routines (Daily Routines list hygiene), so cycle cards could
+    // never render their exercise lists. Fetch any cycle-referenced routine missing from the
+    // StateFlow directly from the DB and merge for display.
+    var cycleRoutines by remember { mutableStateOf<Map<String, Routine>>(emptyMap()) }
+    LaunchedEffect(cycles, routines) {
+        val knownIds = routines.mapTo(mutableSetOf()) { it.id }
+        val missingIds = cycles.asSequence()
+            .flatMap { it.days }
+            .mapNotNull { it.routineId }
+            .distinct()
+            .filter { it !in knownIds }
+            .toList()
+        cycleRoutines = missingIds.mapNotNull { id ->
+            workoutRepository.getRoutineById(id)?.let { id to it }
+        }.toMap()
+    }
+    val allRoutines = remember(routines, cycleRoutines) { routines + cycleRoutines.values }
 
     // State
     val creationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -302,7 +336,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                         ActiveCycleCard(
                             cycle = activeCycle!!,
                             progress = cycleProgress[activeCycle!!.id],
-                            routines = routines,
+                            routines = allRoutines,
                             selectedDayNumber = selectedDayNumber,
                             onDaySelected = { dayNumber ->
                                 selectedDayNumber = dayNumber
@@ -332,10 +366,16 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                                     if (viewModel.loadRoutineFromCycleAsync(rid, cycleId, dayNumber)) {
                                                         viewModel.enterSetReady(0, 0)
                                                         navController.navigate(NavigationRoutes.SetReady.route)
+                                                    } else {
+                                                        snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
                                                     }
                                                 }
                                             },
-                                            onFailed = { /* Error shown via StateFlow */ },
+                                            onFailed = {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
+                                                }
+                                            },
                                         )
                                     }
                                 }
@@ -401,7 +441,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     CycleListItem(
                         cycle = cycle,
                         progress = cycleProgress[cycle.id],
-                        routines = routines,
+                        routines = allRoutines,
                         isActive = cycle.id == activeCycle?.id,
                         onActivate = {
                             scope.launch {
@@ -453,38 +493,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 scope.launch {
                     creationSheetState.hide()
                     showCreationSheet = false
-                    if (template.requiresOneRepMax) {
-                        // 5/3/1 needs 1RM input → mode confirmation → create
-                        creationState = CycleCreationState.OneRepMaxInput(template)
-                    } else {
-                        // Simple templates: auto-create with defaults, skip 1RM and mode screens
-                        creationState = CycleCreationState.Creating(template)
-                        try {
-                            // Issue #364 fix: Pass profileId so cycle and routines are owned by the active profile
-                            val conversionResult = templateConverter.convert(
-                                template = template,
-                                profileId = profileId,
-                            )
-
-                            conversionResult.routines.forEach { routine ->
-                                // Save routine with active profile's ownership
-                                workoutRepository.saveRoutine(routine.copy(profileId = profileId))
-                            }
-                            cycleRepository.saveCycle(conversionResult.cycle)
-
-                            if (conversionResult.warnings.isNotEmpty()) {
-                                Logger.w { "Some exercises not found: ${conversionResult.warnings}" }
-                                showWarningDialog = conversionResult.warnings
-                            }
-
-                            creationState = CycleCreationState.Idle
-                            Logger.d { "Auto-created cycle: ${template.name}" }
-                        } catch (e: Exception) {
-                            Logger.e(e) { "Failed to auto-create cycle from template" }
-                            creationState = CycleCreationState.Idle
-                            showErrorDialog = e.message ?: "Failed to create training cycle"
-                        }
-                    }
+                    // Flow: editable preview → 1RM input (skippable) → mode confirmation
+                    // → create. Live %-of-1RM resolution means new users never get 0kg.
+                    creationState = CycleCreationState.Previewing(template)
                 }
             },
             onCreateCustom = {
@@ -500,6 +511,19 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 
     // OneRepMaxInputScreen
     when (val state = creationState) {
+        is CycleCreationState.Previewing -> {
+            TemplatePreviewEditSheet(
+                template = state.template,
+                exerciseRepository = exerciseRepository,
+                onContinue = { editedTemplate ->
+                    creationState = CycleCreationState.OneRepMaxInput(editedTemplate)
+                },
+                onCancel = {
+                    creationState = CycleCreationState.Idle
+                },
+            )
+        }
+
         is CycleCreationState.OneRepMaxInput -> {
             // Extract exercise names from template - show all cable exercises (not just percentage-based)
             // This allows users to enter 1RM values for any exercise they want
@@ -519,13 +543,25 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 
             val mainLiftNames = percentageBasedExercises + otherCableExercises
 
-            // Load existing 1RM values - prioritize PR value over stored 1RM
-            // Also load PR weight values for showing PR indicators in ModeConfirmation
-            val existingOneRepMaxValues = remember { mutableStateMapOf<String, Float>() }
-            val existingPrWeightValues = remember { mutableStateMapOf<String, Float>() }
+            // Template exercises carry stable library IDs — prefer ID-based lookup over the
+            // fragile name-only findByName (names can be edited; IDs are stable).
+            val templateExerciseIds = state.template.exerciseIdsByName()
+
+            // Load existing 1RM values - prioritize PR value over stored 1RM.
+            // Also load PR weight values for showing PR indicators in ModeConfirmation.
+            //
+            // IMPORTANT: these are published as a single immutable snapshot when loading
+            // completes — NOT a mutableStateMap populated in place. OneRepMaxInputScreen
+            // seeds its text fields in remember(existingOneRepMaxValues, ...), which keys
+            // on the map's identity; in-place mutation never re-seeds, leaving the prefill
+            // blank and Continue disabled for returning users (#633 review, P2).
+            var existingOneRepMaxValues by remember { mutableStateOf<Map<String, Float>?>(null) }
+            var existingPrWeightValues by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
             LaunchedEffect(mainLiftNames) {
+                val oneRepMaxValues = mutableMapOf<String, Float>()
+                val prWeights = mutableMapOf<String, Float>()
                 mainLiftNames.forEach { exerciseName ->
-                    exerciseRepository.findByName(exerciseName)?.let { exercise ->
+                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
                         val exerciseId = exercise.id ?: return@let
 
                         // First try to get the PR (best weight ever achieved)
@@ -537,43 +573,60 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                             ?: exercise.oneRepMaxKg?.takeIf { it > 0f }
 
                         valueToUse?.let { oneRepMax ->
-                            existingOneRepMaxValues[exerciseName] = oneRepMax
+                            oneRepMaxValues[exerciseName] = oneRepMax
                         }
 
                         // Store the actual PR weight for indicator display
                         pr?.weightPerCableKg?.takeIf { it > 0f }?.let { weight ->
-                            existingPrWeightValues[exerciseName] = weight
+                            prWeights[exerciseName] = weight
                         }
                     }
                 }
+                existingPrWeightValues = prWeights.toMap()
+                existingOneRepMaxValues = oneRepMaxValues.toMap()
             }
 
-            OneRepMaxInputScreen(
-                mainLiftNames = mainLiftNames,
-                existingOneRepMaxValues = existingOneRepMaxValues,
-                weightUnit = weightUnit,
-                kgToDisplay = viewModel::kgToDisplay,
-                displayToKg = viewModel::displayToKg,
-                onConfirm = { oneRepMaxValues ->
-                    scope.launch {
-                        oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
-                            if (oneRepMax > 0f) {
-                                exerciseRepository.findByName(exerciseName)?.let { exercise ->
-                                    exerciseRepository.updateOneRepMax(exercise.id ?: "", oneRepMax)
+            val loadedOneRepMaxValues = existingOneRepMaxValues
+            if (loadedOneRepMaxValues == null) {
+                // Local DB lookups — resolves within a frame or two. Gating avoids
+                // composing the form before the prefill snapshot exists.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                OneRepMaxInputScreen(
+                    mainLiftNames = mainLiftNames,
+                    existingOneRepMaxValues = loadedOneRepMaxValues,
+                    weightUnit = weightUnit,
+                    kgToDisplay = viewModel::kgToDisplay,
+                    displayToKg = viewModel::displayToKg,
+                    onConfirm = { oneRepMaxValues ->
+                        scope.launch {
+                            oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
+                                if (oneRepMax > 0f) {
+                                    // ID-first lookup: template IDs are stable, names are not.
+                                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
+                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
+                                    }
                                 }
                             }
                         }
-                    }
-                    creationState = CycleCreationState.ModeConfirmation(
-                        template = state.template,
-                        oneRepMaxValues = oneRepMaxValues,
-                        prWeightValues = existingPrWeightValues.toMap(),
-                    )
-                },
-                onCancel = {
-                    creationState = CycleCreationState.Idle
-                },
-            )
+                        creationState = CycleCreationState.ModeConfirmation(
+                            template = state.template,
+                            oneRepMaxValues = oneRepMaxValues,
+                            prWeightValues = existingPrWeightValues,
+                        )
+                    },
+                    onCancel = {
+                        creationState = CycleCreationState.Idle
+                    },
+                )
+            }
         }
 
         is CycleCreationState.ModeConfirmation -> {
@@ -589,10 +642,11 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     scope.launch {
                         try {
                             // 1. Update 1RM values in exercise repository if provided
+                            val modeTemplateExerciseIds = state.template.exerciseIdsByName()
                             state.oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
                                 if (oneRepMax > 0f) {
-                                    exerciseRepository.findByName(exerciseName)?.let { exercise ->
-                                        exerciseRepository.updateOneRepMax(exercise.id ?: "", oneRepMax)
+                                    exerciseRepository.findByIdOrName(modeTemplateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
+                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
                                     }
                                 }
                             }
@@ -769,10 +823,16 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                     ) {
                                         viewModel.enterSetReady(0, 0)
                                         navController.navigate(NavigationRoutes.SetReady.route)
+                                    } else {
+                                        snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
                                     }
                                 }
                             },
-                            onFailed = { /* Error shown via StateFlow */ },
+                            onFailed = {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
+                                }
+                            },
                         )
                     }
                 },
@@ -917,6 +977,24 @@ private fun ActiveCycleCard(
                         "No routine assigned",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (hasRoutine) {
+                // Issue #620: routineId is set but the routine couldn't be loaded from the
+                // StateFlow or the DB — data integrity problem. Never render a blank area.
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Routine data missing — edit the cycle to reassign it",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }

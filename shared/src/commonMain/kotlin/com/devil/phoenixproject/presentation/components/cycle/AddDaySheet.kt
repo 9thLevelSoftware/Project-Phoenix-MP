@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -24,6 +25,8 @@ fun AddDaySheet(
     onAddRestDay: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: SheetState = rememberModalBottomSheetState(),
+    // When editing an existing workout day: opens the routine editor for its exercises.
+    onEditExercises: (() -> Unit)? = null,
 ) {
     val recentRoutines = recentRoutineIds.mapNotNull { id -> routines.find { it.id == id } }
     val otherRoutines = routines.filterNot { it.id in recentRoutineIds }
@@ -47,6 +50,30 @@ fun AddDaySheet(
             )
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Edit the current day's routine exercises (only when editing an existing workout day)
+            if (onEditExercises != null) {
+                FilledTonalButton(
+                    onClick = {
+                        onEditExercises()
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Edit Exercises",
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // Quick action: Rest day button
             FilledTonalButton(
