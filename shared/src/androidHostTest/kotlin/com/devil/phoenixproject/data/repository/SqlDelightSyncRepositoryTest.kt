@@ -577,6 +577,18 @@ class SqlDelightSyncRepositoryTest {
                             weight = 40f,
                             isBodyweight = false,
                         ),
+                        // Older Edge Function payloads omit the field entirely — the
+                        // stored flag must stay NULL (derive from catalog equipment),
+                        // never explicit cable.
+                        PullRoutineExerciseDto(
+                            id = "rex-635-omitted",
+                            routineId = "routine-635",
+                            name = "Plank",
+                            muscleGroup = "Core",
+                            orderIndex = 2,
+                            reps = 1,
+                            weight = 0f,
+                        ),
                     ),
                 ),
             ),
@@ -597,6 +609,9 @@ class SqlDelightSyncRepositoryTest {
         val cableRow = exercises[1]
         assertEquals(0L, cableRow.isBodyweight)
         assertEquals("", cableRow.exerciseEquipment)
+
+        val omittedRow = exercises[2]
+        assertEquals(null, omittedRow.isBodyweight)
     }
 
     private fun insertHistoricalSession(

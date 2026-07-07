@@ -2241,7 +2241,9 @@ class SqlDelightSyncRepository(
                     ?: localRackOverridesByExerciseId[exercise.id]
                     ?: "{}",
                 scalingBasis = localScalingBasisByExerciseId[exercise.id],
-                isBodyweight = if (exercise.isBodyweight) 1L else 0L,
+                // Explicit portal flag when present; NULL (derive from catalog equipment)
+                // when the payload omits the field — never coerce absence to cable (#635).
+                isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L },
             )
         }
     }
