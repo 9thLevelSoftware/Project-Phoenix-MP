@@ -632,8 +632,8 @@
     <string name="settings_adults_only_decline">Mantenlo limpio</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Lenguaje fuerte + Temas sugerentes</string>
     <string name="settings_ble_compat_title">Modo de compatibilidad BLE</string>
-    <string name="settings_ble_compat_description">Ruta de escritura con MTU pequeña que corrige las desconexiones al iniciar el entrenamiento en Pixel 6/7. Auto solo la activa en esos dispositivos.</string>
-    <string name="settings_ble_compat_description_affected">Ruta de escritura con MTU pequeña que corrige las desconexiones al iniciar el entrenamiento en Pixel 6/7. Auto solo la activa en esos dispositivos (este dispositivo está afectado).</string>
+    <string name="settings_ble_compat_description">Ruta de escritura con MTU pequeña que corrige las desconexiones al iniciar el entrenamiento en Pixel 6/7, Fold y Tablet. Auto solo la activa en esos dispositivos.</string>
+    <string name="settings_ble_compat_description_affected">Ruta de escritura con MTU pequeña que corrige las desconexiones al iniciar el entrenamiento en Pixel 6/7, Fold y Tablet. Auto solo la activa en esos dispositivos (este dispositivo está afectado).</string>
     <string name="settings_ble_compat_auto">Auto</string>
     <string name="settings_ble_compat_on">Activado</string>
     <string name="settings_ble_compat_off">Desactivado</string>

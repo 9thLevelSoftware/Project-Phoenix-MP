@@ -7,7 +7,8 @@ import kotlin.concurrent.Volatile
 /**
  * Issue #333: BLE compatibility mode ("official small-MTU path").
  *
- * Root cause: on Pixel 6/7 (Tensor G1/G2 + Broadcom BCM4389 Bluetooth controller),
+ * Root cause: on BCM4389 Pixels (Tensor G1/G2 generation — Pixel 6/7 phones,
+ * Pixel Fold, Pixel Tablet — all with the Broadcom BCM4389 Bluetooth controller),
  * a 96-byte acknowledged write sent as a single large ATT PDU under the 517-byte
  * MTU that Android 14+ forces on the first requestMtu() call never completes —
  * the controller's write lane wedges (WriteRequestBusy forever), then surfaces
@@ -32,7 +33,7 @@ object BleCompatibilityMode {
     var setting: BleCompatibilitySetting = BleCompatibilitySetting.AUTO
 
     /** Resolved state: should the small-MTU compatibility path be used right now? */
-    fun isActive(isAffectedDevice: Boolean = DeviceInfo.isPixel6Or7()): Boolean =
+    fun isActive(isAffectedDevice: Boolean = DeviceInfo.isBcm4389Pixel()): Boolean =
         when (setting) {
             BleCompatibilitySetting.ON -> true
             BleCompatibilitySetting.OFF -> false
@@ -40,13 +41,13 @@ object BleCompatibilityMode {
         }
 
     /** The GATT heartbeat loop is suppressed on the compatibility path. */
-    fun includeHeartbeat(isAffectedDevice: Boolean = DeviceInfo.isPixel6Or7()): Boolean =
+    fun includeHeartbeat(isAffectedDevice: Boolean = DeviceInfo.isBcm4389Pixel()): Boolean =
         !isActive(isAffectedDevice)
 
     /** Best-effort pre-ready firmware/version reads are skipped on the compatibility path. */
-    fun includePreReadyDiagnosticReads(isAffectedDevice: Boolean = DeviceInfo.isPixel6Or7()): Boolean =
+    fun includePreReadyDiagnosticReads(isAffectedDevice: Boolean = DeviceInfo.isBcm4389Pixel()): Boolean =
         !isActive(isAffectedDevice)
 
-    fun summary(isAffectedDevice: Boolean = DeviceInfo.isPixel6Or7()): String =
+    fun summary(isAffectedDevice: Boolean = DeviceInfo.isBcm4389Pixel()): String =
         "setting=${setting.name}, affectedDevice=$isAffectedDevice, active=${isActive(isAffectedDevice)}"
 }

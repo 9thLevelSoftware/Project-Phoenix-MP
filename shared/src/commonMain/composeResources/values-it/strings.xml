@@ -61,8 +61,8 @@
     <string name="settings_adults_only_decline">Mantienilo pulito</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Linguaggio forte + Temi suggestivi</string>
     <string name="settings_ble_compat_title">Modalità di compatibilità BLE</string>
-    <string name="settings_ble_compat_description">Percorso di scrittura con MTU ridotta che risolve le disconnessioni all\'avvio dell\'allenamento su Pixel 6/7. Auto la attiva solo su quei dispositivi.</string>
-    <string name="settings_ble_compat_description_affected">Percorso di scrittura con MTU ridotta che risolve le disconnessioni all\'avvio dell\'allenamento su Pixel 6/7. Auto la attiva solo su quei dispositivi (questo dispositivo è interessato).</string>
+    <string name="settings_ble_compat_description">Percorso di scrittura con MTU ridotta che risolve le disconnessioni all\'avvio dell\'allenamento su Pixel 6/7, Fold e Tablet. Auto la attiva solo su quei dispositivi.</string>
+    <string name="settings_ble_compat_description_affected">Percorso di scrittura con MTU ridotta che risolve le disconnessioni all\'avvio dell\'allenamento su Pixel 6/7, Fold e Tablet. Auto la attiva solo su quei dispositivi (questo dispositivo è interessato).</string>
     <string name="settings_ble_compat_auto">Auto</string>
     <string name="settings_ble_compat_on">Attivato</string>
     <string name="settings_ble_compat_off">Disattivato</string>

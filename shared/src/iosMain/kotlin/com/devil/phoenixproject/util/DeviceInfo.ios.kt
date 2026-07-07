@@ -83,5 +83,5 @@ actual object DeviceInfo {
     }
 
     /** Issue #333: Android-only concern; never a Pixel on iOS. */
-    actual fun isPixel6Or7(): Boolean = false
+    actual fun isBcm4389Pixel(): Boolean = false
 }
