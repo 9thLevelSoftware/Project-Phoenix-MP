@@ -49,8 +49,10 @@ internal fun applyMigrationResilient(
  * Get the SQL statements for a specific migration version.
  *
  * These mirror the .sqm files exactly, split into individual statements so
- * the resilient executor can apply them one-by-one. Every version from 1-33
- * is covered. Version 18 is intentionally empty (NOOP).
+ * the resilient executor can apply them one-by-one. The key is the .sqm FILE
+ * NUMBER — the schema version being migrated FROM (N.sqm migrates N -> N+1).
+ * Callers falling back from a failed `Schema.migrate(v, v + 1)` must pass `v`,
+ * not `v + 1`. Version 18 is intentionally empty (NOOP).
  */
 internal fun getMigrationStatements(version: Int): List<String> = when (version) {
     // Migration 1: Add 1RM column to Exercise
@@ -898,6 +900,33 @@ WHERE gs.rowid = (
     // Migration 38: per-routine-exercise scaling basis (% of estimated 1RM) — issue #517 Phase 3.
     38 -> listOf(
         "ALTER TABLE RoutineExercise ADD COLUMN scalingBasis TEXT",
+    )
+
+    // Migration 39: explicit isBodyweight classification (issue #635).
+    // The UPDATE backfills MUST run even on the resilient path (duplicate-column
+    // fallback) — reconciliation can heal missing columns but never re-runs data
+    // fixes. All statements are idempotent, so partial replay is safe.
+    39 -> listOf(
+        "ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER",
+        "ALTER TABLE RoutineExercise ADD COLUMN isBodyweight INTEGER",
+        """UPDATE Exercise SET isBodyweight = 0 WHERE id IN (
+        'UjIGHxCav-lS9B2I',
+        'enuJ_FgAzXDLAweK',
+        'KoL_gx00nuf2wncV',
+        'kSLyRg4bjLuzTeIM',
+        '2nTn2QR6MyezFYmK',
+        'fAglxv8VMaisUTyo'
+    )""",
+        """UPDATE RoutineExercise SET isBodyweight = 1, exerciseEquipment = ''
+    WHERE exerciseEquipment = 'Bodyweight'""",
+        """UPDATE RoutineExercise SET isBodyweight = 0 WHERE exerciseId IN (
+        'UjIGHxCav-lS9B2I',
+        'enuJ_FgAzXDLAweK',
+        'KoL_gx00nuf2wncV',
+        'kSLyRg4bjLuzTeIM',
+        '2nTn2QR6MyezFYmK',
+        'fAglxv8VMaisUTyo'
+    )""",
     )
 
     else -> emptyList()

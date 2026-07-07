@@ -140,7 +140,11 @@ private class ResilientMigratingSchema(
                 NSLog("iOS DB: Migration to version $stepTo succeeded")
             } catch (e: Exception) {
                 NSLog("iOS DB: Migration $stepTo failed (${e.message?.take(120)}), applying resilient fallback")
-                val results = applyMigrationResilient(driver, stepTo.toInt())
+                // getMigrationStatements is keyed by the .sqm file number — the version
+                // being migrated FROM ($version), not the target ($stepTo). Passing the
+                // target replayed the NEXT migration's statements and skipped the failed
+                // one's data fixes entirely (#636 review).
+                val results = applyMigrationResilient(driver, version.toInt())
                 val failures = results.count { !it.success && !it.recoverable }
                 if (failures > 0) {
                     NSLog("iOS DB: Migration $stepTo had $failures non-recoverable failures")

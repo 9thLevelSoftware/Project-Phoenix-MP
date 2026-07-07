@@ -64,7 +64,11 @@ actual class DriverFactory(private val context: Context) {
                         Log.i(TAG, "Migration ${version + 1} succeeded")
                     } catch (e: SQLiteException) {
                         Log.w(TAG, "Migration ${version + 1} failed, applying resilient fallback: ${e.message}")
-                        val results = applyMigrationResilient(callbackDriver(db), version + 1)
+                        // getMigrationStatements is keyed by the .sqm file number — the
+                        // version being migrated FROM (version), not the target. Passing
+                        // version + 1 replayed the NEXT migration's statements and skipped
+                        // the failed one's data fixes entirely (#636 review).
+                        val results = applyMigrationResilient(callbackDriver(db), version)
                         val failures = results.count { result -> !result.success && !result.recoverable }
                         if (failures > 0) {
                             Log.w(TAG, "Migration ${version + 1} had $failures non-recoverable statements")

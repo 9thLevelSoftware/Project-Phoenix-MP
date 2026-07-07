@@ -414,6 +414,58 @@ class SchemaParityTest {
         assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-squat'"))
     }
 
+    @Test
+    fun `migration 39 backfill runs via resilient fallback when a column already exists`() {
+        // #636 review (Codex P2): when Schema.migrate throws on a drifted DB
+        // (e.g. isBodyweight already added by a heal), the resilient fallback must
+        // still run 39.sqm's data backfills — reconciliation only adds columns,
+        // it never re-runs data fixes.
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 39)
+
+        // Simulate schema drift: the Exercise column already exists, so the
+        // standard migrate path aborts on 39.sqm's first statement.
+        driver.execute(null, "ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER", 0)
+
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, created, muscleGroup, muscleGroups, equipment,
+                popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
+            ) VALUES (
+                'UjIGHxCav-lS9B2I', 'Squat', 0, 'LEGS', 'LEGS', '',
+                0, 0, 0, 0, 0, 'DOUBLE'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO Routine (id, name, createdAt) VALUES ('routine-635-resilient', 'BW', 1)",
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-sentinel-resilient', 'routine-635-resilient', 'Push Up', 'CHEST', 'Bodyweight', 0, 0.0
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        // Same path production takes: migrate throws (duplicate column) -> fallback.
+        migrateWithResilience(driver, 39, 40)
+
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "isBodyweight"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'UjIGHxCav-lS9B2I'"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-sentinel-resilient'"))
+        assertEquals("", queryScalar(driver, "SELECT exerciseEquipment FROM RoutineExercise WHERE id = 'rex-sentinel-resilient'"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
@@ -619,7 +671,9 @@ class SchemaParityTest {
             try {
                 VitruvianDatabase.Schema.migrate(driver, v, v + 1)
             } catch (_: Exception) {
-                applyMigrationResilient(driver, (v + 1).toInt())
+                // Keyed by the .sqm file number (the version migrated FROM) — matches
+                // the production DriverFactory callers.
+                applyMigrationResilient(driver, v.toInt())
             }
         }
     }
