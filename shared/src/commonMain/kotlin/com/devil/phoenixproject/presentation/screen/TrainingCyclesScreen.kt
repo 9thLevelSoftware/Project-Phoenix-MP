@@ -484,38 +484,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 scope.launch {
                     creationSheetState.hide()
                     showCreationSheet = false
-                    if (template.requiresOneRepMax) {
-                        // 5/3/1 needs 1RM input → mode confirmation → create
-                        creationState = CycleCreationState.OneRepMaxInput(template)
-                    } else {
-                        // Simple templates: auto-create with defaults, skip 1RM and mode screens
-                        creationState = CycleCreationState.Creating(template)
-                        try {
-                            // Issue #364 fix: Pass profileId so cycle and routines are owned by the active profile
-                            val conversionResult = templateConverter.convert(
-                                template = template,
-                                profileId = profileId,
-                            )
-
-                            conversionResult.routines.forEach { routine ->
-                                // Save routine with active profile's ownership
-                                workoutRepository.saveRoutine(routine.copy(profileId = profileId))
-                            }
-                            cycleRepository.saveCycle(conversionResult.cycle)
-
-                            if (conversionResult.warnings.isNotEmpty()) {
-                                Logger.w { "Some exercises not found: ${conversionResult.warnings}" }
-                                showWarningDialog = conversionResult.warnings
-                            }
-
-                            creationState = CycleCreationState.Idle
-                            Logger.d { "Auto-created cycle: ${template.name}" }
-                        } catch (e: Exception) {
-                            Logger.e(e) { "Failed to auto-create cycle from template" }
-                            creationState = CycleCreationState.Idle
-                            showErrorDialog = e.message ?: "Failed to create training cycle"
-                        }
-                    }
+                    // All templates flow through the 1RM step (skippable for non-5/3/1
+                    // templates) so live %-of-1RM weight resolution has a baseline and
+                    // new users never get 0kg routines. Then mode confirmation → create.
+                    creationState = CycleCreationState.OneRepMaxInput(template)
                 }
             },
             onCreateCustom = {
@@ -550,13 +522,19 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 
             val mainLiftNames = percentageBasedExercises + otherCableExercises
 
+            // Template exercises carry stable library IDs — prefer ID-based lookup over the
+            // fragile name-only findByName (names can be edited; IDs are stable).
+            val templateExerciseIds = state.template.days
+                .flatMap { it.routine?.exercises ?: emptyList() }
+                .associate { it.exerciseName to it.exerciseId }
+
             // Load existing 1RM values - prioritize PR value over stored 1RM
             // Also load PR weight values for showing PR indicators in ModeConfirmation
             val existingOneRepMaxValues = remember { mutableStateMapOf<String, Float>() }
             val existingPrWeightValues = remember { mutableStateMapOf<String, Float>() }
             LaunchedEffect(mainLiftNames) {
                 mainLiftNames.forEach { exerciseName ->
-                    exerciseRepository.findByName(exerciseName)?.let { exercise ->
+                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
                         val exerciseId = exercise.id ?: return@let
 
                         // First try to get the PR (best weight ever achieved)
@@ -589,8 +567,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     scope.launch {
                         oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
                             if (oneRepMax > 0f) {
-                                exerciseRepository.findByName(exerciseName)?.let { exercise ->
-                                    exerciseRepository.updateOneRepMax(exercise.id ?: "", oneRepMax)
+                                // ID-first lookup: template IDs are stable, names are not.
+                                exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
+                                    exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
                                 }
                             }
                         }
@@ -620,10 +599,13 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     scope.launch {
                         try {
                             // 1. Update 1RM values in exercise repository if provided
+                            val modeTemplateExerciseIds = state.template.days
+                                .flatMap { it.routine?.exercises ?: emptyList() }
+                                .associate { it.exerciseName to it.exerciseId }
                             state.oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
                                 if (oneRepMax > 0f) {
-                                    exerciseRepository.findByName(exerciseName)?.let { exercise ->
-                                        exerciseRepository.updateOneRepMax(exercise.id ?: "", oneRepMax)
+                                    exerciseRepository.findByIdOrName(modeTemplateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
+                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
                                     }
                                 }
                             }

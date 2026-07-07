@@ -60,6 +60,11 @@ fun calculateSetWeight(oneRepMaxKg: Float, percentageSet: PercentageSet): Float 
  * @param isPercentageBased Whether this uses percentage-based loading (5/3/1)
  * @param percentageSets Percentage sets for 5/3/1 programming
  * @param exerciseId Stable ID from exercise library for reliable lookup
+ * @param percentOfOneRm Working-weight prescription as % of estimated 1RM for
+ *   non-percentage-based exercises. Resolved live at workout start through
+ *   ResolveRoutineWeightsUseCase (VBT 1RM → stored 1RM → PRs), so weights grow
+ *   with the user. Ignored when [isPercentageBased] is true (per-set percentages
+ *   from [percentageSets] apply instead).
  */
 data class TemplateExercise(
     val exerciseName: String,
@@ -69,6 +74,7 @@ data class TemplateExercise(
     val isPercentageBased: Boolean = false,
     val percentageSets: List<PercentageSet>? = null,
     val exerciseId: String? = null,
+    val percentOfOneRm: Int = 70,
 )
 
 /**

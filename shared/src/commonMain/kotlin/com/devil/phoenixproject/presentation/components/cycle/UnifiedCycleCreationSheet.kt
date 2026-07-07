@@ -14,7 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.devil.phoenixproject.data.migration.CycleTemplates
+import com.devil.phoenixproject.domain.model.CycleTemplates
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
