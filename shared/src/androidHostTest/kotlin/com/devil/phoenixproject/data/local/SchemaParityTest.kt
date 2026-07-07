@@ -396,6 +396,31 @@ class SchemaParityTest {
             """.trimIndent(),
             0,
         )
+        // Legacy name-only row (NULL exerciseId) for a known cable lift — the
+        // loader heals these by name, so the backfill must catch them too
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-squat-name-only', 'routine-635', 'Squat', 'LEGS', '', 2, 40.0
+            )
+            """.trimIndent(),
+            0,
+        )
+        // Legacy name-only bodyweight row — must stay NULL (derived)
+        driver.execute(
+            null,
+            """
+            INSERT INTO RoutineExercise (
+                id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, orderIndex, weightPerCableKg
+            ) VALUES (
+                'rex-plank-name-only', 'routine-635', 'Plank', 'CORE', '', 3, 0.0
+            )
+            """.trimIndent(),
+            0,
+        )
 
         VitruvianDatabase.Schema.migrate(driver, 39, 40)
 
@@ -412,6 +437,11 @@ class SchemaParityTest {
 
         // Routine exercise referencing the misclassified cable lift force-corrected
         assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-squat'"))
+
+        // Name-only legacy row (NULL exerciseId) force-corrected by name;
+        // name-only bodyweight row untouched (NULL = derived)
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-squat-name-only'"))
+        assertEquals(null, queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-plank-name-only'"))
     }
 
     @Test

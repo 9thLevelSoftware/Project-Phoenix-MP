@@ -32,3 +32,17 @@ UPDATE RoutineExercise SET isBodyweight = 0 WHERE exerciseId IN (
     '2nTn2QR6MyezFYmK',
     'fAglxv8VMaisUTyo'
 );
+
+-- Legacy rows can carry a NULL or stale exerciseId (the loader heals them by
+-- name at load time), so also match the known cable lifts by snapshot name.
+-- TRIM handles the catalog's trailing-space 'Kneeling 45 Degree Kickback '.
+-- The IS NULL guard preserves explicit flags set above (e.g. a portal
+-- bodyweight toggle converted from the sentinel).
+UPDATE RoutineExercise SET isBodyweight = 0
+WHERE isBodyweight IS NULL AND TRIM(exerciseName) IN (
+    'Squat',
+    'Good Morning',
+    'Medial Delt Twist',
+    'Kneeling 45 Degree Kickback',
+    'Just Lift exercise'
+);

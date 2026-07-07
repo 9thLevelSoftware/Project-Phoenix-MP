@@ -927,6 +927,14 @@ WHERE gs.rowid = (
         '2nTn2QR6MyezFYmK',
         'fAglxv8VMaisUTyo'
     )""",
+        """UPDATE RoutineExercise SET isBodyweight = 0
+    WHERE isBodyweight IS NULL AND TRIM(exerciseName) IN (
+        'Squat',
+        'Good Morning',
+        'Medial Delt Twist',
+        'Kneeling 45 Degree Kickback',
+        'Just Lift exercise'
+    )""",
     )
 
     else -> emptyList()
