@@ -47,6 +47,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -65,7 +66,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -547,11 +547,19 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             // fragile name-only findByName (names can be edited; IDs are stable).
             val templateExerciseIds = state.template.exerciseIdsByName()
 
-            // Load existing 1RM values - prioritize PR value over stored 1RM
-            // Also load PR weight values for showing PR indicators in ModeConfirmation
-            val existingOneRepMaxValues = remember { mutableStateMapOf<String, Float>() }
-            val existingPrWeightValues = remember { mutableStateMapOf<String, Float>() }
+            // Load existing 1RM values - prioritize PR value over stored 1RM.
+            // Also load PR weight values for showing PR indicators in ModeConfirmation.
+            //
+            // IMPORTANT: these are published as a single immutable snapshot when loading
+            // completes — NOT a mutableStateMap populated in place. OneRepMaxInputScreen
+            // seeds its text fields in remember(existingOneRepMaxValues, ...), which keys
+            // on the map's identity; in-place mutation never re-seeds, leaving the prefill
+            // blank and Continue disabled for returning users (#633 review, P2).
+            var existingOneRepMaxValues by remember { mutableStateOf<Map<String, Float>?>(null) }
+            var existingPrWeightValues by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
             LaunchedEffect(mainLiftNames) {
+                val oneRepMaxValues = mutableMapOf<String, Float>()
+                val prWeights = mutableMapOf<String, Float>()
                 mainLiftNames.forEach { exerciseName ->
                     exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
                         val exerciseId = exercise.id ?: return@let
@@ -565,44 +573,60 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                             ?: exercise.oneRepMaxKg?.takeIf { it > 0f }
 
                         valueToUse?.let { oneRepMax ->
-                            existingOneRepMaxValues[exerciseName] = oneRepMax
+                            oneRepMaxValues[exerciseName] = oneRepMax
                         }
 
                         // Store the actual PR weight for indicator display
                         pr?.weightPerCableKg?.takeIf { it > 0f }?.let { weight ->
-                            existingPrWeightValues[exerciseName] = weight
+                            prWeights[exerciseName] = weight
                         }
                     }
                 }
+                existingPrWeightValues = prWeights.toMap()
+                existingOneRepMaxValues = oneRepMaxValues.toMap()
             }
 
-            OneRepMaxInputScreen(
-                mainLiftNames = mainLiftNames,
-                existingOneRepMaxValues = existingOneRepMaxValues,
-                weightUnit = weightUnit,
-                kgToDisplay = viewModel::kgToDisplay,
-                displayToKg = viewModel::displayToKg,
-                onConfirm = { oneRepMaxValues ->
-                    scope.launch {
-                        oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
-                            if (oneRepMax > 0f) {
-                                // ID-first lookup: template IDs are stable, names are not.
-                                exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
-                                    exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
+            val loadedOneRepMaxValues = existingOneRepMaxValues
+            if (loadedOneRepMaxValues == null) {
+                // Local DB lookups — resolves within a frame or two. Gating avoids
+                // composing the form before the prefill snapshot exists.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                OneRepMaxInputScreen(
+                    mainLiftNames = mainLiftNames,
+                    existingOneRepMaxValues = loadedOneRepMaxValues,
+                    weightUnit = weightUnit,
+                    kgToDisplay = viewModel::kgToDisplay,
+                    displayToKg = viewModel::displayToKg,
+                    onConfirm = { oneRepMaxValues ->
+                        scope.launch {
+                            oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
+                                if (oneRepMax > 0f) {
+                                    // ID-first lookup: template IDs are stable, names are not.
+                                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
+                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
+                                    }
                                 }
                             }
                         }
-                    }
-                    creationState = CycleCreationState.ModeConfirmation(
-                        template = state.template,
-                        oneRepMaxValues = oneRepMaxValues,
-                        prWeightValues = existingPrWeightValues.toMap(),
-                    )
-                },
-                onCancel = {
-                    creationState = CycleCreationState.Idle
-                },
-            )
+                        creationState = CycleCreationState.ModeConfirmation(
+                            template = state.template,
+                            oneRepMaxValues = oneRepMaxValues,
+                            prWeightValues = existingPrWeightValues,
+                        )
+                    },
+                    onCancel = {
+                        creationState = CycleCreationState.Idle
+                    },
+                )
+            }
         }
 
         is CycleCreationState.ModeConfirmation -> {
