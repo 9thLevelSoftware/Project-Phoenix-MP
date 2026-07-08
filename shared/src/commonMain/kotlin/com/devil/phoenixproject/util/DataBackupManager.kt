@@ -668,6 +668,8 @@ abstract class BaseDataBackupManager(
                             created_at = cycle.createdAt,
                             is_active = if (cycle.isActive) 1L else 0L,
                             profile_id = cycle.profileId ?: "default",
+                            template_id = cycle.templateId,
+                            week_number = cycle.weekNumber.toLong(),
                         )
                         trainingCyclesImported++
                     } else {
@@ -1449,6 +1451,8 @@ abstract class BaseDataBackupManager(
                                                     created_at = cycle.createdAt,
                                                     is_active = if (cycle.isActive) 1L else 0L,
                                                     profile_id = cycle.profileId ?: "default",
+                                                    template_id = cycle.templateId,
+                                                    week_number = cycle.weekNumber.toLong(),
                                                 )
                                                 trainingCyclesImported++
                                                 importedCycleIds.add(cycle.id)
@@ -2461,6 +2465,8 @@ abstract class BaseDataBackupManager(
         createdAt = cycle.created_at,
         isActive = cycle.is_active != 0L,
         profileId = cycle.profile_id,
+        templateId = cycle.template_id,
+        weekNumber = cycle.week_number.toInt(),
     )
 
     private fun mapCycleDayToBackup(day: CycleDay): CycleDayBackup = CycleDayBackup(

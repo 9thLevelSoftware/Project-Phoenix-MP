@@ -13,8 +13,9 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeights
+import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeightsForWeek
 import com.devil.phoenixproject.domain.model.generateUUID
-import kotlin.math.roundToInt
 
 /**
  * Convert eccentric load percentage to EccentricLoad enum.
@@ -78,11 +79,6 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
          */
         const val DEFAULT_FALLBACK_WEIGHT_KG = 10f
 
-        /**
-         * Wendler 5/3/1 training max: percentages are prescribed against 90% of 1RM.
-         * Double, not Float — Float arithmetic truncates (90% of TM → 80.999994 → 80).
-         */
-        const val TRAINING_MAX_FACTOR = 0.9
     }
 
     /**
@@ -220,13 +216,8 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                             isAMRAP = activeSets.any { it.isAmrap },
                             usePercentOfPR = true,
                             scalingBasis = ScalingBasis.ESTIMATED_1RM,
-                            setWeightsPercentOfPR = activeSets.map {
-                                // Integer percent first, then the double TM factor — avoids
-                                // Float artifacts (90% of TM → 80.999994 → 80). roundToInt()
-                                // rounds ties up (58.5 → 59), unlike round()'s ties-to-even.
-                                val percentOfTm = (it.percent * 100).roundToInt()
-                                (percentOfTm * TRAINING_MAX_FACTOR).roundToInt()
-                            },
+                            setWeightsPercentOfPR = computeFiveThreeOneSetWeights(activeSets)
+                                .ifEmpty { computeFiveThreeOneSetWeightsForWeek(weekNumber) },
                         )
                     } else {
                         RoutineExercise(
@@ -302,6 +293,7 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
             progressionRule = template.progressionRule,
             weekNumber = weekNumber,
             profileId = profileId,
+            templateId = template.id,
         )
 
         return ConversionResult(

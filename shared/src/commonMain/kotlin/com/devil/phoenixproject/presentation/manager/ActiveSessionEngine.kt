@@ -28,6 +28,7 @@ import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ConnectionStatus
+import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -43,6 +44,7 @@ import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WeightAdjustmentInput
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -54,6 +56,7 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
+import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
@@ -111,6 +114,7 @@ class ActiveSessionEngine(
     private val settingsManager: SettingsManager,
     private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope,
+    private val regenerateFiveThreeOneUseCase: RegenerateFiveThreeOneRoutinesUseCase? = null,
     private val dataBackupManager: DataBackupManager? = null,
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
@@ -1873,6 +1877,19 @@ class ActiveSessionEngine(
         flowDelegate?.clearCycleContext()
     }
 
+    private fun shouldUpdateCycleProgressAfterSavedSet(): Boolean {
+        if (coordinator.activeCycleId == null || coordinator.activeCycleDayNumber == null) {
+            return false
+        }
+
+        val routine = coordinator._loadedRoutine.value ?: return true
+        return flowDelegate?.getNextStep(
+            routine = routine,
+            exerciseIndex = coordinator._currentExerciseIndex.value,
+            setIndex = coordinator._currentSetIndex.value,
+        ) == null
+    }
+
     private suspend fun updateCycleProgressIfNeeded() {
         val cycleId = coordinator.activeCycleId ?: return
         val dayNumber = coordinator.activeCycleDayNumber ?: return
@@ -1889,23 +1906,81 @@ class ActiveSessionEngine(
                 trainingCycleRepository.updateCycleProgress(updated)
 
                 val completedDay = cycle.days.find { it.dayNumber == dayNumber }
-                // Rotation detection: check if this was the last day in the cycle
-                val isRotationComplete = dayNumber >= cycle.days.size
+                val lastWorkoutBearingDayNumber = cycle.days
+                    .asSequence()
+                    .filter { !it.isRestDay && it.routineId != null }
+                    .maxOfOrNull { it.dayNumber }
+                val isGenericRotationComplete = dayNumber >= cycle.days.size
+                val isFiveThreeOneWorkoutRotationComplete = lastWorkoutBearingDayNumber != null &&
+                    dayNumber == lastWorkoutBearingDayNumber &&
+                    cycle.isFiveThreeOneCycleForProgress()
+                val isRotationComplete = isGenericRotationComplete || isFiveThreeOneWorkoutRotationComplete
+                val newRotationCount = if (isRotationComplete) progress.rotationCount + 1 else progress.rotationCount
+                val targetWeek = if (isFiveThreeOneWorkoutRotationComplete) {
+                    if (cycle.weekNumber >= 4) 1 else cycle.weekNumber + 1
+                } else {
+                    (newRotationCount % 4) + 1
+                }
+                val bumpTrainingMax = isFiveThreeOneWorkoutRotationComplete && cycle.weekNumber == 4
+                var regenerationSucceeded = false
+
+                if (
+                    isFiveThreeOneWorkoutRotationComplete &&
+                    cycle.weekNumber != targetWeek
+                ) {
+                    try {
+                        regenerateFiveThreeOneUseCase?.let { useCase ->
+                            regenerationSucceeded = useCase.execute(
+                                cycleId = cycleId,
+                                targetWeek = targetWeek,
+                                bumpTrainingMax = bumpTrainingMax,
+                            )
+                        }
+                    } catch (e: Exception) {
+                        Logger.w(e) {
+                            "5/3/1 regeneration failed after cycle completion: cycleId=$cycleId targetWeek=$targetWeek"
+                        }
+                    }
+                }
+
                 coordinator._cycleDayCompletionEvent.value = CycleDayCompletionEvent(
                     dayNumber = dayNumber,
                     dayName = completedDay?.name,
                     isRotationComplete = isRotationComplete,
-                    rotationCount = if (isRotationComplete) progress.rotationCount + 1 else progress.rotationCount,
+                    rotationCount = newRotationCount,
+                    newWeekNumber = if (regenerationSucceeded) targetWeek else null,
+                    tmBumped = regenerationSucceeded && bumpTrainingMax,
                 )
 
                 Logger.d {
                     "Cycle progress updated: day $dayNumber completed, now on day ${updated.currentDayNumber}" +
-                        if (isRotationComplete) " (rotation ${updated.rotationCount} complete!)" else ""
+                        if (isRotationComplete) " (rotation $newRotationCount complete!)" else ""
                 }
             }
         } catch (e: Exception) {
             Logger.e(e) { "Error updating cycle progress: ${e.message}" }
         }
+    }
+
+    private suspend fun TrainingCycle.isFiveThreeOneCycleForProgress(): Boolean {
+        if (templateId == TEMPLATE_531_ID) {
+            return true
+        }
+
+        val matchedLiftIds = mutableSetOf<String>()
+        for (day in days) {
+            if (day.isRestDay) {
+                continue
+            }
+
+            val routineId = day.routineId ?: continue
+            val routine = workoutRepository.getRoutineById(routineId) ?: continue
+            for (exercise in routine.exercises) {
+                FiveThreeOneRoutineDetector.knownShapeMainLiftId(exercise)?.let { matchedLiftIds += it }
+            }
+        }
+
+        return matchedLiftIds.containsAll(FiveThreeOneRoutineDetector.MAIN_LIFT_IDS)
     }
 
     // ===== Form Check =====
@@ -3682,12 +3757,6 @@ class ActiveSessionEngine(
             enqueueWorkoutHealthPush(session)
         }
 
-        // Sync trigger AFTER all persistence (session, metrics, CompletedSet, PR marking)
-        // so the push sends complete data. Previously fired before saveCompletedSet/markAsPr.
-        scope.launch {
-            syncTriggerManager?.onWorkoutCompleted()
-        }
-
         // Per-session auto-backup AFTER all persistence (including CompletedSet and PR).
         // Fire-and-forget, never blocks the save flow.
         // Issue #525: skip per-set backup for routine sets — exportRoutine handles the
@@ -3705,7 +3774,15 @@ class ActiveSessionEngine(
             saveSingleExerciseDefaultsFromWorkout()
         }
 
-        updateCycleProgressIfNeeded()
+        if (shouldUpdateCycleProgressAfterSavedSet()) {
+            updateCycleProgressIfNeeded()
+        }
+
+        // Sync trigger after all local persistence, including 5/3/1 cycle
+        // advancement, so the push cannot snapshot the old week sentinel.
+        scope.launch {
+            syncTriggerManager?.onWorkoutCompleted()
+        }
     }
 
     // ===== Set Completion (cross-cutting) =====
@@ -4924,5 +5001,9 @@ class ActiveSessionEngine(
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.repEventsCollectionJob?.cancel()
         coordinator.workoutJob?.cancel()
+    }
+
+    private companion object {
+        const val TEMPLATE_531_ID = "template_531"
     }
 }

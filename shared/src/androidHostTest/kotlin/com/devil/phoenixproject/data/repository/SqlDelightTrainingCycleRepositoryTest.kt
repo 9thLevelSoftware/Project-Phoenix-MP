@@ -42,6 +42,25 @@ class SqlDelightTrainingCycleRepositoryTest {
     }
 
     @Test
+    fun `saveCycle persists templateId and weekNumber`() = runTest {
+        val cycleId = "cycle-template-week"
+        val cycle = TrainingCycle.create(
+            id = cycleId,
+            name = "5/3/1",
+            templateId = "template_531",
+            weekNumber = 3,
+            days = listOf(CycleDay.create(cycleId = cycleId, dayNumber = 1, name = "Press")),
+        )
+
+        repository.saveCycle(cycle)
+
+        val loaded = repository.getCycleById(cycleId)
+        assertNotNull(loaded)
+        assertEquals("template_531", loaded.templateId)
+        assertEquals(3, loaded.weekNumber)
+    }
+
+    @Test
     fun `setActiveCycle updates active flow`() = runTest {
         val cycle = TrainingCycle.create(id = "cycle-2", name = "Active Cycle")
         repository.saveCycle(cycle)
@@ -161,6 +180,27 @@ class SqlDelightTrainingCycleRepositoryTest {
         val loaded = repository.getCycleProgression(cycleId)
         assertEquals(3, loaded?.frequencyCycles)
         assertTrue(loaded?.echoLevelIncrease == true)
+    }
+
+    @Test
+    fun `updateWeekNumber persists new week without touching templateId`() = runTest {
+        val cycleId = "cycle-update-week"
+        repository.saveCycle(
+            TrainingCycle.create(
+                id = cycleId,
+                name = "Cycle",
+                templateId = "template_531",
+                weekNumber = 1,
+                days = listOf(CycleDay.restDay(cycleId = cycleId, dayNumber = 1)),
+            ),
+        )
+
+        repository.updateWeekNumber(cycleId, 4)
+
+        val loaded = repository.getCycleById(cycleId)
+        assertNotNull(loaded)
+        assertEquals("template_531", loaded.templateId)
+        assertEquals(4, loaded.weekNumber)
     }
 
     @Test

@@ -224,6 +224,8 @@ data class TrainingCycleBackup(
     val createdAt: Long,
     val isActive: Boolean = false,
     val profileId: String? = null, // null for backward compat with pre-profile backups
+    val templateId: String? = null,
+    val weekNumber: Int = 1,
 )
 
 /**

@@ -38,6 +38,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
+import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -128,7 +129,14 @@ data class ResumableProgressInfo(
  * Event emitted when a training cycle day is completed after a workout.
  * Consumed by TrainingCyclesScreen to show completion feedback.
  */
-data class CycleDayCompletionEvent(val dayNumber: Int, val dayName: String?, val isRotationComplete: Boolean, val rotationCount: Int)
+data class CycleDayCompletionEvent(
+    val dayNumber: Int,
+    val dayName: String?,
+    val isRotationComplete: Boolean,
+    val rotationCount: Int,
+    val newWeekNumber: Int? = null,
+    val tmBumped: Boolean = false,
+)
 
 // ===== DefaultWorkoutSessionManager =====
 
@@ -248,6 +256,11 @@ class DefaultWorkoutSessionManager(
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
         scope = scope,
+        regenerateFiveThreeOneUseCase = RegenerateFiveThreeOneRoutinesUseCase(
+            trainingCycleRepository = trainingCycleRepository,
+            workoutRepository = workoutRepository,
+            exerciseRepository = exerciseRepository,
+        ),
         dataBackupManager = dataBackupManager,
         healthIntegration = healthIntegration,
         externalActivityRepository = externalActivityRepository,

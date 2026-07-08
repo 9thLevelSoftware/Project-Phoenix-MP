@@ -213,7 +213,11 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     LaunchedEffect(completionEvent) {
         completionEvent?.let { event ->
             val message = if (event.isRotationComplete) {
-                "Cycle complete! Starting rotation ${event.rotationCount + 1}"
+                when {
+                    event.tmBumped -> "Deload complete! Week 1 begins with increased training max."
+                    event.newWeekNumber != null -> "Rotation complete! Advancing to Week ${event.newWeekNumber}."
+                    else -> "Cycle complete! Starting rotation ${event.rotationCount + 1}"
+                }
             } else {
                 val dayLabel = event.dayName ?: "Day ${event.dayNumber}"
                 "$dayLabel completed!"

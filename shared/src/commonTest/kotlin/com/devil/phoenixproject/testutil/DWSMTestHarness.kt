@@ -68,6 +68,7 @@ class DWSMTestHarness(val testScope: TestScope) {
     val fakeBiomechanicsRepo = FakeBiomechanicsRepository()
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
     val fakeEquipmentRackRepo = SettingsEquipmentRackRepository(MapSettings())
+    val fakeUserProfileRepo = FakeUserProfileRepository()
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeExerciseRepo, FakeVelocityOneRepMaxRepository())
@@ -83,6 +84,7 @@ class DWSMTestHarness(val testScope: TestScope) {
     // full test suite and making advanceUntilIdle() return before init work was truly settled.
     private val dwsmJob = Job(testScope.coroutineContext[Job])
     private val dwsmScope = CoroutineScope(StandardTestDispatcher(testScope.testScheduler) + dwsmJob)
+    val workoutScope: CoroutineScope get() = dwsmScope
 
     val settingsManager = SettingsManager(fakePrefsManager, fakeBleRepo, dwsmScope)
     val gamificationManager = GamificationManager(
@@ -113,7 +115,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         equipmentRackRepository = fakeEquipmentRackRepo,
         applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         settingsManager = settingsManager,
-        userProfileRepository = FakeUserProfileRepository(),
+        userProfileRepository = fakeUserProfileRepo,
         workoutServiceController = fakeWorkoutServiceController,
         scope = dwsmScope,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },

@@ -37,6 +37,7 @@ data class TrainingCycle(
     val progressionRule: ProgressionRule? = null,
     val weekNumber: Int = 1,
     val profileId: String = "default",
+    val templateId: String? = null,
 ) {
     companion object {
         fun create(
@@ -48,6 +49,7 @@ data class TrainingCycle(
             progressionRule: ProgressionRule? = null,
             weekNumber: Int = 1,
             profileId: String = "default",
+            templateId: String? = null,
         ) = TrainingCycle(
             id = id,
             name = name,
@@ -58,6 +60,7 @@ data class TrainingCycle(
             progressionRule = progressionRule,
             weekNumber = weekNumber,
             profileId = profileId,
+            templateId = templateId,
         )
     }
 }

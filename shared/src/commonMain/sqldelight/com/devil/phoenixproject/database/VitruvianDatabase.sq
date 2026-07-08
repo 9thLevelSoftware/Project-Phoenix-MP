@@ -1676,7 +1676,11 @@ CREATE TABLE TrainingCycle (
     -- Multi-profile support (added in migration 21)
     profile_id TEXT NOT NULL DEFAULT 'default',
     -- Soft-delete for sync tombstone propagation (added in migration 27)
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    -- Template identity for generated cycles (added in migration 41)
+    template_id TEXT,
+    -- Persisted 5/3/1 current week (added in migration 41)
+    week_number INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX idx_cycle_profile ON TrainingCycle(profile_id);
@@ -1788,11 +1792,14 @@ selectActiveTrainingCycle:
 SELECT * FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profileId AND deletedAt IS NULL LIMIT 1;
 
 insertTrainingCycle:
-INSERT INTO TrainingCycle (id, name, description, created_at, is_active, profile_id)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO TrainingCycle (id, name, description, created_at, is_active, profile_id, template_id, week_number)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 updateTrainingCycle:
-UPDATE TrainingCycle SET name = ?, description = ?, is_active = ? WHERE id = ?;
+UPDATE TrainingCycle SET name = ?, description = ?, is_active = ?, template_id = ?, week_number = ? WHERE id = ?;
+
+updateTrainingCycleWeekNumber:
+UPDATE TrainingCycle SET week_number = ? WHERE id = ?;
 
 setActiveTrainingCycle:
 UPDATE TrainingCycle SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE profile_id = :profileId;
@@ -2043,8 +2050,8 @@ SELECT id FROM UserProfile;
 -- INSERT OR IGNORE queries for backup import (skips duplicates)
 
 insertTrainingCycleIgnore:
-INSERT OR IGNORE INTO TrainingCycle (id, name, description, created_at, is_active, profile_id)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO TrainingCycle (id, name, description, created_at, is_active, profile_id, template_id, week_number)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 insertCycleDayIgnore:
 INSERT OR IGNORE INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day, echo_level, eccentric_load_percent, weight_progression_percent, rep_modifier, rest_time_override_seconds)

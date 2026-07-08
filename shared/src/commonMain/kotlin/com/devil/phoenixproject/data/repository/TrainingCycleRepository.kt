@@ -46,6 +46,11 @@ interface TrainingCycleRepository {
     suspend fun updateCycle(cycle: TrainingCycle)
 
     /**
+     * Update the persisted 5/3/1 week for a cycle.
+     */
+    suspend fun updateWeekNumber(cycleId: String, weekNumber: Int)
+
+    /**
      * Set a cycle as the active one (deactivates all others).
      */
     suspend fun setActiveCycle(cycleId: String, profileId: String)

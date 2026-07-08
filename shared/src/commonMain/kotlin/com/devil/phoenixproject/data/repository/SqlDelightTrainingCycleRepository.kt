@@ -32,6 +32,8 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
         is_active: Long,
         // Multi-profile support (migration 21)
         profileId: String,
+        template_id: String?,
+        week_number: Long,
     ): TrainingCycle {
         val days = getCycleDays(id)
         return TrainingCycle(
@@ -42,6 +44,8 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
             createdAt = created_at,
             isActive = is_active == 1L,
             profileId = profileId,
+            templateId = template_id,
+            weekNumber = week_number.toInt(),
         )
     }
 
@@ -121,6 +125,8 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
             is_active,
             profile_id,
             _deletedAt,
+            template_id,
+            week_number,
         ->
         TrainingCycle(
             id = id,
@@ -130,6 +136,8 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
             createdAt = created_at,
             isActive = is_active == 1L,
             profileId = profile_id,
+            templateId = template_id,
+            weekNumber = week_number.toInt(),
         )
     }
         .asFlow()
@@ -157,6 +165,8 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
                 createdAt = row.created_at,
                 isActive = row.is_active == 1L,
                 profileId = row.profile_id,
+                templateId = row.template_id,
+                weekNumber = row.week_number.toInt(),
             )
         }
     }
@@ -169,6 +179,8 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
             is_active,
             profile_id,
             _deletedAt,
+            template_id,
+            week_number,
         ->
         TrainingCycle(
             id = id,
@@ -178,6 +190,8 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
             createdAt = created_at,
             isActive = is_active == 1L,
             profileId = profile_id,
+            templateId = template_id,
+            weekNumber = week_number.toInt(),
         )
     }
         .asFlow()
@@ -208,6 +222,8 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
                     created_at = cycle.createdAt,
                     is_active = if (cycle.isActive) 1L else 0L,
                     profile_id = cycle.profileId,
+                    template_id = cycle.templateId,
+                    week_number = cycle.weekNumber.toLong(),
                 )
 
                 // Insert all days
@@ -257,6 +273,8 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
                     name = cycle.name,
                     description = cycle.description,
                     is_active = if (cycle.isActive) 1L else 0L,
+                    template_id = cycle.templateId,
+                    week_number = cycle.weekNumber.toLong(),
                     id = cycle.id,
                 )
 
@@ -285,6 +303,15 @@ class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : Tra
                     queries.setActiveTrainingCycle(cycle.id, profileId = cycle.profileId)
                 }
             }
+        }
+    }
+
+    override suspend fun updateWeekNumber(cycleId: String, weekNumber: Int) {
+        withContext(Dispatchers.IO) {
+            queries.updateTrainingCycleWeekNumber(
+                week_number = weekNumber.toLong(),
+                id = cycleId,
+            )
         }
     }
 

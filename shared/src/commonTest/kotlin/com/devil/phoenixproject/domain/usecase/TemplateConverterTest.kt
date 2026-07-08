@@ -8,10 +8,12 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
+import com.devil.phoenixproject.domain.model.PercentageSet
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineTemplate
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.TemplateExercise
+import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeightsForWeek
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -156,6 +158,63 @@ class TemplateConverterTest {
         assertEquals(98f, routineExercise.weightPerCableKg)
     }
 
+    @Test
+    fun `week one custom percentage sets drive per-set weight percentages`() = runTest {
+        val repository = FakeExerciseRepository().apply {
+            addExercise(
+                Exercise(
+                    id = "bench-001",
+                    name = "Bench Press",
+                    muscleGroup = "Chest",
+                    muscleGroups = "Chest",
+                    equipment = "BAR",
+                    oneRepMaxKg = 100f,
+                ),
+            )
+        }
+        val converter = TemplateConverter(repository)
+
+        val template = CycleTemplate(
+            id = "custom-531",
+            name = "Custom 531",
+            description = "Custom week 1 loading",
+            days = listOf(
+                CycleDayTemplate.training(
+                    dayNumber = 1,
+                    name = "Push",
+                    routine = RoutineTemplate(
+                        name = "Push",
+                        exercises = listOf(
+                            TemplateExercise(
+                                exerciseName = "Bench Press",
+                                sets = 3,
+                                reps = null,
+                                suggestedMode = ProgramMode.OldSchool,
+                                isPercentageBased = true,
+                                percentageSets = listOf(
+                                    PercentageSet(0.50f, 5),
+                                    PercentageSet(0.60f, 5),
+                                    PercentageSet(0.70f, null, isAmrap = true),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            progressionRule = null,
+        )
+
+        val lift = converter.convert(template, weekNumber = 1)
+            .routines
+            .single()
+            .exercises
+            .single()
+
+        assertEquals(listOf(45, 54, 63), lift.setWeightsPercentOfPR)
+        assertEquals(listOf(5, 5, null), lift.setReps)
+        assertTrue(lift.isAMRAP)
+    }
+
     // ===== Production template regression suite =====
 
     @Test
@@ -254,11 +313,19 @@ class TemplateConverterTest {
             .filter { it.exercise.name in template.mainLifts && it.setWeightsPercentOfPR.isNotEmpty() }
 
         assertEquals(4, mainLifts.size, "All 4 main lifts must resolve")
+        assertEquals(template.id, result.cycle.templateId)
+        assertEquals(1, result.cycle.weekNumber)
         mainLifts.forEach { lift ->
             assertEquals(listOf(59, 68, 77), lift.setWeightsPercentOfPR, lift.exercise.name)
             assertEquals(listOf(5, 5, null), lift.setReps, lift.exercise.name)
             assertTrue(lift.isAMRAP, "${lift.exercise.name}: week 1-3 last set is AMRAP")
         }
+    }
+
+    @Test
+    fun `computeFiveThreeOneSetWeightsForWeek returns canonical folded percentages`() {
+        assertEquals(listOf(59, 68, 77), computeFiveThreeOneSetWeightsForWeek(1))
+        assertEquals(listOf(68, 77, 86), computeFiveThreeOneSetWeightsForWeek(3))
     }
 
     @Test

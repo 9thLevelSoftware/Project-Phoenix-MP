@@ -643,15 +643,21 @@ class SqlDelightSyncRepository(
                         created_at = currentTimeMillis(),
                         is_active = 0L, // Don't set active yet - enforce single-active at end
                         profile_id = profileId,
+                        template_id = portalCycle.templateId,
+                        week_number = portalCycle.currentWeek?.toLong() ?: 1L,
                     )
 
                     // For pre-existing cycles only: update metadata (but NOT is_active - enforce single-active at end).
                     // Newly-inserted rows already have the correct values from insertTrainingCycleIgnore above.
                     if (existing != null) {
+                        val mergedTemplateId = portalCycle.templateId ?: existing.template_id
+                        val mergedWeekNumber = portalCycle.currentWeek?.toLong() ?: existing.week_number
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
                             description = portalCycle.description,
                             is_active = existing.is_active, // Preserve; single-active enforcement runs at end
+                            template_id = mergedTemplateId,
+                            week_number = mergedWeekNumber,
                             id = portalCycle.id,
                         )
                     }
@@ -697,10 +703,14 @@ class SqlDelightSyncRepository(
                 if (portalActiveCycleId != null) {
                     // Portal specified an active cycle - deactivate all others, activate this one
                     queries.deactivateAllCycles(profileId)
+                    val activeCycle = cycles.first { it.id == portalActiveCycleId }
+                    val storedActiveCycle = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne()
                     queries.updateTrainingCycle(
-                        name = cycles.first { it.id == portalActiveCycleId }.name,
-                        description = cycles.first { it.id == portalActiveCycleId }.description,
+                        name = activeCycle.name,
+                        description = activeCycle.description,
                         is_active = 1L,
+                        template_id = storedActiveCycle.template_id,
+                        week_number = storedActiveCycle.week_number,
                         id = portalActiveCycleId,
                     )
                     Logger.d { "Set active cycle from portal: $portalActiveCycleId" }
@@ -715,10 +725,14 @@ class SqlDelightSyncRepository(
                     // Recovery: deactivate all and re-activate the portal's choice (or none)
                     queries.deactivateAllCycles(profileId)
                     portalActiveCycleId?.let { id ->
+                        val activeCycle = cycles.first { it.id == id }
+                        val storedActiveCycle = queries.selectTrainingCycleById(id).executeAsOne()
                         queries.updateTrainingCycle(
-                            name = cycles.first { it.id == id }.name,
-                            description = cycles.first { it.id == id }.description,
+                            name = activeCycle.name,
+                            description = activeCycle.description,
                             is_active = 1L,
+                            template_id = storedActiveCycle.template_id,
+                            week_number = storedActiveCycle.week_number,
                             id = id,
                         )
                     }
@@ -1129,6 +1143,9 @@ class SqlDelightSyncRepository(
                     days = days,
                     createdAt = row.created_at,
                     isActive = row.is_active == 1L,
+                    weekNumber = row.week_number.toInt(),
+                    profileId = row.profile_id,
+                    templateId = row.template_id,
                 ),
                 progress = progress,
                 progression = progression,
@@ -1651,14 +1668,20 @@ class SqlDelightSyncRepository(
                         created_at = currentTimeMillis(),
                         is_active = 0L,
                         profile_id = profileId,
+                        template_id = portalCycle.templateId,
+                        week_number = portalCycle.currentWeek?.toLong() ?: 1L,
                     )
 
                     // Only update pre-existing cycles; newly-inserted rows already have correct values.
                     if (existingCycle != null) {
+                        val mergedTemplateId = portalCycle.templateId ?: existingCycle.template_id
+                        val mergedWeekNumber = portalCycle.currentWeek?.toLong() ?: existingCycle.week_number
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
                             description = portalCycle.description,
                             is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
+                            template_id = mergedTemplateId,
+                            week_number = mergedWeekNumber,
                             id = portalCycle.id,
                         )
                     }
@@ -1700,10 +1723,13 @@ class SqlDelightSyncRepository(
                 if (portalActiveCycleId != null) {
                     queries.deactivateAllCycles(profileId)
                     val activeCycle = cycles.first { it.id == portalActiveCycleId }
+                    val storedActiveCycle = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne()
                     queries.updateTrainingCycle(
                         name = activeCycle.name,
                         description = activeCycle.description,
                         is_active = 1L,
+                        template_id = storedActiveCycle.template_id,
+                        week_number = storedActiveCycle.week_number,
                         id = portalActiveCycleId,
                     )
                 }
@@ -1715,10 +1741,13 @@ class SqlDelightSyncRepository(
                     queries.deactivateAllCycles(profileId)
                     portalActiveCycleId?.let { id ->
                         val activeCycle = cycles.first { it.id == id }
+                        val storedActiveCycle = queries.selectTrainingCycleById(id).executeAsOne()
                         queries.updateTrainingCycle(
                             name = activeCycle.name,
                             description = activeCycle.description,
                             is_active = 1L,
+                            template_id = storedActiveCycle.template_id,
+                            week_number = storedActiveCycle.week_number,
                             id = id,
                         )
                     }

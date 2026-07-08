@@ -333,6 +333,8 @@ class ConflictResolutionTest {
             created_at = now - 100_000,
             is_active = 1L,
             profile_id = testProfileId,
+            template_id = null,
+            week_number = 1L,
         )
         database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
             id = localInactiveId,
@@ -341,6 +343,8 @@ class ConflictResolutionTest {
             created_at = now - 50_000,
             is_active = 0L,
             profile_id = testProfileId,
+            template_id = null,
+            week_number = 1L,
         )
 
         // WHEN: Portal sends cycles with a different active cycle
@@ -389,6 +393,8 @@ class ConflictResolutionTest {
             created_at = now,
             is_active = 1L,
             profile_id = testProfileId,
+            template_id = null,
+            week_number = 1L,
         )
 
         // WHEN: Portal sends cycles but none are active
@@ -421,6 +427,8 @@ class ConflictResolutionTest {
             created_at = now,
             is_active = 1L,
             profile_id = testProfileId,
+            template_id = null,
+            week_number = 1L,
         )
 
         // WHEN: Portal sends the SAME cycle ID with status != "active"
@@ -443,6 +451,143 @@ class ConflictResolutionTest {
         assertEquals(1L, cycle.is_active, "is_active must be preserved through metadata update")
         // Metadata update should still have applied
         assertEquals("Updated Name From Portal", cycle.name, "Name should be updated from portal")
+    }
+
+    @Test
+    fun `mergePortalCycles persists templateId and currentWeek from portal`() = runTest {
+        val cycleId = "portal-cycle-template-week"
+
+        repository.mergePortalCycles(
+            listOf(
+                PullTrainingCycleDto(
+                    id = cycleId,
+                    name = "Portal 5 3 1",
+                    templateId = "template_531",
+                    currentWeek = 4,
+                    status = "draft",
+                    days = emptyList(),
+                ),
+            ),
+            testProfileId,
+        )
+
+        val cycle = database.vitruvianDatabaseQueries
+            .selectTrainingCycleById(cycleId)
+            .executeAsOne()
+
+        assertEquals("template_531", cycle.template_id)
+        assertEquals(4L, cycle.week_number)
+    }
+
+    @Test
+    fun `mergePortalCycles active toggle preserves merged week metadata`() = runTest {
+        val activeCycleId = "portal-active-week-preserved"
+        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+            id = activeCycleId,
+            name = "Local Active Cycle",
+            description = null,
+            created_at = now,
+            is_active = 1L,
+            profile_id = testProfileId,
+            template_id = "template_531",
+            week_number = 3L,
+        )
+
+        repository.mergePortalCycles(
+            listOf(
+                PullTrainingCycleDto(
+                    id = activeCycleId,
+                    name = "Portal Active Cycle",
+                    templateId = "template_531",
+                    currentWeek = 1,
+                    status = "active",
+                    days = emptyList(),
+                ),
+            ),
+            testProfileId,
+        )
+
+        val cycle = database.vitruvianDatabaseQueries
+            .selectTrainingCycleById(activeCycleId)
+            .executeAsOne()
+
+        assertEquals(1L, cycle.is_active)
+        assertEquals("template_531", cycle.template_id)
+        assertEquals(1L, cycle.week_number)
+    }
+
+    @Test
+    fun `mergePortalCycles preserves existing templateId and currentWeek when portal omits them`() = runTest {
+        val cycleId = "local-531-template-preserved"
+        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+            id = cycleId,
+            name = "Local 5 3 1",
+            description = null,
+            created_at = now,
+            is_active = 1L,
+            profile_id = testProfileId,
+            template_id = "template_531",
+            week_number = 2L,
+        )
+
+        repository.mergePortalCycles(
+            listOf(
+                PullTrainingCycleDto(
+                    id = cycleId,
+                    name = "Portal 5 3 1",
+                    status = "active",
+                    days = emptyList(),
+                ),
+            ),
+            testProfileId,
+        )
+
+        val cycle = database.vitruvianDatabaseQueries
+            .selectTrainingCycleById(cycleId)
+            .executeAsOne()
+
+        assertEquals("template_531", cycle.template_id)
+        assertEquals(2L, cycle.week_number)
+    }
+
+    @Test
+    fun `mergeAllPullData preserves existing templateId and currentWeek when portal omits them`() = runTest {
+        val cycleId = "atomic-local-531-template-preserved"
+        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+            id = cycleId,
+            name = "Local 5 3 1",
+            description = null,
+            created_at = now,
+            is_active = 1L,
+            profile_id = testProfileId,
+            template_id = "template_531",
+            week_number = 2L,
+        )
+
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = cycleId,
+                    name = "Portal 5 3 1",
+                    status = "active",
+                    days = emptyList(),
+                ),
+            ),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = testProfileId,
+        )
+
+        val cycle = database.vitruvianDatabaseQueries
+            .selectTrainingCycleById(cycleId)
+            .executeAsOne()
+
+        assertEquals("template_531", cycle.template_id)
+        assertEquals(2L, cycle.week_number)
     }
 
     // ─── Badge Merge Tests (UNION) ─────────────────────────────────────
