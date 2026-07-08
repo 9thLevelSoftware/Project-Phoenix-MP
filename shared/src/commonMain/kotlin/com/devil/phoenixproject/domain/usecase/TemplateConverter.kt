@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeights
 import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeightsForWeek
 import com.devil.phoenixproject.domain.model.generateUUID
 
@@ -215,7 +216,8 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                             isAMRAP = activeSets.any { it.isAmrap },
                             usePercentOfPR = true,
                             scalingBasis = ScalingBasis.ESTIMATED_1RM,
-                            setWeightsPercentOfPR = computeFiveThreeOneSetWeightsForWeek(weekNumber),
+                            setWeightsPercentOfPR = computeFiveThreeOneSetWeights(activeSets)
+                                .ifEmpty { computeFiveThreeOneSetWeightsForWeek(weekNumber) },
                         )
                     } else {
                         RoutineExercise(

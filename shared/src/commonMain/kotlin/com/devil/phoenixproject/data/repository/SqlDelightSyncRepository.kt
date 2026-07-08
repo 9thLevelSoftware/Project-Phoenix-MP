@@ -703,12 +703,14 @@ class SqlDelightSyncRepository(
                 if (portalActiveCycleId != null) {
                     // Portal specified an active cycle - deactivate all others, activate this one
                     queries.deactivateAllCycles(profileId)
+                    val activeCycle = cycles.first { it.id == portalActiveCycleId }
+                    val storedActiveCycle = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne()
                     queries.updateTrainingCycle(
-                        name = cycles.first { it.id == portalActiveCycleId }.name,
-                        description = cycles.first { it.id == portalActiveCycleId }.description,
+                        name = activeCycle.name,
+                        description = activeCycle.description,
                         is_active = 1L,
-                        template_id = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne().template_id,
-                        week_number = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne().week_number,
+                        template_id = storedActiveCycle.template_id,
+                        week_number = storedActiveCycle.week_number,
                         id = portalActiveCycleId,
                     )
                     Logger.d { "Set active cycle from portal: $portalActiveCycleId" }
@@ -723,12 +725,14 @@ class SqlDelightSyncRepository(
                     // Recovery: deactivate all and re-activate the portal's choice (or none)
                     queries.deactivateAllCycles(profileId)
                     portalActiveCycleId?.let { id ->
+                        val activeCycle = cycles.first { it.id == id }
+                        val storedActiveCycle = queries.selectTrainingCycleById(id).executeAsOne()
                         queries.updateTrainingCycle(
-                            name = cycles.first { it.id == id }.name,
-                            description = cycles.first { it.id == id }.description,
+                            name = activeCycle.name,
+                            description = activeCycle.description,
                             is_active = 1L,
-                            template_id = queries.selectTrainingCycleById(id).executeAsOne().template_id,
-                            week_number = queries.selectTrainingCycleById(id).executeAsOne().week_number,
+                            template_id = storedActiveCycle.template_id,
+                            week_number = storedActiveCycle.week_number,
                             id = id,
                         )
                     }
@@ -1719,12 +1723,13 @@ class SqlDelightSyncRepository(
                 if (portalActiveCycleId != null) {
                     queries.deactivateAllCycles(profileId)
                     val activeCycle = cycles.first { it.id == portalActiveCycleId }
+                    val storedActiveCycle = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne()
                     queries.updateTrainingCycle(
                         name = activeCycle.name,
                         description = activeCycle.description,
                         is_active = 1L,
-                        template_id = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne().template_id,
-                        week_number = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne().week_number,
+                        template_id = storedActiveCycle.template_id,
+                        week_number = storedActiveCycle.week_number,
                         id = portalActiveCycleId,
                     )
                 }
@@ -1736,12 +1741,13 @@ class SqlDelightSyncRepository(
                     queries.deactivateAllCycles(profileId)
                     portalActiveCycleId?.let { id ->
                         val activeCycle = cycles.first { it.id == id }
+                        val storedActiveCycle = queries.selectTrainingCycleById(id).executeAsOne()
                         queries.updateTrainingCycle(
                             name = activeCycle.name,
                             description = activeCycle.description,
                             is_active = 1L,
-                            template_id = queries.selectTrainingCycleById(id).executeAsOne().template_id,
-                            week_number = queries.selectTrainingCycleById(id).executeAsOne().week_number,
+                            template_id = storedActiveCycle.template_id,
+                            week_number = storedActiveCycle.week_number,
                             id = id,
                         )
                     }

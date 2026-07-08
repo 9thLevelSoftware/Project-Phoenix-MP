@@ -18,62 +18,58 @@ class RegenerateFiveThreeOneRoutinesUseCase(
     suspend fun execute(cycleId: String, targetWeek: Int, bumpTrainingMax: Boolean): Boolean {
         val cycle = trainingCycleRepository.getCycleById(cycleId) ?: return false
         val matchedLiftIds = linkedSetOf<String>()
-        var matchedAnyExpectedMainLift = false
-        var failedExpectedMainLift = false
+        var failedMainLiftRegeneration = false
         val routineUpdates = mutableListOf<Pair<Routine, Routine>>()
 
         for (day in cycle.days.sortedBy { it.dayNumber }) {
-            val expectedMainLiftId = day.expectedFiveThreeOneMainLiftId()
-            if (expectedMainLiftId == null) {
-                if (!day.isRestDay && day.routineId != null) {
-                    Logger.w {
-                        "5/3/1 regeneration skipped unrecognized cycle day: cycleId=$cycleId dayNumber=${day.dayNumber} dayName=${day.name}"
-                    }
-                    failedExpectedMainLift = true
-                }
+            if (day.isRestDay) {
                 continue
             }
 
             val routineId = day.routineId
             if (routineId == null) {
                 Logger.w {
-                    "5/3/1 regeneration could not find routine for expected main lift: cycleId=$cycleId dayNumber=${day.dayNumber} expectedExerciseId=$expectedMainLiftId"
+                    "5/3/1 regeneration could not find routine for training day: cycleId=$cycleId dayNumber=${day.dayNumber}"
                 }
-                failedExpectedMainLift = true
+                failedMainLiftRegeneration = true
                 continue
             }
 
             val routine = workoutRepository.getRoutineById(routineId)
             if (routine == null) {
                 Logger.w { "5/3/1 regeneration skipped missing routine: cycleId=$cycleId routineId=$routineId" }
-                failedExpectedMainLift = true
+                failedMainLiftRegeneration = true
                 continue
             }
 
-            val updatedRoutine = regenerateRoutineForWeek(
-                day = day,
-                routine = routine,
-                expectedMainLiftId = expectedMainLiftId,
-                targetWeek = targetWeek,
-            )
+            val updatedRoutine = try {
+                regenerateRoutineForWeek(
+                    day = day,
+                    routine = routine,
+                    targetWeek = targetWeek,
+                    onMatchedLift = { matchedLiftIds += it },
+                )
+            } catch (e: IllegalStateException) {
+                Logger.w(e) { "5/3/1 regeneration found ambiguous main lift state: cycleId=$cycleId routineId=$routineId" }
+                failedMainLiftRegeneration = true
+                continue
+            }
             if (updatedRoutine == null) {
                 Logger.w {
-                    "5/3/1 regeneration could not find expected main lift: cycleId=$cycleId dayNumber=${day.dayNumber} routineId=$routineId expectedExerciseId=$expectedMainLiftId"
+                    "5/3/1 regeneration skipped routine with no 5/3/1 main lift: cycleId=$cycleId dayNumber=${day.dayNumber} routineId=$routineId"
                 }
-                failedExpectedMainLift = true
                 continue
             }
 
-            matchedAnyExpectedMainLift = true
-            matchedLiftIds += expectedMainLiftId
             if (updatedRoutine != routine) {
                 routineUpdates += routine to updatedRoutine
             }
         }
 
-        if (failedExpectedMainLift || !matchedAnyExpectedMainLift) {
+        val missingMainLiftIds = MAIN_LIFT_IDS - matchedLiftIds
+        if (failedMainLiftRegeneration || missingMainLiftIds.isNotEmpty()) {
             Logger.w {
-                "5/3/1 regeneration aborted before advancing week sentinel: cycleId=$cycleId targetWeek=$targetWeek"
+                "5/3/1 regeneration aborted before advancing week sentinel: cycleId=$cycleId targetWeek=$targetWeek missingLiftIds=${missingMainLiftIds.joinToString(",")}"
             }
             return false
         }
@@ -112,22 +108,47 @@ class RegenerateFiveThreeOneRoutinesUseCase(
     private fun regenerateRoutineForWeek(
         day: CycleDay,
         routine: Routine,
-        expectedMainLiftId: String,
         targetWeek: Int,
+        onMatchedLift: (String) -> Unit,
     ): Routine? {
-        val matchingIndexes = routine.exercises.mapIndexedNotNull { index, exercise ->
-            if (exercise.matchesExpectedFiveThreeOneMainLift(expectedMainLiftId)) index else null
+        val matches = routine.exercises.mapIndexedNotNull { index, exercise ->
+            exercise.fiveThreeOneMainLiftId()?.let { liftId ->
+                MainLiftMatch(
+                    index = index,
+                    liftId = liftId,
+                    hasFiveThreeOneSetShape = exercise.hasFiveThreeOneSetShape(),
+                )
+            }
         }
-        if (matchingIndexes.isEmpty()) {
+        if (matches.isEmpty()) {
             return null
         }
-        if (matchingIndexes.size > 1) {
-            Logger.w {
-                "5/3/1 regeneration found multiple expected main lift matches; rewriting first match only: routineId=${routine.id} dayNumber=${day.dayNumber} expectedExerciseId=$expectedMainLiftId matches=${matchingIndexes.joinToString(",")}"
+
+        val duplicateLift = matches
+            .groupBy { it.liftId }
+            .firstNotNullOfOrNull { (liftId, liftMatches) ->
+                liftMatches.takeIf { it.size > 1 }?.let { liftId to it }
+            }
+        if (duplicateLift != null) {
+            val (liftId, duplicateMatches) = duplicateLift
+            throw IllegalStateException(
+                "5/3/1 regeneration found multiple matches for liftId=$liftId routineId=${routine.id} dayNumber=${day.dayNumber} matches=${duplicateMatches.joinToString(",") { it.index.toString() }}",
+            )
+        }
+
+        val shapedMatches = matches.filter { it.hasFiveThreeOneSetShape }
+        val mainLiftMatch = when {
+            matches.size == 1 -> matches.single()
+            shapedMatches.size == 1 -> shapedMatches.single()
+            else -> {
+                throw IllegalStateException(
+                    "5/3/1 regeneration found multiple possible main lifts: routineId=${routine.id} dayNumber=${day.dayNumber} matches=${matches.joinToString(",") { "${it.liftId}@${it.index}" }}",
+                )
             }
         }
 
-        val mainLiftIndex = matchingIndexes.first()
+        onMatchedLift(mainLiftMatch.liftId)
+        val mainLiftIndex = mainLiftMatch.index
         var changed = false
         val targetSets = FiveThreeOneWeeks.forWeek(targetWeek)
         val targetPercentages = computeFiveThreeOneSetWeightsForWeek(targetWeek)
@@ -151,21 +172,25 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         return if (changed) routine.copy(exercises = updatedExercises) else routine
     }
 
-    private fun CycleDay.expectedFiveThreeOneMainLiftId(): String? {
-        val normalizedName = name?.trim()?.lowercase().orEmpty()
-        return when {
-            "deadlift" in normalizedName -> DEADLIFT_ID
-            "squat" in normalizedName -> SQUAT_ID
-            "bench" in normalizedName -> BENCH_ID
-            "press" in normalizedName -> SHOULDER_PRESS_ID
-            else -> null
-        }
+    private fun RoutineExercise.fiveThreeOneMainLiftId(): String? {
+        val exerciseId = exercise.id ?: return null
+        return if (usePercentOfPR && exerciseId in MAIN_LIFT_IDS) exerciseId else null
     }
 
-    private fun RoutineExercise.matchesExpectedFiveThreeOneMainLift(expectedMainLiftId: String): Boolean {
-        val exerciseId = exercise.id ?: return false
-        return usePercentOfPR && exerciseId == expectedMainLiftId
+    private fun RoutineExercise.hasFiveThreeOneSetShape(): Boolean = FIVE_THREE_ONE_SET_SHAPES.any { shape ->
+        setReps == shape.reps && isAMRAP == shape.isAmrap
     }
+
+    private data class MainLiftMatch(
+        val index: Int,
+        val liftId: String,
+        val hasFiveThreeOneSetShape: Boolean,
+    )
+
+    private data class FiveThreeOneSetShape(
+        val reps: List<Int?>,
+        val isAmrap: Boolean,
+    )
 
     private companion object {
         const val BENCH_ID = "ZZ92N8QsBdp6HCh3"
@@ -174,6 +199,18 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         const val DEADLIFT_ID = "e64c7837-52e2-4b97-b771-cf08ab861af1"
 
         val UPPER_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID)
+        val MAIN_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID, SQUAT_ID, DEADLIFT_ID)
+        val FIVE_THREE_ONE_SET_SHAPES = listOf(
+            FiveThreeOneWeeks.WEEK_1,
+            FiveThreeOneWeeks.WEEK_2,
+            FiveThreeOneWeeks.WEEK_3,
+            FiveThreeOneWeeks.WEEK_4_DELOAD,
+        ).map { sets ->
+            FiveThreeOneSetShape(
+                reps = sets.map { it.targetReps },
+                isAmrap = sets.any { it.isAmrap },
+            )
+        }
 
         const val UPPER_ONE_REP_MAX_BUMP_KG = 1.25f / 0.9f
         const val LOWER_ONE_REP_MAX_BUMP_KG = 2.5f / 0.9f

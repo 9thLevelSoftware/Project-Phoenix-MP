@@ -3736,12 +3736,6 @@ class ActiveSessionEngine(
             enqueueWorkoutHealthPush(session)
         }
 
-        // Sync trigger AFTER all persistence (session, metrics, CompletedSet, PR marking)
-        // so the push sends complete data. Previously fired before saveCompletedSet/markAsPr.
-        scope.launch {
-            syncTriggerManager?.onWorkoutCompleted()
-        }
-
         // Per-session auto-backup AFTER all persistence (including CompletedSet and PR).
         // Fire-and-forget, never blocks the save flow.
         // Issue #525: skip per-set backup for routine sets — exportRoutine handles the
@@ -3761,6 +3755,12 @@ class ActiveSessionEngine(
 
         if (shouldUpdateCycleProgressAfterSavedSet()) {
             updateCycleProgressIfNeeded()
+        }
+
+        // Sync trigger after all local persistence, including 5/3/1 cycle
+        // advancement, so the push cannot snapshot the old week sentinel.
+        scope.launch {
+            syncTriggerManager?.onWorkoutCompleted()
         }
     }
 

@@ -43,10 +43,13 @@ object FiveThreeOneWeeks {
 
 private const val FIVE_THREE_ONE_TRAINING_MAX_FACTOR = 0.9
 
-fun computeFiveThreeOneSetWeightsForWeek(weekNumber: Int): List<Int> = FiveThreeOneWeeks.forWeek(weekNumber).map { set ->
+fun computeFiveThreeOneSetWeights(sets: List<PercentageSet>): List<Int> = sets.map { set ->
     val percentOfOneRepMax = (set.percent * 100).roundToInt()
     (percentOfOneRepMax * FIVE_THREE_ONE_TRAINING_MAX_FACTOR).roundToInt()
 }
+
+fun computeFiveThreeOneSetWeightsForWeek(weekNumber: Int): List<Int> =
+    computeFiveThreeOneSetWeights(FiveThreeOneWeeks.forWeek(weekNumber))
 
 /**
  * Default %-of-1RM working-weight prescription for a rep count, per the template

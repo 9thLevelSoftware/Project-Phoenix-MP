@@ -15,6 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
 class RegenerateFiveThreeOneRoutinesUseCaseTest {
@@ -92,6 +93,61 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         val pressMainLift = pressRoutine.exercises.first()
         assertEquals(listOf(63, 72, 81), pressMainLift.setWeightsPercentOfPR)
         assertEquals(listOf(3, 3, null), pressMainLift.setReps)
+    }
+
+    @Test
+    fun `custom day names still regenerate by inspecting routines`() = runTest {
+        val cycle = seedFiveThreeOneCycle()
+        trainingCycleRepository.updateCycle(
+            cycle.copy(
+                days = cycle.days.mapIndexed { index, day ->
+                    day.copy(name = "Workout ${index + 1}")
+                },
+            ),
+        )
+
+        assertTrue(useCase.execute(cycleId = "cycle-531", targetWeek = 2, bumpTrainingMax = false))
+
+        val benchRoutine = workoutRepository.getRoutineById("routine-bench")
+        assertNotNull(benchRoutine)
+        val benchMainLift = benchRoutine.exercises.first()
+        assertEquals(listOf(63, 72, 81), benchMainLift.setWeightsPercentOfPR)
+        assertEquals(listOf(3, 3, null), benchMainLift.setReps)
+        assertEquals(2, trainingCycleRepository.getCycleById(cycle.id)?.weekNumber)
+    }
+
+    @Test
+    fun `extra accessory day without a main lift does not abort regeneration`() = runTest {
+        val cycle = seedFiveThreeOneCycle()
+        val curl = accessoryExercise(id = "curl", name = "Curl")
+        exerciseRepository.addExercise(curl)
+        val armsRoutine = Routine(
+            id = "routine-arms",
+            name = "Arms",
+            exercises = orderedExercises(
+                accessoryRoutineExercise(id = "re-curl", exercise = curl, reps = listOf(12, 12, 12)),
+            ),
+        )
+        workoutRepository.addRoutine(armsRoutine)
+        trainingCycleRepository.updateCycle(
+            cycle.copy(
+                days = cycle.days + CycleDay.create(
+                    id = "day-8",
+                    cycleId = cycle.id,
+                    dayNumber = 8,
+                    name = "Arms",
+                    routineId = armsRoutine.id,
+                ),
+            ),
+        )
+
+        assertTrue(useCase.execute(cycleId = "cycle-531", targetWeek = 2, bumpTrainingMax = false))
+
+        assertEquals(2, trainingCycleRepository.getCycleById(cycle.id)?.weekNumber)
+        val storedArmsRoutine = workoutRepository.getRoutineById("routine-arms")
+        assertNotNull(storedArmsRoutine)
+        assertEquals(listOf(12, 12, 12), storedArmsRoutine.exercises.single().setReps)
+        assertEquals(listOf(65, 65, 65), storedArmsRoutine.exercises.single().setWeightsPercentOfPR)
     }
 
     @Test
@@ -185,6 +241,35 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         val squatMainLift = squatRoutine.exercises.first()
         assertEquals(listOf(59, 68, 77), squatMainLift.setWeightsPercentOfPR)
         assertEquals(listOf(5, 5, null), squatMainLift.setReps)
+    }
+
+    @Test
+    fun `week sentinel does not advance when one routine has duplicate same-lift matches`() = runTest {
+        val cycle = seedFiveThreeOneCycle(benchMainLiftPosition = 1)
+        val bench = exerciseRepository.getExerciseById(BENCH_ID)
+        assertNotNull(bench)
+        val benchRoutine = workoutRepository.getRoutineById("routine-bench")
+        assertNotNull(benchRoutine)
+        workoutRepository.updateRoutine(
+            benchRoutine.copy(
+                exercises = orderedExercises(
+                    accessoryRoutineExercise(id = "re-bench-accessory", exercise = bench),
+                    benchRoutine.exercises[1],
+                    benchRoutine.exercises[2],
+                    benchRoutine.exercises[3],
+                ),
+            ),
+        )
+
+        assertFalse(useCase.execute(cycleId = "cycle-531", targetWeek = 2, bumpTrainingMax = false))
+
+        val storedCycle = trainingCycleRepository.getCycleById(cycle.id)
+        assertNotNull(storedCycle)
+        assertEquals(1, storedCycle.weekNumber)
+        val storedBenchRoutine = workoutRepository.getRoutineById("routine-bench")
+        assertNotNull(storedBenchRoutine)
+        assertEquals(listOf(65, 65, 65), storedBenchRoutine.exercises[0].setWeightsPercentOfPR)
+        assertEquals(listOf(59, 68, 77), storedBenchRoutine.exercises[1].setWeightsPercentOfPR)
     }
 
     private fun seedFiveThreeOneCycle(

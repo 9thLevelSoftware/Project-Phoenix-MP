@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
+import com.devil.phoenixproject.domain.model.PercentageSet
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineTemplate
 import com.devil.phoenixproject.domain.model.ScalingBasis
@@ -155,6 +156,63 @@ class TemplateConverterTest {
         // Fallback weight snapshot (used only when the resolution chain misses):
         // 140kg 1RM × default 70% = 98kg
         assertEquals(98f, routineExercise.weightPerCableKg)
+    }
+
+    @Test
+    fun `week one custom percentage sets drive per-set weight percentages`() = runTest {
+        val repository = FakeExerciseRepository().apply {
+            addExercise(
+                Exercise(
+                    id = "bench-001",
+                    name = "Bench Press",
+                    muscleGroup = "Chest",
+                    muscleGroups = "Chest",
+                    equipment = "BAR",
+                    oneRepMaxKg = 100f,
+                ),
+            )
+        }
+        val converter = TemplateConverter(repository)
+
+        val template = CycleTemplate(
+            id = "custom-531",
+            name = "Custom 531",
+            description = "Custom week 1 loading",
+            days = listOf(
+                CycleDayTemplate.training(
+                    dayNumber = 1,
+                    name = "Push",
+                    routine = RoutineTemplate(
+                        name = "Push",
+                        exercises = listOf(
+                            TemplateExercise(
+                                exerciseName = "Bench Press",
+                                sets = 3,
+                                reps = null,
+                                suggestedMode = ProgramMode.OldSchool,
+                                isPercentageBased = true,
+                                percentageSets = listOf(
+                                    PercentageSet(0.50f, 5),
+                                    PercentageSet(0.60f, 5),
+                                    PercentageSet(0.70f, null, isAmrap = true),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            progressionRule = null,
+        )
+
+        val lift = converter.convert(template, weekNumber = 1)
+            .routines
+            .single()
+            .exercises
+            .single()
+
+        assertEquals(listOf(45, 54, 63), lift.setWeightsPercentOfPR)
+        assertEquals(listOf(5, 5, null), lift.setReps)
+        assertTrue(lift.isAMRAP)
     }
 
     // ===== Production template regression suite =====
