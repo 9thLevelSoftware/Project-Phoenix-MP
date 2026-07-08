@@ -1902,8 +1902,12 @@ class ActiveSessionEngine(
                         dayNumber == lastWorkoutBearingDayNumber
                 val isRotationComplete = isGenericRotationComplete || isFiveThreeOneWorkoutRotationComplete
                 val newRotationCount = if (isRotationComplete) progress.rotationCount + 1 else progress.rotationCount
-                val targetWeek = (newRotationCount % 4) + 1
-                val bumpTrainingMax = targetWeek == 1 && newRotationCount > 0
+                val targetWeek = if (isFiveThreeOneWorkoutRotationComplete) {
+                    if (cycle.weekNumber >= 4) 1 else cycle.weekNumber + 1
+                } else {
+                    (newRotationCount % 4) + 1
+                }
+                val bumpTrainingMax = isFiveThreeOneWorkoutRotationComplete && cycle.weekNumber == 4
                 var regenerationSucceeded = false
 
                 if (

@@ -516,6 +516,82 @@ class ConflictResolutionTest {
         assertEquals(1L, cycle.week_number)
     }
 
+    @Test
+    fun `mergePortalCycles preserves existing templateId when portal omits it`() = runTest {
+        val cycleId = "local-531-template-preserved"
+        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+            id = cycleId,
+            name = "Local 5 3 1",
+            description = null,
+            created_at = now,
+            is_active = 1L,
+            profile_id = testProfileId,
+            template_id = "template_531",
+            week_number = 2L,
+        )
+
+        repository.mergePortalCycles(
+            listOf(
+                PullTrainingCycleDto(
+                    id = cycleId,
+                    name = "Portal 5 3 1",
+                    currentWeek = 3,
+                    status = "active",
+                    days = emptyList(),
+                ),
+            ),
+            testProfileId,
+        )
+
+        val cycle = database.vitruvianDatabaseQueries
+            .selectTrainingCycleById(cycleId)
+            .executeAsOne()
+
+        assertEquals("template_531", cycle.template_id)
+        assertEquals(3L, cycle.week_number)
+    }
+
+    @Test
+    fun `mergeAllPullData preserves existing templateId when portal omits it`() = runTest {
+        val cycleId = "atomic-local-531-template-preserved"
+        database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
+            id = cycleId,
+            name = "Local 5 3 1",
+            description = null,
+            created_at = now,
+            is_active = 1L,
+            profile_id = testProfileId,
+            template_id = "template_531",
+            week_number = 2L,
+        )
+
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = cycleId,
+                    name = "Portal 5 3 1",
+                    currentWeek = 3,
+                    status = "active",
+                    days = emptyList(),
+                ),
+            ),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = testProfileId,
+        )
+
+        val cycle = database.vitruvianDatabaseQueries
+            .selectTrainingCycleById(cycleId)
+            .executeAsOne()
+
+        assertEquals("template_531", cycle.template_id)
+        assertEquals(3L, cycle.week_number)
+    }
+
     // ─── Badge Merge Tests (UNION) ─────────────────────────────────────
 
     @Test

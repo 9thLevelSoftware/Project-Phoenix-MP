@@ -650,11 +650,12 @@ class SqlDelightSyncRepository(
                     // For pre-existing cycles only: update metadata (but NOT is_active - enforce single-active at end).
                     // Newly-inserted rows already have the correct values from insertTrainingCycleIgnore above.
                     if (existing != null) {
+                        val mergedTemplateId = portalCycle.templateId ?: existing.template_id
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
                             description = portalCycle.description,
                             is_active = existing.is_active, // Preserve; single-active enforcement runs at end
-                            template_id = portalCycle.templateId,
+                            template_id = mergedTemplateId,
                             week_number = portalCycle.currentWeek.toLong(),
                             id = portalCycle.id,
                         )
@@ -1668,11 +1669,12 @@ class SqlDelightSyncRepository(
 
                     // Only update pre-existing cycles; newly-inserted rows already have correct values.
                     if (existingCycle != null) {
+                        val mergedTemplateId = portalCycle.templateId ?: existingCycle.template_id
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
                             description = portalCycle.description,
                             is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
-                            template_id = portalCycle.templateId,
+                            template_id = mergedTemplateId,
                             week_number = portalCycle.currentWeek.toLong(),
                             id = portalCycle.id,
                         )

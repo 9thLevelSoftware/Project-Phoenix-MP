@@ -192,10 +192,10 @@ class ActiveSessionEngineIntegrationTest {
     }
 
     @Test
-    fun reCompletingLastDayWhenCycleAlreadyAtTargetWeekSkipsSecondRegeneration() = runTest {
+    fun consecutive_day_four_531_completions_advance_from_persisted_week() = runTest {
         val harness = DWSMTestHarness(this)
         try {
-            val cycle = seedFiveThreeOneCycle(harness, weekNumber = 2)
+            val cycle = seedFiveThreeOneCycle(harness)
             harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
             harness.fakeBleRepo.simulateConnect("Vee_Test")
 
@@ -211,9 +211,25 @@ class ActiveSessionEngineIntegrationTest {
             val completionEvent = harness.coordinator.cycleDayCompletionEvent.value
             assertNotNull(completionEvent)
             assertTrue(completionEvent.isRotationComplete)
-            assertNull(completionEvent.newWeekNumber)
+            assertEquals(2, completionEvent.newWeekNumber)
             assertFalse(completionEvent.tmBumped)
             assertEquals(2, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
+
+            completeCycleWorkoutDay(
+                harness = harness,
+                routineId = "routine-deadlift",
+                cycleId = cycle.id,
+                dayNumber = 4,
+                engine = harness.activeSessionEngine,
+            )
+            advanceUntilIdle()
+
+            val secondCompletionEvent = harness.coordinator.cycleDayCompletionEvent.value
+            assertNotNull(secondCompletionEvent)
+            assertTrue(secondCompletionEvent.isRotationComplete)
+            assertEquals(3, secondCompletionEvent.newWeekNumber)
+            assertFalse(secondCompletionEvent.tmBumped)
+            assertEquals(3, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
         } finally {
             harness.cleanup()
         }
@@ -270,6 +286,42 @@ class ActiveSessionEngineIntegrationTest {
             assertEquals(1, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
         } finally {
             nullUseCaseEngine?.cleanup()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun completing_week_four_day_four_rolls_to_week_one_and_bumps_training_maxes() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val cycle = seedFiveThreeOneCycle(harness, weekNumber = 4)
+            harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+            completeCycleWorkoutDay(
+                harness = harness,
+                routineId = "routine-deadlift",
+                cycleId = cycle.id,
+                dayNumber = 4,
+                engine = harness.activeSessionEngine,
+            )
+            advanceUntilIdle()
+
+            val completionEvent = harness.coordinator.cycleDayCompletionEvent.value
+            assertNotNull(completionEvent)
+            assertTrue(completionEvent.isRotationComplete)
+            assertEquals(1, completionEvent.newWeekNumber)
+            assertTrue(completionEvent.tmBumped)
+            assertEquals(1, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
+            assertEquals(
+                100f + (1.25f / 0.9f),
+                harness.fakeExerciseRepo.getExerciseById(BENCH_ID)?.oneRepMaxKg,
+            )
+            assertEquals(
+                160f + (2.5f / 0.9f),
+                harness.fakeExerciseRepo.getExerciseById(DEADLIFT_ID)?.oneRepMaxKg,
+            )
+        } finally {
             harness.cleanup()
         }
     }
