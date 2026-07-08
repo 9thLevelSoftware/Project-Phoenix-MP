@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -66,7 +67,7 @@ class RegenerateFiveThreeOneRoutinesUseCase(
             }
         }
 
-        val missingMainLiftIds = MAIN_LIFT_IDS - matchedLiftIds
+        val missingMainLiftIds = FiveThreeOneRoutineDetector.MAIN_LIFT_IDS - matchedLiftIds
         if (failedMainLiftRegeneration || missingMainLiftIds.isNotEmpty()) {
             Logger.w {
                 "5/3/1 regeneration aborted before advancing week sentinel: cycleId=$cycleId targetWeek=$targetWeek missingLiftIds=${missingMainLiftIds.joinToString(",")}"
@@ -92,7 +93,7 @@ class RegenerateFiveThreeOneRoutinesUseCase(
                     continue
                 }
 
-                val bump = if (exerciseId in UPPER_LIFT_IDS) {
+                val bump = if (exerciseId in FiveThreeOneRoutineDetector.UPPER_LIFT_IDS) {
                     UPPER_ONE_REP_MAX_BUMP_KG
                 } else {
                     LOWER_ONE_REP_MAX_BUMP_KG
@@ -173,13 +174,11 @@ class RegenerateFiveThreeOneRoutinesUseCase(
     }
 
     private fun RoutineExercise.fiveThreeOneMainLiftId(): String? {
-        val exerciseId = exercise.id ?: return null
-        return if (usePercentOfPR && exerciseId in MAIN_LIFT_IDS) exerciseId else null
+        return FiveThreeOneRoutineDetector.mainLiftId(this)
     }
 
-    private fun RoutineExercise.hasFiveThreeOneSetShape(): Boolean = FIVE_THREE_ONE_SET_SHAPES.any { shape ->
-        setReps == shape.reps && isAMRAP == shape.isAmrap
-    }
+    private fun RoutineExercise.hasFiveThreeOneSetShape(): Boolean =
+        FiveThreeOneRoutineDetector.hasKnownSetShape(this)
 
     private data class MainLiftMatch(
         val index: Int,
@@ -187,31 +186,7 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         val hasFiveThreeOneSetShape: Boolean,
     )
 
-    private data class FiveThreeOneSetShape(
-        val reps: List<Int?>,
-        val isAmrap: Boolean,
-    )
-
     private companion object {
-        const val BENCH_ID = "ZZ92N8QsBdp6HCh3"
-        const val SHOULDER_PRESS_ID = "0040d53f-85c7-4564-b14e-9b38c979b461"
-        const val SQUAT_ID = "UjIGHxCav-lS9B2I"
-        const val DEADLIFT_ID = "e64c7837-52e2-4b97-b771-cf08ab861af1"
-
-        val UPPER_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID)
-        val MAIN_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID, SQUAT_ID, DEADLIFT_ID)
-        val FIVE_THREE_ONE_SET_SHAPES = listOf(
-            FiveThreeOneWeeks.WEEK_1,
-            FiveThreeOneWeeks.WEEK_2,
-            FiveThreeOneWeeks.WEEK_3,
-            FiveThreeOneWeeks.WEEK_4_DELOAD,
-        ).map { sets ->
-            FiveThreeOneSetShape(
-                reps = sets.map { it.targetReps },
-                isAmrap = sets.any { it.isAmrap },
-            )
-        }
-
         const val UPPER_ONE_REP_MAX_BUMP_KG = 1.25f / 0.9f
         const val LOWER_ONE_REP_MAX_BUMP_KG = 2.5f / 0.9f
     }

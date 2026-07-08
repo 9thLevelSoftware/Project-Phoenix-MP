@@ -28,7 +28,7 @@ import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ConnectionStatus
-import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
+import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -1976,23 +1976,11 @@ class ActiveSessionEngine(
             val routineId = day.routineId ?: continue
             val routine = workoutRepository.getRoutineById(routineId) ?: continue
             for (exercise in routine.exercises) {
-                val exerciseId = exercise.exercise.id
-                if (
-                    exerciseId != null &&
-                    exerciseId in FIVE_THREE_ONE_MAIN_LIFT_IDS &&
-                    exercise.usePercentOfPR &&
-                    exercise.hasFiveThreeOneSetShapeForProgress()
-                ) {
-                    matchedLiftIds += exerciseId
-                }
+                FiveThreeOneRoutineDetector.knownShapeMainLiftId(exercise)?.let { matchedLiftIds += it }
             }
         }
 
-        return matchedLiftIds.containsAll(FIVE_THREE_ONE_MAIN_LIFT_IDS)
-    }
-
-    private fun RoutineExercise.hasFiveThreeOneSetShapeForProgress(): Boolean = FIVE_THREE_ONE_SET_SHAPES.any { shape ->
-        setReps == shape.reps && isAMRAP == shape.isAmrap
+        return matchedLiftIds.containsAll(FiveThreeOneRoutineDetector.MAIN_LIFT_IDS)
     }
 
     // ===== Form Check =====
@@ -5017,32 +5005,5 @@ class ActiveSessionEngine(
 
     private companion object {
         const val TEMPLATE_531_ID = "template_531"
-        const val BENCH_ID = "ZZ92N8QsBdp6HCh3"
-        const val SHOULDER_PRESS_ID = "0040d53f-85c7-4564-b14e-9b38c979b461"
-        const val SQUAT_ID = "UjIGHxCav-lS9B2I"
-        const val DEADLIFT_ID = "e64c7837-52e2-4b97-b771-cf08ab861af1"
-
-        val FIVE_THREE_ONE_MAIN_LIFT_IDS = setOf(
-            BENCH_ID,
-            SHOULDER_PRESS_ID,
-            SQUAT_ID,
-            DEADLIFT_ID,
-        )
-        val FIVE_THREE_ONE_SET_SHAPES = listOf(
-            FiveThreeOneWeeks.WEEK_1,
-            FiveThreeOneWeeks.WEEK_2,
-            FiveThreeOneWeeks.WEEK_3,
-            FiveThreeOneWeeks.WEEK_4_DELOAD,
-        ).map { sets ->
-            FiveThreeOneSetShape(
-                reps = sets.map { it.targetReps },
-                isAmrap = sets.any { it.isAmrap },
-            )
-        }
     }
-
-    private data class FiveThreeOneSetShape(
-        val reps: List<Int?>,
-        val isAmrap: Boolean,
-    )
 }
