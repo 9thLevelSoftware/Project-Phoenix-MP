@@ -517,7 +517,7 @@ class ConflictResolutionTest {
     }
 
     @Test
-    fun `mergePortalCycles preserves existing templateId when portal omits it`() = runTest {
+    fun `mergePortalCycles preserves existing templateId and currentWeek when portal omits them`() = runTest {
         val cycleId = "local-531-template-preserved"
         database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
             id = cycleId,
@@ -535,7 +535,6 @@ class ConflictResolutionTest {
                 PullTrainingCycleDto(
                     id = cycleId,
                     name = "Portal 5 3 1",
-                    currentWeek = 3,
                     status = "active",
                     days = emptyList(),
                 ),
@@ -548,11 +547,11 @@ class ConflictResolutionTest {
             .executeAsOne()
 
         assertEquals("template_531", cycle.template_id)
-        assertEquals(3L, cycle.week_number)
+        assertEquals(2L, cycle.week_number)
     }
 
     @Test
-    fun `mergeAllPullData preserves existing templateId when portal omits it`() = runTest {
+    fun `mergeAllPullData preserves existing templateId and currentWeek when portal omits them`() = runTest {
         val cycleId = "atomic-local-531-template-preserved"
         database.vitruvianDatabaseQueries.insertTrainingCycleIgnore(
             id = cycleId,
@@ -572,7 +571,6 @@ class ConflictResolutionTest {
                 PullTrainingCycleDto(
                     id = cycleId,
                     name = "Portal 5 3 1",
-                    currentWeek = 3,
                     status = "active",
                     days = emptyList(),
                 ),
@@ -589,7 +587,7 @@ class ConflictResolutionTest {
             .executeAsOne()
 
         assertEquals("template_531", cycle.template_id)
-        assertEquals(3L, cycle.week_number)
+        assertEquals(2L, cycle.week_number)
     }
 
     // ─── Badge Merge Tests (UNION) ─────────────────────────────────────

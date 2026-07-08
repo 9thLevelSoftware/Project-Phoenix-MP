@@ -797,7 +797,7 @@ data class PullTrainingCycleDto(
     val durationWeeks: Int = 1,
     val workoutDays: Int = 0,
     val restDays: Int = 0,
-    val currentWeek: Int = 1,
+    val currentWeek: Int? = null,
     val status: String = "draft",
     val startedAt: String? = null,
     val lastUsedAt: String? = null,

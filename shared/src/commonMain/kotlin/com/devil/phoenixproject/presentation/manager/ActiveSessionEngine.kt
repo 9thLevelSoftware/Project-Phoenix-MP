@@ -1875,6 +1875,19 @@ class ActiveSessionEngine(
         flowDelegate?.clearCycleContext()
     }
 
+    private fun shouldUpdateCycleProgressAfterSavedSet(): Boolean {
+        if (coordinator.activeCycleId == null || coordinator.activeCycleDayNumber == null) {
+            return false
+        }
+
+        val routine = coordinator._loadedRoutine.value ?: return true
+        return flowDelegate?.getNextStep(
+            routine = routine,
+            exerciseIndex = coordinator._currentExerciseIndex.value,
+            setIndex = coordinator._currentSetIndex.value,
+        ) == null
+    }
+
     private suspend fun updateCycleProgressIfNeeded() {
         val cycleId = coordinator.activeCycleId ?: return
         val dayNumber = coordinator.activeCycleDayNumber ?: return
@@ -3746,7 +3759,9 @@ class ActiveSessionEngine(
             saveSingleExerciseDefaultsFromWorkout()
         }
 
-        updateCycleProgressIfNeeded()
+        if (shouldUpdateCycleProgressAfterSavedSet()) {
+            updateCycleProgressIfNeeded()
+        }
     }
 
     // ===== Set Completion (cross-cutting) =====

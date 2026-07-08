@@ -192,6 +192,33 @@ class ActiveSessionEngineIntegrationTest {
     }
 
     @Test
+    fun first_set_of_day_four_531_cycle_does_not_advance_week() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val cycle = seedFiveThreeOneCycle(harness)
+            harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+            assertTrue(harness.dwsm.loadRoutineFromCycleAsync("routine-deadlift", cycle.id, dayNumber = 4))
+            harness.testScope.advanceUntilIdle()
+            completeLoadedCycleSet(
+                harness = harness,
+                exerciseIndex = 0,
+                setIndex = 0,
+                engine = harness.activeSessionEngine,
+            )
+            advanceUntilIdle()
+
+            assertNull(harness.coordinator.cycleDayCompletionEvent.value)
+            assertEquals(1, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
+            assertEquals(cycle.id, harness.coordinator.activeCycleId)
+            assertEquals(4, harness.coordinator.activeCycleDayNumber)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun consecutive_day_four_531_completions_advance_from_persisted_week() = runTest {
         val harness = DWSMTestHarness(this)
         try {
@@ -418,7 +445,28 @@ class ActiveSessionEngineIntegrationTest {
     ) {
         assertTrue(harness.dwsm.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber))
         harness.testScope.advanceUntilIdle()
-        harness.dwsm.enterSetReady(0, 0)
+
+        val routine = harness.fakeWorkoutRepo.getRoutineById(routineId)
+        assertNotNull(routine)
+        for ((exerciseIndex, exercise) in routine.exercises.withIndex()) {
+            for (setIndex in exercise.setReps.indices) {
+                completeLoadedCycleSet(
+                    harness = harness,
+                    exerciseIndex = exerciseIndex,
+                    setIndex = setIndex,
+                    engine = engine,
+                )
+            }
+        }
+    }
+
+    private suspend fun completeLoadedCycleSet(
+        harness: DWSMTestHarness,
+        exerciseIndex: Int,
+        setIndex: Int,
+        engine: ActiveSessionEngine,
+    ) {
+        harness.dwsm.enterSetReady(exerciseIndex, setIndex)
         harness.testScope.advanceUntilIdle()
         harness.dwsm.startWorkout(skipCountdown = true)
         harness.testScope.advanceUntilIdle()
@@ -442,6 +490,7 @@ class ActiveSessionEngineIntegrationTest {
         )
 
         engine.handleSetCompletion()
+        harness.testScope.advanceUntilIdle()
     }
 
     private fun seededMainLift(id: String, name: String, oneRepMaxKg: Float): Exercise = Exercise(

@@ -644,19 +644,20 @@ class SqlDelightSyncRepository(
                         is_active = 0L, // Don't set active yet - enforce single-active at end
                         profile_id = profileId,
                         template_id = portalCycle.templateId,
-                        week_number = portalCycle.currentWeek.toLong(),
+                        week_number = portalCycle.currentWeek?.toLong() ?: 1L,
                     )
 
                     // For pre-existing cycles only: update metadata (but NOT is_active - enforce single-active at end).
                     // Newly-inserted rows already have the correct values from insertTrainingCycleIgnore above.
                     if (existing != null) {
                         val mergedTemplateId = portalCycle.templateId ?: existing.template_id
+                        val mergedWeekNumber = portalCycle.currentWeek?.toLong() ?: existing.week_number
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
                             description = portalCycle.description,
                             is_active = existing.is_active, // Preserve; single-active enforcement runs at end
                             template_id = mergedTemplateId,
-                            week_number = portalCycle.currentWeek.toLong(),
+                            week_number = mergedWeekNumber,
                             id = portalCycle.id,
                         )
                     }
@@ -1664,18 +1665,19 @@ class SqlDelightSyncRepository(
                         is_active = 0L,
                         profile_id = profileId,
                         template_id = portalCycle.templateId,
-                        week_number = portalCycle.currentWeek.toLong(),
+                        week_number = portalCycle.currentWeek?.toLong() ?: 1L,
                     )
 
                     // Only update pre-existing cycles; newly-inserted rows already have correct values.
                     if (existingCycle != null) {
                         val mergedTemplateId = portalCycle.templateId ?: existingCycle.template_id
+                        val mergedWeekNumber = portalCycle.currentWeek?.toLong() ?: existingCycle.week_number
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
                             description = portalCycle.description,
                             is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
                             template_id = mergedTemplateId,
-                            week_number = portalCycle.currentWeek.toLong(),
+                            week_number = mergedWeekNumber,
                             id = portalCycle.id,
                         )
                     }
