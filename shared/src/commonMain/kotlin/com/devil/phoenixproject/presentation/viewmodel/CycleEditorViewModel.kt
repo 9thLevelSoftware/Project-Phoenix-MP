@@ -307,11 +307,12 @@ class CycleEditorViewModel(
         if (_uiState.value.isSaving) return null
         val state = _uiState.value
         val isNewCycle = state.cycleId == "new"
+        val existingCycle = if (isNewCycle) null else repository.getCycleById(state.cycleId)
         // For new cycles: use active profile; for edits: preserve original ownership
         val profileIdToUse = if (isNewCycle) {
             userProfileRepository.activeProfile.value?.id ?: "default"
         } else {
-            state.originalProfileId ?: "default"
+            existingCycle?.profileId ?: state.originalProfileId ?: "default"
         }
         Logger.d {
             "CycleEditorVM: saveCycle called, cycleId=${state.cycleId}, items=${state.items.size}, profileId=$profileIdToUse, isNew=$isNewCycle"
@@ -349,6 +350,8 @@ class CycleEditorViewModel(
                 days = days,
                 isActive = false,
                 profileId = profileIdToUse,
+                templateId = existingCycle?.templateId,
+                weekNumber = existingCycle?.weekNumber ?: 1,
             )
 
             if (isNewCycle) {

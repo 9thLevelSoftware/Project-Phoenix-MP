@@ -197,6 +197,46 @@ class CycleEditorViewModelTest {
     }
 
     @Test
+    fun `editing cycle preserves template id and week number`() = runTest {
+        val existingCycleId = "existing-531-cycle"
+        val existingCycle = TrainingCycle(
+            id = existingCycleId,
+            name = "5/3/1 Week 3",
+            description = "Original",
+            days = listOf(
+                CycleDay(
+                    id = "day-1",
+                    cycleId = existingCycleId,
+                    dayNumber = 1,
+                    name = "Bench",
+                    routineId = "routine-bench",
+                    isRestDay = false,
+                ),
+            ),
+            createdAt = 1000L,
+            isActive = false,
+            profileId = "profile-531",
+            templateId = "template_531",
+            weekNumber = 3,
+        )
+        repository.addCycle(existingCycle)
+
+        viewModel.initialize(cycleId = existingCycleId)
+        advanceUntilIdle()
+        viewModel.updateCycleName("Renamed 5/3/1")
+
+        val savedId = viewModel.saveCycle()
+        assertNotNull(savedId)
+        assertEquals(existingCycleId, savedId)
+
+        val stored = repository.getCycleById(savedId)
+        assertNotNull(stored)
+        assertEquals("Renamed 5/3/1", stored.name)
+        assertEquals("template_531", stored.templateId)
+        assertEquals(3, stored.weekNumber)
+    }
+
+    @Test
     fun `originalProfileId is captured when loading existing cycle`() = runTest {
         // Given: An existing cycle owned by a specific profile
         val originalProfileId = "profile-xyz"
