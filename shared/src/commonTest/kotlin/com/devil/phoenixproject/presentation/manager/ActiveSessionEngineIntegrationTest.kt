@@ -192,6 +192,37 @@ class ActiveSessionEngineIntegrationTest {
     }
 
     @Test
+    fun completing_day_four_of_legacy_null_template_531_cycle_emits_new_week_number() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val cycle = seedFiveThreeOneCycle(harness, templateId = null)
+            harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+            completeCycleWorkoutDay(
+                harness = harness,
+                routineId = "routine-deadlift",
+                cycleId = cycle.id,
+                dayNumber = 4,
+                engine = harness.activeSessionEngine,
+            )
+            advanceUntilIdle()
+
+            val completionEvent = harness.coordinator.cycleDayCompletionEvent.value
+            assertNotNull(completionEvent)
+            assertTrue(completionEvent.isRotationComplete)
+            assertEquals(2, completionEvent.newWeekNumber)
+            assertFalse(completionEvent.tmBumped)
+
+            val updatedCycle = harness.fakeTrainingCycleRepo.getCycleById(cycle.id)
+            assertEquals(2, updatedCycle?.weekNumber)
+            assertNull(updatedCycle?.templateId)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun first_set_of_day_four_531_cycle_does_not_advance_week() = runTest {
         val harness = DWSMTestHarness(this)
         try {
@@ -356,6 +387,7 @@ class ActiveSessionEngineIntegrationTest {
     private fun seedFiveThreeOneCycle(
         harness: DWSMTestHarness,
         weekNumber: Int = 1,
+        templateId: String? = "template_531",
     ): TrainingCycle {
         val bench = seededMainLift(BENCH_ID, "Bench Press", 100f)
         val squat = seededMainLift(SQUAT_ID, "Squat", 140f)
@@ -421,7 +453,7 @@ class ActiveSessionEngineIntegrationTest {
             id = "cycle-531",
             name = "5/3/1",
             weekNumber = weekNumber,
-            templateId = "template_531",
+            templateId = templateId,
             days = listOf(
                 CycleDay.create(id = "day-1", cycleId = "cycle-531", dayNumber = 1, name = "Bench", routineId = benchRoutine.id),
                 CycleDay.create(id = "day-2", cycleId = "cycle-531", dayNumber = 2, name = "Squat", routineId = squatRoutine.id),
