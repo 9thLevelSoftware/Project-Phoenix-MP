@@ -8,7 +8,6 @@ import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
 import com.devil.phoenixproject.domain.model.Routine
-import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeightsForWeek
 
 class RegenerateFiveThreeOneRoutinesUseCase(
@@ -113,11 +112,11 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         onMatchedLift: (String) -> Unit,
     ): Routine? {
         val matches = routine.exercises.mapIndexedNotNull { index, exercise ->
-            exercise.fiveThreeOneMainLiftId()?.let { liftId ->
+            FiveThreeOneRoutineDetector.mainLiftId(exercise)?.let { liftId ->
                 MainLiftMatch(
                     index = index,
                     liftId = liftId,
-                    hasFiveThreeOneSetShape = exercise.hasFiveThreeOneSetShape(),
+                    hasFiveThreeOneSetShape = FiveThreeOneRoutineDetector.hasKnownSetShape(exercise),
                 )
             }
         }
@@ -172,13 +171,6 @@ class RegenerateFiveThreeOneRoutinesUseCase(
 
         return if (changed) routine.copy(exercises = updatedExercises) else routine
     }
-
-    private fun RoutineExercise.fiveThreeOneMainLiftId(): String? {
-        return FiveThreeOneRoutineDetector.mainLiftId(this)
-    }
-
-    private fun RoutineExercise.hasFiveThreeOneSetShape(): Boolean =
-        FiveThreeOneRoutineDetector.hasKnownSetShape(this)
 
     private data class MainLiftMatch(
         val index: Int,
