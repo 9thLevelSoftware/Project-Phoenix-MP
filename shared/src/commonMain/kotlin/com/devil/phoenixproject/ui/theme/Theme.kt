@@ -112,7 +112,14 @@ fun VitruvianTheme(
         ThemeMode.DARK -> true
     }
     val colorScheme = if (dynamicColorEnabled) {
-        platformDynamicColorScheme(useDarkColors)
+        // Material You path. In dark mode, clamp the dynamic dark scheme so the
+        // surface family never resolves to high-luminance values; see
+        // `ClampedDynamicDarkScheme.kt` and the RCA for issue #640 for the rationale.
+        val dynamic = platformDynamicColorScheme(useDarkColors)
+        when {
+            dynamic != null && useDarkColors -> clampDynamicDarkScheme(dynamic, DarkColorScheme)
+            else -> dynamic
+        }
     } else {
         null
     } ?: if (useDarkColors) {
