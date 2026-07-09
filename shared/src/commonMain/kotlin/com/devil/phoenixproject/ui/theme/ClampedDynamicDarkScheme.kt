@@ -33,12 +33,11 @@ import androidx.compose.material3.ColorScheme
  * outlineVariant — are preserved, so the wallpaper hue still flows through toggles,
  * sliders, badges, and error states.
  *
- * Why not pass `surfaceVariant` / `background` / `surfaceDim` / `surfaceBright`
- * through from `dynamic`? Those tokens are part of the same surface family that
- * wallpaper-derived palettes miscalibrate for some users. The conservative clamp
- * keeps the chrome visually consistent across wallpapers; the wallpaper hue stays
- * alive on accent colors that are explicitly user-interactive (toggles, selection
- * chips, error states) instead of on ambient background tints that should stay
+ * Why not pass any of those tokens through from `dynamic`? They are all part of the
+ * same wallpaper-miscalibrated surface family. The conservative clamp keeps the
+ * chrome visually consistent across wallpapers; the wallpaper hue stays alive on
+ * accent colors that are explicitly user-interactive (toggles, selection chips,
+ * error states) instead of on ambient background tints that should stay
  * brand-controlled.
  *
  * Only the dark branch of `VitruvianTheme` invokes this helper; light + Material You

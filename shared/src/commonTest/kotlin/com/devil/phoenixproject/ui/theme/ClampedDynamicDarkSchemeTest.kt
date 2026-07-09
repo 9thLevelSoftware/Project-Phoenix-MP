@@ -154,12 +154,9 @@ class ClampedDynamicDarkSchemeTest {
         assertTrue(
             dynamic.surfaceVariant != fallback.surfaceVariant ||
                 dynamic.background != fallback.background ||
-                dynamic.surfaceDim != fallback.surfaceDim ||
-                dynamic.inverseSurface != fallback.inverseSurface ||
-                dynamic.inverseOnSurface != fallback.inverseOnSurface,
+                dynamic.surfaceDim != fallback.surfaceDim,
             "precondition: faked dynamic must differ from fallback on surfaceVariant/" +
-                "background/surfaceDim/inverseSurface/inverseOnSurface so the clamp " +
-                "assertions are meaningful",
+                "background/surfaceDim so the clamp assertion is meaningful",
         )
 
         assertEquals(fallback.surfaceVariant, clamped.surfaceVariant,
@@ -172,13 +169,10 @@ class ClampedDynamicDarkSchemeTest {
         assertEquals(fallback.onBackground, clamped.onBackground)
         assertEquals(fallback.surfaceDim, clamped.surfaceDim)
         assertEquals(fallback.surfaceBright, clamped.surfaceBright)
-        assertEquals(fallback.inverseSurface, clamped.inverseSurface,
-            "inverseSurface must come from fallback — Material 3 Snackbar and similar " +
-                "components read this for their container color. Clamping prevents the " +
-                "dark-on-dark trap described in the Gemini Code Review on PR #642.")
-        assertEquals(fallback.inverseOnSurface, clamped.inverseOnSurface,
-            "inverseOnSurface must come from fallback — keeps Snackbar / Tooltip " +
-                "content readable when the wallpaper tries to invert them.")
+        // inverseSurface / inverseOnSurface are NOT asserted here — see the broader
+        // `clamped surface family equals the static dark fallback surface` test above,
+        // which asserts every surface-family token in one place. Asserting them here
+        // too would be a duplicate copy of the same clamp check.
     }
 
     @Test
