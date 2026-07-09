@@ -14,8 +14,8 @@ import kotlin.test.assertTrue
  *
  * The helper merges a wallpaper-derived dynamic dark `ColorScheme` with the
  * brand-controlled static `DarkColorScheme`: the surface family — surface /
- * surfaceVariant / onSurfaceVariant / surfaceDim / surfaceBright / surfaceContainer* /
- * background / onBackground / inverseSurface / inverseOnSurface — must come from
+ * surfaceVariant / onSurfaceVariant / surfaceDim / surfaceBright / surfaceTint /
+ * surfaceContainer* / background / onBackground / inverseSurface / inverseOnSurface — must come from
  * the static palette (so chrome / card surfaces and Material 3 components that
  * read from inverseSurface such as Snackbar never resolve to high-luminance values
  * or fall into the dark-on-dark trap), while primary / secondary / tertiary / error
@@ -98,6 +98,7 @@ class ClampedDynamicDarkSchemeTest {
             surfaceContainer = Color(0xFFA0A0A0),
             surfaceContainerHigh = Color(0xFFB0B0B0),  // BUG: light
             surfaceContainerHighest = Color(0xFFD0D0D0), // BUG: very light
+            surfaceTint = Color(0xFFFFF59D),            // BUG: bright elevated-surface tint
             error = Color(0xFFFF1744),
             onError = Color.White,
             outline = Color(0xFF707070),
@@ -132,6 +133,9 @@ class ClampedDynamicDarkSchemeTest {
         assertEquals(fallback.surfaceContainerHighest, clamped.surfaceContainerHighest)
         assertEquals(fallback.background, clamped.background)
         assertEquals(fallback.onBackground, clamped.onBackground)
+        assertNotEquals(dynamic.surfaceTint, fallback.surfaceTint,
+            "precondition: faked dynamic surfaceTint must differ from fallback so the clamp assertion is meaningful")
+        assertEquals(fallback.surfaceTint, clamped.surfaceTint)
         assertEquals(fallback.inverseSurface, clamped.inverseSurface)
         assertEquals(fallback.inverseOnSurface, clamped.inverseOnSurface)
     }
@@ -297,12 +301,14 @@ class ClampedDynamicDarkSchemeTest {
             surfaceContainerHighest = Color.White,
             surfaceContainerHigh = Color.White,
             surfaceBright = Color.White,
+            surfaceTint = Color.White,
         )
         val clamped = clampDynamicDarkScheme(extremeDynamic, fallback)
         assertEquals(fallback.surface, clamped.surface)
         assertEquals(fallback.surfaceContainerHighest, clamped.surfaceContainerHighest)
         assertEquals(fallback.surfaceContainerHigh, clamped.surfaceContainerHigh)
         assertEquals(fallback.surfaceBright, clamped.surfaceBright)
+        assertEquals(fallback.surfaceTint, clamped.surfaceTint)
         assertTrue(clamped.surface.luminance() < 0.5f)
     }
 

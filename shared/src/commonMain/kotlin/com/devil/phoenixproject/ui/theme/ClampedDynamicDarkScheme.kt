@@ -20,18 +20,22 @@ import androidx.compose.material3.ColorScheme
  *
  * This helper is the minimal, **conservative** product fix. It clamps **the entire
  * surface family** (incl. `surfaceVariant` / `onSurfaceVariant` / `surfaceDim` /
- * `surfaceBright` / `background` / `onBackground` / `inverseSurface` /
- * `inverseOnSurface`) to the brand-controlled static `DarkColorScheme`, because those
+ * `surfaceBright` / `surfaceTint` / `background` / `onBackground` /
+ * `inverseSurface` / `inverseOnSurface`) to the brand-controlled static
+ * `DarkColorScheme`, because those
  * tokens are co-sampled by the same chrome surfaces that the reporter saw flip light.
  * `inverseSurface` / `inverseOnSurface` in particular are used by Material 3
  * components like `Snackbar` for their container / content colors; if we clamp
  * `surface` to dark but leave the dynamic `inverseSurface` in place, a Snackbar on a
  * wallpaper with a light `surface` would render dark-on-dark (Snackbar container
  * resolves to dynamic `inverseSurface` which is dark when the dynamic `surface` is
- * light, while the underlying screen is dark from the clamp → no contrast). Only the
- * wallpaper-derived accents — primary, secondary, tertiary, error, outline,
- * outlineVariant — are preserved, so the wallpaper hue still flows through toggles,
- * sliders, badges, and error states.
+ * light, while the underlying screen is dark from the clamp → no contrast).
+ * `surfaceTint` is also clamped because Material 3 applies it to elevated surface
+ * containers; a light or saturated wallpaper tint can otherwise reintroduce the
+ * same color drift on elevated bars/cards after the surface roles are clamped.
+ * Only the wallpaper-derived accents — primary, secondary, tertiary, error,
+ * outline, outlineVariant — are preserved, so the wallpaper hue still flows
+ * through toggles, sliders, badges, and error states.
  *
  * Why not pass any of those tokens through from `dynamic`? They are all part of the
  * same wallpaper-miscalibrated surface family. The conservative clamp keeps the
@@ -68,6 +72,10 @@ fun clampDynamicDarkScheme(
     surfaceContainerHighest = fallback.surfaceContainerHighest,
     background = fallback.background,
     onBackground = fallback.onBackground,
+    // surfaceTint: Material 3 applies this tint to elevated surface containers.
+    // Keep it on the static dark ramp so elevated bars/cards cannot drift away
+    // from the clamped surface family under bright/saturated wallpaper palettes.
+    surfaceTint = fallback.surfaceTint,
     // inverseSurface / inverseOnSurface: Material 3 components such as Snackbar use
     // these for their container / content colors. Clamping them keeps Snackbar (and
     // any other inverse-surface component) readable under the wallpaper bug instead

@@ -95,22 +95,25 @@ class MaterialYouDarkClampContractTest {
     }
 
     @Test
-    fun clampHelper_clampInverseSurfaceFromFallback() {
+    fun clampHelper_clampsInverseSurfaceAndSurfaceTintFromFallback() {
         // Material 3 components such as Snackbar read `inverseSurface` for their
         // container color and `inverseOnSurface` for content. If the clamp leaves
         // these from `dynamic`, a wallpaper that produces a light surface produces
         // a dark `inverseSurface`, and the Snackbar renders dark-on-dark under the
-        // very wallpaper this fix is meant to tame. Pin the clamp composition here.
+        // very wallpaper this fix is meant to tame. Material 3 also applies
+        // `surfaceTint` to elevated surface containers, so pin that to fallback too
+        // and prevent bright/saturated wallpaper tints from reintroducing chrome drift.
         val helper = read(
             "shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/ClampedDynamicDarkScheme.kt",
         )
         assertTrue(
             helper.contains("inverseSurface = fallback.inverseSurface") &&
-                helper.contains("inverseOnSurface = fallback.inverseOnSurface"),
-            "ClampedDynamicDarkScheme must clamp inverseSurface and inverseOnSurface " +
-                "from fallback so Material 3 Snackbar / Tooltip / similar components " +
-                "do not fall into the dark-on-dark trap described in the Gemini Code " +
-                "Review on PR #642.",
+                helper.contains("inverseOnSurface = fallback.inverseOnSurface") &&
+                helper.contains("surfaceTint = fallback.surfaceTint"),
+            "ClampedDynamicDarkScheme must clamp inverseSurface, inverseOnSurface, " +
+                "and surfaceTint from fallback so Material 3 Snackbar / Tooltip / " +
+                "similar components and elevated surfaces stay on the brand-controlled " +
+                "dark ramp described in the automated reviews on PR #642.",
         )
     }
 }
