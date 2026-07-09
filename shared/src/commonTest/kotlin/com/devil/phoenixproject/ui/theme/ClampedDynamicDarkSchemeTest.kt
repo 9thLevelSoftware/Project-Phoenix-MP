@@ -126,6 +126,41 @@ class ClampedDynamicDarkSchemeTest {
     }
 
     @Test
+    fun `conservative clamp routes surfaceVariant background surfaceDim surfaceBright from fallback`() {
+        // Regression test for the Kilo Code Review warning on PR #642:
+        // the *entire* surface family (incl. surfaceVariant / onSurfaceVariant /
+        // surfaceDim / surfaceBright / background / onBackground) is clamped to
+        // fallback, not just the surfaceContainer* roles. These tokens are part of
+        // the same wallpaper-miscalibrated surface family that the reporter saw
+        // flip light. If a future refactor loosens the clamp on these tokens,
+        // the bug returns on wallpapers with high-luminance surfaceVariant /
+        // background values.
+        val dynamic = highLuminanceDynamicDark()
+        val clamped = clampDynamicDarkScheme(dynamic, fallback)
+
+        // Confirm the test fixture has a non-fallback value for these tokens so the
+        // assertion is meaningful (otherwise the test would silently pass).
+        assertTrue(
+            dynamic.surfaceVariant != fallback.surfaceVariant ||
+                dynamic.background != fallback.background ||
+                dynamic.surfaceDim != fallback.surfaceDim,
+            "precondition: faked dynamic must differ from fallback on surfaceVariant/" +
+                "background/surfaceDim so the clamp assertion is meaningful",
+        )
+
+        assertEquals(fallback.surfaceVariant, clamped.surfaceVariant,
+            "surfaceVariant must come from fallback — defensive against wallpaper " +
+                "surfaceVariant leak. See PR #642 Kilo Code Review.")
+        assertEquals(fallback.onSurfaceVariant, clamped.onSurfaceVariant,
+            "onSurfaceVariant must come from fallback — defensive against wallpaper " +
+                "onSurfaceVariant leak.")
+        assertEquals(fallback.background, clamped.background)
+        assertEquals(fallback.onBackground, clamped.onBackground)
+        assertEquals(fallback.surfaceDim, clamped.surfaceDim)
+        assertEquals(fallback.surfaceBright, clamped.surfaceBright)
+    }
+
+    @Test
     fun `clamped chrome surface luminance is below the dark threshold`() {
         // Regression test for issue #640: top app bar / bottom nav / expanded card.
         val dynamic = highLuminanceDynamicDark()

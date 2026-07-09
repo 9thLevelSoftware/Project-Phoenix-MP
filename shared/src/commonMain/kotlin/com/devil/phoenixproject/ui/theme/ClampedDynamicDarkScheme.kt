@@ -18,12 +18,21 @@ import androidx.compose.material3.ColorScheme
  *     at elevation 8.dp (and the same color at elevation 2.dp when collapsed)
  * which produces a half-light / half-dark screen under Dark + Material You.
  *
- * This helper is the minimal product fix:
- *   - `surface` family comes from `fallback` (the brand-controlled static
- *     `DarkColorScheme` — Slate950/900/800/700). Chrome stays brand-dark.
- *   - `primary` / `secondary` / `tertiary` / `error` / outline* / surfaceVariant /
- *     `background` come from `dynamic`. The wallpaper hue still flows through
- *     toggles, sliders, badges, error states, etc.
+ * This helper is the minimal, **conservative** product fix. It clamps **the entire
+ * surface family** (incl. `surfaceVariant` / `onSurfaceVariant` / `surfaceDim` /
+ * `surfaceBright` / `background` / `onBackground`) to the brand-controlled static
+ * `DarkColorScheme`, because those tokens are co-sampled by the same chrome surfaces
+ * that the reporter saw flip light. Only the wallpaper-derived accents — primary,
+ * secondary, tertiary, error, outline, outlineVariant — are preserved, so the
+ * wallpaper hue still flows through toggles, sliders, badges, and error states.
+ *
+ * Why not pass `surfaceVariant` / `background` / `surfaceDim` / `surfaceBright`
+ * through from `dynamic`? Those tokens are part of the same surface family that
+ * wallpaper-derived palettes miscalibrate for some users. The conservative clamp
+ * keeps the chrome visually consistent across wallpapers; the wallpaper hue stays
+ * alive on accent colors that are explicitly user-interactive (toggles, selection
+ * chips, error states) instead of on ambient background tints that should stay
+ * brand-controlled.
  *
  * Only the dark branch of `VitruvianTheme` invokes this helper; light + Material You
  * is unchanged. iOS never invokes it because `platformDynamicColorScheme` returns
