@@ -85,7 +85,7 @@ class HealthIntegrationSegmentTypeTest {
     @Test
     fun raiseVariantsMapToSpecificTypesNotGenericWeightlifting() {
         assertEquals(
-            ExerciseSegment.EXERCISE_SEGMENT_TYPE_FRONT_RAISE,
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_DUMBBELL_FRONT_RAISE,
             segmentTypeForExerciseInternal("Dumbbell Front Raise"),
         )
         assertEquals(
@@ -93,7 +93,7 @@ class HealthIntegrationSegmentTypeTest {
             segmentTypeForExerciseInternal("Lateral Raise"),
         )
         assertEquals(
-            ExerciseSegment.EXERCISE_SEGMENT_TYPE_LATERAL_RAISE,
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_DUMBBELL_LATERAL_RAISE,
             segmentTypeForExerciseInternal("Dumbbell Lateral Raise"),
         )
     }
@@ -170,6 +170,10 @@ class HealthIntegrationSegmentTypeTest {
             ExerciseSegment.EXERCISE_SEGMENT_TYPE_LUNGE,
             segmentTypeForExerciseInternal("Walking Lunge"),
         )
+        assertEquals(
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_DUMBBELL_ROW,
+            segmentTypeForExerciseInternal("Dumbbell Row"),
+        )
     }
 
     @Test
@@ -195,11 +199,9 @@ class HealthIntegrationSegmentTypeTest {
 
     @Test
     fun setIndexWriterConversion_isOneBased() {
-        // Mirror the writer's `setIndex = (setIndex + 1).coerceAtLeast(1)` rule
-        // so the regression is locked at the data-flow level too: 0/1/2 in
-        // CompletedSet.setNumber must become 1/2/3 in ExerciseSegment.setIndex.
-        // (The actual `toHealthConnectSegment` call requires a `Context`; this
-        // test pins the conversion formula independently.)
+        // Call the same helper used by the Android Health Connect writer so this
+        // trips if production accidentally reverts to passing 0-based setIndex
+        // values through unchanged.
         assertEquals(1, toHealthConnectSetIndex(0), "setNumber 0 must become 1.")
         assertEquals(2, toHealthConnectSetIndex(1), "setNumber 1 must become 2.")
         assertEquals(3, toHealthConnectSetIndex(2), "setNumber 2 must become 3.")
@@ -223,7 +225,4 @@ class HealthIntegrationSegmentTypeTest {
         assertNotEquals(1, toHealthConnectSetIndex(1), "setIndex 1 must NOT be written as 1 (was the pre-fix bug).")
         assertNotEquals(2, toHealthConnectSetIndex(2), "setIndex 2 must NOT be written as 2 (was the pre-fix bug).")
     }
-
-    private fun toHealthConnectSetIndex(internalSetIndex: Int): Int =
-        (internalSetIndex + 1).coerceAtLeast(1)
 }

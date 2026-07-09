@@ -19,6 +19,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 private val log = Logger.withTag("HealthIntegration.Android")
 
@@ -271,7 +272,7 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
             // pipeline (CompletedSet.setNumber, WorkoutCoordinator._currentSetIndex)
             // is 0-based. Convert at the writer boundary so the internal 0-based
             // convention is preserved everywhere else.
-            setIndex = (setIndex + 1).coerceAtLeast(1),
+            setIndex = toHealthConnectSetIndex(setIndex),
             rateOfPerceivedExertion = rpe?.toFloat(),
         )
     }
@@ -359,6 +360,14 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
 }
 
 /**
+ * Issue #639: the Android Health Connect writer is the boundary where Phoenix's
+ * internal 0-based set number becomes the user-visible Health Connect set label.
+ */
+@androidx.annotation.VisibleForTesting
+internal fun toHealthConnectSetIndex(internalSetIndex: Int): Int =
+    (internalSetIndex + 1).coerceAtLeast(1)
+
+/**
  * Issue #639: top-level (rather than class-member) helper for testing. The
  * Android-host test suite calls this directly to lock in the exercise-name to
  * Health Connect segment-type mapping without needing a `Context`. The
@@ -366,7 +375,7 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
  */
 @androidx.annotation.VisibleForTesting
 internal fun segmentTypeForExerciseInternal(name: String): Int {
-    val normalized = name.lowercase()
+    val normalized = name.lowercase(Locale.ROOT)
     return when {
         "bench" in normalized && "press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_BENCH_PRESS
         "deadlift" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DEADLIFT
@@ -382,9 +391,13 @@ internal fun segmentTypeForExerciseInternal(name: String): Int {
         "leg press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_LEG_PRESS
         "leg raise" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_LEG_RAISE
         "barbell shoulder press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_BARBELL_SHOULDER_PRESS
-        "front raise" in normalized || "dumbbell front raise" in normalized ->
+        "dumbbell front raise" in normalized ->
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_DUMBBELL_FRONT_RAISE
+        "front raise" in normalized ->
             ExerciseSegment.EXERCISE_SEGMENT_TYPE_FRONT_RAISE
-        "lateral raise" in normalized || "dumbbell lateral raise" in normalized ->
+        "dumbbell lateral raise" in normalized ->
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_DUMBBELL_LATERAL_RAISE
+        "lateral raise" in normalized ->
             ExerciseSegment.EXERCISE_SEGMENT_TYPE_LATERAL_RAISE
         "hip thrust" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_HIP_THRUST
         "back extension" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_BACK_EXTENSION
@@ -401,6 +414,7 @@ internal fun segmentTypeForExerciseInternal(name: String): Int {
         // Generic single-word fallbacks. Placed AFTER the specific multi-word
         // matches so they only apply when no more specific branch matches.
         "curl" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_ARM_CURL
+        "dumbbell row" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DUMBBELL_ROW
         "row" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
         else -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
     }
