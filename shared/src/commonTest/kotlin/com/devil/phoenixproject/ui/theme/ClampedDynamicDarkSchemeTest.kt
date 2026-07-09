@@ -13,11 +13,14 @@ import kotlin.test.assertTrue
  * Unit tests for [clampDynamicDarkScheme] (fix for issue #640).
  *
  * The helper merges a wallpaper-derived dynamic dark `ColorScheme` with the
- * brand-controlled static `DarkColorScheme`: the surface family must come from
- * the static palette (so chrome / card surfaces never resolve to high-luminance
- * values), while primary / secondary / tertiary / error / outline* / surfaceVariant
- * / background must come from the dynamic palette (so the wallpaper hue still
- * flows through toggles, sliders, badges, error states, etc.).
+ * brand-controlled static `DarkColorScheme`: the surface family — surface /
+ * surfaceVariant / onSurfaceVariant / surfaceDim / surfaceBright / surfaceContainer* /
+ * background / onBackground / inverseSurface / inverseOnSurface — must come from
+ * the static palette (so chrome / card surfaces and Material 3 components that
+ * read from inverseSurface such as Snackbar never resolve to high-luminance values
+ * or fall into the dark-on-dark trap), while primary / secondary / tertiary / error
+ * / outline / outlineVariant come from the dynamic palette (so the wallpaper hue
+ * still flows through toggles, sliders, badges, error states, etc.).
  *
  * These tests are JVM-only — they construct fake `ColorScheme` instances via the
  * `darkColorScheme(...)` builder + `.copy(...)` and assert on the resulting merged
@@ -99,6 +102,12 @@ class ClampedDynamicDarkSchemeTest {
             onError = Color.White,
             outline = Color(0xFF707070),
             outlineVariant = Color(0xFF505050),
+            // Simulate a wallpaper whose inverseSurface would resolve dark when the
+            // surface is light — the exact dark-on-dark Snackbar trap. Material 3
+            // `darkColorScheme(...)` defaults inverseSurface to a light value, so we
+            // have to override it here to make the trap reproducible in tests.
+            inverseSurface = Color(0xFF101010),
+            inverseOnSurface = Color(0xFF101010),
         )
     }
 
@@ -123,6 +132,8 @@ class ClampedDynamicDarkSchemeTest {
         assertEquals(fallback.surfaceContainerHighest, clamped.surfaceContainerHighest)
         assertEquals(fallback.background, clamped.background)
         assertEquals(fallback.onBackground, clamped.onBackground)
+        assertEquals(fallback.inverseSurface, clamped.inverseSurface)
+        assertEquals(fallback.inverseOnSurface, clamped.inverseOnSurface)
     }
 
     @Test
@@ -143,9 +154,12 @@ class ClampedDynamicDarkSchemeTest {
         assertTrue(
             dynamic.surfaceVariant != fallback.surfaceVariant ||
                 dynamic.background != fallback.background ||
-                dynamic.surfaceDim != fallback.surfaceDim,
+                dynamic.surfaceDim != fallback.surfaceDim ||
+                dynamic.inverseSurface != fallback.inverseSurface ||
+                dynamic.inverseOnSurface != fallback.inverseOnSurface,
             "precondition: faked dynamic must differ from fallback on surfaceVariant/" +
-                "background/surfaceDim so the clamp assertion is meaningful",
+                "background/surfaceDim/inverseSurface/inverseOnSurface so the clamp " +
+                "assertions are meaningful",
         )
 
         assertEquals(fallback.surfaceVariant, clamped.surfaceVariant,
@@ -158,6 +172,13 @@ class ClampedDynamicDarkSchemeTest {
         assertEquals(fallback.onBackground, clamped.onBackground)
         assertEquals(fallback.surfaceDim, clamped.surfaceDim)
         assertEquals(fallback.surfaceBright, clamped.surfaceBright)
+        assertEquals(fallback.inverseSurface, clamped.inverseSurface,
+            "inverseSurface must come from fallback — Material 3 Snackbar and similar " +
+                "components read this for their container color. Clamping prevents the " +
+                "dark-on-dark trap described in the Gemini Code Review on PR #642.")
+        assertEquals(fallback.inverseOnSurface, clamped.inverseOnSurface,
+            "inverseOnSurface must come from fallback — keeps Snackbar / Tooltip " +
+                "content readable when the wallpaper tries to invert them.")
     }
 
     @Test

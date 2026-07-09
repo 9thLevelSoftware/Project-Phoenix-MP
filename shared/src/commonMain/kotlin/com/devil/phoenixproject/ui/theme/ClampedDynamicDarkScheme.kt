@@ -20,11 +20,18 @@ import androidx.compose.material3.ColorScheme
  *
  * This helper is the minimal, **conservative** product fix. It clamps **the entire
  * surface family** (incl. `surfaceVariant` / `onSurfaceVariant` / `surfaceDim` /
- * `surfaceBright` / `background` / `onBackground`) to the brand-controlled static
- * `DarkColorScheme`, because those tokens are co-sampled by the same chrome surfaces
- * that the reporter saw flip light. Only the wallpaper-derived accents — primary,
- * secondary, tertiary, error, outline, outlineVariant — are preserved, so the
- * wallpaper hue still flows through toggles, sliders, badges, and error states.
+ * `surfaceBright` / `background` / `onBackground` / `inverseSurface` /
+ * `inverseOnSurface`) to the brand-controlled static `DarkColorScheme`, because those
+ * tokens are co-sampled by the same chrome surfaces that the reporter saw flip light.
+ * `inverseSurface` / `inverseOnSurface` in particular are used by Material 3
+ * components like `Snackbar` for their container / content colors; if we clamp
+ * `surface` to dark but leave the dynamic `inverseSurface` in place, a Snackbar on a
+ * wallpaper with a light `surface` would render dark-on-dark (Snackbar container
+ * resolves to dynamic `inverseSurface` which is dark when the dynamic `surface` is
+ * light, while the underlying screen is dark from the clamp → no contrast). Only the
+ * wallpaper-derived accents — primary, secondary, tertiary, error, outline,
+ * outlineVariant — are preserved, so the wallpaper hue still flows through toggles,
+ * sliders, badges, and error states.
  *
  * Why not pass `surfaceVariant` / `background` / `surfaceDim` / `surfaceBright`
  * through from `dynamic`? Those tokens are part of the same surface family that
@@ -62,4 +69,10 @@ fun clampDynamicDarkScheme(
     surfaceContainerHighest = fallback.surfaceContainerHighest,
     background = fallback.background,
     onBackground = fallback.onBackground,
+    // inverseSurface / inverseOnSurface: Material 3 components such as Snackbar use
+    // these for their container / content colors. Clamping them keeps Snackbar (and
+    // any other inverse-surface component) readable under the wallpaper bug instead
+    // of falling into the dark-on-dark trap. See Gemini Code Review on PR #642.
+    inverseSurface = fallback.inverseSurface,
+    inverseOnSurface = fallback.inverseOnSurface,
 )
