@@ -71,7 +71,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -92,6 +91,8 @@ import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ProfileColors
 import com.devil.phoenixproject.presentation.components.RoutineModifierDialog
+import com.devil.phoenixproject.presentation.theme.routineCardContainerColor
+import com.devil.phoenixproject.presentation.theme.routineCardDefaultElevation
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -1077,14 +1078,13 @@ fun RoutineCard(
             ),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHighest
-            },
+            containerColor = routineCardContainerColor(
+                colorScheme = MaterialTheme.colorScheme,
+                isSelected = isSelected,
+            ),
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (expanded) 8.dp else 2.dp,
+            defaultElevation = routineCardDefaultElevation(expanded),
         ),
         border = BorderStroke(
             2.dp,

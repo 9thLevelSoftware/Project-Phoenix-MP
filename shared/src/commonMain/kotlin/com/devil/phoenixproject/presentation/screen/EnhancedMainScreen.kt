@@ -82,6 +82,8 @@ import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.theme.phoenixBottomNavigationContainerColor
+import com.devil.phoenixproject.presentation.theme.phoenixTopAppBarContainerColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
@@ -332,7 +334,7 @@ fun EnhancedMainScreen(
                                 }
                             },
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
+                                containerColor = phoenixTopAppBarContainerColor(MaterialTheme.colorScheme),
                                 titleContentColor = MaterialTheme.colorScheme.onSurface,
                                 actionIconContentColor = MaterialTheme.colorScheme.onSurface,
                             ),
@@ -497,7 +499,7 @@ private fun PhoenixBottomNavigationBar(
     onInsightsClick: () -> Unit,
     onSettingsClick: () -> Unit,
 ) {
-    val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val containerColor = phoenixBottomNavigationContainerColor(MaterialTheme.colorScheme)
     val barHeight = remember(isCompactHeight) { if (isCompactHeight) 56.dp else 60.dp }
 
     Box(
