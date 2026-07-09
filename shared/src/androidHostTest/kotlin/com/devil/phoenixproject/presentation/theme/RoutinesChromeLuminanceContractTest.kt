@@ -1,113 +1,103 @@
 package com.devil.phoenixproject.presentation.theme
 
-import java.io.File
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.ui.graphics.Color
 import kotlin.test.Test
-import kotlin.test.assertFalse
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
- * Contract test guarding the rendered chrome luminance invariant under
+ * Behavior contract guarding the rendered chrome luminance invariant under
  * Dark + Material You (issue #640).
  *
- * `EnhancedMainScreen` paints:
- *   - the TopAppBar with `MaterialTheme.colorScheme.surface` (line ~335)
- *   - `PhoenixBottomNavigationBar` with `MaterialTheme.colorScheme.surfaceContainerHigh` (line ~500)
- *
- * `RoutinesTab` paints `RoutineCard` with `MaterialTheme.colorScheme.surfaceContainerHighest`
- * (line ~1083). All three read from `MaterialTheme.colorScheme.*`, which is exactly the
- * place the `clampDynamicDarkScheme` helper rewrites under dark + dynamic.
- *
- * This test asserts the *read* sites still go through `MaterialTheme.colorScheme.*`
- * (no hardcoded surface-color overrides crept in). The actual luminance invariant
- * under dark + Material You is proven by `ClampedDynamicDarkSchemeTest`
- * (`clamped chrome surface luminance is below the dark threshold`) plus this
- * source-level contract — together they close the loop without needing a Compose
- * UI-test runtime, which the project does not configure today.
+ * Production chrome call sites read their high-visibility container colors through
+ * the helpers in `PhoenixChromeColorContracts.kt`. These tests assert those helpers
+ * forward the runtime [ColorScheme] roles that `clampDynamicDarkScheme` rewrites,
+ * without reading physical source files or matching fragile formatting-sensitive
+ * strings in `.kt` files.
  */
 class RoutinesChromeLuminanceContractTest {
 
-    private val projectRoot: File by lazy {
-        var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/commonMain").exists()) {
-            dir = dir.parentFile ?: break
+    private fun chromeScheme(): ColorScheme = darkColorScheme(
+        surface = Color(0xFF101820),
+        surfaceContainerHigh = Color(0xFF1E293B),
+        surfaceContainerHighest = Color(0xFF334155),
+        primaryContainer = Color(0xFF7C2D12),
+    )
+
+    @Test
+    fun topAppBar_containerColor_readsColorSchemeSurface() {
+        val scheme = chromeScheme().copy(surface = Color(0xFF123456))
+
+        assertEquals(
+            scheme.surface,
+            phoenixTopAppBarContainerColor(scheme),
+            "Top app bar container color must read ColorScheme.surface so the " +
+                "dark+Material You clamp propagates through.",
+        )
+    }
+
+    @Test
+    fun bottomNavigation_containerColor_readsColorSchemeSurfaceContainerHigh() {
+        val scheme = chromeScheme().copy(surfaceContainerHigh = Color(0xFF234567))
+
+        assertEquals(
+            scheme.surfaceContainerHigh,
+            phoenixBottomNavigationContainerColor(scheme),
+            "Bottom navigation container color must read ColorScheme.surfaceContainerHigh " +
+                "so the dark+Material You clamp propagates through.",
+        )
+    }
+
+    @Test
+    fun routineCard_unselectedContainerColor_readsColorSchemeSurfaceContainerHighest() {
+        val scheme = chromeScheme().copy(surfaceContainerHighest = Color(0xFF345678))
+
+        assertEquals(
+            scheme.surfaceContainerHighest,
+            routineCardContainerColor(scheme, isSelected = false),
+            "Unselected RoutineCard container color must read " +
+                "ColorScheme.surfaceContainerHighest so the dark+Material You clamp propagates through.",
+        )
+    }
+
+    @Test
+    fun routineCard_selectedContainerColor_preservesPrimaryContainerSelectionTint() {
+        val scheme = chromeScheme().copy(primaryContainer = Color(0xFF456789))
+
+        assertEquals(
+            scheme.primaryContainer.copy(alpha = 0.4f),
+            routineCardContainerColor(scheme, isSelected = true),
+            "Selected RoutineCard container color must remain the primaryContainer " +
+                "selection tint, not a hardcoded surface color.",
+        )
+    }
+
+    @Test
+    fun chromeHelpers_areDrivenByInputSchemeNotHardcodedLightColors() {
+        val darkScheme = chromeScheme()
+        val lightSentinel = Color.White
+
+        val returnedColors = listOf(
+            phoenixTopAppBarContainerColor(darkScheme),
+            phoenixBottomNavigationContainerColor(darkScheme),
+            routineCardContainerColor(darkScheme, isSelected = false),
+        )
+
+        returnedColors.forEach { color ->
+            assertNotEquals(
+                lightSentinel,
+                color,
+                "Chrome helper returned Color.White for a dark scheme; this would " +
+                    "bypass the issue #640 dark-surface clamp.",
+            )
+            assertTrue(
+                color != Color(0xFFFFFFFF),
+                "Chrome helper returned a hardcoded white Color literal for a dark scheme; " +
+                    "it must be driven by the runtime ColorScheme instead.",
+            )
         }
-        dir
-    }
-
-    private fun read(relativePath: String): String =
-        File(projectRoot, relativePath).readText()
-
-    @Test
-    fun topAppBar_containerColor_readsFromMaterialTheme() {
-        val source = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
-        )
-        // The chrome must read `MaterialTheme.colorScheme.surface`. If someone
-        // hardcodes `Color.White` / `Color(0xFF...)` here, the clamp cannot fix the
-        // bug and the test fails loudly.
-        assertTrue(
-            source.contains("containerColor = MaterialTheme.colorScheme.surface") ||
-                source.contains("containerColor = MaterialTheme.colorScheme.surface,"),
-            "TopAppBar containerColor in EnhancedMainScreen.kt must read from " +
-                "MaterialTheme.colorScheme.surface so the dark+Material You clamp " +
-                "propagates through. If hardcoded, the surface-luminance invariant " +
-                "breaks and the issue #640 bug returns on any wallpaper.",
-        )
-    }
-
-    @Test
-    fun bottomNavigation_containerColor_readsFromMaterialTheme() {
-        val source = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
-        )
-        assertTrue(
-            source.contains("containerColor = MaterialTheme.colorScheme.surfaceContainerHigh"),
-            "PhoenixBottomNavigationBar containerColor in EnhancedMainScreen.kt " +
-                "must read from MaterialTheme.colorScheme.surfaceContainerHigh so the " +
-                "clamp propagates through. Hardcoded values here reintroduce the " +
-                "light bottom-nav symptom of issue #640.",
-        )
-    }
-
-    @Test
-    fun routineCard_containerColor_readsFromMaterialTheme() {
-        val source = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutinesTab.kt",
-        )
-        assertTrue(
-            source.contains("MaterialTheme.colorScheme.surfaceContainerHighest"),
-            "RoutineCard containerColor in RoutinesTab.kt must read from " +
-                "MaterialTheme.colorScheme.surfaceContainerHighest so the clamp " +
-                "propagates through. Hardcoded values here reintroduce the light " +
-                "expanded-card symptom of issue #640.",
-        )
-    }
-
-    @Test
-    fun noHardcodedSurfaceColorInChrome() {
-        // Belt-and-braces: assert that no chrome touchpoint hardcodes a near-white
-        // Color literal that would override the MaterialTheme. We allow `Color.White`
-        // for `onPrimary` (text/icons on the brand orange), but not for any
-        // `containerColor` / `background(...)` modifier on the chrome.
-        val source = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
-        )
-        val routinesSource = read(
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutinesTab.kt",
-        )
-        // These checks deliberately look only at the file-level strings we already
-        // inspected during RCA. They are conservative — a future change that adds
-        // a new hardcoded chrome background will need to update this test too,
-        // which is the point.
-        assertFalse(
-            source.contains("containerColor = Color.White"),
-            "EnhancedMainScreen.kt must not hardcode containerColor = Color.White " +
-                "on the chrome — that defeats the dark+Material You clamp.",
-        )
-        assertFalse(
-            routinesSource.contains("containerColor = Color.White"),
-            "RoutinesTab.kt must not hardcode containerColor = Color.White on " +
-                "RoutineCard — that defeats the dark+Material You clamp.",
-        )
     }
 }
