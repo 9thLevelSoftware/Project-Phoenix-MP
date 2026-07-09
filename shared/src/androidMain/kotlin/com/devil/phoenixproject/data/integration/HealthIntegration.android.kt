@@ -19,6 +19,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 private val log = Logger.withTag("HealthIntegration.Android")
 
@@ -266,27 +267,17 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
             segmentType = segmentType,
             repetitions = reps.coerceAtLeast(0),
             weight = Mass.kilograms(weightKg.toDouble().coerceAtLeast(0.0)),
-            setIndex = setIndex.coerceAtLeast(0),
+            // Issue #639: Health Connect expects the user-visible 1-based set
+            // number ("Set 1, Set 2, …") while the rest of Phoenix's internal
+            // pipeline (CompletedSet.setNumber, WorkoutCoordinator._currentSetIndex)
+            // is 0-based. Convert at the writer boundary so the internal 0-based
+            // convention is preserved everywhere else.
+            setIndex = toHealthConnectSetIndex(setIndex),
             rateOfPerceivedExertion = rpe?.toFloat(),
         )
     }
 
-    private fun segmentTypeForExercise(name: String): Int {
-        val normalized = name.lowercase()
-        return when {
-            "bench" in normalized && "press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_BENCH_PRESS
-            "deadlift" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DEADLIFT
-            "squat" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_SQUAT
-            "curl" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_ARM_CURL
-            "row" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
-            "pulldown" in normalized || "pull down" in normalized || "lat pull" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
-            "pull-up" in normalized || "pull up" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_PULL_UP
-            "lunge" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_LUNGE
-            "shoulder press" in normalized || "overhead press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_SHOULDER_PRESS
-            "tricep" in normalized || "triceps" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DOUBLE_ARM_TRICEPS_EXTENSION
-            else -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
-        }
-    }
+    private fun segmentTypeForExercise(name: String): Int = segmentTypeForExerciseInternal(name)
 
     private fun WeightRecord.toEligibleBodyWeightSampleOrNull(): HealthBodyWeightSample? {
         val recordMetadata = this.metadata
@@ -365,5 +356,66 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
                 else -> append(char)
             }
         }
+    }
+}
+
+/**
+ * Issue #639: the Android Health Connect writer is the boundary where Phoenix's
+ * internal 0-based set number becomes the user-visible Health Connect set label.
+ */
+@androidx.annotation.VisibleForTesting
+internal fun toHealthConnectSetIndex(internalSetIndex: Int): Int =
+    (internalSetIndex + 1).coerceAtLeast(1)
+
+/**
+ * Issue #639: top-level (rather than class-member) helper for testing. The
+ * Android-host test suite calls this directly to lock in the exercise-name to
+ * Health Connect segment-type mapping without needing a `Context`. The
+ * class-member `segmentTypeForExercise` simply delegates here.
+ */
+@androidx.annotation.VisibleForTesting
+internal fun segmentTypeForExerciseInternal(name: String): Int {
+    val normalized = name.lowercase(Locale.ROOT)
+    return when {
+        "bench" in normalized && "press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_BENCH_PRESS
+        "deadlift" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DEADLIFT
+        "squat" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_SQUAT
+        // Issue #639: Specific curl/press/raise multi-word keywords MUST be
+        // checked before the generic "curl"/"press" branches below, otherwise
+        // the generic single-word branch wins (e.g. "leg curl" would match
+        // "curl" first and resolve to ARM_CURL, hiding the actual leg exercise).
+        "leg curl" in normalized || "hamstring curl" in normalized ->
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_LEG_CURL
+        "leg extension" in normalized || "quad extension" in normalized ->
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_LEG_EXTENSION
+        "leg press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_LEG_PRESS
+        "leg raise" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_LEG_RAISE
+        "barbell shoulder press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_BARBELL_SHOULDER_PRESS
+        "dumbbell front raise" in normalized ->
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_DUMBBELL_FRONT_RAISE
+        "front raise" in normalized ->
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_FRONT_RAISE
+        "dumbbell lateral raise" in normalized ->
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_DUMBBELL_LATERAL_RAISE
+        "lateral raise" in normalized ->
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_LATERAL_RAISE
+        "hip thrust" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_HIP_THRUST
+        "back extension" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_BACK_EXTENSION
+        // Issue #639: "Neutral Wide Grip Pulldown" (and other pulldown / lat-pull
+        // variants) were collapsing to the generic WEIGHTLIFTING display label.
+        // Map them to the specific Health Connect segment type so the user
+        // sees the real exercise name in Health Connect / Google Fit.
+        "pulldown" in normalized || "pull down" in normalized || "lat pull" in normalized ->
+            ExerciseSegment.EXERCISE_SEGMENT_TYPE_LAT_PULL_DOWN
+        "pull-up" in normalized || "pull up" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_PULL_UP
+        "lunge" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_LUNGE
+        "shoulder press" in normalized || "overhead press" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_SHOULDER_PRESS
+        "tricep" in normalized || "triceps" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DOUBLE_ARM_TRICEPS_EXTENSION
+        // Generic single-word fallbacks. Placed AFTER the specific multi-word
+        // matches so they only apply when no more specific branch matches.
+        "curl" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_ARM_CURL
+        "dumbbell row" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_DUMBBELL_ROW
+        "row" in normalized -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
+        else -> ExerciseSegment.EXERCISE_SEGMENT_TYPE_WEIGHTLIFTING
     }
 }
