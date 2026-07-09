@@ -2,7 +2,6 @@ package com.devil.phoenixproject.presentation.theme
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import androidx.compose.ui.unit.dp
 
 /**
@@ -29,15 +28,6 @@ class RoutineCardElevationContractTest {
             routineCardDefaultElevation(expanded = true),
             "Expanded RoutineCard elevation must stay 8.dp so the elevation-tint " +
                 "delta remains the RCA/acceptance-tested 6-dp step.",
-        )
-    }
-
-    @Test
-    fun routineCard_expandedElevationIsAboveCollapsedElevation() {
-        assertTrue(
-            routineCardDefaultElevation(expanded = true) > routineCardDefaultElevation(expanded = false),
-            "Expanded RoutineCard elevation must remain above collapsed elevation; " +
-                "otherwise the issue #640 expand/collapse color-shift bound no longer applies.",
         )
     }
 }

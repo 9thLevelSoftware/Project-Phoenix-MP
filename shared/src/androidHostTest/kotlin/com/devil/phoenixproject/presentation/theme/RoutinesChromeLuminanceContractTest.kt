@@ -6,7 +6,6 @@ import androidx.compose.ui.graphics.Color
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
 
 /**
  * Behavior contract guarding the rendered chrome luminance invariant under
@@ -92,11 +91,6 @@ class RoutinesChromeLuminanceContractTest {
                 color,
                 "Chrome helper returned Color.White for a dark scheme; this would " +
                     "bypass the issue #640 dark-surface clamp.",
-            )
-            assertTrue(
-                color != Color(0xFFFFFFFF),
-                "Chrome helper returned a hardcoded white Color literal for a dark scheme; " +
-                    "it must be driven by the runtime ColorScheme instead.",
             )
         }
     }
