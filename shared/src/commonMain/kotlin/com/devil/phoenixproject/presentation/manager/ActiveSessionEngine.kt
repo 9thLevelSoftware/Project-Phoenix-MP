@@ -1356,7 +1356,17 @@ class ActiveSessionEngine(
                     // or a completed working rep clears it. The deadline field
                     // alone is the source of truth — no derived flag to keep in
                     // sync.
-                    if (!coordinator.autoEndOnVelocityLoss) {
+                    //
+                    // Issue #649 (Codex P2, race-window): checkVelocityThreshold runs
+                    // on Dispatchers.Default; a stale callback resumed after a set
+                    // transition could publish a fresh deadline into the next set.
+                    // Same race characteristic as velocityThresholdAlertEmitted above.
+                    // Narrow the window for this fix by re-checking the active state
+                    // before writing; if the workout has already left Active (manual
+                    // stop / reset / next set started), drop the arm silently.
+                    if (!coordinator.autoEndOnVelocityLoss &&
+                        coordinator._workoutState.value is WorkoutState.Active
+                    ) {
                         deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
                         resetStallTimer()
                         resetAutoStopTimer()
