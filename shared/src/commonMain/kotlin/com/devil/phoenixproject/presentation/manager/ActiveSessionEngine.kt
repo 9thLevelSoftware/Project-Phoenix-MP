@@ -243,20 +243,16 @@ class ActiveSessionEngine(
     private var velocityThresholdAlertEmitted = false
     private var consecutiveThresholdReps = 0
 
-    // Issue #649: defer position/stall auto-stop until the next completed working
-    // rep after a verbal VBT cue was emitted with autoEndOnVelocityLoss=false.
-    // Written on Dispatchers.Default in checkVelocityThreshold() and read on the
-    // metrics collection thread in checkAutoStop(); @Volatile keeps the cross-
-    // thread visibility without a wrapper holder.
-    // The deadline covers the verbal cue plus a short transition window so a user
-    // who rackets mid-set after the cue still gets normal AMRAP/stall auto-stop.
-    // ponytail: single boolean + deadline; cleared on next completed working rep,
-    // expiry, or per-set reset. Add a tunable when legitimate pauses get ended.
-    @kotlin.concurrent.Volatile
-    private var deferAutoStopUntilNextWorkingRep = false
-    // @Volatile not strictly required for the deadline — both writes and reads
-    // happen on the metrics-collection thread — but reads after a metrics thread
-    // switch on arming can still race; mark volatile to match the flag's lifetime.
+    // Issue #649: defer position/stall auto-stop until the cue + short
+    // transition window elapses, or a completed working rep clears it. The
+    // deadline (@Volatile Long) is the single source of truth — 0L means no
+    // defer. checkVelocityThreshold() arms it on Dispatchers.Default;
+    // checkAutoStop() reads it on the metrics thread. @Volatile is required so
+    // the metrics thread never sees a stale old deadline across a thread switch.
+    // Resets: resetAutoStopState() (skip/restart/stop), per-set reset sites,
+    // and the next completed working rep all zero it.
+    // ponytail: one Long + one const ceiling; a tunable window is the only thing
+    // we'd add if users reported legitimate pauses being ended by this.
     @kotlin.concurrent.Volatile
     private var deferAutoStopDeadlineMs = 0L
 
@@ -972,9 +968,8 @@ class ActiveSessionEngine(
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
         coordinator._autoStopState.value = AutoStopUiState()
-        // Issue #649: clear the verbal-cue defer so a new set never inherits a
-        // stale flag from the previous one (skip / restart paths included).
-        deferAutoStopUntilNextWorkingRep = false
+        // Issue #649: zero the deadline so a new set never inherits a stale
+        // verbal-cue defer (skip / restart / startWorkout paths included).
         deferAutoStopDeadlineMs = 0L
     }
 
@@ -1101,9 +1096,10 @@ class ActiveSessionEngine(
         // Score the rep if rep count actually incremented
         val repCountAfter = repCounter.getRepCount().totalReps
         if (repCountAfter > repCountBefore) {
-            // Issue #649: a completed working rep proves the user is back in motion;
-            // let normal AMRAP / stall auto-stop resume.
-            deferAutoStopUntilNextWorkingRep = false
+            // Issue #649: a completed working rep proves the user is back in
+            // motion; let normal AMRAP / stall auto-stop resume by zeroing the
+            // deadline (the source-of-truth field).
+            deferAutoStopDeadlineMs = 0L
 
             // Capture rep boundary timestamp BEFORE scoring so scoreCurrentRep()
             // and processBiomechanicsForRep() both see the correct metric window.
@@ -1356,14 +1352,12 @@ class ActiveSessionEngine(
                     // Issue #649: when the user has VBT auto-end OFF, the verbal cue is
                     // the only velocity signal — don't let AMRAP position / velocity-stall
                     // timers end the set while the cue is still audible. Defer both timers
-                    // until the user completes another working rep or the deadline
-                    // (cue + short transition window) elapses; any later auto-end branch
-                    // (VBT or stall) proceeds normally. Publish deadline BEFORE flipping
-                    // the flag so a metrics-thread reader never sees flag=true with the
-                    // stale 0L deadline (cross-thread ordering with @Volatile fields).
+                    // until the deadline (cue + short transition window) elapses
+                    // or a completed working rep clears it. The deadline field
+                    // alone is the source of truth — no derived flag to keep in
+                    // sync.
                     if (!coordinator.autoEndOnVelocityLoss) {
                         deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
-                        deferAutoStopUntilNextWorkingRep = true
                         resetStallTimer()
                         resetAutoStopTimer()
                     }
@@ -1446,21 +1440,15 @@ class ActiveSessionEngine(
 
         // Issue #649: while a verbal VBT cue is still in flight and the user has VBT
         // auto-end OFF, neither AMRAP position nor velocity-stall may end the set.
-        // Source of truth is the deadline field — flag is derived. The deadline is
-        // 0L when no defer is active; a metrics-thread reader can never observe
-        // `flag=true && deadline=0L` because the writer publishes the future
-        // deadline before flipping the flag (cross-thread ordering of two @Volatile
-        // fields isn't guaranteed, but a single @Volatile source eliminates the
-        // race by construction). Reset the live countdowns defensively each metric;
-        // cleared on the next completed working rep, deadline expiry, or at the
-        // per-set reset boundary / resetAutoStopState().
+        // The deadline field is the only source of truth — 0L means no defer.
+        // Any reset path (next completed working rep, resetAutoStopState, per-set
+        // boundary, deadline expiry) zeros it; this predicate then falls through.
+        // Reset the live countdowns defensively each metric.
         val deferDeadline = deferAutoStopDeadlineMs
         if (deferDeadline != 0L) {
             if (currentTimeMillis() >= deferDeadline) {
-                deferAutoStopUntilNextWorkingRep = false
                 deferAutoStopDeadlineMs = 0L
             } else {
-                deferAutoStopUntilNextWorkingRep = true
                 resetStallTimer()
                 resetAutoStopTimer()
                 return
@@ -2070,7 +2058,7 @@ class ActiveSessionEngine(
         coordinator.biomechanicsEngine.reset()
         velocityThresholdAlertEmitted = false
         consecutiveThresholdReps = 0
-        deferAutoStopUntilNextWorkingRep = false
+        deferAutoStopDeadlineMs = 0L
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
@@ -2493,7 +2481,7 @@ class ActiveSessionEngine(
         coordinator.biomechanicsEngine.reset()
         velocityThresholdAlertEmitted = false
         consecutiveThresholdReps = 0
-        deferAutoStopUntilNextWorkingRep = false
+        deferAutoStopDeadlineMs = 0L
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
         coordinator._loadBaselineA.value = 0f
@@ -4033,7 +4021,7 @@ class ActiveSessionEngine(
             coordinator.biomechanicsEngine.reset()
             velocityThresholdAlertEmitted = false
             consecutiveThresholdReps = 0
-            deferAutoStopUntilNextWorkingRep = false
+            deferAutoStopDeadlineMs = 0L
             coordinator.repBoundaryTimestamps.value = emptyList()
 
             val completedReps = coordinator._repCount.value.workingReps
