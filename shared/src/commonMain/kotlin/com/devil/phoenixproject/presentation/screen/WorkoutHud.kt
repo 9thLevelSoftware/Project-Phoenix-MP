@@ -183,6 +183,7 @@ fun WorkoutHud(
                     1 -> InstructionPage(
                         loadedRoutine = loadedRoutine,
                         currentExerciseIndex = currentExerciseIndex,
+                        selectedExerciseId = workoutParameters.selectedExerciseId,
                         exerciseRepository = exerciseRepository,
                         enableVideoPlayback = enableVideoPlayback,
                     )
@@ -711,13 +712,14 @@ private fun ExecutionPage(
 private fun InstructionPage(
     loadedRoutine: Routine?,
     currentExerciseIndex: Int,
+    selectedExerciseId: String?,
     exerciseRepository: ExerciseRepository,
     enableVideoPlayback: Boolean,
 ) {
     val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
-    val exerciseId = currentExercise?.exercise?.id
-    var videoEntity by remember(currentExerciseIndex) { mutableStateOf<ExerciseVideoEntity?>(null) }
-    var isLoading by remember(currentExerciseIndex) { mutableStateOf(true) }
+    val exerciseId = currentExercise?.exercise?.id ?: selectedExerciseId
+    var videoEntity by remember(currentExerciseIndex, exerciseId) { mutableStateOf<ExerciseVideoEntity?>(null) }
+    var isLoading by remember(currentExerciseIndex, exerciseId) { mutableStateOf(true) }
 
     LaunchedEffect(currentExerciseIndex, exerciseId) {
         isLoading = true
@@ -725,8 +727,8 @@ private fun InstructionPage(
         if (exerciseId != null) {
             try {
                 videoEntity = exerciseRepository.getVideos(exerciseId).firstOrNull()
-            } catch (_: Exception) {
-                // Video loading failed - videoEntity stays null.
+            } catch (e: Exception) {
+                co.touchlab.kermit.Logger.e("WorkoutHud") { "Failed to load video for $exerciseId: ${e.message}" }
             }
         }
         isLoading = false

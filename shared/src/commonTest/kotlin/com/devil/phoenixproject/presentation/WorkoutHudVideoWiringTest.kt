@@ -29,6 +29,15 @@ class WorkoutHudVideoWiringTest {
             src.contains("Video Playback Disabled") && src.contains("VideoPlayer("),
             "InstructionPage must render the disabled state and exercise video player.",
         )
+        assertTrue(
+            src.contains("selectedExerciseId = workoutParameters.selectedExerciseId") &&
+                src.contains("currentExercise?.exercise?.id ?: selectedExerciseId"),
+            "InstructionPage must load a selected exercise video when an active workout has no routine.",
+        )
+        assertTrue(
+            src.contains("remember(currentExerciseIndex, exerciseId)"),
+            "InstructionPage state must reset when either the routine position or exercise changes.",
+        )
     }
 
     @Test
