@@ -245,8 +245,20 @@ class ActiveSessionEngine(
 
     // Issue #649: defer position/stall auto-stop until the next completed working
     // rep after a verbal VBT cue was emitted with autoEndOnVelocityLoss=false.
-    // ponytail: single boolean; cleared on next completed working rep + per-set reset.
+    // Written on Dispatchers.Default in checkVelocityThreshold() and read on the
+    // metrics collection thread in checkAutoStop(); @Volatile keeps the cross-
+    // thread visibility without a wrapper holder.
+    // The deadline covers the verbal cue plus a short transition window so a user
+    // who rackets mid-set after the cue still gets normal AMRAP/stall auto-stop.
+    // ponytail: single boolean + deadline; cleared on next completed working rep,
+    // expiry, or per-set reset. Add a tunable when legitimate pauses get ended.
+    @kotlin.concurrent.Volatile
     private var deferAutoStopUntilNextWorkingRep = false
+    // @Volatile not strictly required for the deadline — both writes and reads
+    // happen on the metrics-collection thread — but reads after a metrics thread
+    // switch on arming can still race; mark volatile to match the flag's lifetime.
+    @kotlin.concurrent.Volatile
+    private var deferAutoStopDeadlineMs = 0L
 
     // ===== Init Block: Workout-Related Collectors (moved from DWSM) =====
 
@@ -1340,10 +1352,12 @@ class ActiveSessionEngine(
                     // Issue #649: when the user has VBT auto-end OFF, the verbal cue is
                     // the only velocity signal — don't let AMRAP position / velocity-stall
                     // timers end the set while the cue is still audible. Defer both timers
-                    // until the user completes another working rep; any later auto-end
-                    // branch (VBT or stall) proceeds normally.
+                    // until the user completes another working rep or the deadline
+                    // (cue + short transition window) elapses; any later auto-end branch
+                    // (VBT or stall) proceeds normally.
                     if (!coordinator.autoEndOnVelocityLoss) {
                         deferAutoStopUntilNextWorkingRep = true
+                        deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
                         resetStallTimer()
                         resetAutoStopTimer()
                     }
@@ -1427,11 +1441,16 @@ class ActiveSessionEngine(
         // Issue #649: while a verbal VBT cue is still in flight and the user has VBT
         // auto-end OFF, neither AMRAP position nor velocity-stall may end the set.
         // Reset the live countdowns defensively each metric; cleared on the next
-        // completed working rep or at the per-set reset boundary.
+        // completed working rep, the deadline (cue + transition window), or at
+        // the per-set reset boundary.
         if (deferAutoStopUntilNextWorkingRep) {
-            resetStallTimer()
-            resetAutoStopTimer()
-            return
+            if (currentTimeMillis() >= deferAutoStopDeadlineMs) {
+                deferAutoStopUntilNextWorkingRep = false
+            } else {
+                resetStallTimer()
+                resetAutoStopTimer()
+                return
+            }
         }
 
         val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
@@ -5038,5 +5057,9 @@ class ActiveSessionEngine(
 
     private companion object {
         const val TEMPLATE_531_ID = "template_531"
+        // Issue #649: verbal cues are typically <30s; this ceiling covers the cue
+        // plus a short post-cue transition window. Exceeding it releases the defer
+        // so a racked mid-set handle can end the set normally.
+        const val VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS = 30_000L
     }
 }
