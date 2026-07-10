@@ -243,6 +243,11 @@ class ActiveSessionEngine(
     private var velocityThresholdAlertEmitted = false
     private var consecutiveThresholdReps = 0
 
+    // Issue #649: defer position/stall auto-stop until the next completed working
+    // rep after a verbal VBT cue was emitted with autoEndOnVelocityLoss=false.
+    // ponytail: single boolean; cleared on next completed working rep + per-set reset.
+    private var deferAutoStopUntilNextWorkingRep = false
+
     // ===== Init Block: Workout-Related Collectors (moved from DWSM) =====
 
     init {
@@ -1080,6 +1085,10 @@ class ActiveSessionEngine(
         // Score the rep if rep count actually incremented
         val repCountAfter = repCounter.getRepCount().totalReps
         if (repCountAfter > repCountBefore) {
+            // Issue #649: a completed working rep proves the user is back in motion;
+            // let normal AMRAP / stall auto-stop resume.
+            deferAutoStopUntilNextWorkingRep = false
+
             // Capture rep boundary timestamp BEFORE scoring so scoreCurrentRep()
             // and processBiomechanicsForRep() both see the correct metric window.
             val now = KmpUtils.currentTimeMillis()
@@ -1327,6 +1336,17 @@ class ActiveSessionEngine(
                         ),
                     )
                     Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${prefs.vulgarTier}, dominatrix=${prefs.dominatrixModeActive}, vulgar=${prefs.vulgarModeEnabled})" }
+
+                    // Issue #649: when the user has VBT auto-end OFF, the verbal cue is
+                    // the only velocity signal — don't let AMRAP position / velocity-stall
+                    // timers end the set while the cue is still audible. Defer both timers
+                    // until the user completes another working rep; any later auto-end
+                    // branch (VBT or stall) proceeds normally.
+                    if (!coordinator.autoEndOnVelocityLoss) {
+                        deferAutoStopUntilNextWorkingRep = true
+                        resetStallTimer()
+                        resetAutoStopTimer()
+                    }
                 }
             }
 
@@ -1401,6 +1421,16 @@ class ActiveSessionEngine(
         if (!isWarmupGateOpenForAutoStop()) {
             resetAutoStopTimer()
             resetStallTimer()
+            return
+        }
+
+        // Issue #649: while a verbal VBT cue is still in flight and the user has VBT
+        // auto-end OFF, neither AMRAP position nor velocity-stall may end the set.
+        // Reset the live countdowns defensively each metric; cleared on the next
+        // completed working rep or at the per-set reset boundary.
+        if (deferAutoStopUntilNextWorkingRep) {
+            resetStallTimer()
+            resetAutoStopTimer()
             return
         }
 
@@ -2007,6 +2037,7 @@ class ActiveSessionEngine(
         coordinator.biomechanicsEngine.reset()
         velocityThresholdAlertEmitted = false
         consecutiveThresholdReps = 0
+        deferAutoStopUntilNextWorkingRep = false
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
@@ -2429,6 +2460,7 @@ class ActiveSessionEngine(
         coordinator.biomechanicsEngine.reset()
         velocityThresholdAlertEmitted = false
         consecutiveThresholdReps = 0
+        deferAutoStopUntilNextWorkingRep = false
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
         coordinator._loadBaselineA.value = 0f
@@ -3968,6 +4000,7 @@ class ActiveSessionEngine(
             coordinator.biomechanicsEngine.reset()
             velocityThresholdAlertEmitted = false
             consecutiveThresholdReps = 0
+            deferAutoStopUntilNextWorkingRep = false
             coordinator.repBoundaryTimestamps.value = emptyList()
 
             val completedReps = coordinator._repCount.value.workingReps
