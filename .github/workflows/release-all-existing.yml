@@ -1,94 +1,121 @@
 name: Release All (Existing)
 
 on:
-    workflow_dispatch:
-        inputs:
-            versionCodeOverride:
-                description: 'Optional Android version code override (passed to both Android workflows)'
-                required: false
-                type: string
-            submit_android_playstore_for_review:
-                description: 'Submit Android Play Store edit for review immediately. Disable only when deliberately staging Play Console declarations.'
-                required: false
-                type: boolean
-                default: true
-            skip_android_playstore:
-                description: 'Skip Android Play Store'
-                required: false
-                type: boolean
-                default: false
-            skip_android_apk:
-                description: 'Skip Android Release APK'
-                required: false
-                type: boolean
-                default: false
-            skip_ios_ipa:
-                description: 'Skip iOS Release IPA'
-                required: false
-                type: boolean
-                default: false
-            skip_ios_testflight:
-                description: 'Skip iOS TestFlight'
-                required: false
-                type: boolean
-                default: false
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing GitHub release tag whose APK and IPA should be rebuilt'
+        required: true
+        type: string
+      versionCodeOverride:
+        description: 'Optional Android version code override (passed to both Android workflows)'
+        required: false
+        type: string
+      submit_android_playstore_for_review:
+        description: 'Submit Android Play Store edit for review immediately.'
+        required: false
+        type: boolean
+        default: true
+      skip_android_playstore:
+        description: 'Skip Android Play Store'
+        required: false
+        type: boolean
+        default: false
+      skip_android_apk:
+        description: 'Skip Android Release APK'
+        required: false
+        type: boolean
+        default: false
+      skip_ios_ipa:
+        description: 'Skip iOS Release IPA'
+        required: false
+        type: boolean
+        default: false
+      skip_ios_testflight:
+        description: 'Skip iOS TestFlight'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
-    trigger-all:
-        runs-on: ubuntu-latest
-        steps:
-            -   name: Trigger Android Play Store
-                if: ${{ !inputs.skip_android_playstore }}
-                env:
-                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-                run: |
-                    args=(-f "submitForReview=${{ inputs.submit_android_playstore_for_review }}")
-                    if [ -n "${{ inputs.versionCodeOverride }}" ]; then
-                      args+=(-f "versionCodeOverride=${{ inputs.versionCodeOverride }}")
-                    fi
-                    gh workflow run android-playstore.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}" "${args[@]}"
-                    echo "Triggered Android Play Store on ref ${{ github.ref_name }}"
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify workflow runs from main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Run Release All (Existing) from main and provide the release tag as input." >&2
+            exit 1
+          fi
+      - name: Verify release and remove prior assets
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null
+          for asset in "ProjectPhoenix-$TAG.apk" "ProjectPhoenix-$TAG.ipa"; do
+            if gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' | grep -Fxq "$asset"; then
+              gh release delete-asset "$TAG" "$asset" --repo "${{ github.repository }}" --yes
+              echo "Deleted existing asset $asset"
+            else
+              echo "Asset $asset was not present; continuing with rebuild."
+            fi
+          done
 
-            -   name: Trigger Android Release APK
-                if: ${{ !inputs.skip_android_apk }}
-                env:
-                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-                run: |
-                    args=()
-                    if [ -n "${{ inputs.versionCodeOverride }}" ]; then
-                      args+=(-f "versionCodeOverride=${{ inputs.versionCodeOverride }}")
-                    fi
-                    gh workflow run android-release-apk.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}" "${args[@]}"
-                    echo "Triggered Android Release APK on ref ${{ github.ref_name }}"
+  android-apk:
+    needs: prepare-release
+    if: ${{ !inputs.skip_android_apk }}
+    uses: ./.github/workflows/android-release-apk.yml
+    with:
+      source_ref: main
+      release_tag: ${{ inputs.release_tag }}
+      versionCodeOverride: ${{ inputs.versionCodeOverride }}
+    secrets: inherit
 
-            -   name: Trigger iOS Release IPA
-                if: ${{ !inputs.skip_ios_ipa }}
-                env:
-                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-                run: |
-                    gh workflow run ios-release-ipa.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}"
-                    echo "Triggered iOS Release IPA on ref ${{ github.ref_name }}"
+  ios-ipa:
+    needs: prepare-release
+    if: ${{ !inputs.skip_ios_ipa }}
+    uses: ./.github/workflows/ios-release-ipa.yml
+    with:
+      source_ref: main
+      release_tag: ${{ inputs.release_tag }}
+    secrets: inherit
 
-            -   name: Trigger iOS TestFlight
-                if: ${{ !inputs.skip_ios_testflight }}
-                env:
-                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-                run: |
-                    gh workflow run ios-testflight.yml --repo ${{ github.repository }} --ref "${{ github.ref_name }}"
-                    echo "Triggered iOS TestFlight on ref ${{ github.ref_name }}"
+  android-playstore:
+    needs: [prepare-release, android-apk, ios-ipa]
+    if: ${{ !inputs.skip_android_playstore }}
+    uses: ./.github/workflows/android-playstore.yml
+    with:
+      source_ref: main
+      versionCodeOverride: ${{ inputs.versionCodeOverride }}
+      submitForReview: ${{ inputs.submit_android_playstore_for_review }}
+    secrets: inherit
 
-            -   name: Summary
-                run: |
-                    echo "## Release All (Existing)" >> $GITHUB_STEP_SUMMARY
-                    echo "" >> $GITHUB_STEP_SUMMARY
-                    echo "Dispatched on ref: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-                    echo "" >> $GITHUB_STEP_SUMMARY
-                    echo "> This workflow dispatches platform builds against an existing release ref." >> $GITHUB_STEP_SUMMARY
-                    echo "> No new tag or release is created." >> $GITHUB_STEP_SUMMARY
-                    echo "" >> $GITHUB_STEP_SUMMARY
-                    echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
-                    echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-                    echo "| Android Play Store | ${{ inputs.skip_android_playstore && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
-                    echo "| Android Release APK | ${{ inputs.skip_android_apk && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
-                    echo "| iOS Release IPA | ${{ inputs.skip_ios_ipa && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
-                    echo "| iOS TestFlight | ${{ inputs.skip_ios_testflight && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
+  ios-testflight:
+    needs: [prepare-release, android-apk, ios-ipa]
+    if: ${{ !inputs.skip_ios_testflight }}
+    uses: ./.github/workflows/ios-testflight.yml
+    with:
+      source_ref: main
+    secrets: inherit
+
+  summary:
+    if: always()
+    needs: [prepare-release, android-apk, ios-ipa, android-playstore, ios-testflight]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          echo "## Release All (Existing)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release tag: ${{ inputs.release_tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Only the APK and IPA assets were replaced; store builds were sourced from main." >> "$GITHUB_STEP_SUMMARY"
+          echo "| Platform | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Android Release APK | ${{ needs.android-apk.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| iOS Release IPA | ${{ needs.ios-ipa.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Android Play Store | ${{ needs.android-playstore.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| iOS TestFlight | ${{ needs.ios-testflight.result }} |" >> "$GITHUB_STEP_SUMMARY"

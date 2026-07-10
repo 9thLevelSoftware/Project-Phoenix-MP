@@ -7,6 +7,21 @@ on:
         description: 'Optional version code override (must be > current Play max and <= 2100000000)'
         required: false
         type: string
+      release_tag:
+        description: 'GitHub release tag to receive the APK'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
+      versionCodeOverride:
+        required: false
+        type: string
 
 permissions:
   contents: write  # Required to upload release assets
@@ -22,6 +37,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Authenticate to Google Play API
         id: auth
@@ -50,21 +67,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Get latest release
-        id: latest_release
+      - name: Verify target release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          RELEASE_INFO=$(gh release view --json tagName,uploadUrl,name 2>/dev/null || echo "")
-          if [ -z "$RELEASE_INFO" ]; then
-            echo "No releases found in this repository"
-            exit 1
-          fi
-          TAG_NAME=$(echo "$RELEASE_INFO" | jq -r '.tagName')
-          RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
-          echo "Found latest release: $RELEASE_NAME (tag: $TAG_NAME)"
+        run: gh release view "${{ inputs.release_tag }}" --repo "${{ github.repository }}"
 
       - name: Resolve monotonic version code from Google Play
         id: version
@@ -180,7 +186,7 @@ jobs:
         id: rename_apk
         run: |
           APK_PATH=$(find androidApp/build/outputs/apk/release -name "*.apk" | head -1)
-          TAG="${{ steps.latest_release.outputs.tag_name }}"
+          TAG="${{ inputs.release_tag }}"
           NEW_NAME="ProjectPhoenix-${TAG}.apk"
           cp "$APK_PATH" "$NEW_NAME"
           echo "apk_path=$NEW_NAME" >> $GITHUB_OUTPUT
@@ -190,7 +196,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ steps.latest_release.outputs.tag_name }}" \
+          gh release upload "${{ inputs.release_tag }}" \
             "${{ steps.rename_apk.outputs.apk_path }}" \
             --clobber
-          echo "Successfully uploaded APK to release ${{ steps.latest_release.outputs.tag_name }}"
+          echo "Successfully uploaded APK to release ${{ inputs.release_tag }}"

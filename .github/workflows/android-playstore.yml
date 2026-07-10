@@ -12,6 +12,17 @@ on:
         required: false
         type: boolean
         default: true
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
+      versionCodeOverride:
+        required: false
+        type: string
+      submitForReview:
+        required: false
+        type: boolean
 
 permissions:
   contents: read
@@ -27,6 +38,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Authenticate to Google Play API
         id: auth

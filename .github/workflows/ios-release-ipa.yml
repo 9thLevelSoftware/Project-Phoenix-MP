@@ -2,6 +2,19 @@ name: iOS Release IPA
 
 on:
   workflow_dispatch:  # Manual trigger only
+    inputs:
+      release_tag:
+        description: 'GitHub release tag to receive the IPA'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
 
 permissions:
   contents: write  # Required to upload release assets
@@ -23,6 +36,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Write Supabase.xcconfig from secrets
         env:
@@ -41,21 +56,10 @@ jobs:
             echo "SUPABASE_ANON_KEY = $key_escaped"
           } > iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
 
-      - name: Get latest release
-        id: latest_release
+      - name: Verify target release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          RELEASE_INFO=$(gh release view --json tagName,uploadUrl,name 2>/dev/null || echo "")
-          if [ -z "$RELEASE_INFO" ]; then
-            echo "No releases found in this repository"
-            exit 1
-          fi
-          TAG_NAME=$(echo "$RELEASE_INFO" | jq -r '.tagName')
-          RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
-          echo "Found latest release: $RELEASE_NAME (tag: $TAG_NAME)"
+        run: gh release view "${{ inputs.release_tag }}" --repo "${{ github.repository }}"
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -214,7 +218,7 @@ jobs:
         id: rename_ipa
         run: |
           IPA_PATH=$(find $RUNNER_TEMP/export -name "*.ipa" | head -1)
-          TAG="${{ steps.latest_release.outputs.tag_name }}"
+          TAG="${{ inputs.release_tag }}"
           NEW_NAME="ProjectPhoenix-${TAG}.ipa"
           cp "$IPA_PATH" "$NEW_NAME"
           echo "ipa_path=$NEW_NAME" >> $GITHUB_OUTPUT
@@ -224,10 +228,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ steps.latest_release.outputs.tag_name }}" \
+          gh release upload "${{ inputs.release_tag }}" \
             "${{ steps.rename_ipa.outputs.ipa_path }}" \
             --clobber
-          echo "Successfully uploaded IPA to release ${{ steps.latest_release.outputs.tag_name }}"
+          echo "Successfully uploaded IPA to release ${{ inputs.release_tag }}"
 
       - name: Clean up keychain
         if: always()

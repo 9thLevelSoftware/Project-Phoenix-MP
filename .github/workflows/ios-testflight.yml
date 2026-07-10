@@ -7,6 +7,14 @@ on:
         description: "Fail the run if adding the build to the TestFlight group or the Beta App Review submission fails. Set true for external-tester workflows; leave false for internal-only groups (audit F073)."
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
+      fail_on_distribution_error:
+        required: false
+        type: boolean
 
 permissions:
   contents: write  # Needed to push testflight/* tags for release notes tracking
@@ -28,6 +36,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Write Supabase.xcconfig from secrets
         env:

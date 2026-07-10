@@ -1,149 +1,138 @@
 name: Release All Platforms
 
 on:
-    workflow_dispatch:
-        inputs:
-            version_override:
-                description: 'Version tag override (e.g. v0.10.0). Leave empty to use the latest existing tag.'
-                required: false
-                type: string
-            versionCodeOverride:
-                description: 'Optional Android version code override (passed to both Android workflows)'
-                required: false
-                type: string
-            submit_android_playstore_for_review:
-                description: 'Submit Android Play Store edit for review immediately. Disable only when deliberately staging Play Console declarations.'
-                required: false
-                type: boolean
-                default: true
-            skip_android_playstore:
-                description: 'Skip Android Play Store'
-                required: false
-                type: boolean
-                default: false
-            skip_android_apk:
-                description: 'Skip Android Release APK'
-                required: false
-                type: boolean
-                default: false
-            skip_ios_ipa:
-                description: 'Skip iOS Release IPA'
-                required: false
-                type: boolean
-                default: false
-            skip_ios_testflight:
-                description: 'Skip iOS TestFlight'
-                required: false
-                type: boolean
-                default: false
+  workflow_dispatch:
+    inputs:
+      versionCodeOverride:
+        description: 'Optional Android version code override (passed to both Android workflows)'
+        required: false
+        type: string
+      submit_android_playstore_for_review:
+        description: 'Submit Android Play Store edit for review immediately.'
+        required: false
+        type: boolean
+        default: true
+      skip_android_playstore:
+        description: 'Skip Android Play Store'
+        required: false
+        type: boolean
+        default: false
+      skip_android_apk:
+        description: 'Skip Android Release APK'
+        required: false
+        type: boolean
+        default: false
+      skip_ios_ipa:
+        description: 'Skip iOS Release IPA'
+        required: false
+        type: boolean
+        default: false
+      skip_ios_testflight:
+        description: 'Skip iOS TestFlight'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
-    create-release:
-        runs-on: ubuntu-latest
-        outputs:
-            tag: ${{ steps.version.outputs.tag }}
-        steps:
-            -   name: Checkout
-                uses: actions/checkout@v4
-                with:
-                    fetch-depth: 0
-
-            -   name: Determine version
-                id: version
-                run: |
-                    LATEST=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1)
-                    if [ -n "${{ inputs.version_override }}" ]; then
-                      TAG="${{ inputs.version_override }}"
-                      echo "Using override tag: $TAG"
-                    elif [ -n "$LATEST" ]; then
-                      TAG="$LATEST"
-                      echo "Using latest existing tag: $TAG (no auto-bump)"
-                    else
-                      TAG="v0.1.0"
-                      echo "No existing tags, starting at $TAG"
-                    fi
-                    echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-                    echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
-
-            -   name: Create release
-                env:
-                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-                run: |
-                    TAG="${{ steps.version.outputs.tag }}"
-                    # Check tag doesn't already exist
-                    if git rev-parse "$TAG" >/dev/null 2>&1; then
-                      echo "Tag $TAG already exists, skipping release creation"
-                      exit 0
-                    fi
-                    # Create tag + release in one shot (gh creates the tag on the server)
-                    gh release create "$TAG" \
-                      --repo "${{ github.repository }}" \
-                      --title "$TAG" \
-                      --generate-notes \
-                      --notes-start-tag "${{ steps.version.outputs.latest }}" \
-                      --target "${{ github.sha }}" \
-                      --latest
-                    echo "Created release $TAG"
-
-    trigger-all:
-        needs: create-release
-        runs-on: ubuntu-latest
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Verify workflow runs from main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Run Release All Platforms from main." >&2
+            exit 1
+          fi
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Determine release version
+        id: version
+        run: |
+          set -euo pipefail
+          ANDROID_VERSION="$(sed -nE 's/^[[:space:]]*versionName = "([^"]+)".*/\1/p' androidApp/build.gradle.kts | head -1)"
+          IOS_VERSIONS="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj | sort -u)"
+          if ! [[ "$ANDROID_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
+            echo "Invalid Android versionName: '$ANDROID_VERSION'." >&2
+            exit 1
+          fi
+          if [ "$(printf '%s\n' "$IOS_VERSIONS" | sed '/^$/d' | wc -l)" -ne 1 ] || [ "$IOS_VERSIONS" != "$ANDROID_VERSION" ]; then
+            echo "Android and iOS marketing versions must match. Android='$ANDROID_VERSION'; iOS='$IOS_VERSIONS'." >&2
+            exit 1
+          fi
+          TAG="v$ANDROID_VERSION"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Release tag $TAG already exists. Bump the app version on main before releasing." >&2
+            exit 1
+          fi
+          LATEST="$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Create release
         env:
-            RELEASE_TAG: ${{ needs.create-release.outputs.tag }}
-        steps:
-            -   name: Trigger Android Play Store
-                if: ${{ !inputs.skip_android_playstore }}
-                env:
-                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-                run: |
-                    args=(-f "submitForReview=${{ inputs.submit_android_playstore_for_review }}")
-                    if [ -n "${{ inputs.versionCodeOverride }}" ]; then
-                      args+=(-f "versionCodeOverride=${{ inputs.versionCodeOverride }}")
-                    fi
-                    gh workflow run android-playstore.yml --repo ${{ github.repository }} --ref "$RELEASE_TAG" "${args[@]}"
-                    echo "Triggered Android Play Store on ref $RELEASE_TAG"
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -n "${{ steps.version.outputs.latest }}" ]; then
+            gh release create "${{ steps.version.outputs.tag }}" --repo "${{ github.repository }}" --title "${{ steps.version.outputs.tag }}" --generate-notes --notes-start-tag "${{ steps.version.outputs.latest }}" --target "${{ steps.version.outputs.sha }}" --latest
+          else
+            gh release create "${{ steps.version.outputs.tag }}" --repo "${{ github.repository }}" --title "${{ steps.version.outputs.tag }}" --generate-notes --target "${{ steps.version.outputs.sha }}" --latest
+          fi
 
-            -   name: Trigger Android Release APK
-                if: ${{ !inputs.skip_android_apk }}
-                env:
-                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-                run: |
-                    args=()
-                    if [ -n "${{ inputs.versionCodeOverride }}" ]; then
-                      args+=(-f "versionCodeOverride=${{ inputs.versionCodeOverride }}")
-                    fi
-                    gh workflow run android-release-apk.yml --repo ${{ github.repository }} --ref "$RELEASE_TAG" "${args[@]}"
-                    echo "Triggered Android Release APK on ref $RELEASE_TAG"
-
-            -   name: Trigger iOS Release IPA
-                if: ${{ !inputs.skip_ios_ipa }}
-                env:
-                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-                run: |
-                    gh workflow run ios-release-ipa.yml --repo ${{ github.repository }} --ref "$RELEASE_TAG"
-                    echo "Triggered iOS Release IPA on ref $RELEASE_TAG"
-
-            -   name: Trigger iOS TestFlight
-                if: ${{ !inputs.skip_ios_testflight }}
-                env:
-                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-                run: |
-                    gh workflow run ios-testflight.yml --repo ${{ github.repository }} --ref "$RELEASE_TAG"
-                    echo "Triggered iOS TestFlight on ref $RELEASE_TAG"
-
-            -   name: Summary
-                run: |
-                    echo "## Release All Platforms" >> $GITHUB_STEP_SUMMARY
-                    echo "" >> $GITHUB_STEP_SUMMARY
-                    echo "Release tag: \`${{ env.RELEASE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
-                    echo "" >> $GITHUB_STEP_SUMMARY
-                    echo "> NOTE: this job only **dispatches** the platform workflows on the ref above;" >> $GITHUB_STEP_SUMMARY
-                    echo "> it does not wait for them. A green run here means they were triggered, not that" >> $GITHUB_STEP_SUMMARY
-                    echo "> they published successfully — check each child workflow run for its outcome (audit F075)." >> $GITHUB_STEP_SUMMARY
-                    echo "" >> $GITHUB_STEP_SUMMARY
-                    echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
-                    echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-                    echo "| Android Play Store | ${{ inputs.skip_android_playstore && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
-                    echo "| Android Release APK | ${{ inputs.skip_android_apk && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
-                    echo "| iOS Release IPA | ${{ inputs.skip_ios_ipa && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
-                    echo "| iOS TestFlight | ${{ inputs.skip_ios_testflight && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
+  android-apk:
+    needs: create-release
+    if: ${{ !inputs.skip_android_apk }}
+    uses: ./.github/workflows/android-release-apk.yml
+    with:
+      source_ref: ${{ needs.create-release.outputs.tag }}
+      release_tag: ${{ needs.create-release.outputs.tag }}
+      versionCodeOverride: ${{ inputs.versionCodeOverride }}
+    secrets: inherit
+  ios-ipa:
+    needs: create-release
+    if: ${{ !inputs.skip_ios_ipa }}
+    uses: ./.github/workflows/ios-release-ipa.yml
+    with:
+      source_ref: ${{ needs.create-release.outputs.tag }}
+      release_tag: ${{ needs.create-release.outputs.tag }}
+    secrets: inherit
+  android-playstore:
+    needs: [create-release, android-apk, ios-ipa]
+    if: ${{ !inputs.skip_android_playstore }}
+    uses: ./.github/workflows/android-playstore.yml
+    with:
+      source_ref: ${{ needs.create-release.outputs.tag }}
+      versionCodeOverride: ${{ inputs.versionCodeOverride }}
+      submitForReview: ${{ inputs.submit_android_playstore_for_review }}
+    secrets: inherit
+  ios-testflight:
+    needs: [create-release, android-apk, ios-ipa]
+    if: ${{ !inputs.skip_ios_testflight }}
+    uses: ./.github/workflows/ios-testflight.yml
+    with:
+      source_ref: ${{ needs.create-release.outputs.tag }}
+    secrets: inherit
+  summary:
+    if: always()
+    needs: [create-release, android-apk, ios-ipa, android-playstore, ios-testflight]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          echo "## Release All Platforms" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release tag: ${{ needs.create-release.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "APK and IPA builds complete before store publication begins." >> "$GITHUB_STEP_SUMMARY"
+          echo "| Platform | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Android Release APK | ${{ needs.android-apk.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| iOS Release IPA | ${{ needs.ios-ipa.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Android Play Store | ${{ needs.android-playstore.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| iOS TestFlight | ${{ needs.ios-testflight.result }} |" >> "$GITHUB_STEP_SUMMARY"
