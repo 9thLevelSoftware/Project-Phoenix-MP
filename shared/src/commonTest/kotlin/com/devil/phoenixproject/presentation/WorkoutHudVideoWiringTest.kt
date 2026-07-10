@@ -35,7 +35,8 @@ class WorkoutHudVideoWiringTest {
             "InstructionPage must load a selected exercise video when an active workout has no routine.",
         )
         assertTrue(
-            src.contains("remember(currentExerciseIndex, exerciseId)"),
+            src.contains("var videoEntity by remember(currentExerciseIndex, exerciseId)") &&
+                src.contains("var isLoading by remember(currentExerciseIndex, exerciseId)"),
             "InstructionPage state must reset when either the routine position or exercise changes.",
         )
     }
