@@ -29,6 +29,12 @@ class ComputeVelocityOneRepMaxUseCase(
             personalSampleCount = personal?.second ?: 0,
         )
         val result = estimator.estimate(points, mvt) ?: return null
+        // Issue #644: never persist a passing velocity-1RM row that sits at the 1.0 kg
+        // hardware floor — the regression didn't actually reach the 1RM velocity, and
+        // persisting it would let the resolver short-circuit stored-1RM / max-weight PR
+        // fallback. Returning null here keeps the call sites' null-handling intact and
+        // mirrors what a row with r2<threshold or distinctLoads<3 already does.
+        if (!VelocityOneRepMaxEstimator.isUsableEstimate(result.estimatedPerCableKg)) return null
         persist(result, exerciseId, nowMs, profileId)
         return result
     }

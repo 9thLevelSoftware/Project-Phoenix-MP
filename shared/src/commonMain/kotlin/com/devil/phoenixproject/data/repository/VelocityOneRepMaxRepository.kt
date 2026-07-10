@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -61,12 +62,22 @@ class SqlDelightVelocityOneRepMaxRepository(private val db: VitruvianDatabase) :
 
     override suspend fun getLatestPassing(exerciseId: String, profileId: String): VelocityOneRepMaxEntity? =
         withContext(Dispatchers.IO) {
-            queries.selectLatestPassingVelocityOneRepMax(exerciseId, profileId, ::map).executeAsOneOrNull()
+            // Issue #644: ignore floor-clamped rows (AssessmentEngine's 1.0 kg hardware floor)
+            // when selecting the latest passing baseline. Affected users have a poisoned row
+            // from a previous build that would short-circuit stored-1RM / max-weight PR
+            // fallback. Filter here so editor preview and workout-start resolution agree.
+            queries.selectLatestPassingVelocityOneRepMax(exerciseId, profileId, ::map)
+                .executeAsList()
+                .firstOrNull { VelocityOneRepMaxEstimator.isUsableEstimate(it.estimatedPerCableKg) }
         }
 
     override suspend fun getAllPassing(profileId: String): List<VelocityOneRepMaxEntity> =
         withContext(Dispatchers.IO) {
-            queries.selectAllPassingVelocityOneRepMaxByProfile(profileId, ::map).executeAsList()
+            // Issue #644: same floor filter for callers (e.g., PR surfaces) that enumerate
+            // all passing estimates.
+            queries.selectAllPassingVelocityOneRepMaxByProfile(profileId, ::map)
+                .executeAsList()
+                .filter { VelocityOneRepMaxEstimator.isUsableEstimate(it.estimatedPerCableKg) }
         }
 
     override fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>> =

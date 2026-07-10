@@ -47,7 +47,14 @@ class VelocityOneRepMaxEstimator(private val assessmentEngine: AssessmentEngine)
         val config = AssessmentConfig(minSets = MIN_DISTINCT_LOADS, oneRmVelocityMs = mvtMs)
         val assessment = assessmentEngine.estimateOneRepMax(lvPoints, config) ?: return null
 
-        val passed = distinctLoads >= MIN_DISTINCT_LOADS && assessment.r2 >= R2_PASS_THRESHOLD
+        // Issue #644: AssessmentEngine clamps the extrapolated load to the 1.0 kg hardware
+        // floor. A result at the floor means the regression couldn't reach the 1RM velocity
+        // — that's a diagnostic value, not a usable per-cable 1RM. Mark it unpassing so the
+        // resolver falls through to stored-1RM / max-weight PR fallback.
+        val atFloor = assessment.estimatedOneRepMaxKg <= MIN_USABLE_ESTIMATE_KG
+        val passed = !atFloor &&
+            distinctLoads >= MIN_DISTINCT_LOADS &&
+            assessment.r2 >= R2_PASS_THRESHOLD
         return VelocityOneRepMaxResult(
             estimatedPerCableKg = assessment.estimatedOneRepMaxKg,
             mvtUsedMs = mvtMs,
@@ -63,5 +70,20 @@ class VelocityOneRepMaxEstimator(private val assessmentEngine: AssessmentEngine)
         const val R2_PASS_THRESHOLD = 0.8f
         const val MIN_DISTINCT_LOADS = 3
         const val LOAD_BUCKET_KG = 0.5f
+
+        /**
+         * Minimum per-cable 1RM estimate that may be treated as a real baseline. Values at or
+         * below the AssessmentEngine hardware floor (1.0 kg) are diagnostic, not actionable —
+         * the regression couldn't reach the 1RM velocity, so 80% of that rounds to 0 and
+         * collapses the routine to a meaningless weight. Issue #644.
+         */
+        const val MIN_USABLE_ESTIMATE_KG = 1.0f
+
+        /**
+         * Predicate: true when [estimatedPerCableKg] is a usable velocity-1RM baseline. Shared
+         * by producer, repository, resolver, and editor so they all reject floor-clamped rows.
+         */
+        fun isUsableEstimate(estimatedPerCableKg: Float): Boolean =
+            estimatedPerCableKg > MIN_USABLE_ESTIMATE_KG
     }
 }

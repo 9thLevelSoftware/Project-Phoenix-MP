@@ -10,6 +10,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator
 
 /**
  * Shared resolver for routine percent-of-PR baseline lookup.
@@ -72,7 +73,12 @@ class ResolveRoutineScalingBaselineUseCase(
     ): RoutineScalingBaseline? {
         velocityOneRepMaxRepository.getLatestPassing(exerciseId, profileId)
             ?.estimatedPerCableKg
-            ?.takeIf { it > 0 }
+            // Issue #644: reject the AssessmentEngine 1.0 kg hardware floor. A row at the
+            // floor is a diagnostic, not a usable baseline — fall through to stored-1RM /
+            // max-weight PR fallback so 80% scaling doesn't collapse to 2.2 lb/cable.
+            // Belt-and-suspenders: SqlDelightVelocityOneRepMaxRepository already filters,
+            // but a different repo impl plugged in here would re-introduce the bug.
+            ?.takeIf { VelocityOneRepMaxEstimator.isUsableEstimate(it) }
             ?.let { estimate ->
                 return RoutineScalingBaseline(
                     weightPerCableKg = estimate,
