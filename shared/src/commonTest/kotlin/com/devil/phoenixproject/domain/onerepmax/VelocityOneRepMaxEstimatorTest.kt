@@ -2,6 +2,8 @@ package com.devil.phoenixproject.domain.onerepmax
 
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -51,5 +53,41 @@ class VelocityOneRepMaxEstimatorTest {
     @Test fun `warmup-only or zero-rep points excluded by caller contract are not required here`() {
         // estimator trusts caller to pass working points; verify it still needs 3 distinct loads
         assertNull(estimator.estimate(listOf(point(50f, 700f)), mvtMs = 0.20f))
+    }
+
+    // Issue #644: a velocity-1RM estimate that hits AssessmentEngine's 1.0 kg hardware floor
+    // means the regression didn't reach the 1RM velocity — diagnostic, not a usable baseline.
+    // The estimator must mark it unpassing so the resolver falls through to stored-1RM / PR
+    // fallback and the producer (ComputeVelocityOneRepMaxUseCase) never persists it.
+
+    @Test fun `estimate that lands on the 1 kg hardware floor is not passing`() {
+        // Points (1kg@0.5, 2kg@0.3, 3kg@0.1 m/s) → OLS slope -0.20, intercept 0.70.
+        // At mvtMs=0.50: load = (0.50 - 0.70) / -0.20 = 1.0 kg → hardware floor.
+        val result = estimator.estimate(
+            points = listOf(
+                point(1f, 500f),
+                point(2f, 300f),
+                point(3f, 100f),
+            ),
+            mvtMs = 0.50f,
+        )
+        assertNotNull(result, "estimator should still return a result for visibility")
+        assertTrue(result.estimatedPerCableKg <= VelocityOneRepMaxEstimator.MIN_USABLE_ESTIMATE_KG,
+            "expected estimate at/below floor, got ${result.estimatedPerCableKg}")
+        assertFalse(result.passedQualityGate,
+            "a floor-clamped estimate must not be marked passing (Issue #644)")
+    }
+
+    @Test fun `isUsableEstimate predicate matches the documented contract`() {
+        // The shared predicate is the single source of truth — verify the boundary.
+        assertFalse(VelocityOneRepMaxEstimator.isUsableEstimate(0f))
+        assertFalse(VelocityOneRepMaxEstimator.isUsableEstimate(1.0f))
+        assertTrue(VelocityOneRepMaxEstimator.isUsableEstimate(1.5f))
+        assertTrue(VelocityOneRepMaxEstimator.isUsableEstimate(100f))
+    }
+
+    @Test fun `MIN_USABLE_ESTIMATE_KG equals 1 kg`() {
+        // Document the floor explicitly so a future refactor doesn't drift the contract.
+        assertEquals(1.0f, VelocityOneRepMaxEstimator.MIN_USABLE_ESTIMATE_KG)
     }
 }

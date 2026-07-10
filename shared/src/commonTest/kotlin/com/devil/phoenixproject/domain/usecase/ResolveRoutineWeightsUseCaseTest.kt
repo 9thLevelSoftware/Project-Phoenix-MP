@@ -695,6 +695,135 @@ class ResolveRoutineWeightsUseCaseTest {
         assertNull(result.fallbackReason)
     }
 
+    // Issue #644: a velocity-1RM row at the 1.0 kg hardware floor must not be selected as the
+    // baseline — it would short-circuit stored-1RM / max-weight PR fallback and collapse 80%
+    // scaling to 2.2 lb/cable. The repo now filters such rows out; verify the resolver agrees
+    // and falls through to the PR / stored-1RM baseline instead.
+
+    @Test
+    fun `ESTIMATED_1RM ignores floor-clamped velocity row and falls back to stored 1RM`() = runTest {
+        // Given: a poisoned velocity row at the 1.0 kg floor plus a sane stored 1RM
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 1L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 1.0f, // AssessmentEngine floor clamp
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true, // legacy row from a previous build
+            computedAt = 1000L,
+            profileId = "default",
+        )
+        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 120f))
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-1rm-floor-stored",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        // 80% of stored 120 = 96 kg — not 1.0 kg / 2.2 lb
+        assertEquals(96f, result.baseWeight)
+        assertEquals(120f, result.usedPR)
+        assertEquals(80, result.percentOfPR)
+        assertTrue(result.isFromPR)
+        assertNull(result.fallbackReason)
+    }
+
+    @Test
+    fun `ESTIMATED_1RM ignores floor-clamped velocity row and falls back to max-weight PR`() = runTest {
+        // Given: floor-clamped velocity row + no stored 1RM + a max-weight PR
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 2L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 1.0f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.95f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = 1000L,
+            profileId = "default",
+        )
+        prRepository.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = "bench-press",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 60f,
+                reps = 5,
+                oneRepMax = 70f,
+                timestamp = 1000L,
+                workoutMode = "Old School",
+                prType = PRType.MAX_WEIGHT,
+                volume = 300f,
+            ),
+        )
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-1rm-floor-pr",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        // 80% of 60 (max-weight PR) = 48 kg — not 1.0 kg
+        assertEquals(48f, result.baseWeight)
+        assertEquals(60f, result.usedPR)
+        assertEquals(80, result.percentOfPR)
+        assertTrue(result.isFromPR)
+        assertNull(result.fallbackReason)
+    }
+
+    @Test
+    fun `ESTIMATED_1RM still trusts a sane velocity row above the floor`() = runTest {
+        // Sanity: the new filter must not strip legitimate estimates.
+        velocityRepository.latestPassing = VelocityOneRepMaxEntity(
+            id = 3L,
+            exerciseId = "bench-press",
+            estimatedPerCableKg = 100f,
+            mvtUsedMs = 0.3f,
+            r2 = 0.98f,
+            distinctLoads = 4,
+            passedQualityGate = true,
+            computedAt = 1000L,
+            profileId = "default",
+        )
+        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 120f))
+
+        val routineExercise = RoutineExercise(
+            id = "routine-ex-1rm-sane",
+            exercise = testExercise,
+            orderIndex = 0,
+            weightPerCableKg = 30f,
+            usePercentOfPR = true,
+            weightPercentOfPR = 80,
+            scalingBasis = ScalingBasis.ESTIMATED_1RM,
+            programMode = ProgramMode.OldSchool,
+        )
+
+        val result = useCase(routineExercise)
+
+        // 80% of 100 = 80 kg
+        assertEquals(80f, result.baseWeight)
+        assertEquals(100f, result.usedPR)
+        assertEquals(80, result.percentOfPR)
+        assertTrue(result.isFromPR)
+        assertNull(result.fallbackReason)
+    }
+
     @Test
     fun `max weight basis falls back to same profile cross mode PR when selected mode has none`() = runTest {
         prRepository.addRecord(
