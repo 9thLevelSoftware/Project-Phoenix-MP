@@ -483,12 +483,14 @@ selectLatestPassingVelocityOneRepMax:
 SELECT * FROM VelocityOneRepMaxEstimate
 WHERE exerciseId = :exerciseId AND profile_id = :profileId
 AND passedQualityGate = 1 AND deletedAt IS NULL
+AND estimatedPerCableKg > :minUsableEstimateKg
 ORDER BY computedAt DESC, id DESC
 LIMIT 1;
 
 selectAllPassingVelocityOneRepMaxByProfile:
 SELECT * FROM VelocityOneRepMaxEstimate
 WHERE profile_id = :profileId AND passedQualityGate = 1 AND deletedAt IS NULL
+AND estimatedPerCableKg > :minUsableEstimateKg
 ORDER BY exerciseId ASC, computedAt ASC;
 
 -- Issue #517 Phase 5 T1: enumerate exercises that have at least one MCV-bearing set.

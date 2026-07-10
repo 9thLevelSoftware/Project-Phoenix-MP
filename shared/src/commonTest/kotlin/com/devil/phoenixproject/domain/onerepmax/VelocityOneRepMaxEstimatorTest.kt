@@ -61,20 +61,8 @@ class VelocityOneRepMaxEstimatorTest {
     // fallback and the producer (ComputeVelocityOneRepMaxUseCase) never persists it.
 
     @Test fun `estimate that lands on the 1 kg hardware floor is not passing`() {
-        // Velocity-vs-load points whose OLS regression extrapolates to a load below 0 at the
-        // 1RM velocity — AssessmentEngine clamps the load to 1.0 kg, which the estimator
-        // must now treat as unpassing.
-        //   slope = (0.10-0.50)/30 ≈ -0.0133, intercept ≈ 0.50, mvt = 0.05 m/s
-        //   load at 0.05 = (0.05-0.50)/-0.0133 ≈ 33.6, then a tiny MVT
-        // Use a low-MVT (e.g. 0.05 m/s) where the regression result is negative and clamped:
-        //   three points with very low velocities and small loads → clamp to 1.0 kg.
-        // Easier: feed points whose OLS gives a load below 0 at the supplied MVT.
-        //   points (1, 0.50), (2, 0.30), (3, 0.10) → slope=-0.20, intercept=0.70
-        //   at MVT=0.0 → (0.0-0.70)/-0.20 = 3.5 — still positive, not what we want.
-        //   at MVT=-0.5 (effectively impossible, but tests the clamp path):
-        //   at MVT=0.50: load = (0.50-0.70)/-0.20 = 1.0 (exactly the floor).
-        // Use MVT such that the regression yields exactly 1.0 kg — the boundary case that
-        // triggers the clamp and must now be marked unpassing.
+        // Points (1kg@0.5, 2kg@0.3, 3kg@0.1 m/s) → OLS slope -0.20, intercept 0.70.
+        // At mvtMs=0.50: load = (0.50 - 0.70) / -0.20 = 1.0 kg → hardware floor.
         val result = estimator.estimate(
             points = listOf(
                 point(1f, 500f),

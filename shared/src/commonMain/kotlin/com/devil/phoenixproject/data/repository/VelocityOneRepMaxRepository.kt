@@ -66,18 +66,23 @@ class SqlDelightVelocityOneRepMaxRepository(private val db: VitruvianDatabase) :
             // when selecting the latest passing baseline. Affected users have a poisoned row
             // from a previous build that would short-circuit stored-1RM / max-weight PR
             // fallback. Filter here so editor preview and workout-start resolution agree.
-            queries.selectLatestPassingVelocityOneRepMax(exerciseId, profileId, ::map)
-                .executeAsList()
-                .firstOrNull { VelocityOneRepMaxEstimator.isUsableEstimate(it.estimatedPerCableKg) }
+            queries.selectLatestPassingVelocityOneRepMax(
+                exerciseId,
+                profileId,
+                VelocityOneRepMaxEstimator.MIN_USABLE_ESTIMATE_KG.toDouble(),
+                ::map,
+            ).executeAsOneOrNull()
         }
 
     override suspend fun getAllPassing(profileId: String): List<VelocityOneRepMaxEntity> =
         withContext(Dispatchers.IO) {
             // Issue #644: same floor filter for callers (e.g., PR surfaces) that enumerate
             // all passing estimates.
-            queries.selectAllPassingVelocityOneRepMaxByProfile(profileId, ::map)
-                .executeAsList()
-                .filter { VelocityOneRepMaxEstimator.isUsableEstimate(it.estimatedPerCableKg) }
+            queries.selectAllPassingVelocityOneRepMaxByProfile(
+                profileId,
+                VelocityOneRepMaxEstimator.MIN_USABLE_ESTIMATE_KG.toDouble(),
+                ::map,
+            ).executeAsList()
         }
 
     override fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>> =

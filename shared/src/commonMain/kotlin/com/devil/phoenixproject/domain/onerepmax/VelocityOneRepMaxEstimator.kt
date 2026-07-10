@@ -51,8 +51,7 @@ class VelocityOneRepMaxEstimator(private val assessmentEngine: AssessmentEngine)
         // floor. A result at the floor means the regression couldn't reach the 1RM velocity
         // — that's a diagnostic value, not a usable per-cable 1RM. Mark it unpassing so the
         // resolver falls through to stored-1RM / max-weight PR fallback.
-        val atFloor = assessment.estimatedOneRepMaxKg <= MIN_USABLE_ESTIMATE_KG
-        val passed = !atFloor &&
+        val passed = assessment.estimatedOneRepMaxKg > MIN_USABLE_ESTIMATE_KG &&
             distinctLoads >= MIN_DISTINCT_LOADS &&
             assessment.r2 >= R2_PASS_THRESHOLD
         return VelocityOneRepMaxResult(
