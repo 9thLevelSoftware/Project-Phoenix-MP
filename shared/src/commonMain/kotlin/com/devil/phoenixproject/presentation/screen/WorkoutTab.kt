@@ -224,6 +224,7 @@ fun WorkoutTab(
         velocityLossThresholdPercent = state.velocityLossThresholdPercent,
         weightStepKg = state.weightStepKg,
         rackLoadAdjustment = state.rackLoadAdjustment,
+        currentWarmupSetIndex = state.currentWarmupSetIndex,
     )
 }
 
@@ -305,6 +306,8 @@ fun WorkoutTab(
     // Issue #266/#410: Configurable weight step from user preferences (kg)
     weightStepKg: Float = 0.25f,
     rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
+    // Issue #646: -1 means not currently in variable warm-up phase
+    currentWarmupSetIndex: Int = -1,
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -344,6 +347,7 @@ fun WorkoutTab(
                 onResetExerciseTimer = onResetExerciseTimer,
                 velocityLossThresholdPercent = velocityLossThresholdPercent,
                 rackLoadAdjustment = rackLoadAdjustment,
+                currentWarmupSetIndex = currentWarmupSetIndex,
                 modifier = Modifier.fillMaxSize(),
             )
 
