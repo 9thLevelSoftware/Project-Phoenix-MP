@@ -679,5 +679,9 @@
     <string name="cd_equipment_rack">Equipment rack</string>
     <string name="bodyweight_effective_load_includes">Inclusief: %1$s</string>
     <string name="bodyweight_effective_load_more">+%1$d meer</string>
+    <!-- ==================== Set type labels (Issue #646) ==================== -->
+    <string name="set_type_calibration">Calibration Reps</string>
+    <string name="set_type_warmup">Warm-up Set %1$d</string>
+    <string name="set_type_working">Working Set</string>
 
 </resources>

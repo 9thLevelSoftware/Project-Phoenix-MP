@@ -51,6 +51,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.presentation.util.SetTypeLabel
+import com.devil.phoenixproject.presentation.util.setTypeLabel
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -106,6 +109,8 @@ import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_ov
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_title
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
 import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
+import vitruvianprojectphoenix.shared.generated.resources.set_type_warmup
+import vitruvianprojectphoenix.shared.generated.resources.set_type_working
 import vitruvianprojectphoenix.shared.generated.resources.target_reps
 
 /**
@@ -124,6 +129,9 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     val weightRecommendation by viewModel.weightAdjustmentRecommendation.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
     val activeRackItemIds by viewModel.activeRackItemIds.collectAsState()
+    // Issue #646: drive set-type badge in SetReady header
+    val currentWarmupSetIndex by viewModel.currentWarmupSetIndex.collectAsState()
+    val repCount by viewModel.repCount.collectAsState()
 
     // Get current state
     val setReadyState = routineFlowState as? RoutineFlowState.SetReady
@@ -435,6 +443,21 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
                         )
+                        // Issue #646: set-type badge — calibration label suppressed at SetReady
+                        // (calibration reps run during the active set, not at this screen)
+                        val setType = setTypeLabel(repCount, currentWarmupSetIndex, showCalibrationLabel = false)
+                        val setTypeText = when (setType) {
+                            is SetTypeLabel.Warmup -> stringResource(Res.string.set_type_warmup, setType.setNumber)
+                            SetTypeLabel.Working -> stringResource(Res.string.set_type_working)
+                            SetTypeLabel.Calibration -> "" // unreachable; showCalibrationLabel=false
+                        }
+                        if (setTypeText.isNotEmpty()) {
+                            Text(
+                                text = setTypeText,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                            )
+                        }
                     }
                 }
             }

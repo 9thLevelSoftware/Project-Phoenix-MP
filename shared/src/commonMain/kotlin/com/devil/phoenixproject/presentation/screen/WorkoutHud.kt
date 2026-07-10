@@ -33,8 +33,10 @@ import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
 import com.devil.phoenixproject.presentation.components.StableRepProgress
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.SetTypeLabel
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.util.setTypeLabel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
@@ -82,6 +84,7 @@ fun WorkoutHud(
     onResetExerciseTimer: () -> Unit = {},
     velocityLossThresholdPercent: Int = 20,
     rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
+    currentWarmupSetIndex: Int = -1, // Issue #646: -1 = no warm-up phase
     modifier: Modifier = Modifier,
 ) {
     // Determine if we're in Echo mode
@@ -172,6 +175,7 @@ fun WorkoutHud(
                             onPauseExerciseTimer = onPauseExerciseTimer,
                             onResumeExerciseTimer = onResumeExerciseTimer,
                             onResetExerciseTimer = onResetExerciseTimer,
+                            currentWarmupSetIndex = currentWarmupSetIndex,
                         )
                     }
 
@@ -471,6 +475,7 @@ private fun ExecutionPage(
     onPauseExerciseTimer: () -> Unit = {},
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
+    currentWarmupSetIndex: Int = -1, // Issue #646: -1 = no warm-up phase
 ) {
     // Issue #192: Check if this is a timed exercise
     val isTimedExercise = timedExerciseRemainingSeconds != null
@@ -505,6 +510,20 @@ private fun ExecutionPage(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+
+            // Issue #646: set-type badge (Calibration Reps / Warm-up Set N / Working Set)
+            val setType = setTypeLabel(repCount, currentWarmupSetIndex, showCalibrationLabel = true)
+            val setTypeText = when (setType) {
+                SetTypeLabel.Calibration -> stringResource(Res.string.set_type_calibration)
+                is SetTypeLabel.Warmup -> stringResource(Res.string.set_type_warmup, setType.setNumber)
+                SetTypeLabel.Working -> stringResource(Res.string.set_type_working)
+            }
+            Text(
+                text = setTypeText,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
         }

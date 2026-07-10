@@ -67,5 +67,9 @@
     <string name="settings_ble_compat_on">Attivato</string>
     <string name="settings_ble_compat_off">Disattivato</string>
     <string name="settings_ble_compat_reconnect_hint">Ha effetto alla prossima connessione. Riconnettiti al trainer dopo la modifica.</string>
+    <!-- ==================== Set type labels (Issue #646) ==================== -->
+    <string name="set_type_calibration">Calibration Reps</string>
+    <string name="set_type_warmup">Warm-up Set %1$d</string>
+    <string name="set_type_working">Working Set</string>
 
 </resources>

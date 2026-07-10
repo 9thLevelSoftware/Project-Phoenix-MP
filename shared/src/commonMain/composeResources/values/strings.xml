@@ -765,6 +765,10 @@
     <string name="equipment_rack_selected_count">%1$d selected</string>
     <string name="equipment_rack_inline_context">Rack: %1$s</string>
     <string name="detailed_metrics_not_captured">Detailed metrics were not captured for this set</string>
+    <!-- ==================== Set type labels (Issue #646) ==================== -->
+    <string name="set_type_calibration">Calibration Reps</string>
+    <string name="set_type_warmup">Warm-up Set %1$d</string>
+    <string name="set_type_working">Working Set</string>
     <string name="equipment_rack_category_weighted_vest">Weighted vest</string>
     <string name="equipment_rack_category_dip_belt">Dip belt</string>
     <string name="equipment_rack_category_chains">Chains</string>
