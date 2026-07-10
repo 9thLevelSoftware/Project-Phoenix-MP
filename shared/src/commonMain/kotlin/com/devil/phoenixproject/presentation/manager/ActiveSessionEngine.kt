@@ -972,6 +972,10 @@ class ActiveSessionEngine(
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
         coordinator._autoStopState.value = AutoStopUiState()
+        // Issue #649: clear the verbal-cue defer so a new set never inherits a
+        // stale flag from the previous one (skip / restart paths included).
+        deferAutoStopUntilNextWorkingRep = false
+        deferAutoStopDeadlineMs = 0L
     }
 
     /**
@@ -1354,10 +1358,12 @@ class ActiveSessionEngine(
                     // timers end the set while the cue is still audible. Defer both timers
                     // until the user completes another working rep or the deadline
                     // (cue + short transition window) elapses; any later auto-end branch
-                    // (VBT or stall) proceeds normally.
+                    // (VBT or stall) proceeds normally. Publish deadline BEFORE flipping
+                    // the flag so a metrics-thread reader never sees flag=true with the
+                    // stale 0L deadline (cross-thread ordering with @Volatile fields).
                     if (!coordinator.autoEndOnVelocityLoss) {
-                        deferAutoStopUntilNextWorkingRep = true
                         deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
+                        deferAutoStopUntilNextWorkingRep = true
                         resetStallTimer()
                         resetAutoStopTimer()
                     }
@@ -1440,13 +1446,21 @@ class ActiveSessionEngine(
 
         // Issue #649: while a verbal VBT cue is still in flight and the user has VBT
         // auto-end OFF, neither AMRAP position nor velocity-stall may end the set.
-        // Reset the live countdowns defensively each metric; cleared on the next
-        // completed working rep, the deadline (cue + transition window), or at
-        // the per-set reset boundary.
-        if (deferAutoStopUntilNextWorkingRep) {
-            if (currentTimeMillis() >= deferAutoStopDeadlineMs) {
+        // Source of truth is the deadline field — flag is derived. The deadline is
+        // 0L when no defer is active; a metrics-thread reader can never observe
+        // `flag=true && deadline=0L` because the writer publishes the future
+        // deadline before flipping the flag (cross-thread ordering of two @Volatile
+        // fields isn't guaranteed, but a single @Volatile source eliminates the
+        // race by construction). Reset the live countdowns defensively each metric;
+        // cleared on the next completed working rep, deadline expiry, or at the
+        // per-set reset boundary / resetAutoStopState().
+        val deferDeadline = deferAutoStopDeadlineMs
+        if (deferDeadline != 0L) {
+            if (currentTimeMillis() >= deferDeadline) {
                 deferAutoStopUntilNextWorkingRep = false
+                deferAutoStopDeadlineMs = 0L
             } else {
+                deferAutoStopUntilNextWorkingRep = true
                 resetStallTimer()
                 resetAutoStopTimer()
                 return

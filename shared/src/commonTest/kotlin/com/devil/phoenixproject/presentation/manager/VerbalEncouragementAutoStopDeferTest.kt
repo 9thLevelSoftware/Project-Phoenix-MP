@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -51,14 +52,25 @@ private class VerbalEncouragementAutoStopDeferTracker(
 
     /** Returns true if the defer is still active at `nowMs`. */
     fun isDeferActive(nowMs: Long): Boolean {
-        if (!deferAutoStop) return false
-        if (nowMs >= deferDeadlineMs) {
+        val deadline = deferDeadlineMs
+        if (deadline == 0L) return false
+        if (nowMs >= deadline) {
             deferAutoStop = false
             deferDeadlineMs = 0L
             return false
         }
+        deferAutoStop = true
         return true
     }
+
+    /** Mirrors resetAutoStopState(): every new-set reset clears the defer. */
+    fun onResetAutoStopState() {
+        deferAutoStop = false
+        deferDeadlineMs = 0L
+    }
+
+    /** Test seam: read the published deadline (mirrors the @Volatile field). */
+    fun deferDeadlineSnapshot(): Long = deferDeadlineMs
 }
 
 class VerbalEncouragementAutoStopDeferTest {
@@ -138,5 +150,40 @@ class VerbalEncouragementAutoStopDeferTest {
             "Past the deadline the defer must clear so auto-stop can fire normally",
         )
         assertFalse(tracker.deferAutoStop, "Expired defer must clear the flag")
+    }
+
+    @Test
+    fun `autoEnd off - resetAutoStopState clears the defer for the next set`() {
+        // Verbal cue armed the defer mid-set. Before the 30s deadline the user
+        // skips / restarts. The next active set must not inherit the defer —
+        // otherwise checkAutoStop() would suppress AMRAP/stall auto-stop there too.
+        val tracker = VerbalEncouragementAutoStopDeferTracker(autoEndOnVelocityLoss = false)
+        tracker.onRepCompleted(shouldStopSet = true, nowMs = 10_000L)
+        assertTrue(tracker.isDeferActive(nowMs = 20_000L))
+
+        tracker.onResetAutoStopState()
+
+        assertFalse(tracker.deferAutoStop)
+        assertEquals(
+            0L, tracker.deferDeadlineSnapshot(),
+            "resetAutoStopState must zero the deadline so the source-of-truth predicate clears",
+        )
+        assertFalse(
+            tracker.isDeferActive(nowMs = 20_000L),
+            "After resetAutoStopState() the new set must allow normal auto-stop behavior",
+        )
+    }
+
+    @Test
+    fun `arm publishes deadline before flag is observable to readers`() {
+        // Mirrors the production publish order: deadline first, flag second.
+        // The tracker mirrors the production single-source-of-truth pattern
+        // (deadline != 0L is the gate); this test pins the deadline value at
+        // arming time so a reader that arrives the instant the cue fires sees
+        // a future deadline and never the stale 0L value.
+        val tracker = VerbalEncouragementAutoStopDeferTracker(autoEndOnVelocityLoss = false)
+        tracker.onRepCompleted(shouldStopSet = true, nowMs = 5_000L)
+        assertEquals(35_000L, tracker.deferDeadlineSnapshot())
+        assertTrue(tracker.isDeferActive(nowMs = 5_000L))
     }
 }
