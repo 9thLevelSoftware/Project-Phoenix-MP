@@ -811,10 +811,11 @@ git commit -m "feat: add profile preference schema"
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
 
 **Interfaces:**
 - Consumes: generated schema-43 queries and Task 1's typed codec.
-- Produces: `ProfilePreferencesRepository`, `ProfileLocalSafetyStore`, `UserProfileRepository.activeProfileContext`, typed update methods, and atomic `createAndActivateProfile`.
+- Produces: `ProfilePreferencesRepository`, `ProfileLocalSafetyStore`, `UserProfileRepository.activeProfileContext`, typed update methods, atomic `createAndActivateProfile`, the idempotent pending-local-cleanup processor needed by Task 4, and compile-safe focused-store/repository DI bindings.
 
 - [ ] **Step 1: Write failing section-isolation and switch-order tests**
 
@@ -923,6 +924,20 @@ fun failedCreateCompensationRetriesFromJournalWithoutLeavingRows() = runTest {
     assertNull(queries.getProfileById(failedId).executeAsOneOrNull())
     assertNull(queries.selectProfilePreferences(failedId).executeAsOneOrNull())
     assertEquals(profileIdsBefore, facade.allProfiles.value.map { it.id }.toSet())
+}
+
+@Test
+fun pendingLocalCleanupDequeuesOnlyAfterEverySafetyKeyIsRemoved() = runTest {
+    queries.enqueueProfileLocalCleanup("source", 100)
+    safetyStore.failDeletes = true
+
+    facade.retryPendingLocalCleanup()
+    assertEquals(listOf("source"), queries.selectPendingProfileLocalCleanup().executeAsList().map { it.profile_id })
+
+    safetyStore.failDeletes = false
+    facade.retryPendingLocalCleanup()
+    assertTrue(queries.selectPendingProfileLocalCleanup().executeAsList().isEmpty())
+    assertNull(settings.getStringOrNull("profile_source_safe_word"))
 }
 ```
 
@@ -1106,6 +1121,7 @@ interface UserProfileRepository {
     suspend fun updateLed(profileId: String, value: LedPreferences)
     suspend fun updateVbt(profileId: String, value: VbtPreferences)
     suspend fun updateLocalSafety(profileId: String, value: ProfileLocalSafetyPreferences)
+    suspend fun retryPendingLocalCleanup(profileId: String? = null)
     suspend fun recoverPendingProfileTransitionForStartup()
     suspend fun reconcileActiveProfileContext()
 }
@@ -1268,24 +1284,64 @@ override suspend fun reconcileActiveProfileContext() = profileContextMutex.withL
         throw ProfileContextRecoveryException(error)
     }
 }
+
+private val profileCleanupMutex = Mutex()
+
+override suspend fun retryPendingLocalCleanup(profileId: String?) = profileCleanupMutex.withLock {
+    queries.selectPendingProfileLocalCleanup().executeAsList()
+        .asSequence()
+        .filter { profileId == null || it.profile_id == profileId }
+        .forEach { pending ->
+            try {
+                profileLocalSafetyStore.delete(pending.profile_id)
+                queries.dequeueProfileLocalCleanup(pending.profile_id)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Logger.w(error) { "Profile local cleanup remains queued profile=${pending.profile_id}" }
+            }
+        }
+}
 ```
 
 - [ ] **Step 6: Update fakes and pass isolation tests**
 
-Make `FakeUserProfileRepository` hold a `MutableStateFlow<ActiveProfileContext>` and implement the same whole-section updates, startup recovery, and reconciliation hooks. Add tests for A/B values across every section, atomic create/default/activate, invalid update rejection, local safety isolation, `Switching -> Ready` order, failed create after database activation, and failed switch after database activation. Both ordinary failure tests must assert that SQLite's active ID and `activeProfileContext.Ready.profile.id` return to the same prior profile; the failed-create case must also prove that neither the identity nor its default-preference row remains. Then force rollback and failed-create deletion failures separately, prove the journal remains, retry `reconcileActiveProfileContext()`, and assert the journal drains only after SQLite, identity rows, preference rows, and Ready all agree. Separately assert that `recoverPendingProfileTransitionForStartup()` drains the journal but leaves the context in `Switching`.
+Make `FakeUserProfileRepository` hold a `MutableStateFlow<ActiveProfileContext>` and implement the same whole-section updates, cleanup, startup recovery, and reconciliation hooks. Add tests for A/B values across every section, atomic create/default/activate, invalid update rejection, local safety isolation, `Switching -> Ready` order, failed create after database activation, and failed switch after database activation. Both ordinary failure tests must assert that SQLite's active ID and `activeProfileContext.Ready.profile.id` return to the same prior profile; the failed-create case must also prove that neither the identity nor its default-preference row remains. Then force rollback and failed-create deletion failures separately, prove the journal remains, retry `reconcileActiveProfileContext()`, and assert the journal drains only after SQLite, identity rows, preference rows, and Ready all agree. Separately assert that `recoverPendingProfileTransitionForStartup()` drains the journal but leaves the context in `Switching`, and that pending local cleanup remains queued on Settings failure and drains on retry.
+
+- [ ] **Step 7: Update the focused DI bindings before compiling later tasks**
+
+Replace the existing one-argument `SqlDelightUserProfileRepository(get())` binding in `DataModule.kt` now, in the same task that changes its constructor:
+
+```kotlin
+single<ProfilePreferencesRepository> { SqlDelightProfilePreferencesRepository(get()) }
+single<ProfileLocalSafetyStore> { SettingsProfileLocalSafetyStore(get()) }
+single<UserProfileRepository> {
+    SqlDelightUserProfileRepository(
+        database = get(),
+        profilePreferencesRepository = get(),
+        profileLocalSafetyStore = get(),
+        gamificationRepository = get(),
+    )
+}
+```
+
+Do not register `LegacyProfilePreferencesReader`, the refactored `SettingsManager`, or backup dependencies yet; their implementations land in later tasks and Task 9 performs final graph verification.
+
+- [ ] **Step 8: Run focused tests and compile the affected graph**
 
 Run:
 
 ```powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*SqlDelightProfilePreferencesRepositoryTest*" --tests "*SqlDelightUserProfileRepositoryTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileAndroidMain --console=plain
 ```
 
 Expected: PASS, including the malformed-raw retention test.
 
-- [ ] **Step 7: Commit the repositories**
+- [ ] **Step 9: Commit the repositories and compile-safe bindings**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfilePreferencesRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/ProfileLocalSafetyStore.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightProfilePreferencesRepositoryTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfilePreferencesRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/ProfileLocalSafetyStore.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightProfilePreferencesRepositoryTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt
 git commit -m "feat: add active profile preference facade"
 ```
 
@@ -1527,7 +1583,7 @@ private suspend fun migrateProfilePreferences() {
         profileLocalSafetyStore.copyLegacyToProfiles(profiles.map { it.id }, snapshot.localSafety)
         settings.putBoolean(KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE, true)
     }
-    retryPendingProfileLocalCleanup()
+    userProfileRepository.retryPendingLocalCleanup()
     userProfileRepository.reconcileActiveProfileContext()
 }
 ```
@@ -2160,7 +2216,8 @@ git commit -m "feat: gate live VBT by active profile"
 
 **Interfaces:**
 - Consumes: existing profile-inclusive PR/badge unique indexes and the Task 3 safety store.
-- Produces: deterministic PR/badge merge functions and retryable `PendingProfileLocalCleanup` processing.
+- Consumes: Task 3's retryable `PendingProfileLocalCleanup` processor.
+- Produces: deterministic PR/badge merge functions and deletion-side cleanup journaling.
 
 - [ ] **Step 1: Write failing collision and cleanup-retry tests**
 
@@ -2311,7 +2368,7 @@ publishReadyContext(postDeleteActiveProfileId)
 retryPendingLocalCleanup(id)
 ```
 
-`retryPendingLocalCleanup` catches non-cancellation failures and leaves the row queued. It dequeues only after all profile-prefixed keys are removed. Call the all-row retry from the required startup migration. Inject the existing `GamificationRepository`; do not construct `SqlDelightGamificationRepository` inside `deleteProfile`.
+Call Task 3's `retryPendingLocalCleanup(id)` after commit; it catches non-cancellation failures and leaves the row queued, and Task 4 already calls its all-row form during required startup migration. Inject the existing `GamificationRepository`; do not construct `SqlDelightGamificationRepository` inside `deleteProfile`.
 
 - [ ] **Step 6: Pass collision, default guard, and cleanup tests**
 
@@ -2599,27 +2656,17 @@ Run:
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*KoinModuleVerifyTest*" --console=plain
 ```
 
-Expected: FAIL with missing `ProfilePreferencesRepository`, `ProfileLocalSafetyStore`, or changed constructor dependencies.
+Expected: FAIL only for bindings introduced after Task 3, such as `LegacyProfilePreferencesReader`, refactored manager/health/safety consumers, or changed backup constructor dependencies. The focused preference stores and expanded `UserProfileRepository` binding already compile from Task 3.
 
-- [ ] **Step 3: Register focused stores before their consumers**
+- [ ] **Step 3: Complete the remaining graph bindings**
 
 ```kotlin
-single<ProfilePreferencesRepository> { SqlDelightProfilePreferencesRepository(get()) }
-single<ProfileLocalSafetyStore> { SettingsProfileLocalSafetyStore(get()) }
 single<LegacyProfilePreferencesReader> { SettingsLegacyProfilePreferencesReader(get(), get()) }
-single<UserProfileRepository> {
-    SqlDelightUserProfileRepository(
-        database = get(),
-        profilePreferencesRepository = get(),
-        profileLocalSafetyStore = get(),
-        gamificationRepository = get(),
-    )
-}
 single { SettingsManager(globalPreferences = get(), userProfileRepository = get(), bleRepository = get(), scope = get()) }
 single<EquipmentRackRepository> { ProfileEquipmentRackRepository(get()) }
 ```
 
-Update `MigrationManager`, health import, safe-word, backup, MainViewModel, and platform host bindings with their new arguments. Avoid a dependency cycle: `UserProfileRepository` may depend on focused stores and gamification, but neither focused store may depend on `UserProfileRepository`.
+Retain and verify Task 3's focused-store and expanded `UserProfileRepository` registrations; do not add duplicate definitions. Update `MigrationManager`, health import, safe-word, backup, MainViewModel, and platform host bindings with their new arguments. Avoid a dependency cycle: `UserProfileRepository` may depend on focused stores and gamification, but neither focused store may depend on `UserProfileRepository`.
 
 - [ ] **Step 4: Run focused and full shared verification**
 
