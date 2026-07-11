@@ -609,7 +609,7 @@ Expected: FAIL because schema 43 and migration `42.sqm` are absent.
 
 - [ ] **Step 3: Add the canonical tables and migration with identical DDL**
 
-Put this DDL in both the canonical `.sq` file and `42.sqm`; only `42.sqm` includes the final seed statement.
+Put this DDL in the canonical `.sq` file, `42.sqm`, and the `MigrationStatements` 42 fallback branch. Keep the canonical schema seed-free. Both executable migration paths—`42.sqm` and the resilient fallback branch—must append the same final seed statement so existing profiles are initialized regardless of which migration mechanism runs.
 
 ```sql
 CREATE TABLE UserProfilePreferences (
@@ -663,7 +663,7 @@ CREATE TABLE PendingProfileContextRecovery (
 );
 ```
 
-Append only to `42.sqm`:
+Append to both `42.sqm` and the `MigrationStatements` 42 fallback branch, but not the canonical `.sq` schema:
 
 ```sql
 INSERT OR IGNORE INTO UserProfilePreferences(profile_id)
