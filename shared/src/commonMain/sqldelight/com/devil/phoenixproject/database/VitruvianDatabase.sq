@@ -2121,6 +2121,158 @@ CREATE TABLE UserProfile (
     last_auth_at INTEGER
 );
 
+CREATE TABLE UserProfilePreferences (
+    profile_id TEXT PRIMARY KEY NOT NULL,
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    legacy_migration_version INTEGER NOT NULL DEFAULT 0,
+    body_weight_kg REAL NOT NULL DEFAULT 0 CHECK(body_weight_kg = 0 OR body_weight_kg BETWEEN 20 AND 300),
+    weight_unit TEXT NOT NULL DEFAULT 'LB' CHECK(weight_unit IN ('KG', 'LB')),
+    weight_increment REAL NOT NULL DEFAULT -1 CHECK(weight_increment = -1 OR weight_increment > 0),
+    core_updated_at INTEGER NOT NULL DEFAULT 0,
+    core_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(core_local_generation >= 0),
+    core_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(core_server_revision >= 0),
+    core_dirty INTEGER NOT NULL DEFAULT 1 CHECK(core_dirty IN (0, 1)),
+    equipment_rack_json TEXT NOT NULL DEFAULT '{"version":1,"items":[]}',
+    rack_updated_at INTEGER NOT NULL DEFAULT 0,
+    rack_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(rack_local_generation >= 0),
+    rack_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(rack_server_revision >= 0),
+    rack_dirty INTEGER NOT NULL DEFAULT 1 CHECK(rack_dirty IN (0, 1)),
+    workout_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+    workout_updated_at INTEGER NOT NULL DEFAULT 0,
+    workout_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(workout_local_generation >= 0),
+    workout_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(workout_server_revision >= 0),
+    workout_dirty INTEGER NOT NULL DEFAULT 1 CHECK(workout_dirty IN (0, 1)),
+    led_color_scheme_id INTEGER NOT NULL DEFAULT 0 CHECK(led_color_scheme_id >= 0),
+    led_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+    led_updated_at INTEGER NOT NULL DEFAULT 0,
+    led_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(led_local_generation >= 0),
+    led_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(led_server_revision >= 0),
+    led_dirty INTEGER NOT NULL DEFAULT 1 CHECK(led_dirty IN (0, 1)),
+    vbt_enabled INTEGER NOT NULL DEFAULT 1 CHECK(vbt_enabled IN (0, 1)),
+    vbt_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+    vbt_updated_at INTEGER NOT NULL DEFAULT 0,
+    vbt_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(vbt_local_generation >= 0),
+    vbt_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(vbt_server_revision >= 0),
+    vbt_dirty INTEGER NOT NULL DEFAULT 1 CHECK(vbt_dirty IN (0, 1)),
+    FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE
+);
+
+CREATE TABLE PendingProfileLocalCleanup (
+    profile_id TEXT PRIMARY KEY NOT NULL,
+    enqueued_at INTEGER NOT NULL
+);
+
+CREATE TABLE PendingProfileContextRecovery (
+    recovery_key TEXT PRIMARY KEY NOT NULL
+        DEFAULT 'active_profile_transition'
+        CHECK(recovery_key = 'active_profile_transition'),
+    prior_profile_id TEXT NOT NULL,
+    created_profile_id TEXT,
+    enqueued_at INTEGER NOT NULL
+);
+
+selectProfilePreferences:
+SELECT * FROM UserProfilePreferences WHERE profile_id = ?;
+
+selectAllProfilePreferences:
+SELECT * FROM UserProfilePreferences ORDER BY profile_id;
+
+insertDefaultProfilePreferences:
+INSERT OR IGNORE INTO UserProfilePreferences(profile_id, legacy_migration_version)
+VALUES (?, ?);
+
+seedMissingProfilePreferences:
+INSERT OR IGNORE INTO UserProfilePreferences(profile_id)
+SELECT id FROM UserProfile;
+
+updateCoreProfilePreferences:
+UPDATE UserProfilePreferences
+SET body_weight_kg = ?, weight_unit = ?, weight_increment = ?, core_updated_at = ?,
+    core_local_generation = core_local_generation + 1, core_dirty = 1
+WHERE profile_id = ?;
+
+updateRackProfilePreferences:
+UPDATE UserProfilePreferences
+SET equipment_rack_json = ?, rack_updated_at = ?, rack_local_generation = rack_local_generation + 1, rack_dirty = 1
+WHERE profile_id = ?;
+
+updateWorkoutProfilePreferences:
+UPDATE UserProfilePreferences
+SET workout_preferences_json = ?, workout_updated_at = ?, workout_local_generation = workout_local_generation + 1, workout_dirty = 1
+WHERE profile_id = ?;
+
+updateLedProfilePreferences:
+UPDATE UserProfilePreferences
+SET led_color_scheme_id = ?, led_preferences_json = ?, led_updated_at = ?,
+    led_local_generation = led_local_generation + 1, led_dirty = 1
+WHERE profile_id = ?;
+
+updateVbtProfilePreferences:
+UPDATE UserProfilePreferences
+SET vbt_enabled = ?, vbt_preferences_json = ?, vbt_updated_at = ?,
+    vbt_local_generation = vbt_local_generation + 1, vbt_dirty = 1
+WHERE profile_id = ?;
+
+applyLegacyProfilePreferences:
+UPDATE UserProfilePreferences
+SET schema_version = 1,
+    legacy_migration_version = 1,
+    body_weight_kg = :body_weight_kg,
+    weight_unit = :weight_unit,
+    weight_increment = :weight_increment,
+    core_updated_at = :migrated_at,
+    core_local_generation = 1,
+    core_server_revision = 0,
+    core_dirty = 1,
+    equipment_rack_json = :equipment_rack_json,
+    rack_updated_at = :migrated_at,
+    rack_local_generation = 1,
+    rack_server_revision = 0,
+    rack_dirty = 1,
+    workout_preferences_json = :workout_preferences_json,
+    workout_updated_at = :migrated_at,
+    workout_local_generation = 1,
+    workout_server_revision = 0,
+    workout_dirty = 1,
+    led_color_scheme_id = :led_color_scheme_id,
+    led_preferences_json = :led_preferences_json,
+    led_updated_at = :migrated_at,
+    led_local_generation = 1,
+    led_server_revision = 0,
+    led_dirty = 1,
+    vbt_enabled = :vbt_enabled,
+    vbt_preferences_json = :vbt_preferences_json,
+    vbt_updated_at = :migrated_at,
+    vbt_local_generation = 1,
+    vbt_server_revision = 0,
+    vbt_dirty = 1
+WHERE profile_id = :profile_id AND legacy_migration_version = 0;
+
+deleteProfilePreferences:
+DELETE FROM UserProfilePreferences WHERE profile_id = ?;
+
+enqueueProfileLocalCleanup:
+INSERT OR REPLACE INTO PendingProfileLocalCleanup(profile_id, enqueued_at) VALUES (?, ?);
+
+selectPendingProfileLocalCleanup:
+SELECT * FROM PendingProfileLocalCleanup ORDER BY enqueued_at, profile_id;
+
+dequeueProfileLocalCleanup:
+DELETE FROM PendingProfileLocalCleanup WHERE profile_id = ?;
+
+enqueueProfileContextRecovery:
+INSERT OR REPLACE INTO PendingProfileContextRecovery(
+    recovery_key, prior_profile_id, created_profile_id, enqueued_at
+) VALUES ('active_profile_transition', ?, ?, ?);
+
+selectPendingProfileContextRecovery:
+SELECT * FROM PendingProfileContextRecovery
+WHERE recovery_key = 'active_profile_transition';
+
+clearPendingProfileContextRecovery:
+DELETE FROM PendingProfileContextRecovery
+WHERE recovery_key = 'active_profile_transition';
+
 -- Queries for UserProfile
 getActiveProfile:
 SELECT * FROM UserProfile WHERE isActive = 1 LIMIT 1;

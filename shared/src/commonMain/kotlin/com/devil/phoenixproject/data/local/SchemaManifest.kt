@@ -211,6 +211,93 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 // ============================================================
 
 internal val manifestTables: List<SchemaTableOperation> = listOf(
+    // UserProfile -- initial schema, full current shape
+    // Columns added by later migrations: subscription fields (m5)
+    SchemaTableOperation(
+        table = "UserProfile",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS UserProfile (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                colorIndex INTEGER NOT NULL DEFAULT 0,
+                createdAt INTEGER NOT NULL,
+                isActive INTEGER NOT NULL DEFAULT 0,
+                supabase_user_id TEXT,
+                subscription_status TEXT DEFAULT 'free',
+                subscription_expires_at INTEGER,
+                last_auth_at INTEGER
+            )
+        """.trimIndent(),
+    ),
+
+    // UserProfilePreferences -- migration 42, device-local profile preferences.
+    SchemaTableOperation(
+        table = "UserProfilePreferences",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS UserProfilePreferences (
+                profile_id TEXT PRIMARY KEY NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                legacy_migration_version INTEGER NOT NULL DEFAULT 0,
+                body_weight_kg REAL NOT NULL DEFAULT 0 CHECK(body_weight_kg = 0 OR body_weight_kg BETWEEN 20 AND 300),
+                weight_unit TEXT NOT NULL DEFAULT 'LB' CHECK(weight_unit IN ('KG', 'LB')),
+                weight_increment REAL NOT NULL DEFAULT -1 CHECK(weight_increment = -1 OR weight_increment > 0),
+                core_updated_at INTEGER NOT NULL DEFAULT 0,
+                core_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(core_local_generation >= 0),
+                core_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(core_server_revision >= 0),
+                core_dirty INTEGER NOT NULL DEFAULT 1 CHECK(core_dirty IN (0, 1)),
+                equipment_rack_json TEXT NOT NULL DEFAULT '{"version":1,"items":[]}',
+                rack_updated_at INTEGER NOT NULL DEFAULT 0,
+                rack_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(rack_local_generation >= 0),
+                rack_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(rack_server_revision >= 0),
+                rack_dirty INTEGER NOT NULL DEFAULT 1 CHECK(rack_dirty IN (0, 1)),
+                workout_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+                workout_updated_at INTEGER NOT NULL DEFAULT 0,
+                workout_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(workout_local_generation >= 0),
+                workout_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(workout_server_revision >= 0),
+                workout_dirty INTEGER NOT NULL DEFAULT 1 CHECK(workout_dirty IN (0, 1)),
+                led_color_scheme_id INTEGER NOT NULL DEFAULT 0 CHECK(led_color_scheme_id >= 0),
+                led_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+                led_updated_at INTEGER NOT NULL DEFAULT 0,
+                led_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(led_local_generation >= 0),
+                led_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(led_server_revision >= 0),
+                led_dirty INTEGER NOT NULL DEFAULT 1 CHECK(led_dirty IN (0, 1)),
+                vbt_enabled INTEGER NOT NULL DEFAULT 1 CHECK(vbt_enabled IN (0, 1)),
+                vbt_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+                vbt_updated_at INTEGER NOT NULL DEFAULT 0,
+                vbt_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(vbt_local_generation >= 0),
+                vbt_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(vbt_server_revision >= 0),
+                vbt_dirty INTEGER NOT NULL DEFAULT 1 CHECK(vbt_dirty IN (0, 1)),
+                FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // PendingProfileContextRecovery -- migration 42, device-local transition journal.
+    SchemaTableOperation(
+        table = "PendingProfileContextRecovery",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PendingProfileContextRecovery (
+                recovery_key TEXT PRIMARY KEY NOT NULL
+                    DEFAULT 'active_profile_transition'
+                    CHECK(recovery_key = 'active_profile_transition'),
+                prior_profile_id TEXT NOT NULL,
+                created_profile_id TEXT,
+                enqueued_at INTEGER NOT NULL
+            )
+        """.trimIndent(),
+    ),
+
+    // PendingProfileLocalCleanup -- migration 42, device-local cleanup journal.
+    SchemaTableOperation(
+        table = "PendingProfileLocalCleanup",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PendingProfileLocalCleanup (
+                profile_id TEXT PRIMARY KEY NOT NULL,
+                enqueued_at INTEGER NOT NULL
+            )
+        """.trimIndent(),
+    ),
+
     // EarnedBadge -- originally bootstrapped by ensureGamificationTablesExist()
     // Full current shape: sync fields (m11), profile_id (m22)
     SchemaTableOperation(
@@ -1091,25 +1178,6 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 timestamp INTEGER NOT NULL,
                 profile_id TEXT NOT NULL DEFAULT 'default',
                 FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
-            )
-        """.trimIndent(),
-    ),
-
-    // UserProfile -- initial schema, full current shape
-    // Columns added by later migrations: subscription fields (m5)
-    SchemaTableOperation(
-        table = "UserProfile",
-        createSql = """
-            CREATE TABLE IF NOT EXISTS UserProfile (
-                id TEXT PRIMARY KEY NOT NULL,
-                name TEXT NOT NULL,
-                colorIndex INTEGER NOT NULL DEFAULT 0,
-                createdAt INTEGER NOT NULL,
-                isActive INTEGER NOT NULL DEFAULT 0,
-                supabase_user_id TEXT,
-                subscription_status TEXT DEFAULT 'free',
-                subscription_expires_at INTEGER,
-                last_auth_at INTEGER
             )
         """.trimIndent(),
     ),

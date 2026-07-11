@@ -33,7 +33,7 @@ class SchemaParityTest {
         // Database B: v1 base -> migrate 1..27 with resilient fallback -> reconcile
         val upgradeDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         buildMinimalV1Schema(upgradeDriver)
-        migrateWithResilience(upgradeDriver, 1, CURRENT_VERSION)
+        migrateWithResilience(upgradeDriver, 1, EXPECTED_SCHEMA_VERSION)
         reconcileFullSchema(upgradeDriver)
 
         // Compare tables (filter out migration temp/rebuild artifacts)
@@ -106,30 +106,30 @@ class SchemaParityTest {
     fun `every intermediate version upgrades cleanly with all manifest entries`() {
         val failures = mutableListOf<String>()
 
-        for (startVersion in 1L..CURRENT_VERSION - 1) {
+        for (startVersion in 1L..EXPECTED_SCHEMA_VERSION - 1) {
             val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
             try {
                 buildSchemaAtVersion(driver, startVersion)
-                if (startVersion < CURRENT_VERSION) {
-                    migrateWithResilience(driver, startVersion, CURRENT_VERSION)
+                if (startVersion < EXPECTED_SCHEMA_VERSION) {
+                    migrateWithResilience(driver, startVersion, EXPECTED_SCHEMA_VERSION)
                 }
                 reconcileFullSchema(driver)
 
                 // Verify all manifestColumns entries exist
                 for (op in manifestColumns) {
                     if (!columnExistsInDriver(driver, op.table, op.column)) {
-                        failures += "v$startVersion->v$CURRENT_VERSION: MISSING column ${op.table}.${op.column}"
+                        failures += "v$startVersion->v$EXPECTED_SCHEMA_VERSION: MISSING column ${op.table}.${op.column}"
                     }
                 }
 
                 // Verify all manifestIndexes entries exist
                 for (op in manifestIndexes) {
                     if (!indexExistsInDriver(driver, op.name)) {
-                        failures += "v$startVersion->v$CURRENT_VERSION: MISSING index ${op.name}"
+                        failures += "v$startVersion->v$EXPECTED_SCHEMA_VERSION: MISSING index ${op.name}"
                     }
                 }
             } catch (e: Exception) {
-                failures += "v$startVersion->v$CURRENT_VERSION: EXCEPTION ${e::class.simpleName}: ${e.message}"
+                failures += "v$startVersion->v$EXPECTED_SCHEMA_VERSION: EXCEPTION ${e::class.simpleName}: ${e.message}"
             } finally {
                 try {
                     driver.close()
@@ -595,10 +595,53 @@ class SchemaParityTest {
         assertEquals(null, queryScalar(driver, "SELECT template_id FROM TrainingCycle WHERE id = 'cycle-531'"))
     }
 
+    @Test
+    fun `generated schema exposes expected version`() {
+        assertEquals(EXPECTED_SCHEMA_VERSION, VitruvianDatabase.Schema.version)
+    }
+
+    @Test
+    fun migration42To43AddsProfilePreferenceTablesAndSeedsProfiles() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 42)
+        driver.execute(
+            null,
+            "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('a','A',0,1,1)",
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 42, EXPECTED_SCHEMA_VERSION)
+
+        assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'a'"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(vbt_enabled AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'a'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(legacy_migration_version AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'a'"))
+        assertEquals(true, getTables(driver).contains("PendingProfileLocalCleanup"))
+        assertEquals(true, getTables(driver).contains("PendingProfileContextRecovery"))
+    }
+
+    @Test
+    fun `resilient migration 42 fallback adds profile preference tables and seeds profiles`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 42)
+        driver.execute(
+            null,
+            "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('fallback','Fallback',0,1,1)",
+            0,
+        )
+
+        applyMigrationResilient(driver, 42)
+
+        assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'fallback'"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(vbt_enabled AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'fallback'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(legacy_migration_version AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'fallback'"))
+        assertEquals(true, getTables(driver).contains("PendingProfileLocalCleanup"))
+        assertEquals(true, getTables(driver).contains("PendingProfileContextRecovery"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 42L
+        private const val EXPECTED_SCHEMA_VERSION = 43L
         private val CANONICAL_UUID_REGEX = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
         /**

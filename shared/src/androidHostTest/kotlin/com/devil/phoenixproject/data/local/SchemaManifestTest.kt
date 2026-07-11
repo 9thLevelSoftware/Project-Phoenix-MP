@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.local
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.devil.phoenixproject.database.VitruvianDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -159,6 +160,66 @@ class SchemaManifestTest {
         val result = applyTableCreate(driver, op)
 
         assertEquals(ReconciliationStatus.ALREADY_PRESENT, result.status)
+    }
+
+    @Test
+    fun `reconcileFullSchema restores profile preference and cleanup tables with all columns`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        VitruvianDatabase.Schema.create(driver)
+        driver.execute(null, "DROP TABLE IF EXISTS UserProfilePreferences", 0)
+        driver.execute(null, "DROP TABLE IF EXISTS PendingProfileContextRecovery", 0)
+        driver.execute(null, "DROP TABLE IF EXISTS PendingProfileLocalCleanup", 0)
+
+        reconcileFullSchema(driver)
+
+        assertTrue(tableExists(driver, "UserProfilePreferences"))
+        assertTrue(tableExists(driver, "PendingProfileContextRecovery"))
+        assertTrue(tableExists(driver, "PendingProfileLocalCleanup"))
+        assertEquals(
+            listOf(
+                "profile_id",
+                "schema_version",
+                "legacy_migration_version",
+                "body_weight_kg",
+                "weight_unit",
+                "weight_increment",
+                "core_updated_at",
+                "core_local_generation",
+                "core_server_revision",
+                "core_dirty",
+                "equipment_rack_json",
+                "rack_updated_at",
+                "rack_local_generation",
+                "rack_server_revision",
+                "rack_dirty",
+                "workout_preferences_json",
+                "workout_updated_at",
+                "workout_local_generation",
+                "workout_server_revision",
+                "workout_dirty",
+                "led_color_scheme_id",
+                "led_preferences_json",
+                "led_updated_at",
+                "led_local_generation",
+                "led_server_revision",
+                "led_dirty",
+                "vbt_enabled",
+                "vbt_preferences_json",
+                "vbt_updated_at",
+                "vbt_local_generation",
+                "vbt_server_revision",
+                "vbt_dirty",
+            ),
+            columnNames(driver, "UserProfilePreferences"),
+        )
+        assertEquals(
+            listOf("recovery_key", "prior_profile_id", "created_profile_id", "enqueued_at"),
+            columnNames(driver, "PendingProfileContextRecovery"),
+        )
+        assertEquals(
+            listOf("profile_id", "enqueued_at"),
+            columnNames(driver, "PendingProfileLocalCleanup"),
+        )
     }
 
     // ── Index Create Tests ──────────────────────────────────────────────
