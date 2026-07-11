@@ -43,6 +43,7 @@ data class UserPreferences(
     // Issue #293: Custom backup destination (default = platform default location)
     val backupDestination: BackupDestination = BackupDestination.Default,
     // Issue #313: Velocity-Based Training (VBT) power loss threshold
+    val vbtEnabled: Boolean = true,
     val velocityLossThresholdPercent: Int = 20,
     val autoEndOnVelocityLoss: Boolean = false,
     // Issue #424: Suggestion-only next-set weight recommendations
