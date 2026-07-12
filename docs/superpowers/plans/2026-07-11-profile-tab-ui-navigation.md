@@ -4722,15 +4722,179 @@ git commit -m "feat: add profile scoped insights state"
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileExerciseInsights.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/util/KmpUtils.kt`
+- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/util/KmpUtilsTest.kt`
 
 **Interfaces:**
-- Consumes: Task 4 identity/dialog components, Task 5 state, `ExercisePickerDialog`, `VolumeHistoryChart`, `WeightDisplayFormatter`, and `KmpUtils.formatTimestamp`.
-- Produces: a compiling `ProfileScreen`, active-profile edit/delete actions, and compact independently resilient insight cards. Task 7 can now register the finished route directly.
+- Consumes: Task 4's callback-only identity/dialog components and single-owner action tags; Task 5's stable `selectionFailure`, selected/missing exercise state, and three independent `ProfileLoadable` blocks; `ExercisePickerDialog`; `VolumeHistoryChart`; `WeightDisplayFormatter`; and `WorkoutSession.effectiveTotalVolumeKg`.
+- Produces: atomic `UserProfileRepository.deleteActiveProfile(expectedProfileId)`, explicit `KmpUtils` support for `"MMM d"`, token/profile/kind-scoped identity mutation state and events, `buildProfileRecentHistory`, a compiling `ProfileScreen`, active-profile edit/delete actions, and compact independently resilient insight cards. Task 7 receives `onProfileRecoveryRequired` and can register the finished route without taking ownership of mutation state.
+- Identity invariant: the UI may delete only the active non-default profile, and the repository validates that same identity while holding `profileContextMutex`; a concurrent switch can never make the delete copy's Default reassignment claim false.
+- Overlay invariant: picker/edit/delete state is keyed by profile ID, terminal events are matched to that target, and a Switching/new-Ready context cannot retarget an already-open overlay.
+- Accessibility/tag invariant: all selector/header actions have 48dp targets and localized names; `SCREEN_PROFILE` belongs to the screen root, `ACTION_EDIT_PROFILE`/`ACTION_DELETE_PROFILE` belong only to header triggers, and Task 4 dialogs do not reuse action tags on confirmation buttons.
 
-- [ ] **Step 1: Write failing identity-mutation and screen-contract tests**
+#### Hardened Task 6 execution contract (authoritative)
+
+This block supersedes any older Task 6 snippet below where the two disagree. Do not begin
+production edits until the expanded red suite reaches the compiler/test runner.
+
+**Atomic active deletion**
+
+- Add `suspend fun deleteActiveProfile(expectedProfileId: String): Boolean` to
+  `UserProfileRepository`; retain generic `deleteProfile` for the legacy side panel until Task 10.
+- In `SqlDelightUserProfileRepository`, validate the current `ActiveProfileContext.Ready` and
+  `expectedProfileId` while already holding `profileContextMutex`. A mismatch throws
+  `StaleProfileContextException`; Switching throws `ProfileContextUnavailableException`.
+- Refactor the existing deletion body into one lock-owned helper. The active-only path requires a
+  non-default active row and always reassigns to Default. There must be no check-then-lock gap and
+  no nested acquisition of `profileContextMutex`.
+- Give `FakeUserProfileRepository` exact parity, plus update/delete call histories, ordinary
+  failure seams, and suspend gates used by deterministic cancellation/race tests.
+- Add two SQLDelight repository tests: a stale expected ID after a completed switch throws without
+  mutating either profile, and an active deletion racing a queued switch can only (a) delete and
+  reassign to Default before the switch or (b) fail stale before deletion. It may never reassign
+  the deleted profile to the newly active non-default profile.
+
+**Scoped identity mutations**
+
+- Replace the bare Boolean operation model with token/profile/kind ownership:
+
+```kotlin
+enum class ProfileIdentityMutationKind { UPDATE, DELETE }
+
+data class ProfileIdentityMutation(
+    val token: Long,
+    val profileId: String,
+    val kind: ProfileIdentityMutationKind,
+)
+```
+
+- `ProfileUiState` owns `identityMutation: ProfileIdentityMutation?`; expose
+  `identityMutationInFlight` as `identityMutation != null`. Task 5's Switching/new-profile reset
+  paths must preserve the current mutation record until its owning job clears it.
+- Scope terminal events with IDs/kinds:
+
+```kotlin
+data class IdentityUpdated(val profileId: String) : ProfileUiEvent
+data class IdentityUpdateFailed(
+    val profileId: String,
+    val kind: ProfileIdentityMutationKind,
+) : ProfileUiEvent
+data class ProfileDeleted(val profileId: String) : ProfileUiEvent
+data class ProfileRecoveryRequired(
+    val profileId: String,
+    val cause: ProfileContextRecoveryException,
+) : ProfileUiEvent
+```
+
+- Capture only when repository and UI contexts are both Ready for the same profile. Reject blank
+  names, default-profile deletion, stale pairs, and overlaps before launching. Normalize submitted
+  color indices with Task 4's helper.
+- Allocate the token and publish busy state synchronously before returning from the public action,
+  so two calls in the same frame cannot both launch. Recheck current ownership immediately before
+  an update repository call. Switching cancels an UPDATE job but must not blindly cancel DELETE,
+  because successful active deletion emits its own Switching(Default) transition.
+- Rethrow `CancellationException` and emit no failure event. Ordinary exceptions emit a matching
+  scoped failure only if the token still owns the operation. A
+  `ProfileContextRecoveryException` emits only `ProfileRecoveryRequired` for Task 7's blocking
+  recovery owner; it is never reduced to `profile_update_failed`.
+- Clear busy state (only if the finishing token still owns it) before sending a terminal event.
+  Suppress stale update success/failure after a profile switch. Call the new atomic
+  `deleteActiveProfile(capturedProfileId)` for deletion.
+
+Add exactly eleven identity-mutation tests to the existing fourteen ViewModel tests (25 total):
+
+1. trimmed/normalized update targets the current Ready ID and success is observed only after the
+   repository value is authoritative;
+2. ordinary update failure leaves authoritative state, clears its token, and emits one scoped
+   failure;
+3. cancellation emits no failure/success and clears only its own token;
+4. an overlapping update/delete call is rejected synchronously;
+5. a same-profile Ready refresh preserves the in-flight token and does not restart insights;
+6. a gated update followed by A→B cannot mutate B or publish a stale A event;
+7. Default deletion never reaches the repository;
+8. successful active deletion emits one scoped `ProfileDeleted` after busy clears;
+9. repository `false` emits one scoped delete failure;
+10. an ordinary delete exception emits one scoped delete failure without closing state; and
+11. `ProfileContextRecoveryException` emits only the scoped recovery event.
+
+**Compact insights and screen state**
+
+- Add `selectionFailure: Throwable?` to `ProfileExerciseInsights`. With no selection, precedence is
+  selection failure → missing exercise → ordinary no-history. Keep the exercise selector visible
+  in every case so manual selection can recover.
+- `CurrentOneRepMaxSource` has only VELOCITY/ASSESSMENT/SESSION. Map those three resources; use
+  `profile_one_rep_max_source_none` only for `ProfileLoadable.Empty`.
+- `ProfilePrHighlights.maxVolumeKg` is a legacy-named per-cable `kg × reps` value from
+  `PersonalRecord.volume`, not a total. Convert its kg magnitude exactly once for LB display and
+  never multiply it by cable count. Use `effectiveTotalVolumeKg()` only for recent sessions.
+- Add a pure `buildProfileRecentHistory` helper. Sort defensively by timestamp DESC then ID DESC,
+  take five for the newest-first accessible list, reverse that bounded list for oldest→newest chart
+  order, and create chart points only for finite positive total volume. An empty valid chart does
+  not hide the session list.
+- Add explicit `"MMM d"` handling to `KmpUtils.formatTimestamp` and a focused common test proving it
+  does not fall through to numeric `MM/dd/yyyy`.
+- The exercise selector is a named `Role.Button` with a 48dp minimum. Header switch/edit/delete
+  triggers are named 48dp controls and all are disabled during any identity mutation. Edit/delete
+  tags appear only on these header triggers. Treat the chart as decorative because the accessible
+  newest-first list conveys the same sessions.
+- Add `TestTags.SCREEN_PROFILE` in this task. For a non-Ready context, use a full-size centered
+  `Column` with `LoadingIndicator(LoadingIndicatorSize.Large)` and localized
+  `profile_switching`; `LoadingIndicator` has no `message` parameter.
+- Store `pickerProfileId`, `editTargetProfileId`, and `deleteTargetProfileId`, not free-floating
+  Booleans. Render each overlay only when its target equals the current Ready ID. Clear mismatched
+  targets on Switching/profile changes. Match scoped terminal events by ID and kind before closing;
+  ordinary matching failure keeps the dialog open and shows one snackbar. Forward a matching
+  recovery event through `onProfileRecoveryRequired` for Task 7.
+
+Add exactly six `ProfileScreenContractTest` cases:
+
+1. `SCREEN_PROFILE` exists and the non-Ready loader uses the real `LoadingIndicator` API;
+2. selection failure has precedence over missing/empty copy while the picker remains available;
+3. picker, all insight resources, source-empty handling, and no `Exercise.oneRepMaxKg` legacy read;
+4. the pure recent-history helper proves deterministic newest-first list, oldest-first chart, five
+   row cap, and nonfinite/nonpositive chart filtering;
+5. PR max-volume display documents per-cable semantics and never applies cable multiplication; and
+6. profile-keyed overlays, scoped event matching, 48dp named header controls, and single-owner tags.
+
+**Required red/green and scope gates**
+
+The red run includes all four focused families and records the missing atomic API/screen symbols:
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest `
+  --tests "*ProfileViewModelTest*" `
+  --tests "*ProfileScreenContractTest*" `
+  --tests "*SqlDelightUserProfileRepositoryTest*" `
+  --tests "*KmpUtilsTest*" --console=plain
+```
+
+The final uncached gate is:
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest `
+  --tests "*ProfileViewModelTest*" `
+  --tests "*ProfileScreenContractTest*" `
+  --tests "*SqlDelightUserProfileRepositoryTest*" `
+  --tests "*KmpUtilsTest*" `
+  :shared:compileAndroidMain :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 `
+  --rerun-tasks --console=plain
+```
+
+Require 25 ViewModel tests, 6 screen-contract tests, 2 new atomic-deletion tests within the existing
+repository suite, and the compact-date test, all with zero failures/errors/skips. Run
+`git diff --check` over exactly the eleven Task 6 files and verify both worktree and staged scope
+before commit. No navigation, Settings, RoutinesTab, or resource bundle is in Task 6 scope.
+
+- [ ] **Step 1: Write the expanded failing repository, mutation, formatter, and screen tests**
+
+The authoritative matrix above replaces the smaller starter examples below: implement all
+11 mutation, 6 screen, 2 atomic-delete, and 1 compact-date cases before production code.
 
 Add `updateProfileFailure` and `deleteProfileFailure` test controls to `FakeUserProfileRepository`, throwing before mutating when set. Then add ViewModel tests proving:
 
@@ -4810,63 +4974,24 @@ class ProfileScreenContractTest {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and confirm the red state**
+- [ ] **Step 2: Run the four-family red gate and confirm the missing atomic/UI contracts**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileViewModelTest*" --tests "*ProfileScreenContractTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest `
+  --tests "*ProfileViewModelTest*" --tests "*ProfileScreenContractTest*" `
+  --tests "*SqlDelightUserProfileRepositoryTest*" --tests "*KmpUtilsTest*" --console=plain
 ```
 
-Expected: FAIL because the identity operations and Profile UI files are absent.
+Expected: FAIL for the missing atomic active-delete API, scoped identity state/events, compact date
+formatter, history helper, and Profile UI files. Use the authoritative four-family command above.
 
-- [ ] **Step 3: Add repository-authoritative identity mutations to ProfileViewModel**
+- [ ] **Step 3: Add atomic deletion and scoped identity mutations**
 
-Add `identityMutationInFlight: Boolean` to `ProfileUiState`. Implement both actions through one helper that preserves cancellation and emits typed events:
-
-```kotlin
-fun updateIdentity(name: String, colorIndex: Int) {
-    val ready = uiState.value.context as? ActiveProfileContext.Ready ?: return
-    val trimmed = name.trim()
-    if (trimmed.isEmpty() || identityJob?.isActive == true) return
-    identityJob = viewModelScope.launch {
-        _uiState.update { it.copy(identityMutationInFlight = true) }
-        try {
-            profiles.updateProfile(ready.profile.id, trimmed, colorIndex)
-            _events.send(ProfileUiEvent.IdentityUpdated)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            _events.send(ProfileUiEvent.IdentityUpdateFailed)
-        } finally {
-            _uiState.update { it.copy(identityMutationInFlight = false) }
-        }
-    }
-}
-
-fun deleteActiveProfile() {
-    val ready = uiState.value.context as? ActiveProfileContext.Ready ?: return
-    if (!canDeleteProfile(ready.profile) || identityJob?.isActive == true) return
-    identityJob = viewModelScope.launch {
-        _uiState.update { it.copy(identityMutationInFlight = true) }
-        try {
-            if (profiles.deleteProfile(ready.profile.id)) {
-                _events.send(ProfileUiEvent.ProfileDeleted)
-            } else {
-                _events.send(ProfileUiEvent.IdentityUpdateFailed)
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            _events.send(ProfileUiEvent.IdentityUpdateFailed)
-        } finally {
-            _uiState.update { it.copy(identityMutationInFlight = false) }
-        }
-    }
-}
-```
-
-Expose events as a `Channel<ProfileUiEvent>(Channel.BUFFERED).receiveAsFlow()` so a success/error is consumed once, not replayed on recomposition.
+Implement the lock-owned repository API, fake parity, token/profile/kind state, scoped events,
+cancellation/recovery distinctions, and owner-only busy clearing exactly as specified above. Keep
+events on a buffered one-shot channel; never replay them on recomposition.
 
 - [ ] **Step 4: Build the compact insight component**
 
@@ -4877,6 +5002,7 @@ Use this boundary:
 fun ProfileExerciseInsights(
     selectedExercise: Exercise?,
     missingExerciseId: String?,
+    selectionFailure: Throwable?,
     currentOneRepMax: ProfileLoadable<CurrentOneRepMax>,
     prHighlights: ProfileLoadable<ProfilePrHighlights>,
     recentSessions: ProfileLoadable<List<WorkoutSession>>,
@@ -4890,10 +5016,11 @@ fun ProfileExerciseInsights(
 Implementation rules:
 
 - The first row is a full-width, 48dp-minimum selector showing the exercise display name or `profile_choose_exercise` and a search icon.
-- If selection is null and `missingExerciseId != null`, render `profile_missing_exercise`; if both are null, render `profile_no_exercise_history`. Render no metric shells in either state.
-- Current 1RM uses `WeightDisplayFormatter.formatPerCableWeight`, the selected unit suffix, and a source label mapped from `CurrentOneRepMaxSource` to the four `profile_one_rep_max_source_*` resources.
-- PR highlights are three compact equal-width cells. Max weight and estimated 1RM are per-cable displays; max volume uses canonical total kg converted once to the selected unit.
-- Recent history sorts newest-first defensively, calls `.take(5)`, maps points to `VolumePoint(KmpUtils.formatTimestamp(timestamp, "MMM d"), effectiveTotalVolumeKg())`, renders `VolumeHistoryChart` at 112dp, and shows a compact session list below it.
+- If selection is null, render selection failure first, then `profile_missing_exercise`, then ordinary `profile_no_exercise_history`. Render no metric shells in those states, but keep the selector available.
+- Current 1RM uses `WeightDisplayFormatter.formatPerCableWeight`, the selected unit suffix, and maps the three enum sources. `ProfileLoadable.Empty` alone consumes `profile_one_rep_max_source_none`.
+- PR highlights are three compact equal-width cells. Max weight and estimated 1RM are per-cable displays.
+- PR max volume is stored per-cable kg×reps: convert once and never multiply by cable count.
+- Recent history uses `buildProfileRecentHistory`: newest-first deterministic list, oldest-first finite-positive chart points, explicit `"MMM d"`, a 112dp decorative chart, and an accessible compact list.
 - A `Failed` branch renders `profile_insights_load_failed` only inside that metric card. Other cards remain visible.
 - A nonempty recent list ends with `profile_view_full_history`; pass the nonblank selected exercise ID to the callback.
 
@@ -4906,6 +5033,7 @@ Start with this route-ready API; Task 8 adds the preference callbacks below the 
 fun ProfileScreen(
     onOpenProfileSwitcher: () -> Unit,
     onNavigateToExerciseDetail: (String) -> Unit,
+    onProfileRecoveryRequired: (ProfileContextRecoveryException) -> Unit,
     enableVideoPlayback: Boolean,
     themeMode: ThemeMode,
     modifier: Modifier = Modifier,
@@ -4914,9 +5042,9 @@ fun ProfileScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val ready = state.context as? ActiveProfileContext.Ready
-    var showPicker by rememberSaveable { mutableStateOf(false) }
-    var showEdit by rememberSaveable { mutableStateOf(false) }
-    var showDelete by rememberSaveable { mutableStateOf(false) }
+    var pickerProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editTargetProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteTargetProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
@@ -4924,10 +5052,14 @@ fun ProfileScreen(
         modifier = modifier.testTag(TestTags.SCREEN_PROFILE),
     ) { padding ->
         if (ready == null) {
-            LoadingIndicator(
+            Column(
                 modifier = Modifier.fillMaxSize().padding(padding),
-                message = stringResource(Res.string.profile_switching),
-            )
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                LoadingIndicator(LoadingIndicatorSize.Large)
+                Text(stringResource(Res.string.profile_switching))
+            }
         } else {
             LazyColumn(
                 contentPadding = PaddingValues(
@@ -4943,19 +5075,20 @@ fun ProfileScreen(
                         profile = ready.profile,
                         identityMutationInFlight = state.identityMutationInFlight,
                         onSwitchProfile = onOpenProfileSwitcher,
-                        onEdit = { showEdit = true },
-                        onDelete = { showDelete = true },
+                        onEdit = { editTargetProfileId = ready.profile.id },
+                        onDelete = { deleteTargetProfileId = ready.profile.id },
                     )
                 }
                 item(key = "exercise-insights") {
                     ProfileExerciseInsights(
                         selectedExercise = state.selectedExercise,
                         missingExerciseId = state.missingExerciseId,
+                        selectionFailure = state.selectionFailure,
                         currentOneRepMax = state.currentOneRepMax,
                         prHighlights = state.prHighlights,
                         recentSessions = state.recentSessions,
                         weightUnit = ready.preferences.core.value.weightUnit,
-                        onChooseExercise = { showPicker = true },
+                        onChooseExercise = { pickerProfileId = ready.profile.id },
                         onViewFullHistory = onNavigateToExerciseDetail,
                     )
                 }
@@ -4965,16 +5098,16 @@ fun ProfileScreen(
 }
 ```
 
-The header is a compact Material 3 card with a 56dp `ProfileAvatar`, active name, visible `Switch Profile` button, edit icon, and—only when `canDeleteProfile(ready.profile)`—delete icon. Attach the Task 4 action tags. Call `ProfileEditDialog` and `ProfileDeleteDialog` outside the lazy list; pass `state.identityMutationInFlight`. Close the relevant dialog only on `IdentityUpdated`/`ProfileDeleted`. On `IdentityUpdateFailed`, keep it open and show the localized update error exactly once.
+The header is a compact Material 3 card with a 56dp `ProfileAvatar`, active name, visible `Switch Profile` button, edit icon, and—only when `canDeleteProfile(ready.profile)`—delete icon. Give every action a named 48dp target and attach edit/delete tags only to those header triggers. Call `ProfileEditDialog` and `ProfileDeleteDialog` outside the lazy list only when their target ID still equals the Ready profile; pass `state.identityMutationInFlight`. Match scoped ID/kind events before closing. On a matching ordinary failure, keep the dialog open and show the localized update error exactly once; forward only `ProfileRecoveryRequired` to `onProfileRecoveryRequired`.
 
 Render `ExercisePickerDialog` outside the list with:
 
 ```kotlin
 ExercisePickerDialog(
-    showDialog = showPicker,
-    onDismiss = { showPicker = false },
+    showDialog = pickerProfileId == ready?.profile?.id,
+    onDismiss = { pickerProfileId = null },
     onExerciseSelected = { exercise ->
-        showPicker = false
+        pickerProfileId = null
         viewModel.selectExercise(exercise)
     },
     exerciseRepository = exerciseRepository,
@@ -4984,20 +5117,27 @@ ExercisePickerDialog(
 )
 ```
 
-- [ ] **Step 6: Run focused tests and both target compilers**
+Clear picker/edit/delete target IDs whenever the Ready profile ID changes or the context enters
+Switching. Do not let a saved Boolean retarget an overlay to the next profile.
+
+- [ ] **Step 6: Run the authoritative uncached four-family and cross-target gate**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileViewModelTest*" --tests "*ProfileScreenContractTest*" :shared:compileKotlinIosArm64 --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest `
+  --tests "*ProfileViewModelTest*" --tests "*ProfileScreenContractTest*" `
+  --tests "*SqlDelightUserProfileRepositoryTest*" --tests "*KmpUtilsTest*" `
+  :shared:compileAndroidMain :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 `
+  --rerun-tasks --console=plain
 ```
 
-Expected: BUILD SUCCESSFUL; the Profile surface compiles on Android/JVM and iOS and all mutation/contract tests pass.
+Expected: BUILD SUCCESSFUL with the authoritative counts, zero failures/errors/skips, and Android/iOS main plus iOS test compilation.
 
 - [ ] **Step 7: Commit the Profile identity and insight UI**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileExerciseInsights.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileExerciseInsights.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/util/KmpUtils.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/util/KmpUtilsTest.kt
 git commit -m "feat: build profile identity and exercise insights"
 ```
 
