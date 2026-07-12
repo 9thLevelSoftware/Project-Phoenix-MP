@@ -1,10 +1,12 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.auth.sha256
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -38,6 +40,23 @@ class BackendHandoffContractTest {
 
     private fun normalizedTrackedText(value: String): String =
         value.replace("\r\n", "\n").removeSuffix("\n")
+
+    private val SHA256_EMPTY_RED_SENTINEL =
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+    // Task 2 RED only. Replace this RHS after reviewing the complete amended handoff.
+    private val EXPECTED_EDGE_HANDOFF_SHA256 =
+        "6b624d45038dfbc63a6d3a80be7ece5d09bc4cb292bc1df5353ab8f10f61a666"
+
+    private fun normalizedEdgeHandoff(value: String): String =
+        value.replace("\r\n", "\n").replace('\r', '\n')
+
+    private fun ByteArray.lowerHex(): String = joinToString("") {
+        (it.toInt() and 0xff).toString(16).padStart(2, '0')
+    }
+
+    private fun edgeHandoffSha256(value: String): String =
+        sha256(normalizedEdgeHandoff(value).encodeToByteArray()).lowerHex()
 
     private fun executableTypeScript(): String = Regex(
         pattern = """(?s)```typescript\s+(.*?)```""",
@@ -795,6 +814,12 @@ class BackendHandoffContractTest {
         val code = executableTypeScript()
         listOf(
             "auth.getUser(userJwt)",
+            "authOperationalFailure",
+            "status === 400 || status === 401 || status === 403",
+            "{ status: 503 }",
+            "req.arrayBuffer()",
+            "TextDecoder(\"utf-8\", { fatal: true",
+            "hasLeadingUtf8Bom",
             "SUPABASE_SERVICE_ROLE_KEY",
             "parsePreferenceEnvelope",
             "validateCorePayload",
@@ -803,6 +828,13 @@ class BackendHandoffContractTest {
             "validateLedPayload",
             "validateVbtPayload",
             "LOCAL_ONLY_KEYS",
+            "requirePostgresTextTree",
+            "requireInt32",
+            "requireFloat32",
+            "requireSafeJsonLong",
+            "requireRfc3339Instant",
+            "INT32_MIN = -2_147_483_648",
+            "originalBodyBytes.byteLength",
             "MAX_PROFILE_PREFERENCE_SECTION_BYTES = 262_144",
             "MAX_PROFILE_PREFERENCE_REQUEST_BYTES = 524_288",
             "scanTopLevelJsonObject",
@@ -816,7 +848,7 @@ class BackendHandoffContractTest {
             ".eq(\"user_id\", verifiedUserId)",
             ".eq(\"local_profile_id\", requestedProfileId)",
             "throw new PreferenceInfrastructureError",
-            "new Date(value).toISOString()",
+            "normalized.toISOString()",
         ).forEach { fragment -> assertTrue(fragment in code, fragment) }
 
         fun quotedInitializer(pattern: String): List<String> {
@@ -875,6 +907,32 @@ class BackendHandoffContractTest {
     }
 
     @Test
+    fun `complete normalized Edge handoff is sealed by a pinned digest`() {
+        val original = normalizedEdgeHandoff(edgeContract())
+        val actual = edgeHandoffSha256(original)
+        assertEquals(
+            EXPECTED_EDGE_HANDOFF_SHA256,
+            actual,
+            "After writing and reviewing the exact handoff, pin this digest: $actual",
+        )
+        assertNotEquals(
+            SHA256_EMPTY_RED_SENTINEL,
+            EXPECTED_EDGE_HANDOFF_SHA256,
+            "The Task 2 RED sentinel must not survive the reviewed handoff",
+        )
+
+        val appended = original +
+            "\n```typescript\nthrow new Error(\"appended executable mutation\");\n```\n"
+        val inverted = original.replaceFirst(
+            "rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES",
+            "rawBodyBytes <= MAX_PROFILE_PREFERENCE_REQUEST_BYTES",
+        )
+        assertNotEquals(original, inverted, "Digest mutation target must exist")
+        assertNotEquals(EXPECTED_EDGE_HANDOFF_SHA256, edgeHandoffSha256(appended))
+        assertNotEquals(EXPECTED_EDGE_HANDOFF_SHA256, edgeHandoffSha256(inverted))
+    }
+
+    @Test
     fun `edge handoff names executable portal tests rather than prose-only assurances`() {
         assertEquals(
             setOf(
@@ -882,7 +940,10 @@ class BackendHandoffContractTest {
                 "database:temporary-grant-owner-rls-and-cross-owner-user-id-protection",
                 "database:base-revision-accept-and-stale-canonical-conflict",
                 "edge:auth-and-cross-user-profile-rejection",
+                "edge:auth-rejection-vs-operational-outage-classification",
                 "edge:strict-five-section-validation-and-local-only-rejection",
+                "edge:kotlin-int32-float32-unicode-and-rfc3339-parity",
+                "edge:fatal-utf8-bom-and-original-byte-enforcement",
                 "edge:section-262143-262144-262145-byte-boundaries",
                 "edge:envelope-524287-524288-524289-byte-boundaries",
                 "edge:unexpected-rpc-error-is-sanitized-5xx",

@@ -72,7 +72,7 @@ interface MobileSyncPullResponseAdditions {
 }
 ```
 
-`REVISION_CONFLICT`, `VALIDATION_FAILED`, `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, and `UNKNOWN_PROFILE` are domain rejections returned by the RPC and may coexist with successful siblings. `SECTION_TOO_LARGE` and `DUPLICATE_SECTION` are Edge validation rejections. Authentication, transport, PostgREST/RPC, permission, timeout, malformed-RPC-row, and pull-query failures are infrastructure failures: return a sanitized HTTP 5xx and never relabel them as a domain rejection. Version `1` is the only supported wrapper and embedded document version.
+`REVISION_CONFLICT`, `VALIDATION_FAILED`, `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, and `UNKNOWN_PROFILE` are domain rejections returned by the RPC and may coexist with successful siblings. `SECTION_TOO_LARGE` and `DUPLICATE_SECTION` are Edge validation rejections. A missing or malformed bearer header, or a returned `auth.getUser` Auth error whose numeric status is exactly 400, 401, or 403, is a definitive credential rejection and returns 401. Returned Auth errors with 429, 5xx, any other or missing status, malformed success or no-user results, and thrown or rejected calls are operational auth failures: return a generic 503, log only `{ name }`, and never construct the admin client. Transport, PostgREST/RPC, permission, timeout, malformed-RPC-row, and pull-query failures are likewise sanitized infrastructure 5xx responses and are never relabeled as domain rejection. Version `1` is the only supported wrapper and embedded document version.
 
 ## Exact raw-byte contract
 
@@ -80,7 +80,7 @@ Copy `profile-preference-byte-goldens.json` byte-for-byte to `supabase/functions
 
 For a section golden, assert the padding marker appears exactly once, replace it with enough ASCII `x` bytes to reach the requested section target, and assert the final UTF-8 count. For a request golden, first replace `__SECTION_JSON__` with the valid section template containing one ASCII padding byte, then replace the request padding marker with enough ASCII `x` bytes to reach the complete-body target. Keep the `20.0` decimal lexeme, `-1e3` exponent lexeme, escaped quote/backslash, and multibyte `π界🙂` unchanged.
 
-The 9,500,000-byte cap applies to the exact HTTP body only when `profilePreferenceSections` is absent. When that key is present, the 524,288-byte cap applies to the complete exact raw `PortalSyncPayload`, including whitespace and ordinary fields. The 262,144-byte cap applies to each exact raw array-element span; never reconstruct it with `JSON.stringify`. Exact limits are inclusive. Kotlin verifies decoder/scanner parity; Deno invokes the real raw handler and verifies 400/413 responses and privileged-call suppression.
+The 9,500,000-byte cap applies to the original HTTP byte sequence only when `profilePreferenceSections` is absent. When that key is present, the 524,288-byte cap applies to the complete original raw `PortalSyncPayload`, including whitespace and ordinary fields. The 262,144-byte cap applies to each exact raw array-element span; never reconstruct it with `JSON.stringify`. Reject malformed UTF-8 and any leading UTF-8 BOM before parsing. Exact limits are inclusive. Kotlin verifies decoder/scanner parity; Deno invokes the real raw-byte handler and verifies 400/413 responses and privileged-call suppression.
 
 ## Push validation and raw scanner
 
@@ -112,6 +112,8 @@ class PreferenceInfrastructureError extends Error {
 const MAX_PROFILE_PREFERENCE_SECTION_BYTES = 262_144;
 const MAX_PROFILE_PREFERENCE_REQUEST_BYTES = 524_288;
 const MAX_MOBILE_SYNC_REQUEST_BYTES = 9_500_000;
+const INT32_MIN = -2_147_483_648;
+const INT32_MAX = 2_147_483_647;
 const utf8Bytes = (rawJson: string): number =>
   new TextEncoder().encode(rawJson).byteLength;
 
@@ -174,12 +176,45 @@ const requireRecord = (value: unknown, field: string): JsonRecord => {
   return value as JsonRecord;
 };
 
+const requirePostgresString = (value: unknown, field: string): string => {
+  if (typeof value !== "string") fail(field);
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit === 0) fail(field);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) fail(field);
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      fail(field);
+    }
+  }
+  return value;
+};
+
+function requirePostgresTextTree(value: unknown, field: string): void {
+  if (typeof value === "string") {
+    requirePostgresString(value, field);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => requirePostgresTextTree(child, field + "[" + index + "]"));
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  Object.entries(value as JsonRecord).forEach(([key, child]) => {
+    requirePostgresString(key, field + ".<key>");
+    requirePostgresTextTree(child, field + "." + key);
+  });
+}
+
 const requireExactRecord = (
   value: unknown,
   keys: readonly string[],
   field: string,
 ): JsonRecord => {
   const record = requireRecord(value, field);
+  requirePostgresTextTree(record, field);
   const allowed = new Set(keys);
   for (const key of Object.keys(record)) {
     if (!allowed.has(key)) fail(field + "." + key);
@@ -337,16 +372,35 @@ const requireBoolean = (value: unknown, field: string): boolean => {
   return value;
 };
 
-const requireFiniteNumber = (
+const requireFloat32 = (
   value: unknown,
   field: string,
   predicate: (number: number) => boolean = () => true,
 ): number => {
-  if (typeof value !== "number" || !Number.isFinite(value) || !predicate(value)) fail(field);
+  if (typeof value !== "number" || !Number.isFinite(value)) fail(field);
+  const narrowed = Math.fround(value);
+  if (!Number.isFinite(narrowed) || (value !== 0 && narrowed === 0) || !predicate(narrowed)) {
+    fail(field);
+  }
+  return narrowed;
+};
+
+const requireInt32 = (
+  value: unknown,
+  field: string,
+  predicate: (number: number) => boolean = () => true,
+): number => {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < INT32_MIN ||
+    value > INT32_MAX ||
+    !predicate(value)
+  ) fail(field);
   return value;
 };
 
-const requireSafeInteger = (
+const requireSafeJsonLong = (
   value: unknown,
   field: string,
   predicate: (number: number) => boolean = () => true,
@@ -356,8 +410,9 @@ const requireSafeInteger = (
 };
 
 const requireNonBlank = (value: unknown, field: string): string => {
-  if (typeof value !== "string" || value.trim().length === 0) fail(field);
-  return value;
+  const text = requirePostgresString(value, field);
+  if (text.trim().length === 0) fail(field);
+  return text;
 };
 
 const requireEnum = <T extends string>(
@@ -365,18 +420,49 @@ const requireEnum = <T extends string>(
   allowed: readonly T[],
   field: string,
 ): T => {
-  if (typeof value !== "string" || !allowed.includes(value as T)) fail(field);
-  return value as T;
+  const text = requirePostgresString(value, field);
+  if (!allowed.includes(text as T)) fail(field);
+  return text as T;
 };
 
 const requireVersionOne = (value: unknown, field: string): 1 => {
-  if (value !== 1) fail(field, "UNSUPPORTED_DOCUMENT_VERSION");
+  const version = requireInt32(value, field);
+  if (version !== 1) fail(field, "UNSUPPORTED_DOCUMENT_VERSION");
   return 1;
 };
 
-const requireIsoTimestamp = (value: unknown, field: string): string => {
-  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) fail(field);
-  return value;
+const RFC3339_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+const isLeapYear = (year: number): boolean =>
+  year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+
+const daysInMonth = (year: number, month: number): number =>
+  [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 0;
+
+const requireRfc3339Instant = (value: unknown, field: string): string => {
+  const text = requirePostgresString(value, field);
+  const match = RFC3339_INSTANT.exec(text);
+  if (!match) fail(field);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[8] === "Z" ? 0 : Number(match[10]);
+  const offsetMinute = match[8] === "Z" ? 0 : Number(match[11]);
+  if (
+    year < 1 ||
+    month < 1 || month > 12 ||
+    day < 1 || day > daysInMonth(year, month) ||
+    hour > 23 || minute > 59 || second > 59 ||
+    offsetHour > 23 || offsetMinute > 59
+  ) fail(field);
+  const epoch = Date.parse(text);
+  if (!Number.isFinite(epoch)) fail(field);
+  const normalized = new Date(epoch);
+  return normalized.toISOString();
 };
 
 const rejectLocalOnlyKeys = (value: unknown, field = "profilePreferenceSections"): void => {
@@ -425,13 +511,13 @@ function validateCorePayload(value: unknown): JsonRecord {
     ["bodyWeightKg", "weightUnit", "weightIncrement"],
     "payload",
   );
-  requireFiniteNumber(
+  requireFloat32(
     payload.bodyWeightKg,
     "payload.bodyWeightKg",
     (number) => number === 0 || (number >= 20 && number <= 300),
   );
   requireEnum(payload.weightUnit, ["KG", "LB"] as const, "payload.weightUnit");
-  requireFiniteNumber(
+  requireFloat32(
     payload.weightIncrement,
     "payload.weightIncrement",
     (number) => number === -1 || number > 0,
@@ -451,12 +537,12 @@ function validateRackPayload(value: unknown): JsonRecord {
     if (ids.has(id)) fail(field + ".id");
     ids.add(id);
     requireEnum(item.category, RACK_CATEGORIES, field + ".category");
-    requireFiniteNumber(item.weightKg, field + ".weightKg", (number) => number >= 0);
+    requireFloat32(item.weightKg, field + ".weightKg", (number) => number >= 0);
     requireEnum(item.behavior, RACK_BEHAVIORS, field + ".behavior");
     requireBoolean(item.enabled, field + ".enabled");
-    requireSafeInteger(item.sortOrder, field + ".sortOrder");
-    requireSafeInteger(item.createdAt, field + ".createdAt");
-    requireSafeInteger(item.updatedAt, field + ".updatedAt");
+    requireInt32(item.sortOrder, field + ".sortOrder");
+    requireSafeJsonLong(item.createdAt, field + ".createdAt");
+    requireSafeJsonLong(item.updatedAt, field + ".updatedAt");
   });
   return payload;
 }
@@ -514,26 +600,26 @@ const WORKOUT_KEYS = [
 
 function validateJustLiftDefaults(value: unknown, field: string): void {
   const defaults = requireExactRecord(value, JUST_LIFT_KEYS, field);
-  requireSafeInteger(
+  requireInt32(
     defaults.workoutModeId,
     field + ".workoutModeId",
     (number) => WORKOUT_MODES.includes(number as typeof WORKOUT_MODES[number]),
   );
-  requireFiniteNumber(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
-  requireFiniteNumber(defaults.weightChangePerRep, field + ".weightChangePerRep");
-  requireSafeInteger(
+  requireFloat32(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
+  requireFloat32(defaults.weightChangePerRep, field + ".weightChangePerRep");
+  requireInt32(
     defaults.eccentricLoadPercentage,
     field + ".eccentricLoadPercentage",
     (number) => number >= 0 && number <= 150,
   );
-  requireSafeInteger(
+  requireInt32(
     defaults.echoLevelValue,
     field + ".echoLevelValue",
     (number) => number >= 0 && number <= 3,
   );
   requireBoolean(defaults.stallDetectionEnabled, field + ".stallDetectionEnabled");
   requireEnum(defaults.repCountTimingName, REP_COUNT_TIMINGS, field + ".repCountTimingName");
-  requireSafeInteger(
+  requireInt32(
     defaults.restSeconds,
     field + ".restSeconds",
     (number) => number === 0 || (number >= 5 && number <= 300),
@@ -550,39 +636,39 @@ function validateSingleExerciseDefaults(
   if (mapKey.trim().length === 0 || exerciseId !== mapKey) fail(field + ".exerciseId");
   requireArray(defaults.setReps, field + ".setReps").forEach((rep, index) => {
     if (rep !== null) {
-      requireSafeInteger(rep, field + ".setReps[" + index + "]", (number) => number >= 0);
+      requireInt32(rep, field + ".setReps[" + index + "]", (number) => number >= 0);
     }
   });
-  requireFiniteNumber(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
+  requireFloat32(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
   requireArray(defaults.setWeightsPerCableKg, field + ".setWeightsPerCableKg")
-    .forEach((weight, index) => requireFiniteNumber(
+    .forEach((weight, index) => requireFloat32(
       weight,
       field + ".setWeightsPerCableKg[" + index + "]",
       (number) => number >= 0,
     ));
-  requireFiniteNumber(defaults.progressionKg, field + ".progressionKg");
+  requireFloat32(defaults.progressionKg, field + ".progressionKg");
   requireArray(defaults.setRestSeconds, field + ".setRestSeconds")
-    .forEach((rest, index) => requireSafeInteger(
+    .forEach((rest, index) => requireInt32(
       rest,
       field + ".setRestSeconds[" + index + "]",
       (number) => number === 0 || (number >= 5 && number <= 300),
     ));
-  requireSafeInteger(
+  requireInt32(
     defaults.workoutModeId,
     field + ".workoutModeId",
     (number) => WORKOUT_MODES.includes(number as typeof WORKOUT_MODES[number]),
   );
-  requireSafeInteger(
+  requireInt32(
     defaults.eccentricLoadPercentage,
     field + ".eccentricLoadPercentage",
     (number) => number >= 0 && number <= 150,
   );
-  requireSafeInteger(
+  requireInt32(
     defaults.echoLevelValue,
     field + ".echoLevelValue",
     (number) => number >= 0 && number <= 3,
   );
-  requireSafeInteger(defaults.duration, field + ".duration", (number) => number >= 0);
+  requireInt32(defaults.duration, field + ".duration", (number) => number >= 0);
   requireBoolean(defaults.isAMRAP, field + ".isAMRAP");
   requireBoolean(defaults.perSetRestTime, field + ".perSetRestTime");
   const rackIds = requireArray(defaults.defaultRackItemIds, field + ".defaultRackItemIds")
@@ -611,17 +697,17 @@ function validateWorkoutPayload(value: unknown): JsonRecord {
     "voiceStopEnabled",
   ].forEach((key) => requireBoolean(payload[key], "payload." + key));
   requireEnum(payload.repCountTiming, REP_COUNT_TIMINGS, "payload.repCountTiming");
-  requireSafeInteger(
+  requireInt32(
     payload.summaryCountdownSeconds,
     "payload.summaryCountdownSeconds",
     (number) => [-1, 0, 5, 10, 15, 20, 25, 30].includes(number),
   );
-  requireSafeInteger(
+  requireInt32(
     payload.autoStartCountdownSeconds,
     "payload.autoStartCountdownSeconds",
     (number) => number >= 2 && number <= 10,
   );
-  requireSafeInteger(
+  requireInt32(
     payload.defaultRoutineExerciseWeightPercentOfPR,
     "payload.defaultRoutineExerciseWeightPercentOfPR",
     (number) => number >= 50 && number <= 120,
@@ -647,7 +733,7 @@ function validateLedPayload(value: unknown): JsonRecord {
     ["ledColorSchemeId", "preferences"],
     "payload",
   );
-  requireSafeInteger(
+  requireInt32(
     payload.ledColorSchemeId,
     "payload.ledColorSchemeId",
     (number) => number >= 0,
@@ -681,7 +767,7 @@ function validateVbtPayload(value: unknown): JsonRecord {
     "payload.preferences",
   );
   requireVersionOne(preferences.version, "payload.preferences.version");
-  requireSafeInteger(
+  requireInt32(
     preferences.velocityLossThresholdPercent,
     "payload.preferences.velocityLossThresholdPercent",
     (number) => number >= 10 && number <= 50,
@@ -710,6 +796,7 @@ function validateVbtPayload(value: unknown): JsonRecord {
 
 ```typescript
 function parsePreferenceMutation(value: unknown): PortalProfilePreferenceSectionMutation {
+  requirePostgresTextTree(value, "mutation");
   rejectLocalOnlyKeys(value);
   const mutation = requireExactRecord(value, MUTATION_KEYS, "mutation");
   const localProfileId = requireNonBlank(mutation.localProfileId, "mutation.localProfileId");
@@ -718,14 +805,16 @@ function parsePreferenceMutation(value: unknown): PortalProfilePreferenceSection
     fail("mutation.section", "UNSUPPORTED_SECTION");
   }
   const section = mutation.section as ProfilePreferenceSection;
-  const documentVersion = requireSafeInteger(mutation.documentVersion, "mutation.documentVersion");
-  requireVersionOne(documentVersion, "mutation.documentVersion");
-  const baseRevision = requireSafeInteger(
+  const documentVersion = requireVersionOne(
+    mutation.documentVersion,
+    "mutation.documentVersion",
+  );
+  const baseRevision = requireSafeJsonLong(
     mutation.baseRevision,
     "mutation.baseRevision",
     (number) => number >= 0,
   );
-  const clientModifiedAt = requireIsoTimestamp(
+  const clientModifiedAt = requireRfc3339Instant(
     mutation.clientModifiedAt,
     "mutation.clientModifiedAt",
   );
@@ -795,6 +884,9 @@ function parsePreferenceEnvelope(
   if (rawMutations.length !== rawContext.preferenceElementSpans.length) {
     fail("body.profilePreferenceSections.span");
   }
+  rawMutations.forEach((rawMutation, index) => {
+    requirePostgresTextTree(rawMutation, "body.profilePreferenceSections[" + index + "]");
+  });
   rawMutations.forEach((rawMutation, index) => {
     const span = rawContext.preferenceElementSpans[index];
     let reparsed: unknown;
@@ -872,7 +964,7 @@ Authenticate with the caller-scoped anon client. Parse and validate the complete
 
 ```typescript
 const authorization = req.headers.get("Authorization");
-if (!authorization?.startsWith("Bearer ")) {
+if (!authorization?.startsWith("Bearer ") || authorization.length === "Bearer ".length) {
   return new Response(JSON.stringify({ error: "Missing bearer token" }), { status: 401 });
 }
 const userJwt = authorization.slice("Bearer ".length);
@@ -880,16 +972,95 @@ const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   global: { headers: { Authorization: authorization } },
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const { data: userData, error: userError } = await authClient.auth.getUser(userJwt);
-if (userError || !userData.user) {
-  return new Response(JSON.stringify({ error: "Invalid bearer token" }), { status: 401 });
-}
-const verifiedUserId = userData.user.id;
 
-const rawBody = await req.text();
-const rawBodyBytes = new TextEncoder().encode(rawBody).byteLength;
+const safeErrorName = (error: unknown, fallback: string): string => {
+  let candidate = fallback;
+  if (error instanceof Error) {
+    candidate = error.name;
+  } else if (
+    typeof error === "object" && error !== null &&
+    typeof (error as JsonRecord).name === "string"
+  ) {
+    candidate = (error as JsonRecord).name as string;
+  }
+  return /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(candidate) ? candidate : fallback;
+};
+
+const authOperationalFailure = (error: unknown): Response => {
+  console.error({ name: safeErrorName(error, "AuthOperationalFailure") });
+  return new Response(
+    JSON.stringify({ error: "Authentication service unavailable" }),
+    { status: 503 },
+  );
+};
+
+const returnedAuthStatus = (error: unknown): number | null => {
+  if (typeof error !== "object" || error === null) return null;
+  const record = error as JsonRecord;
+  const status = record.status ?? record.statusCode;
+  return typeof status === "number" && Number.isInteger(status) ? status : null;
+};
+
+let authResult: unknown;
+try {
+  authResult = await authClient.auth.getUser(userJwt);
+} catch (error) {
+  return authOperationalFailure(error);
+}
+if (typeof authResult !== "object" || authResult === null) {
+  return authOperationalFailure({ name: "AuthUnexpectedResult" });
+}
+const authRecord = authResult as JsonRecord;
+const userError = authRecord.error;
+if (userError !== null && userError !== undefined) {
+  const status = returnedAuthStatus(userError);
+  if (status === 400 || status === 401 || status === 403) {
+    return new Response(JSON.stringify({ error: "Invalid bearer token" }), { status: 401 });
+  }
+  return authOperationalFailure(userError);
+}
+const userData = authRecord.data;
+if (typeof userData !== "object" || userData === null) {
+  return authOperationalFailure({ name: "AuthUnexpectedResult" });
+}
+const verifiedUser = (userData as JsonRecord).user;
+if (
+  typeof verifiedUser !== "object" || verifiedUser === null ||
+  typeof (verifiedUser as JsonRecord).id !== "string" ||
+  ((verifiedUser as JsonRecord).id as string).length === 0
+) {
+  return authOperationalFailure({ name: "AuthUnexpectedResult" });
+}
+const verifiedUserId = (verifiedUser as JsonRecord).id as string;
+
+let originalBodyBytes: Uint8Array;
+try {
+  originalBodyBytes = new Uint8Array(await req.arrayBuffer());
+} catch (error) {
+  console.error({ name: safeErrorName(error, "RequestBodyReadFailure") });
+  return new Response(JSON.stringify({ error: "Request unavailable" }), { status: 503 });
+}
+const rawBodyBytes = originalBodyBytes.byteLength;
 if (rawBodyBytes > MAX_MOBILE_SYNC_REQUEST_BYTES) {
   return new Response(JSON.stringify({ error: "Request too large" }), { status: 413 });
+}
+const hasLeadingUtf8Bom =
+  originalBodyBytes.length >= 3 &&
+  originalBodyBytes[0] === 0xef &&
+  originalBodyBytes[1] === 0xbb &&
+  originalBodyBytes[2] === 0xbf;
+if (hasLeadingUtf8Bom) {
+  return new Response(JSON.stringify({ error: "Invalid sync request" }), { status: 400 });
+}
+let rawBody: string;
+try {
+  rawBody = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
+    .decode(originalBodyBytes);
+} catch {
+  return new Response(JSON.stringify({ error: "Invalid sync request" }), { status: 400 });
+}
+if (rawBody.startsWith("\uFEFF")) {
+  return new Response(JSON.stringify({ error: "Invalid sync request" }), { status: 400 });
 }
 
 let topLevelScan: TopLevelJsonScan;
@@ -937,7 +1108,9 @@ const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 });
 ```
 
-`clientModifiedAt` is validated ISO audit metadata only. Never use it, `deviceId`, or a client-generated idempotency value for mutation ordering.
+The 9,500,000-byte cap counts `originalBodyBytes.byteLength` only when `profilePreferenceSections` is absent. Whenever that top-level field is present, the 524,288-byte cap applies to that same complete original byte sequence, including all whitespace, ordinary fields, and preference fields. Reject oversize requests from the original count, never from a decoded/re-encoded surrogate. The 262,144-byte cap applies to each exact raw JSON array-element span measured by the quote-, escape-, and nesting-aware scanner. Only after one fatal valid-UTF-8 decode and explicit no-BOM check is `TextEncoder.encode(rawBody.slice(span.start, span.end))` byte-identical to the corresponding original octets: valid UTF-8 has a unique encoding and JSON structural offsets fall on scalar boundaries. Never reconstruct spans with `JSON.stringify`. Reject malformed UTF-8, a leading BOM/U+FEFF, duplicate relevant top-level keys, element-count mismatch, and reparsed-span/value mismatch before constructing the admin client. Exact-size payloads are accepted; 262,145 and 524,289 bytes are rejected.
+
+`clientModifiedAt` is strict timezone-bearing RFC3339 audit metadata normalized by `requireRfc3339Instant`. Never use it, `deviceId`, or a client-generated idempotency value for mutation ordering.
 
 ## RPC result parsing and push response
 
@@ -974,6 +1147,7 @@ function parseInfrastructureCanonical(
   mutation: PortalProfilePreferenceSectionMutation,
 ): PortalProfilePreferenceSectionCanonical {
   try {
+    requirePostgresTextTree(value, "canonical");
     const canonical = requireExactRecord(
       value,
       [
@@ -990,7 +1164,7 @@ function parseInfrastructureCanonical(
     if (canonical.section !== mutation.section) fail("canonical.section");
     requireVersionOne(canonical.documentVersion, "canonical.documentVersion");
     const serverRevision = infrastructureRevision(canonical.serverRevision);
-    const serverUpdatedAt = requireIsoTimestamp(
+    const serverUpdatedAt = requireRfc3339Instant(
       canonical.serverUpdatedAt,
       "canonical.serverUpdatedAt",
     );
@@ -1129,7 +1303,7 @@ verify_jwt = true
 
 ## Pull contract
 
-In `mobile-sync-pull/index.ts`, repeat bearer-token verification with `auth.getUser(userJwt)`, derive `verifiedUserId` only from that verified user, and construct the service-role client only after authentication. Query preferences only on the first page for a nonblank requested profile, apply both owner predicates, and map the typed columns/documents into the exact canonical wrappers returned by mutation.
+In `mobile-sync-pull/index.ts`, reuse the exact bearer-token/`auth.getUser(userJwt)` classifier above: only returned Auth errors with 400, 401, or 403 become 401; 429, 5xx, any other or missing status, malformed results, and thrown or rejected calls become name-only-logged generic 503 responses. Derive `verifiedUserId` only from the verified user, and construct the service-role client only after successful authentication and strict pull-request validation. Query preferences only on the first page for a nonblank requested profile, apply both owner predicates, and map the typed columns/documents into the exact canonical wrappers returned by mutation.
 
 ```typescript
 const canonical = (
@@ -1147,7 +1321,8 @@ const canonical = (
   payload,
 });
 
-const canonicalTimestamp = (value: string): string => new Date(value).toISOString();
+const canonicalTimestamp = (value: unknown): string =>
+  requireRfc3339Instant(value, "pull.serverUpdatedAt");
 
 async function loadFirstPageProfilePreferences(
   cursor: string | null | undefined,
@@ -1245,7 +1420,10 @@ database:exact-function-acls-and-no-client-dml
 database:temporary-grant-owner-rls-and-cross-owner-user-id-protection
 database:base-revision-accept-and-stale-canonical-conflict
 edge:auth-and-cross-user-profile-rejection
+edge:auth-rejection-vs-operational-outage-classification
 edge:strict-five-section-validation-and-local-only-rejection
+edge:kotlin-int32-float32-unicode-and-rfc3339-parity
+edge:fatal-utf8-bom-and-original-byte-enforcement
 edge:section-262143-262144-262145-byte-boundaries
 edge:envelope-524287-524288-524289-byte-boundaries
 edge:unexpected-rpc-error-is-sanitized-5xx
@@ -1261,12 +1439,13 @@ Implement every manifest entry as executable pgTAP or Deno coverage, not a strin
 - In `supabase/tests/database/profile_preferences.test.sql`, use pgTAP in a transaction. Assert both exact function signatures, `SECURITY INVOKER`, empty `search_path`, owner, volatility, return shapes, and ACLs. Assert `PUBLIC`, `anon`, and `authenticated` have no function execution or table DML while `service_role` has only the intended privileges.
 - Temporarily grant table DML inside the rolled-back pgTAP transaction to test RLS. With authenticated JWT claims for owners A and B, prove CRUD is restricted to each composite parent and owner A cannot update `user_id` to owner B because `WITH CHECK` fails. Do not claim RLS makes a same-owner `local_profile_id` immutable; no trigger is part of this contract. Revoke the temporary grants and reassert production ACLs.
 - Seed two composite profile keys and call the real mutation RPC for all five sections. Prove base 0 acceptance at revision 1, matching-base increment, stale-base canonical conflict, sibling preservation, key preservation, and explicit domain rejection rows.
-- Push tests use injected anon/admin clients and two real local users. Missing/invalid JWT, cross-owner requests, and any body `userId` authority fail. Malformed final ordinary or preference items produce zero privileged calls.
-- Table-drive required/unknown keys, primitive types, enum/range edges, nested objects, duplicate rack ID, duplicate section identity, all five wrappers, unsupported versions, and recursively normalized local-only names. Duplicate rack names and signed safe timestamps are accepted.
-- Exercise shared UTF-8 goldens at 262143/262144/262145 bytes per raw section and 524287/524288/524289 bytes per complete request. Verify scanner offsets through whitespace, escapes, and nesting. A large ordinary-only request below 9,500,000 bytes must not inherit the preference request cap.
+- Push tests use injected anon/admin clients and two real local users. Missing or malformed bearer headers and returned Auth errors with each of 400, 401, and 403 return HTTP 401. Separately inject returned 429, 500, and 503 errors, an error without a status, a null or malformed result, a success without a user, and thrown or rejected `getUser` calls; each returns generic 503 and its captured log object has exactly the `name` key. Every auth failure constructs and calls zero admin clients. Cross-owner requests and any body `userId` authority fail. Malformed final ordinary or preference items produce zero privileged calls.
+- Table-drive required and unknown keys, primitive types, enum and range edges, nested objects, duplicate rack ID, duplicate section identity, all five wrappers, unsupported versions, and recursively normalized local-only names. For Kotlin `Int`, prove rack `sortOrder` accepts exactly -2147483648 and 2147483647 and rejects either adjacent overflow; cover workout `setReps` and `duration` plus LED color scheme with both Int32 and their narrower business rules. For Kotlin `Float`, prove `Float.MAX_VALUE` and the smallest nonzero Float32 survive where business rules allow, while positive and negative Float32 overflow and nonzero underflow-to-zero are rejected; retain every domain predicate. Safe JSON integers apply only to Long revisions and timestamps. Recursively test raw and escaped U+0000 plus lone high and low surrogates in nested string values and `singleExerciseDefaults` or other object keys; reject each before admin construction, while a valid supplementary pair or emoji passes. Duplicate rack names and signed safe-integer `createdAt` and `updatedAt` values are accepted. Pre-count duplicate section identities before size or document validation, emit exactly one `DUPLICATE_SECTION` rejection per duplicated key, execute zero RPCs for every occurrence, and still execute each valid non-duplicated sibling once.
+- Table-drive the shared strict instant helper through mutation, RPC canonical, and pull paths. Reject numeric and string `0`, prose dates, date-only or space forms, February 30, invalid leap days, times, or offsets, and every missing timezone. Accept valid `Z`, fractional-second, and positive or negative offset instants and assert exact `toISOString()` normalization.
+- Send raw `Uint8Array` bodies through the real handler. Reject a leading UTF-8 BOM, truncated sequences, overlong encodings, and isolated continuation bytes with HTTP 400 and zero admin construction or calls; accept a legitimately encoded U+FFFD scalar. Exercise shared UTF-8 goldens at 262143/262144/262145 original bytes per raw section and 524287/524288/524289 original bytes per complete request. Assert inclusive limits from `Uint8Array.byteLength`, HTTP 413 only for complete-request overflow when the preference field is present, per-section `SECTION_TOO_LARGE` for section overflow, and exact scanner offsets through whitespace, escapes, and nesting. A large ordinary-only request below 9,500,000 bytes must not inherit the preference request cap.
 - Inject RPC error, null/empty/multiple rows, malformed canonical, mismatched revision, and unknown reason. Each produces a generic 5xx with sanitized logging and never fabricated `VALIDATION_FAILED`; a valid domain rejection still coexists with valid siblings.
 - Use real RPC calls plus `Promise.all` for same-section and different-section first-write races, and exercise the lost-ack retry convergence path.
-- Pull tests seed all five documents through mutation and deep-compare first-page canonical wrappers to mutation responses, including normalized timestamps. Verify both predicates, cross-owner isolation, no row creation on absence, later-page omission, and retained `syncTime`.
+- Pull tests repeat the exact auth classification matrix, seed all five documents through mutation, and deep-compare first-page canonical wrappers to mutation responses, including strict RFC3339 `toISOString()` normalization. Inject malformed database timestamps and string or object-key Unicode to prove a name-only-logged generic 5xx rather than silent normalization. Verify both owner predicates, cross-owner isolation, no row creation on absence, later-page omission, and retained `syncTime`.
 
 ## Portal verification and handoff boundary
 
