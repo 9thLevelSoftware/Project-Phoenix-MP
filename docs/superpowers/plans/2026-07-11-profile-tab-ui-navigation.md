@@ -2797,6 +2797,15 @@ class ProfileResourceContractTest {
         "equipment_rack_title",
         "equipment_rack_manage",
         "cd_led_scheme",
+        "color_blue",
+        "color_green",
+        "color_amber",
+        "color_red",
+        "color_purple",
+        "color_pink",
+        "color_cyan",
+        "color_orange",
+        "cd_select_profile_color",
     )
 
     private val expectedLedSchemeLabels = mapOf(
@@ -2809,6 +2818,15 @@ class ProfileResourceContractTest {
 
     private val expectedPlaceholders = mapOf(
         "profile_delete_reassign_message" to listOf("%1${'$'}s"),
+        "cd_select_profile_color" to listOf("%1${'$'}s"),
+    )
+
+    private val expectedColorLabels = mapOf(
+        "en" to listOf("Blue", "Green", "Amber", "Red", "Purple", "Pink", "Cyan", "Orange"),
+        "nl" to listOf("Blauw", "Groen", "Amber", "Rood", "Paars", "Roze", "Cyaan", "Oranje"),
+        "de" to listOf("Blau", "Grün", "Bernstein", "Rot", "Lila", "Rosa", "Cyan", "Orange"),
+        "es" to listOf("Azul", "Verde", "Ámbar", "Rojo", "Morado", "Rosa", "Cian", "Naranja"),
+        "fr" to listOf("Bleu", "Vert", "Ambre", "Rouge", "Violet", "Rose", "Cyan", "Orange"),
     )
 
     private val placeholderPattern = Regex("""%\d+\${'$'}[A-Za-z]""")
@@ -2861,8 +2879,22 @@ class ProfileResourceContractTest {
                 resourceValue(source, "cd_led_scheme", path),
                 "$path translated LED scheme label",
             )
+            assertEquals(
+                expectedColorLabels.getValue(languageCode),
+                listOf(
+                    "color_blue",
+                    "color_green",
+                    "color_amber",
+                    "color_red",
+                    "color_purple",
+                    "color_pink",
+                    "color_cyan",
+                    "color_orange",
+                ).map { resourceValue(source, it, path) },
+                "$path translated profile color labels",
+            )
 
-            newKeys.forEach { key ->
+            (newKeys + reusedKeys).forEach { key ->
                 val value = resourceValue(source, key, path)
                 val placeholders = placeholderPattern.findAll(value)
                     .map { it.value }
@@ -3289,17 +3321,21 @@ git commit -m "feat: add localized profile screen copy"
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutinesTab.kt:92,980`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt`
 
 **Interfaces:**
-- Consumes: existing `UserProfile`, color resource names, and Material 3 sheet/dialog primitives.
-- Produces: `ProfileColors`, `PROFILE_COLOR_COUNT`, `ProfileAvatar`, callback-only add/edit/delete dialogs, and a switch/create-only `ProfileSwitcherSheet` for Tasks 6–7.
+- Consumes: existing `UserProfile`; Task 3's localized profile/color resources; and common Material 3 sheet, dialog, selection, and semantics primitives.
+- Produces: `ProfileColors`, `PROFILE_COLOR_COUNT`, `suggestedProfileColorIndex`, `normalizedProfileColorIndex`, contrast-safe `profileInitialsColor`, active-only `canDeleteProfile`, `ProfileAvatar`, callback-only add/edit/delete dialogs, `canDismissProfileSwitcher`, and a switch/create-only `ProfileSwitcherSheet` for Tasks 6–7.
+- Interaction contract: every clickable avatar/swatch is at least 48dp, profile choices expose radio/selected semantics, dialog callbacks never mutate repositories or close optimistically, and a switch in flight cannot hide the sheet through drag, back, scrim, or callback dismissal.
+- Delete-copy invariant: Task 6 deletes only the active non-default profile, whose repository reassignment target is Default. The shared policy and dialog must encode that active-only precondition so `profile_delete_reassign_message` can never lie about the target.
 
 - [ ] **Step 1: Write the failing identity policy test**
 
 ```kotlin
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
@@ -3311,28 +3347,68 @@ import kotlin.test.assertTrue
 
 class ProfileIdentityPolicyTest {
     @Test
-    fun `suggested colors wrap the shared palette`() {
+    fun `palette selection wraps and invalid stored indexes normalize`() {
+        assertEquals(PROFILE_COLOR_COUNT, ProfileColors.size)
+        assertEquals(0, suggestedProfileColorIndex(-1))
         assertEquals(0, suggestedProfileColorIndex(0))
         assertEquals(7, suggestedProfileColorIndex(7))
         assertEquals(0, suggestedProfileColorIndex(8))
+
+        assertEquals(0, normalizedProfileColorIndex(-1))
+        assertEquals(0, normalizedProfileColorIndex(0))
+        assertEquals(7, normalizedProfileColorIndex(7))
+        assertEquals(0, normalizedProfileColorIndex(8))
     }
 
     @Test
-    fun `only non-default profiles may be deleted`() {
-        assertFalse(canDeleteProfile(profile("default")))
-        assertTrue(canDeleteProfile(profile("athlete-a")))
+    fun `avatar initials meet text contrast across the shared palette`() {
+        ProfileColors.forEach { background ->
+            val foreground = profileInitialsColor(background)
+            assertTrue(
+                contrastRatio(foreground, background) >= 4.5f,
+                "Insufficient initials contrast for $background",
+            )
+        }
     }
 
     @Test
-    fun `switcher and delete dialog consume their complete resource inventory`() {
-        val switcher = assertNotNull(readProjectFile(
-            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt",
-        ))
-        val dialogs = assertNotNull(readProjectFile(
-            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt",
-        ))
+    fun `only the active non-default profile may be deleted`() {
+        assertFalse(canDeleteProfile(profile("default", isActive = true)))
+        assertFalse(canDeleteProfile(profile("athlete-a", isActive = false)))
+        assertTrue(canDeleteProfile(profile("athlete-a", isActive = true)))
+    }
 
-        assertContains(switcher, "Res.string.profiles_title")
+    @Test
+    fun `switcher may dismiss only while no switch is in flight`() {
+        assertTrue(canDismissProfileSwitcher(null))
+        assertFalse(canDismissProfileSwitcher("athlete-a"))
+    }
+
+    @Test
+    fun `identity dialogs are callback only guarded and responsive`() {
+        val dialogs = assertNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt",
+            ),
+        )
+
+        assertFalse(dialogs.contains("UserProfileRepository"))
+        assertFalse(dialogs.contains("CoroutineScope"))
+        assertFalse(dialogs.contains("DestructiveConfirmDialog("))
+        assertContains(dialogs, "fun ProfileAddDialog(")
+        assertContains(dialogs, "fun ProfileEditDialog(")
+        assertContains(dialogs, "fun ProfileDeleteDialog(")
+        assertContains(dialogs, "require(canDeleteProfile(profile))")
+        assertContains(dialogs, "AlertDialog(")
+        assertContains(dialogs, "name.trim()")
+        assertContains(dialogs, "normalizedProfileColorIndex(selectedColorIndex)")
+        assertContains(dialogs, "ProfileColors.indices.chunked(4)")
+        assertContains(dialogs, ".size(48.dp)")
+        assertContains(dialogs, ".selectable(")
+        assertContains(dialogs, "Role.RadioButton")
+        assertContains(dialogs, ".selectableGroup()")
+        assertContains(dialogs, "enabled = !isSubmitting")
+        assertContains(dialogs, "if (!isSubmitting)")
         val deleteCopyOffset = dialogs.indexOf("Res.string.profile_delete_reassign_message")
         assertTrue(deleteCopyOffset >= 0)
         val deleteCopyCall = dialogs.substring(
@@ -3342,13 +3418,76 @@ class ProfileIdentityPolicyTest {
         assertContains(deleteCopyCall, "profile.name")
     }
 
-    private fun profile(id: String) = UserProfile(
+    @Test
+    fun `switcher is switch create only and cannot hide while switching`() {
+        val switcher = assertNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt",
+            ),
+        )
+
+        assertContains(switcher, "Res.string.profiles_title")
+        assertContains(switcher, "TestTags.PROFILE_SWITCHER_SHEET")
+        assertContains(switcher, "TestTags.ACTION_ADD_PROFILE")
+        assertFalse(switcher.contains("onEditProfile"))
+        assertFalse(switcher.contains("onDeleteProfile"))
+        assertFalse(switcher.contains("combinedClickable"))
+        assertContains(switcher, "rememberUpdatedState")
+        assertContains(switcher, "confirmValueChange")
+        assertContains(switcher, "targetValue != SheetValue.Hidden")
+        assertContains(switcher, "sheetGesturesEnabled = canDismiss")
+        assertContains(switcher, "if (canDismissProfileSwitcher(")
+        assertContains(switcher, ".selectableGroup()")
+    }
+
+    @Test
+    fun `identity surfaces declare accessible semantics and all downstream tags`() {
+        val identity = assertNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityComponents.kt",
+            ),
+        )
+        val row = assertNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt",
+            ),
+        )
+        val tags = assertNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt",
+            ),
+        )
+
+        assertContains(identity, "minimumInteractiveComponentSize")
+        assertContains(identity, "Role.Button")
+        assertContains(identity, "contentDescription = accessibleName")
+        assertContains(identity, "clearAndSetSemantics")
+        assertContains(row, "heightIn(min = 56.dp)")
+        assertContains(row, "Modifier.selectable(")
+        assertContains(row, "Role.RadioButton")
+        assertContains(row, "selected = isActive")
+        assertContains(row, "enabled && !switching")
+        listOf(
+            "PROFILE_SWITCHER_SHEET",
+            "ACTION_ADD_PROFILE",
+            "ACTION_EDIT_PROFILE",
+            "ACTION_DELETE_PROFILE",
+        ).forEach { tag -> assertContains(tags, "const val $tag") }
+    }
+
+    private fun profile(id: String, isActive: Boolean) = UserProfile(
         id = id,
         name = id,
         colorIndex = 0,
         createdAt = 1L,
-        isActive = id == "default",
+        isActive = isActive,
     )
+
+    private fun contrastRatio(first: Color, second: Color): Float {
+        val lighter = maxOf(first.luminance(), second.luminance())
+        val darker = minOf(first.luminance(), second.luminance())
+        return (lighter + 0.05f) / (darker + 0.05f)
+    }
 }
 ```
 
@@ -3360,11 +3499,11 @@ Run:
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileIdentityPolicyTest*" --console=plain
 ```
 
-Expected: FAIL to compile because the extracted policy functions do not exist.
+Expected: FAIL to compile because the extracted policy functions/files and the four downstream test tags do not exist.
 
 - [ ] **Step 3: Extract the palette, avatar, and identity policy before deleting the speed dial**
 
-Create `ProfileIdentityComponents.kt` with the palette currently defined in `ProfileSpeedDial.kt` and these stable helpers:
+Create `ProfileIdentityComponents.kt` with the palette currently defined in `ProfileSpeedDial.kt`. Keep palette indexing total for imported/synced legacy rows, encode the active-only delete invariant, and choose whichever of black/white gives the stronger WCAG contrast against the avatar background:
 
 ```kotlin
 val ProfileColors = listOf(
@@ -3377,7 +3516,18 @@ const val PROFILE_COLOR_COUNT = 8
 internal fun suggestedProfileColorIndex(profileCount: Int): Int =
     profileCount.coerceAtLeast(0) % PROFILE_COLOR_COUNT
 
-internal fun canDeleteProfile(profile: UserProfile): Boolean = profile.id != "default"
+internal fun normalizedProfileColorIndex(colorIndex: Int): Int =
+    colorIndex.takeIf(ProfileColors.indices::contains) ?: 0
+
+internal fun canDeleteProfile(profile: UserProfile): Boolean =
+    profile.id != "default" && profile.isActive
+
+internal fun profileInitialsColor(background: Color): Color {
+    val luminance = background.luminance()
+    val blackContrast = (luminance + 0.05f) / 0.05f
+    val whiteContrast = 1.05f / (luminance + 0.05f)
+    return if (blackContrast >= whiteContrast) Color.Black else Color.White
+}
 
 @Composable
 fun ProfileAvatar(
@@ -3387,26 +3537,51 @@ fun ProfileAvatar(
     modifier: Modifier = Modifier,
     size: Dp = 40.dp,
 ) {
-    Surface(
-        modifier = modifier
-            .size(size)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .shadow(if (isActive) 8.dp else 0.dp, CircleShape),
-        shape = CircleShape,
-        color = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors.first() },
+    val accessibleName = profile.name.trim().ifEmpty { "?" }
+    val interactionModifier = if (onClick == null) {
+        // The surrounding row/header owns the name; do not announce a duplicate initial.
+        Modifier.clearAndSetSemantics { }
+    } else {
+        Modifier
+            .minimumInteractiveComponentSize()
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .clearAndSetSemantics {
+                contentDescription = accessibleName
+                role = Role.Button
+                onClick(label = accessibleName) {
+                    onClick()
+                    true
+                }
+            }
+    }
+    val background = ProfileColors[normalizedProfileColorIndex(profile.colorIndex)]
+
+    Box(
+        modifier = modifier.then(interactionModifier),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) {
+        Surface(
+            modifier = Modifier
+                .size(size)
+                .shadow(if (isActive) 8.dp else 0.dp, CircleShape),
+            shape = CircleShape,
+            color = background,
+        ) {
             Text(
-                text = profile.name.trim().take(1).uppercase().ifEmpty { "?" },
-                color = Color.White,
+                text = accessibleName.take(1).uppercase(),
+                color = profileInitialsColor(background),
                 fontWeight = FontWeight.Bold,
+                modifier = Modifier.wrapContentSize(Alignment.Center),
             )
         }
     }
 }
 ```
 
-Remove only the duplicate palette/constants/avatar from `ProfileSpeedDial.kt` at this step. `RoutinesTab` remains source-compatible because the extracted symbols stay in the same package; replace any explicit import pointing at the obsolete file with the package-level import.
+Use `androidx.compose.ui.graphics.luminance`, `minimumInteractiveComponentSize`, `Role.Button`, and `clearAndSetSemantics` from common Compose APIs. The visual circle stays 40dp by default, while a clickable avatar's outer hit target is at least 48dp. The contrast test is the guard against future palette changes.
+
+Remove only the duplicate palette/constants/avatar from `ProfileSpeedDial.kt`; its named `ProfileAvatar` call remains source-compatible. Do not edit `RoutinesTab`: it already imports the package-level `ProfileColors` symbol, and Kotlin imports do not point at source files.
 
 - [ ] **Step 4: Make the list row switcher-specific**
 
@@ -3425,7 +3600,68 @@ fun ProfileListItem(
 )
 ```
 
-Use a full-width 56dp-minimum row, `ProfileAvatar`, the profile name, a check icon for `isActive`, and a 20dp `CircularProgressIndicator` for `switching`. The modifier uses `combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick)` only while the nullable legacy callback is present; otherwise use ordinary `clickable(enabled = enabled && !isActive)`. Thus the new sheet has no context action while `ProfileSidePanel` continues compiling during the staged migration. Task 10 removes the nullable legacy callback and `combinedClickable` after deleting the last side-panel call.
+Use a full-width 56dp-minimum row, a non-clickable/decorative `ProfileAvatar`, the profile name with one-line ellipsis, a check icon for `isActive`, and a 20dp `CircularProgressIndicator` for `switching`. Disable every pointer action while `switching` is true.
+
+The legacy side-panel branch keeps `combinedClickable` because active rows still need their edit/delete context action. Add explicit radio/selected semantics there. The new switcher branch uses `selectable`, which supplies the correct mutually-exclusive control semantics and disables the already-active row:
+
+```kotlin
+val interactionEnabled = enabled && !switching
+val interactionModifier = if (onLongClick != null) {
+    Modifier
+        .combinedClickable(
+            enabled = interactionEnabled,
+            onClick = onClick,
+            onLongClick = onLongClick,
+        )
+        .semantics {
+            selected = isActive
+            role = Role.RadioButton
+        }
+} else {
+    Modifier.selectable(
+        selected = isActive,
+        enabled = interactionEnabled && !isActive,
+        role = Role.RadioButton,
+        onClick = onClick,
+    )
+}
+
+Surface(
+    modifier = modifier
+        .fillMaxWidth()
+        .heightIn(min = 56.dp)
+        .then(interactionModifier),
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ProfileAvatar(profile = profile, isActive = isActive)
+        Text(
+            text = profile.name,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        when {
+            switching -> CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+            )
+            isActive -> Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = stringResource(Res.string.cd_active),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+```
+
+Task 10 removes the nullable legacy callback and `combinedClickable` after deleting the last side-panel call.
 
 - [ ] **Step 5: Create callback-only dialogs that never mutate repositories**
 
@@ -3457,22 +3693,129 @@ fun ProfileDeleteDialog(
 )
 ```
 
-Each dialog owns only transient text/color selection. Trim the name, disable confirmation for blank names or while submitting, and disable dismiss while submitting. `ProfileDeleteDialog` must `require(canDeleteProfile(profile))`, must not optimistically close, and must bind the one `%1$s` placeholder rather than rendering an unformatted token:
+Each add/edit dialog owns only transient text/color selection. Key edit state by `profile.id`, normalize the stored color before displaying or confirming it, trim the name passed to `onConfirm`, disable the text field, swatches, confirmation, cancellation, and `onDismissRequest` while submitting, and never call `onDismiss` from a confirmation callback. Keep these exact guards in the shared `AlertDialog` implementation:
 
 ```kotlin
-Text(
-    text = stringResource(
-        Res.string.profile_delete_reassign_message,
-        profile.name,
-    ),
+val trimmedName = name.trim()
+AlertDialog(
+    onDismissRequest = { if (!isSubmitting) onDismiss() },
+    confirmButton = {
+        TextButton(
+            onClick = onConfirm,
+            enabled = trimmedName.isNotEmpty() && !isSubmitting,
+        ) { Text(confirmLabel) }
+    },
+    dismissButton = {
+        TextButton(
+            onClick = onDismiss,
+            enabled = !isSubmitting,
+        ) { Text(stringResource(Res.string.action_cancel)) }
+    },
 )
 ```
 
-Render the eight color choices with the existing `color_*` names and `cd_select_profile_color` semantics. The `Profile*Dialog` names intentionally avoid colliding with the repository-coupled legacy dialogs until Task 10 deletes them.
+Build `ProfileDeleteDialog` with its own guarded `AlertDialog`; do not reuse `DestructiveConfirmDialog`, whose current API cannot disable its buttons. Require the active non-default invariant before rendering, keep the dialog open until Task 6 observes a success event, and bind the one `%1$s` placeholder:
+
+```kotlin
+require(canDeleteProfile(profile)) {
+    "Only the active non-default profile may be deleted from Profile"
+}
+AlertDialog(
+    onDismissRequest = { if (!isSubmitting) onDismiss() },
+    title = { Text(stringResource(Res.string.delete_profile)) },
+    text = {
+        Text(
+            text = stringResource(
+                Res.string.profile_delete_reassign_message,
+                profile.name,
+            ),
+        )
+    },
+    confirmButton = {
+        TextButton(onClick = onConfirm, enabled = !isSubmitting) {
+            Text(stringResource(Res.string.action_delete))
+        }
+    },
+    dismissButton = {
+        TextButton(onClick = onDismiss, enabled = !isSubmitting) {
+            Text(stringResource(Res.string.action_cancel))
+        }
+    },
+)
+```
+
+Render the eight translated color choices as exactly two rows of four. A single eight-item row cannot preserve 48dp targets on compact dialog widths. The 48dp wrapper is the radio target; the 36dp inner circle is visual only. Use the same contrast-safe foreground for the selected border/check:
+
+```kotlin
+Column(
+    modifier = Modifier.fillMaxWidth().selectableGroup(),
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+) {
+    ProfileColors.indices.chunked(4).forEach { indices ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            indices.forEach { index ->
+                val color = ProfileColors[index]
+                val selected = normalizedProfileColorIndex(selectedColorIndex) == index
+                val description = stringResource(
+                    Res.string.cd_select_profile_color,
+                    colorNames[index],
+                )
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .selectable(
+                            selected = selected,
+                            enabled = !isSubmitting,
+                            role = Role.RadioButton,
+                            onClick = { onColorSelected(index) },
+                        )
+                        .semantics { contentDescription = description },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(color, CircleShape)
+                            .then(
+                                if (selected) {
+                                    Modifier.border(
+                                        2.dp,
+                                        profileInitialsColor(color),
+                                        CircleShape,
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (selected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = profileInitialsColor(color),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+The `Profile*Dialog` names intentionally avoid colliding with the repository-coupled legacy dialogs until Task 10 deletes them.
 
 - [ ] **Step 6: Build the shared switch/create-only sheet**
 
 ```kotlin
+internal fun canDismissProfileSwitcher(switchingTargetProfileId: String?): Boolean =
+    switchingTargetProfileId == null
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileSwitcherSheet(
@@ -3483,8 +3826,22 @@ fun ProfileSwitcherSheet(
     onAddProfile: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val currentSwitchingTargetProfileId by rememberUpdatedState(switchingTargetProfileId)
+    val canDismiss = canDismissProfileSwitcher(switchingTargetProfileId)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { targetValue ->
+            targetValue != SheetValue.Hidden ||
+                canDismissProfileSwitcher(currentSwitchingTargetProfileId)
+        },
+    )
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (canDismissProfileSwitcher(currentSwitchingTargetProfileId)) onDismiss()
+        },
+        sheetState = sheetState,
+        sheetGesturesEnabled = canDismiss,
         modifier = Modifier.testTag(TestTags.PROFILE_SWITCHER_SHEET),
     ) {
         Text(
@@ -3492,12 +3849,15 @@ fun ProfileSwitcherSheet(
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
-        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            contentPadding = PaddingValues(bottom = 24.dp),
+        ) {
             items(profiles, key = UserProfile::id) { profile ->
                 ProfileListItem(
                     profile = profile,
                     isActive = profile.id == activeProfileId,
-                    enabled = switchingTargetProfileId == null,
+                    enabled = canDismiss,
                     switching = profile.id == switchingTargetProfileId,
                     onClick = { onSelectProfile(profile) },
                 )
@@ -3508,7 +3868,11 @@ fun ProfileSwitcherSheet(
                     leadingContent = { Icon(Icons.Default.Add, contentDescription = null) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = switchingTargetProfileId == null, onClick = onAddProfile)
+                        .clickable(
+                            enabled = canDismiss,
+                            role = Role.Button,
+                            onClick = onAddProfile,
+                        )
                         .testTag(TestTags.ACTION_ADD_PROFILE),
                 )
             }
@@ -3517,22 +3881,51 @@ fun ProfileSwitcherSheet(
 }
 ```
 
-Add `PROFILE_SWITCHER_SHEET`, `ACTION_ADD_PROFILE`, `ACTION_EDIT_PROFILE`, and `ACTION_DELETE_PROFILE` to `TestTags`. The sheet deliberately has no edit/delete callbacks.
+The state veto is required because Material 3 hides a modal sheet before delivering `onDismissRequest`; a callback-only guard would otherwise leave a remembered but hidden sheet after a failed switch. The veto covers back/scrim dismissal, and `sheetGesturesEnabled` prevents a misleading drag while the switch is in flight.
+
+Add all four stable tags to `TestTags`:
+
+```kotlin
+const val PROFILE_SWITCHER_SHEET = "profile-switcher-sheet"
+const val ACTION_ADD_PROFILE = "action-add-profile"
+const val ACTION_EDIT_PROFILE = "action-edit-profile"
+const val ACTION_DELETE_PROFILE = "action-delete-profile"
+```
+
+`PROFILE_SWITCHER_SHEET` belongs to the sheet root and `ACTION_ADD_PROFILE` belongs to its add row. `ACTION_EDIT_PROFILE` and `ACTION_DELETE_PROFILE` are declared now for Task 6's header actions. Do not put the same action tag on dialog confirmation buttons while the underlying action remains composed, because duplicate visible tags make UI tests ambiguous. The sheet deliberately has no edit/delete callbacks.
 
 - [ ] **Step 7: Run focused tests and compile both KMP targets**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileIdentityPolicyTest*" :shared:compileKotlinIosArm64 --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileIdentityPolicyTest*" :shared:compileAndroidMain :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --rerun --console=plain
 ```
 
-Expected: BUILD SUCCESSFUL; identity policies pass and all extracted composables compile for iOS.
+Expected: BUILD SUCCESSFUL; all seven identity policy/source-contract cases execute, production composables compile for Android and iOS, and the common test plus `SourceFileReader.ios.kt` compile for iOS. This is an iOS compile check, not an iOS runtime test.
+
+Verify the exact Android-host test count and the callback-only boundary:
+
+```powershell
+$result = [xml](Get-Content 'shared/build/test-results/testAndroidHostTest/TEST-com.devil.phoenixproject.presentation.components.ProfileIdentityPolicyTest.xml' -Raw)
+$cases = @($result.SelectNodes("//testcase[@classname='com.devil.phoenixproject.presentation.components.ProfileIdentityPolicyTest']"))
+if ($cases.Count -ne 7) { throw "Expected 7 ProfileIdentityPolicyTest cases, found $($cases.Count)" }
+if (@($result.SelectNodes('//failure | //error')).Count -ne 0) { throw 'ProfileIdentityPolicyTest failed' }
+
+$repositoryCoupling = rg -n 'UserProfileRepository|CoroutineScope|profileRepository\.|scope\.launch' shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt
+if ($LASTEXITCODE -eq 0) {
+    $repositoryCoupling
+    throw 'Callback-only profile dialogs still mutate repositories or launch work'
+}
+
+git diff --check -- shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityComponents.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt
+if ($LASTEXITCODE -ne 0) { throw 'Task 4 diff check failed' }
+```
 
 - [ ] **Step 8: Commit the reusable identity surface**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityComponents.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutinesTab.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityComponents.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt
 git commit -m "refactor: extract profile identity components"
 ```
 
