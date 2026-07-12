@@ -2705,7 +2705,7 @@ The retained new-key ownership is exact:
 | Task 7: `EnhancedMainScreen.kt`, `NavGraph.kt`, `ProfileDialogs.kt` | `nav_profile`, `cd_profile`, `cd_open_profile_switcher`, `profile_switch_failed`, `profile_create_failed`, `profile_recovery_title`, `profile_recovery_message`, `profile_recovery_retry_failed` |
 | Task 8: `ProfilePreferenceComponents.kt`, `ProfileScreen.kt` | `profile_preferences_title`, `profile_measurements`, `profile_workout_behavior`, `profile_led`, `profile_vbt`, `profile_safety`, `profile_vbt_enabled`, `profile_weight_increment`, `profile_body_weight`, `profile_set_summary`, `profile_autostart_countdown`, `profile_auto_start_routine`, `profile_audio_rep_counter`, `profile_countdown_beeps`, `profile_rep_completion_sound`, `profile_motion_start`, `profile_gamification`, `profile_default_scaling_basis`, `profile_routine_starting_weights`, `profile_stop_at_top`, `profile_stall_detection`, `profile_velocity_loss_threshold`, `profile_auto_end_velocity_loss`, `profile_vbt_history_note` |
 | Task 9: `SettingsTab.kt` | `settings_video_behavior`, `settings_show_exercise_videos`, `settings_show_exercise_videos_description` |
-| Task 10: legacy selector removal | None; it deletes old consumers and introduces no copy. |
+| Task 10: sole-owner regression guard | None; it is test-only and introduces no copy. |
 
 - [ ] **Step 1: Write the failing locale resource contract test**
 
@@ -3585,7 +3585,7 @@ Remove only the duplicate palette/constants/avatar from `ProfileSpeedDial.kt`; i
 
 - [ ] **Step 4: Make the list row switcher-specific**
 
-Extend `ProfileListItem` with switcher state while keeping its legacy side-panel call source-compatible until Task 10:
+Extend `ProfileListItem` with switcher state while keeping its legacy side-panel call source-compatible until Task 7's atomic selector replacement:
 
 ```kotlin
 @Composable
@@ -3661,7 +3661,7 @@ Surface(
 }
 ```
 
-Task 10 removes the nullable legacy callback and `combinedClickable` after deleting the last side-panel call.
+Task 7 removes the nullable legacy callback and `combinedClickable` while atomically deleting the last side-panel call.
 
 - [ ] **Step 5: Create callback-only dialogs that never mutate repositories**
 
@@ -3808,7 +3808,7 @@ Column(
 }
 ```
 
-The `Profile*Dialog` names intentionally avoid colliding with the repository-coupled legacy dialogs until Task 10 deletes them.
+The `Profile*Dialog` names intentionally avoid colliding with the repository-coupled legacy dialogs until Task 7 deletes them atomically.
 
 - [ ] **Step 6: Build the shared switch/create-only sheet**
 
@@ -4746,7 +4746,7 @@ production edits until the expanded red suite reaches the compiler/test runner.
 **Atomic active deletion**
 
 - Add `suspend fun deleteActiveProfile(expectedProfileId: String): Boolean` to
-  `UserProfileRepository`; retain generic `deleteProfile` for the legacy side panel until Task 10.
+  `UserProfileRepository`; retain generic `deleteProfile` as a backward-compatible repository API after Task 7 removes the legacy side panel.
 - In `SqlDelightUserProfileRepository`, validate the current `ActiveProfileContext.Ready` and
   `expectedProfileId` while already holding `profileContextMutex`. A mismatch throws
   `StaleProfileContextException`; Switching throws `ProfileContextUnavailableException`.
@@ -5630,8 +5630,8 @@ Run:
 
 Expected: BUILD SUCCESSFUL. Assert XML counts and zero failures/errors/skips: exactly 17
 `ProfileSwitcherViewModelTest`, 8 `ProfileNavigationContractTest`, 7
-`ProfileIdentityPolicyTest`, 6 hardened `ProfileScreenContractTest`, 25 hardened
-`ProfileViewModelTest`, and 1 `KoinModuleVerifyTest` test (64 total). The iOS test compiler is
+`ProfileIdentityPolicyTest`, 7 hardened `ProfileScreenContractTest`, 26 hardened
+`ProfileViewModelTest`, and 1 `KoinModuleVerifyTest` test (66 total). The iOS test compiler is
 mandatory because the fake and both common source-contract suites changed.
 
 Run static intent checks: no legacy selector symbols/files; exactly one Profile route, one
@@ -6081,11 +6081,11 @@ git commit -m "feat: add profile tab and long press switcher"
 - Does not change: typed schemas, repository signatures, ProfilePreferencesValidator, SettingsManager, runtime safety policy, or sync DTOs. Future non-negative LED indices remain codec-compatible and are normalized for display only.
 
 **Exact count contract:**
-- ProfileViewModelTest begins at 25 Task 6 tests; add 20, final total 45.
-- ProfileScreenContractTest begins at 6 Task 6 tests; add 8, final total 14.
+- ProfileViewModelTest begins at 26 Task 6 tests; add 20, final total 46.
+- ProfileScreenContractTest begins at 7 Task 6 tests; add 8, final total 15.
 - ProfilePreferencePolicyTest is new with 4 tests.
 - Mandatory unchanged runtime set: VbtEnabledRuntimeTest 7, SafeWordDetectionManagerTest 2, VerbalEncouragementPreferenceCascadeTest 11, AdultModePresentationTest 3.
-- Task 8 adds exactly 32 tests. The counted focused suite is 86 tests: 45 + 14 + 4 + 7 + 2 + 11 + 3. Codec and fake regressions run in addition.
+- Task 8 adds exactly 32 tests. The counted focused suite is 88 tests: 46 + 15 + 4 + 7 + 2 + 11 + 3. Codec and fake regressions run in addition.
 
 - [ ] **Step 1: Enforce the clean Task 6/7 baseline**
 
@@ -6095,11 +6095,11 @@ Run only after Tasks 6 and 7 are committed in a clean isolated worktree:
 if (git status --porcelain) { throw "Task 8 requires a clean worktree" }
 $vm = (Select-String -Path shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt -Pattern '^\s*@Test').Count
 $screen = (Select-String -Path shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt -Pattern '^\s*@Test').Count
-if ($vm -ne 25 -or $screen -ne 6) { throw "Expected Task 6 counts 25/6, found $vm/$screen" }
+if ($vm -ne 26 -or $screen -ne 7) { throw "Expected Task 6 counts 26/7, found $vm/$screen" }
 rg -n "selectionFailure|identityMutation: ProfileIdentityMutation\?|ProfileRecoveryRequired|onProfileRecoveryRequired|onOpenProfileSwitcher" shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt
 ~~~
 
-Expected: clean status, counts 25/6, and every preserved symbol present. Stop and reconcile earlier tasks on any mismatch.
+Expected: clean status, counts 26/7, and every preserved symbol present. Stop and reconcile earlier tasks on any mismatch.
 
 - [ ] **Step 2: Add deterministic fake seams and all failing tests**
 
@@ -6625,11 +6625,11 @@ The Profile destination must not call MainViewModel.unlockDiscoMode or any persi
 Enforce counts:
 
 ~~~powershell
-$counts = @{'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt'=45;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=14;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferencePolicyTest.kt'=4;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/VbtEnabledRuntimeTest.kt'=7;'shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/voice/SafeWordDetectionManagerTest.kt'=2;'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/VerbalEncouragementPreferenceCascadeTest.kt'=11;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/AdultModePresentationTest.kt'=3}
+$counts = @{'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt'=46;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=15;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferencePolicyTest.kt'=4;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/VbtEnabledRuntimeTest.kt'=7;'shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/voice/SafeWordDetectionManagerTest.kt'=2;'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/VerbalEncouragementPreferenceCascadeTest.kt'=11;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/AdultModePresentationTest.kt'=3}
 foreach($entry in $counts.GetEnumerator()){ $actual=(Select-String -Path $entry.Key -Pattern '^\s*@Test').Count; if($actual -ne $entry.Value){ throw "$($entry.Key): expected $($entry.Value), found $actual" } }
 ~~~
 
-Run the counted 86 plus codec/fake regressions:
+Run the counted 88 plus codec/fake regressions:
 
 ~~~powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.viewmodel.ProfileViewModelTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileScreenContractTest" --tests "com.devil.phoenixproject.presentation.components.ProfilePreferencePolicyTest" --tests "com.devil.phoenixproject.presentation.manager.VbtEnabledRuntimeTest" --tests "com.devil.phoenixproject.domain.voice.SafeWordDetectionManagerTest" --tests "com.devil.phoenixproject.data.preferences.VerbalEncouragementPreferenceCascadeTest" --tests "com.devil.phoenixproject.presentation.components.AdultModePresentationTest" --tests "com.devil.phoenixproject.data.preferences.ProfilePreferencesCodecTest" --tests "com.devil.phoenixproject.testutil.FakeExternalIntegrationRepositoriesTest" --rerun-tasks --console=plain
@@ -6724,7 +6724,7 @@ Confirm inherited contract counts before Task 9:
 ~~~powershell
 $handoffCounts=@{
 'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt'=8
-'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=14
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=15
 'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt'=3
 }
 foreach($entry in $handoffCounts.GetEnumerator()){ $actual=(Select-String -Path $entry.Key -Pattern '^\s*@Test').Count; if($actual -ne $entry.Value){ throw "$($entry.Key): expected $($entry.Value), found $actual" } }
@@ -7171,7 +7171,7 @@ This task must not modify:
 
 The exact five-path scope gate in Step 12 is authoritative. The unchanged regression classes in Step 11 additionally prove compatibility behavior, migration, persistence, codec, and sync remain intact.
 
-- [ ] **Step 11: Enforce exact 156-test count and run the focused/regression suite**
+- [ ] **Step 11: Enforce exact 157-test count and run the focused/regression suite**
 
 Enforce these exact counts:
 
@@ -7179,7 +7179,7 @@ Enforce these exact counts:
 $counts=@{
 'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'=8
 'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModelTest.kt'=33
-'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=14
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=15
 'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt'=8
 'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt'=3
 'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/manager/SettingsManagerTest.kt'=16
@@ -7192,16 +7192,16 @@ $counts=@{
 }
 $total=0
 foreach($entry in $counts.GetEnumerator()){ $actual=(Select-String -Path $entry.Key -Pattern '^\s*@Test').Count; if($actual -ne $entry.Value){ throw "$($entry.Key): expected $($entry.Value), found $actual" }; $total += $actual }
-if($total -ne 156){ throw "Expected 156 focused tests, found $total" }
+if($total -ne 157){ throw "Expected 157 focused tests, found $total" }
 ~~~
 
-Run all 156 with forced execution:
+Run all 157 with forced execution:
 
 ~~~powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.screen.ProfileSettingsSeparationContractTest" --tests "com.devil.phoenixproject.presentation.viewmodel.MainViewModelTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileScreenContractTest" --tests "com.devil.phoenixproject.presentation.navigation.ProfileNavigationContractTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileResourceContractTest" --tests "com.devil.phoenixproject.presentation.manager.SettingsManagerTest" --tests "com.devil.phoenixproject.data.preferences.SettingsPreferencesManagerTest" --tests "com.devil.phoenixproject.data.migration.ProfilePreferencesMigrationTest" --tests "com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepositoryTest" --tests "com.devil.phoenixproject.data.sync.SqlDelightProfilePreferenceSyncRepositoryTest" --tests "com.devil.phoenixproject.data.preferences.ProfilePreferencesCodecTest" --tests "com.devil.phoenixproject.data.sync.ProfilePreferenceSyncDtosTest" --rerun-tasks --console=plain
 ~~~
 
-Expected: BUILD SUCCESSFUL, exactly 156 counted tests. This includes the final Task 7 ProfileNavigationContractTest count of eight and Task 8 ProfileScreenContractTest count of fourteen.
+Expected: BUILD SUCCESSFUL, exactly 157 counted tests. This includes the final Task 7 ProfileNavigationContractTest count of eight and Task 8 ProfileScreenContractTest count of fifteen.
 
 - [ ] **Step 12: Run target gates, enforce exact five-path scope, and commit**
 
@@ -7253,275 +7253,231 @@ Expected: exact five-path implementation commit and clean worktree.
 
 ---
 
-### Task 10: Verify Sole Profile-Switcher Ownership and Prune Dead References
+### Task 10: Add the Verification-Only Sole Profile-Switcher Ownership Guard
 
-**Files:**
-- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt`
+**Exact implementation allowlist (one path):**
+- Modify: shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt
+
+**Verify unchanged:** every production file; ProfileNavigationContractTest; ProfileSwitcherViewModelTest; UserProfileRepository and its implementation/fakes; MigrationManager; DataBackupManager; all schema, resource, and platform files.
 
 **Interfaces:**
-- Consumes: Task 7's already-deleted legacy selectors and sole root-owned switch/create/recovery coordinator, plus Task 9's global/profile settings separation contract.
-- Produces: a final regression guard that later preference pruning did not restore a repository-coupled selector or dead compatibility branch. No production behavior changes are expected in this task.
+- Consumes: Task 7's atomic removal of both legacy selector call sites and four obsolete files, route-root ProfileSwitcherViewModel, and eight-case navigation contract; Task 8's callback-only Profile ownership; and Task 9's eight-case global/profile separation contract.
+- Produces: one ninth separation-contract test proving Task-owned presentation surfaces did not acquire a second direct switch/create/recovery repository owner after Tasks 8–9.
+- Adds exactly one test. Final focused counts are 9 ProfileSettingsSeparationContractTest + 8 ProfileNavigationContractTest + 17 ProfileSwitcherViewModelTest = 34.
 
-#### Hardened Task 10 verification contract (authoritative)
+**Boundary:** this is a verification-only, test-only task. It performs no production cleanup and expects no RED phase because Task 7 already owns the removal. If a legacy symbol, deleted file, or second repository caller is found, stop and correct the Task 7, 8, or 9 owning commit before continuing.
 
-This block supersedes the older removal draft below. Task 7 now performs the atomic removal; Task
-10 verifies that Tasks 8–9 did not reintroduce it and commits only the final regression test.
+The presentation ownership chain remains:
 
-- [ ] **Step A: Add the final sole-owner regression case**
+~~~text
+Profile tab long press or ProfileScreen switch action
+    -> EnhancedMainScreen's single shared ProfileSwitcherSheet
+    -> route-root ProfileSwitcherViewModel
+    -> UserProfileRepository switch/create/recovery methods
+~~~
 
-Add `assertNull` if not already imported and append this fifth case to
-`ProfileSettingsSeparationContractTest`:
+Do not infer that a repository method is dead because it has one presentation owner. Preserve activeProfile, allProfiles, activeProfileContext, observePreferences, createProfile, createAndActivateProfile, updateProfile, deleteProfile, deleteActiveProfile, setActiveProfile, and reconcileActiveProfileContext. MigrationManager and DataBackupManager are valid non-presentation clients of activation/reconciliation APIs, so ownership scans must remain scoped to the presentation package.
 
-```kotlin
+- [ ] **Step 1: Start clean and verify the inherited ownership/file inventory**
+
+Run only after Task 9 is committed:
+
+~~~powershell
+if(git status --porcelain){ throw "Task 10 requires a clean worktree" }
+
+$counts=@{
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'=8
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt'=8
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModelTest.kt'=17
+}
+foreach($entry in $counts.GetEnumerator()){ $actual=(Select-String -Path $entry.Key -Pattern '^\s*@Test').Count; if($actual -ne $entry.Value){ throw "$($entry.Key): expected $($entry.Value), found $actual" } }
+
+$deleted=@(
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSidePanel.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EditProfileDialog.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/DeleteProfileDialog.kt'
+)
+$present=@($deleted|Where-Object{Test-Path -LiteralPath $_})
+if($present){ throw "Task 7 deleted files returned: $($present -join ', ')" }
+
+$legacyPattern='\b(ProfileSidePanel|ProfileSpeedDial|EditProfileDialog|DeleteProfileDialog|AddProfileDialog|showAddProfileDialog)\b'
+$legacy=@(rg -n $legacyPattern shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation -g '*.kt')
+$legacyExit=$LASTEXITCODE
+if($legacyExit -gt 1){ throw "Legacy rg failed with exit $legacyExit" }
+if($legacy){ throw "Task 7 legacy symbol returned: $($legacy -join [Environment]::NewLine)" }
+
+$listItemPath='shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt'
+$listItem=Get-Content -Raw -LiteralPath $listItemPath
+foreach($symbol in @('onLongClick','combinedClickable','UserProfileRepository')){ if($listItem.Contains($symbol)){ throw "ProfileListItem retained legacy ownership: $symbol" } }
+
+$retained=@{
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityComponents.kt'=@('ProfileColors','PROFILE_COLOR_COUNT','fun ProfileAvatar(')
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt'=@('fun ProfileAddDialog(','fun ProfileEditDialog(','fun ProfileDeleteDialog(','fun ProfileRecoveryDialog(')
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt'=@('fun ProfileSwitcherSheet(')
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt'=@('fun ProfileListItem(')
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt'=@('class ProfileSwitcherViewModel')
+}
+foreach($entry in $retained.GetEnumerator()){
+    if(-not (Test-Path -LiteralPath $entry.Key)){ throw "Retained Task 7 file missing: $($entry.Key)" }
+    $source=Get-Content -Raw -LiteralPath $entry.Key
+    foreach($symbol in $entry.Value){ if(-not $source.Contains($symbol)){ throw "Retained symbol missing from $($entry.Key): $symbol" } }
+}
+
+$owners=@(rg -l 'setActiveProfile\(|createAndActivateProfile\(|reconcileActiveProfileContext\(' shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation -g '*.kt')
+$ownerExit=$LASTEXITCODE
+if($ownerExit -gt 1){ throw "Owner rg failed with exit $ownerExit" }
+$owners=@($owners|ForEach-Object{$_ -replace '\\','/'}|Sort-Object -Unique)
+$expectedOwner='shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt'
+if($owners.Count -ne 1 -or $owners[0] -ne $expectedOwner){ throw "Presentation repository owners=[$($owners -join ', ')]" }
+
+$repositoryPath='shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt'
+$repository=Get-Content -Raw -LiteralPath $repositoryPath
+$requiredRepositoryApi=@('val activeProfile:','val allProfiles:','val activeProfileContext:','fun observePreferences(','suspend fun createProfile(','suspend fun createAndActivateProfile(','suspend fun updateProfile(','suspend fun deleteProfile(','suspend fun deleteActiveProfile(','suspend fun setActiveProfile(','suspend fun reconcileActiveProfileContext(')
+foreach($api in $requiredRepositoryApi){ if(-not $repository.Contains($api)){ throw "Compatibility API missing: $api" } }
+~~~
+
+Expected: inherited counts 8/8/17, no legacy files/symbols, all extracted replacements present, ProfileListItem callback-only, ProfileSwitcherViewModel the sole presentation owner, and repository compatibility intact. This is a GREEN precondition, not a RED test.
+
+- [ ] **Step 2: Add the exact ninth separation-contract test**
+
+Add assertContains and assertEquals imports if Task 9 did not already need them. Append exactly this test to ProfileSettingsSeparationContractTest:
+
+~~~kotlin
 @Test
-fun legacyProfileSelectorsRemainAbsentAfterPreferenceMigration() {
+fun profileSwitcherRemainsTheOnlyTaskOwnedPresentationRepositoryCaller() {
+    fun source(path: String): String = requireNotNull(readProjectFile(path), path)
+
+    val switcherPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt"
     val mainPath =
         "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt"
     val justLiftPath =
         "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt"
+    val graphPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt"
+    val profilePath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt"
+    val settingsPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt"
+    val mainViewModelPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt"
+    val sheetPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt"
+    val dialogsPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt"
     val listItemPath =
         "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt"
-    val switcherPath =
-        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt"
-    val main = requireNotNull(readProjectFile(mainPath), mainPath)
-    val justLift = requireNotNull(readProjectFile(justLiftPath), justLiftPath)
-    val listItem = requireNotNull(readProjectFile(listItemPath), listItemPath)
-    val switcher = requireNotNull(readProjectFile(switcherPath), switcherPath)
 
-    assertFalse(main.contains("ProfileSidePanel("))
-    assertFalse(main.contains("AddProfileDialog("))
-    assertFalse(justLift.contains("ProfileSidePanel("))
-    assertFalse(justLift.contains("AddProfileDialog("))
-    assertFalse(justLift.contains("showAddProfileDialog"))
-    assertFalse(listItem.contains("onLongClick"))
-    assertFalse(listItem.contains("combinedClickable"))
-    assertTrue(switcher.contains("profiles.setActiveProfile("))
-    assertTrue(switcher.contains("profiles.createAndActivateProfile("))
-    assertTrue(switcher.contains("profiles.reconcileActiveProfileContext("))
+    val switcher = source(switcherPath)
+    val main = source(mainPath)
+    val graph = source(graphPath)
+    val profile = source(profilePath)
+    val sheet = source(sheetPath)
+    val dialogs = source(dialogsPath)
+    val listItem = source(listItemPath)
 
     listOf(
-        "ProfileSidePanel.kt",
-        "ProfileSpeedDial.kt",
-        "EditProfileDialog.kt",
-        "DeleteProfileDialog.kt",
-    ).forEach { fileName ->
-        assertNull(
-            readProjectFile(
-                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/$fileName",
-            ),
-            fileName,
-        )
+        "profiles.setActiveProfile(",
+        "profiles.createAndActivateProfile(",
+        "profiles.reconcileActiveProfileContext(",
+    ).forEach { call ->
+        assertEquals(1, Regex(Regex.escape(call)).findAll(switcher).count(), call)
     }
-}
-```
 
-- [ ] **Step B: Prove there is no second presentation-layer repository caller**
+    val directRepositoryCall = Regex(
+        """\b(?:profiles|profileRepository|userProfileRepository)\s*\.\s*""" +
+            """(?:setActiveProfile|createAndActivateProfile|reconcileActiveProfileContext)\s*\(""",
+    )
+    mapOf(
+        mainPath to main,
+        justLiftPath to source(justLiftPath),
+        graphPath to graph,
+        profilePath to profile,
+        settingsPath to source(settingsPath),
+        mainViewModelPath to source(mainViewModelPath),
+        sheetPath to sheet,
+        dialogsPath to dialogs,
+        listItemPath to listItem,
+    ).forEach { (path, text) ->
+        assertFalse(directRepositoryCall.containsMatchIn(text), path)
+    }
+
+    assertEquals(1, Regex("""\bProfileSwitcherSheet\s*\(""").findAll(main).count())
+    assertContains(main, "profileSwitcherViewModel.openSwitcher()")
+    assertContains(graph, "onOpenProfileSwitcher = onOpenProfileSwitcher")
+    assertContains(profile, "onOpenProfileSwitcher")
+    assertFalse(sheet.contains("UserProfileRepository"))
+    assertFalse(dialogs.contains("UserProfileRepository"))
+    assertFalse(listItem.contains("UserProfileRepository"))
+    assertFalse(listItem.contains("onLongClick"))
+    assertFalse(listItem.contains("combinedClickable"))
+}
+~~~
+
+The unchanged eighth ProfileNavigationContractTest case remains the durable guard for Enhanced Main, Just Lift, and the four deleted files. Do not duplicate those assertions here.
+
+- [ ] **Step 3: Enforce final 9/8/17 counts and run all 34 focused tests**
 
 Run:
 
-```powershell
-$legacy = rg -n "\b(ProfileSidePanel|ProfileSpeedDial|EditProfileDialog|DeleteProfileDialog)\b" `
-    shared/src/commonMain/kotlin
-if ($LASTEXITCODE -eq 0) { $legacy; throw 'Legacy profile selector reference remains' }
-
-$owners = @(rg -l `
-    "setActiveProfile\(|createAndActivateProfile\(|reconcileActiveProfileContext\(" `
-    shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation `
-    -g '*.kt')
-if ($owners.Count -ne 1 -or
-    $owners[0] -notlike '*ProfileSwitcherViewModel.kt') {
-    $owners
-    throw 'Profile switch/create/recovery has more than one presentation owner'
+~~~powershell
+$counts=@{
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'=9
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt'=8
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModelTest.kt'=17
 }
-```
+$total=0
+foreach($entry in $counts.GetEnumerator()){ $actual=(Select-String -Path $entry.Key -Pattern '^\s*@Test').Count; if($actual -ne $entry.Value){ throw "$($entry.Key): expected $($entry.Value), found $actual" }; $total += $actual }
+if($total -ne 34){ throw "Expected 34 ownership tests, found $total" }
 
-Expected: both checks pass. Do not make opportunistic production edits here. A legacy match means
-Task 7 is incomplete and must be corrected at its owning commit before continuing.
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.screen.ProfileSettingsSeparationContractTest" --tests "com.devil.phoenixproject.presentation.navigation.ProfileNavigationContractTest" --tests "com.devil.phoenixproject.presentation.viewmodel.ProfileSwitcherViewModelTest" --rerun-tasks --console=plain
+~~~
 
-- [ ] **Step C: Run the verification-only cross-target gate**
+Expected: BUILD SUCCESSFUL with exactly 34 tests and zero failures/errors/skips. A failure is an earlier-task regression; Task 10 does not authorize a production fix.
 
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' `
-    :shared:testAndroidHostTest `
-    --tests "*ProfileSettingsSeparationContractTest*" `
-    --tests "*ProfileNavigationContractTest*" `
-    --tests "*ProfileSwitcherViewModelTest*" `
-    :shared:compileKotlinIosArm64 `
-    :shared:compileTestKotlinIosArm64 `
-    :androidApp:assembleDebug `
-    --rerun-tasks `
-    --console=plain
-```
+- [ ] **Step 4: Run Android, iOS main/test, and application gates separately**
 
-Expected: BUILD SUCCESSFUL; exactly 5 separation, 8 navigation, and 17 coordinator tests execute
-(30 total), with zero failures/errors/skips, and both iOS main/test plus the Android app compile.
+Run:
 
-- [ ] **Step D: Commit the regression guard with exact one-file scope**
+~~~powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileAndroidMain --rerun-tasks --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --rerun-tasks --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :androidApp:assembleDebug --rerun-tasks --console=plain
+~~~
 
-```powershell
-$expected = @(
-    'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'
+Expected: all three commands BUILD SUCCESSFUL. iOS test compilation is mandatory because the ninth test is in commonTest.
+
+- [ ] **Step 5: Enforce exact one-file scope and commit the guard**
+
+~~~powershell
+$allowed=@(
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'
 )
-$actual = @(git status --porcelain=v1 | ForEach-Object { $_.Substring(3) })
-if (Compare-Object $expected $actual) { throw 'Task 10 must remain test-only' }
-git diff --check -- $expected
-if ($LASTEXITCODE -ne 0) { throw 'Task 10 diff check failed' }
-git add -- $expected
-if (Compare-Object $expected @(git diff --cached --name-only)) {
-    throw 'Task 10 staged scope mismatch'
-}
+$changed=@((@(git diff --no-renames --name-only)+@(git ls-files --others --exclude-standard))|Sort-Object -Unique)
+$missing=@($allowed|Where-Object{$_ -notin $changed})
+$extra=@($changed|Where-Object{$_ -notin $allowed})
+if($missing -or $extra){ throw "Changed scope mismatch missing=[$($missing -join ', ')] extra=[$($extra -join ', ')]" }
+git diff --check -- $allowed
+git add -A -- $allowed
+$staged=@(git diff --cached --no-renames --name-only|Sort-Object -Unique)
+$missing=@($allowed|Where-Object{$_ -notin $staged})
+$extra=@($staged|Where-Object{$_ -notin $allowed})
+if($missing -or $extra){ throw "Staged scope mismatch missing=[$($missing -join ', ')] extra=[$($extra -join ', ')]" }
 git diff --cached --check
-if ($LASTEXITCODE -ne 0) { throw 'Task 10 cached diff check failed' }
 git commit -m "test: guard sole profile switcher ownership"
-```
+~~~
 
-- [ ] **Step 1: Extend the source contract with failing legacy-removal assertions**
+Post-commit:
 
-```kotlin
-@Test
-fun legacyProfileSelectorsAreGone() {
-    val main = requireNotNull(readProjectFile(
-        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
-    ))
-    val justLift = requireNotNull(readProjectFile(
-        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt",
-    ))
-    assertFalse(main.contains("ProfileSidePanel("))
-    assertFalse(justLift.contains("ProfileSidePanel("))
-    assertFalse(justLift.contains("showAddProfileDialog"))
-    assertNull(readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSidePanel.kt"))
-    assertNull(readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt"))
-    assertNull(readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EditProfileDialog.kt"))
-    assertNull(readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/DeleteProfileDialog.kt"))
-}
-```
+~~~powershell
+$committed=@(git show --no-renames --name-only --format= HEAD|Where-Object{$_}|Sort-Object -Unique)
+$missing=@($allowed|Where-Object{$_ -notin $committed})
+$extra=@($committed|Where-Object{$_ -notin $allowed})
+if($missing -or $extra){ throw "Committed scope mismatch missing=[$($missing -join ', ')] extra=[$($extra -join ', ')]" }
+if(git status --porcelain){ throw "Task 10 left a dirty worktree" }
+~~~
 
-Run:
-
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileSettingsSeparationContractTest*" --console=plain
-```
-
-Expected: FAIL on both call sites and four existing files.
-
-- [ ] **Step 2: Remove both overlays and their dead local state**
-
-In `EnhancedMainScreen`, remove the Home-only `ProfileSidePanel` block and its import. Retain the profiles/context/scope state used by the new root sheet.
-
-In `JustLiftScreen`, remove profile repository collection, `showAddProfileDialog`, `ProfileSidePanel`, old Add dialog, and imports. Remove its `rememberCoroutineScope` only if `rg -n "scope\." JustLiftScreen.kt` confirms no non-profile use remains.
-
-- [ ] **Step 3: Delete obsolete files after verifying all extracted symbols**
-
-Before deletion run:
-
-```powershell
-rg -n "ProfileColors|PROFILE_COLOR_COUNT|ProfileAvatar|Profile(Add|Edit|Delete)Dialog" shared/src/commonMain/kotlin/com/devil/phoenixproject
-```
-
-Expected: palette/avatar resolve to `ProfileIdentityComponents.kt`; new dialogs resolve to `ProfileDialogs.kt`; no production call resolves to the four legacy files. Delete the four files. Then simplify `ProfileListItem` to the Task 4 sheet-only API by removing `onLongClick` and `combinedClickable` entirely.
-
-- [ ] **Step 4: Run removal guards and compile both targets**
-
-Run:
-
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileSettingsSeparationContractTest*" --tests "*ProfileNavigationContractTest*" :shared:compileKotlinIosArm64 :androidApp:assembleDebug --console=plain
-```
-
-Expected: BUILD SUCCESSFUL; deleted sources have no references and Just Lift retains its normal workout setup behavior without profile UI.
-
-- [ ] **Step 5: Commit legacy selector removal**
-
-```powershell
-git add -A shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSidePanel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EditProfileDialog.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/DeleteProfileDialog.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt
-git commit -m "refactor: remove legacy profile selectors"
-```
+Expected: one test-only path committed and a clean worktree. No production, repository, migration, resource, or platform file belongs to Task 10.
 
 ---
-
-### Task 11: Verify DI, Migrations, Cross-Target Compilation, and the Finished User Flows
-
-**Files:**
-- Verify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`, `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`, and `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/PresentationModule.kt`
-- Verify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt`
-- Modify: `docs/superpowers/plans/2026-07-11-profile-tab-ui-navigation.md` — check completed boxes during execution; do not change approved behavior.
-
-**Interfaces:**
-- Consumes: all preceding UI tasks and the completed data-foundation plan.
-- Produces: fresh proof that SQLDelight migrations, unit/source contracts, Koin, Android, iOS, lint, and the compact Profile flow all work together.
-
-- [ ] **Step 1: Scan for unfinished markers, stale APIs, and duplicate ownership**
-
-Run:
-
-```powershell
-rg -n "TODO|TBD|NotImplementedError|error\(\"placeholder|ProfileSidePanel|ProfileSpeedDial|createProfile\(" shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation
-rg -n "onBodyWeightKgChange|onColorSchemeChange|onVelocityLossThresholdChange|onSafeWordChange|onNavigateToBadges" shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt
-rg -n "profiles\.update(Core|Rack|Workout|Led|Vbt|LocalSafety)\([^,\r\n]+\)" shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation
-```
-
-Expected: no unfinished-marker, legacy-selector, or global-Settings hits; no one-argument profile-repository preference writes. Any `createProfile` hit must be a backward-compatibility repository implementation/test, never new UI.
-
-- [ ] **Step 2: Run SQLDelight generation and migration verification**
-
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration --console=plain
-```
-
-Expected: BUILD SUCCESSFUL from a clean schema generation path.
-
-- [ ] **Step 3: Run the focused feature and graph suite**
-
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*Profile*" --tests "*ResolveCurrentOneRepMaxUseCaseTest*" --tests "*AssessmentViewModelProfileScopeTest*" --tests "*SqlDelightAssessmentRepositoryTest*" --tests "*SqlDelightWorkoutRepositoryTest*" --tests "*KoinModuleVerifyTest*" --console=plain
-```
-
-Expected: BUILD SUCCESSFUL; profile A/B isolation, selection restoration, stale-write rejection, resolver precedence, Settings separation, removal guards, and dependency graph all pass.
-
-- [ ] **Step 4: Run full shared and Android verification**
-
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 :androidApp:testDebugUnitTest :androidApp:assembleDebug :androidApp:lintDebug --console=plain
-```
-
-Expected: BUILD SUCCESSFUL with no test, compiler, packaging, or lint regression. If a pre-existing unrelated failure is encountered, capture its exact task/test and rerun the affected Profile commands separately; do not label the feature verified without fresh passing feature evidence.
-
-- [ ] **Step 5: Perform compact-width manual acceptance on an Android emulator**
-
-Use a 320dp-wide emulator or resizable emulator profile and verify:
-
-1. five icon-only tabs appear in Analytics → Workout → Insights → Profile → Settings order with no clipping;
-2. Profile tap navigates and restores tab state; long press gives haptic feedback, opens the sheet, and does not navigate;
-3. TalkBack exposes separate Profile click and long-click actions;
-4. create activates only after success; A → B swaps every preference; A → B → A restores each exercise selection without flashing stale metrics;
-5. 1RM source precedence, three PR highlights, five-session chart/list, empty state, and partial error state render compactly;
-6. edit and guarded delete work; Default has no delete action; failed mutation leaves its dialog open and shows one snackbar;
-7. Equipment Rack and Achievements open from Profile; Settings contains only the retained global groups;
-8. Home edge swipe and Just Lift show no profile selector; historical VBT/assessment insights remain visible with VBT disabled.
-
-Record the emulator/API level and pass/fail result in the implementation handoff.
-
-- [ ] **Step 6: Review the final diff for scope and commit verification fixes**
-
-Run:
-
-```powershell
-git status --short
-git diff --check
-git diff --stat
-```
-
-Expected: no whitespace errors, no generated/build artifacts, no backend SQL changes, and only files named by this plan plus the dependency data plan. If verification required a real DI/test fix, commit it:
-
-```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/di shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di
-git commit -m "test: verify profile feature graph"
-```
-
-If no fix was needed, do not create an empty commit.
-
----
-
-## Implementation Handoff
-
-Execute `docs/superpowers/plans/2026-07-11-profile-preferences-data-foundation.md` first, including its migration, repository/context, runtime-consumer, deletion, and backup milestones. Then execute this plan in numeric task order even if work is parallelized inside a task. `docs/superpowers/plans/2026-07-11-profile-preferences-sync-backend.md` may proceed after the same data foundation without blocking this UI plan; it owns the Supabase SQL/RLS handoff, and this UI plan must not silently widen into remote schema mutation.
