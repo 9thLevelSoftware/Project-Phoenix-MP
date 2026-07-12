@@ -762,4 +762,13 @@
     <string name="profile_velocity_loss_threshold">Schwelle für Geschwindigkeitsverlust</string>
     <string name="profile_auto_end_velocity_loss">Bei Geschwindigkeitsverlust automatisch beenden</string>
     <string name="profile_vbt_history_note">Das Ausschalten von VBT betrifft nur Live-Trainings; gespeicherte Schätzungen und Tests bleiben verfügbar.</string>
+    <string name="color_blue">Blau</string>
+    <string name="color_green">Grün</string>
+    <string name="color_amber">Bernstein</string>
+    <string name="color_red">Rot</string>
+    <string name="color_purple">Lila</string>
+    <string name="color_pink">Rosa</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="color_orange">Orange</string>
+    <string name="cd_select_profile_color">Profilfarbe %1$s auswählen</string>
 </resources>

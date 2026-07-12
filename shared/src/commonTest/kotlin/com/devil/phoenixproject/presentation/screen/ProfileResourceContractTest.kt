@@ -85,6 +85,15 @@ class ProfileResourceContractTest {
         "equipment_rack_title",
         "equipment_rack_manage",
         "cd_led_scheme",
+        "color_blue",
+        "color_green",
+        "color_amber",
+        "color_red",
+        "color_purple",
+        "color_pink",
+        "color_cyan",
+        "color_orange",
+        "cd_select_profile_color",
     )
 
     private val expectedLedSchemeLabels = mapOf(
@@ -97,6 +106,15 @@ class ProfileResourceContractTest {
 
     private val expectedPlaceholders = mapOf(
         "profile_delete_reassign_message" to listOf("%1${'$'}s"),
+        "cd_select_profile_color" to listOf("%1${'$'}s"),
+    )
+
+    private val expectedColorLabels = mapOf(
+        "en" to listOf("Blue", "Green", "Amber", "Red", "Purple", "Pink", "Cyan", "Orange"),
+        "nl" to listOf("Blauw", "Groen", "Amber", "Rood", "Paars", "Roze", "Cyaan", "Oranje"),
+        "de" to listOf("Blau", "Grün", "Bernstein", "Rot", "Lila", "Rosa", "Cyan", "Orange"),
+        "es" to listOf("Azul", "Verde", "Ámbar", "Rojo", "Morado", "Rosa", "Cian", "Naranja"),
+        "fr" to listOf("Bleu", "Vert", "Ambre", "Rouge", "Violet", "Rose", "Cyan", "Orange"),
     )
 
     private val placeholderPattern = Regex("""%\d+\${'$'}[A-Za-z]""")
@@ -149,8 +167,22 @@ class ProfileResourceContractTest {
                 resourceValue(source, "cd_led_scheme", path),
                 "$path translated LED scheme label",
             )
+            assertEquals(
+                expectedColorLabels.getValue(languageCode),
+                listOf(
+                    "color_blue",
+                    "color_green",
+                    "color_amber",
+                    "color_red",
+                    "color_purple",
+                    "color_pink",
+                    "color_cyan",
+                    "color_orange",
+                ).map { resourceValue(source, it, path) },
+                "$path translated profile color labels",
+            )
 
-            newKeys.forEach { key ->
+            (newKeys + reusedKeys).forEach { key ->
                 val value = resourceValue(source, key, path)
                 val placeholders = placeholderPattern.findAll(value)
                     .map { it.value }

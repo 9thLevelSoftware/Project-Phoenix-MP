@@ -762,4 +762,13 @@
     <string name="profile_velocity_loss_threshold">Umbral de pérdida de velocidad</string>
     <string name="profile_auto_end_velocity_loss">Finalizar al perder velocidad</string>
     <string name="profile_vbt_history_note">Desactivar VBT solo afecta a los entrenamientos en vivo; las estimaciones y evaluaciones guardadas siguen disponibles.</string>
+    <string name="color_blue">Azul</string>
+    <string name="color_green">Verde</string>
+    <string name="color_amber">Ámbar</string>
+    <string name="color_red">Rojo</string>
+    <string name="color_purple">Morado</string>
+    <string name="color_pink">Rosa</string>
+    <string name="color_cyan">Cian</string>
+    <string name="color_orange">Naranja</string>
+    <string name="cd_select_profile_color">Seleccionar %1$s como color del perfil</string>
 </resources>
