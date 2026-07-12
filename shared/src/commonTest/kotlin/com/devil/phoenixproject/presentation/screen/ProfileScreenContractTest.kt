@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.screen
 
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.buildProfileRecentHistory
+import com.devil.phoenixproject.presentation.viewmodel.ProfileIdentityMutationKind
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -130,6 +131,45 @@ class ProfileScreenContractTest {
         assertEquals(1, Regex("TestTags\\.ACTION_DELETE_PROFILE").findAll(screen).count())
         assertFalse(dialogs.contains("TestTags.ACTION_EDIT_PROFILE"))
         assertFalse(dialogs.contains("TestTags.ACTION_DELETE_PROFILE"))
+    }
+
+    @Test
+    fun deletionOverlayOwnershipSurvivesSwitchingRollbackAndScopedFailure() {
+        val initial = ProfileIdentityOverlayOwnership(
+            deleteTargetProfileId = "a",
+            pendingIdentityProfileId = "a",
+        )
+
+        val switching = retainProfileIdentityOverlayOwnership(
+            ownership = initial,
+            readyProfileId = null,
+        )
+        assertEquals(initial, switching)
+
+        val rolledBack = retainProfileIdentityOverlayOwnership(
+            ownership = switching,
+            readyProfileId = "a",
+        )
+        assertEquals(initial, rolledBack)
+
+        val failure = applyProfileIdentityFailure(
+            ownership = rolledBack,
+            profileId = "a",
+            kind = ProfileIdentityMutationKind.DELETE,
+        )
+        assertTrue(failure.showError)
+        assertEquals(
+            ProfileIdentityOverlayOwnership(deleteTargetProfileId = "a"),
+            failure.ownership,
+        )
+
+        assertEquals(
+            ProfileIdentityOverlayOwnership(),
+            retainProfileIdentityOverlayOwnership(
+                ownership = rolledBack,
+                readyProfileId = "default",
+            ),
+        )
     }
 
     private fun session(id: String, timestamp: Long, totalVolumeKg: Float) = WorkoutSession(

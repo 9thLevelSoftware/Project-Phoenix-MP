@@ -27,6 +27,8 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -780,6 +782,43 @@ class ProfileViewModelTest {
             assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value).profile.id,
         )
         assertNull(viewModel.uiState.value.identityMutation)
+    }
+
+    @Test
+    fun `active deletion rollback emits scoped failure after Switching Ready restoration`() = runTest {
+        profiles.seedReadyProfileForTest("default")
+        profiles.seedReadyProfileForTest("a")
+        profiles.failBeforeProfileDeletionCommit = true
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        val contexts = mutableListOf<ActiveProfileContext>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        val contextJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            profiles.activeProfileContext.drop(1).take(2).toList(contexts)
+        }
+        runCurrent()
+
+        viewModel.deleteActiveProfile()
+        advanceUntilIdle()
+
+        assertEquals(listOf("a"), profiles.deleteActiveProfileRequests)
+        assertEquals(2, contexts.size)
+        assertEquals("default", assertIs<ActiveProfileContext.Switching>(contexts[0]).targetProfileId)
+        assertEquals("a", assertIs<ActiveProfileContext.Ready>(contexts[1]).profile.id)
+        assertEquals(
+            listOf<ProfileUiEvent>(
+                ProfileUiEvent.IdentityUpdateFailed("a", ProfileIdentityMutationKind.DELETE),
+            ),
+            events,
+        )
+        assertEquals(
+            "a",
+            assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context).profile.id,
+        )
+        assertNull(viewModel.uiState.value.identityMutation)
+        contextJob.cancel()
     }
 
     @Test

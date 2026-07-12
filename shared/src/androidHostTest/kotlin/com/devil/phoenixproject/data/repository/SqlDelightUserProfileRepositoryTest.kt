@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackPreferences
+import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.domain.model.VbtPreferences
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
@@ -25,16 +26,22 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -656,6 +663,77 @@ class SqlDelightUserProfileRepositoryTest {
     }
 
     @Test
+    fun activeDeletionCancellationDuringPostCommitPublicationRecoversReadyAndPropagatesOriginal() =
+        runTest {
+            ready()
+            val source = repository.createAndActivateProfile("Source", 1)
+            val cancellation = CancellationException("cancel post-commit publication")
+            preferenceStore.cancelNextGetWith = cancellation
+            var propagatedByRepository: CancellationException? = null
+
+            val deletion = async {
+                try {
+                    repository.deleteActiveProfile(source.id)
+                } catch (error: CancellationException) {
+                    propagatedByRepository = error
+                    throw error
+                }
+            }
+            val thrown = assertFailsWith<CancellationException> { deletion.await() }
+
+            assertEquals(cancellation.message, thrown.message)
+            assertSame(cancellation, propagatedByRepository)
+            assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+            assertEquals(
+                "default",
+                database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            )
+            assertEquals(
+                "default",
+                assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id,
+            )
+        }
+
+    @Test
+    fun activeDeletionCancellationPreservesRecoveryExceptionWhenReconciliationTrulyFails() =
+        runTest {
+            ready()
+            val source = repository.createAndActivateProfile("Source", 1)
+            val cancellation = CancellationException("cancel post-commit publication")
+            preferenceStore.cancelNextGetWith = cancellation
+            preferenceStore.failNextGet = true
+            var propagatedByRepository: Throwable? = null
+
+            val thrown = supervisorScope {
+                val deletion = async {
+                    try {
+                        repository.deleteActiveProfile(source.id)
+                    } catch (error: Throwable) {
+                        propagatedByRepository = error
+                        throw error
+                    }
+                }
+                assertFailsWith<ProfileContextRecoveryException> { deletion.await() }
+            }
+            val recovery = assertIs<ProfileContextRecoveryException>(propagatedByRepository)
+            assertEquals(recovery.message, thrown.message)
+            assertSame(cancellation, recovery.cause)
+            assertEquals(1, cancellation.suppressed.size)
+            assertIs<InjectedTransitionFailure>(cancellation.suppressed.single())
+            assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+            assertEquals(
+                "default",
+                database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            )
+            assertEquals(
+                "default",
+                assertIs<ActiveProfileContext.Switching>(
+                    repository.activeProfileContext.value,
+                ).targetProfileId,
+            )
+        }
+
+    @Test
     fun inactiveDeletionTargetsCurrentReadyProfileWithoutSwitching() = runTest {
         ready()
         val target = repository.createAndActivateProfile("Target", 1)
@@ -1240,19 +1318,30 @@ class SqlDelightUserProfileRepositoryTest {
     ) : ProfilePreferencesRepository by delegate {
         var failNextGet = false
         var failNextGetFor: String? = null
+        var cancelNextGetWith: CancellationException? = null
+        private var requireActiveGetContext = false
 
-        override suspend fun get(profileId: String) = when {
-            failNextGet -> {
-                failNextGet = false
-                throw InjectedTransitionFailure()
+        override suspend fun get(profileId: String): UserProfilePreferences {
+            cancelNextGetWith?.let { cancellation ->
+                cancelNextGetWith = null
+                requireActiveGetContext = true
+                currentCoroutineContext().cancel(cancellation)
+                throw cancellation
             }
+            if (requireActiveGetContext) currentCoroutineContext().ensureActive()
+            return when {
+                failNextGet -> {
+                    failNextGet = false
+                    throw InjectedTransitionFailure()
+                }
 
-            failNextGetFor == profileId -> {
-                failNextGetFor = null
-                throw InjectedTransitionFailure()
+                failNextGetFor == profileId -> {
+                    failNextGetFor = null
+                    throw InjectedTransitionFailure()
+                }
+
+                else -> delegate.get(profileId)
             }
-
-            else -> delegate.get(profileId)
         }
     }
 

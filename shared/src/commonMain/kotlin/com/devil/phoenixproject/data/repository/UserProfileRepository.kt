@@ -14,6 +14,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 enum class SubscriptionStatus {
     FREE,
@@ -270,9 +272,12 @@ class SqlDelightUserProfileRepository(
             publishReadyContext(targetProfileId)
         } catch (failure: Throwable) {
             _activeProfileContext.value = ActiveProfileContext.Switching(targetProfileId)
-            runCatching {
-                reconcileActiveProfileContextLocked(publishReady = true)
-            }.getOrElse { recoveryFailure ->
+            val recoveryFailure = withContext(NonCancellable) {
+                runCatching {
+                    reconcileActiveProfileContextLocked(publishReady = true)
+                }.exceptionOrNull()
+            }
+            if (recoveryFailure != null) {
                 failure.addSuppressed(recoveryFailure)
                 throw ProfileContextRecoveryException(failure)
             }

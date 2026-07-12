@@ -63,6 +63,50 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import vitruvianprojectphoenix.shared.generated.resources.*
 
+internal data class ProfileIdentityOverlayOwnership(
+    val editTargetProfileId: String? = null,
+    val deleteTargetProfileId: String? = null,
+    val pendingIdentityProfileId: String? = null,
+)
+
+internal fun retainProfileIdentityOverlayOwnership(
+    ownership: ProfileIdentityOverlayOwnership,
+    readyProfileId: String?,
+): ProfileIdentityOverlayOwnership {
+    if (readyProfileId == null) return ownership
+    return ProfileIdentityOverlayOwnership(
+        editTargetProfileId = ownership.editTargetProfileId.takeIf { it == readyProfileId },
+        deleteTargetProfileId = ownership.deleteTargetProfileId.takeIf { it == readyProfileId },
+        pendingIdentityProfileId = ownership.pendingIdentityProfileId.takeIf {
+            it == readyProfileId
+        },
+    )
+}
+
+internal data class ProfileIdentityFailureDisposition(
+    val ownership: ProfileIdentityOverlayOwnership,
+    val showError: Boolean,
+)
+
+internal fun applyProfileIdentityFailure(
+    ownership: ProfileIdentityOverlayOwnership,
+    profileId: String,
+    kind: ProfileIdentityMutationKind,
+): ProfileIdentityFailureDisposition {
+    val showError = when (kind) {
+        ProfileIdentityMutationKind.UPDATE -> ownership.editTargetProfileId == profileId
+        ProfileIdentityMutationKind.DELETE -> ownership.deleteTargetProfileId == profileId
+    }
+    return ProfileIdentityFailureDisposition(
+        ownership = ownership.copy(
+            pendingIdentityProfileId = ownership.pendingIdentityProfileId.takeUnless {
+                it == profileId
+            },
+        ),
+        showError = showError,
+    )
+}
+
 @Composable
 fun ProfileScreen(
     onOpenProfileSwitcher: () -> Unit,
@@ -87,11 +131,17 @@ fun ProfileScreen(
 
     LaunchedEffect(readyProfileId) {
         if (pickerProfileId != readyProfileId) pickerProfileId = null
-        if (editTargetProfileId != readyProfileId) editTargetProfileId = null
-        if (deleteTargetProfileId != readyProfileId) deleteTargetProfileId = null
-        if (state.identityMutation?.kind != ProfileIdentityMutationKind.DELETE) {
-            if (pendingIdentityProfileId != readyProfileId) pendingIdentityProfileId = null
-        }
+        val retained = retainProfileIdentityOverlayOwnership(
+            ownership = ProfileIdentityOverlayOwnership(
+                editTargetProfileId = editTargetProfileId,
+                deleteTargetProfileId = deleteTargetProfileId,
+                pendingIdentityProfileId = pendingIdentityProfileId,
+            ),
+            readyProfileId = readyProfileId,
+        )
+        editTargetProfileId = retained.editTargetProfileId
+        deleteTargetProfileId = retained.deleteTargetProfileId
+        pendingIdentityProfileId = retained.pendingIdentityProfileId
     }
 
     LaunchedEffect(viewModel, snackbarHostState, updateFailedMessage) {
@@ -102,12 +152,19 @@ fun ProfileScreen(
                     if (pendingIdentityProfileId == event.profileId) pendingIdentityProfileId = null
                 }
                 is ProfileUiEvent.IdentityUpdateFailed -> {
-                    val matchingDialog = when (event.kind) {
-                        ProfileIdentityMutationKind.UPDATE -> editTargetProfileId == event.profileId
-                        ProfileIdentityMutationKind.DELETE -> deleteTargetProfileId == event.profileId
-                    }
-                    if (pendingIdentityProfileId == event.profileId) pendingIdentityProfileId = null
-                    if (matchingDialog) snackbarHostState.showSnackbar(updateFailedMessage)
+                    val failure = applyProfileIdentityFailure(
+                        ownership = ProfileIdentityOverlayOwnership(
+                            editTargetProfileId = editTargetProfileId,
+                            deleteTargetProfileId = deleteTargetProfileId,
+                            pendingIdentityProfileId = pendingIdentityProfileId,
+                        ),
+                        profileId = event.profileId,
+                        kind = event.kind,
+                    )
+                    editTargetProfileId = failure.ownership.editTargetProfileId
+                    deleteTargetProfileId = failure.ownership.deleteTargetProfileId
+                    pendingIdentityProfileId = failure.ownership.pendingIdentityProfileId
+                    if (failure.showError) snackbarHostState.showSnackbar(updateFailedMessage)
                 }
                 is ProfileUiEvent.ProfileDeleted -> {
                     if (deleteTargetProfileId == event.profileId) deleteTargetProfileId = null
