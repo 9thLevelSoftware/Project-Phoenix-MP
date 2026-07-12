@@ -1324,8 +1324,11 @@ fun `edge executable contract authenticates validates fully then performs scoped
     val code = executableTypeScript()
     listOf(
         "auth.getUser(userJwt)",
+        "bearerMatch",
         "authOperationalFailure",
         "status === 400 || status === 401 || status === 403",
+        "Object.hasOwn(authRecord, \"error\")",
+        "Object.hasOwn(authRecord, \"data\")",
         "{ status: 503 }",
         "req.arrayBuffer()",
         "TextDecoder(\"utf-8\", { fatal: true",
@@ -1360,6 +1363,7 @@ fun `edge executable contract authenticates validates fully then performs scoped
         ".eq(\"user_id\", verifiedUserId)",
         ".eq(\"local_profile_id\", requestedProfileId)",
         "throw new PreferenceInfrastructureError",
+        "console.error({ name: safeErrorName(error",
         "normalized.toISOString()",
     ).forEach { fragment -> assertTrue(fragment in code, fragment) }
 
@@ -1404,6 +1408,7 @@ fun `edge executable contract authenticates validates fully then performs scoped
 
     assertTrue("rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES" in code)
     assertFalse("requirePostgresTextTree(rawMutation" in code)
+    assertFalse("console.error(\"profile preference infrastructure failure\"" in code)
     assertFalse(Regex("""\buserId\s*[?:]?\s*:\s*string""").containsMatchIn(code))
     assertFalse(Regex("""console[.](?:log|info|warn|error)[(][^)]*SERVICE_ROLE""").containsMatchIn(code))
 }
@@ -2727,10 +2732,13 @@ Authenticate with an anon client, parse and validate the complete body, and only
 
 ```typescript
 const authorization = req.headers.get("Authorization");
-if (!authorization?.startsWith("Bearer ") || authorization.length === "Bearer ".length) {
+const bearerMatch = authorization === null
+  ? null
+  : /^Bearer ([^\s]+)$/.exec(authorization);
+if (!bearerMatch) {
   return new Response(JSON.stringify({ error: "Missing bearer token" }), { status: 401 });
 }
-const userJwt = authorization.slice("Bearer ".length);
+const userJwt = bearerMatch[1];
 const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   global: { headers: { Authorization: authorization } },
   auth: { persistSession: false, autoRefreshToken: false },
@@ -2770,12 +2778,15 @@ try {
 } catch (error) {
   return authOperationalFailure(error);
 }
-if (typeof authResult !== "object" || authResult === null) {
+if (typeof authResult !== "object" || authResult === null || Array.isArray(authResult)) {
   return authOperationalFailure({ name: "AuthUnexpectedResult" });
 }
 const authRecord = authResult as JsonRecord;
+if (!Object.hasOwn(authRecord, "error") || !Object.hasOwn(authRecord, "data")) {
+  return authOperationalFailure({ name: "AuthUnexpectedResult" });
+}
 const userError = authRecord.error;
-if (userError !== null && userError !== undefined) {
+if (userError !== null) {
   const status = returnedAuthStatus(userError);
   if (status === 400 || status === 401 || status === 403) {
     return new Response(JSON.stringify({ error: "Invalid bearer token" }), { status: 401 });
@@ -2783,12 +2794,12 @@ if (userError !== null && userError !== undefined) {
   return authOperationalFailure(userError);
 }
 const userData = authRecord.data;
-if (typeof userData !== "object" || userData === null) {
+if (typeof userData !== "object" || userData === null || Array.isArray(userData)) {
   return authOperationalFailure({ name: "AuthUnexpectedResult" });
 }
 const verifiedUser = (userData as JsonRecord).user;
 if (
-  typeof verifiedUser !== "object" || verifiedUser === null ||
+  typeof verifiedUser !== "object" || verifiedUser === null || Array.isArray(verifiedUser) ||
   typeof (verifiedUser as JsonRecord).id !== "string" ||
   ((verifiedUser as JsonRecord).id as string).length === 0
 ) {
@@ -3029,9 +3040,7 @@ try {
     }
   }
 } catch (error) {
-  console.error("profile preference infrastructure failure", {
-    name: error instanceof Error ? error.name : "UnknownError",
-  });
+  console.error({ name: safeErrorName(error, "PreferenceInfrastructureFailure") });
   return new Response(JSON.stringify({ error: "Sync temporarily unavailable" }), {
     status: 503,
   });
@@ -3200,11 +3209,11 @@ Implement the manifest with real database and function tests, not string searche
 - In `supabase/tests/database/profile_preferences.test.sql`, use pgTAP in a transaction. Assert the two exact function identities/signatures, `SECURITY INVOKER`, empty `search_path`, owner, volatility, return shapes, and execute ACLs; assert `PUBLIC`, `anon`, and `authenticated` have neither function execute nor table DML while `service_role` has only the intended table/function privileges.
 - In that pgTAP file, temporarily grant table DML inside the test transaction solely to exercise RLS. Set authenticated JWT claims for owner A and owner B, prove each CRUD operation sees/mutates only its own composite parent, and prove owner A cannot update a row's `user_id` to owner B because the `WITH CHECK` predicate fails. Do not claim that RLS makes a same-owner `local_profile_id` immutable; no trigger is part of this plan. Revoke the temporary grants and verify the production ACLs again before rollback.
 - Seed two composite profile keys and call the real mutation function for all five sections. Prove base revision 0 accepts revision 1, the next matching base accepts exactly the next revision, a stale base returns `REVISION_CONFLICT` plus byte/equality-identical canonical JSON, and mutating one section leaves all four sibling payloads/revisions unchanged. For every call, prove the targeted row keeps its `user_id` and `local_profile_id`, the non-target key is untouched, and the RPC cannot mutate either key. Exercise explicit `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, `VALIDATION_FAILED`, and `UNKNOWN_PROFILE` rows.
-- In `mobile-sync-push/index.test.ts`, invoke the exported handler with injected anon/admin clients and two real local Supabase users. Cover missing/malformed bearer headers and returned Auth errors with each of 400, 401, and 403 as HTTP 401. Separately inject returned 429, 500, and 503 errors, an error with no status, a null/malformed result, a success without a user, and thrown/rejected `getUser` calls; each is a generic 503 whose captured log object has exactly the `name` key. Every auth failure constructs/calls zero admin clients. Also cover attempted cross-user profile mutation and the absence of any request-body `userId` authority. Spy on every privileged table/RPC method and prove malformed data in the final ordinary or preference item produces zero privileged calls.
+- In `mobile-sync-push/index.test.ts`, invoke the exported handler with injected anon/admin clients and two real local Supabase users. Cover missing headers plus blank, whitespace-bearing, multi-token, and otherwise malformed `Bearer` suffixes as immediate HTTP 401 responses with zero `getUser` or admin calls. Cover returned Auth errors with each of 400, 401, and 403 as HTTP 401. Separately inject returned 429, 500, and 503 errors, an error with no status, a null/array/malformed result, missing `error` or `data` discriminants, a non-null error without status, a success without a user, and thrown/rejected `getUser` calls; each is a generic 503 whose captured console call has exactly one argument equal to an object with exactly the `name` key. Every auth failure constructs/calls zero admin clients. Also cover attempted cross-user profile mutation and the absence of any request-body `userId` authority. Spy on every privileged table/RPC method and prove malformed data in the final ordinary or preference item produces zero privileged calls.
 - Table-drive every required and unknown key, primitive type, enum, range, nested object, duplicate rack id, duplicate `(localProfileId, section)`, all five version-1 wrappers, every unsupported wrapper/embedded version, and recursive normalized local-only names. For Kotlin `Int`, prove rack `sortOrder` accepts exactly -2147483648 and 2147483647 and rejects either adjacent overflow; cover workout `setReps`/`duration` and LED color scheme with both Int32 and their narrower business rules. For Kotlin `Float`, prove `Float.MAX_VALUE` and the smallest nonzero Float32 survive where business rules allow, while positive/negative Float32 overflow and nonzero underflow-to-zero are rejected; apply every business predicate to both the original JavaScript number and its `Math.fround` result. In CORE, accept exact `bodyWeightKg` values `20` and `300`, but reject exact adjacent inputs `19.9999999` and `300.00001` even though Float32 rounding produces `20` and `300`. For the nonnegative RACK `weightKg` JSONB field, accept `0` and the smallest positive Float32, but reject exact `-1e-46` rather than allowing its `-0` Float32 result through. Safe JSON integers apply only to Long revisions/timestamps. Recursively test raw and escaped U+0000 plus lone high/low surrogates in nested string values and `singleExerciseDefaults`/other object keys; each is rejected pre-admin, while a valid supplementary pair/emoji passes. Put one such Unicode-invalid unique-key section beside a valid unique-key sibling and assert exactly one `VALIDATION_FAILED` for the invalid key, zero RPC calls for that key, and one successful RPC for the valid sibling. Keep malformed raw-span structure or a raw/parsed element mismatch as an envelope-level HTTP 400 with zero privileged calls. Rack names may repeat, and signed safe-integer `createdAt`/`updatedAt` values are accepted. Pre-count duplicate section identities before size or document validation; assert exactly one `DUPLICATE_SECTION` rejection per duplicated key, zero RPC calls for every occurrence of that key, and one RPC for each valid non-duplicated sibling.
 - Table-drive the shared strict instant helper through mutation, RPC canonical, and pull paths. Reject numeric/string `0`, prose dates, date-only/space forms, February 30, invalid leap days/times/offsets, and any missing timezone. Accept valid `Z`, fractional-second, and positive/negative-offset instants and assert canonical output is the exact `toISOString()` normalization.
 - Send raw `Uint8Array` bodies through the real handler. Reject a leading UTF-8 BOM, truncated sequences, overlong encodings, and isolated continuation bytes with HTTP 400 and zero admin construction/calls; accept a legitimately encoded U+FFFD scalar. Use the shared byte-golden artifact to build original bodies at exactly 262143, 262144, and 262145 bytes for one preference array element and exactly 524287, 524288, and 524289 bytes for the complete HTTP `PortalSyncPayload`. Assert inclusive limits from the original `Uint8Array.byteLength`, HTTP 413 only for full-request overflow when the preference field is present, per-section `SECTION_TOO_LARGE` for section overflow, exact scanner offsets despite whitespace/escapes/nesting, and that a large ordinary request below 9,500,000 bytes without the preference field is not subjected to the preference cap.
-- Inject RPC error, null data, empty array, two rows, malformed canonical, mismatched revision, and unknown rejection reason. Each must return generic 5xx, log only `{ name }`, expose no payload/profile/token/secret/error message, and never emit `VALIDATION_FAILED`. A well-formed domain rejection continues with valid siblings.
+- Inject RPC error, null data, empty array, two rows, malformed canonical, mismatched revision, and unknown rejection reason. Each must return generic 5xx, call the logger with exactly one `{ name: safeErrorName(...) }` object, expose no payload/profile/token/secret/error message, and never emit `VALIDATION_FAILED`. Include a thrown error whose custom `name` is invalid/oversized and prove the fallback name is logged. A well-formed domain rejection continues with valid siblings.
 - With real RPC calls and `Promise.all`, prove same-section concurrent base-0 writes yield one revision-1 acceptance and one canonical conflict, while different-section base-0 writes both reach revision 1 and preserve both documents. Assert one returned row per call.
 - For lost acknowledgement, commit A directly, force the handler's later B RPC to fail after A has committed, discard the failed response, and retry the original A mutation at base 0. Assert the retry is a canonical revision-1 conflict and the stored revision remains 1; then retry B normally and assert convergence.
 - In `mobile-sync-pull/index.test.ts`, repeat the exact auth classification matrix, seed all five typed documents through the mutation RPC, invoke first-page pull as the owner, and deep-compare every canonical wrapper to the mutation responses, including strict RFC3339 `toISOString()` normalization. Inject malformed database timestamps and string/object-key Unicode to prove a name-only-logged generic 5xx rather than silent normalization. Assert both owner predicates are applied, a cross-user profile cannot be read, an absent row is not created, later cursor pages omit `profilePreferenceSections`, and every response retains `syncTime`.
