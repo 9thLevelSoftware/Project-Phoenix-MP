@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
+import com.devil.phoenixproject.testutil.FakeProfilePreferenceSyncRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
@@ -48,6 +49,7 @@ class PortalTokenRefreshTest {
     private val fakeUserProfileRepo = FakeUserProfileRepository()
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
     private val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
+    private val fakeProfilePreferenceSyncRepo = FakeProfilePreferenceSyncRepository()
 
     private fun createManager() = SyncManager(
         apiClient = fakeApi,
@@ -56,8 +58,10 @@ class PortalTokenRefreshTest {
         gamificationRepository = fakeGamificationRepo,
         repMetricRepository = fakeRepMetricRepo,
         userProfileRepository = fakeUserProfileRepo,
+        profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
         externalActivityRepository = fakeExternalActivityRepo,
         velocityOneRepMaxRepository = fakeVelocityRepo,
+        isProfilePreferenceMigrationReady = { true },
     )
 
     // ==================== isTokenExpired Buffer ====================

@@ -12,12 +12,14 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.CharacterClass
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.isIosPlatform
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -124,6 +126,148 @@ object SyncConfig {
     const val RATE_LIMIT_WINDOW_MS = 60_000L
 }
 
+private val PROFILE_PREFERENCE_REASON_NAMES =
+    ProfilePreferenceSyncIssueReason.entries.mapTo(mutableSetOf<String>()) { it.name }
+
+private fun safeProfilePreferenceReason(reason: String): String =
+    reason.takeIf { it in PROFILE_PREFERENCE_REASON_NAMES }
+        ?: "INVALID_PROFILE_PREFERENCE_DIAGNOSTIC"
+
+internal enum class ProfilePreferenceLocalFailureStage {
+    SNAPSHOT,
+    MUTATION_MAPPING,
+    CHUNK_PLANNING,
+    RESPONSE_MAPPING,
+    OUTCOME_APPLY,
+    PULL_RESPONSE_MAPPING,
+    PULL_APPLY,
+}
+
+internal fun profilePreferenceIssueLogLine(issue: ProfilePreferenceSyncIssue): String =
+    "PROFILE_PREFERENCE_NOT_SENT section=${issue.key.section.name} " +
+        "reason=${safeProfilePreferenceReason(issue.reason)}"
+
+internal fun profilePreferenceMetadataDeferredLogLine(
+    key: ProfilePreferenceSectionKey,
+): String = "PROFILE_PREFERENCE_NOT_SENT section=${key.section.name} " +
+    "reason=PROFILE_METADATA_NOT_SENT"
+
+internal fun profilePreferenceDuplicateResultLogLine(
+    key: ProfilePreferenceSectionKey,
+): String = "PROFILE_PREFERENCE_DUPLICATE_RESULT section=${key.section.name}"
+
+internal fun profilePreferenceInvalidCanonicalLogLine(
+    invalid: ProfilePreferenceCanonicalDecodeResult.Invalid,
+): String = "PROFILE_PREFERENCE_INVALID_CANONICAL " +
+    "reason=${safeProfilePreferenceReason(invalid.reason)}"
+
+internal fun profilePreferenceChunkFailureLogLine(error: Throwable?): String {
+    val status = (error as? PortalApiException)?.statusCode?.toString() ?: "UNKNOWN"
+    return "PROFILE_PREFERENCE_CHUNK_FAILED status=$status"
+}
+
+internal fun profilePreferenceLocalFailureLogLine(
+    stage: ProfilePreferenceLocalFailureStage,
+): String = "PROFILE_PREFERENCE_LOCAL_FAILURE stage=${stage.name}"
+
+internal suspend fun <T> isolateProfilePreferenceFailure(
+    stage: ProfilePreferenceLocalFailureStage,
+    onFailure: (String) -> Unit,
+    block: suspend () -> T,
+): T? = try {
+    block()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    onFailure(profilePreferenceLocalFailureLogLine(stage))
+    null
+}
+
+private data class PreferenceOutcomeCandidate(
+    val key: ProfilePreferenceSectionKey,
+    val serverRevision: Long,
+    val canonical: CanonicalProfilePreferenceSection,
+    val rejectionReason: String?,
+)
+
+private val PROFILE_PREFERENCE_REJECTION_REASONS = setOf(
+    "REVISION_CONFLICT",
+    "VALIDATION_FAILED",
+    "UNSUPPORTED_SECTION",
+    "UNSUPPORTED_DOCUMENT_VERSION",
+    "UNKNOWN_PROFILE",
+    "SECTION_TOO_LARGE",
+    "DUPLICATE_SECTION",
+)
+
+private fun responseKey(
+    localProfileId: String,
+    section: String,
+): ProfilePreferenceSectionKey? {
+    val parsed = ProfilePreferenceSectionName.entries.firstOrNull { it.name == section }
+        ?: return null
+    return ProfilePreferenceSectionKey(localProfileId, parsed)
+}
+
+internal fun buildProfilePreferencePushOutcomes(
+    response: PortalSyncPushResponse,
+    ledger: Map<ProfilePreferenceSectionKey, Long>,
+): List<ProfilePreferencePushOutcome> {
+    val candidates = mutableListOf<PreferenceOutcomeCandidate>()
+    val responseCounts = mutableMapOf<ProfilePreferenceSectionKey, Int>()
+    response.canonicalProfilePreferenceSections.forEach { dto ->
+        val key = responseKey(dto.localProfileId, dto.section) ?: return@forEach
+        if (key !in ledger) return@forEach
+        responseCounts[key] = responseCounts.getOrElse(key) { 0 } + 1
+        val decoded = PortalPullAdapter.toCanonicalProfilePreferenceSection(dto)
+        if (decoded is ProfilePreferenceCanonicalDecodeResult.Valid && decoded.section.key == key) {
+            candidates += PreferenceOutcomeCandidate(
+                key = key,
+                serverRevision = decoded.section.serverRevision,
+                canonical = decoded.section,
+                rejectionReason = null,
+            )
+        }
+    }
+    response.profilePreferenceRejections.forEach { rejection ->
+        val key = responseKey(rejection.localProfileId, rejection.section) ?: return@forEach
+        if (key !in ledger) return@forEach
+        responseCounts[key] = responseCounts.getOrElse(key) { 0 } + 1
+        if (rejection.reason !in PROFILE_PREFERENCE_REJECTION_REASONS) return@forEach
+        if (rejection.reason != "REVISION_CONFLICT") return@forEach
+        val canonicalDto = rejection.canonicalSection ?: return@forEach
+        val canonical = PortalPullAdapter.toCanonicalProfilePreferenceSection(canonicalDto)
+        val decodedCanonical = (canonical as? ProfilePreferenceCanonicalDecodeResult.Valid)
+            ?.section
+            ?: return@forEach
+        if (decodedCanonical.key != key ||
+            decodedCanonical.serverRevision != rejection.serverRevision
+        ) {
+            return@forEach
+        }
+        candidates += PreferenceOutcomeCandidate(
+            key = key,
+            serverRevision = rejection.serverRevision,
+            canonical = decodedCanonical,
+            rejectionReason = rejection.reason,
+        )
+    }
+    return candidates.groupBy(PreferenceOutcomeCandidate::key).mapNotNull { (key, entries) ->
+        if (entries.size != 1 || responseCounts[key] != 1) {
+            Logger.w("SyncManager") { profilePreferenceDuplicateResultLogLine(key) }
+            return@mapNotNull null
+        }
+        val candidate = entries.single()
+        ProfilePreferencePushOutcome(
+            key = key,
+            sentLocalGeneration = ledger.getValue(key),
+            serverRevision = candidate.serverRevision,
+            canonical = candidate.canonical,
+            rejectionReason = candidate.rejectionReason,
+        )
+    }
+}
+
 class SyncManager(
     private val apiClient: PortalApiClient,
     private val tokenStorage: PortalTokenStorage,
@@ -131,9 +275,11 @@ class SyncManager(
     private val gamificationRepository: GamificationRepository,
     private val repMetricRepository: RepMetricRepository,
     private val userProfileRepository: UserProfileRepository,
+    private val profilePreferenceSyncRepository: ProfilePreferenceSyncRepository,
     private val externalActivityRepository: ExternalActivityRepository,
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
     private val rateLimiter: ClientRateLimiter = ClientRateLimiter(),
+    private val isProfilePreferenceMigrationReady: () -> Boolean,
 ) {
     companion object {
         /**
@@ -562,20 +708,6 @@ class SyncManager(
         val userId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
 
-        // fix(audit #9): self-throttle to match server 10/min limit so a
-        // runaway retry loop fails fast locally instead of hammering the
-        // Edge Function for HTTP 429 responses.
-        if (!rateLimiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)) {
-            return Result.failure(
-                PortalApiException(
-                    "Client rate limit exceeded for push (" +
-                        "${SyncConfig.PUSH_RATE_LIMIT_PER_MIN}/min). Try again shortly.",
-                    null,
-                    429,
-                ),
-            )
-        }
-
         val deviceId = tokenStorage.getDeviceId()
         val lastSync = tokenStorage.getLastSyncTimestamp()
         val platform = getPlatformName()
@@ -949,7 +1081,7 @@ class SyncManager(
                 personalRecords = personalRecordDtos,
             )
             rejectDuplicatePushPayloadKeys(payload)?.let { return it }
-            val result = apiClient.pushPortalPayload(payload)
+            val result = pushPayloadWithRateLimit(payload)
             if (result.isFailure) return result
             lastResponse = result.getOrThrow()
             // Single-batch success - reset retry tracking
@@ -1001,7 +1133,7 @@ class SyncManager(
                 )
 
                 rejectDuplicatePushPayloadKeys(payload)?.let { return it }
-                val result = apiClient.pushPortalPayload(payload)
+                val result = pushPayloadWithRateLimit(payload)
                 if (result.isFailure) {
                     val error = result.exceptionOrNull()
                     val batchSessionIds = batchSessions.map { it.id }.take(3)
@@ -1056,6 +1188,14 @@ class SyncManager(
             consecutiveFullRetries = 0
             lastFailedBatchHash = null
         }
+
+        val sentMetadataProfileIds = profileDtos.mapTo(linkedSetOf()) { it.id }
+        pushDirtyProfilePreferences(
+            deviceId = deviceId,
+            platform = platform,
+            lastSync = lastSync,
+            sentMetadataProfileIds = sentMetadataProfileIds,
+        )
 
         // Mark external activities as synced based on server acknowledgement.
         // Only mark activities the server confirmed it persisted — prevents silently
@@ -1112,6 +1252,101 @@ class SyncManager(
 
         return Result.success(lastResponse!!)
         // No updateServerIds() -- portal uses client-provided UUIDs
+    }
+
+    private suspend fun pushPayloadWithRateLimit(
+        payload: PortalSyncPayload,
+    ): Result<PortalSyncPushResponse> {
+        if (!rateLimiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)) {
+            return Result.failure(
+                PortalApiException(
+                    "Client rate limit exceeded for push " +
+                        "(${SyncConfig.PUSH_RATE_LIMIT_PER_MIN}/min). Try again shortly.",
+                    statusCode = 429,
+                ),
+            )
+        }
+        return apiClient.pushPortalPayload(payload)
+    }
+
+    private suspend fun pushDirtyProfilePreferences(
+        deviceId: String,
+        platform: String,
+        lastSync: Long,
+        sentMetadataProfileIds: Set<String>,
+    ) {
+        if (!isProfilePreferenceMigrationReady()) return
+        val safeFailureLogger: (String) -> Unit = { line ->
+            Logger.w("SyncManager") { line }
+        }
+        val snapshot = isolateProfilePreferenceFailure(
+            ProfilePreferenceLocalFailureStage.SNAPSHOT,
+            safeFailureLogger,
+        ) {
+            profilePreferenceSyncRepository.snapshotDirtySections()
+        } ?: return
+        snapshot.unsyncable.forEach { issue ->
+            Logger.w("SyncManager") { profilePreferenceIssueLogLine(issue) }
+        }
+        val (eligible, deferred) = snapshot.valid.partition {
+            it.key.localProfileId in sentMetadataProfileIds
+        }
+        deferred.forEach { section ->
+            Logger.i("SyncManager") { profilePreferenceMetadataDeferredLogLine(section.key) }
+        }
+        val prepared = isolateProfilePreferenceFailure(
+            ProfilePreferenceLocalFailureStage.MUTATION_MAPPING,
+            safeFailureLogger,
+        ) {
+            eligible.map(PortalSyncAdapter::toPortalProfilePreferenceMutation)
+        } ?: return
+        if (prepared.isEmpty()) return
+
+        val base = PortalSyncPayload(
+            deviceId = deviceId,
+            platform = platform,
+            lastSync = lastSync,
+        )
+        val plan = isolateProfilePreferenceFailure(
+            ProfilePreferenceLocalFailureStage.CHUNK_PLANNING,
+            safeFailureLogger,
+        ) {
+            planProfilePreferencePushChunks(base, prepared)
+        } ?: return
+        plan.unsyncable.forEach { issue ->
+            Logger.w("SyncManager") { profilePreferenceIssueLogLine(issue) }
+        }
+
+        for (chunk in plan.chunks) {
+            val result = pushPayloadWithRateLimit(chunk.payload)
+            if (result.isFailure) {
+                Logger.w("SyncManager") {
+                    profilePreferenceChunkFailureLogLine(result.exceptionOrNull())
+                }
+                return
+            }
+            val response = result.getOrThrow()
+            if (response.profilePreferencesAccepted != true) {
+                Logger.i("SyncManager") {
+                    "Backend did not acknowledge profile preference support"
+                }
+                return
+            }
+            val outcomes = isolateProfilePreferenceFailure(
+                ProfilePreferenceLocalFailureStage.RESPONSE_MAPPING,
+                safeFailureLogger,
+            ) {
+                buildProfilePreferencePushOutcomes(response, chunk.ledger)
+            } ?: return
+            if (outcomes.isNotEmpty()) {
+                isolateProfilePreferenceFailure(
+                    ProfilePreferenceLocalFailureStage.OUTCOME_APPLY,
+                    safeFailureLogger,
+                ) {
+                    profilePreferenceSyncRepository.applyPushOutcomes(outcomes)
+                } ?: return
+            }
+        }
     }
 
     /**

@@ -2,11 +2,13 @@ package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
+import com.devil.phoenixproject.testutil.FakeProfilePreferenceSyncRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
@@ -18,6 +20,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Tests for push-side batch splitting defined by SyncManager.SYNC_BATCH_SIZE (=50).
@@ -43,16 +47,22 @@ class PortalPushLimitsTest {
     private val fakeUserProfileRepo = FakeUserProfileRepository()
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
     private val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
+    private val fakeProfilePreferenceSyncRepo = FakeProfilePreferenceSyncRepository()
 
-    private fun createManager() = SyncManager(
+    private fun createManager(
+        rateLimiter: ClientRateLimiter = ClientRateLimiter(),
+    ) = SyncManager(
         apiClient = fakeApi,
         tokenStorage = tokenStorage,
         syncRepository = fakeSyncRepo,
         gamificationRepository = fakeGamificationRepo,
         repMetricRepository = fakeRepMetricRepo,
         userProfileRepository = fakeUserProfileRepo,
+        profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
         externalActivityRepository = fakeExternalActivityRepo,
         velocityOneRepMaxRepository = fakeVelocityRepo,
+        rateLimiter = rateLimiter,
+        isProfilePreferenceMigrationReady = { true },
     )
 
     private fun authenticate(userId: String = "user-123") {
@@ -222,8 +232,10 @@ class PortalPushLimitsTest {
             gamificationRepository = fakeGamificationRepo,
             repMetricRepository = fakeRepMetricRepo,
             userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
             externalActivityRepository = fakeExternalActivityRepo,
             velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
         )
 
         mgr.sync()
@@ -256,8 +268,10 @@ class PortalPushLimitsTest {
             gamificationRepository = fakeGamificationRepo,
             repMetricRepository = fakeRepMetricRepo,
             userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
             externalActivityRepository = fakeExternalActivityRepo,
             velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
         )
 
         mgr.sync()
@@ -326,8 +340,10 @@ class PortalPushLimitsTest {
             gamificationRepository = fakeGamificationRepo,
             repMetricRepository = fakeRepMetricRepo,
             userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
             externalActivityRepository = fakeExternalActivityRepo,
             velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
         )
 
         val result = mgr.sync()
@@ -364,8 +380,10 @@ class PortalPushLimitsTest {
             gamificationRepository = fakeGamificationRepo,
             repMetricRepository = fakeRepMetricRepo,
             userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
             externalActivityRepository = fakeExternalActivityRepo,
             velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
         )
 
         mgr.sync()
@@ -375,6 +393,82 @@ class PortalPushLimitsTest {
             callIndex,
             "Once batch 1 fails, batches 2+ must NOT be attempted in the same sync cycle",
         )
+    }
+
+    @Test
+    fun preferenceChunksFollowTheFinalMetadataBatch() = runTest {
+        authenticate()
+        fakeUserProfileRepo.setActiveProfileForTest("profile-a")
+        fakeSyncRepo.workoutSessionsToReturn = buildSessions(73)
+        fakeProfilePreferenceSyncRepo.dirtySnapshot = ProfilePreferenceDirtySnapshot(
+            valid = listOf(coreSectionForSync()),
+            unsyncable = emptyList(),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-07-11T12:00:00Z",
+                profilePreferencesAccepted = true,
+                canonicalProfilePreferenceSections = listOf(coreCanonicalForSync()),
+            ),
+        )
+
+        createManager().sync()
+
+        val preferenceIndex = fakeApi.pushPayloads.indexOfFirst {
+            it.profilePreferenceSections != null
+        }
+        val metadataIndex = fakeApi.pushPayloads.indexOfLast { it.allProfiles != null }
+        assertTrue(metadataIndex >= 0)
+        assertTrue(preferenceIndex > metadataIndex)
+        assertTrue(
+            "profile-a" in fakeApi.pushPayloads[metadataIndex].allProfiles.orEmpty().map { it.id },
+        )
+    }
+
+    @Test
+    fun everyLogicalPushCallConsumesTheSharedRateLimit() = runTest {
+        authenticate()
+        repeat(20) { index ->
+            fakeUserProfileRepo.setActiveProfileForTest("profile-$index")
+        }
+        fakeUserProfileRepo.setActiveProfileForTest("profile-a")
+        val ordinary = buildSessions(1).single()
+        fakeSyncRepo.workoutSessionsToReturn = listOf(ordinary)
+        fakeProfilePreferenceSyncRepo.dirtySnapshot = ProfilePreferenceDirtySnapshot(
+            valid = List(20) { index ->
+                ProfilePreferenceSectionSyncDto(
+                    key = ProfilePreferenceSectionKey(
+                        "profile-$index",
+                        ProfilePreferenceSectionName.RACK,
+                    ),
+                    documentVersion = 1,
+                    baseRevision = 0,
+                    clientModifiedAtEpochMs = 1_783_771_200_000L,
+                    localGeneration = 1,
+                    payload = buildJsonObject { put("padding", "x".repeat(174_700)) },
+                )
+            },
+            unsyncable = emptyList(),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-07-11T12:00:00Z",
+                profilePreferencesAccepted = true,
+            ),
+        )
+
+        val result = createManager(
+            rateLimiter = ClientRateLimiter(nowMs = { 0L }),
+        ).sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(SyncConfig.PUSH_RATE_LIMIT_PER_MIN, fakeApi.pushPayloads.size)
+        assertEquals(
+            SyncConfig.PUSH_RATE_LIMIT_PER_MIN - 1,
+            fakeApi.pushPayloads.count { it.profilePreferenceSections != null },
+        )
+        assertTrue(fakeProfilePreferenceSyncRepo.appliedPushOutcomes.isEmpty())
+        assertEquals(listOf(ordinary.id), fakeSyncRepo.updateSessionTimestampCalls)
     }
 
     // ==================== Telemetry-Aware Batching (audit: 36_852 point rejection) ====================
@@ -556,6 +650,28 @@ class PortalPushLimitsTest {
         assertEquals(listOf("REP-A"), duplicates[5].ids)
         assertEquals(listOf("TELEMETRY-A"), duplicates[6].ids)
     }
+
+    private fun coreSectionForSync() = ProfilePreferenceSectionSyncDto(
+        key = ProfilePreferenceSectionKey("profile-a", ProfilePreferenceSectionName.CORE),
+        documentVersion = 1,
+        baseRevision = 0,
+        clientModifiedAtEpochMs = 1_783_771_200_000L,
+        localGeneration = 1,
+        payload = buildJsonObject {
+            put("bodyWeightKg", 80.0)
+            put("weightUnit", "KG")
+            put("weightIncrement", 0.5)
+        },
+    )
+
+    private fun coreCanonicalForSync() = PortalProfilePreferenceSectionCanonicalDto(
+        localProfileId = "profile-a",
+        section = "CORE",
+        documentVersion = 1,
+        serverRevision = 1,
+        serverUpdatedAt = "2026-07-11T12:00:00Z",
+        payload = coreSectionForSync().payload,
+    )
 
     private fun stubPortalSession(id: String) = PortalWorkoutSessionDto(
         id = id,

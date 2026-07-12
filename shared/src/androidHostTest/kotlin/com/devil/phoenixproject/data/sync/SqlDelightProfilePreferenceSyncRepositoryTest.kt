@@ -1146,6 +1146,56 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
     }
 
     @Test
+    fun `lost acknowledgement then later edit retains approved matching generation server wins policy`() =
+        runTest {
+            createProfile("lost-ack-edit")
+            foundationRepository.insertDefaults("lost-ack-edit")
+            foundationRepository.updateCore(
+                "lost-ack-edit",
+                CoreProfilePreferences(bodyWeightKg = 80f),
+                now = 20,
+            )
+            val committedButUnacknowledged = repository.snapshotDirtySections().valid.single {
+                it.key.localProfileId == "lost-ack-edit" &&
+                    it.key.section == ProfilePreferenceSectionName.CORE
+            }
+
+            // Simulate the server committing generation 1 at revision 1 and the HTTP response
+            // being lost: do not apply an outcome locally before the user edits again.
+            foundationRepository.updateCore(
+                "lost-ack-edit",
+                CoreProfilePreferences(bodyWeightKg = 90f),
+                now = 30,
+            )
+            val retry = repository.snapshotDirtySections().valid.single {
+                it.key == committedButUnacknowledged.key
+            }
+            assertTrue(retry.localGeneration > committedButUnacknowledged.localGeneration)
+            assertEquals(0L, retry.baseRevision)
+
+            repository.applyPushOutcomes(
+                listOf(
+                    ProfilePreferencePushOutcome(
+                        key = retry.key,
+                        sentLocalGeneration = retry.localGeneration,
+                        serverRevision = 1,
+                        canonical = coreCanonical(
+                            revision = 1,
+                            bodyWeightKg = 80.0,
+                            profileId = "lost-ack-edit",
+                        ),
+                        rejectionReason = "REVISION_CONFLICT",
+                    ),
+                ),
+            )
+
+            val current = foundationRepository.get("lost-ack-edit").core
+            assertEquals(80f, current.value.bodyWeightKg)
+            assertEquals(1L, current.metadata.serverRevision)
+            assertFalse(current.metadata.dirty)
+        }
+
+    @Test
     fun `semantic numeric equality does not become equal revision divergence`() = runTest {
         createProfile("numeric-equality")
         foundationRepository.insertDefaults("numeric-equality")
