@@ -125,6 +125,7 @@ package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -135,20 +136,360 @@ class BackendHandoffContractTest {
         "Supabase handoff SQL must be tracked in the mobile repository",
     )
 
+    private fun normalizedSql(): String {
+        val compact = sql()
+            .replace(Regex("""(?s)/[*].*?[*]/"""), " ")
+            .lineSequence()
+            .map { line -> line.substringBefore("--") }
+            .joinToString(" ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+        return lowercaseOutsideLiterals(compact)
+    }
+
+    private fun lowercaseOutsideLiterals(value: String): String = buildString(value.length) {
+        var inLiteral = false
+        var index = 0
+        while (index < value.length) {
+            val character = value[index]
+            if (
+                character == '\'' &&
+                inLiteral &&
+                index + 1 < value.length &&
+                value[index + 1] == '\''
+            ) {
+                append(character)
+                append(value[index + 1])
+                index += 2
+                continue
+            }
+            if (character == '\'') {
+                append(character)
+                inLiteral = !inLiteral
+            } else if (
+                !inLiteral &&
+                character == ' ' &&
+                ((length > 0 && this[length - 1] == '(') ||
+                    (index + 1 < value.length && value[index + 1] == ')'))
+            ) {
+                // Normalize formatting-only whitespace inside SQL parentheses.
+            } else {
+                append(if (inLiteral) character else character.lowercaseChar())
+            }
+            index += 1
+        }
+    }
+
+    private fun tableEntries(sql: String): List<String> {
+        val body = assertNotNull(
+            Regex(
+                """(?s)\bcreate table public[.]local_profile_preferences\s*[(](.*?)[)]\s*;""",
+            ).find(sql),
+            "Expected one executable local_profile_preferences table declaration",
+        ).groupValues[1]
+        return splitTopLevel(body)
+    }
+
+    private fun splitTopLevel(value: String): List<String> {
+        val entries = mutableListOf<String>()
+        var depth = 0
+        var inLiteral = false
+        var start = 0
+        var index = 0
+        while (index < value.length) {
+            val character = value[index]
+            if (
+                character == '\'' &&
+                inLiteral &&
+                index + 1 < value.length &&
+                value[index + 1] == '\''
+            ) {
+                index += 2
+                continue
+            }
+            when {
+                character == '\'' -> inLiteral = !inLiteral
+                !inLiteral && character == '(' -> depth += 1
+                !inLiteral && character == ')' -> depth -= 1
+                !inLiteral && character == ',' && depth == 0 -> {
+                    entries += value.substring(start, index).trim()
+                    start = index + 1
+                }
+            }
+            index += 1
+        }
+        entries += value.substring(start).trim()
+        return entries.filter { entry -> entry.isNotEmpty() }
+    }
+
     @Test
-    fun `sql handoff secures the profile preference table`() {
-        val sql = sql()
-        assertTrue(sql.contains("CREATE TABLE public.local_profile_preferences"))
-        assertTrue(sql.contains("PRIMARY KEY (user_id, local_profile_id)"))
-        assertTrue(sql.contains("REFERENCES public.local_profiles(user_id, id) ON DELETE CASCADE"))
-        assertTrue(sql.contains("ENABLE ROW LEVEL SECURITY"))
-        assertTrue(sql.contains("TO authenticated"))
-        assertTrue(sql.contains("REVOKE ALL ON TABLE public.local_profile_preferences FROM PUBLIC"))
-        assertTrue(sql.contains("REVOKE ALL ON TABLE public.local_profile_preferences FROM anon"))
-        assertTrue(sql.contains("REVOKE ALL ON TABLE public.local_profile_preferences FROM authenticated"))
-        assertTrue(sql.contains("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.local_profile_preferences TO service_role"))
-        assertFalse(sql.contains("GRANT INSERT, UPDATE, DELETE ON TABLE public.local_profile_preferences TO authenticated"))
-        assertTrue(sql.contains("262144"), "Database-side section ceiling must be 256 KiB")
+    fun sqlHandoffDeclaresTheExactProfilePreferenceSchema() {
+        val sql = normalizedSql()
+        val entries = tableEntries(sql)
+        val columns = entries.filterNot { entry -> entry.startsWith("constraint ") }
+        assertEquals(
+            listOf(
+                "user_id uuid not null",
+                "local_profile_id text not null",
+                "schema_version integer not null default 1 check (schema_version = 1)",
+                "body_weight_kg double precision not null default 0",
+                "weight_unit text not null default 'LB'",
+                "weight_increment double precision not null default -1",
+                "core_revision bigint not null default 0 check (core_revision >= 0)",
+                "core_updated_at timestamptz not null default now()",
+                """equipment_rack jsonb not null default '{"version":1,"items":[]}'::jsonb""",
+                "rack_revision bigint not null default 0 check (rack_revision >= 0)",
+                "rack_updated_at timestamptz not null default now()",
+                """workout_preferences jsonb not null default '{"version":1}'::jsonb""",
+                "workout_revision bigint not null default 0 check (workout_revision >= 0)",
+                "workout_updated_at timestamptz not null default now()",
+                "led_color_scheme_id integer not null default 0",
+                """led_preferences jsonb not null default '{"version":1,"discoModeUnlocked":false}'::jsonb""",
+                "led_revision bigint not null default 0 check (led_revision >= 0)",
+                "led_updated_at timestamptz not null default now()",
+                "vbt_enabled boolean not null default true",
+                """vbt_preferences jsonb not null default '{"version":1,"velocityLossThresholdPercent":20,"autoEndOnVelocityLoss":false,"defaultScalingBasis":"MAX_WEIGHT_PR","verbalEncouragementEnabled":false,"vulgarModeEnabled":false,"vulgarTier":"STRONG","dominatrixModeUnlocked":false,"dominatrixModeActive":false}'::jsonb""",
+                "vbt_revision bigint not null default 0 check (vbt_revision >= 0)",
+                "vbt_updated_at timestamptz not null default now()",
+                "updated_at timestamptz generated always as (" +
+                    "greatest(core_updated_at, rack_updated_at, workout_updated_at, " +
+                    "led_updated_at, vbt_updated_at)) stored",
+            ),
+            columns,
+        )
+
+        val constraintPairs = entries
+            .filter { entry -> entry.startsWith("constraint ") }
+            .map { entry ->
+                val match = assertNotNull(
+                    Regex("""^constraint ([a-z_][a-z0-9_]*)\b""").find(entry),
+                    "Every table constraint must be explicitly named",
+                )
+                match.groupValues[1] to entry
+            }
+        val constraints = constraintPairs.toMap()
+        assertEquals(constraintPairs.size, constraints.size, "Constraint names must be unique")
+
+        val expectedConstraints = mapOf(
+            "local_profile_preferences_pkey" to
+                "constraint local_profile_preferences_pkey " +
+                "primary key (user_id, local_profile_id)",
+            "local_profile_preferences_parent_fkey" to
+                "constraint local_profile_preferences_parent_fkey " +
+                "foreign key (user_id, local_profile_id) " +
+                "references public.local_profiles(user_id, id) on delete cascade",
+            "local_profile_preferences_body_weight_check" to
+                "constraint local_profile_preferences_body_weight_check check (" +
+                "body_weight_kg not in (" +
+                "'NaN'::double precision, 'Infinity'::double precision, " +
+                "'-Infinity'::double precision) and " +
+                "(body_weight_kg = 0 or body_weight_kg between 20 and 300))",
+            "local_profile_preferences_weight_unit_check" to
+                "constraint local_profile_preferences_weight_unit_check " +
+                "check (weight_unit in ('KG', 'LB'))",
+            "local_profile_preferences_weight_increment_check" to
+                "constraint local_profile_preferences_weight_increment_check check (" +
+                "weight_increment not in (" +
+                "'NaN'::double precision, 'Infinity'::double precision, " +
+                "'-Infinity'::double precision) and " +
+                "(weight_increment = -1 or weight_increment > 0))",
+            "local_profile_preferences_led_scheme_check" to
+                "constraint local_profile_preferences_led_scheme_check " +
+                "check (led_color_scheme_id >= 0)",
+            "local_profile_preferences_rack_object_check" to
+                "constraint local_profile_preferences_rack_object_check check (" +
+                "jsonb_typeof(equipment_rack) = 'object' and " +
+                """equipment_rack @> '{"version":1}'::jsonb and """ +
+                "jsonb_typeof(equipment_rack -> 'items') = 'array' and " +
+                "not jsonb_path_exists(" +
+                "equipment_rack, '$.items[*] ? (@.weightKg < 0)') and " +
+                "octet_length(equipment_rack::text) <= 262144)",
+            "local_profile_preferences_workout_object_check" to
+                "constraint local_profile_preferences_workout_object_check check (" +
+                "jsonb_typeof(workout_preferences) = 'object' and " +
+                """workout_preferences @> '{"version":1}'::jsonb and """ +
+                "(not workout_preferences ? 'summaryCountdownSeconds' or (" +
+                "jsonb_typeof(workout_preferences -> 'summaryCountdownSeconds') = " +
+                "'number' and " +
+                "(workout_preferences ->> 'summaryCountdownSeconds')::integer " +
+                "in (-1, 0, 5, 10, 15, 20, 25, 30))) and " +
+                "(not workout_preferences ? 'autoStartCountdownSeconds' or (" +
+                "jsonb_typeof(workout_preferences -> 'autoStartCountdownSeconds') = " +
+                "'number' and " +
+                "(workout_preferences ->> 'autoStartCountdownSeconds')::integer " +
+                "between 2 and 10)) and " +
+                "(not workout_preferences ? " +
+                "'defaultRoutineExerciseWeightPercentOfPR' or (" +
+                "jsonb_typeof(workout_preferences -> " +
+                "'defaultRoutineExerciseWeightPercentOfPR') = 'number' and " +
+                "(workout_preferences ->> " +
+                "'defaultRoutineExerciseWeightPercentOfPR')::integer " +
+                "between 50 and 120)) and " +
+                "octet_length(workout_preferences::text) <= 262144)",
+            "local_profile_preferences_led_object_check" to
+                "constraint local_profile_preferences_led_object_check check (" +
+                "jsonb_typeof(led_preferences) = 'object' and " +
+                """led_preferences @> '{"version":1}'::jsonb and """ +
+                "jsonb_typeof(led_preferences -> 'discoModeUnlocked') = " +
+                "'boolean' and octet_length(led_preferences::text) <= 262144)",
+            "local_profile_preferences_vbt_object_check" to
+                "constraint local_profile_preferences_vbt_object_check check (" +
+                "jsonb_typeof(vbt_preferences) = 'object' and " +
+                """vbt_preferences @> '{"version":1}'::jsonb and """ +
+                "jsonb_typeof(vbt_preferences -> " +
+                "'velocityLossThresholdPercent') = 'number' and " +
+                "(vbt_preferences ->> 'velocityLossThresholdPercent')::integer " +
+                "between 10 and 50 and " +
+                "octet_length(vbt_preferences::text) <= 262144)",
+        )
+        assertEquals(expectedConstraints, constraints)
+
+        assertEquals(
+            "updated_at timestamptz generated always as (" +
+                "greatest(core_updated_at, rack_updated_at, workout_updated_at, " +
+                "led_updated_at, vbt_updated_at)) stored",
+            columns.single { column -> column.startsWith("updated_at ") },
+        )
+
+        val aggregate = "array_agg(attribute.attname::text order by key_column.ordinality)"
+        assertEquals(2, Regex(Regex.escape(aggregate)).findAll(sql).count())
+        assertTrue(sql.contains("select " + aggregate + " into matching_key"))
+        assertTrue(
+            sql.contains(
+                "having " + aggregate + " = array['user_id', 'id']::text[]",
+            ),
+        )
+
+        val workoutConstraint = constraints.getValue(
+            "local_profile_preferences_workout_object_check",
+        )
+        val countdownSets = Regex(
+            """[(]workout_preferences ->> 'summaryCountdownSeconds'[)]::integer """ +
+                """in [(]([^)]*)[)]""",
+        ).findAll(workoutConstraint).toList()
+        assertEquals(1, countdownSets.size)
+        assertEquals("-1, 0, 5, 10, 15, 20, 25, 30", countdownSets.single().groupValues[1])
+
+        mapOf(
+            "local_profile_preferences_rack_object_check" to
+                "octet_length(equipment_rack::text) <= 262144",
+            "local_profile_preferences_workout_object_check" to
+                "octet_length(workout_preferences::text) <= 262144",
+            "local_profile_preferences_led_object_check" to
+                "octet_length(led_preferences::text) <= 262144",
+            "local_profile_preferences_vbt_object_check" to
+                "octet_length(vbt_preferences::text) <= 262144",
+        ).forEach { (name, ceiling) ->
+            assertTrue(constraints.getValue(name).contains(ceiling))
+        }
+    }
+
+    @Test
+    fun sqlHandoffSecuresTheExactProfilePreferenceSurface() {
+        val sql = normalizedSql()
+        val statements = sql.split(';')
+            .map { statement -> statement.trim() }
+            .filter { statement -> statement.isNotEmpty() }
+        assertTrue(
+            statements.contains(
+                "alter table public.local_profile_preferences enable row level security",
+            ),
+        )
+        assertFalse(
+            Regex("""\bdisable\s+row\s+level\s+security\b""").containsMatchIn(sql),
+            "The handoff must never disable RLS",
+        )
+
+        val expectedPolicies = mapOf(
+            "local_profile_preferences_owner_select" to
+                "create policy local_profile_preferences_owner_select " +
+                "on public.local_profile_preferences for select to authenticated " +
+                "using ((select auth.uid()) = user_id)",
+            "local_profile_preferences_owner_insert" to
+                "create policy local_profile_preferences_owner_insert " +
+                "on public.local_profile_preferences for insert to authenticated " +
+                "with check ((select auth.uid()) = user_id)",
+            "local_profile_preferences_owner_update" to
+                "create policy local_profile_preferences_owner_update " +
+                "on public.local_profile_preferences for update to authenticated " +
+                "using ((select auth.uid()) = user_id) " +
+                "with check ((select auth.uid()) = user_id)",
+            "local_profile_preferences_owner_delete" to
+                "create policy local_profile_preferences_owner_delete " +
+                "on public.local_profile_preferences for delete to authenticated " +
+                "using ((select auth.uid()) = user_id)",
+        )
+        val createPolicyPattern = Regex("""^create\s+policy\b""")
+        val policyStatements = statements.filter { statement ->
+            createPolicyPattern.containsMatchIn(statement)
+        }
+        assertEquals(expectedPolicies.size, policyStatements.size)
+        assertEquals(expectedPolicies.values.toSet(), policyStatements.toSet())
+        assertEquals(
+            expectedPolicies.keys,
+            policyStatements
+                .map { statement ->
+                    statement.removePrefix("create policy ").substringBefore(" on ")
+                }
+                .toSet(),
+        )
+
+        val forbiddenPolicyDdl = Regex("""^(?:alter|drop)\s+policy\b""")
+        assertFalse(
+            statements.any { statement -> forbiddenPolicyDdl.containsMatchIn(statement) },
+            "ALTER POLICY and DROP POLICY are forbidden in the handoff",
+        )
+
+        assertTrue("revoke all on table public.local_profile_preferences from public" in statements)
+        assertTrue("revoke all on table public.local_profile_preferences from anon" in statements)
+        assertTrue(
+            "revoke all on table public.local_profile_preferences from authenticated" in statements,
+        )
+
+        val grantPattern = Regex(
+            """^grant\s+(.+?)\s+on\s+(?:table\s+)?(.+?)\s+to\s+(.+)$""",
+        )
+        val tableGrants = statements.mapNotNull { statement ->
+            grantPattern.matchEntire(statement)
+        }.filter { grant ->
+            grant.groupValues[2].split(',').any { target ->
+                target.trim() == "public.local_profile_preferences"
+            }
+        }
+        val forbiddenClientRole = Regex("""\b(?:public|anon|authenticated)\b""")
+        assertFalse(
+            tableGrants.any { grant ->
+                forbiddenClientRole.containsMatchIn(grant.groupValues[3])
+            },
+            "Client roles must not receive direct table grants",
+        )
+        assertEquals(1, tableGrants.size, "Only the service-role table grant is allowed")
+        assertEquals(
+            "select, insert, update, delete",
+            tableGrants.single().groupValues[1].trim(),
+        )
+        assertEquals("public.local_profile_preferences", tableGrants.single().groupValues[2].trim())
+        assertEquals("service_role", tableGrants.single().groupValues[3].trim())
+
+        val forbiddenLocalFieldPatterns = mapOf(
+            "local safety or consent" to Regex(
+                """(?i)\b[a-z0-9_]*(?:local_?safety|safe_?word(?:_?(?:calibrated|calibration))?|""" +
+                    """adults?_?only_?(?:confirmed|prompted|consent)|adult_?consent)\b""",
+            ),
+            "local generation" to Regex("""(?i)\b[a-z0-9_]*local_?generation\b"""),
+            "dirty state" to Regex("""(?i)\b[a-z0-9_]*dirty\b"""),
+            "legacy migration version" to
+                Regex(
+                    """(?i)\b[a-z0-9_]*(?:legacy_migration_version|""" +
+                        """legacymigrationversion)\b""",
+                ),
+        )
+        forbiddenLocalFieldPatterns.forEach { (field, pattern) ->
+            assertFalse(
+                pattern.containsMatchIn(sql),
+                "Local-only field must not enter backend SQL: $field",
+            )
+        }
     }
 }
 ```
@@ -178,7 +519,7 @@ BEGIN
         RAISE EXCEPTION 'profile preferences preflight: public.local_profiles does not exist';
     END IF;
 
-    SELECT array_agg(attribute.attname ORDER BY key_column.ordinality)
+    SELECT array_agg(attribute.attname::text ORDER BY key_column.ordinality)
       INTO matching_key
       FROM pg_constraint constraint_row
       CROSS JOIN LATERAL unnest(constraint_row.conkey)
@@ -189,7 +530,7 @@ BEGIN
      WHERE constraint_row.conrelid = 'public.local_profiles'::regclass
        AND constraint_row.contype IN ('p', 'u')
      GROUP BY constraint_row.oid
-    HAVING array_agg(attribute.attname ORDER BY key_column.ordinality)
+    HAVING array_agg(attribute.attname::text ORDER BY key_column.ordinality)
            = ARRAY['user_id', 'id']::text[]
      LIMIT 1;
 
@@ -262,10 +603,8 @@ CREATE TABLE public.local_profile_preferences (
             NOT workout_preferences ? 'summaryCountdownSeconds'
             OR (
                 jsonb_typeof(workout_preferences -> 'summaryCountdownSeconds') = 'number'
-                AND (
-                    (workout_preferences ->> 'summaryCountdownSeconds')::integer IN (-1, 0)
-                    OR (workout_preferences ->> 'summaryCountdownSeconds')::integer BETWEEN 5 AND 30
-                )
+                AND (workout_preferences ->> 'summaryCountdownSeconds')::integer
+                    IN (-1, 0, 5, 10, 15, 20, 25, 30)
             )
         )
         AND (
