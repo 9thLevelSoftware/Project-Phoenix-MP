@@ -68,6 +68,13 @@ class SettingsLegacyProfilePreferencesReader(
         val updatedAt: Long? = null,
     )
 
+    private data class LegacyExerciseDefaultsCandidate(
+        val exerciseId: String,
+        val document: SingleExerciseDefaultsDocument,
+        val key: String,
+        val precedence: Int,
+    )
+
     override fun readNormalized(): LegacyProfilePreferenceSnapshot {
         val legacy = preferencesManager.preferencesFlow.value
         return LegacyProfilePreferenceSnapshot(
@@ -270,17 +277,35 @@ class SettingsLegacyProfilePreferencesReader(
                         logNormalization(key, "malformed or invalid defaults")
                         null
                     } else {
-                        Triple(
-                            decoded.exerciseId,
-                            document,
-                            key == LegacyProfilePreferenceKeys.EXERCISE_PREFIX + decoded.exerciseId,
+                        LegacyExerciseDefaultsCandidate(
+                            exerciseId = decoded.exerciseId,
+                            document = document,
+                            key = key,
+                            precedence = exerciseDefaultsKeyPrecedence(key, decoded.exerciseId),
                         )
                     }
                 }
             }
-            .sortedByDescending { it.third }
-            .distinctBy { it.first }
-            .associate { it.first to it.second }
+            .sortedWith(
+                compareBy<LegacyExerciseDefaultsCandidate>(
+                    { it.exerciseId },
+                    { it.precedence },
+                    { it.key },
+                ),
+            )
+            .distinctBy { it.exerciseId }
+            .associate { it.exerciseId to it.document }
+
+    private fun exerciseDefaultsKeyPrecedence(key: String, exerciseId: String): Int {
+        val canonicalKey = LegacyProfilePreferenceKeys.EXERCISE_PREFIX + exerciseId
+        return when (key) {
+            canonicalKey -> 0
+            "${canonicalKey}_DOUBLE" -> 1
+            "${canonicalKey}_SINGLE" -> 2
+            "${canonicalKey}_EITHER" -> 3
+            else -> 4
+        }
+    }
 
     private fun normalizeInt(
         key: String,
