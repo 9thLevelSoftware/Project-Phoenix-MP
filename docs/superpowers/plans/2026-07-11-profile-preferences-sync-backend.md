@@ -19,7 +19,8 @@
 - `localGeneration` is device-local, monotonic, and never serialized.
 - The current Kotlin push request type is `PortalSyncPayload`; do not introduce a duplicate `PortalSyncPushRequest` type.
 - All new request and response fields are additive and have backward-compatible constructor defaults.
-- A single encoded preference mutation is at most 262,144 bytes. A payload containing `profilePreferenceSections` is at most 524,288 bytes. The existing 9,500,000-byte endpoint cap remains in force.
+- A single preference mutation's exact raw UTF-8 JSON element span is at most 262,144 bytes. Whenever `profilePreferenceSections` is present, the complete raw HTTP `PortalSyncPayload` is at most 524,288 bytes. The existing 9,500,000-byte endpoint cap remains in force for requests without that field.
+- Kotlin `Long` values serialized as JSON numbers must be in `-9_007_199_254_740_991L..9_007_199_254_740_991L` before entering a preference DTO. The current kotlinx.serialization wire emits JSON numbers, while Edge parses JavaScript `Number` values; out-of-range `baseRevision` and rack timestamps are dead-lettered locally for their current generation with an explicit diagnostic instead of being rounded or retried forever.
 - Preference sections are sent only in preference-only pushes after an ordinary payload has sent `allProfiles`. They are never attached to workout/session batches.
 - Pull never creates, renames, deletes, or resurrects a local profile. Unknown `localProfileId` values are logged and ignored.
 - Direct `PUBLIC`, `anon`, and `authenticated` DML on `public.local_profile_preferences` is revoked. Remote mutation is Edge-only.
@@ -73,6 +74,7 @@ This plan adds a focused internal `ProfilePreferenceSyncRepository` and `SqlDeli
 
 - Create: `docs/backend-handoff/profile-preferences-supabase.sql` — executable table, constraints, RLS, grants, canonical projection, and atomic service-role RPC.
 - Create: `docs/backend-handoff/profile-preferences-edge-functions.md` — exact TypeScript request/response, authentication, validation, push, pull, concurrency, testing, and deployment contract.
+- Create: `docs/backend-handoff/profile-preference-byte-goldens.json` — shared raw-JSON boundary recipes consumed by both Kotlin and Deno tests.
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/BackendHandoffContractTest.kt` — keeps the mobile-only handoff security and wire requirements from drifting.
 
 ### Mobile sync implementation
@@ -127,6 +129,7 @@ import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -136,45 +139,163 @@ class BackendHandoffContractTest {
         "Supabase handoff SQL must be tracked in the mobile repository",
     )
 
-    private fun normalizedSql(): String {
-        val compact = sql()
-            .replace(Regex("""(?s)/[*].*?[*]/"""), " ")
-            .lineSequence()
-            .map { line -> line.substringBefore("--") }
-            .joinToString(" ")
-            .replace(Regex("""\s+"""), " ")
-            .trim()
-        return lowercaseOutsideLiterals(compact)
+    private fun normalizedSql(): String = normalizedTopLevelStatements(sql())
+        .joinToString(separator = "; ", postfix = ";")
+
+    private fun normalizedTopLevelStatements(value: String): List<String> =
+        topLevelStatements(value).map(::normalizeStatement)
+
+    private fun normalizeStatement(value: String): String =
+        lowercaseOutsideLiterals(value.replace(Regex("""\s+"""), " ").trim())
+
+    private fun topLevelStatements(value: String): List<String> {
+        val statements = mutableListOf<String>()
+        val statement = StringBuilder()
+        var quote: Char? = null
+        var dollarDelimiter: String? = null
+        var inLineComment = false
+        var blockCommentDepth = 0
+        var index = 0
+
+        fun finishStatement() {
+            statement.toString().trim().takeIf(String::isNotEmpty)?.let(statements::add)
+            statement.clear()
+        }
+
+        while (index < value.length) {
+            val character = value[index]
+            val next = value.getOrNull(index + 1)
+            if (dollarDelimiter != null) {
+                if (value.startsWith(dollarDelimiter, index)) {
+                    statement.append(dollarDelimiter)
+                    index += dollarDelimiter.length
+                    dollarDelimiter = null
+                } else {
+                    statement.append(character)
+                    index += 1
+                }
+                continue
+            }
+            if (inLineComment) {
+                if (character == '\n' || character == '\r') {
+                    statement.append(' ')
+                    inLineComment = false
+                }
+                index += 1
+                continue
+            }
+            if (blockCommentDepth > 0) {
+                when {
+                    character == '/' && next == '*' -> {
+                        blockCommentDepth += 1
+                        index += 2
+                    }
+                    character == '*' && next == '/' -> {
+                        blockCommentDepth -= 1
+                        index += 2
+                        if (blockCommentDepth == 0) statement.append(' ')
+                    }
+                    else -> index += 1
+                }
+                continue
+            }
+            if (quote != null) {
+                statement.append(character)
+                if (character == quote && next == quote) {
+                    statement.append(next)
+                    index += 2
+                } else {
+                    if (character == quote) quote = null
+                    index += 1
+                }
+                continue
+            }
+            when {
+                character == '-' && next == '-' -> {
+                    inLineComment = true
+                    index += 2
+                }
+                character == '/' && next == '*' -> {
+                    blockCommentDepth = 1
+                    index += 2
+                }
+                character == '\'' || character == '"' -> {
+                    quote = character
+                    statement.append(character)
+                    index += 1
+                }
+                character == '$' -> {
+                    val delimiter = dollarQuoteDelimiterAt(value, index)
+                    if (delimiter == null) {
+                        statement.append(character)
+                        index += 1
+                    } else {
+                        dollarDelimiter = delimiter
+                        statement.append(delimiter)
+                        index += delimiter.length
+                    }
+                }
+                character == ';' -> {
+                    finishStatement()
+                    index += 1
+                }
+                else -> {
+                    statement.append(character)
+                    index += 1
+                }
+            }
+        }
+        assertTrue(quote == null, "Unterminated quoted SQL token")
+        assertTrue(dollarDelimiter == null, "Unterminated dollar-quoted SQL body")
+        assertEquals(0, blockCommentDepth, "Unterminated SQL block comment")
+        finishStatement()
+        return statements
+    }
+
+    private fun dollarQuoteDelimiterAt(value: String, index: Int): String? {
+        if (value.getOrNull(index) != '$') return null
+        val previous = value.getOrNull(index - 1)
+        if (previous != null && (previous.isLetterOrDigit() || previous == '_' || previous == '$')) {
+            return null
+        }
+        var cursor = index + 1
+        if (value.getOrNull(cursor) == '$') return value.substring(index, cursor + 1)
+        val first = value.getOrNull(cursor) ?: return null
+        if (!(first.isLetter() || first == '_')) return null
+        cursor += 1
+        while (cursor < value.length) {
+            when (val current = value[cursor]) {
+                '$' -> return value.substring(index, cursor + 1)
+                else -> if (current.isLetterOrDigit() || current == '_') cursor += 1 else return null
+            }
+        }
+        return null
     }
 
     private fun lowercaseOutsideLiterals(value: String): String = buildString(value.length) {
-        var inLiteral = false
+        var quote: Char? = null
         var index = 0
         while (index < value.length) {
             val character = value[index]
-            if (
-                character == '\'' &&
-                inLiteral &&
-                index + 1 < value.length &&
-                value[index + 1] == '\''
-            ) {
+            if (quote != null && character == quote && value.getOrNull(index + 1) == quote) {
                 append(character)
                 append(value[index + 1])
                 index += 2
                 continue
             }
-            if (character == '\'') {
-                append(character)
-                inLiteral = !inLiteral
-            } else if (
-                !inLiteral &&
+            when {
+                quote != null -> {
+                    append(character)
+                    if (character == quote) quote = null
+                }
+                character == '\'' || character == '"' -> {
+                    append(character)
+                    quote = character
+                }
                 character == ' ' &&
-                ((length > 0 && this[length - 1] == '(') ||
-                    (index + 1 < value.length && value[index + 1] == ')'))
-            ) {
-                // Normalize formatting-only whitespace inside SQL parentheses.
-            } else {
-                append(if (inLiteral) character else character.lowercaseChar())
+                    ((length > 0 && this[length - 1] == '(') ||
+                        value.getOrNull(index + 1) == ')') -> Unit
+                else -> append(character.lowercaseChar())
             }
             index += 1
         }
@@ -222,9 +343,80 @@ class BackendHandoffContractTest {
         return entries.filter { entry -> entry.isNotEmpty() }
     }
 
+    private fun exactPreflightStatement(): String {
+        val delimiter = "\$preflight\$"
+        return normalizeStatement(
+            """
+            DO $delimiter
+            DECLARE
+                matching_key text[];
+            BEGIN
+                IF to_regclass('public.local_profiles') IS NULL THEN
+                    RAISE EXCEPTION
+                        'profile preferences preflight: public.local_profiles does not exist';
+                END IF;
+
+                SELECT array_agg(attribute.attname::text ORDER BY key_column.ordinality)
+                  INTO matching_key
+                  FROM pg_constraint constraint_row
+                  CROSS JOIN LATERAL unnest(constraint_row.conkey)
+                      WITH ORDINALITY AS key_column(attnum, ordinality)
+                  JOIN pg_attribute attribute
+                    ON attribute.attrelid = constraint_row.conrelid
+                   AND attribute.attnum = key_column.attnum
+                 WHERE constraint_row.conrelid = 'public.local_profiles'::regclass
+                   AND constraint_row.contype IN ('p', 'u')
+                 GROUP BY constraint_row.oid
+                HAVING array_agg(attribute.attname::text ORDER BY key_column.ordinality)
+                       = ARRAY['user_id', 'id']::text[]
+                 LIMIT 1;
+
+                IF matching_key IS NULL THEN
+                    RAISE EXCEPTION
+                        'profile preferences preflight: expected unique local_profiles(user_id, id) parent key';
+                END IF;
+            END
+            $delimiter
+            """.trimIndent(),
+        )
+    }
+
+    private fun exactTask1SecurityStatements(): List<String> = listOf(
+        "alter table public.local_profile_preferences enable row level security",
+        "create policy local_profile_preferences_owner_select " +
+            "on public.local_profile_preferences for select to authenticated " +
+            "using ((select auth.uid()) = user_id)",
+        "create policy local_profile_preferences_owner_insert " +
+            "on public.local_profile_preferences for insert to authenticated " +
+            "with check ((select auth.uid()) = user_id)",
+        "create policy local_profile_preferences_owner_update " +
+            "on public.local_profile_preferences for update to authenticated " +
+            "using ((select auth.uid()) = user_id) " +
+            "with check ((select auth.uid()) = user_id)",
+        "create policy local_profile_preferences_owner_delete " +
+            "on public.local_profile_preferences for delete to authenticated " +
+            "using ((select auth.uid()) = user_id)",
+        "revoke all on table public.local_profile_preferences from public",
+        "revoke all on table public.local_profile_preferences from anon",
+        "revoke all on table public.local_profile_preferences from authenticated",
+        "grant select, insert, update, delete on table " +
+            "public.local_profile_preferences to service_role",
+    )
+
+    private fun assertTask1ExecutableEnvelope(statements: List<String>) {
+        assertEquals(13, statements.size)
+        assertEquals("begin", statements[0])
+        assertEquals(exactPreflightStatement(), statements[1])
+        assertTrue(statements[2].startsWith("create table public.local_profile_preferences("))
+        assertEquals(exactTask1SecurityStatements(), statements.subList(3, 12))
+        assertEquals("commit", statements[12])
+    }
+
     @Test
     fun sqlHandoffDeclaresTheExactProfilePreferenceSchema() {
-        val sql = normalizedSql()
+        val statements = normalizedTopLevelStatements(sql())
+        assertTask1ExecutableEnvelope(statements)
+        val sql = statements.joinToString(separator = "; ", postfix = ";")
         val entries = tableEntries(sql)
         val columns = entries.filterNot { entry -> entry.startsWith("constraint ") }
         assertEquals(
@@ -386,10 +578,9 @@ class BackendHandoffContractTest {
 
     @Test
     fun sqlHandoffSecuresTheExactProfilePreferenceSurface() {
-        val sql = normalizedSql()
-        val statements = sql.split(';')
-            .map { statement -> statement.trim() }
-            .filter { statement -> statement.isNotEmpty() }
+        val statements = normalizedTopLevelStatements(sql())
+        assertTask1ExecutableEnvelope(statements)
+        val sql = statements.joinToString(separator = "; ", postfix = ";")
         assertTrue(
             statements.contains(
                 "alter table public.local_profile_preferences enable row level security",
@@ -699,6 +890,7 @@ git commit -m "docs(sync): add secured profile preferences schema handoff"
 **Files:**
 - Modify: `docs/backend-handoff/profile-preferences-supabase.sql`
 - Create: `docs/backend-handoff/profile-preferences-edge-functions.md`
+- Create: `docs/backend-handoff/profile-preference-byte-goldens.json`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/BackendHandoffContractTest.kt`
 
 **Interfaces:**
@@ -707,7 +899,12 @@ git commit -m "docs(sync): add secured profile preferences schema handoff"
 
 - [ ] **Step 1: Extend the contract test for atomic mutation and Edge authorization**
 
-Add these tests to `BackendHandoffContractTest`:
+Extend the committed Task 1 test rather than adding a second SQL parser. Replace
+`assertTask1ExecutableEnvelope` with `assertFinalExecutableEnvelope`, update both schema/security
+tests to call the final helper, and keep Task 1's quote/comment/dollar-aware
+`topLevelStatements` → `normalizeStatement` pipeline. The table-only commit is intentionally
+13 statements; this Task 2 RED step changes the final contract to the exact 19-statement chain.
+Add these helpers/tests to `BackendHandoffContractTest`:
 
 ```kotlin
 private fun edgeContract(): String = assertNotNull(
@@ -715,60 +912,76 @@ private fun edgeContract(): String = assertNotNull(
     "Edge Function handoff must be tracked in the mobile repository",
 )
 
-@Test
-fun `sql handoff exposes only a service role mutation rpc`() {
-    val sql = sql()
-    assertTrue(sql.contains("CREATE FUNCTION public.mutate_local_profile_preference_section"))
-    assertTrue(sql.contains("core_revision = p_base_revision"))
-    assertTrue(sql.contains("rack_revision = p_base_revision"))
-    assertTrue(sql.contains("workout_revision = p_base_revision"))
-    assertTrue(sql.contains("led_revision = p_base_revision"))
-    assertTrue(sql.contains("vbt_revision = p_base_revision"))
-    assertTrue(sql.contains("ON CONFLICT DO NOTHING"))
-    assertFalse(sql.contains("ON CONFLICT DO UPDATE"))
-    assertTrue(sql.contains("REVOKE ALL ON FUNCTION public.mutate_local_profile_preference_section"))
-    assertTrue(sql.contains("GRANT EXECUTE ON FUNCTION public.mutate_local_profile_preference_section"))
-    assertTrue(sql.contains("GRANT EXECUTE ON FUNCTION public.local_profile_preference_section_canonical"))
-    assertTrue(sql.contains("TO service_role"))
+private fun byteGoldenArtifact(): String = assertNotNull(
+    readProjectFile("docs/backend-handoff/profile-preference-byte-goldens.json"),
+    "Shared profile preference byte goldens must be tracked in the mobile repository",
+)
+
+private val exactByteGoldenArtifact = """
+{
+  "version": 1,
+  "paddingMarker": "__ASCII_PADDING__",
+  "sectionMarker": "__SECTION_JSON__",
+  "sectionRawTemplate": "{\"localProfileId\":\"profile-a\",\"section\":\"RACK\",\"documentVersion\":1,\"baseRevision\":0,\"clientModifiedAt\":\"2026-07-11T12:00:00Z\",\"payload\":{\"version\":1,\"items\":[{\"id\":\"rack-a\",\"name\":\"π界🙂\\\"\\\\__ASCII_PADDING__\",\"category\":\"OTHER\",\"weightKg\":20.0,\"behavior\":\"DISPLAY_ONLY\",\"enabled\":true,\"sortOrder\":0,\"createdAt\":-1e3,\"updatedAt\":0}]}}",
+  "requestRawTemplate": "{\"deviceId\":\"golden-device\",\"platform\":\"android\",\"lastSync\":0,\"profileId\":\"profile-a\",\"profileName\":\"π界🙂\\\"\\\\__ASCII_PADDING__\",\"profilePreferenceSections\":[__SECTION_JSON__]}",
+  "sectionTargetBytes": [262143, 262144, 262145],
+  "requestTargetBytes": [524287, 524288, 524289]
+}
+""".trimIndent()
+
+private fun normalizedTrackedText(value: String): String =
+    value.replace("\r\n", "\n").removeSuffix("\n")
+
+private fun executableTypeScript(): String = Regex(
+    pattern = """(?s)```typescript\s+(.*?)```""",
+).findAll(edgeContract())
+    .joinToString("\n") { match -> match.groupValues[1] }
+    .replace(Regex("""(?s)/[*].*?[*]/"""), " ")
+    .lineSequence()
+    .map { line -> line.substringBefore("//") }
+    .joinToString("\n")
+
+private fun portalTestManifest(): Set<String> {
+    val matches = Regex("""(?s)```portal-test-manifest\s+(.*?)```""")
+        .findAll(edgeContract())
+        .toList()
+    assertEquals(1, matches.size, "Expected exactly one portal test manifest")
+    val lines = matches.single().groupValues[1]
+        .lineSequence()
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .toList()
+    assertEquals(lines.size, lines.toSet().size, "Portal test manifest entries must be unique")
+    return lines.toSet()
 }
 
-@Test
-fun `edge handoff derives user identity and enforces section limits`() {
-    val contract = edgeContract()
-    assertTrue(contract.contains("auth.getUser(userJwt)"))
-    assertTrue(contract.contains("SUPABASE_SERVICE_ROLE_KEY"))
-    assertTrue(contract.contains("262_144"))
-    assertTrue(contract.contains("524_288"))
-    assertTrue(contract.contains("profilePreferencesAccepted"))
-    assertTrue(contract.contains("profilePreferenceRejections"))
-    assertTrue(contract.contains("profilePreferenceSections"))
-    assertFalse(contract.contains("userId: string"), "The preference mutation wire type must not accept user identity")
-}
-```
+private fun exactFunctionAclStatements(): List<String> = listOf(
+    "revoke all on function public.local_profile_preference_section_canonical(" +
+        "public.local_profile_preferences, text) from public, anon, authenticated",
+    "revoke all on function public.mutate_local_profile_preference_section(" +
+        "uuid, text, text, integer, bigint, jsonb) from public, anon, authenticated",
+    "grant execute on function public.local_profile_preference_section_canonical(" +
+        "public.local_profile_preferences, text) to service_role",
+    "grant execute on function public.mutate_local_profile_preference_section(" +
+        "uuid, text, text, integer, bigint, jsonb) to service_role",
+)
 
-- [ ] **Step 2: Run the test and verify the missing RPC/document failures**
-
-Run:
-
-```powershell
-.\gradlew.bat :shared:testAndroidHostTest --tests "com.devil.phoenixproject.data.sync.BackendHandoffContractTest" -Pskip.supabase.check=true
-```
-
-Expected: FAIL because the RPC and Edge handoff are absent.
-
-- [ ] **Step 3: Add a canonical-section SQL projection**
-
-Insert this function before Task 1's privilege block and `COMMIT`:
-
-```sql
+/*
+ * Deliberately duplicate the complete Step 3 and Step 4 SQL blocks as raw triple-quoted
+ * literals. These constants are independent test oracles; never derive them from sql().
+ * The literal contents are exactly the full CREATE FUNCTION statements shown below,
+ * including every branch and dollar-quoted body.
+ */
+private val EXACT_CANONICAL_FUNCTION_SQL = """
 CREATE FUNCTION public.local_profile_preference_section_canonical(
     p_row public.local_profile_preferences,
     p_section text
 ) RETURNS jsonb
 LANGUAGE sql
 STABLE
-SET search_path = public, pg_temp
-AS $canonical$
+SECURITY INVOKER
+SET search_path = ''
+AS ${'$'}canonical${'$'}
     SELECT jsonb_build_object(
         'localProfileId', p_row.local_profile_id,
         'section', p_section,
@@ -814,14 +1027,10 @@ AS $canonical$
             )
         END
     );
-$canonical$;
-```
+${'$'}canonical${'$'}
+"""
 
-- [ ] **Step 4: Add the service-role-only revision-checked RPC**
-
-Add the following RPC immediately after the canonical projection and before the privilege block/`COMMIT`. Its five branches are explicit so typed columns and JSON documents cannot be accidentally swapped. The function call is one Postgres transaction, so the conflict fetch observes the same atomic operation.
-
-```sql
+private val EXACT_MUTATION_FUNCTION_SQL = """
 CREATE FUNCTION public.mutate_local_profile_preference_section(
     p_user_id uuid,
     p_local_profile_id text,
@@ -837,17 +1046,22 @@ CREATE FUNCTION public.mutate_local_profile_preference_section(
 )
 LANGUAGE plpgsql
 SECURITY INVOKER
-SET search_path = public, pg_temp
-AS $mutation$
+SET search_path = ''
+AS ${'$'}mutation${'$'}
 DECLARE
     current_row public.local_profile_preferences%ROWTYPE;
     current_revision bigint;
 BEGIN
-    IF p_section NOT IN ('CORE', 'RACK', 'WORKOUT', 'LED', 'VBT') THEN
+    IF p_section IS NULL OR p_section NOT IN ('CORE', 'RACK', 'WORKOUT', 'LED', 'VBT') THEN
         RETURN QUERY SELECT false, 'UNSUPPORTED_SECTION', 0::bigint, NULL::jsonb;
         RETURN;
     END IF;
-    IF p_base_revision < 0 OR p_document_version <> 1 OR jsonb_typeof(p_payload) <> 'object' THEN
+    IF p_document_version IS NULL OR p_document_version <> 1 THEN
+        RETURN QUERY SELECT false, 'UNSUPPORTED_DOCUMENT_VERSION', 0::bigint, NULL::jsonb;
+        RETURN;
+    END IF;
+    IF p_base_revision IS NULL OR p_base_revision < 0
+       OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
         RETURN QUERY SELECT false, 'VALIDATION_FAILED', 0::bigint, NULL::jsonb;
         RETURN;
     END IF;
@@ -944,7 +1158,454 @@ BEGIN
             CASE WHEN p_section = 'VBT' THEN p_payload -> 'preferences' ELSE '{"version":1,"velocityLossThresholdPercent":20,"autoEndOnVelocityLoss":false,"defaultScalingBasis":"MAX_WEIGHT_PR","verbalEncouragementEnabled":false,"vulgarModeEnabled":false,"vulgarTier":"STRONG","dominatrixModeUnlocked":false,"dominatrixModeActive":false}'::jsonb END,
             CASE WHEN p_section = 'VBT' THEN 1 ELSE 0 END
         )
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (user_id, local_profile_id) DO NOTHING
+        RETURNING * INTO current_row;
+
+        IF FOUND THEN
+            canonical_section := public.local_profile_preference_section_canonical(current_row, p_section);
+            server_revision := (canonical_section ->> 'serverRevision')::bigint;
+            RETURN QUERY SELECT true, NULL::text, server_revision, canonical_section;
+            RETURN;
+        END IF;
+
+        CASE p_section
+            WHEN 'CORE' THEN
+                UPDATE public.local_profile_preferences
+                   SET body_weight_kg = (p_payload ->> 'bodyWeightKg')::double precision,
+                       weight_unit = p_payload ->> 'weightUnit',
+                       weight_increment = (p_payload ->> 'weightIncrement')::double precision,
+                       core_revision = 1,
+                       core_updated_at = clock_timestamp()
+                 WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND core_revision = 0
+                RETURNING * INTO current_row;
+            WHEN 'RACK' THEN
+                UPDATE public.local_profile_preferences
+                   SET equipment_rack = p_payload, rack_revision = 1, rack_updated_at = clock_timestamp()
+                 WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND rack_revision = 0
+                RETURNING * INTO current_row;
+            WHEN 'WORKOUT' THEN
+                UPDATE public.local_profile_preferences
+                   SET workout_preferences = p_payload, workout_revision = 1, workout_updated_at = clock_timestamp()
+                 WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND workout_revision = 0
+                RETURNING * INTO current_row;
+            WHEN 'LED' THEN
+                UPDATE public.local_profile_preferences
+                   SET led_color_scheme_id = (p_payload ->> 'ledColorSchemeId')::integer,
+                       led_preferences = p_payload -> 'preferences',
+                       led_revision = 1,
+                       led_updated_at = clock_timestamp()
+                 WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND led_revision = 0
+                RETURNING * INTO current_row;
+            WHEN 'VBT' THEN
+                UPDATE public.local_profile_preferences
+                   SET vbt_enabled = (p_payload ->> 'vbtEnabled')::boolean,
+                       vbt_preferences = p_payload -> 'preferences',
+                       vbt_revision = 1,
+                       vbt_updated_at = clock_timestamp()
+                 WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND vbt_revision = 0
+                RETURNING * INTO current_row;
+        END CASE;
+
+        IF FOUND THEN
+            canonical_section := public.local_profile_preference_section_canonical(current_row, p_section);
+            server_revision := (canonical_section ->> 'serverRevision')::bigint;
+            RETURN QUERY SELECT true, NULL::text, server_revision, canonical_section;
+            RETURN;
+        END IF;
+    END IF;
+
+    SELECT * INTO current_row
+      FROM public.local_profile_preferences
+     WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id;
+
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT false, 'REVISION_CONFLICT', 0::bigint, NULL::jsonb;
+        RETURN;
+    END IF;
+
+    canonical_section := public.local_profile_preference_section_canonical(current_row, p_section);
+    current_revision := (canonical_section ->> 'serverRevision')::bigint;
+    RETURN QUERY SELECT false, 'REVISION_CONFLICT', current_revision, canonical_section;
+END
+${'$'}mutation${'$'}
+"""
+
+private val exactCanonicalFunctionStatement =
+    normalizeStatement(EXACT_CANONICAL_FUNCTION_SQL)
+private val exactMutationFunctionStatement =
+    normalizeStatement(EXACT_MUTATION_FUNCTION_SQL)
+
+private fun assertFinalExecutableEnvelope(statements: List<String>) {
+    assertEquals(19, statements.size, "Expected the exact final atomic statement chain")
+    assertEquals("begin", statements[0])
+    assertEquals(exactPreflightStatement(), statements[1])
+    assertTrue(statements[2].startsWith("create table public.local_profile_preferences("))
+    assertEquals(exactCanonicalFunctionStatement, statements[3])
+    assertEquals(exactMutationFunctionStatement, statements[4])
+    assertEquals(exactFunctionAclStatements(), statements.subList(5, 9))
+    assertEquals(exactTask1SecurityStatements(), statements.subList(9, 18))
+    assertEquals("commit", statements[18])
+}
+
+@Test
+fun `sql handoff has the exact functions ACLs and 19 statement envelope`() {
+    val statements = normalizedTopLevelStatements(sql())
+    assertFinalExecutableEnvelope(statements)
+    assertEquals(2, statements.count { it.startsWith("create function ") })
+    assertEquals(
+        exactFunctionAclStatements(),
+        statements.filter { " on function " in it },
+    )
+    val tableAcls = statements.filter {
+        (" on table public.local_profile_preferences " in it) &&
+            (it.startsWith("revoke ") || it.startsWith("grant "))
+    }
+    assertEquals(exactTask1SecurityStatements().takeLast(4), tableAcls)
+}
+
+@Test
+fun `exact function bodies reject executable additions`() {
+    val valid = sql()
+    val mutations = mapOf(
+        "canonical DELETE" to valid.replace(
+            "    SELECT jsonb_build_object(",
+            "    DELETE FROM public.local_profile_preferences;\n" +
+                "    SELECT jsonb_build_object(",
+        ),
+        "mutation PERFORM" to valid.replace(
+            "BEGIN\n    IF p_section IS NULL",
+            "BEGIN\n    PERFORM now();\n    IF p_section IS NULL",
+        ),
+        "mutation dblink_exec" to valid.replace(
+            "BEGIN\n    IF p_section IS NULL",
+            "BEGIN\n    PERFORM dblink_exec('remote', 'DELETE FROM public.local_profiles');\n" +
+                "    IF p_section IS NULL",
+        ),
+        "mutation role change" to valid.replace(
+            "BEGIN\n    IF p_section IS NULL",
+            "BEGIN\n    SET LOCAL ROLE authenticated;\n    IF p_section IS NULL",
+        ),
+        "mutation transaction control" to valid.replace(
+            "BEGIN\n    IF p_section IS NULL",
+            "BEGIN\n    COMMIT;\n    IF p_section IS NULL",
+        ),
+    )
+    mutations.forEach { (name, mutation) ->
+        assertFailsWith<AssertionError>("Must reject $name") {
+            assertFinalExecutableEnvelope(normalizedTopLevelStatements(mutation))
+        }
+    }
+}
+
+@Test
+fun `edge executable contract authenticates validates fully then performs scoped admin calls`() {
+    val code = executableTypeScript()
+    listOf(
+        "auth.getUser(userJwt)",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "parsePreferenceEnvelope",
+        "validateCorePayload",
+        "validateRackPayload",
+        "validateWorkoutPayload",
+        "validateLedPayload",
+        "validateVbtPayload",
+        "LOCAL_ONLY_KEYS",
+        "MAX_PROFILE_PREFERENCE_SECTION_BYTES = 262_144",
+        "MAX_PROFILE_PREFERENCE_REQUEST_BYTES = 524_288",
+        "scanTopLevelJsonObject",
+        "preferenceElementSpans",
+        "rawPreferenceElementBytes",
+        "rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES",
+        "duplicateIdentities",
+        "validatedMutations",
+        "admin.rpc(\"mutate_local_profile_preference_section\"",
+        "p_user_id: verifiedUserId",
+        ".eq(\"user_id\", verifiedUserId)",
+        ".eq(\"local_profile_id\", requestedProfileId)",
+        "throw new PreferenceInfrastructureError",
+        "new Date(value).toISOString()",
+    ).forEach { fragment -> assertTrue(fragment in code, fragment) }
+
+    fun quotedInitializer(pattern: String): List<String> {
+        val body = assertNotNull(
+            Regex(pattern).find(code),
+            "Missing exact TypeScript allowlist: $pattern",
+        ).groupValues[1]
+        return Regex(""""([^"]+)"""")
+            .findAll(body)
+            .map { match -> match.groupValues[1] }
+            .toList()
+    }
+    assertEquals(
+        listOf(
+            "deviceId", "platform", "lastSync", "sessions", "telemetry", "routines",
+            "deletedRoutineIds", "cycles", "deletedCycleIds", "rpgAttributes", "badges",
+            "gamificationStats", "phaseStatistics", "exerciseSignatures", "assessments",
+            "customExercises", "profileId", "profileName", "allProfiles",
+            "externalActivities", "personalRecords", "profilePreferenceSections",
+        ),
+        quotedInitializer(
+            """(?s)const PUSH_BODY_KEYS = new Set[(][[](.+?)[]][)];""",
+        ),
+    )
+    assertEquals(
+        listOf(
+            "localProfileId", "section", "documentVersion", "baseRevision",
+            "clientModifiedAt", "payload",
+        ),
+        quotedInitializer("""(?s)const MUTATION_KEYS = [[](.+?)[]] as const;"""),
+    )
+    assertEquals(
+        listOf(
+            "safeword", "safewordcalibrated", "adultsonlyconfirmed",
+            "adultsonlyprompted", "localgeneration", "dirty", "legacymigrationversion",
+        ),
+        quotedInitializer(
+            """(?s)const LOCAL_ONLY_KEYS = new Set[(][[](.+?)[]][)];""",
+        ),
+    )
+
+    assertTrue("rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES" in code)
+    assertFalse(Regex("""\buserId\s*[?:]?\s*:\s*string""").containsMatchIn(code))
+    assertFalse(Regex("""console[.](?:log|info|warn|error)[(][^)]*SERVICE_ROLE""").containsMatchIn(code))
+}
+
+@Test
+fun `shared byte golden artifact is the exact cross-language oracle`() {
+    assertEquals(
+        exactByteGoldenArtifact,
+        normalizedTrackedText(byteGoldenArtifact()),
+    )
+}
+
+@Test
+fun `edge handoff names executable portal tests rather than prose-only assurances`() {
+    assertEquals(
+        setOf(
+            "database:exact-function-acls-and-no-client-dml",
+            "database:temporary-grant-owner-rls-and-cross-owner-user-id-protection",
+            "database:base-revision-accept-and-stale-canonical-conflict",
+            "edge:auth-and-cross-user-profile-rejection",
+            "edge:strict-five-section-validation-and-local-only-rejection",
+            "edge:section-262143-262144-262145-byte-boundaries",
+            "edge:envelope-524287-524288-524289-byte-boundaries",
+            "edge:unexpected-rpc-error-is-sanitized-5xx",
+            "edge:same-section-concurrent-first-write",
+            "edge:different-section-concurrent-first-write",
+            "edge:lost-ack-retry-canonical-convergence",
+            "edge:mutation-and-first-page-pull-canonical-equality",
+            "edge:later-pull-pages-omit-preferences-and-keep-sync-time",
+        ),
+        portalTestManifest(),
+    )
+}
+```
+
+- [ ] **Step 2: Run the test and verify the missing RPC/document failures**
+
+Run:
+
+```powershell
+.\gradlew.bat :shared:testAndroidHostTest --tests "com.devil.phoenixproject.data.sync.BackendHandoffContractTest" -Pskip.supabase.check=true
+```
+
+Expected: FAIL because the RPC and Edge handoff are absent.
+
+- [ ] **Step 3: Add a canonical-section SQL projection**
+
+Insert this function before Task 1's privilege block and `COMMIT`:
+
+```sql
+CREATE FUNCTION public.local_profile_preference_section_canonical(
+    p_row public.local_profile_preferences,
+    p_section text
+) RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $canonical$
+    SELECT jsonb_build_object(
+        'localProfileId', p_row.local_profile_id,
+        'section', p_section,
+        'documentVersion', CASE p_section
+            WHEN 'CORE' THEN 1
+            WHEN 'RACK' THEN (p_row.equipment_rack ->> 'version')::integer
+            WHEN 'WORKOUT' THEN (p_row.workout_preferences ->> 'version')::integer
+            WHEN 'LED' THEN (p_row.led_preferences ->> 'version')::integer
+            WHEN 'VBT' THEN (p_row.vbt_preferences ->> 'version')::integer
+        END,
+        'serverRevision', CASE p_section
+            WHEN 'CORE' THEN p_row.core_revision
+            WHEN 'RACK' THEN p_row.rack_revision
+            WHEN 'WORKOUT' THEN p_row.workout_revision
+            WHEN 'LED' THEN p_row.led_revision
+            WHEN 'VBT' THEN p_row.vbt_revision
+        END,
+        'serverUpdatedAt', to_char(
+            (CASE p_section
+                WHEN 'CORE' THEN p_row.core_updated_at
+                WHEN 'RACK' THEN p_row.rack_updated_at
+                WHEN 'WORKOUT' THEN p_row.workout_updated_at
+                WHEN 'LED' THEN p_row.led_updated_at
+                WHEN 'VBT' THEN p_row.vbt_updated_at
+            END) AT TIME ZONE 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+        ),
+        'payload', CASE p_section
+            WHEN 'CORE' THEN jsonb_build_object(
+                'bodyWeightKg', p_row.body_weight_kg,
+                'weightUnit', p_row.weight_unit,
+                'weightIncrement', p_row.weight_increment
+            )
+            WHEN 'RACK' THEN p_row.equipment_rack
+            WHEN 'WORKOUT' THEN p_row.workout_preferences
+            WHEN 'LED' THEN jsonb_build_object(
+                'ledColorSchemeId', p_row.led_color_scheme_id,
+                'preferences', p_row.led_preferences
+            )
+            WHEN 'VBT' THEN jsonb_build_object(
+                'vbtEnabled', p_row.vbt_enabled,
+                'preferences', p_row.vbt_preferences
+            )
+        END
+    );
+$canonical$;
+```
+
+- [ ] **Step 4: Add the service-role-only revision-checked RPC**
+
+Add the following RPC immediately after the canonical projection and before the privilege block/`COMMIT`. Its five branches are explicit so typed columns and JSON documents cannot be accidentally swapped. The function call is one Postgres transaction, so the conflict fetch observes the same atomic operation.
+
+```sql
+CREATE FUNCTION public.mutate_local_profile_preference_section(
+    p_user_id uuid,
+    p_local_profile_id text,
+    p_section text,
+    p_document_version integer,
+    p_base_revision bigint,
+    p_payload jsonb
+) RETURNS TABLE (
+    accepted boolean,
+    rejection_reason text,
+    server_revision bigint,
+    canonical_section jsonb
+)
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $mutation$
+DECLARE
+    current_row public.local_profile_preferences%ROWTYPE;
+    current_revision bigint;
+BEGIN
+    IF p_section IS NULL OR p_section NOT IN ('CORE', 'RACK', 'WORKOUT', 'LED', 'VBT') THEN
+        RETURN QUERY SELECT false, 'UNSUPPORTED_SECTION', 0::bigint, NULL::jsonb;
+        RETURN;
+    END IF;
+    IF p_document_version IS NULL OR p_document_version <> 1 THEN
+        RETURN QUERY SELECT false, 'UNSUPPORTED_DOCUMENT_VERSION', 0::bigint, NULL::jsonb;
+        RETURN;
+    END IF;
+    IF p_base_revision IS NULL OR p_base_revision < 0
+       OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
+        RETURN QUERY SELECT false, 'VALIDATION_FAILED', 0::bigint, NULL::jsonb;
+        RETURN;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.local_profiles
+         WHERE user_id = p_user_id AND id = p_local_profile_id
+    ) THEN
+        RETURN QUERY SELECT false, 'UNKNOWN_PROFILE', 0::bigint, NULL::jsonb;
+        RETURN;
+    END IF;
+
+    CASE p_section
+        WHEN 'CORE' THEN
+            UPDATE public.local_profile_preferences
+               SET body_weight_kg = (p_payload ->> 'bodyWeightKg')::double precision,
+                   weight_unit = p_payload ->> 'weightUnit',
+                   weight_increment = (p_payload ->> 'weightIncrement')::double precision,
+                   core_revision = core_revision + 1,
+                   core_updated_at = clock_timestamp()
+             WHERE user_id = p_user_id
+               AND local_profile_id = p_local_profile_id
+               AND core_revision = p_base_revision
+            RETURNING * INTO current_row;
+        WHEN 'RACK' THEN
+            UPDATE public.local_profile_preferences
+               SET equipment_rack = p_payload,
+                   rack_revision = rack_revision + 1,
+                   rack_updated_at = clock_timestamp()
+             WHERE user_id = p_user_id
+               AND local_profile_id = p_local_profile_id
+               AND rack_revision = p_base_revision
+            RETURNING * INTO current_row;
+        WHEN 'WORKOUT' THEN
+            UPDATE public.local_profile_preferences
+               SET workout_preferences = p_payload,
+                   workout_revision = workout_revision + 1,
+                   workout_updated_at = clock_timestamp()
+             WHERE user_id = p_user_id
+               AND local_profile_id = p_local_profile_id
+               AND workout_revision = p_base_revision
+            RETURNING * INTO current_row;
+        WHEN 'LED' THEN
+            UPDATE public.local_profile_preferences
+               SET led_color_scheme_id = (p_payload ->> 'ledColorSchemeId')::integer,
+                   led_preferences = p_payload -> 'preferences',
+                   led_revision = led_revision + 1,
+                   led_updated_at = clock_timestamp()
+             WHERE user_id = p_user_id
+               AND local_profile_id = p_local_profile_id
+               AND led_revision = p_base_revision
+            RETURNING * INTO current_row;
+        WHEN 'VBT' THEN
+            UPDATE public.local_profile_preferences
+               SET vbt_enabled = (p_payload ->> 'vbtEnabled')::boolean,
+                   vbt_preferences = p_payload -> 'preferences',
+                   vbt_revision = vbt_revision + 1,
+                   vbt_updated_at = clock_timestamp()
+             WHERE user_id = p_user_id
+               AND local_profile_id = p_local_profile_id
+               AND vbt_revision = p_base_revision
+            RETURNING * INTO current_row;
+    END CASE;
+
+    IF FOUND THEN
+        canonical_section := public.local_profile_preference_section_canonical(current_row, p_section);
+        server_revision := (canonical_section ->> 'serverRevision')::bigint;
+        RETURN QUERY SELECT true, NULL::text, server_revision, canonical_section;
+        RETURN;
+    END IF;
+
+    IF p_base_revision = 0 THEN
+        INSERT INTO public.local_profile_preferences (
+            user_id, local_profile_id,
+            body_weight_kg, weight_unit, weight_increment, core_revision,
+            equipment_rack, rack_revision,
+            workout_preferences, workout_revision,
+            led_color_scheme_id, led_preferences, led_revision,
+            vbt_enabled, vbt_preferences, vbt_revision
+        ) VALUES (
+            p_user_id,
+            p_local_profile_id,
+            CASE WHEN p_section = 'CORE' THEN (p_payload ->> 'bodyWeightKg')::double precision ELSE 0 END,
+            CASE WHEN p_section = 'CORE' THEN p_payload ->> 'weightUnit' ELSE 'LB' END,
+            CASE WHEN p_section = 'CORE' THEN (p_payload ->> 'weightIncrement')::double precision ELSE -1 END,
+            CASE WHEN p_section = 'CORE' THEN 1 ELSE 0 END,
+            CASE WHEN p_section = 'RACK' THEN p_payload ELSE '{"version":1,"items":[]}'::jsonb END,
+            CASE WHEN p_section = 'RACK' THEN 1 ELSE 0 END,
+            CASE WHEN p_section = 'WORKOUT' THEN p_payload ELSE '{"version":1}'::jsonb END,
+            CASE WHEN p_section = 'WORKOUT' THEN 1 ELSE 0 END,
+            CASE WHEN p_section = 'LED' THEN (p_payload ->> 'ledColorSchemeId')::integer ELSE 0 END,
+            CASE WHEN p_section = 'LED' THEN p_payload -> 'preferences' ELSE '{"version":1,"discoModeUnlocked":false}'::jsonb END,
+            CASE WHEN p_section = 'LED' THEN 1 ELSE 0 END,
+            CASE WHEN p_section = 'VBT' THEN (p_payload ->> 'vbtEnabled')::boolean ELSE true END,
+            CASE WHEN p_section = 'VBT' THEN p_payload -> 'preferences' ELSE '{"version":1,"velocityLossThresholdPercent":20,"autoEndOnVelocityLoss":false,"defaultScalingBasis":"MAX_WEIGHT_PR","verbalEncouragementEnabled":false,"vulgarModeEnabled":false,"vulgarTier":"STRONG","dominatrixModeUnlocked":false,"dominatrixModeActive":false}'::jsonb END,
+            CASE WHEN p_section = 'VBT' THEN 1 ELSE 0 END
+        )
+        ON CONFLICT (user_id, local_profile_id) DO NOTHING
         RETURNING * INTO current_row;
 
         IF FOUND THEN
@@ -1031,9 +1692,40 @@ GRANT EXECUTE ON FUNCTION public.mutate_local_profile_preference_section(
 
 - [ ] **Step 5: Create the exact Edge Function handoff document**
 
-Create `docs/backend-handoff/profile-preferences-edge-functions.md` with the portal target paths and these concrete TypeScript types:
+Create `docs/backend-handoff/profile-preferences-edge-functions.md` as a local-only backend handoff. It tells the portal implementer exactly what to create and test; this mobile-repository task does not deploy an Edge Function, apply a remote migration, or mutate the Supabase project. Name these portal targets exactly:
+
+```text
+supabase/functions/mobile-sync-push/index.ts
+supabase/functions/mobile-sync-push/index.test.ts
+supabase/functions/mobile-sync-pull/index.ts
+supabase/functions/mobile-sync-pull/index.test.ts
+supabase/functions/_shared/profile-preference-byte-goldens.json
+supabase/tests/database/profile_preferences.test.sql
+supabase/config.toml
+supabase/migrations/  (created by: supabase migration new profile_preferences)
+docs/profile-preferences-advisor-dispositions.md
+```
+
+Create `docs/backend-handoff/profile-preference-byte-goldens.json` with this exact content. The portal implementer copies it byte-for-byte to `supabase/functions/_shared/profile-preference-byte-goldens.json`; the Kotlin contract test compares the tracked object exactly, and the Deno tests compare the portal copy's SHA-256 to the handoff artifact before using it:
+
+```json
+{
+  "version": 1,
+  "paddingMarker": "__ASCII_PADDING__",
+  "sectionMarker": "__SECTION_JSON__",
+  "sectionRawTemplate": "{\"localProfileId\":\"profile-a\",\"section\":\"RACK\",\"documentVersion\":1,\"baseRevision\":0,\"clientModifiedAt\":\"2026-07-11T12:00:00Z\",\"payload\":{\"version\":1,\"items\":[{\"id\":\"rack-a\",\"name\":\"π界🙂\\\"\\\\__ASCII_PADDING__\",\"category\":\"OTHER\",\"weightKg\":20.0,\"behavior\":\"DISPLAY_ONLY\",\"enabled\":true,\"sortOrder\":0,\"createdAt\":-1e3,\"updatedAt\":0}]}}",
+  "requestRawTemplate": "{\"deviceId\":\"golden-device\",\"platform\":\"android\",\"lastSync\":0,\"profileId\":\"profile-a\",\"profileName\":\"π界🙂\\\"\\\\__ASCII_PADDING__\",\"profilePreferenceSections\":[__SECTION_JSON__]}",
+  "sectionTargetBytes": [262143, 262144, 262145],
+  "requestTargetBytes": [524287, 524288, 524289]
+}
+```
+
+Both languages implement the same recipe: parse only the artifact wrapper, preserve each raw-template string verbatim, replace the section padding marker with enough ASCII `x` bytes to reach the requested section target, and assert that the marker occurs exactly once. For a request golden, first replace `__SECTION_JSON__` with the valid section template containing one ASCII padding byte, then replace the request padding marker with enough ASCII `x` bytes to reach the requested complete-body target. Compute padding from UTF-8 byte counts, not character counts, and assert the final count equals its target. Both test suites assert that the generated raw JSON retains the decimal lexeme `20.0`, exponent lexeme `-1e3`, escaped quote and backslash, and multibyte `π界🙂`. Kotlin owns parity between these raw spans and the real kotlinx mutation/request decoders plus the mobile scanner; it does not exercise an HTTP raw-body handler. Deno owns enforcement through the real raw Edge handler, including 400/413 behavior, privileged-call suppression, and inclusive size boundaries. These are shared cross-language fixtures, not independently reconstructed goldens.
+
+Start the handoff with the current official [Edge authorization guidance](https://supabase.com/docs/guides/functions/auth), [RLS guidance](https://supabase.com/docs/guides/database/postgres/row-level-security), and [Data API exposure change](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically). Use these concrete TypeScript types:
 
 ```typescript
+type JsonRecord = Record<string, unknown>;
 type ProfilePreferenceSection = "CORE" | "RACK" | "WORKOUT" | "LED" | "VBT";
 
 interface PortalProfilePreferenceSectionMutation {
@@ -1064,6 +1756,7 @@ interface ProfilePreferenceSectionRejection {
     | "UNSUPPORTED_SECTION"
     | "UNSUPPORTED_DOCUMENT_VERSION"
     | "SECTION_TOO_LARGE"
+    | "DUPLICATE_SECTION"
     | "UNKNOWN_PROFILE";
   canonicalSection?: PortalProfilePreferenceSectionCanonical;
 }
@@ -1083,23 +1776,798 @@ interface MobileSyncPullResponseAdditions {
 }
 ```
 
-The document must name these portal implementation targets exactly:
+`REVISION_CONFLICT`, `VALIDATION_FAILED`, `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, and `UNKNOWN_PROFILE` are domain rejections returned by the RPC and may coexist with successful sibling sections. `SECTION_TOO_LARGE` and `DUPLICATE_SECTION` are Edge validation rejections. Authentication, transport, PostgREST/RPC, permission, timeout, malformed-RPC-row, and pull-query failures are infrastructure errors: they return a sanitized HTTP 5xx and are never relabeled as a domain rejection. Document version `1` is the only supported version; any other wrapper version, or an embedded `version` other than `1`, uses `UNSUPPORTED_DOCUMENT_VERSION` instead of a generic validation reason.
 
-```text
-supabase/functions/mobile-sync-push/index.ts
-supabase/functions/mobile-sync-pull/index.ts
-supabase/config.toml
-supabase/migrations/  (created by: supabase migration new profile_preferences)
-```
-
-Add this authorization and byte-counting implementation contract:
+Put these executable runtime parsers in `mobile-sync-push/index.ts` (or import them from a tested sibling module without changing their behavior). This is the complete request allowlist and the complete version-1 schema for all five wrappers; no schema library may silently strip unknown keys or coerce strings into numbers/booleans:
 
 ```typescript
+type ValidationReason =
+  | "VALIDATION_FAILED"
+  | "UNSUPPORTED_SECTION"
+  | "UNSUPPORTED_DOCUMENT_VERSION";
+
+class PreferenceValidationError extends Error {
+  constructor(
+    readonly reason: ValidationReason,
+    readonly field: string,
+  ) {
+    super("Invalid profile preference field: " + field);
+    this.name = "PreferenceValidationError";
+  }
+}
+
+class PreferenceInfrastructureError extends Error {
+  constructor(readonly operation: string) {
+    super("Profile preference infrastructure failure");
+    this.name = "PreferenceInfrastructureError";
+  }
+}
+
 const MAX_PROFILE_PREFERENCE_SECTION_BYTES = 262_144;
 const MAX_PROFILE_PREFERENCE_REQUEST_BYTES = 524_288;
-const encodedBytes = (value: unknown): number =>
-  new TextEncoder().encode(JSON.stringify(value)).byteLength;
+const MAX_MOBILE_SYNC_REQUEST_BYTES = 9_500_000;
+const utf8Bytes = (rawJson: string): number =>
+  new TextEncoder().encode(rawJson).byteLength;
 
+const PUSH_BODY_KEYS = new Set([
+  "deviceId",
+  "platform",
+  "lastSync",
+  "sessions",
+  "telemetry",
+  "routines",
+  "deletedRoutineIds",
+  "cycles",
+  "deletedCycleIds",
+  "rpgAttributes",
+  "badges",
+  "gamificationStats",
+  "phaseStatistics",
+  "exerciseSignatures",
+  "assessments",
+  "customExercises",
+  "profileId",
+  "profileName",
+  "allProfiles",
+  "externalActivities",
+  "personalRecords",
+  "profilePreferenceSections",
+]);
+
+const MUTATION_KEYS = [
+  "localProfileId",
+  "section",
+  "documentVersion",
+  "baseRevision",
+  "clientModifiedAt",
+  "payload",
+] as const;
+
+const LOCAL_ONLY_KEYS = new Set([
+  "safeword",
+  "safewordcalibrated",
+  "adultsonlyconfirmed",
+  "adultsonlyprompted",
+  "localgeneration",
+  "dirty",
+  "legacymigrationversion",
+]);
+const normalizeKey = (key: string): string =>
+  key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+
+const fail = (
+  field: string,
+  reason: ValidationReason = "VALIDATION_FAILED",
+): never => {
+  throw new PreferenceValidationError(reason, field);
+};
+
+const requireRecord = (value: unknown, field: string): JsonRecord => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) fail(field);
+  return value as JsonRecord;
+};
+
+const requireExactRecord = (
+  value: unknown,
+  keys: readonly string[],
+  field: string,
+): JsonRecord => {
+  const record = requireRecord(value, field);
+  const allowed = new Set(keys);
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) fail(field + "." + key);
+  }
+  for (const key of keys) {
+    if (!Object.hasOwn(record, key)) fail(field + "." + key);
+  }
+  return record;
+};
+
+const requireKnownKeys = (
+  record: JsonRecord,
+  allowed: ReadonlySet<string>,
+  field: string,
+): void => {
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) fail(field + "." + key);
+  }
+};
+
+const requireArray = (value: unknown, field: string): unknown[] => {
+  if (!Array.isArray(value)) fail(field);
+  return value;
+};
+
+interface RawJsonSpan {
+  start: number;
+  end: number;
+}
+
+interface TopLevelJsonScan {
+  valueSpans: Map<string, RawJsonSpan>;
+  duplicateKeys: Set<string>;
+}
+
+const skipJsonWhitespace = (raw: string, from: number): number => {
+  let index = from;
+  while (index < raw.length && /[\u0009\u000a\u000d\u0020]/.test(raw[index])) index += 1;
+  return index;
+};
+
+function scanJsonString(raw: string, start: number): number {
+  if (raw[start] !== '"') fail("rawJson.string");
+  let index = start + 1;
+  while (index < raw.length) {
+    const character = raw[index];
+    if (character === '"') return index + 1;
+    if (character === "\\") {
+      index += 2;
+    } else {
+      index += 1;
+    }
+  }
+  fail("rawJson.unterminatedString");
+}
+
+function scanJsonValue(raw: string, from: number, depth = 0): number {
+  if (depth > 256) fail("rawJson.depth");
+  let index = skipJsonWhitespace(raw, from);
+  if (raw[index] === '"') return scanJsonString(raw, index);
+  if (raw[index] === "[") {
+    index = skipJsonWhitespace(raw, index + 1);
+    if (raw[index] === "]") return index + 1;
+    while (index < raw.length) {
+      index = skipJsonWhitespace(raw, scanJsonValue(raw, index, depth + 1));
+      if (raw[index] === "]") return index + 1;
+      if (raw[index] !== ",") fail("rawJson.arrayDelimiter");
+      index = skipJsonWhitespace(raw, index + 1);
+    }
+    fail("rawJson.unterminatedArray");
+  }
+  if (raw[index] === "{") {
+    index = skipJsonWhitespace(raw, index + 1);
+    if (raw[index] === "}") return index + 1;
+    while (index < raw.length) {
+      const keyEnd = scanJsonString(raw, index);
+      index = skipJsonWhitespace(raw, keyEnd);
+      if (raw[index] !== ":") fail("rawJson.objectColon");
+      index = skipJsonWhitespace(raw, scanJsonValue(raw, index + 1, depth + 1));
+      if (raw[index] === "}") return index + 1;
+      if (raw[index] !== ",") fail("rawJson.objectDelimiter");
+      index = skipJsonWhitespace(raw, index + 1);
+    }
+    fail("rawJson.unterminatedObject");
+  }
+  const tokenStart = index;
+  while (
+    index < raw.length &&
+    !/[\u0009\u000a\u000d\u0020,\]}]/.test(raw[index])
+  ) {
+    index += 1;
+  }
+  if (index === tokenStart) fail("rawJson.value");
+  return index;
+}
+
+function scanTopLevelJsonObject(raw: string): TopLevelJsonScan {
+  let index = skipJsonWhitespace(raw, 0);
+  if (raw[index] !== "{") fail("body");
+  index = skipJsonWhitespace(raw, index + 1);
+  const valueSpans = new Map<string, RawJsonSpan>();
+  const duplicateKeys = new Set<string>();
+  if (raw[index] === "}") {
+    index = skipJsonWhitespace(raw, index + 1);
+    if (index !== raw.length) fail("rawJson.trailingData");
+    return { valueSpans, duplicateKeys };
+  }
+  while (index < raw.length) {
+    const keyStart = index;
+    const keyEnd = scanJsonString(raw, keyStart);
+    const key = JSON.parse(raw.slice(keyStart, keyEnd)) as string;
+    index = skipJsonWhitespace(raw, keyEnd);
+    if (raw[index] !== ":") fail("rawJson.objectColon");
+    const valueStart = skipJsonWhitespace(raw, index + 1);
+    const valueEnd = scanJsonValue(raw, valueStart);
+    if (valueSpans.has(key)) duplicateKeys.add(key);
+    else valueSpans.set(key, { start: valueStart, end: valueEnd });
+    index = skipJsonWhitespace(raw, valueEnd);
+    if (raw[index] === "}") {
+      index = skipJsonWhitespace(raw, index + 1);
+      if (index !== raw.length) fail("rawJson.trailingData");
+      return { valueSpans, duplicateKeys };
+    }
+    if (raw[index] !== ",") fail("rawJson.objectDelimiter");
+    index = skipJsonWhitespace(raw, index + 1);
+  }
+  fail("rawJson.unterminatedObject");
+}
+
+function scanJsonArrayElementSpans(raw: string, arraySpan: RawJsonSpan): RawJsonSpan[] {
+  let index = skipJsonWhitespace(raw, arraySpan.start);
+  if (raw[index] !== "[") fail("body.profilePreferenceSections");
+  index = skipJsonWhitespace(raw, index + 1);
+  const spans: RawJsonSpan[] = [];
+  if (raw[index] === "]") {
+    if (index + 1 !== arraySpan.end) fail("body.profilePreferenceSections.span");
+    return spans;
+  }
+  while (index < arraySpan.end) {
+    const start = index;
+    const end = scanJsonValue(raw, start);
+    spans.push({ start, end });
+    index = skipJsonWhitespace(raw, end);
+    if (raw[index] === "]") {
+      if (index + 1 !== arraySpan.end) fail("body.profilePreferenceSections.span");
+      return spans;
+    }
+    if (raw[index] !== ",") fail("body.profilePreferenceSections.delimiter");
+    index = skipJsonWhitespace(raw, index + 1);
+  }
+  fail("body.profilePreferenceSections.span");
+}
+
+const sameJsonValue = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
+
+const requireBoolean = (value: unknown, field: string): boolean => {
+  if (typeof value !== "boolean") fail(field);
+  return value;
+};
+
+const requireFiniteNumber = (
+  value: unknown,
+  field: string,
+  predicate: (number: number) => boolean = () => true,
+): number => {
+  if (typeof value !== "number" || !Number.isFinite(value) || !predicate(value)) fail(field);
+  return value;
+};
+
+const requireSafeInteger = (
+  value: unknown,
+  field: string,
+  predicate: (number: number) => boolean = () => true,
+): number => {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || !predicate(value)) fail(field);
+  return value;
+};
+
+const requireNonBlank = (value: unknown, field: string): string => {
+  if (typeof value !== "string" || value.trim().length === 0) fail(field);
+  return value;
+};
+
+const requireEnum = <T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  field: string,
+): T => {
+  if (typeof value !== "string" || !allowed.includes(value as T)) fail(field);
+  return value as T;
+};
+
+const requireVersionOne = (value: unknown, field: string): 1 => {
+  if (value !== 1) fail(field, "UNSUPPORTED_DOCUMENT_VERSION");
+  return 1;
+};
+
+const requireIsoTimestamp = (value: unknown, field: string): string => {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) fail(field);
+  return value;
+};
+
+const rejectLocalOnlyKeys = (value: unknown, field = "profilePreferenceSections"): void => {
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => rejectLocalOnlyKeys(child, field + "[" + index + "]"));
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  for (const [key, child] of Object.entries(value as JsonRecord)) {
+    if (LOCAL_ONLY_KEYS.has(normalizeKey(key))) fail(field + "." + key);
+    rejectLocalOnlyKeys(child, field + "." + key);
+  }
+};
+
+const RACK_ITEM_KEYS = [
+  "id",
+  "name",
+  "category",
+  "weightKg",
+  "behavior",
+  "enabled",
+  "sortOrder",
+  "createdAt",
+  "updatedAt",
+] as const;
+const RACK_CATEGORIES = [
+  "WEIGHTED_VEST",
+  "DIP_BELT",
+  "CHAINS",
+  "BAND",
+  "ASSISTANCE",
+  "ATTACHMENT",
+  "OTHER",
+] as const;
+const RACK_BEHAVIORS = [
+  "ADDED_RESISTANCE",
+  "COUNTERWEIGHT",
+  "DISPLAY_ONLY",
+] as const;
+const WORKOUT_MODES = [0, 2, 3, 4, 6, 10] as const;
+const REP_COUNT_TIMINGS = ["TOP", "BOTTOM"] as const;
+
+function validateCorePayload(value: unknown): JsonRecord {
+  const payload = requireExactRecord(
+    value,
+    ["bodyWeightKg", "weightUnit", "weightIncrement"],
+    "payload",
+  );
+  requireFiniteNumber(
+    payload.bodyWeightKg,
+    "payload.bodyWeightKg",
+    (number) => number === 0 || (number >= 20 && number <= 300),
+  );
+  requireEnum(payload.weightUnit, ["KG", "LB"] as const, "payload.weightUnit");
+  requireFiniteNumber(
+    payload.weightIncrement,
+    "payload.weightIncrement",
+    (number) => number === -1 || number > 0,
+  );
+  return payload;
+}
+
+function validateRackPayload(value: unknown): JsonRecord {
+  const payload = requireExactRecord(value, ["version", "items"], "payload");
+  requireVersionOne(payload.version, "payload.version");
+  const ids = new Set<string>();
+  requireArray(payload.items, "payload.items").forEach((rawItem, index) => {
+    const field = "payload.items[" + index + "]";
+    const item = requireExactRecord(rawItem, RACK_ITEM_KEYS, field);
+    const id = requireNonBlank(item.id, field + ".id");
+    requireNonBlank(item.name, field + ".name");
+    if (ids.has(id)) fail(field + ".id");
+    ids.add(id);
+    requireEnum(item.category, RACK_CATEGORIES, field + ".category");
+    requireFiniteNumber(item.weightKg, field + ".weightKg", (number) => number >= 0);
+    requireEnum(item.behavior, RACK_BEHAVIORS, field + ".behavior");
+    requireBoolean(item.enabled, field + ".enabled");
+    requireSafeInteger(item.sortOrder, field + ".sortOrder");
+    requireSafeInteger(item.createdAt, field + ".createdAt");
+    requireSafeInteger(item.updatedAt, field + ".updatedAt");
+  });
+  return payload;
+}
+
+const JUST_LIFT_KEYS = [
+  "workoutModeId",
+  "weightPerCableKg",
+  "weightChangePerRep",
+  "eccentricLoadPercentage",
+  "echoLevelValue",
+  "stallDetectionEnabled",
+  "repCountTimingName",
+  "restSeconds",
+] as const;
+
+const SINGLE_EXERCISE_KEYS = [
+  "exerciseId",
+  "setReps",
+  "weightPerCableKg",
+  "setWeightsPerCableKg",
+  "progressionKg",
+  "setRestSeconds",
+  "workoutModeId",
+  "eccentricLoadPercentage",
+  "echoLevelValue",
+  "duration",
+  "isAMRAP",
+  "perSetRestTime",
+  "defaultRackItemIds",
+] as const;
+
+const WORKOUT_KEYS = [
+  "version",
+  "stopAtTop",
+  "beepsEnabled",
+  "stallDetectionEnabled",
+  "audioRepCountEnabled",
+  "repCountTiming",
+  "summaryCountdownSeconds",
+  "autoStartCountdownSeconds",
+  "gamificationEnabled",
+  "autoStartRoutine",
+  "countdownBeepsEnabled",
+  "repSoundEnabled",
+  "motionStartEnabled",
+  "weightSuggestionsEnabled",
+  "defaultRoutineExerciseUsePercentOfPR",
+  "defaultRoutineExerciseWeightPercentOfPR",
+  "voiceStopEnabled",
+  "justLiftDefaults",
+  "singleExerciseDefaults",
+] as const;
+
+function validateJustLiftDefaults(value: unknown, field: string): void {
+  const defaults = requireExactRecord(value, JUST_LIFT_KEYS, field);
+  requireSafeInteger(
+    defaults.workoutModeId,
+    field + ".workoutModeId",
+    (number) => WORKOUT_MODES.includes(number as typeof WORKOUT_MODES[number]),
+  );
+  requireFiniteNumber(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
+  requireFiniteNumber(defaults.weightChangePerRep, field + ".weightChangePerRep");
+  requireSafeInteger(
+    defaults.eccentricLoadPercentage,
+    field + ".eccentricLoadPercentage",
+    (number) => number >= 0 && number <= 150,
+  );
+  requireSafeInteger(
+    defaults.echoLevelValue,
+    field + ".echoLevelValue",
+    (number) => number >= 0 && number <= 3,
+  );
+  requireBoolean(defaults.stallDetectionEnabled, field + ".stallDetectionEnabled");
+  requireEnum(defaults.repCountTimingName, REP_COUNT_TIMINGS, field + ".repCountTimingName");
+  requireSafeInteger(
+    defaults.restSeconds,
+    field + ".restSeconds",
+    (number) => number === 0 || (number >= 5 && number <= 300),
+  );
+}
+
+function validateSingleExerciseDefaults(
+  mapKey: string,
+  value: unknown,
+  field: string,
+): void {
+  const defaults = requireExactRecord(value, SINGLE_EXERCISE_KEYS, field);
+  const exerciseId = requireNonBlank(defaults.exerciseId, field + ".exerciseId");
+  if (mapKey.trim().length === 0 || exerciseId !== mapKey) fail(field + ".exerciseId");
+  requireArray(defaults.setReps, field + ".setReps").forEach((rep, index) => {
+    if (rep !== null) {
+      requireSafeInteger(rep, field + ".setReps[" + index + "]", (number) => number >= 0);
+    }
+  });
+  requireFiniteNumber(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
+  requireArray(defaults.setWeightsPerCableKg, field + ".setWeightsPerCableKg")
+    .forEach((weight, index) => requireFiniteNumber(
+      weight,
+      field + ".setWeightsPerCableKg[" + index + "]",
+      (number) => number >= 0,
+    ));
+  requireFiniteNumber(defaults.progressionKg, field + ".progressionKg");
+  requireArray(defaults.setRestSeconds, field + ".setRestSeconds")
+    .forEach((rest, index) => requireSafeInteger(
+      rest,
+      field + ".setRestSeconds[" + index + "]",
+      (number) => number === 0 || (number >= 5 && number <= 300),
+    ));
+  requireSafeInteger(
+    defaults.workoutModeId,
+    field + ".workoutModeId",
+    (number) => WORKOUT_MODES.includes(number as typeof WORKOUT_MODES[number]),
+  );
+  requireSafeInteger(
+    defaults.eccentricLoadPercentage,
+    field + ".eccentricLoadPercentage",
+    (number) => number >= 0 && number <= 150,
+  );
+  requireSafeInteger(
+    defaults.echoLevelValue,
+    field + ".echoLevelValue",
+    (number) => number >= 0 && number <= 3,
+  );
+  requireSafeInteger(defaults.duration, field + ".duration", (number) => number >= 0);
+  requireBoolean(defaults.isAMRAP, field + ".isAMRAP");
+  requireBoolean(defaults.perSetRestTime, field + ".perSetRestTime");
+  const rackIds = requireArray(defaults.defaultRackItemIds, field + ".defaultRackItemIds")
+    .map((rackId, index) => requireNonBlank(
+      rackId,
+      field + ".defaultRackItemIds[" + index + "]",
+    ));
+  if (new Set(rackIds).size !== rackIds.length) fail(field + ".defaultRackItemIds");
+}
+
+function validateWorkoutPayload(value: unknown): JsonRecord {
+  const payload = requireExactRecord(value, WORKOUT_KEYS, "payload");
+  requireVersionOne(payload.version, "payload.version");
+  [
+    "stopAtTop",
+    "beepsEnabled",
+    "stallDetectionEnabled",
+    "audioRepCountEnabled",
+    "gamificationEnabled",
+    "autoStartRoutine",
+    "countdownBeepsEnabled",
+    "repSoundEnabled",
+    "motionStartEnabled",
+    "weightSuggestionsEnabled",
+    "defaultRoutineExerciseUsePercentOfPR",
+    "voiceStopEnabled",
+  ].forEach((key) => requireBoolean(payload[key], "payload." + key));
+  requireEnum(payload.repCountTiming, REP_COUNT_TIMINGS, "payload.repCountTiming");
+  requireSafeInteger(
+    payload.summaryCountdownSeconds,
+    "payload.summaryCountdownSeconds",
+    (number) => [-1, 0, 5, 10, 15, 20, 25, 30].includes(number),
+  );
+  requireSafeInteger(
+    payload.autoStartCountdownSeconds,
+    "payload.autoStartCountdownSeconds",
+    (number) => number >= 2 && number <= 10,
+  );
+  requireSafeInteger(
+    payload.defaultRoutineExerciseWeightPercentOfPR,
+    "payload.defaultRoutineExerciseWeightPercentOfPR",
+    (number) => number >= 50 && number <= 120,
+  );
+  validateJustLiftDefaults(payload.justLiftDefaults, "payload.justLiftDefaults");
+  const singleExerciseDefaults = requireRecord(
+    payload.singleExerciseDefaults,
+    "payload.singleExerciseDefaults",
+  );
+  Object.entries(singleExerciseDefaults).forEach(([key, defaults]) =>
+    validateSingleExerciseDefaults(
+      key,
+      defaults,
+      "payload.singleExerciseDefaults." + key,
+    )
+  );
+  return payload;
+}
+
+function validateLedPayload(value: unknown): JsonRecord {
+  const payload = requireExactRecord(
+    value,
+    ["ledColorSchemeId", "preferences"],
+    "payload",
+  );
+  requireSafeInteger(
+    payload.ledColorSchemeId,
+    "payload.ledColorSchemeId",
+    (number) => number >= 0,
+  );
+  const preferences = requireExactRecord(
+    payload.preferences,
+    ["version", "discoModeUnlocked"],
+    "payload.preferences",
+  );
+  requireVersionOne(preferences.version, "payload.preferences.version");
+  requireBoolean(preferences.discoModeUnlocked, "payload.preferences.discoModeUnlocked");
+  return payload;
+}
+
+function validateVbtPayload(value: unknown): JsonRecord {
+  const payload = requireExactRecord(value, ["vbtEnabled", "preferences"], "payload");
+  requireBoolean(payload.vbtEnabled, "payload.vbtEnabled");
+  const preferences = requireExactRecord(
+    payload.preferences,
+    [
+      "version",
+      "velocityLossThresholdPercent",
+      "autoEndOnVelocityLoss",
+      "defaultScalingBasis",
+      "verbalEncouragementEnabled",
+      "vulgarModeEnabled",
+      "vulgarTier",
+      "dominatrixModeUnlocked",
+      "dominatrixModeActive",
+    ],
+    "payload.preferences",
+  );
+  requireVersionOne(preferences.version, "payload.preferences.version");
+  requireSafeInteger(
+    preferences.velocityLossThresholdPercent,
+    "payload.preferences.velocityLossThresholdPercent",
+    (number) => number >= 10 && number <= 50,
+  );
+  requireBoolean(preferences.autoEndOnVelocityLoss, "payload.preferences.autoEndOnVelocityLoss");
+  requireEnum(
+    preferences.defaultScalingBasis,
+    ["MAX_WEIGHT_PR", "MAX_VOLUME_PR", "ESTIMATED_1RM"] as const,
+    "payload.preferences.defaultScalingBasis",
+  );
+  requireBoolean(
+    preferences.verbalEncouragementEnabled,
+    "payload.preferences.verbalEncouragementEnabled",
+  );
+  requireBoolean(preferences.vulgarModeEnabled, "payload.preferences.vulgarModeEnabled");
+  requireEnum(
+    preferences.vulgarTier,
+    ["MILD", "STRONG", "MIX"] as const,
+    "payload.preferences.vulgarTier",
+  );
+  requireBoolean(
+    preferences.dominatrixModeUnlocked,
+    "payload.preferences.dominatrixModeUnlocked",
+  );
+  requireBoolean(
+    preferences.dominatrixModeActive,
+    "payload.preferences.dominatrixModeActive",
+  );
+  return payload;
+}
+
+function parsePreferenceMutation(value: unknown): PortalProfilePreferenceSectionMutation {
+  rejectLocalOnlyKeys(value);
+  const mutation = requireExactRecord(value, MUTATION_KEYS, "mutation");
+  const localProfileId = requireNonBlank(mutation.localProfileId, "mutation.localProfileId");
+  if (typeof mutation.section !== "string") fail("mutation.section", "UNSUPPORTED_SECTION");
+  if (!["CORE", "RACK", "WORKOUT", "LED", "VBT"].includes(mutation.section)) {
+    fail("mutation.section", "UNSUPPORTED_SECTION");
+  }
+  const section = mutation.section as ProfilePreferenceSection;
+  const documentVersion = requireSafeInteger(mutation.documentVersion, "mutation.documentVersion");
+  requireVersionOne(documentVersion, "mutation.documentVersion");
+  const baseRevision = requireSafeInteger(
+    mutation.baseRevision,
+    "mutation.baseRevision",
+    (number) => number >= 0,
+  );
+  const clientModifiedAt = requireIsoTimestamp(
+    mutation.clientModifiedAt,
+    "mutation.clientModifiedAt",
+  );
+  const payload = ({
+    CORE: validateCorePayload,
+    RACK: validateRackPayload,
+    WORKOUT: validateWorkoutPayload,
+    LED: validateLedPayload,
+    VBT: validateVbtPayload,
+  } as const)[section](mutation.payload);
+  return {
+    localProfileId,
+    section,
+    documentVersion,
+    baseRevision,
+    clientModifiedAt,
+    payload,
+  };
+}
+
+interface PreferenceEnvelope {
+  present: boolean;
+  validatedMutations: PortalProfilePreferenceSectionMutation[];
+  rejections: ProfilePreferenceSectionRejection[];
+}
+
+interface PreferenceRawContext {
+  rawBody: string;
+  preferenceElementSpans: RawJsonSpan[];
+}
+
+const rawPreferenceIdentity = (value: unknown): string | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as JsonRecord;
+  if (typeof record.localProfileId !== "string" || typeof record.section !== "string") {
+    return null;
+  }
+  return JSON.stringify([record.localProfileId, record.section]);
+};
+
+const rawPreferenceLabel = (value: unknown): { localProfileId: string; section: string } => {
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? value as JsonRecord
+      : {};
+  return {
+    localProfileId: typeof record.localProfileId === "string" ? record.localProfileId : "",
+    section: typeof record.section === "string" ? record.section : "UNKNOWN",
+  };
+};
+
+function parsePreferenceEnvelope(
+  body: JsonRecord,
+  rawContext: PreferenceRawContext,
+): PreferenceEnvelope {
+  requireKnownKeys(body, PUSH_BODY_KEYS, "body");
+  if (!Object.hasOwn(body, "profilePreferenceSections")) {
+    if (rawContext.preferenceElementSpans.length !== 0) {
+      fail("body.profilePreferenceSections.span");
+    }
+    return { present: false, validatedMutations: [], rejections: [] };
+  }
+  const rawMutations = requireArray(
+    body.profilePreferenceSections,
+    "body.profilePreferenceSections",
+  );
+  if (rawMutations.length !== rawContext.preferenceElementSpans.length) {
+    fail("body.profilePreferenceSections.span");
+  }
+  rawMutations.forEach((rawMutation, index) => {
+    const span = rawContext.preferenceElementSpans[index];
+    let reparsed: unknown;
+    try {
+      reparsed = JSON.parse(rawContext.rawBody.slice(span.start, span.end));
+    } catch {
+      fail("body.profilePreferenceSections.span");
+    }
+    if (!sameJsonValue(reparsed, rawMutation)) {
+      fail("body.profilePreferenceSections.span");
+    }
+  });
+
+  const identityCounts = new Map<string, number>();
+  rawMutations.forEach((rawMutation) => {
+    const identity = rawPreferenceIdentity(rawMutation);
+    if (identity !== null) {
+      identityCounts.set(identity, (identityCounts.get(identity) ?? 0) + 1);
+    }
+  });
+  const duplicateIdentities = new Set(
+    [...identityCounts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([identity]) => identity),
+  );
+
+  const validatedMutations: PortalProfilePreferenceSectionMutation[] = [];
+  const rejections: ProfilePreferenceSectionRejection[] = [];
+  const duplicateReported = new Set<string>();
+  rawMutations.forEach((rawMutation, index) => {
+    const label = rawPreferenceLabel(rawMutation);
+    const identity = rawPreferenceIdentity(rawMutation);
+    if (identity !== null && duplicateIdentities.has(identity)) {
+      if (!duplicateReported.has(identity)) {
+        duplicateReported.add(identity);
+        rejections.push({
+          ...label,
+          serverRevision: 0,
+          reason: "DUPLICATE_SECTION",
+        });
+      }
+      return;
+    }
+    const span = rawContext.preferenceElementSpans[index];
+    const rawPreferenceElementBytes = utf8Bytes(
+      rawContext.rawBody.slice(span.start, span.end),
+    );
+    if (rawPreferenceElementBytes > MAX_PROFILE_PREFERENCE_SECTION_BYTES) {
+      rejections.push({
+        ...label,
+        serverRevision: 0,
+        reason: "SECTION_TOO_LARGE",
+      });
+      return;
+    }
+    try {
+      const mutation = parsePreferenceMutation(rawMutation);
+      validatedMutations.push(mutation);
+    } catch (error) {
+      if (!(error instanceof PreferenceValidationError)) throw error;
+      rejections.push({
+        ...label,
+        serverRevision: 0,
+        reason: error.reason,
+      });
+    }
+  });
+  return { present: true, validatedMutations, rejections };
+}
+```
+
+Authenticate with an anon client, parse and validate the complete body, and only then construct or call the privileged client. `validateExistingMobileSyncPushBody` below means the existing strict, side-effect-free validator for every non-preference field in `PUSH_BODY_KEYS`; wire it to the endpoint's real parser and add a regression proving a malformed final ordinary or preference item causes zero admin table/RPC calls:
+
+```typescript
 const authorization = req.headers.get("Authorization");
 if (!authorization?.startsWith("Bearer ")) {
   return new Response(JSON.stringify({ error: "Missing bearer token" }), { status: 401 });
@@ -1114,125 +2582,409 @@ if (userError || !userData.user) {
   return new Response(JSON.stringify({ error: "Invalid bearer token" }), { status: 401 });
 }
 const verifiedUserId = userData.user.id;
-const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
 
 const rawBody = await req.text();
 const rawBodyBytes = new TextEncoder().encode(rawBody).byteLength;
-if (rawBodyBytes > 9_500_000) {
+if (rawBodyBytes > MAX_MOBILE_SYNC_REQUEST_BYTES) {
   return new Response(JSON.stringify({ error: "Request too large" }), { status: 413 });
 }
-let body: Record<string, unknown>;
+
+let topLevelScan: TopLevelJsonScan;
 try {
-  body = JSON.parse(rawBody) as Record<string, unknown>;
-} catch {
-  return new Response(JSON.stringify({ error: "Malformed JSON" }), { status: 400 });
+  topLevelScan = scanTopLevelJsonObject(rawBody);
+  for (const duplicateKey of topLevelScan.duplicateKeys) {
+    if (PUSH_BODY_KEYS.has(duplicateKey)) fail("body." + duplicateKey);
+  }
+} catch (error) {
+  if (!(error instanceof PreferenceValidationError) && !(error instanceof SyntaxError)) {
+    throw error;
+  }
+  return new Response(JSON.stringify({ error: "Invalid sync request" }), { status: 400 });
 }
-if (Object.hasOwn(body, "profilePreferenceSections") &&
-    rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES) {
-  return new Response(JSON.stringify({ error: "Profile preference request exceeds 524288 bytes" }), {
-    status: 413,
+const preferenceValueSpan = topLevelScan.valueSpans.get("profilePreferenceSections");
+if (
+  preferenceValueSpan !== undefined &&
+  rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES
+) {
+  return new Response(JSON.stringify({ error: "Request too large" }), { status: 413 });
+}
+
+let body: JsonRecord;
+let preferenceEnvelope: PreferenceEnvelope;
+try {
+  const preferenceElementSpans = preferenceValueSpan === undefined
+    ? []
+    : scanJsonArrayElementSpans(rawBody, preferenceValueSpan);
+  const parsedBody = JSON.parse(rawBody) as unknown;
+  body = requireRecord(parsedBody, "body");
+  preferenceEnvelope = parsePreferenceEnvelope(body, {
+    rawBody,
+    preferenceElementSpans,
   });
+  validateExistingMobileSyncPushBody(body);
+} catch (error) {
+  if (!(error instanceof PreferenceValidationError) && !(error instanceof SyntaxError)) {
+    throw error;
+  }
+  return new Response(JSON.stringify({ error: "Invalid sync request" }), { status: 400 });
 }
+
+const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 ```
 
-Specify that push validates the whole body before database work, rejects a preference request over 524,288 bytes at HTTP 413, converts each invalid/oversized section into its own rejection, and calls the RPC once per valid section:
+The 9,500,000-byte cap counts the original HTTP body only when `profilePreferenceSections` is absent. Whenever that top-level field is present, the 524,288-byte cap applies to the complete raw HTTP `PortalSyncPayload`, including all whitespace, ordinary fields, and preference fields. The 262,144-byte cap applies to each exact raw JSON array-element span, measured from the pinned scanner offsets with a quote-, escape-, and nesting-aware scan; it is never reconstructed with `JSON.stringify`. Reject a duplicate relevant top-level key, element-count mismatch, or reparsed-span/value mismatch before constructing the admin client. Exact-size payloads are accepted; 262,145 and 524,289 bytes are rejected. `clientModifiedAt` is validated ISO audit metadata and is never used for ordering.
+
+Treat only a successfully parsed RPC row as a domain result. Use the exact runtime parser and loop below so empty/multiple/malformed rows, unknown rejection reasons, permission failures, and PostgREST errors are infrastructure failures rather than fabricated `VALIDATION_FAILED` results:
 
 ```typescript
-if (encodedBytes(mutation) > MAX_PROFILE_PREFERENCE_SECTION_BYTES) {
-  profilePreferenceRejections.push({
-    localProfileId: mutation.localProfileId,
-    section: mutation.section,
-    serverRevision: 0,
-    reason: "SECTION_TOO_LARGE",
-  });
-  continue;
+interface RpcMutationRow {
+  accepted: boolean;
+  rejection_reason: string | null;
+  server_revision: number | string;
+  canonical_section: unknown | null;
 }
 
-const { data, error } = await admin.rpc("mutate_local_profile_preference_section", {
-  p_user_id: verifiedUserId,
-  p_local_profile_id: mutation.localProfileId,
-  p_section: mutation.section,
-  p_document_version: mutation.documentVersion,
-  p_base_revision: mutation.baseRevision,
-  p_payload: mutation.payload,
-});
+const RPC_DOMAIN_REASONS = new Set([
+  "REVISION_CONFLICT",
+  "VALIDATION_FAILED",
+  "UNSUPPORTED_SECTION",
+  "UNSUPPORTED_DOCUMENT_VERSION",
+  "UNKNOWN_PROFILE",
+]);
+
+const infrastructureRevision = (value: unknown): number => {
+  const number = typeof value === "string" && /^[0-9]+$/.test(value)
+    ? Number(value)
+    : value;
+  if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 0) {
+    throw new PreferenceInfrastructureError("malformed revision");
+  }
+  return number;
+};
+
+function parseInfrastructureCanonical(
+  value: unknown,
+  mutation: PortalProfilePreferenceSectionMutation,
+): PortalProfilePreferenceSectionCanonical {
+  try {
+    const canonical = requireExactRecord(
+      value,
+      [
+        "localProfileId",
+        "section",
+        "documentVersion",
+        "serverRevision",
+        "serverUpdatedAt",
+        "payload",
+      ],
+      "canonical",
+    );
+    if (canonical.localProfileId !== mutation.localProfileId) fail("canonical.localProfileId");
+    if (canonical.section !== mutation.section) fail("canonical.section");
+    requireVersionOne(canonical.documentVersion, "canonical.documentVersion");
+    const serverRevision = infrastructureRevision(canonical.serverRevision);
+    const serverUpdatedAt = requireIsoTimestamp(
+      canonical.serverUpdatedAt,
+      "canonical.serverUpdatedAt",
+    );
+    const payload = ({
+      CORE: validateCorePayload,
+      RACK: validateRackPayload,
+      WORKOUT: validateWorkoutPayload,
+      LED: validateLedPayload,
+      VBT: validateVbtPayload,
+    } as const)[mutation.section](canonical.payload);
+    return {
+      localProfileId: mutation.localProfileId,
+      section: mutation.section,
+      documentVersion: 1,
+      serverRevision,
+      serverUpdatedAt,
+      payload,
+    };
+  } catch (error) {
+    if (error instanceof PreferenceInfrastructureError) throw error;
+    throw new PreferenceInfrastructureError("malformed canonical");
+  }
+}
+
+function parseRpcMutationRow(
+  data: unknown,
+  mutation: PortalProfilePreferenceSectionMutation,
+): {
+  accepted: boolean;
+  rejectionReason: string | null;
+  serverRevision: number;
+  canonicalSection?: PortalProfilePreferenceSectionCanonical;
+} {
+  if (!Array.isArray(data) || data.length !== 1) {
+    throw new PreferenceInfrastructureError("RPC row cardinality");
+  }
+  try {
+    const row = requireExactRecord(
+      data[0],
+      ["accepted", "rejection_reason", "server_revision", "canonical_section"],
+      "rpcRow",
+    ) as unknown as RpcMutationRow;
+    if (typeof row.accepted !== "boolean") fail("rpcRow.accepted");
+    const serverRevision = infrastructureRevision(row.server_revision);
+    const canonicalSection = row.canonical_section === null
+      ? undefined
+      : parseInfrastructureCanonical(row.canonical_section, mutation);
+    if (row.accepted) {
+      if (row.rejection_reason !== null || !canonicalSection) fail("rpcRow");
+    } else {
+      if (
+        typeof row.rejection_reason !== "string" ||
+        !RPC_DOMAIN_REASONS.has(row.rejection_reason)
+      ) {
+        fail("rpcRow.rejection_reason");
+      }
+      if (row.rejection_reason === "REVISION_CONFLICT" && !canonicalSection) {
+        fail("rpcRow.canonical_section");
+      }
+    }
+    if (canonicalSection && canonicalSection.serverRevision !== serverRevision) fail("rpcRow");
+    return {
+      accepted: row.accepted,
+      rejectionReason: row.rejection_reason,
+      serverRevision,
+      canonicalSection,
+    };
+  } catch (error) {
+    if (error instanceof PreferenceInfrastructureError) throw error;
+    throw new PreferenceInfrastructureError("malformed RPC row");
+  }
+}
+
+const canonicalProfilePreferenceSections: PortalProfilePreferenceSectionCanonical[] = [];
+const profilePreferenceRejections: ProfilePreferenceSectionRejection[] = [
+  ...preferenceEnvelope.rejections,
+];
+
+try {
+  for (const mutation of preferenceEnvelope.validatedMutations) {
+    const { data, error } = await admin.rpc("mutate_local_profile_preference_section", {
+      p_user_id: verifiedUserId,
+      p_local_profile_id: mutation.localProfileId,
+      p_section: mutation.section,
+      p_document_version: mutation.documentVersion,
+      p_base_revision: mutation.baseRevision,
+      p_payload: mutation.payload,
+    });
+    if (error) throw new PreferenceInfrastructureError("mutation RPC");
+    const result = parseRpcMutationRow(data, mutation);
+    if (result.accepted) {
+      canonicalProfilePreferenceSections.push(result.canonicalSection!);
+    } else {
+      profilePreferenceRejections.push({
+        localProfileId: mutation.localProfileId,
+        section: mutation.section,
+        serverRevision: result.serverRevision,
+        reason: result.rejectionReason as ProfilePreferenceSectionRejection["reason"],
+        ...(result.canonicalSection
+          ? { canonicalSection: result.canonicalSection }
+          : {}),
+      });
+    }
+  }
+} catch (error) {
+  console.error("profile preference infrastructure failure", {
+    name: error instanceof Error ? error.name : "UnknownError",
+  });
+  return new Response(JSON.stringify({ error: "Sync temporarily unavailable" }), {
+    status: 503,
+  });
+}
+
+const preferenceResponseAdditions = {
+  ...(preferenceEnvelope.present ? { profilePreferencesAccepted: true } : {}),
+  canonicalProfilePreferenceSections,
+  profilePreferenceRejections,
+};
 ```
 
 The document must state these response and pull rules in executable terms:
 
-- `profilePreferencesAccepted` is emitted as `true` only when `profilePreferenceSections` was present and evaluated.
-- An accepted RPC row appends its canonical object to `canonicalProfilePreferenceSections`.
-- A rejected RPC row appends one `profilePreferenceRejections` entry and preserves its canonical object when present.
-- A single RPC error becomes one `VALIDATION_FAILED` rejection; the loop continues with valid sibling sections.
-- Pull uses the service-role client with both `.eq("user_id", verifiedUserId)` and `.eq("local_profile_id", requestedProfileId)`.
-- Pull emits all five canonical sections only when the cursor is absent; later pages omit `profilePreferenceSections`.
-- Push and pull responses retain the existing required `syncTime` field.
-- `verify_jwt = true` remains configured for both functions.
-- No network call occurs while a database row lock is held because the RPC owns the complete mutation transaction.
-- Concurrent first writes to the same section yield one revision-1 acceptance and one canonical conflict. Concurrent first writes to different sections both reach revision 1 without overwriting the other section.
+- `profilePreferencesAccepted` is emitted as `true` only when `profilePreferenceSections` was present, envelope-validated, and evaluated. It is omitted for legacy callers.
+- Every accepted RPC row contributes its canonical object; every well-formed domain rejection contributes its reason and canonical object when supplied. Local validation rejections coexist with valid siblings.
+- Any unexpected RPC/query/permission/transport error aborts the HTTP response with a sanitized 5xx. It is never converted to `VALIDATION_FAILED`, and no payload, JWT, service-role secret, profile id, PostgREST message, or raw error message is logged.
+- Push and pull merge these additions into the existing response without removing or changing the required `syncTime` field.
+- Keep `verify_jwt = true` for both functions in `supabase/config.toml`.
+- The Edge function performs no network call while a database row lock is held; one RPC invocation owns one complete Postgres transaction.
+- Same-section concurrent first writes produce exactly one revision-1 acceptance and one canonical revision conflict. Different-section concurrent first writes against the same profile each produce revision 1 and preserve the sibling section.
 
-Use an explicit verified-owner predicate for pull, then map the typed columns/documents into the same canonical wrappers returned by the mutation RPC:
+Lost acknowledgement is an expected convergence path, not an idempotency-key feature. If mutation A commits and a later sibling B experiences an infrastructure failure, the endpoint returns 5xx and acknowledges neither. Mobile retains both dirty generations. Retrying A with its old `baseRevision` returns `REVISION_CONFLICT` plus A's committed canonical revision without incrementing it a second time; the mobile generation ledger applies that canonical state and converges. B then retries normally. Do not trust `deviceId`, `clientModifiedAt`, or a client-generated idempotency value as mutation ordering.
+
+```toml
+[functions.mobile-sync-push]
+verify_jwt = true
+
+[functions.mobile-sync-pull]
+verify_jwt = true
+```
+
+In `mobile-sync-pull/index.ts`, repeat the same bearer-token/`auth.getUser(userJwt)` verification, derive `verifiedUserId` only from the verified user, and construct the service-role client only after authentication. Use an explicit verified-owner predicate, then map the typed columns/documents into the same canonical wrappers returned by the mutation RPC:
 
 ```typescript
-const { data: preferenceRow, error: preferenceError } = await admin
-  .from("local_profile_preferences")
-  .select("*")
-  .eq("user_id", verifiedUserId)
-  .eq("local_profile_id", requestedProfileId)
-  .maybeSingle();
-if (preferenceError) throw preferenceError;
-
 const canonical = (
+  localProfileId: string,
   section: ProfilePreferenceSection,
-  documentVersion: number,
   serverRevision: number,
   serverUpdatedAt: string,
-  payload: Record<string, unknown>,
+  payload: JsonRecord,
 ): PortalProfilePreferenceSectionCanonical => ({
-  localProfileId: requestedProfileId,
+  localProfileId,
   section,
-  documentVersion,
+  documentVersion: 1,
   serverRevision,
   serverUpdatedAt,
   payload,
 });
 
-const profilePreferenceSections = cursor || !preferenceRow ? undefined : [
-  canonical("CORE", 1, preferenceRow.core_revision, preferenceRow.core_updated_at, {
-    bodyWeightKg: preferenceRow.body_weight_kg,
-    weightUnit: preferenceRow.weight_unit,
-    weightIncrement: preferenceRow.weight_increment,
-  }),
-  canonical("RACK", preferenceRow.equipment_rack.version, preferenceRow.rack_revision,
-    preferenceRow.rack_updated_at, preferenceRow.equipment_rack),
-  canonical("WORKOUT", preferenceRow.workout_preferences.version,
-    preferenceRow.workout_revision, preferenceRow.workout_updated_at,
-    preferenceRow.workout_preferences),
-  canonical("LED", preferenceRow.led_preferences.version, preferenceRow.led_revision,
-    preferenceRow.led_updated_at, {
+const canonicalTimestamp = (value: string): string => new Date(value).toISOString();
+
+async function loadFirstPageProfilePreferences(
+  cursor: string | null | undefined,
+  requestedProfileId: string | null | undefined,
+): Promise<PortalProfilePreferenceSectionCanonical[] | undefined> {
+  if (cursor || !requestedProfileId || requestedProfileId.trim().length === 0) {
+    return undefined;
+  }
+  const { data: preferenceRow, error: preferenceError } = await admin
+    .from("local_profile_preferences")
+    .select(
+      "local_profile_id,body_weight_kg,weight_unit,weight_increment," +
+        "core_revision,core_updated_at,equipment_rack,rack_revision,rack_updated_at," +
+        "workout_preferences,workout_revision,workout_updated_at," +
+        "led_color_scheme_id,led_preferences,led_revision,led_updated_at," +
+        "vbt_enabled,vbt_preferences,vbt_revision,vbt_updated_at",
+    )
+    .eq("user_id", verifiedUserId)
+    .eq("local_profile_id", requestedProfileId)
+    .maybeSingle();
+  if (preferenceError) throw new PreferenceInfrastructureError("preference pull");
+  if (!preferenceRow) return undefined;
+
+  try {
+    const core = validateCorePayload({
+      bodyWeightKg: preferenceRow.body_weight_kg,
+      weightUnit: preferenceRow.weight_unit,
+      weightIncrement: preferenceRow.weight_increment,
+    });
+    const rack = validateRackPayload(preferenceRow.equipment_rack);
+    const workout = validateWorkoutPayload(preferenceRow.workout_preferences);
+    const led = validateLedPayload({
       ledColorSchemeId: preferenceRow.led_color_scheme_id,
       preferences: preferenceRow.led_preferences,
-    }),
-  canonical("VBT", preferenceRow.vbt_preferences.version, preferenceRow.vbt_revision,
-    preferenceRow.vbt_updated_at, {
+    });
+    const vbt = validateVbtPayload({
       vbtEnabled: preferenceRow.vbt_enabled,
       preferences: preferenceRow.vbt_preferences,
-    }),
-];
+    });
+    return [
+      canonical(
+        requestedProfileId,
+        "CORE",
+        infrastructureRevision(preferenceRow.core_revision),
+        canonicalTimestamp(preferenceRow.core_updated_at),
+        core,
+      ),
+      canonical(
+        requestedProfileId,
+        "RACK",
+        infrastructureRevision(preferenceRow.rack_revision),
+        canonicalTimestamp(preferenceRow.rack_updated_at),
+        rack,
+      ),
+      canonical(
+        requestedProfileId,
+        "WORKOUT",
+        infrastructureRevision(preferenceRow.workout_revision),
+        canonicalTimestamp(preferenceRow.workout_updated_at),
+        workout,
+      ),
+      canonical(
+        requestedProfileId,
+        "LED",
+        infrastructureRevision(preferenceRow.led_revision),
+        canonicalTimestamp(preferenceRow.led_updated_at),
+        led,
+      ),
+      canonical(
+        requestedProfileId,
+        "VBT",
+        infrastructureRevision(preferenceRow.vbt_revision),
+        canonicalTimestamp(preferenceRow.vbt_updated_at),
+        vbt,
+      ),
+    ];
+  } catch (error) {
+    if (error instanceof PreferenceInfrastructureError) throw error;
+    throw new PreferenceInfrastructureError("malformed preference pull row");
+  }
+}
+
+const profilePreferenceSections = await loadFirstPageProfilePreferences(
+  cursor,
+  requestedProfileId,
+);
 ```
 
-List the required portal verification commands:
+Only the first page (`!cursor`) for a nonblank requested profile may execute this query. Later pages omit the field but keep normal pagination and `syncTime`. An absent preference row also omits the field and never creates a row. The containing pull handler catches `PreferenceInfrastructureError`, logs only its sanitized error class name, and returns a generic 5xx.
+
+Add this machine-readable manifest exactly; the mobile handoff contract test parses only this fenced block, so prose cannot impersonate test coverage:
+
+```portal-test-manifest
+database:exact-function-acls-and-no-client-dml
+database:temporary-grant-owner-rls-and-cross-owner-user-id-protection
+database:base-revision-accept-and-stale-canonical-conflict
+edge:auth-and-cross-user-profile-rejection
+edge:strict-five-section-validation-and-local-only-rejection
+edge:section-262143-262144-262145-byte-boundaries
+edge:envelope-524287-524288-524289-byte-boundaries
+edge:unexpected-rpc-error-is-sanitized-5xx
+edge:same-section-concurrent-first-write
+edge:different-section-concurrent-first-write
+edge:lost-ack-retry-canonical-convergence
+edge:mutation-and-first-page-pull-canonical-equality
+edge:later-pull-pages-omit-preferences-and-keep-sync-time
+```
+
+Implement the manifest with real database and function tests, not string searches:
+
+- In `supabase/tests/database/profile_preferences.test.sql`, use pgTAP in a transaction. Assert the two exact function identities/signatures, `SECURITY INVOKER`, empty `search_path`, owner, volatility, return shapes, and execute ACLs; assert `PUBLIC`, `anon`, and `authenticated` have neither function execute nor table DML while `service_role` has only the intended table/function privileges.
+- In that pgTAP file, temporarily grant table DML inside the test transaction solely to exercise RLS. Set authenticated JWT claims for owner A and owner B, prove each CRUD operation sees/mutates only its own composite parent, and prove owner A cannot update a row's `user_id` to owner B because the `WITH CHECK` predicate fails. Do not claim that RLS makes a same-owner `local_profile_id` immutable; no trigger is part of this plan. Revoke the temporary grants and verify the production ACLs again before rollback.
+- Seed two composite profile keys and call the real mutation function for all five sections. Prove base revision 0 accepts revision 1, the next matching base accepts exactly the next revision, a stale base returns `REVISION_CONFLICT` plus byte/equality-identical canonical JSON, and mutating one section leaves all four sibling payloads/revisions unchanged. For every call, prove the targeted row keeps its `user_id` and `local_profile_id`, the non-target key is untouched, and the RPC cannot mutate either key. Exercise explicit `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, `VALIDATION_FAILED`, and `UNKNOWN_PROFILE` rows.
+- In `mobile-sync-push/index.test.ts`, invoke the exported handler with injected anon/admin clients and two real local Supabase users. Cover missing/invalid JWT, attempted cross-user profile mutation, and the absence of any request-body `userId` authority. Spy on every privileged table/RPC method and prove malformed data in the final ordinary item or final preference item produces zero privileged calls.
+- Table-drive every required and unknown key, primitive type, enum, range, nested object, duplicate rack id, duplicate `(localProfileId, section)`, all five version-1 wrappers, every unsupported wrapper/embedded version, and recursive normalized local-only names. Rack names may repeat, and signed safe-integer `createdAt`/`updatedAt` values are accepted. Pre-count duplicate section identities before size or document validation; assert exactly one `DUPLICATE_SECTION` rejection per duplicated key, zero RPC calls for every occurrence of that key, and one RPC for each valid non-duplicated sibling.
+- Use the shared byte-golden artifact described below to build complete raw bodies at exactly 262143, 262144, and 262145 bytes for one preference array element and exactly 524287, 524288, and 524289 bytes for the complete raw HTTP `PortalSyncPayload`. Assert inclusive limits, HTTP 413 only for full-request overflow when the preference field is present, per-section `SECTION_TOO_LARGE` for section overflow, exact scanner offsets despite whitespace/escapes/nesting, and that a large ordinary sync body below 9,500,000 bytes without the preference field is not incorrectly subjected to the preference request cap.
+- Inject RPC error, null data, empty array, two rows, malformed canonical, mismatched revision, and unknown rejection reason. Each must return generic 5xx, log only `{ name }`, expose no payload/profile/token/secret/error message, and never emit `VALIDATION_FAILED`. A well-formed domain rejection continues with valid siblings.
+- With real RPC calls and `Promise.all`, prove same-section concurrent base-0 writes yield one revision-1 acceptance and one canonical conflict, while different-section base-0 writes both reach revision 1 and preserve both documents. Assert one returned row per call.
+- For lost acknowledgement, commit A directly, force the handler's later B RPC to fail after A has committed, discard the failed response, and retry the original A mutation at base 0. Assert the retry is a canonical revision-1 conflict and the stored revision remains 1; then retry B normally and assert convergence.
+- In `mobile-sync-pull/index.test.ts`, seed all five typed documents through the mutation RPC, invoke first-page pull as the owner, and deep-compare every canonical wrapper to the mutation responses, including normalized ISO timestamps. Assert both owner predicates are applied, a cross-user profile cannot be read, an absent row is not created, later cursor pages omit `profilePreferenceSections`, and every response retains `syncTime`.
+
+Run this exact portal verification sequence from the portal repository:
 
 ```bash
-supabase db reset
-supabase migration list
-supabase test db
+supabase --version
+supabase start
+supabase db reset --local
+supabase migration list --local
+supabase test db --local
 deno test --allow-env --allow-net supabase/functions/mobile-sync-push
 deno test --allow-env --allow-net supabase/functions/mobile-sync-pull
-supabase inspect db lint
+supabase db lint --local --fail-on warning
+supabase db advisors --local
+git status --short
+git diff --check
+git diff --name-only
+git diff -- supabase/functions/mobile-sync-push supabase/functions/mobile-sync-pull supabase/functions/_shared/profile-preference-byte-goldens.json supabase/tests/database/profile_preferences.test.sql supabase/config.toml supabase/migrations docs/profile-preferences-advisor-dispositions.md
 ```
+
+Require Supabase CLI 2.81.3 or newer for `db advisors`. If that command is unavailable in the installed CLI, run the equivalent Supabase Advisors through the project MCP integration or Dashboard before handoff approval; do not skip it. Record every lint/advisor finding with id, severity, affected object, fix or evidence-backed disposition, command/source, and rerun result in `docs/profile-preferences-advisor-dispositions.md`. The final `git diff --name-only` must contain only the listed portal targets, the focused diff must be reviewed, and no `supabase db push`, `functions deploy`, remote migration, commit, or deployment belongs to this handoff step.
 
 - [ ] **Step 6: Run the handoff contract test and verify it passes**
 
@@ -1247,7 +2999,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit the atomic backend handoff**
 
 ```powershell
-git add docs/backend-handoff/profile-preferences-supabase.sql docs/backend-handoff/profile-preferences-edge-functions.md shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/BackendHandoffContractTest.kt
+git add docs/backend-handoff/profile-preferences-supabase.sql docs/backend-handoff/profile-preferences-edge-functions.md docs/backend-handoff/profile-preference-byte-goldens.json shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/BackendHandoffContractTest.kt
 git commit -m "docs(sync): define atomic profile preference edge contract"
 ```
 
@@ -1274,11 +3026,21 @@ package com.devil.phoenixproject.data.sync
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 
 class ProfilePreferenceSyncDtosTest {
@@ -1301,10 +3063,23 @@ class ProfilePreferenceSyncDtosTest {
         assertTrue(push.canonicalProfilePreferenceSections.isEmpty())
         assertTrue(push.profilePreferenceRejections.isEmpty())
         assertNull(pull.profilePreferenceSections)
+
+        val encodedPush = json.encodeToJsonElement(push).jsonObject
+        val encodedPull = json.encodeToJsonElement(pull).jsonObject
+        assertFalse("profilePreferencesAccepted" in encodedPush)
+        assertEquals(
+            JsonArray(emptyList()),
+            encodedPush.getValue("canonicalProfilePreferenceSections"),
+        )
+        assertEquals(
+            JsonArray(emptyList()),
+            encodedPush.getValue("profilePreferenceRejections"),
+        )
+        assertFalse("profilePreferenceSections" in encodedPull)
     }
 
     @Test
-    fun `mutation serializes payload object and excludes local safety`() {
+    fun `mutation has exact value-only wire keys and JSON number revisions`() {
         val mutation = PortalProfilePreferenceSectionMutationDto(
             localProfileId = "profile-a",
             section = "WORKOUT",
@@ -1317,16 +3092,74 @@ class ProfilePreferenceSyncDtosTest {
             },
         )
 
-        val encoded = json.encodeToString(mutation)
-        assertTrue(encoded.contains("\"voiceStopEnabled\":true"))
-        assertFalse(encoded.contains("safeWord"))
-        assertFalse(encoded.contains("safeWordCalibrated"))
-        assertFalse(encoded.contains("adultsOnlyConfirmed"))
-        assertFalse(encoded.contains("adultsOnlyPrompted"))
+        val encoded = json.encodeToJsonElement(mutation).jsonObject
+        assertEquals(
+            setOf(
+                "localProfileId", "section", "documentVersion", "baseRevision",
+                "clientModifiedAt", "payload",
+            ),
+            encoded.keys,
+        )
+        assertEquals("profile-a", encoded.getValue("localProfileId").jsonPrimitive.content)
+        assertEquals("WORKOUT", encoded.getValue("section").jsonPrimitive.content)
+        assertFalse(encoded.getValue("documentVersion").jsonPrimitive.isString)
+        assertEquals(1, encoded.getValue("documentVersion").jsonPrimitive.int)
+        assertFalse(encoded.getValue("baseRevision").jsonPrimitive.isString)
+        assertEquals(4L, encoded.getValue("baseRevision").jsonPrimitive.long)
+        assertEquals(
+            "2026-07-11T12:00:00Z",
+            encoded.getValue("clientModifiedAt").jsonPrimitive.content,
+        )
+        val payload = encoded.getValue("payload")
+        assertTrue(payload is JsonObject)
+        assertEquals(setOf("version", "voiceStopEnabled"), payload.jsonObject.keys)
+        assertFalse(payload.jsonObject.getValue("version").jsonPrimitive.isString)
+        assertTrue(payload.jsonObject.getValue("voiceStopEnabled").jsonPrimitive.boolean)
     }
 
     @Test
-    fun `canonical and rejection preserve revision identity`() {
+    fun `recursive normalized local-only names cannot enter mutation or canonical DTOs`() {
+        listOf(
+            "safeWord",
+            "SAFE_WORD",
+            "safe-word-calibrated",
+            "adults_only_confirmed",
+            "adultsOnlyPrompted",
+            "local_generation",
+            "DIRTY",
+            "legacy-migration-version",
+        ).forEach { forbidden ->
+            val adversarial = buildJsonObject {
+                put("version", 1)
+                putJsonArray("nested") {
+                    add(buildJsonObject { put(forbidden, "must-not-enter-wire-dto") })
+                }
+            }
+            assertFailsWith<IllegalArgumentException>(forbidden) {
+                PortalProfilePreferenceSectionMutationDto(
+                    localProfileId = "profile-a",
+                    section = "WORKOUT",
+                    documentVersion = 1,
+                    baseRevision = 4,
+                    clientModifiedAt = "2026-07-11T12:00:00Z",
+                    payload = adversarial,
+                )
+            }
+            assertFailsWith<IllegalArgumentException>(forbidden) {
+                PortalProfilePreferenceSectionCanonicalDto(
+                    localProfileId = "profile-a",
+                    section = "WORKOUT",
+                    documentVersion = 1,
+                    serverRevision = 7,
+                    serverUpdatedAt = "2026-07-11T12:01:00Z",
+                    payload = adversarial,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `canonical and rejection encode exact keys types and revision identity`() {
         val canonical = PortalProfilePreferenceSectionCanonicalDto(
             localProfileId = "profile-a",
             section = "CORE",
@@ -1343,8 +3176,29 @@ class ProfilePreferenceSyncDtosTest {
             canonicalSection = canonical,
         )
 
-        assertEquals(7, rejection.serverRevision)
-        assertEquals(canonical, rejection.canonicalSection)
+        val encodedCanonical = json.encodeToJsonElement(canonical).jsonObject
+        assertEquals(
+            setOf(
+                "localProfileId", "section", "documentVersion", "serverRevision",
+                "serverUpdatedAt", "payload",
+            ),
+            encodedCanonical.keys,
+        )
+        assertFalse(encodedCanonical.getValue("serverRevision").jsonPrimitive.isString)
+        assertEquals(7L, encodedCanonical.getValue("serverRevision").jsonPrimitive.long)
+        assertTrue(encodedCanonical.getValue("payload") is JsonObject)
+
+        val encodedRejection = json.encodeToJsonElement(rejection).jsonObject
+        assertEquals(
+            setOf(
+                "localProfileId", "section", "serverRevision", "reason", "canonicalSection",
+            ),
+            encodedRejection.keys,
+        )
+        assertFalse(encodedRejection.getValue("serverRevision").jsonPrimitive.isString)
+        assertEquals(7L, encodedRejection.getValue("serverRevision").jsonPrimitive.long)
+        assertEquals("REVISION_CONFLICT", encodedRejection.getValue("reason").jsonPrimitive.content)
+        assertEquals(encodedCanonical, encodedRejection.getValue("canonicalSection"))
     }
 }
 ```
@@ -1409,6 +3263,7 @@ data class ProfilePreferenceSyncApplyReport(
 
 data class ProfilePreferenceSyncIssue(
     val key: ProfilePreferenceSectionKey,
+    val localGeneration: Long,
     val reason: String,
 )
 
@@ -1429,9 +3284,36 @@ sealed interface ProfilePreferenceCanonicalDecodeResult {
 
 - [ ] **Step 4: Add the wire DTOs and additive fields**
 
-Add the three `@Serializable` DTOs to `PortalSyncDtos.kt`:
+Add a recursive value-only guard and the three `@Serializable` DTOs to `PortalSyncDtos.kt`. The guard normalizes punctuation/case exactly like the Edge validator and rejects local metadata or consent/safety fields at any payload depth. `Long` fields deliberately use the default kotlinx.serialization JSON-number representation; they are not quoted strings. Task 4 prevents values outside JavaScript's exact-integer range from reaching these DTOs.
 
 ```kotlin
+private val LOCAL_ONLY_PROFILE_PREFERENCE_KEYS = setOf(
+    "safeword",
+    "safewordcalibrated",
+    "adultsonlyconfirmed",
+    "adultsonlyprompted",
+    "localgeneration",
+    "dirty",
+    "legacymigrationversion",
+)
+
+private fun normalizedProfilePreferenceWireKey(key: String): String =
+    key.lowercase().filter { it in 'a'..'z' || it in '0'..'9' }
+
+private fun requireValueOnlyProfilePreferencePayload(value: kotlinx.serialization.json.JsonElement) {
+    when (value) {
+        is kotlinx.serialization.json.JsonArray ->
+            value.forEach(::requireValueOnlyProfilePreferencePayload)
+        is kotlinx.serialization.json.JsonObject -> value.forEach { (key, child) ->
+            require(normalizedProfilePreferenceWireKey(key) !in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS) {
+                "Local-only profile preference fields are not wire-safe"
+            }
+            requireValueOnlyProfilePreferencePayload(child)
+        }
+        else -> Unit
+    }
+}
+
 @Serializable
 data class PortalProfilePreferenceSectionMutationDto(
     val localProfileId: String,
@@ -1440,7 +3322,11 @@ data class PortalProfilePreferenceSectionMutationDto(
     val baseRevision: Long,
     val clientModifiedAt: String,
     val payload: kotlinx.serialization.json.JsonObject,
-)
+) {
+    init {
+        requireValueOnlyProfilePreferencePayload(payload)
+    }
+}
 
 @Serializable
 data class PortalProfilePreferenceSectionCanonicalDto(
@@ -1450,7 +3336,11 @@ data class PortalProfilePreferenceSectionCanonicalDto(
     val serverRevision: Long,
     val serverUpdatedAt: String,
     val payload: kotlinx.serialization.json.JsonObject,
-)
+) {
+    init {
+        requireValueOnlyProfilePreferencePayload(payload)
+    }
+}
 
 @Serializable
 data class ProfilePreferenceSectionRejectionDto(
@@ -1502,6 +3392,7 @@ git commit -m "feat(sync): add profile preference wire contract"
 
 **Files:**
 - Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt`
 - Create: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt`
@@ -1566,9 +3457,166 @@ fun `malformed dirty document is reported and valid sibling remains syncable`() 
     assertEquals(ProfilePreferenceSectionName.WORKOUT, snapshot.unsyncable.single().key.section)
     assertTrue(snapshot.unsyncable.single().reason.startsWith("invalid local document:"))
 }
+
+private companion object {
+    const val MAX_EXACT_JSON_INTEGER = 9_007_199_254_740_991L
+    const val MIN_EXACT_JSON_INTEGER = -9_007_199_254_740_991L
+}
+
+private fun forceDirtyCoreRevision(profileId: String, revision: Long) {
+    driver.execute(
+        identifier = null,
+        sql = """
+            UPDATE UserProfilePreferences
+               SET core_server_revision = ?, core_dirty = 1
+             WHERE profile_id = ?
+        """.trimIndent(),
+        parameters = 2,
+    ) {
+        bindLong(0, revision)
+        bindString(1, profileId)
+    }
+}
+
+@Test
+fun `base revision max is syncable while max plus one is a dead letter`() = runTest {
+    val cases = listOf(
+        "profile-max" to MAX_EXACT_JSON_INTEGER,
+        "profile-over" to MAX_EXACT_JSON_INTEGER + 1,
+    )
+    cases.forEach { (profileId, revision) ->
+        createProfile(profileId)
+        foundationRepository.insertDefaults(profileId)
+        forceDirtyCoreRevision(profileId, revision)
+    }
+
+    val first = repository.snapshotDirtySections()
+    val max = first.valid.single {
+        it.key.localProfileId == "profile-max" &&
+            it.key.section == ProfilePreferenceSectionName.CORE
+    }
+    assertEquals(MAX_EXACT_JSON_INTEGER, max.baseRevision)
+    assertTrue(first.valid.none {
+        it.key.localProfileId == "profile-over" &&
+            it.key.section == ProfilePreferenceSectionName.CORE
+    })
+    val issue = first.unsyncable.single {
+        it.key.localProfileId == "profile-over" &&
+            it.key.section == ProfilePreferenceSectionName.CORE
+    }
+    assertEquals(
+        foundationRepository.get("profile-over").core.metadata.localGeneration,
+        issue.localGeneration,
+    )
+    assertTrue(issue.reason.startsWith("unrepresentable JSON integer: baseRevision="))
+    assertTrue(foundationRepository.get("profile-over").core.metadata.dirty)
+
+    val second = repository.snapshotDirtySections()
+    assertEquals(
+        setOf("profile-over"),
+        second.unsyncable.filter { it.key.section == ProfilePreferenceSectionName.CORE }
+            .map { it.key.localProfileId }
+            .toSet(),
+    )
+}
+
+@Test
+fun `rack signed timestamp bounds stay JSON numbers and overflow is dead lettered`() = runTest {
+    suspend fun writeRack(
+        profileId: String,
+        createdAt: Long,
+        updatedAt: Long,
+        duplicateName: Boolean = false,
+    ) {
+        createProfile(profileId)
+        foundationRepository.insertDefaults(profileId)
+        val items = buildList {
+            add(
+                RackItem(
+                    id = "rack-1",
+                    name = "Same name",
+                    weightKg = 20f,
+                    createdAt = createdAt,
+                    updatedAt = updatedAt,
+                ),
+            )
+            if (duplicateName) add(
+                RackItem(
+                    id = "rack-2",
+                    name = "Same name",
+                    weightKg = 10f,
+                    createdAt = createdAt,
+                    updatedAt = updatedAt,
+                ),
+            )
+        }
+        foundationRepository.updateRack(profileId, RackPreferences(items = items), now = 30)
+    }
+    writeRack(
+        "rack-bounds",
+        createdAt = MIN_EXACT_JSON_INTEGER,
+        updatedAt = MAX_EXACT_JSON_INTEGER,
+        duplicateName = true,
+    )
+    writeRack("rack-created-over", MAX_EXACT_JSON_INTEGER + 1, 0)
+    writeRack("rack-updated-under", 0, MIN_EXACT_JSON_INTEGER - 1)
+
+    val snapshot = repository.snapshotDirtySections()
+    val bounds = snapshot.valid.single {
+        it.key.localProfileId == "rack-bounds" &&
+            it.key.section == ProfilePreferenceSectionName.RACK
+    }
+    val firstItem = bounds.payload.getValue("items").jsonArray.first().jsonObject
+    assertFalse(firstItem.getValue("createdAt").jsonPrimitive.isString)
+    assertFalse(firstItem.getValue("updatedAt").jsonPrimitive.isString)
+    assertEquals(MIN_EXACT_JSON_INTEGER, firstItem.getValue("createdAt").jsonPrimitive.long)
+    assertEquals(MAX_EXACT_JSON_INTEGER, firstItem.getValue("updatedAt").jsonPrimitive.long)
+    assertEquals(2, bounds.payload.getValue("items").jsonArray.size)
+
+    mapOf(
+        "rack-created-over" to "RACK.items[0].createdAt",
+        "rack-updated-under" to "RACK.items[0].updatedAt",
+    ).forEach { (profileId, field) ->
+        assertTrue(snapshot.valid.none {
+            it.key.localProfileId == profileId &&
+                it.key.section == ProfilePreferenceSectionName.RACK
+        })
+        val issue = snapshot.unsyncable.single {
+            it.key.localProfileId == profileId &&
+                it.key.section == ProfilePreferenceSectionName.RACK
+        }
+        assertTrue(issue.reason.startsWith("unrepresentable JSON integer: $field="))
+        assertTrue(foundationRepository.get(profileId).rack.metadata.dirty)
+    }
+
+    val oldGeneration = snapshot.unsyncable.single {
+        it.key.localProfileId == "rack-created-over" &&
+            it.key.section == ProfilePreferenceSectionName.RACK
+    }.localGeneration
+    foundationRepository.updateRack(
+        "rack-created-over",
+        RackPreferences(
+            items = listOf(
+                RackItem(
+                    id = "rack-1",
+                    name = "Same name",
+                    weightKg = 20f,
+                    createdAt = 0,
+                    updatedAt = 0,
+                ),
+            ),
+        ),
+        now = 40,
+    )
+    val revalidated = repository.snapshotDirtySections().valid.single {
+        it.key.localProfileId == "rack-created-over" &&
+            it.key.section == ProfilePreferenceSectionName.RACK
+    }
+    assertTrue(revalidated.localGeneration > oldGeneration)
+}
 ```
 
-The fixture's `createProfile` calls the existing generated `insertProfile` query. Import `jsonObject`, `jsonPrimitive`, `int`, and `boolean`; assertions inspect JSON elements, not stringified nested JSON.
+The fixture's `createProfile` calls the existing generated `insertProfile` query, and its in-memory `driver` is used only for the nonnegative MAX/MAX+1 boundary seeds above. Do not seed a negative `core_server_revision`: schema 43's `CHECK (core_server_revision >= 0)` correctly makes that database state impossible. Keep the codec's negative-base-revision branch as defense in depth for non-database callers. Import `jsonArray`, `jsonObject`, `jsonPrimitive`, `int`, `long`, and `boolean`; assertions inspect JSON elements, not stringified nested JSON. “Dead letter for the current generation” has an executable meaning: the issue carries that `localGeneration`, the section remains dirty, every snapshot excludes it from `valid` (so no wire DTO, chunk, or RPC retry can be created), and it remains diagnosable in `unsyncable`. A subsequent local edit increments the generation and is validated afresh. No value is rounded, coerced to a string, or sent repeatedly.
 
 - [ ] **Step 2: Write failing generation-race and pull-merge tests**
 
@@ -1816,10 +3864,38 @@ WHERE profile_id = :profile_id
 
 - [ ] **Step 5: Implement the strict sync codec and complete wire wrappers**
 
-Create `ProfilePreferenceSyncCodec.kt` as an internal class. It parses foundation codec output back to `JsonObject`, so JSON documents remain objects:
+First create `PortalWireJson.kt`; Task 4's codec uses this shared instance and must compile independently before Task 5 adds raw request scanning:
+
+```kotlin
+package com.devil.phoenixproject.data.sync
+
+import kotlinx.serialization.json.Json
+
+internal val PortalWireJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    encodeDefaults = true
+    explicitNulls = false
+}
+```
+
+Then create `ProfilePreferenceSyncCodec.kt` as an internal class. It parses foundation codec output back to `JsonObject`, so JSON documents remain objects:
 
 ```kotlin
 internal class ProfilePreferenceSyncCodec {
+    companion object {
+        const val MAX_EXACT_JSON_INTEGER = 9_007_199_254_740_991L
+        const val MIN_EXACT_JSON_INTEGER = -9_007_199_254_740_991L
+    }
+
+    private fun exactJsonIntegerIssue(field: String, value: Long): String? =
+        if (value in MIN_EXACT_JSON_INTEGER..MAX_EXACT_JSON_INTEGER) {
+            null
+        } else {
+            "unrepresentable JSON integer: $field=$value; exact range is " +
+                "$MIN_EXACT_JSON_INTEGER..$MAX_EXACT_JSON_INTEGER"
+        }
+
     private fun document(encoded: String): JsonObject =
         PortalWireJson.parseToJsonElement(encoded).jsonObject
 
@@ -1877,7 +3953,7 @@ internal sealed interface DecodedProfilePreferenceValue {
 }
 ```
 
-Add `encodeDirtyRow(row)`, `decodeAndValidateTypedValue(section, payload)`, and `decodeCanonical(canonical)` methods. `encodeDirtyRow` decodes each dirty section independently with the foundation validator/codec; it emits a `ProfilePreferenceSectionSyncDto` only for `ProfilePreferenceValidity.Valid`, and emits a `ProfilePreferenceSyncIssue` retaining the profile/section identity for every invalid dirty document. It uses the section's row timestamp, local generation, and server revision.
+Add `encodeDirtyRow(row)`, `decodeAndValidateTypedValue(section, payload)`, and `decodeCanonical(canonical)` methods. `encodeDirtyRow` decodes each dirty section independently with the foundation validator/codec. Before constructing any `ProfilePreferenceSectionSyncDto` or `PortalProfilePreferenceSectionMutationDto`, check that the section's `baseRevision` is nonnegative and no greater than `MAX_EXACT_JSON_INTEGER`; a negative in the exact-number interval gets `invalid local document: baseRevision must be nonnegative`, while either exact-number overflow gets `exactJsonIntegerIssue("baseRevision", value)`. For RACK, check every typed item's signed `createdAt` and `updatedAt` with `exactJsonIntegerIssue`. The Kotlin validator and Edge validator both allow repeated rack names and signed timestamps; only duplicate rack IDs and timestamps outside the exact JSON-number interval are rejected. Emit a valid sync DTO only when the foundation document and every wire integer pass. Otherwise emit a `ProfilePreferenceSyncIssue(key, localGeneration, reason)` retaining the current profile/section generation. The issue stays out of `valid`, so kotlinx.serialization never has an opportunity to round it or place it in a request; valid `Long` values use `JsonPrimitive(Long)` and therefore remain JSON numbers, never strings. The section's row timestamp, local generation, and server revision are otherwise preserved exactly.
 
 Use this exact typed decoding boundary; kotlinx.serialization document defaults remain compatible, while wrapper fields and JSON types are mandatory:
 
@@ -2089,7 +4165,7 @@ Expected: PASS, including malformed-local retention, both in-flight response rac
 - [ ] **Step 8: Commit the sync persistence boundary**
 
 ```powershell
-git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt
+git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt
 git commit -m "feat(sync): add profile preference sync repository"
 ```
 
@@ -2098,7 +4174,8 @@ git commit -m "feat(sync): add profile preference sync repository"
 ### Task 5: Add Exact Wire JSON, Adapters, and Preference Chunk Planning
 
 **Files:**
-- Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt`
+- Read: `docs/backend-handoff/profile-preference-byte-goldens.json`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncAdapter.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalPullAdapter.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncPlanner.kt`
@@ -2120,7 +4197,7 @@ fun `push adapter maps audit timestamp but keeps generation off wire`() {
     val source = ProfilePreferenceSectionSyncDto(
         key = ProfilePreferenceSectionKey("profile-a", ProfilePreferenceSectionName.CORE),
         documentVersion = 1,
-        baseRevision = 5,
+        baseRevision = 9_007_199_254_740_991L,
         clientModifiedAtEpochMs = 1_783_771_200_000L,
         localGeneration = 9,
         payload = buildJsonObject {
@@ -2133,14 +4210,18 @@ fun `push adapter maps audit timestamp but keeps generation off wire`() {
     val prepared = PortalSyncAdapter.toPortalProfilePreferenceMutation(source)
 
     assertEquals(9, prepared.sentLocalGeneration)
-    assertEquals(5, prepared.wire.baseRevision)
+    assertEquals(9_007_199_254_740_991L, prepared.wire.baseRevision)
     assertEquals("CORE", prepared.wire.section)
-    assertFalse(
-        PortalWireJson.encodeToString(
-            PortalProfilePreferenceSectionMutationDto.serializer(),
-            prepared.wire,
-        ).contains("localGeneration"),
+    val encoded = PortalWireJson.encodeToJsonElement(
+        PortalProfilePreferenceSectionMutationDto.serializer(),
+        prepared.wire,
+    ).jsonObject
+    assertFalse(encoded.getValue("baseRevision").jsonPrimitive.isString)
+    assertEquals(
+        9_007_199_254_740_991L,
+        encoded.getValue("baseRevision").jsonPrimitive.long,
     )
+    assertFalse("localGeneration" in encoded)
 }
 
 @Test
@@ -2183,6 +4264,7 @@ fun `planner isolates oversized section and keeps valid siblings`() {
 
     assertEquals(1, plan.unsyncable.size)
     assertEquals(ProfilePreferenceSectionName.RACK, plan.unsyncable.single().key.section)
+    assertEquals(1L, plan.unsyncable.single().localGeneration)
     assertEquals(listOf(ProfilePreferenceSectionName.CORE), plan.chunks.single().ledger.keys.map { it.section })
 }
 
@@ -2196,15 +4278,84 @@ fun `every planned request stays within preference request cap`() {
 
     assertTrue(plan.chunks.size > 1)
     plan.chunks.forEach { chunk ->
-        val bytes = PortalWireJson.encodeToString(PortalSyncPayload.serializer(), chunk.payload)
-            .encodeToByteArray()
-            .size
+        val bytes = encodePortalSyncPayload(chunk.payload).rawBytes.size
         assertTrue(bytes <= MAX_PROFILE_PREFERENCE_REQUEST_BYTES)
+    }
+}
+
+@Test
+fun `shared raw byte goldens pin scanner spans and inclusive boundaries`() {
+    val recipes = PortalWireJson.decodeFromString<ProfilePreferenceByteGoldenRecipes>(
+        assertNotNull(
+            readProjectFile("docs/backend-handoff/profile-preference-byte-goldens.json"),
+        ),
+    )
+    assertEquals(1, recipes.version)
+
+    recipes.sectionTargetBytes.forEach { target ->
+        val sectionRaw = fillAsciiPadding(
+            recipes.sectionRawTemplate,
+            recipes.paddingMarker,
+            target,
+        )
+        val completeRaw = "{\"profilePreferenceSections\":[$sectionRaw]}"
+        val span = scanProfilePreferenceElementSpans(completeRaw).single()
+        assertEquals(sectionRaw, completeRaw.substring(span.start, span.endExclusive))
+        assertEquals(
+            target,
+            completeRaw.substring(span.start, span.endExclusive).encodeToByteArray().size,
+        )
+        assertEquals(
+            target == 262_145,
+            completeRaw.substring(span.start, span.endExclusive).encodeToByteArray().size >
+                MAX_PROFILE_PREFERENCE_SECTION_BYTES,
+        )
+        assertTrue("\"weightKg\":20.0" in sectionRaw)
+        assertTrue("\"createdAt\":-1e3" in sectionRaw)
+        assertTrue("π界🙂" in sectionRaw)
+        assertTrue("\\\"" in sectionRaw)
+        assertTrue("\\\\" in sectionRaw)
+        val decodedMutation = PortalWireJson.decodeFromString(
+            PortalProfilePreferenceSectionMutationDto.serializer(),
+            sectionRaw,
+        )
+        assertEquals("profile-a", decodedMutation.localProfileId)
+        assertEquals("RACK", decodedMutation.section)
+        assertEquals(0L, decodedMutation.baseRevision)
+        assertTrue(decodedMutation.payload.getValue("items") is JsonArray)
+        PortalWireJson.parseToJsonElement(completeRaw)
+    }
+
+    recipes.requestTargetBytes.forEach { target ->
+        val sectionRaw = recipes.sectionRawTemplate.replace(recipes.paddingMarker, "x")
+        val requestTemplate = recipes.requestRawTemplate.replace(
+            recipes.sectionMarker,
+            sectionRaw,
+        )
+        val completeRaw = fillAsciiPadding(
+            requestTemplate,
+            recipes.paddingMarker,
+            target,
+        )
+        assertEquals(target, completeRaw.encodeToByteArray().size)
+        assertEquals(
+            target == 524_289,
+            completeRaw.encodeToByteArray().size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES,
+        )
+        assertEquals(1, scanProfilePreferenceElementSpans(completeRaw).size)
+        val decodedRequest = PortalWireJson.decodeFromString(
+            PortalSyncPayload.serializer(),
+            completeRaw,
+        )
+        assertEquals("golden-device", decodedRequest.deviceId)
+        assertEquals("profile-a", decodedRequest.profileId)
+        assertEquals(1, decodedRequest.profilePreferenceSections?.size)
+        assertEquals("RACK", decodedRequest.profilePreferenceSections?.single()?.section)
     }
 }
 ```
 
-Add these deterministic helpers in the same test file:
+Import `readProjectFile`, `kotlinx.serialization.Serializable`, `JsonArray`, and `assertNotNull`. Add the serializable `ProfilePreferenceByteGoldenRecipes` shape with fields matching the exact Task 2 artifact, plus `fillAsciiPadding(template, marker, targetBytes)`. The helper requires exactly one marker, removes it to measure the UTF-8 fixed bytes, requires a nonnegative padding count, inserts only ASCII `x`, and asserts the result is exactly `targetBytes`. Add these deterministic mutation helpers in the same test file:
 
 ```kotlin
 private fun preparedMutation(
@@ -2242,24 +4393,41 @@ Run:
 .\gradlew.bat :shared:testAndroidHostTest --tests "*PortalSyncAdapterProfilePreferencesTest*" --tests "*PortalPullAdapterProfilePreferencesTest*" --tests "*ProfilePreferenceSyncPlannerTest*" -Pskip.supabase.check=true
 ```
 
-Expected: FAIL because `PortalWireJson`, adapter methods, constants, and planner are absent.
+Expected: FAIL because Task 4's `PortalWireJson` has no raw encoder/scanner yet and the adapter methods, constants, and planner are absent.
 
-- [ ] **Step 4: Create one shared wire JSON instance**
+- [ ] **Step 4: Extend the shared wire JSON boundary with raw spans**
 
-Create `PortalWireJson.kt`:
+Modify Task 4's `PortalWireJson.kt`; keep its existing `PortalWireJson` configuration byte-for-byte and add this import:
 
 ```kotlin
-package com.devil.phoenixproject.data.sync
+import kotlinx.serialization.encodeToString
+```
 
-import kotlinx.serialization.json.Json
+Then add one raw-wire encoding boundary used by both planning and transport:
 
-internal val PortalWireJson = Json {
-    ignoreUnknownKeys = true
-    isLenient = true
-    encodeDefaults = true
-    explicitNulls = false
+```kotlin
+internal data class RawJsonSpan(val start: Int, val endExclusive: Int)
+
+internal data class EncodedPortalSyncPayload(
+    val raw: String,
+    val rawBytes: ByteArray,
+    val preferenceElementSpans: List<RawJsonSpan>,
+) {
+    fun preferenceElementByteCount(span: RawJsonSpan): Int =
+        raw.substring(span.start, span.endExclusive).encodeToByteArray().size
+}
+
+internal fun encodePortalSyncPayload(payload: PortalSyncPayload): EncodedPortalSyncPayload {
+    val raw = PortalWireJson.encodeToString(PortalSyncPayload.serializer(), payload)
+    val spans = scanProfilePreferenceElementSpans(raw)
+    check(spans.size == payload.profilePreferenceSections.orEmpty().size) {
+        "Serialized profile preference span count mismatch"
+    }
+    return EncodedPortalSyncPayload(raw, raw.encodeToByteArray(), spans)
 }
 ```
+
+Implement `scanProfilePreferenceElementSpans(raw)` as a small index scanner over the complete encoded root object. Decode top-level property-name escapes, require at most one `profilePreferenceSections` key, recursively skip JSON values while tracking object/array nesting, and scan strings by honoring every backslash escape so quotes/brackets inside strings never change structure. For the preference array, pin each element's start after leading JSON whitespace and its exclusive end immediately after the value but before separator whitespace/comma/closing bracket. Require matching delimiters, no trailing non-whitespace, and an array span count equal to the typed list. Measure only `raw.substring(start, endExclusive).encodeToByteArray()`; neither this helper nor its callers may reconstruct an element with `JSON.stringify`, `toString`, or a second serialization. The shared decimal/exponent/escape/multibyte goldens are the executable scanner oracle.
 
 - [ ] **Step 5: Implement the push and pull adapters**
 
@@ -2355,18 +4523,42 @@ internal fun planProfilePreferencePushChunks(
     basePayload: PortalSyncPayload,
     mutations: List<PreparedProfilePreferenceMutation>,
 ): ProfilePreferencePushPlan {
+    fun encodedPayload(items: List<PreparedProfilePreferenceMutation>): PortalSyncPayload =
+        basePayload.copy(
+            sessions = emptyList(),
+            telemetry = emptyList(),
+            routines = emptyList(),
+            deletedRoutineIds = emptyList(),
+            cycles = emptyList(),
+            deletedCycleIds = emptyList(),
+            rpgAttributes = null,
+            badges = emptyList(),
+            gamificationStats = null,
+            phaseStatistics = emptyList(),
+            exerciseSignatures = emptyList(),
+            assessments = emptyList(),
+            customExercises = emptyList(),
+            externalActivities = emptyList(),
+            personalRecords = emptyList(),
+            allProfiles = null,
+            profilePreferenceSections = items.map { it.wire },
+        )
     val sorted = mutations.sortedWith(
         compareBy<PreparedProfilePreferenceMutation>({ it.key.localProfileId }, { it.key.section.ordinal }),
     )
     val valid = mutableListOf<PreparedProfilePreferenceMutation>()
     val issues = mutableListOf<ProfilePreferenceSyncIssue>()
     sorted.forEach { mutation ->
-        val bytes = PortalWireJson.encodeToString(
-            PortalProfilePreferenceSectionMutationDto.serializer(),
-            mutation.wire,
-        ).encodeToByteArray().size
+        val oneElement = encodePortalSyncPayload(encodedPayload(listOf(mutation)))
+        val bytes = oneElement.preferenceElementByteCount(
+            oneElement.preferenceElementSpans.single(),
+        )
         if (bytes > MAX_PROFILE_PREFERENCE_SECTION_BYTES) {
-            issues += ProfilePreferenceSyncIssue(mutation.key, "section exceeds 262144 encoded bytes")
+            issues += ProfilePreferenceSyncIssue(
+                key = mutation.key,
+                localGeneration = mutation.sentLocalGeneration,
+                reason = "section exceeds 262144 encoded bytes",
+            )
         } else {
             valid += mutation
         }
@@ -2374,25 +4566,6 @@ internal fun planProfilePreferencePushChunks(
 
     val chunks = mutableListOf<ProfilePreferencePushChunk>()
     var current = mutableListOf<PreparedProfilePreferenceMutation>()
-    fun encodedPayload(items: List<PreparedProfilePreferenceMutation>): PortalSyncPayload = basePayload.copy(
-        sessions = emptyList(),
-        telemetry = emptyList(),
-        routines = emptyList(),
-        deletedRoutineIds = emptyList(),
-        cycles = emptyList(),
-        deletedCycleIds = emptyList(),
-        rpgAttributes = null,
-        badges = emptyList(),
-        gamificationStats = null,
-        phaseStatistics = emptyList(),
-        exerciseSignatures = emptyList(),
-        assessments = emptyList(),
-        customExercises = emptyList(),
-        externalActivities = emptyList(),
-        personalRecords = emptyList(),
-        allProfiles = null,
-        profilePreferenceSections = items.map { it.wire },
-    )
     fun emit() {
         if (current.isEmpty()) return
         chunks += ProfilePreferencePushChunk(
@@ -2404,10 +4577,7 @@ internal fun planProfilePreferencePushChunks(
 
     valid.forEach { mutation ->
         val candidate = current + mutation
-        val bytes = PortalWireJson.encodeToString(
-            PortalSyncPayload.serializer(),
-            encodedPayload(candidate),
-        ).encodeToByteArray().size
+        val bytes = encodePortalSyncPayload(encodedPayload(candidate)).rawBytes.size
         if (current.isNotEmpty() && bytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES) emit()
         current += mutation
     }
@@ -2507,17 +4677,14 @@ class PortalApiClientProfilePreferenceLimitsTest {
             lastSync = 0,
             profilePreferenceSections = List(3, ::mutation),
         )
+        val encoded = encodePortalSyncPayload(payload)
         assertTrue(
-            payload.profilePreferenceSections.orEmpty().all { section ->
-                PortalWireJson.encodeToString(
-                    PortalProfilePreferenceSectionMutationDto.serializer(),
-                    section,
-                ).encodeToByteArray().size <= MAX_PROFILE_PREFERENCE_SECTION_BYTES
+            encoded.preferenceElementSpans.all { span ->
+                encoded.preferenceElementByteCount(span) <= MAX_PROFILE_PREFERENCE_SECTION_BYTES
             },
         )
         assertTrue(
-            PortalWireJson.encodeToString(PortalSyncPayload.serializer(), payload)
-                .encodeToByteArray().size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES,
+            encoded.rawBytes.size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES,
         )
 
         val error = client.pushPortalPayload(payload).exceptionOrNull()
@@ -2541,14 +4708,13 @@ Expected: FAIL because the call reaches authentication or does not return a 413 
 
 - [ ] **Step 3: Reuse `PortalWireJson` and add preference-specific guards**
 
-Remove `PortalApiClient`'s private `Json` construction and use `PortalWireJson`. Before the existing overall byte check, add:
+Remove `PortalApiClient`'s private `Json` construction and use the exact `encodePortalSyncPayload` result for both the HTTP body and both preference guards. Before the existing overall byte check, add:
 
 ```kotlin
-payload.profilePreferenceSections?.forEach { section ->
-    val sectionBytes = PortalWireJson.encodeToString(
-        PortalProfilePreferenceSectionMutationDto.serializer(),
-        section,
-    ).encodeToByteArray().size
+val encoded = encodePortalSyncPayload(payload)
+payload.profilePreferenceSections?.zip(encoded.preferenceElementSpans)
+    ?.forEach { (section, span) ->
+    val sectionBytes = encoded.preferenceElementByteCount(span)
     if (sectionBytes > MAX_PROFILE_PREFERENCE_SECTION_BYTES) {
         return Result.failure(
             PortalApiException(
@@ -2560,14 +4726,12 @@ payload.profilePreferenceSections?.forEach { section ->
     }
 }
 
-val serialized = PortalWireJson.encodeToString(PortalSyncPayload.serializer(), payload)
-val payloadBytes = serialized.encodeToByteArray()
 if (payload.profilePreferenceSections != null &&
-    payloadBytes.size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES
+    encoded.rawBytes.size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES
 ) {
     return Result.failure(
         PortalApiException(
-            "Profile preference request is ${payloadBytes.size} bytes; " +
+            "Profile preference request is ${encoded.rawBytes.size} bytes; " +
                 "cap is $MAX_PROFILE_PREFERENCE_REQUEST_BYTES bytes.",
             statusCode = 413,
         ),
@@ -2575,7 +4739,7 @@ if (payload.profilePreferenceSections != null &&
 }
 ```
 
-Retain the existing `MAX_PAYLOAD_BYTES` check after this block.
+Send `encoded.raw` as the request body, and retain the existing `MAX_PAYLOAD_BYTES` check against `encoded.rawBytes` after this block. Thus a non-null preference field, including an empty array, always applies 512 KiB to the complete raw `PortalSyncPayload`; without that field only the existing 9,500,000-byte overall cap applies.
 
 - [ ] **Step 4: Extend the fake for multi-request orchestration**
 
@@ -2643,6 +4807,9 @@ git commit -m "feat(sync): enforce profile preference payload limits"
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeProfilePreferenceSyncRepository.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerProfilePreferencesTest.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPushLimitsTest.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerTest.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalTokenRefreshTest.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullPaginationTest.kt`
 
 **Interfaces:**
 - Consumes: Task 4's internal persistence adapter, the data-foundation migration gate, Task 5's planner, and Task 6's transport/fakes.
@@ -2794,6 +4961,15 @@ private fun coreCanonical(revision: Long) = PortalProfilePreferenceSectionCanoni
     payload = coreSection(generation = 1).payload,
 )
 
+private fun workoutCanonical(revision: Long) = PortalProfilePreferenceSectionCanonicalDto(
+    localProfileId = "profile-a",
+    section = "WORKOUT",
+    documentVersion = 1,
+    serverRevision = revision,
+    serverUpdatedAt = "2026-07-11T12:00:00Z",
+    payload = workoutSection(generation = 1).payload,
+)
+
 private fun successResponse(
     profilePreferencesAccepted: Boolean? = null,
     canonicalProfilePreferenceSections: List<PortalProfilePreferenceSectionCanonicalDto> = emptyList(),
@@ -2861,6 +5037,87 @@ fun `canonical conflict is applied only through generation ledger`() = runTest {
     assertEquals(11, outcome.sentLocalGeneration)
     assertEquals("REVISION_CONFLICT", outcome.rejectionReason)
     assertEquals(6, outcome.canonical?.serverRevision)
+}
+
+@Test
+fun `duplicate response cardinality invalidates only that ledger key`() {
+    val coreKey = coreSection(generation = 11).key
+    val workoutKey = workoutSection(generation = 12).key
+    val ledger = mapOf(coreKey to 11L, workoutKey to 12L)
+    val coreRejection = ProfilePreferenceSectionRejectionDto(
+        localProfileId = "profile-a",
+        section = "CORE",
+        serverRevision = 7,
+        reason = "REVISION_CONFLICT",
+        canonicalSection = coreCanonical(revision = 7),
+    )
+    val cases = listOf(
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(
+                coreCanonical(7),
+                workoutCanonical(4),
+            ),
+            profilePreferenceRejections = listOf(coreRejection),
+        ),
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(
+                coreCanonical(7),
+                coreCanonical(8),
+                workoutCanonical(4),
+            ),
+        ),
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(workoutCanonical(4)),
+            profilePreferenceRejections = listOf(coreRejection, coreRejection),
+        ),
+    )
+
+    cases.forEach { response ->
+        val outcomes = buildProfilePreferencePushOutcomes(response, ledger)
+        assertEquals(listOf(workoutKey), outcomes.map { it.key })
+        assertEquals(12L, outcomes.single().sentLocalGeneration)
+        assertEquals(4L, outcomes.single().serverRevision)
+    }
+}
+
+@Test
+fun `rejection canonical key or revision mismatch invalidates only that ledger key`() {
+    val coreKey = coreSection(generation = 11).key
+    val workoutKey = workoutSection(generation = 12).key
+    val mismatchedRejections = listOf(
+        ProfilePreferenceSectionRejectionDto(
+            localProfileId = "profile-a",
+            section = "CORE",
+            serverRevision = 8,
+            reason = "REVISION_CONFLICT",
+            canonicalSection = coreCanonical(revision = 7),
+        ),
+        ProfilePreferenceSectionRejectionDto(
+            localProfileId = "profile-a",
+            section = "CORE",
+            serverRevision = 8,
+            reason = "REVISION_CONFLICT",
+            canonicalSection = workoutCanonical(revision = 8),
+        ),
+    )
+
+    mismatchedRejections.forEach { rejection ->
+        val outcomes = buildProfilePreferencePushOutcomes(
+            successResponse(
+                profilePreferencesAccepted = true,
+                canonicalProfilePreferenceSections = listOf(workoutCanonical(4)),
+                profilePreferenceRejections = listOf(rejection),
+            ),
+            ledger = mapOf(coreKey to 11L, workoutKey to 12L),
+        )
+
+        assertEquals(listOf(workoutKey), outcomes.map { it.key })
+        assertEquals(12L, outcomes.single().sentLocalGeneration)
+        assertEquals(4L, outcomes.single().serverRevision)
+    }
 }
 ```
 
@@ -2991,11 +5248,12 @@ private suspend fun pushDirtyProfilePreferences(
 }
 ```
 
-Implement `buildProfilePreferencePushOutcomes` so it:
+Implement module-internal `buildProfilePreferencePushOutcomes` so the focused tests can call the pure response mapper directly. It:
 
 - accepts only canonical/rejection keys present in the chunk ledger;
-- treats duplicate canonical/rejection entries for one key as an invariant violation and produces no outcome for that key;
+- requires exactly one total response entry per ledger key across both response arrays; canonical-plus-rejection, two canonicals, or two rejections for one key are invariant violations and produce no outcome for only that key;
 - maps canonical DTOs through `PortalPullAdapter.toCanonicalProfilePreferenceSection`;
+- rejects a rejection for only that key when its optional canonical has a different key or when `canonical.serverRevision != rejection.serverRevision`;
 - attaches `sentLocalGeneration` from the ledger;
 - leaves a sent key dirty when neither a valid canonical nor a rejection exists;
 - never maps local safety/consent fields.
@@ -3016,7 +5274,7 @@ private fun responseKey(localProfileId: String, section: String): ProfilePrefere
     return ProfilePreferenceSectionKey(localProfileId, parsed)
 }
 
-private fun buildProfilePreferencePushOutcomes(
+internal fun buildProfilePreferencePushOutcomes(
     response: PortalSyncPushResponse,
     ledger: Map<ProfilePreferenceSectionKey, Long>,
 ): List<ProfilePreferencePushOutcome> {
@@ -3045,7 +5303,11 @@ private fun buildProfilePreferencePushOutcomes(
         )
         if (canonical is ProfilePreferenceCanonicalDecodeResult.Invalid) return@forEach
         val decodedCanonical = (canonical as? ProfilePreferenceCanonicalDecodeResult.Valid)?.section
-        if (decodedCanonical != null && decodedCanonical.key != key) return@forEach
+        if (decodedCanonical != null && (
+                decodedCanonical.key != key ||
+                    decodedCanonical.serverRevision != rejection.serverRevision
+            )
+        ) return@forEach
         candidates += PreferenceOutcomeCandidate(
             key = key,
             serverRevision = rejection.serverRevision,
@@ -3172,7 +5434,7 @@ private fun coreCanonicalForSync() = PortalProfilePreferenceSectionCanonicalDto(
 Run:
 
 ```powershell
-.\gradlew.bat :shared:testAndroidHostTest --tests "*SyncManagerProfilePreferencesTest*" --tests "*PortalPushLimitsTest*" --tests "*SyncManagerTest*" -Pskip.supabase.check=true
+.\gradlew.bat :shared:testAndroidHostTest --tests "*SyncManagerProfilePreferencesTest*" --tests "*PortalPushLimitsTest*" --tests "*SyncManagerTest*" --tests "*PortalTokenRefreshTest*" --tests "*PortalPullPaginationTest*" -Pskip.supabase.check=true
 ```
 
 Expected: PASS.
@@ -3180,7 +5442,7 @@ Expected: PASS.
 - [ ] **Step 10: Commit metadata-first preference push**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/SyncManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeProfilePreferenceSyncRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerProfilePreferencesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPushLimitsTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/SyncManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeProfilePreferenceSyncRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerProfilePreferencesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPushLimitsTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalTokenRefreshTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullPaginationTest.kt
 git commit -m "feat(sync): push revisioned profile preference sections"
 ```
 
@@ -3513,12 +5775,12 @@ If Step 5 required no file changes, do not create an empty commit.
 The portal implementer must record all of these results before the mobile release is enabled:
 
 - [ ] The real portal migration was created with `supabase migration new profile_preferences` and the reviewed mobile SQL was copied without weakening grants, constraints, RLS, or RPC execution privileges.
-- [ ] `supabase db reset`, `supabase migration list`, and `supabase test db` pass in a disposable/local environment.
+- [ ] `supabase start` precedes `supabase db reset`, `supabase migration list`, `supabase test db`, function tests, lint, and advisors in a disposable/local environment.
 - [ ] Supabase security and performance advisors were run; every finding is fixed or documented with a concrete disposition.
 - [ ] Direct `anon` and `authenticated` table SELECT/INSERT/UPDATE/DELETE fail under normal grants.
-- [ ] Temporary-grant RLS tests prove owner SELECT/INSERT/UPDATE/DELETE and ownership-reassignment rejection in an isolated transaction.
+- [ ] Temporary-grant RLS tests prove owner SELECT/INSERT/UPDATE/DELETE and cross-owner `user_id` reassignment rejection in an isolated transaction; they do not claim same-owner `local_profile_id` immutability.
 - [ ] Edge tests prove the JWT-derived user can mutate only that user's composite-key rows.
-- [ ] Cross-user `localProfileId`, forged revisions/timestamps, unsupported versions, malformed payloads, sections over 256 KiB, and requests over 512 KiB are rejected.
+- [ ] Cross-user `localProfileId`, forged revisions/timestamps, unsupported versions, malformed payloads, exact raw section spans over 256 KiB, and complete raw requests over 512 KiB whenever the preference field is present are rejected using the shared cross-language goldens.
 - [ ] Same-section concurrent first writes produce one revision-1 winner and one canonical conflict.
 - [ ] Different-section concurrent first writes both succeed at revision 1 without overwriting either section.
 - [ ] Lost-ack retry converges through a canonical revision conflict.
