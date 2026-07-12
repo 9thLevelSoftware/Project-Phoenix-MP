@@ -528,6 +528,23 @@ upsertExerciseMvt:
 INSERT OR REPLACE INTO ExerciseMvt (exerciseId, profile_id, personalMvtMs, sampleCount, updatedAt)
 VALUES (:exerciseId, :profileId, :personalMvtMs, :sampleCount, :updatedAt);
 
+selectAllExerciseMvtByProfile:
+SELECT * FROM ExerciseMvt WHERE profile_id = :profileId ORDER BY exerciseId;
+
+deleteExerciseMvt:
+DELETE FROM ExerciseMvt WHERE exerciseId = :exerciseId AND profile_id = :profileId;
+
+updateExerciseMvtForProfileMerge:
+UPDATE ExerciseMvt
+SET profile_id = :targetProfileId,
+    personalMvtMs = :personalMvtMs,
+    sampleCount = :sampleCount,
+    updatedAt = :updatedAt
+WHERE exerciseId = :exerciseId AND profile_id = :retainedProfileId;
+
+reassignExerciseMvtProfile:
+UPDATE ExerciseMvt SET profile_id = :targetProfileId WHERE profile_id = :sourceProfileId;
+
 -- Queries
 
 -- Exercise Queries
@@ -2297,6 +2314,9 @@ UPDATE UserProfile SET isActive = CASE WHEN id = ? THEN 1 ELSE 0 END;
 reassignRoutineProfile:
 UPDATE Routine SET profile_id = ? WHERE profile_id = ?;
 
+reassignRoutineGroupProfile:
+UPDATE RoutineGroup SET profile_id = ? WHERE profile_id = ?;
+
 reassignSessionProfile:
 UPDATE WorkoutSession SET profile_id = ? WHERE profile_id = ?;
 
@@ -2327,8 +2347,51 @@ DELETE FROM RpgAttributes WHERE profile_id = ?;
 reassignAssessmentResultProfile:
 UPDATE AssessmentResult SET profile_id = ? WHERE profile_id = ?;
 
+reassignVelocityOneRepMaxProfile:
+UPDATE VelocityOneRepMaxEstimate SET profile_id = ? WHERE profile_id = ?;
+
 reassignProgressionProfile:
 UPDATE ProgressionEvent SET profile_id = ? WHERE profile_id = ?;
+
+deletePersonalRecordById:
+DELETE FROM PersonalRecord WHERE id = ?;
+
+updatePersonalRecordForProfileMerge:
+UPDATE PersonalRecord
+SET exerciseName = :exerciseName,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    workoutMode = :workoutMode,
+    prType = :prType,
+    volume = :volume,
+    phase = :phase,
+    updatedAt = :updatedAt,
+    serverId = :serverId,
+    deletedAt = :deletedAt,
+    cable_count = :cableCount,
+    uuid = :uuid,
+    profile_id = :targetProfileId
+WHERE id = :targetId;
+
+deleteEarnedBadgeById:
+DELETE FROM EarnedBadge WHERE id = ?;
+
+updateEarnedBadgeForProfileMerge:
+UPDATE EarnedBadge
+SET earnedAt = :earnedAt,
+    celebratedAt = :celebratedAt,
+    updatedAt = :updatedAt,
+    serverId = :serverId,
+    deletedAt = :deletedAt
+WHERE id = :targetId;
+
+deleteIntegrationStatusByProfile:
+DELETE FROM IntegrationStatus WHERE profileId = ?;
+
+deleteIntegrationSyncCursorByProfile:
+DELETE FROM IntegrationSyncCursor WHERE profileId = ?;
 
 deleteProfile:
 DELETE FROM UserProfile WHERE id = ? AND id != 'default';
@@ -2790,6 +2853,19 @@ WHERE externalId = ? AND provider = ? AND profileId = ?;
 deleteExternalActivitiesByProvider:
 DELETE FROM ExternalActivity WHERE provider = ? AND profileId = ?;
 
+deleteConflictingSourceExternalActivities:
+DELETE FROM ExternalActivity
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalActivity target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalActivity.provider
+      AND target.externalId = ExternalActivity.externalId
+  );
+
+reassignExternalActivityProfile:
+UPDATE ExternalActivity SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
+
 -- ExternalRoutine queries
 getExternalRoutines:
 SELECT * FROM ExternalRoutine
@@ -2881,6 +2957,47 @@ WHERE externalRoutineId IN (
 deleteExternalRoutinesByProvider:
 DELETE FROM ExternalRoutine WHERE provider = ? AND profileId = ?;
 
+deleteConflictingSourceExternalRoutineSets:
+DELETE FROM ExternalRoutineSet
+WHERE externalRoutineExerciseId IN (
+  SELECT exercise.id
+  FROM ExternalRoutineExercise exercise
+  JOIN ExternalRoutine source ON source.id = exercise.externalRoutineId
+  WHERE source.profileId = :sourceProfileId
+    AND EXISTS (
+      SELECT 1 FROM ExternalRoutine target
+      WHERE target.profileId = :targetProfileId
+        AND target.provider = source.provider
+        AND target.externalId = source.externalId
+    )
+);
+
+deleteConflictingSourceExternalRoutineExercises:
+DELETE FROM ExternalRoutineExercise
+WHERE externalRoutineId IN (
+  SELECT source.id FROM ExternalRoutine source
+  WHERE source.profileId = :sourceProfileId
+    AND EXISTS (
+      SELECT 1 FROM ExternalRoutine target
+      WHERE target.profileId = :targetProfileId
+        AND target.provider = source.provider
+        AND target.externalId = source.externalId
+    )
+);
+
+deleteConflictingSourceExternalRoutines:
+DELETE FROM ExternalRoutine
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalRoutine target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalRoutine.provider
+      AND target.externalId = ExternalRoutine.externalId
+  );
+
+reassignExternalRoutineProfile:
+UPDATE ExternalRoutine SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
+
 -- ExternalRoutineFolder queries
 getExternalRoutineFolders:
 SELECT * FROM ExternalRoutineFolder
@@ -2899,6 +3016,19 @@ INSERT OR REPLACE INTO ExternalRoutineFolder(
 
 deleteExternalRoutineFoldersByProvider:
 DELETE FROM ExternalRoutineFolder WHERE provider = ? AND profileId = ?;
+
+deleteConflictingSourceExternalRoutineFolders:
+DELETE FROM ExternalRoutineFolder
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalRoutineFolder target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalRoutineFolder.provider
+      AND target.externalId = ExternalRoutineFolder.externalId
+  );
+
+reassignExternalRoutineFolderProfile:
+UPDATE ExternalRoutineFolder SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- ExternalProgram queries
 getExternalPrograms:
@@ -2952,6 +3082,32 @@ WHERE id = ?;
 
 deleteExternalProgramsByProvider:
 DELETE FROM ExternalProgram WHERE provider = ? AND profileId = ?;
+
+deleteConflictingSourceExternalProgramStats:
+DELETE FROM ExternalProgramStats
+WHERE externalProgramId IN (
+  SELECT source.id FROM ExternalProgram source
+  WHERE source.profileId = :sourceProfileId
+    AND EXISTS (
+      SELECT 1 FROM ExternalProgram target
+      WHERE target.profileId = :targetProfileId
+        AND target.provider = source.provider
+        AND target.externalId = source.externalId
+    )
+);
+
+deleteConflictingSourceExternalPrograms:
+DELETE FROM ExternalProgram
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalProgram target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalProgram.provider
+      AND target.externalId = ExternalProgram.externalId
+  );
+
+reassignExternalProgramProfile:
+UPDATE ExternalProgram SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- ExternalProgramStats queries
 getExternalProgramStats:
@@ -3014,6 +3170,19 @@ GROUP BY provider;
 deleteExternalExerciseTemplatesByProvider:
 DELETE FROM ExternalExerciseTemplate WHERE provider = ? AND profileId = ?;
 
+deleteConflictingSourceExternalExerciseTemplates:
+DELETE FROM ExternalExerciseTemplate
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalExerciseTemplate target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalExerciseTemplate.provider
+      AND target.externalId = ExternalExerciseTemplate.externalId
+  );
+
+reassignExternalExerciseTemplateProfile:
+UPDATE ExternalExerciseTemplate SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
+
 -- ExternalExerciseTemplateMapping queries
 getExternalExerciseTemplateMapping:
 SELECT * FROM ExternalExerciseTemplateMapping
@@ -3026,6 +3195,19 @@ INSERT OR REPLACE INTO ExternalExerciseTemplateMapping(
 
 deleteExternalExerciseTemplateMappingsByProvider:
 DELETE FROM ExternalExerciseTemplateMapping WHERE provider = ? AND profileId = ?;
+
+deleteConflictingSourceExternalExerciseTemplateMappings:
+DELETE FROM ExternalExerciseTemplateMapping
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalExerciseTemplateMapping target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalExerciseTemplateMapping.provider
+      AND target.externalTemplateId = ExternalExerciseTemplateMapping.externalTemplateId
+  );
+
+reassignExternalExerciseTemplateMappingProfile:
+UPDATE ExternalExerciseTemplateMapping SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- ExternalBodyMeasurement queries
 getExternalBodyMeasurements:
@@ -3050,6 +3232,19 @@ INSERT OR REPLACE INTO ExternalBodyMeasurement(
 
 deleteExternalBodyMeasurementsByProvider:
 DELETE FROM ExternalBodyMeasurement WHERE provider = ? AND profileId = ?;
+
+deleteConflictingSourceExternalBodyMeasurements:
+DELETE FROM ExternalBodyMeasurement
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalBodyMeasurement target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalBodyMeasurement.provider
+      AND target.externalId = ExternalBodyMeasurement.externalId
+  );
+
+reassignExternalBodyMeasurementProfile:
+UPDATE ExternalBodyMeasurement SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- IntegrationSyncCursor queries
 getIntegrationSyncCursor:

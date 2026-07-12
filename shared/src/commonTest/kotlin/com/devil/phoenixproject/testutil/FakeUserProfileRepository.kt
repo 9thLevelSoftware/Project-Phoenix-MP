@@ -37,6 +37,8 @@ class FakeUserProfileRepository : UserProfileRepository {
     private var pendingTransition: PendingTransition? = null
 
     val pendingLocalCleanupProfileIds = linkedSetOf<String>()
+    var failBeforeProfileDeletionCommit: Boolean = false
+    var failLocalCleanupDeletes: Boolean = false
 
     private val _activeProfile = MutableStateFlow<UserProfile?>(null)
     override val activeProfile: StateFlow<UserProfile?> = _activeProfile.asStateFlow()
@@ -120,29 +122,42 @@ class FakeUserProfileRepository : UserProfileRepository {
         if (id == DEFAULT_PROFILE_ID) return@withLock false
         val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
-        val removed = profiles[id] ?: return@withLock false
-        val wasActive = removed.isActive
+        profiles[id] ?: return@withLock false
+        val wasActive = previous.profile.id == id
+        val targetProfileId = if (wasActive) DEFAULT_PROFILE_ID else previous.profile.id
+        require(profiles.containsKey(targetProfileId)) { "Profile deletion target missing: $targetProfileId" }
         if (wasActive) {
-            _activeProfileContext.value = ActiveProfileContext.Switching(DEFAULT_PROFILE_ID)
+            _activeProfileContext.value = ActiveProfileContext.Switching(targetProfileId)
         }
-        profiles.remove(id)
-        preferenceFlows.remove(id)
-        if (wasActive) {
-            if (!profiles.containsKey(DEFAULT_PROFILE_ID)) {
-                profiles[DEFAULT_PROFILE_ID] = UserProfile(
-                    id = DEFAULT_PROFILE_ID,
-                    name = "Default",
-                    colorIndex = 0,
-                    createdAt = currentTimeMillis(),
-                    isActive = false,
-                )
-                ensurePreferenceFlow(DEFAULT_PROFILE_ID)
+
+        val profileSnapshot = profiles.toMap()
+        val preferenceSnapshot = preferenceFlows.toMap()
+        val pendingCleanupSnapshot = pendingLocalCleanupProfileIds.toSet()
+        try {
+            pendingLocalCleanupProfileIds += id
+            profiles.remove(id)
+            preferenceFlows.remove(id)
+            if (wasActive) {
+                setActiveIdentityMapLocked(targetProfileId)
             }
-            setActiveIdentityLocked(DEFAULT_PROFILE_ID)
-        } else {
-            updateIdentityFlows()
+            if (failBeforeProfileDeletionCommit) {
+                failBeforeProfileDeletionCommit = false
+                error("injected profile deletion failure")
+            }
+        } catch (failure: Throwable) {
+            profiles.clear()
+            profiles.putAll(profileSnapshot)
+            preferenceFlows.clear()
+            preferenceFlows.putAll(preferenceSnapshot)
+            pendingLocalCleanupProfileIds.clear()
+            pendingLocalCleanupProfileIds.addAll(pendingCleanupSnapshot)
+            _activeProfileContext.value = previous
+            throw failure
         }
-        publishReady(if (wasActive) DEFAULT_PROFILE_ID else previous.profile.id)
+
+        updateIdentityFlows()
+        publishReady(targetProfileId)
+        retryPendingLocalCleanupLocked(id)
         true
     }
 
@@ -282,13 +297,18 @@ class FakeUserProfileRepository : UserProfileRepository {
 
     override suspend fun retryPendingLocalCleanup(profileId: String?) {
         mutex.withLock {
-            pendingLocalCleanupProfileIds
-                .filter { profileId == null || it == profileId }
-                .forEach { pendingId ->
-                    localSafety.remove(pendingId)
-                    pendingLocalCleanupProfileIds.remove(pendingId)
-                }
+            retryPendingLocalCleanupLocked(profileId)
         }
+    }
+
+    private fun retryPendingLocalCleanupLocked(profileId: String?) {
+        if (failLocalCleanupDeletes) return
+        pendingLocalCleanupProfileIds
+            .filter { profileId == null || it == profileId }
+            .forEach { pendingId ->
+                localSafety.remove(pendingId)
+                pendingLocalCleanupProfileIds.remove(pendingId)
+            }
     }
 
     override suspend fun recoverPendingProfileTransitionForStartup() {
@@ -370,12 +390,16 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     private fun setActiveIdentityLocked(profileId: String) {
+        setActiveIdentityMapLocked(profileId)
+        updateIdentityFlows()
+    }
+
+    private fun setActiveIdentityMapLocked(profileId: String) {
         val updatedProfiles = profiles.mapValues { (id, profile) ->
             profile.copy(isActive = id == profileId)
         }
         profiles.clear()
         profiles.putAll(updatedProfiles)
-        updateIdentityFlows()
     }
 
     private suspend fun mutateActiveProfile(

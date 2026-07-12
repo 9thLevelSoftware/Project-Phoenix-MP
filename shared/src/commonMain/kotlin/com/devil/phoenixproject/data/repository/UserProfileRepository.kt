@@ -122,6 +122,8 @@ class SqlDelightUserProfileRepository(
     private val profilePreferencesRepository: ProfilePreferencesRepository,
     private val profileLocalSafetyStore: ProfileLocalSafetyStore,
     private val gamificationRepository: GamificationRepository,
+    private val profileScopedDataMerger: ProfileScopedDataMerger = ProfileScopedDataMerger(database),
+    private val beforeProfileDeletionCommit: () -> Unit = {},
 ) : UserProfileRepository {
     private val queries = database.vitruvianDatabaseQueries
     private val profileContextMutex = Mutex()
@@ -205,10 +207,13 @@ class SqlDelightUserProfileRepository(
 
         val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
-        if (allProfiles.value.none { it.id == id }) return@withLock false
+        if (queries.getProfileById(id).executeAsOneOrNull() == null) return@withLock false
 
         val wasActive = previous.profile.id == id
         val targetProfileId = if (wasActive) DEFAULT_PROFILE_ID else previous.profile.id
+        requireNotNull(queries.getProfileById(targetProfileId).executeAsOneOrNull()) {
+            "Profile deletion target missing: $targetProfileId"
+        }
         if (wasActive) {
             _activeProfileContext.value = ActiveProfileContext.Switching(targetProfileId)
         }
@@ -216,21 +221,26 @@ class SqlDelightUserProfileRepository(
         try {
             Logger.i { "PROFILE_DELETE: Reassigning data from profile '$id' to '$targetProfileId'" }
             database.transaction {
+                queries.enqueueProfileLocalCleanup(id, currentTimeMillis())
+                profileScopedDataMerger.mergeForProfileDeletion(id, targetProfileId)
+                queries.reassignRoutineGroupProfile(targetProfileId, id)
                 queries.reassignRoutineProfile(targetProfileId, id)
                 queries.reassignSessionProfile(targetProfileId, id)
-                queries.reassignPRProfile(targetProfileId, id)
                 queries.reassignTrainingCycleProfile(targetProfileId, id)
-                queries.reassignBadgeProfile(targetProfileId, id)
                 queries.reassignStreakProfile(targetProfileId, id)
                 queries.deleteGamificationStatsByProfile(id)
                 queries.deleteGamificationStatsByProfile(targetProfileId)
                 queries.deleteRpgAttributesByProfile(id)
                 queries.deleteRpgAttributesByProfile(targetProfileId)
                 queries.reassignAssessmentResultProfile(targetProfileId, id)
+                queries.reassignVelocityOneRepMaxProfile(targetProfileId, id)
                 queries.reassignProgressionProfile(targetProfileId, id)
+                queries.deleteIntegrationStatusByProfile(id)
+                queries.deleteIntegrationSyncCursorByProfile(id)
                 queries.deleteProfilePreferences(id)
                 queries.deleteProfile(id)
                 if (wasActive) queries.setActiveProfile(targetProfileId)
+                beforeProfileDeletionCommit()
             }
         } catch (failure: Throwable) {
             _activeProfileContext.value = previous
@@ -250,6 +260,8 @@ class SqlDelightUserProfileRepository(
             }
             if (failure is CancellationException) throw failure
         }
+
+        retryPendingLocalCleanup(id)
 
         try {
             gamificationRepository.updateStats(targetProfileId)

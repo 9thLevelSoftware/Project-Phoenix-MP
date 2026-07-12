@@ -37,8 +37,8 @@ class MigrationManagerTest {
     private fun createMigrationManager(
         database: VitruvianDatabase,
         driver: SqlDriver? = null,
+        settings: MapSettings = MapSettings(),
     ): MigrationManager {
-        val settings = MapSettings()
         val preferences = SqlDelightProfilePreferencesRepository(database)
         val safety = SettingsProfileLocalSafetyStore(settings)
         val gamification = SqlDelightGamificationRepository(database)
@@ -514,6 +514,241 @@ class MigrationManagerTest {
                 profileId = "orphan-profile",
             ).executeAsOneOrNull(),
         )
+    }
+
+    @Test
+    fun `repair version two normalizes aliases without losing ids names or sync metadata`() = runTest {
+        val settings = MapSettings().apply {
+            putInt("migration_repair_version", 1)
+        }
+        val localManager = createMigrationManager(database, settings = settings)
+        val queries = database.vitruvianDatabaseQueries
+
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Target Deadlift",
+            weight = 100.0,
+            reps = 10,
+            oneRepMax = 130.0,
+            achievedAt = 300,
+            workoutMode = "Old School",
+            prType = PRType.MAX_VOLUME.name,
+            volume = 1_000.0,
+            phase = "COMBINED",
+            profile_id = "default",
+            cable_count = 2,
+            uuid = "target-volume-uuid",
+        )
+        val targetVolume = queries.selectAllRecords("default").executeAsList().single()
+        queries.updatePRServerId("target-volume-server", targetVolume.id)
+        queries.updatePRTimestamp(10, listOf(targetVolume.id))
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "",
+            weight = 101.0,
+            reps = 10,
+            oneRepMax = 120.0,
+            achievedAt = 100,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_VOLUME.name,
+            volume = 1_000.0,
+            phase = "COMBINED",
+            profile_id = "default",
+            cable_count = 1,
+            uuid = "source-volume-uuid",
+        )
+        val sourceVolume = queries.selectAllRecords("default").executeAsList()
+            .single { it.workoutMode == "OldSchool" }
+        queries.updatePRServerId("source-volume-server", sourceVolume.id)
+        queries.updatePRTimestamp(20, listOf(sourceVolume.id))
+
+        queries.insertRecord(
+            exerciseId = "bench",
+            exerciseName = "Target Bench",
+            weight = 50.0,
+            reps = 5,
+            oneRepMax = 60.0,
+            achievedAt = 100,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 250.0,
+            phase = "COMBINED",
+            profile_id = "default",
+            cable_count = null,
+            uuid = "target-fallback-uuid",
+        )
+        val targetBench = queries.selectAllRecords("default").executeAsList()
+            .single { it.exerciseId == "bench" }
+        queries.insertRecord(
+            exerciseId = "bench",
+            exerciseName = "",
+            weight = 70.0,
+            reps = 5,
+            oneRepMax = 80.0,
+            achievedAt = 200,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 350.0,
+            phase = "COMBINED",
+            profile_id = "default",
+            cable_count = null,
+            uuid = null,
+        )
+
+        localManager.runMigrationsNow()
+
+        val volumeRows = queries.selectAllRecords("default").executeAsList()
+            .filter { it.exerciseId == "deadlift" }
+        assertEquals(1, volumeRows.size)
+        val volume = volumeRows.single()
+        assertEquals(targetVolume.id, volume.id)
+        assertEquals("Old School", volume.workoutMode)
+        assertEquals(101.0, volume.weight)
+        assertEquals("Target Deadlift", volume.exerciseName)
+        assertEquals("source-volume-uuid", volume.uuid)
+        assertEquals("source-volume-server", volume.serverId)
+        assertEquals(20, volume.updatedAt)
+        val bench = queries.selectAllRecords("default").executeAsList()
+            .single { it.exerciseId == "bench" }
+        assertEquals(targetBench.id, bench.id)
+        assertEquals("Old School", bench.workoutMode)
+        assertEquals(70.0, bench.weight)
+        assertEquals("Target Bench", bench.exerciseName)
+        assertEquals("target-fallback-uuid", bench.uuid)
+        assertEquals(2, settings.getInt("migration_repair_version", 0))
+    }
+
+    @Test
+    fun `orphan repair preserves target ids and deterministic PR badge sync metadata`() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        VitruvianDatabase.Schema.create(driver)
+        val localDatabase = VitruvianDatabase(driver)
+        val localMigrationManager = createMigrationManager(localDatabase, driver)
+        val queries = localDatabase.vitruvianDatabaseQueries
+        queries.insertProfile("target-profile", "Target", 0, 1, 1)
+
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Target Deadlift",
+            weight = 100.0,
+            reps = 10,
+            oneRepMax = 130.0,
+            achievedAt = 300,
+            workoutMode = "Old School",
+            prType = PRType.MAX_VOLUME.name,
+            volume = 1_000.0,
+            phase = "COMBINED",
+            profile_id = "target-profile",
+            cable_count = 2,
+            uuid = "target-volume-uuid",
+        )
+        val targetVolume = queries.selectAllRecords("target-profile").executeAsList().single()
+        queries.updatePRServerId("target-volume-server", targetVolume.id)
+        queries.updatePRTimestamp(10, listOf(targetVolume.id))
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "",
+            weight = 101.0,
+            reps = 10,
+            oneRepMax = 120.0,
+            achievedAt = 100,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_VOLUME.name,
+            volume = 1_000.0,
+            phase = "COMBINED",
+            profile_id = "orphan-profile",
+            cable_count = 1,
+            uuid = "source-volume-uuid",
+        )
+        val sourceVolume = queries.selectAllRecords("orphan-profile").executeAsList().single()
+        queries.updatePRServerId("source-volume-server", sourceVolume.id)
+        queries.updatePRTimestamp(20, listOf(sourceVolume.id))
+
+        queries.insertRecord(
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            weight = 50.0,
+            reps = 5,
+            oneRepMax = 60.0,
+            achievedAt = 100,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 250.0,
+            phase = "COMBINED",
+            profile_id = "target-profile",
+            cable_count = null,
+            uuid = "target-fallback-uuid",
+        )
+        val targetBench = queries.selectAllRecords("target-profile").executeAsList()
+            .single { it.exerciseId == "bench" }
+        queries.insertRecord(
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            weight = 70.0,
+            reps = 5,
+            oneRepMax = 80.0,
+            achievedAt = 200,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 350.0,
+            phase = "COMBINED",
+            profile_id = "orphan-profile",
+            cable_count = null,
+            uuid = null,
+        )
+
+        queries.insertEarnedBadgeFullIgnore(
+            badgeId = "shared-badge",
+            earnedAt = 200,
+            celebratedAt = 250,
+            updatedAt = 20,
+            serverId = "target-badge-server",
+            deletedAt = null,
+            profile_id = "target-profile",
+        )
+        val targetBadgeId = queries.selectAllEarnedBadges("target-profile").executeAsOne().id
+        queries.insertEarnedBadgeFullIgnore(
+            badgeId = "shared-badge",
+            earnedAt = 100,
+            celebratedAt = 300,
+            updatedAt = 10,
+            serverId = "source-badge-server",
+            deletedAt = 400,
+            profile_id = "orphan-profile",
+        )
+
+        assertEquals(2, localMigrationManager.repairOrphanedPRRecords("target-profile"))
+
+        val volume = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_VOLUME.name,
+            "COMBINED",
+            "target-profile",
+        ).executeAsOne()
+        assertEquals(targetVolume.id, volume.id)
+        assertEquals(101.0, volume.weight)
+        assertEquals("Target Deadlift", volume.exerciseName)
+        assertEquals("source-volume-uuid", volume.uuid)
+        assertEquals("source-volume-server", volume.serverId)
+        assertEquals(20, volume.updatedAt)
+        val bench = queries.selectPR(
+            "bench",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            "COMBINED",
+            "target-profile",
+        ).executeAsOne()
+        assertEquals(targetBench.id, bench.id)
+        assertEquals(70.0, bench.weight)
+        assertEquals("target-fallback-uuid", bench.uuid)
+        val badge = queries.selectEarnedBadgeById("shared-badge", "target-profile").executeAsOne()
+        assertEquals(targetBadgeId, badge.id)
+        assertEquals(100, badge.earnedAt)
+        assertEquals(250, badge.celebratedAt)
+        assertEquals(20, badge.updatedAt)
+        assertEquals("target-badge-server", badge.serverId)
+        assertNull(badge.deletedAt)
     }
 
     @Test

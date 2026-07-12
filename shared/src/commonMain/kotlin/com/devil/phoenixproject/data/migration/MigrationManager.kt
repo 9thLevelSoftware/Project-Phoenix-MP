@@ -11,6 +11,7 @@ import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.ProfileScopedDataMerger
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -19,9 +20,7 @@ import com.devil.phoenixproject.database.Routine
 import com.devil.phoenixproject.database.RoutineExercise
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.database.WorkoutSession
-import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.currentTimeMillis
-import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.russhwolf.settings.Settings
 import kotlin.coroutines.cancellation.CancellationException
@@ -58,6 +57,7 @@ class MigrationManager(
     private val profilePreferencesRepository: ProfilePreferencesRepository,
     private val profileLocalSafetyStore: ProfileLocalSafetyStore,
     private val legacyProfilePreferencesReader: LegacyProfilePreferencesReader,
+    private val profileScopedDataMerger: ProfileScopedDataMerger = ProfileScopedDataMerger(database),
     private val driver: SqlDriver? = null,
 ) : RequiredMigrationGate {
     private val log = Logger.withTag("MigrationManager")
@@ -69,7 +69,7 @@ class MigrationManager(
          * the stored value is less than [CURRENT_REPAIR_VERSION] the repairs execute and
          * the new version is persisted afterwards.
          */
-        private const val CURRENT_REPAIR_VERSION = 1
+        private const val CURRENT_REPAIR_VERSION = 2
         private const val KEY_REPAIR_VERSION = "migration_repair_version"
         private const val KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE =
             "profile_preferences_legacy_migration_complete_v1"
@@ -133,27 +133,6 @@ class MigrationManager(
         val toProfileName: String,
         val fromCounts: ProfileScopedCounts,
         val toCounts: ProfileScopedCounts,
-    )
-
-    private data class CanonicalPersonalRecord(
-        val exerciseId: String,
-        val exerciseName: String,
-        val weight: Double,
-        val reps: Long,
-        val oneRepMax: Double,
-        val achievedAt: Long,
-        val workoutMode: String,
-        val prType: String,
-        val volume: Double,
-        val phase: String,
-        val cable_count: Long? = null,
-        val uuid: String?,
-    )
-
-    private data class CanonicalEarnedBadge(
-        val badgeId: String,
-        val earnedAt: Long,
-        val celebratedAt: Long?,
     )
 
     /**
@@ -402,8 +381,8 @@ class MigrationManager(
             ?: error("Profile-scope repair requires a SqlDriver")
 
         database.transaction {
-            mergePersonalRecords(context.fromProfileId, context.toProfileId, moveDriver)
-            mergeEarnedBadges(context.fromProfileId, context.toProfileId, moveDriver)
+            profileScopedDataMerger.mergePersonalRecords(context.fromProfileId, context.toProfileId)
+            profileScopedDataMerger.mergeEarnedBadges(context.fromProfileId, context.toProfileId)
             moveProfileScopedRows(moveDriver, "WorkoutSession", context.fromProfileId, context.toProfileId)
             moveProfileScopedRows(moveDriver, "Routine", context.fromProfileId, context.toProfileId)
             moveProfileScopedRows(moveDriver, "TrainingCycle", context.fromProfileId, context.toProfileId)
@@ -505,107 +484,6 @@ class MigrationManager(
             parameters = 1,
         ) {
             bindString(0, profileId)
-        }
-    }
-
-    private fun mergePersonalRecords(fromProfileId: String, toProfileId: String, auditDriver: SqlDriver) {
-        val canonicalByKey = linkedMapOf<String, CanonicalPersonalRecord>()
-        val allRecords = queries.selectAllRecords(profileId = fromProfileId).executeAsList() +
-            queries.selectAllRecords(profileId = toProfileId).executeAsList()
-
-        allRecords.forEach { record ->
-            val canonical = CanonicalPersonalRecord(
-                exerciseId = record.exerciseId,
-                exerciseName = record.exerciseName,
-                weight = record.weight,
-                reps = record.reps,
-                oneRepMax = record.oneRepMax,
-                achievedAt = record.achievedAt,
-                workoutMode = normalizeWorkoutModeKey(record.workoutMode),
-                prType = record.prType,
-                volume = record.volume,
-                phase = record.phase,
-                cable_count = record.cable_count,
-                uuid = record.uuid,
-            )
-            val key = "${canonical.exerciseId}|${canonical.workoutMode}|${canonical.prType}|${canonical.phase}"
-            val existing = canonicalByKey[key]
-            canonicalByKey[key] = when {
-                existing == null -> canonical
-
-                shouldReplacePersonalRecord(canonical, existing) -> canonical.copy(
-                    exerciseName = canonical.exerciseName.ifBlank { existing.exerciseName },
-                    uuid = canonical.uuid ?: existing.uuid,
-                )
-
-                else -> existing.copy(
-                    exerciseName = existing.exerciseName.ifBlank { canonical.exerciseName },
-                    uuid = existing.uuid ?: canonical.uuid,
-                )
-            }
-        }
-
-        deleteProfileScopedRows(auditDriver, "PersonalRecord", fromProfileId)
-        deleteProfileScopedRows(auditDriver, "PersonalRecord", toProfileId)
-
-        canonicalByKey.values.forEach { record ->
-            queries.upsertPR(
-                exerciseId = record.exerciseId,
-                exerciseName = record.exerciseName,
-                weight = record.weight,
-                reps = record.reps,
-                oneRepMax = record.oneRepMax,
-                achievedAt = record.achievedAt,
-                workoutMode = record.workoutMode,
-                prType = record.prType,
-                volume = record.volume,
-                phase = record.phase,
-                profile_id = toProfileId,
-                cable_count = record.cable_count,
-                uuid = record.uuid ?: generateUUID(),
-            )
-        }
-    }
-
-    private fun mergeEarnedBadges(fromProfileId: String, toProfileId: String, auditDriver: SqlDriver) {
-        val merged = linkedMapOf<String, CanonicalEarnedBadge>()
-        val allBadges = queries.selectAllEarnedBadges(profileId = fromProfileId).executeAsList() +
-            queries.selectAllEarnedBadges(profileId = toProfileId).executeAsList()
-
-        allBadges.forEach { badge ->
-            val existing = merged[badge.badgeId]
-            val canonical = CanonicalEarnedBadge(
-                badgeId = badge.badgeId,
-                earnedAt = badge.earnedAt,
-                celebratedAt = badge.celebratedAt,
-            )
-            merged[badge.badgeId] = when {
-                existing == null -> canonical
-
-                canonical.earnedAt < existing.earnedAt -> canonical.copy(
-                    celebratedAt = canonical.celebratedAt ?: existing.celebratedAt,
-                )
-
-                else -> existing.copy(
-                    celebratedAt = existing.celebratedAt ?: canonical.celebratedAt,
-                )
-            }
-        }
-
-        deleteProfileScopedRows(auditDriver, "EarnedBadge", fromProfileId)
-        deleteProfileScopedRows(auditDriver, "EarnedBadge", toProfileId)
-
-        merged.values.forEach { badge ->
-            auditDriver.execute(
-                identifier = null,
-                sql = "INSERT INTO EarnedBadge (badgeId, earnedAt, celebratedAt, profile_id) VALUES (?, ?, ?, ?)",
-                parameters = 4,
-            ) {
-                bindString(0, badge.badgeId)
-                bindLong(1, badge.earnedAt)
-                bindLong(2, badge.celebratedAt)
-                bindString(3, toProfileId)
-            }
         }
     }
 
@@ -765,61 +643,21 @@ class MigrationManager(
 
     private fun normalizeLegacyPersonalRecordModes() {
         knownProfileIds().forEach { profileId ->
-            val records = runCatching { queries.selectAllRecords(profileId = profileId).executeAsList() }
-                .getOrElse { error ->
-                    log.e(error) { "Failed to load personal records for mode normalization (profile=$profileId)" }
-                    return@forEach
+            var affectedRows = 0
+            try {
+                database.transaction {
+                    affectedRows = profileScopedDataMerger.normalizePersonalRecordModes(profileId)
                 }
-
-            var updated = 0
-            var merged = 0
-            database.transaction {
-                records.forEach { record ->
-                    val normalizedMode = normalizeWorkoutModeKey(record.workoutMode)
-                    if (normalizedMode == record.workoutMode) return@forEach
-
-                    val recordProfileId = record.profile_id.ifBlank { profileId }
-                    val canonicalRecord = queries.selectPR(
-                        exerciseId = record.exerciseId,
-                        workoutMode = normalizedMode,
-                        prType = record.prType,
-                        phase = record.phase,
-                        profileId = recordProfileId,
-                    ).executeAsOneOrNull()
-
-                    if (canonicalRecord == null || shouldReplacePersonalRecord(record, canonicalRecord)) {
-                        queries.upsertPR(
-                            exerciseId = record.exerciseId,
-                            exerciseName = record.exerciseName,
-                            weight = record.weight,
-                            reps = record.reps,
-                            oneRepMax = record.oneRepMax,
-                            achievedAt = record.achievedAt,
-                            workoutMode = normalizedMode,
-                            prType = record.prType,
-                            volume = record.volume,
-                            phase = record.phase,
-                            profile_id = recordProfileId,
-                            cable_count = record.cable_count,
-                            uuid = canonicalRecord?.uuid ?: record.uuid ?: generateUUID(),
-                        )
-                        updated++
-                    } else {
-                        merged++
-                    }
-
-                    queries.deletePRByKey(
-                        exerciseId = record.exerciseId,
-                        workoutMode = record.workoutMode,
-                        prType = record.prType,
-                        phase = record.phase,
-                        profile_id = recordProfileId,
-                    )
+            } catch (error: Throwable) {
+                log.e(error) {
+                    "Failed to normalize personal record modes for profile=$profileId"
                 }
+                throw error
             }
-
-            if (updated > 0 || merged > 0) {
-                log.i { "Normalized personal record mode keys for profile=$profileId: updated $updated rows, merged $merged legacy duplicates" }
+            if (affectedRows > 0) {
+                log.i {
+                    "Normalized personal record mode keys for profile=$profileId: affected $affectedRows rows"
+                }
             }
         }
     }
@@ -979,14 +817,10 @@ class MigrationManager(
         // row with the same composite key (idx_pr_unique:
         // exerciseId+workoutMode+prType+phase+profile_id; idx_earned_badge_profile:
         // badgeId+profile_id), the update produces a duplicate key and aborts the
-        // whole repair transaction. Reuse the canonical dedup-merge helpers that the
-        // profile-scope move (applyProfileScopeMove) already uses — they collect
-        // both profiles, pick a canonical winner per key, delete both, and reinsert
-        // one row under the target profile.
-        // The dedup-merge helpers need a SqlDriver. When none was injected (the
-        // raw-UPDATE path was historically a no-op in that case), skip rather than
-        // crash — matching the prior behavior but without risking the unique-index
-        // abort the raw UPDATE could cause when a driver IS present.
+        // whole repair transaction. Reuse the shared merger from profile deletion;
+        // it resolves aliases before reassignment while retaining target numeric IDs,
+        // UUIDs, and sync metadata. A SqlDriver remains required for the orphan scan
+        // and derived-aggregate cleanup performed in the same transaction.
         val moveDriver = driver
         if (moveDriver == null) {
             log.w { "Orphaned PR repair skipped: no SqlDriver available for a safe dedup-merge" }
@@ -999,8 +833,8 @@ class MigrationManager(
             for ((orphanProfileId, count) in orphanedCounts) {
                 log.i { "Issue #319: Migrating $count PR records from deleted profile '$orphanProfileId' to '$targetProfileId'" }
 
-                mergePersonalRecords(orphanProfileId, targetProfileId, moveDriver)
-                mergeEarnedBadges(orphanProfileId, targetProfileId, moveDriver)
+                profileScopedDataMerger.mergePersonalRecords(orphanProfileId, targetProfileId)
+                profileScopedDataMerger.mergeEarnedBadges(orphanProfileId, targetProfileId)
 
                 // Derived profile aggregates are recomputed after the move to avoid
                 // carrying duplicate singleton rows across profiles.
@@ -1077,44 +911,6 @@ class MigrationManager(
             _orphanedDataRepairState.value = OrphanedDataRepairState.Failed(
                 "Found orphaned records but no active profile to migrate to: $orphanedCounts",
             )
-        }
-    }
-
-    private fun shouldReplacePersonalRecord(
-        candidate: com.devil.phoenixproject.database.PersonalRecord,
-        current: com.devil.phoenixproject.database.PersonalRecord,
-    ): Boolean = when (candidate.prType) {
-        PRType.MAX_VOLUME.name -> when {
-            candidate.volume > current.volume -> true
-            candidate.volume < current.volume -> false
-            else -> candidate.achievedAt > current.achievedAt
-        }
-
-        else -> when {
-            candidate.weight > current.weight -> true
-            candidate.weight < current.weight -> false
-            candidate.oneRepMax > current.oneRepMax -> true
-            candidate.oneRepMax < current.oneRepMax -> false
-            else -> candidate.achievedAt > current.achievedAt
-        }
-    }
-
-    private fun shouldReplacePersonalRecord(
-        candidate: CanonicalPersonalRecord,
-        current: CanonicalPersonalRecord,
-    ): Boolean = when (candidate.prType) {
-        PRType.MAX_VOLUME.name -> when {
-            candidate.volume > current.volume -> true
-            candidate.volume < current.volume -> false
-            else -> candidate.achievedAt > current.achievedAt
-        }
-
-        else -> when {
-            candidate.weight > current.weight -> true
-            candidate.weight < current.weight -> false
-            candidate.oneRepMax > current.oneRepMax -> true
-            candidate.oneRepMax < current.oneRepMax -> false
-            else -> candidate.achievedAt > current.achievedAt
         }
     }
 

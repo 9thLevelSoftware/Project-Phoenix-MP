@@ -44,12 +44,14 @@ val dataModule = module {
     single<ProfilePreferencesRepository> { SqlDelightProfilePreferencesRepository(get()) }
     single<ProfileLocalSafetyStore> { SettingsProfileLocalSafetyStore(get()) }
     single<LegacyProfilePreferencesReader> { SettingsLegacyProfilePreferencesReader(get(), get()) }
+    single { ProfileScopedDataMerger(get()) }
     single<UserProfileRepository> {
         SqlDelightUserProfileRepository(
             database = get(),
             profilePreferencesRepository = get(),
             profileLocalSafetyStore = get(),
             gamificationRepository = get(),
+            profileScopedDataMerger = get(),
         )
     }
 

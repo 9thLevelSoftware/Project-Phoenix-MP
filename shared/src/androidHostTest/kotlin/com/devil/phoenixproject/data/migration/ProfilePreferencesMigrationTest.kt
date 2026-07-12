@@ -91,7 +91,7 @@ class ProfilePreferencesMigrationTest {
         assertEquals(1, fixture.preferenceRepository.get("a").legacyMigrationVersion)
         assertEquals(1, fixture.preferenceRepository.get("b").legacyMigrationVersion)
         assertEquals(RequiredMigrationState.Ready, fixture.migration.requiredMigrationState.value)
-        assertEquals(1, fixture.settings.getInt("migration_repair_version", 0))
+        assertEquals(2, fixture.settings.getInt("migration_repair_version", 0))
     }
 
     @Test
@@ -175,6 +175,57 @@ class ProfilePreferencesMigrationTest {
         assertEquals(CoreProfilePreferences(), preferences.core.value)
     }
 
+    @Test
+    fun freshMigrationManagerDrainsCommittedDeletionCleanupJournalOnRestart() = runTest {
+        val fixture = fixture()
+        fixture.migration.runRequiredMigrations()
+        val targetSafety = ProfileLocalSafetyPreferences("target-secret", false, true, false)
+        fixture.profiles.updateLocalSafety("default", targetSafety)
+        val source = fixture.profiles.createAndActivateProfile("Source", 1)
+        val sourceSafety = ProfileLocalSafetyPreferences("source-secret", true, true, true)
+        fixture.profiles.updateLocalSafety(source.id, sourceSafety)
+        fixture.safetyStore.failDeleteProfileId = source.id
+
+        assertTrue(fixture.profiles.deleteProfile(source.id))
+
+        assertNull(fixture.queries.getProfileById(source.id).executeAsOneOrNull())
+        assertEquals(sourceSafety, fixture.safetyStore.read(source.id))
+        assertEquals(
+            source.id,
+            fixture.queries.selectPendingProfileLocalCleanup().executeAsOne().profile_id,
+        )
+
+        fixture.safetyStore.failDeleteProfileId = null
+        val gamification = SqlDelightGamificationRepository(fixture.database)
+        val freshMigration = MigrationManager(
+            database = fixture.database,
+            userProfileRepository = fixture.profiles,
+            gamificationRepository = gamification,
+            settings = fixture.settings,
+            profilePreferencesRepository = fixture.preferenceRepository,
+            profileLocalSafetyStore = fixture.safetyStore,
+            legacyProfilePreferencesReader = SettingsLegacyProfilePreferencesReader(
+                SettingsPreferencesManager(fixture.settings),
+                fixture.settings,
+            ),
+        )
+
+        freshMigration.runRequiredMigrations()
+
+        assertEquals(RequiredMigrationState.Ready, freshMigration.requiredMigrationState.value)
+        assertEquals(ProfileLocalSafetyPreferences(), fixture.safetyStore.read(source.id))
+        assertEquals(targetSafety, fixture.safetyStore.read("default"))
+        assertTrue(fixture.queries.selectPendingProfileLocalCleanup().executeAsList().isEmpty())
+        listOf(
+            "safe_word",
+            "safe_word_calibrated",
+            "adults_only_confirmed",
+            "adults_only_prompted",
+        ).forEach { suffix ->
+            assertFalse(fixture.settings.hasKey("profile_${source.id}_$suffix"), suffix)
+        }
+    }
+
     private fun fixture(configure: (MapSettings) -> Unit = {}): Fixture {
         val database = createTestDatabase()
         val settings = MapSettings().also(configure)
@@ -228,6 +279,7 @@ class ProfilePreferencesMigrationTest {
         private val delegate: ProfileLocalSafetyStore,
     ) : ProfileLocalSafetyStore by delegate {
         var failProfileId: String? = null
+        var failDeleteProfileId: String? = null
         var beforeFirstCopy: (suspend () -> Unit)? = null
 
         override suspend fun copyLegacyToProfiles(
@@ -242,6 +294,11 @@ class ProfilePreferencesMigrationTest {
                 if (profileId == failProfileId) throw InjectedSafetyCopyFailure(profileId)
                 delegate.write(profileId, value)
             }
+        }
+
+        override fun delete(profileId: String) {
+            if (profileId == failDeleteProfileId) throw InjectedSafetyCopyFailure(profileId)
+            delegate.delete(profileId)
         }
     }
 }
