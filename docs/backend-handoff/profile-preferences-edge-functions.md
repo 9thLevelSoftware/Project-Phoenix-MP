@@ -72,7 +72,7 @@ interface MobileSyncPullResponseAdditions {
 }
 ```
 
-`REVISION_CONFLICT`, `VALIDATION_FAILED`, `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, and `UNKNOWN_PROFILE` are domain rejections returned by the RPC and may coexist with successful siblings. `SECTION_TOO_LARGE` and `DUPLICATE_SECTION` are Edge validation rejections. A missing or malformed bearer header, or a returned `auth.getUser` Auth error whose numeric status is exactly 400, 401, or 403, is a definitive credential rejection and returns 401. Returned Auth errors with 429, 5xx, any other or missing status, malformed success or no-user results, and thrown or rejected calls are operational auth failures: return a generic 503, log only `{ name }`, and never construct the admin client. Transport, PostgREST/RPC, permission, timeout, malformed-RPC-row, and pull-query failures are likewise sanitized infrastructure 5xx responses and are never relabeled as domain rejection. Version `1` is the only supported wrapper and embedded document version.
+`REVISION_CONFLICT`, `VALIDATION_FAILED`, `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, and `UNKNOWN_PROFILE` are domain rejections returned by the RPC and may coexist with successful siblings. `SECTION_TOO_LARGE` and `DUPLICATE_SECTION` are Edge validation rejections. A bearer header must contain exactly one non-whitespace token after the literal `Bearer ` prefix; missing, blank, whitespace-bearing, multi-token, and otherwise malformed suffixes are definitive credential rejections and return 401 before `getUser` or admin construction. A returned `auth.getUser` Auth error whose numeric status is exactly 400, 401, or 403 also returns 401. Returned Auth errors with 429, 5xx, any other or missing status, result objects missing their own `error` or `data` discriminants, malformed success or no-user results, and thrown or rejected calls are operational auth failures: return a generic 503, log exactly one object containing only `{ name }`, and never construct the admin client. Transport, PostgREST/RPC, permission, timeout, malformed-RPC-row, and pull-query failures are likewise sanitized infrastructure 5xx responses and are never relabeled as domain rejection. Version `1` is the only supported wrapper and embedded document version.
 
 ## Exact raw-byte contract
 
@@ -963,10 +963,13 @@ Authenticate with the caller-scoped anon client. Parse and validate the complete
 
 ```typescript
 const authorization = req.headers.get("Authorization");
-if (!authorization?.startsWith("Bearer ") || authorization.length === "Bearer ".length) {
+const bearerMatch = authorization === null
+  ? null
+  : /^Bearer ([^\s]+)$/.exec(authorization);
+if (!bearerMatch) {
   return new Response(JSON.stringify({ error: "Missing bearer token" }), { status: 401 });
 }
-const userJwt = authorization.slice("Bearer ".length);
+const userJwt = bearerMatch[1];
 const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   global: { headers: { Authorization: authorization } },
   auth: { persistSession: false, autoRefreshToken: false },
@@ -1006,12 +1009,15 @@ try {
 } catch (error) {
   return authOperationalFailure(error);
 }
-if (typeof authResult !== "object" || authResult === null) {
+if (typeof authResult !== "object" || authResult === null || Array.isArray(authResult)) {
   return authOperationalFailure({ name: "AuthUnexpectedResult" });
 }
 const authRecord = authResult as JsonRecord;
+if (!Object.hasOwn(authRecord, "error") || !Object.hasOwn(authRecord, "data")) {
+  return authOperationalFailure({ name: "AuthUnexpectedResult" });
+}
 const userError = authRecord.error;
-if (userError !== null && userError !== undefined) {
+if (userError !== null) {
   const status = returnedAuthStatus(userError);
   if (status === 400 || status === 401 || status === 403) {
     return new Response(JSON.stringify({ error: "Invalid bearer token" }), { status: 401 });
@@ -1019,12 +1025,12 @@ if (userError !== null && userError !== undefined) {
   return authOperationalFailure(userError);
 }
 const userData = authRecord.data;
-if (typeof userData !== "object" || userData === null) {
+if (typeof userData !== "object" || userData === null || Array.isArray(userData)) {
   return authOperationalFailure({ name: "AuthUnexpectedResult" });
 }
 const verifiedUser = (userData as JsonRecord).user;
 if (
-  typeof verifiedUser !== "object" || verifiedUser === null ||
+  typeof verifiedUser !== "object" || verifiedUser === null || Array.isArray(verifiedUser) ||
   typeof (verifiedUser as JsonRecord).id !== "string" ||
   ((verifiedUser as JsonRecord).id as string).length === 0
 ) {
@@ -1269,9 +1275,7 @@ try {
     }
   }
 } catch (error) {
-  console.error("profile preference infrastructure failure", {
-    name: error instanceof Error ? error.name : "UnknownError",
-  });
+  console.error({ name: safeErrorName(error, "PreferenceInfrastructureFailure") });
   return new Response(JSON.stringify({ error: "Sync temporarily unavailable" }), {
     status: 503,
   });
@@ -1438,11 +1442,11 @@ Implement every manifest entry as executable pgTAP or Deno coverage, not a strin
 - In `supabase/tests/database/profile_preferences.test.sql`, use pgTAP in a transaction. Assert both exact function signatures, `SECURITY INVOKER`, empty `search_path`, owner, volatility, return shapes, and ACLs. Assert `PUBLIC`, `anon`, and `authenticated` have no function execution or table DML while `service_role` has only the intended privileges.
 - Temporarily grant table DML inside the rolled-back pgTAP transaction to test RLS. With authenticated JWT claims for owners A and B, prove CRUD is restricted to each composite parent and owner A cannot update `user_id` to owner B because `WITH CHECK` fails. Do not claim RLS makes a same-owner `local_profile_id` immutable; no trigger is part of this contract. Revoke the temporary grants and reassert production ACLs.
 - Seed two composite profile keys and call the real mutation RPC for all five sections. Prove base 0 acceptance at revision 1, matching-base increment, stale-base canonical conflict, sibling preservation, key preservation, and explicit domain rejection rows.
-- Push tests use injected anon/admin clients and two real local users. Missing or malformed bearer headers and returned Auth errors with each of 400, 401, and 403 return HTTP 401. Separately inject returned 429, 500, and 503 errors, an error without a status, a null or malformed result, a success without a user, and thrown or rejected `getUser` calls; each returns generic 503 and its captured log object has exactly the `name` key. Every auth failure constructs and calls zero admin clients. Cross-owner requests and any body `userId` authority fail. Malformed final ordinary or preference items produce zero privileged calls.
+- Push tests use injected anon/admin clients and two real local users. Missing headers plus blank, whitespace-bearing, multi-token, and otherwise malformed `Bearer` suffixes return HTTP 401 without calling `getUser` or constructing/calling admin. Returned Auth errors with each of 400, 401, and 403 also return 401. Separately inject returned 429, 500, and 503 errors, an error without a status, a null, array, or malformed result, results missing their own `error` or `data` discriminants, a non-null error without status, a success without a user, and thrown or rejected `getUser` calls; each returns generic 503 and its captured console call has exactly one argument equal to an object containing exactly the `name` key. Every auth failure constructs and calls zero admin clients. Cross-owner requests and any body `userId` authority fail. Malformed final ordinary or preference items produce zero privileged calls.
 - Table-drive required and unknown keys, primitive types, enum and range edges, nested objects, duplicate rack ID, duplicate section identity, all five wrappers, unsupported versions, and recursively normalized local-only names. For Kotlin `Int`, prove rack `sortOrder` accepts exactly -2147483648 and 2147483647 and rejects either adjacent overflow; cover workout `setReps` and `duration` plus LED color scheme with both Int32 and their narrower business rules. For Kotlin `Float`, prove `Float.MAX_VALUE` and the smallest nonzero Float32 survive where business rules allow, while positive and negative Float32 overflow and nonzero underflow-to-zero are rejected; apply every business predicate to both the original JavaScript number and its `Math.fround` result. In CORE, accept exact `bodyWeightKg` values `20` and `300`, but reject exact adjacent inputs `19.9999999` and `300.00001` even though Float32 rounding produces `20` and `300`. For the nonnegative RACK `weightKg` JSONB field, accept `0` and the smallest positive Float32, but reject exact `-1e-46` rather than allowing its `-0` Float32 result through. Safe JSON integers apply only to Long revisions and timestamps. Recursively test raw and escaped U+0000 plus lone high and low surrogates in nested string values and `singleExerciseDefaults` or other object keys; reject each before admin construction, while a valid supplementary pair or emoji passes. Put one such Unicode-invalid unique-key section beside a valid unique-key sibling and assert exactly one `VALIDATION_FAILED` for the invalid key, zero RPC calls for that key, and one successful RPC for the valid sibling. Keep malformed raw-span structure or a raw/parsed element mismatch as an envelope-level HTTP 400 with zero privileged calls. Duplicate rack names and signed safe-integer `createdAt` and `updatedAt` values are accepted. Pre-count duplicate section identities before size or document validation, emit exactly one `DUPLICATE_SECTION` rejection per duplicated key, execute zero RPCs for every occurrence, and still execute each valid non-duplicated sibling once.
 - Table-drive the shared strict instant helper through mutation, RPC canonical, and pull paths. Reject numeric and string `0`, prose dates, date-only or space forms, February 30, invalid leap days, times, or offsets, and every missing timezone. Accept valid `Z`, fractional-second, and positive or negative offset instants and assert exact `toISOString()` normalization.
 - Send raw `Uint8Array` bodies through the real handler. Reject a leading UTF-8 BOM, truncated sequences, overlong encodings, and isolated continuation bytes with HTTP 400 and zero admin construction or calls; accept a legitimately encoded U+FFFD scalar. Exercise shared UTF-8 goldens at 262143/262144/262145 original bytes per raw section and 524287/524288/524289 original bytes per complete request. Assert inclusive limits from `Uint8Array.byteLength`, HTTP 413 only for complete-request overflow when the preference field is present, per-section `SECTION_TOO_LARGE` for section overflow, and exact scanner offsets through whitespace, escapes, and nesting. A large ordinary-only request below 9,500,000 bytes must not inherit the preference request cap.
-- Inject RPC error, null/empty/multiple rows, malformed canonical, mismatched revision, and unknown reason. Each produces a generic 5xx with sanitized logging and never fabricated `VALIDATION_FAILED`; a valid domain rejection still coexists with valid siblings.
+- Inject RPC error, null/empty/multiple rows, malformed canonical, mismatched revision, and unknown reason. Each produces a generic 5xx, calls the logger with exactly one `{ name: safeErrorName(...) }` object, and never fabricates `VALIDATION_FAILED`; a valid domain rejection still coexists with valid siblings. Include a thrown error whose custom `name` is invalid or oversized and prove the fallback name is logged.
 - Use real RPC calls plus `Promise.all` for same-section and different-section first-write races, and exercise the lost-ack retry convergence path.
 - Pull tests repeat the exact auth classification matrix, seed all five documents through mutation, and deep-compare first-page canonical wrappers to mutation responses, including strict RFC3339 `toISOString()` normalization. Inject malformed database timestamps and string or object-key Unicode to prove a name-only-logged generic 5xx rather than silent normalization. Verify both owner predicates, cross-owner isolation, no row creation on absence, later-page omission, and retained `syncTime`.
 

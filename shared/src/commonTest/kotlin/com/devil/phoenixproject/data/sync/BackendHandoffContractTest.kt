@@ -46,7 +46,7 @@ class BackendHandoffContractTest {
 
     // Task 2 RED only. Replace this RHS after reviewing the complete amended handoff.
     private val EXPECTED_EDGE_HANDOFF_SHA256 =
-        "b13ab9f244720b31e2a5f70fc817a1aa87b79ee62f624828616122475c0faab4"
+        "8d4dcf592e7c27e7be52aa2179e85cf5e90e151d38a6072f2452c5525ff5a3a2"
 
     private fun normalizedEdgeHandoff(value: String): String =
         value.replace("\r\n", "\n").replace('\r', '\n')
@@ -814,8 +814,12 @@ class BackendHandoffContractTest {
         val code = executableTypeScript()
         listOf(
             "auth.getUser(userJwt)",
+            "bearerMatch",
+            "^Bearer ([^\\s]+)$",
             "authOperationalFailure",
             "status === 400 || status === 401 || status === 403",
+            "Object.hasOwn(authRecord, \"error\")",
+            "Object.hasOwn(authRecord, \"data\")",
             "{ status: 503 }",
             "req.arrayBuffer()",
             "TextDecoder(\"utf-8\", { fatal: true",
@@ -850,6 +854,7 @@ class BackendHandoffContractTest {
             ".eq(\"user_id\", verifiedUserId)",
             ".eq(\"local_profile_id\", requestedProfileId)",
             "throw new PreferenceInfrastructureError",
+            "console.error({ name: safeErrorName(error",
             "normalized.toISOString()",
         ).forEach { fragment -> assertTrue(fragment in code, fragment) }
 
@@ -908,6 +913,7 @@ class BackendHandoffContractTest {
 
         assertTrue("rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES" in code)
         assertFalse("requirePostgresTextTree(rawMutation" in code)
+        assertFalse("console.error(\"profile preference infrastructure failure\"" in code)
         assertFalse(Regex("""\buserId\s*[?:]?\s*:\s*string""").containsMatchIn(code))
         assertFalse(
             Regex("""console[.](?:log|info|warn|error)[(][^)]*SERVICE_ROLE""")
