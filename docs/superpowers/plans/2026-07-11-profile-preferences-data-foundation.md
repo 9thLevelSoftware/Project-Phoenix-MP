@@ -1351,8 +1351,12 @@ git commit -m "feat: add active profile preference facade"
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReader.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReaderTest.kt`
 - Create: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/PreferencesManager.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/EquipmentRackRepository.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
 - Modify: `androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/App.kt`
@@ -1371,7 +1375,7 @@ fun corruptLegacyFieldsNormalizeWithoutFailingMigration() = runTest {
     settings.putString("weight_unit", "STONE")
     settings.putFloat("body_weight_kg", Float.NaN)
     settings.putString("equipment_rack_items_v1", "[{\"id\":\"x\"},{\"id\":\"x\"}]")
-    settings.putString("single_exercise_defaults", "{broken")
+    settings.putString("exercise_defaults_broken", "{broken")
 
     val snapshot = reader.readNormalized()
 
@@ -1588,6 +1592,25 @@ private suspend fun migrateProfilePreferences() {
 }
 ```
 
+Register the reader and expanded migration constructor in the same task that introduces them so Android/iOS startup never resolves a partial graph:
+
+```kotlin
+single<LegacyProfilePreferencesReader> { SettingsLegacyProfilePreferencesReader(get(), get()) }
+single {
+    MigrationManager(
+        database = get(),
+        userProfileRepository = get(),
+        gamificationRepository = get(),
+        settings = get(),
+        profilePreferencesRepository = get(),
+        profileLocalSafetyStore = get(),
+        legacyProfilePreferencesReader = get(),
+    )
+}
+```
+
+Replace the existing `MigrationManager` binding; do not add a duplicate. Task 9 verifies this binding with the complete final graph.
+
 `applyLegacyProfilePreferences` must retain its SQL `WHERE legacy_migration_version = 0`; that is the retry guard. The startup-only recovery drains any transition journal left by a killed process before the profile list is snapshotted but deliberately leaves `activeProfileContext` in `Switching`; only the final reconciliation publishes migrated values as `Ready`. A recovery/reconciliation failure keeps the required migration in `Failed`, so Retry continues the same idempotent journal operation. Start ordinary non-critical repair passes only after required migration reaches `Ready`.
 
 Make the existing platform startup entry point idempotently start the required stage first:
@@ -1674,7 +1697,7 @@ Expected: PASS for reconciliation seeding, all-profile copy, corrupt normalizati
 - [ ] **Step 7: Commit the required migration gate**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReader.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReaderTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/App.kt shared/src/androidMain/kotlin/com/devil/phoenixproject/AndroidAppHost.kt shared/src/iosMain/kotlin/com/devil/phoenixproject/IosAppHost.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReader.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReaderTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/PreferencesManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/EquipmentRackRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/App.kt shared/src/androidMain/kotlin/com/devil/phoenixproject/AndroidAppHost.kt shared/src/iosMain/kotlin/com/devil/phoenixproject/IosAppHost.kt
 git commit -m "feat: migrate legacy profile preferences at startup"
 ```
 
@@ -2656,17 +2679,16 @@ Run:
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*KoinModuleVerifyTest*" --console=plain
 ```
 
-Expected: FAIL only for bindings introduced after Task 3, such as `LegacyProfilePreferencesReader`, refactored manager/health/safety consumers, or changed backup constructor dependencies. The focused preference stores and expanded `UserProfileRepository` binding already compile from Task 3.
+Expected: FAIL only for bindings introduced after Task 4, such as refactored manager/health/safety consumers or changed backup constructor dependencies. The focused preference stores, expanded `UserProfileRepository`, legacy reader, and expanded `MigrationManager` bindings already compile from Tasks 3-4.
 
 - [ ] **Step 3: Complete the remaining graph bindings**
 
 ```kotlin
-single<LegacyProfilePreferencesReader> { SettingsLegacyProfilePreferencesReader(get(), get()) }
 single { SettingsManager(globalPreferences = get(), userProfileRepository = get(), bleRepository = get(), scope = get()) }
 single<EquipmentRackRepository> { ProfileEquipmentRackRepository(get()) }
 ```
 
-Retain and verify Task 3's focused-store and expanded `UserProfileRepository` registrations; do not add duplicate definitions. Update `MigrationManager`, health import, safe-word, backup, MainViewModel, and platform host bindings with their new arguments. Avoid a dependency cycle: `UserProfileRepository` may depend on focused stores and gamification, but neither focused store may depend on `UserProfileRepository`.
+Retain and verify Task 3's focused-store/expanded `UserProfileRepository` registrations and Task 4's legacy-reader/expanded `MigrationManager` registrations; do not add duplicate definitions. Update health import, safe-word, backup, MainViewModel, and platform host bindings with their new arguments. Avoid a dependency cycle: `UserProfileRepository` may depend on focused stores and gamification, but neither focused store may depend on `UserProfileRepository`.
 
 - [ ] **Step 4: Run focused and full shared verification**
 
