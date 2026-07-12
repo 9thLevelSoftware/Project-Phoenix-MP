@@ -10,6 +10,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 
 /**
  * Integration tests for backup serialization round-trips with v0.9.0 additions.
@@ -26,6 +28,7 @@ class BackupSerializationTest {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
+        explicitNulls = false
     }
 
     @Test
@@ -165,11 +168,11 @@ class BackupSerializationTest {
     @Test
     fun equipmentRackItemsAndRoutineDefaultIdsRoundTrip() {
         val original = BackupData(
-            version = CURRENT_BACKUP_VERSION,
+            version = 4,
             exportedAt = "2026-06-07T12:00:00Z",
             appVersion = "0.9.0",
             data = BackupContent(
-                equipmentRackItems = listOf(
+                legacyEquipmentRackItems = json.encodeToJsonElement(listOf(
                     RackItem(
                         id = "vest",
                         name = "Weighted vest",
@@ -177,7 +180,7 @@ class BackupSerializationTest {
                         weightKg = 10f,
                         behavior = RackItemBehavior.ADDED_RESISTANCE,
                     ),
-                ),
+                )),
                 routineExercises = listOf(
                     RoutineExerciseBackup(
                         id = "rex-rack",
@@ -198,7 +201,12 @@ class BackupSerializationTest {
         val jsonString = json.encodeToString(original)
         val deserialized = json.decodeFromString<BackupData>(jsonString)
 
-        assertEquals("vest", deserialized.data.equipmentRackItems.single().id)
+        assertEquals(
+            "vest",
+            json.decodeFromJsonElement<List<RackItem>>(
+                requireNotNull(deserialized.data.legacyEquipmentRackItems),
+            ).single().id,
+        )
         assertEquals(listOf("vest"), deserialized.data.routineExercises.single().defaultRackItemIds)
     }
 
@@ -276,5 +284,36 @@ class BackupSerializationTest {
                 "Backup JSON must not contain secret/auth field '$tokenOrSecretField'",
             )
         }
+    }
+
+    @Test
+    fun v5WireDefaultsExposePreferencesAndOmitLegacyRackAndLocalOnlyState() {
+        val backupData = BackupData(
+            exportedAt = "2026-07-12T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(),
+        )
+
+        val jsonString = json.encodeToString(backupData)
+
+        assertEquals(5, CURRENT_BACKUP_VERSION)
+        assertTrue(jsonString.contains("\"profilePreferences\""))
+        assertFalse(jsonString.contains("equipmentRackItems"))
+        listOf(
+            "localGeneration",
+            "serverRevision",
+            "dirty",
+            "safeWord",
+            "safe_word",
+            "calibrated",
+            "adultsOnly",
+            "adult_confirm",
+            "adult_prompt",
+        ).forEach { forbidden ->
+            assertFalse(jsonString.contains(forbidden, ignoreCase = true), forbidden)
+        }
+        assertTrue(backupData.privacy.userFacingSummary.contains("profile training preferences"))
+        assertTrue(backupData.privacy.userFacingSummary.contains("voice", ignoreCase = true))
+        assertTrue(backupData.privacy.userFacingSummary.contains("adult", ignoreCase = true))
     }
 }

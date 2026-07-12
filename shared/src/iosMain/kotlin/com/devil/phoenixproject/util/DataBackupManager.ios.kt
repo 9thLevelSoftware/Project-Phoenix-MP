@@ -2,7 +2,8 @@ package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
-import com.devil.phoenixproject.data.repository.EquipmentRackRepository
+import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.database.VitruvianDatabase
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -52,8 +53,9 @@ class IosDataBackupManager(
     database: VitruvianDatabase,
     private val preferencesManager: PreferencesManager,
     private val destinationResolver: BackupDestinationResolver,
-    equipmentRackRepository: EquipmentRackRepository,
-) : BaseDataBackupManager(database, equipmentRackRepository) {
+    profilePreferencesRepository: ProfilePreferencesRepository,
+    userProfileRepository: UserProfileRepository,
+) : BaseDataBackupManager(database, profilePreferencesRepository, userProfileRepository) {
 
     private val fileManager = NSFileManager.defaultManager
 

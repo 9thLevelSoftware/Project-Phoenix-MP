@@ -1,10 +1,28 @@
 package com.devil.phoenixproject.util
 
-import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
+import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
+import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.LedPreferences
+import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackItemCategory
+import com.devil.phoenixproject.domain.model.RackPreferences
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.VbtPreferences
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
@@ -12,9 +30,20 @@ import com.russhwolf.settings.MapSettings
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.Test
 
 // =============================================================================
@@ -406,9 +435,15 @@ class StreamingImportRoundTripTest {
 
     private class TestDataBackupManager(
         database: com.devil.phoenixproject.database.VitruvianDatabase,
+        val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),
+        val userProfileRepository: UserProfileRepository = createTestUserProfileRepository(
+            database,
+            profilePreferencesRepository,
+        ),
     ) : BaseDataBackupManager(
         database,
-        SettingsEquipmentRackRepository(MapSettings()),
+        profilePreferencesRepository,
+        userProfileRepository,
     ) {
 
         override fun createBackupWriter(): BackupJsonWriter {
@@ -447,6 +482,16 @@ class StreamingImportRoundTripTest {
 
         /** Public wrapper exposing the protected [importFromStream] for testing. */
         suspend fun importFromStreamPublic(source: BackupStreamSource): Result<ImportResult> = importFromStream(source)
+
+        suspend fun importFromStringStreaming(value: String): Result<ImportResult> {
+            val source = StringBackupStreamSource(value)
+            source.open()
+            return try {
+                importFromStreamPublic(source)
+            } finally {
+                source.close()
+            }
+        }
     }
 
     @Test
@@ -482,11 +527,613 @@ class StreamingImportRoundTripTest {
     }
 
     @Test
-    fun `streaming import round-trip preserves all entities`() = runTest {
+    fun `streaming defers profile state until final root version regardless of field order`() = runTest {
+        val v5Fixture = preferenceFixture()
+        seedProfiles(v5Fixture)
+        val v5Payload = adversarialBackup(
+            finalVersion = 5,
+            identities = listOf(profileBackup(PROFILE_A, isActive = false)),
+            preferences = listOf(
+                preferenceEntry(
+                    PROFILE_A,
+                    core = jsonElement(CoreProfilePreferences(83f, WeightUnit.KG, 2.5f)),
+                    rack = jsonElement(RackPreferences(items = listOf(rackItem("v5", "V5", 8f)))),
+                ),
+            ),
+            legacyRack = JsonArray(emptyList()),
+        )
+
+        val v5Result = v5Fixture.manager.importFromStringStreaming(v5Payload)
+
+        assertTrue(v5Result.isSuccess, v5Result.exceptionOrNull()?.toString())
+        assertEquals(83f, v5Fixture.preferences.get(PROFILE_A).core.value.bodyWeightKg)
+        assertEquals(
+            listOf("v5"),
+            v5Fixture.preferences.get(PROFILE_A).rack.value.items.map { it.id },
+            "final v5 preference rack must win while legacy empty rack is ignored",
+        )
+
+        val v4Fixture = preferenceFixture()
+        seedProfiles(v4Fixture)
+        val v4Payload = adversarialBackup(
+            finalVersion = 4,
+            identities = listOf(profileBackup(PROFILE_A)),
+            preferences = listOf(
+                preferenceEntry(
+                    PROFILE_A,
+                    core = jsonElement(CoreProfilePreferences(120f, WeightUnit.LB, 5f)),
+                ),
+            ),
+            legacyRack = JsonArray(emptyList()),
+        )
+
+        val v4Result = v4Fixture.manager.importFromStringStreaming(v4Payload)
+
+        assertTrue(v4Result.isSuccess, v4Result.exceptionOrNull()?.toString())
+        assertEquals(70f, v4Fixture.preferences.get(PROFILE_A).core.value.bodyWeightKg)
+        assertTrue(v4Fixture.preferences.get(PROFILE_A).rack.value.items.isEmpty())
+    }
+
+    @Test
+    fun `streaming v4 distinguishes missing empty invalid and valid rack payloads`() = runTest {
+        suspend fun restore(present: Boolean, raw: JsonElement): Pair<PreferenceFixture, ImportResult> {
+            val fixture = preferenceFixture()
+            seedProfiles(fixture)
+            val data = buildJsonObject {
+                put("userProfiles", testJson.encodeToJsonElement(listOf(profileBackup(PROFILE_A))))
+                if (present) put("equipmentRackItems", raw)
+            }
+            val payload = buildJsonObject {
+                put("data", data)
+                put("version", 4)
+                put("exportedAt", "2026-07-12T00:00:00Z")
+                put("appVersion", "test")
+            }.toString()
+            return fixture to fixture.manager.importFromStringStreaming(payload).getOrThrow()
+        }
+
+        val missing = restore(false, JsonNull).first
+        assertEquals(listOf("a-existing", "shared"), missing.preferences.get(PROFILE_A).rack.value.items.map { it.id })
+
+        listOf(
+            JsonNull,
+            JsonPrimitive(7),
+            JsonArray(listOf(buildJsonObject { put("id", "malformed") })),
+        ).forEach { invalid ->
+            val restored = restore(true, invalid)
+            assertEquals(1, restored.second.entitiesWithErrors)
+            assertEquals(
+                listOf("a-existing", "shared"),
+                restored.first.preferences.get(PROFILE_A).rack.value.items.map { it.id },
+            )
+        }
+
+        assertTrue(restore(true, JsonArray(emptyList())).first.preferences.get(PROFILE_A).rack.value.items.isEmpty())
+
+        val valid = restore(
+            true,
+            jsonElement(listOf(
+                rackItem("shared", "Imported", 9f),
+                rackItem("new", "New", 3f),
+            )),
+        ).first.preferences.get(PROFILE_A).rack.value.items
+        assertEquals(listOf("a-existing", "shared", "new"), valid.map { it.id })
+        assertEquals("Imported", valid[1].name)
+    }
+
+    @Test
+    fun `buffered and streaming preference restores have typed and metadata parity`() = runTest {
+        val buffered = preferenceFixture()
+        val streamed = preferenceFixture()
+        seedProfiles(buffered)
+        seedProfiles(streamed)
+        val payload = standardBackup(
+            version = 5,
+            identities = listOf(profileBackup(PROFILE_A), profileBackup(PROFILE_B)),
+            preferences = listOf(
+                preferenceEntry(
+                    PROFILE_A,
+                    core = jsonElement(CoreProfilePreferences(88f, WeightUnit.KG, 1.25f)),
+                    rack = jsonElement(RackPreferences(items = listOf(rackItem("new-a", "New A", 3f)))),
+                    workout = jsonElement(WorkoutPreferences(stopAtTop = true, summaryCountdownSeconds = 20)),
+                    led = jsonElement(LedPreferences(colorScheme = 9, discoModeUnlocked = true)),
+                    vbt = jsonElement(VbtPreferences(enabled = false, velocityLossThresholdPercent = 50)),
+                ),
+                preferenceEntry(
+                    PROFILE_B,
+                    core = jsonElement(CoreProfilePreferences(99f, WeightUnit.LB, 5f)),
+                    rack = jsonElement(RackPreferences(items = listOf(rackItem("new-b", "New B", 6f)))),
+                    workout = jsonElement(WorkoutPreferences(beepsEnabled = false, summaryCountdownSeconds = 25)),
+                    led = jsonElement(LedPreferences(colorScheme = 10)),
+                    vbt = jsonElement(VbtPreferences(enabled = true, velocityLossThresholdPercent = 35)),
+                ),
+            ),
+        )
+
+        val bufferedResult = buffered.manager.importFromJson(payload)
+        val streamedResult = streamed.manager.importFromStringStreaming(payload)
+
+        assertTrue(bufferedResult.isSuccess, bufferedResult.exceptionOrNull()?.toString())
+        assertTrue(streamedResult.isSuccess, streamedResult.exceptionOrNull()?.toString())
+        assertEquals(bufferedResult.getOrThrow().entitiesWithErrors, streamedResult.getOrThrow().entitiesWithErrors)
+        listOf(PROFILE_A, PROFILE_B).forEach { profileId ->
+            val left = buffered.preferences.get(profileId)
+            val right = streamed.preferences.get(profileId)
+            assertEquals(left.core.value, right.core.value)
+            assertEquals(left.rack.value, right.rack.value)
+            assertEquals(left.workout.value, right.workout.value)
+            assertEquals(left.led.value, right.led.value)
+            assertEquals(left.vbt.value, right.vbt.value)
+            assertEquals(left.core.metadata.copy(updatedAt = 0), right.core.metadata.copy(updatedAt = 0))
+            assertEquals(left.rack.metadata.copy(updatedAt = 0), right.rack.metadata.copy(updatedAt = 0))
+            assertEquals(left.workout.metadata.copy(updatedAt = 0), right.workout.metadata.copy(updatedAt = 0))
+            assertEquals(left.led.metadata.copy(updatedAt = 0), right.led.metadata.copy(updatedAt = 0))
+            assertEquals(left.vbt.metadata.copy(updatedAt = 0), right.vbt.metadata.copy(updatedAt = 0))
+        }
+    }
+
+    @Test
+    fun `streaming active flags never switch target and post-identity failure normalizes then reconciles`() = runTest {
+        listOf(
+            listOf(false, false),
+            listOf(false, true),
+            listOf(true, true),
+        ).forEach { flags ->
+            val fixture = preferenceFixture()
+            seedProfiles(fixture)
+            val payload = standardBackup(
+                version = 5,
+                identities = listOf(
+                    profileBackup(PROFILE_A, flags[0]),
+                    profileBackup(PROFILE_B, flags[1]),
+                ),
+            )
+            assertTrue(fixture.manager.importFromStringStreaming(payload).isSuccess)
+            val profiles = fixture.database.vitruvianDatabaseQueries.getAllProfiles().executeAsList()
+            assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
+            assertEquals(1, fixture.recordingUserProfiles.reconcileCalls)
+        }
+
+        val failed = preferenceFixture()
+        seedProfiles(failed)
+        val malformedAfterIdentityCommit = """
+            {
+              "data": {
+                "userProfiles": [
+                  {"id":"profile-b","name":"Profile B","colorIndex":0,"createdAt":200,"isActive":true}
+                ],
+                "workoutSessions": [}
+              },
+              "version": 5,
+              "exportedAt": "x",
+              "appVersion": "x"
+            }
+        """.trimIndent()
+
+        val result = failed.manager.importFromStringStreaming(malformedAfterIdentityCommit)
+
+        assertTrue(result.isFailure)
+        val profiles = failed.database.vitruvianDatabaseQueries.getAllProfiles().executeAsList()
+        assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
+        assertEquals(1, failed.recordingUserProfiles.reconcileCalls)
+    }
+
+    @Test
+    fun `streaming legacy rows use first represented fallback when no prior active or default exists`() = runTest {
+        val fixture = preferenceFixture()
+        fixture.driver.execute(null, "DELETE FROM UserProfile WHERE id = 'default'", 0)
+        val represented = "first-represented"
+        val session = WorkoutSessionBackup(
+            id = "stream-legacy-fallback",
+            timestamp = 1L,
+            mode = "Old School",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            profileId = null,
+        )
+        val payload = buildJsonObject {
+            put("data", buildJsonObject {
+                put("workoutSessions", JsonArray(listOf(testJson.encodeToJsonElement(session))))
+                put("userProfiles", testJson.encodeToJsonElement(listOf(profileBackup(represented))))
+            })
+            put("version", 5)
+            put("exportedAt", "x")
+            put("appVersion", "x")
+        }.toString()
+
+        val result = fixture.manager.importFromStringStreaming(payload)
+
+        assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
+        assertEquals(
+            represented,
+            fixture.database.vitruvianDatabaseQueries
+                .selectSessionById(session.id)
+                .executeAsOne()
+                .profile_id,
+        )
+        assertEquals(represented, fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+    }
+
+    @Test
+    fun `streaming explicit profile adoption waits for normalized target instead of provisional default`() = runTest {
+        val fixture = preferenceFixture()
+        val session = WorkoutSessionBackup(
+            id = "stream-explicit-adoption",
+            timestamp = 1L,
+            mode = "Old School",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            profileId = "original-owner",
+        )
+        val representedSession = session.copy(id = "stream-explicit-represented")
+        fun payload(rows: List<WorkoutSessionBackup>, identities: List<UserProfileBackup>) = buildJsonObject {
+            put("data", buildJsonObject {
+                put("workoutSessions", testJson.encodeToJsonElement(rows))
+                put("userProfiles", testJson.encodeToJsonElement(identities))
+            })
+            put("version", 5)
+            put("exportedAt", "x")
+            put("appVersion", "x")
+        }.toString()
+
+        assertTrue(
+            fixture.manager.importFromStringStreaming(
+                payload(listOf(session, representedSession), emptyList()),
+            ).isSuccess,
+        )
+        fixture.driver.execute(null, "DELETE FROM UserProfile WHERE id = 'default'", 0)
+
+        val result = fixture.manager.importFromStringStreaming(
+            payload(
+                listOf(
+                    session.copy(profileId = "default"),
+                    representedSession.copy(profileId = "first-represented"),
+                ),
+                listOf(profileBackup("first-represented")),
+            ),
+        )
+
+        assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
+        assertEquals(
+            "original-owner",
+            fixture.database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
+        )
+        assertEquals(
+            "first-represented",
+            fixture.database.vitruvianDatabaseQueries
+                .selectSessionById(representedSession.id)
+                .executeAsOne()
+                .profile_id,
+        )
+        assertEquals(
+            "first-represented",
+            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+        )
+    }
+
+    @Test
+    fun `streaming v1 through v3 ignore supplied preferences and legacy rack and preserve local safety`() = runTest {
+        for (version in 1..3) {
+            val fixture = preferenceFixture()
+            seedProfiles(fixture)
+            val localSafety = ProfileLocalSafetyPreferences(
+                safeWord = "streaming-local-secret-$version",
+                safeWordCalibrated = true,
+                adultsOnlyConfirmed = true,
+                adultsOnlyPrompted = true,
+            )
+            fixture.safetyStore.write(PROFILE_A, localSafety)
+            val before = fixture.preferences.get(PROFILE_A)
+            val payload = buildJsonObject {
+                put("version", version)
+                put("exportedAt", "x")
+                put("appVersion", "x")
+                put("data", buildJsonObject {
+                    put("userProfiles", testJson.encodeToJsonElement(listOf(profileBackup(PROFILE_A))))
+                    put("profilePreferences", JsonArray(listOf(
+                        preferenceEntry(
+                            PROFILE_A,
+                            core = jsonElement(CoreProfilePreferences(120f, WeightUnit.LB, 10f)),
+                            rack = jsonElement(RackPreferences()),
+                        ),
+                    )))
+                    put("equipmentRackItems", JsonArray(emptyList()))
+                })
+            }.toString()
+
+            val result = fixture.manager.importFromStringStreaming(payload)
+
+            assertTrue(result.isSuccess, "v$version: ${result.exceptionOrNull()}")
+            val after = fixture.preferences.get(PROFILE_A)
+            assertEquals(before.core.value, after.core.value, "v$version core")
+            assertEquals(before.rack.value, after.rack.value, "v$version rack")
+            assertEquals(localSafety, fixture.safetyStore.read(PROFILE_A), "v$version local safety")
+        }
+    }
+
+    @Test
+    fun `streaming v6 restores known fields ignores unknown fields and preserves local safety`() = runTest {
+        val fixture = preferenceFixture()
+        seedProfiles(fixture)
+        val localSafety = ProfileLocalSafetyPreferences("v6-stream-secret", true, true, true)
+        fixture.safetyStore.write(PROFILE_A, localSafety)
+        val entry = buildJsonObject {
+            put("profileId", PROFILE_A)
+            put("core", buildJsonObject {
+                put("bodyWeightKg", 88f)
+                put("weightUnit", "KG")
+                put("weightIncrement", 2.5f)
+                put("futureSectionField", JsonArray(listOf(JsonPrimitive(1))))
+            })
+            put("futureEntryField", buildJsonObject { put("ignored", true) })
+        }
+        val payload = buildJsonObject {
+            put("futureRootField", buildJsonObject { put("ignored", true) })
+            put("data", buildJsonObject {
+                put("futureDataField", JsonPrimitive("ignored"))
+                put("profilePreferences", JsonArray(listOf(entry)))
+                put("equipmentRackItems", JsonArray(emptyList()))
+                put("userProfiles", testJson.encodeToJsonElement(listOf(profileBackup(PROFILE_A))))
+            })
+            put("version", 6)
+            put("exportedAt", "x")
+            put("appVersion", "x")
+        }.toString()
+
+        val result = fixture.manager.importFromStringStreaming(payload)
+
+        assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
+        assertEquals(0, result.getOrThrow().entitiesWithErrors)
+        assertEquals(88f, fixture.preferences.get(PROFILE_A).core.value.bodyWeightKg)
+        assertEquals(
+            listOf("a-existing", "shared"),
+            fixture.preferences.get(PROFILE_A).rack.value.items.map { it.id },
+            "v6 must ignore the legacy rack",
+        )
+        assertEquals(localSafety, fixture.safetyStore.read(PROFILE_A))
+    }
+
+    @Test
+    fun `streaming preference failure remains primary and reconcile failure is suppressed once`() = runTest {
+        val restoreFailure = IllegalStateException("streaming preference storage failed")
+        val reconcileFailure = IllegalArgumentException("streaming reconcile failed")
+        val fixture = preferenceFixture(
+            preferenceDecorator = { delegate ->
+                FaultingProfilePreferencesRepository(delegate, restoreFailure)
+            },
+            reconciliationFailure = reconcileFailure,
+        )
+        val payload = standardBackup(
+            version = 5,
+            identities = listOf(profileBackup("default")),
+            preferences = listOf(
+                preferenceEntry(
+                    "default",
+                    core = jsonElement(CoreProfilePreferences(80f, WeightUnit.KG, 2.5f)),
+                ),
+            ),
+        )
+
+        val result = fixture.manager.importFromStringStreaming(payload)
+
+        assertTrue(result.isFailure)
+        assertSame(restoreFailure, result.exceptionOrNull())
+        assertTrue(result.exceptionOrNull()!!.suppressed.any { it.message == reconcileFailure.message })
+        assertEquals(1, fixture.recordingUserProfiles.reconcileCalls)
+    }
+
+    private fun preferenceFixture(
+        preferenceDecorator: (ProfilePreferencesRepository) -> ProfilePreferencesRepository = { it },
+        reconciliationFailure: Throwable? = null,
+    ): PreferenceFixture {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        VitruvianDatabase.Schema.create(driver)
+        val database = VitruvianDatabase(driver)
+        val preferences = preferenceDecorator(SqlDelightProfilePreferencesRepository(database))
+        val safetyStore = SettingsProfileLocalSafetyStore(MapSettings())
+        val realUserProfiles = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = preferences,
+            profileLocalSafetyStore = safetyStore,
+            gamificationRepository = SqlDelightGamificationRepository(database),
+        )
+        database.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+        val recording = RecordingUserProfileRepository(realUserProfiles, reconciliationFailure)
+        return PreferenceFixture(
+            driver = driver,
+            database = database,
+            preferences = preferences,
+            safetyStore = safetyStore,
+            recordingUserProfiles = recording,
+            manager = TestDataBackupManager(database, preferences, recording),
+        )
+    }
+
+    private suspend fun seedProfiles(fixture: PreferenceFixture) {
+        insertProfile(fixture.database, PROFILE_A, 100L)
+        insertProfile(fixture.database, PROFILE_B, 200L)
+        fixture.database.vitruvianDatabaseQueries.setActiveProfile(PROFILE_A)
+        fixture.preferences.updateCore(PROFILE_A, CoreProfilePreferences(70f, WeightUnit.KG, 2.5f), 10L)
+        fixture.preferences.updateRack(
+            PROFILE_A,
+            RackPreferences(items = listOf(
+                rackItem("a-existing", "A existing", 1f),
+                rackItem("shared", "A shared", 2f),
+            )),
+            11L,
+        )
+        fixture.preferences.updateWorkout(
+            PROFILE_A,
+            WorkoutPreferences(stopAtTop = true, summaryCountdownSeconds = 5),
+            12L,
+        )
+        fixture.preferences.updateLed(PROFILE_A, LedPreferences(colorScheme = 2), 13L)
+        fixture.preferences.updateVbt(PROFILE_A, VbtPreferences(enabled = false, velocityLossThresholdPercent = 30), 14L)
+
+        fixture.preferences.updateCore(PROFILE_B, CoreProfilePreferences(90f, WeightUnit.LB, 5f), 20L)
+        fixture.preferences.updateRack(
+            PROFILE_B,
+            RackPreferences(items = listOf(
+                rackItem("b-existing", "B existing", 4f),
+                rackItem("shared", "B shared", 5f),
+            )),
+            21L,
+        )
+        fixture.preferences.updateWorkout(
+            PROFILE_B,
+            WorkoutPreferences(beepsEnabled = false, summaryCountdownSeconds = 15),
+            22L,
+        )
+        fixture.preferences.updateLed(PROFILE_B, LedPreferences(colorScheme = 7), 23L)
+        fixture.preferences.updateVbt(PROFILE_B, VbtPreferences(enabled = true, velocityLossThresholdPercent = 40), 24L)
+    }
+
+    private fun insertProfile(database: VitruvianDatabase, id: String, createdAt: Long) {
+        if (database.vitruvianDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
+            database.vitruvianDatabaseQueries.insertProfile(id, id, 0L, createdAt, 0L)
+        }
+        database.vitruvianDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
+    }
+
+    private inline fun <reified T> jsonElement(value: T): JsonElement = testJson.encodeToJsonElement(value)
+
+    private fun rackItem(id: String, name: String, weightKg: Float) = RackItem(
+        id = id,
+        name = name,
+        category = RackItemCategory.OTHER,
+        weightKg = weightKg,
+        behavior = RackItemBehavior.ADDED_RESISTANCE,
+        createdAt = 1L,
+        updatedAt = 1L,
+    )
+
+    private fun profileBackup(id: String, isActive: Boolean = false) = UserProfileBackup(
+        id = id,
+        name = id,
+        colorIndex = 0,
+        createdAt = if (id == PROFILE_A) 100L else 200L,
+        isActive = isActive,
+    )
+
+    private fun preferenceEntry(
+        profileId: String,
+        core: JsonElement? = null,
+        rack: JsonElement? = null,
+        workout: JsonElement? = null,
+        led: JsonElement? = null,
+        vbt: JsonElement? = null,
+    ) = buildJsonObject {
+        put("profileId", profileId)
+        core?.let { put("core", it) }
+        rack?.let { put("rack", it) }
+        workout?.let { put("workout", it) }
+        led?.let { put("led", it) }
+        vbt?.let { put("vbt", it) }
+    }
+
+    private fun standardBackup(
+        version: Int,
+        identities: List<UserProfileBackup>,
+        preferences: List<JsonElement> = emptyList(),
+    ): String = buildJsonObject {
+        put("version", version)
+        put("exportedAt", "2026-07-12T00:00:00Z")
+        put("appVersion", "test")
+        put("data", buildJsonObject {
+            put("userProfiles", testJson.encodeToJsonElement(identities))
+            put("profilePreferences", JsonArray(preferences))
+        })
+    }.toString()
+
+    private fun adversarialBackup(
+        finalVersion: Int,
+        identities: List<UserProfileBackup>,
+        preferences: List<JsonElement>,
+        legacyRack: JsonElement,
+    ): String = buildJsonObject {
+        put("data", buildJsonObject {
+            put("profilePreferences", JsonArray(preferences))
+            put("equipmentRackItems", legacyRack)
+            put("userProfiles", testJson.encodeToJsonElement(identities))
+            put("futureData", buildJsonObject { put("ignored", true) })
+        })
+        put("futureRoot", JsonArray(listOf(JsonPrimitive("ignored"))))
+        put("version", finalVersion)
+        put("exportedAt", "2026-07-12T00:00:00Z")
+        put("appVersion", "test")
+    }.toString()
+
+    private data class PreferenceFixture(
+        val driver: SqlDriver,
+        val database: VitruvianDatabase,
+        val preferences: ProfilePreferencesRepository,
+        val safetyStore: SettingsProfileLocalSafetyStore,
+        val recordingUserProfiles: RecordingUserProfileRepository,
+        val manager: TestDataBackupManager,
+    )
+
+    private class RecordingUserProfileRepository(
+        private val delegate: UserProfileRepository,
+        private val reconciliationFailure: Throwable? = null,
+    ) : UserProfileRepository by delegate {
+        var reconcileCalls: Int = 0
+            private set
+
+        override suspend fun reconcileActiveProfileContext() {
+            reconcileCalls++
+            reconciliationFailure?.let { throw it }
+            delegate.reconcileActiveProfileContext()
+        }
+    }
+
+    private class FaultingProfilePreferencesRepository(
+        private val delegate: ProfilePreferencesRepository,
+        private val failure: Throwable,
+    ) : ProfilePreferencesRepository by delegate {
+        override suspend fun updateCore(profileId: String, value: CoreProfilePreferences, now: Long) {
+            throw failure
+        }
+    }
+
+    private companion object {
+        const val PROFILE_A = "profile-a"
+        const val PROFILE_B = "profile-b"
+
+        fun createTestUserProfileRepository(
+            database: VitruvianDatabase,
+            preferences: ProfilePreferencesRepository,
+        ): UserProfileRepository = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = preferences,
+            profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings()),
+            gamificationRepository = SqlDelightGamificationRepository(database),
+        ).also {
+            database.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+        }
+    }
+
+    @Test
+    fun `streaming import round-trip preserves all entities and profile preferences`() = runTest {
         // 1. Create original database and populate
-        val originalDb = createTestDatabase()
+        val originalFixture = preferenceFixture()
+        seedProfiles(originalFixture)
+        val originalDb = originalFixture.database
         val originalRepo = SqlDelightWorkoutRepository(originalDb, FakeExerciseRepository())
-        val originalManager = TestDataBackupManager(originalDb)
+        val originalManager = originalFixture.manager
 
         // Insert sessions
         originalRepo.saveSession(
@@ -591,10 +1238,20 @@ class StreamingImportRoundTripTest {
         assertEquals(1, originalBackup.data.routines.size, "Original should have 1 routine")
         assertEquals(1, originalBackup.data.routineExercises.size, "Original should have 1 routine exercise")
         assertTrue(originalBackup.data.personalRecords.isNotEmpty(), "Original should have personal records")
+        assertEquals(setOf("default", PROFILE_A, PROFILE_B), originalBackup.data.userProfiles.map { it.id }.toSet())
+        val originalPreferenceEntries = testJson.parseToJsonElement(exportedJson).jsonObject
+            .getValue("data").jsonObject.getValue("profilePreferences").jsonArray
+            .associateBy { it.jsonObject.getValue("profileId").jsonPrimitive.content }
+        assertEquals(setOf("default", PROFILE_A, PROFILE_B), originalPreferenceEntries.keys)
+        val originalA = originalPreferenceEntries.getValue(PROFILE_A).jsonObject
+        listOf("core", "rack", "workout", "led", "vbt").forEach { section ->
+            assertTrue(section in originalA, "source export must include $section")
+        }
 
         // 3. Create FRESH database and import via streaming
-        val freshDb = createTestDatabase()
-        val freshManager = TestDataBackupManager(freshDb)
+        val freshFixture = preferenceFixture()
+        val freshDb = freshFixture.database
+        val freshManager = freshFixture.manager
 
         val source = StringBackupStreamSource(exportedJson)
         source.open()
@@ -635,6 +1292,19 @@ class StreamingImportRoundTripTest {
             originalBackup.data.personalRecords.size,
             reExportedBackup.data.personalRecords.size,
             "Personal record count must match after round-trip",
+        )
+        assertEquals(
+            originalBackup.data.userProfiles.map { it.id }.toSet(),
+            reExportedBackup.data.userProfiles.map { it.id }.toSet(),
+            "Profile identities must survive streaming round-trip",
+        )
+        val reExportedPreferenceEntries = testJson.parseToJsonElement(reExportedJson).jsonObject
+            .getValue("data").jsonObject.getValue("profilePreferences").jsonArray
+            .associateBy { it.jsonObject.getValue("profileId").jsonPrimitive.content }
+        assertEquals(
+            originalPreferenceEntries,
+            reExportedPreferenceEntries,
+            "All five preference sections must survive streaming round-trip",
         )
 
         // 6. Verify import counts match

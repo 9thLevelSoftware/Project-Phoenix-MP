@@ -10,7 +10,8 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
-import com.devil.phoenixproject.data.repository.EquipmentRackRepository
+import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.database.VitruvianDatabase
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -30,8 +31,9 @@ class AndroidDataBackupManager(
     database: VitruvianDatabase,
     private val preferencesManager: PreferencesManager,
     private val destinationResolver: BackupDestinationResolver,
-    equipmentRackRepository: EquipmentRackRepository,
-) : BaseDataBackupManager(database, equipmentRackRepository) {
+    profilePreferencesRepository: ProfilePreferencesRepository,
+    userProfileRepository: UserProfileRepository,
+) : BaseDataBackupManager(database, profilePreferencesRepository, userProfileRepository) {
 
     private val cacheDir: File
         get() {
