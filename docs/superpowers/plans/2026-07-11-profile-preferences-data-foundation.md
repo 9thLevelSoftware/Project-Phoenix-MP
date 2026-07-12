@@ -3297,18 +3297,22 @@ git commit -m "feat: back up profile preferences in schema v5"
 ### Task 9: Wire dependency injection and verify the data foundation
 
 **Files:**
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt`
-- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt`
-- Modify any platform constructor binding identified in Tasks 4, 5, and 8.
+- Verify first; modify only a genuine omission reported by verification:
+  - `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
+  - `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
+  - `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt`
+  - `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt`
+  - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt`
+  - `shared/src/androidMain/kotlin/com/devil/phoenixproject/di/PlatformModule.android.kt`
+  - `shared/src/iosMain/kotlin/com/devil/phoenixproject/di/PlatformModule.ios.kt`
+  - any concrete MainViewModel/application host file named by a compiler or Koin failure.
 
 **Interfaces:**
 - Consumes: every implementation in this plan.
 - Produces: a statically verified common/Android-host Koin graph, successful iOS DI compilation, and the stable foundation required by both later plans.
+- Expected scope: Tasks 3-8 already own their bindings and constructor changes, so this task is verification-first and should normally make no production-code change or commit.
 
-- [ ] **Step 1: Keep the existing static Koin graph verification current**
+- [ ] **Step 1: Verify the existing static Koin graph before changing it**
 
 ```kotlin
 private val platformProvidedTypes = listOf(
@@ -3349,9 +3353,11 @@ Run:
 
 Expected: PASS. If it fails, a Task 3-8 binding or required `extraTypes` entry was missed; fix that omission before continuing rather than documenting an expected partial graph.
 
-- [ ] **Step 3: Complete the remaining graph bindings**
+- [ ] **Step 3: Repair only a verified graph omission**
 
-Retain and verify Task 3's focused-store/expanded `UserProfileRepository` registrations, Task 4's legacy-reader/expanded `MigrationManager`, and Task 5's `RequiredMigrationGate`, profile rack, health, and safe-word registrations; do not add duplicate definitions. `SettingsManager` remains owned by `MainViewModel` because it requires `viewModelScope`; do not register it as an application singleton. Repair only genuine omissions reported by `verify`, then update any remaining MainViewModel/platform host arguments. Avoid a dependency cycle: `UserProfileRepository` may depend on focused stores and gamification, but neither focused store may depend on `UserProfileRepository`.
+If Step 2 passes, make no graph edit. Retain and verify Task 3's focused-store/expanded `UserProfileRepository` registrations, Task 4's legacy-reader/expanded `MigrationManager`, Task 5's `RequiredMigrationGate`, profile rack, health, and safe-word registrations, Task 7's shared merger, and Task 8's Android/iOS backup-manager constructor bindings; do not add duplicate definitions. `SettingsManager` remains owned by `MainViewModel` because it requires `viewModelScope`; do not register it as an application singleton.
+
+If verification or platform compilation fails, repair only the concrete missing definition, `extraTypes` entry, constructor argument, or platform host binding named by that failure and rerun the failing command immediately. Avoid a dependency cycle: `UserProfileRepository` may depend on focused stores, gamification, and the merger, but neither focused store nor the merger may depend on `UserProfileRepository`.
 
 - [ ] **Step 4: Run focused and full shared verification**
 
@@ -3380,19 +3386,206 @@ Expected: BUILD SUCCESSFUL with no missing platform constructor or serializer.
 Run:
 
 ```powershell
-rg -n "set(BodyWeightKg|WeightUnit|WeightIncrement|ColorScheme|VelocityLossThreshold|AutoEndOnVelocityLoss|SafeWord|AdultsOnlyConfirmed)" shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/PreferencesManager.kt
-rg -n "safeWord|safe_word|adultsOnly|localGeneration|serverRevision|dirty" shared/src/commonMain/kotlin/com/devil/phoenixproject/util/BackupModels.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.kt
+$preferencesFile = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/PreferencesManager.kt'
+$productionRoots = @(
+    'shared/src/commonMain',
+    'shared/src/androidMain',
+    'shared/src/iosMain'
+)
+
+# Derive the complete legacy-writer surface from the concrete Settings manager.
+$legacySetterNames = @(
+    rg -o --replace '$1' `
+        'internal\s+(?:suspend\s+)?fun\s+(set[A-Za-z0-9_]+)\s*\(' `
+        $preferencesFile
+)
+if ($LASTEXITCODE -ne 0 -or $legacySetterNames.Count -eq 0) {
+    throw 'Could not derive internal legacy preference setters'
+}
+$setterAlternation = ($legacySetterNames | ForEach-Object {
+    [Regex]::Escape($_)
+}) -join '|'
+
+# The only legitimate same-name calls are these reviewed file/receiver/type pairs.
+$allowedCallContexts = @(
+    [pscustomobject]@{
+        File = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt'
+        Receiver = 'settingsManager'
+        TypeProof = '\bval\s+settingsManager\s*=\s*SettingsManager\s*\('
+    },
+    [pscustomobject]@{
+        File = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt'
+        Receiver = 'viewModel'
+        TypeProof = '\bviewModel\s*:\s*MainViewModel\b'
+    },
+    [pscustomobject]@{
+        File = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/DefaultWorkoutSessionManager.kt'
+        Receiver = 'settingsManager'
+        TypeProof = '\bprivate\s+val\s+settingsManager\s*:\s*SettingsManager\b'
+    },
+    [pscustomobject]@{
+        File = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/BleConnectionManager.kt'
+        Receiver = 'bleRepository'
+        TypeProof = '\bprivate\s+val\s+bleRepository\s*:\s*BleRepository\b'
+    }
+)
+$allowedFileReceiverPairs = @{}
+foreach ($context in $allowedCallContexts) {
+    rg -n --pcre2 $context.TypeProof $context.File | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Missing reviewed type proof for $($context.File)|$($context.Receiver)"
+    }
+    $allowedFileReceiverPairs["$($context.File)|$($context.Receiver)"] = $true
+}
+
+# Search every production source set, normalize each path, extract every receiver
+# on each matching line, and reject anything outside the proven allowlist.
+$callPattern = '\b(?<receiver>[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*(?:' +
+    $setterAlternation + ')\s*\('
+$callCandidates = @(
+    rg -n --pcre2 --glob '*.kt' --glob '!PreferencesManager.kt' `
+        $callPattern $productionRoots
+)
+if ($LASTEXITCODE -gt 1) {
+    throw "Legacy-setter call search failed with exit code $LASTEXITCODE"
+}
+$unexpectedLegacyCalls = [System.Collections.Generic.List[string]]::new()
+foreach ($candidate in $callCandidates) {
+    $parsed = [Regex]::Match(
+        $candidate,
+        '^(?<file>.*?):(?<line>[0-9]+):(?<source>.*)$'
+    )
+    if (-not $parsed.Success) {
+        throw "Could not parse legacy-setter candidate: $candidate"
+    }
+    $normalizedFile = $parsed.Groups['file'].Value -replace '\\', '/'
+    $receiverMatches = [Regex]::Matches(
+        $parsed.Groups['source'].Value,
+        $callPattern
+    )
+    foreach ($receiverMatch in $receiverMatches) {
+        $receiver = $receiverMatch.Groups['receiver'].Value
+        $pair = "$normalizedFile|$receiver"
+        if (-not $allowedFileReceiverPairs.ContainsKey($pair)) {
+            $unexpectedLegacyCalls.Add("$pair :: $candidate")
+        }
+    }
+}
+if ($unexpectedLegacyCalls.Count -gt 0) {
+    $unexpectedLegacyCalls | Write-Host
+    throw 'Production code still calls an internal legacy Settings preference writer'
+}
+
+# Build the forbidden wire-name set in camelCase and snake_case. Include local
+# safety/calibration/consent aggregates plus unprefixed and per-section sync metadata.
+$wireNames = [System.Collections.Generic.List[string]]::new()
+@(
+    'localSafety', 'local_safety',
+    'safeWord', 'safe_word',
+    'safeWordCalibrated', 'safe_word_calibrated',
+    'safeWordCalibration', 'safe_word_calibration',
+    'adultsOnlyConfirmed', 'adults_only_confirmed',
+    'adultsOnlyPrompted', 'adults_only_prompted',
+    'adultsOnlyConsent', 'adults_only_consent',
+    'adultConsent', 'adult_consent',
+    'localGeneration', 'local_generation',
+    'serverRevision', 'server_revision',
+    'dirty'
+) | ForEach-Object { $wireNames.Add($_) }
+foreach ($section in @('core', 'rack', 'workout', 'led', 'vbt')) {
+    $wireNames.Add("${section}UpdatedAt")
+    $wireNames.Add("${section}_updated_at")
+    $wireNames.Add("${section}LocalGeneration")
+    $wireNames.Add("${section}_local_generation")
+    $wireNames.Add("${section}ServerRevision")
+    $wireNames.Add("${section}_server_revision")
+    $wireNames.Add("${section}Dirty")
+    $wireNames.Add("${section}_dirty")
+}
+# Do not deny unprefixed updatedAt: ordinary backup entities legitimately use it.
+# ProfilePreferencesBackup has only typed section properties, so preference metadata
+# cannot expose an unprefixed updatedAt; section-prefixed forms are denied above.
+$wireAlternation = (
+    $wireNames |
+        Sort-Object -Unique |
+        ForEach-Object { [Regex]::Escape($_) }
+) -join '|'
+
+# Match only Kotlin declarations, property access/named assignment, or an exact
+# serialized key. Prose such as the privacy summary remains allowed.
+$wirePattern = '\b(?:val|var)\s+(?:' + $wireAlternation + ')\b' +
+    '|\.(?:' + $wireAlternation + ')\b' +
+    '|\b(?:' + $wireAlternation + ')\s*=' +
+    '|["''](?:' + $wireAlternation + ')["'']'
+$wireLeaks = @(
+    rg -n --pcre2 $wirePattern `
+        shared/src/commonMain/kotlin/com/devil/phoenixproject/util/BackupModels.kt `
+        shared/src/commonMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.kt
+)
+if ($LASTEXITCODE -gt 1) {
+    throw "Backup privacy search failed with exit code $LASTEXITCODE"
+}
+if ($wireLeaks.Count -gt 0) {
+    $wireLeaks | Write-Host
+    throw 'Local safety/consent or sync metadata entered the backup wire path'
+}
+
 git diff --check
 ```
 
-Expected: the first command finds only deprecated legacy-migration read compatibility or interface declarations with no production profile write path; the second finds only explicit exclusion/privacy assertions and no exported fields; `git diff --check` prints nothing.
+Expected: all internal legacy setter names are derived; every same-name production call maps to one of the four reviewed file/receiver pairs whose `SettingsManager`, `MainViewModel`, or `BleRepository` type proof is present; every other pair fails. No local-safety/consent or unprefixed/section-prefixed sync-metadata property, access, named assignment, or exact camelCase/snake_case serialized key appears in the backup wire path. `git diff --check` prints nothing, and privacy-summary prose is intentionally not matched.
 
-- [ ] **Step 7: Commit final wiring**
+- [ ] **Step 7: Conditionally commit genuine wiring repairs**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt
-git commit -m "chore: wire profile preference foundation"
+$stagedState = git diff --cached --quiet
+if ($LASTEXITCODE -eq 1) {
+    throw 'Index already contains staged changes; review them before Task 9'
+}
+if ($LASTEXITCODE -gt 1) {
+    throw 'Could not inspect the Git index'
+}
+
+$reviewableWiringPaths = @(
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt',
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt',
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt',
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt',
+    'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt',
+    'shared/src/androidMain/kotlin/com/devil/phoenixproject/di/PlatformModule.android.kt',
+    'shared/src/iosMain/kotlin/com/devil/phoenixproject/di/PlatformModule.ios.kt',
+    'shared/src/androidMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.android.kt',
+    'shared/src/iosMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.ios.kt',
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt',
+    'androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt'
+)
+$reviewedWiringFiles = @(
+    git diff --name-only --diff-filter=AM -- $reviewableWiringPaths
+)
+
+if ($reviewedWiringFiles.Count -eq 0) {
+    Write-Host 'Task 9 verification passed with no wiring changes; skip the commit.'
+} else {
+    $reviewedWiringFiles | ForEach-Object {
+        Write-Host "Reviewing Task 9 wiring change: $_"
+    }
+    git add -- $reviewedWiringFiles
+    git diff --cached --check
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Staged Task 9 wiring diff failed whitespace validation'
+    }
+    git diff --cached --quiet
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host 'No effective staged wiring change; skip the empty commit.'
+    } elseif ($LASTEXITCODE -eq 1) {
+        git commit -m "chore: wire profile preference foundation"
+    } else {
+        throw 'Could not inspect the staged Task 9 wiring diff'
+    }
+}
 ```
+
+Expected: normally no files changed and no Task 9 commit is created. If a verification command required a reviewed repair, stage exactly the changed common/platform/host files that implement that repair, rerun the affected verification, and create the commit only when the staged diff is non-empty. Add a compiler-named wiring file to `$reviewableWiringPaths` only after reviewing it; never stage unrelated plan or feature work.
 
 ## Completion Gate
 
