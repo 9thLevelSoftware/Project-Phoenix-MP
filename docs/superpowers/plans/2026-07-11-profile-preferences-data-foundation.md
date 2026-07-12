@@ -2487,105 +2487,146 @@ git commit -m "feat: gate live VBT by active profile"
 
 **Files:**
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicy.kt`
+- Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileScopedDataMerger.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicyTest.kt`
 - Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt`
+- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt`
+- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt`
 
 **Interfaces:**
-- Consumes: existing profile-inclusive PR/badge unique indexes and the Task 3 safety store.
-- Consumes: Task 3's retryable `PendingProfileLocalCleanup` processor.
-- Produces: deterministic PR/badge merge functions and deletion-side cleanup journaling.
+- Consumes: all direct profile-owned tables, existing profile-inclusive unique indexes, Task 3's local-safety store/journal, and `normalizeWorkoutModeKey`.
+- Produces: neutral deterministic PR/badge/MVT merge models shared by deletion and `MigrationManager`, without generated/domain `PersonalRecord` type collisions.
+- Produces: a schema-wide profile deletion transaction, retryable post-commit local-key cleanup, and exact active-context emission semantics.
+- Adds SQLDelight queries only; no `.sqm` or schema-version bump is required.
 
-- [ ] **Step 1: Write failing collision and cleanup-retry tests**
+- [ ] **Step 1: Write failing policy, schema-coverage, transaction, and restart tests**
 
-```kotlin
-@Test
-fun deleteMergesOverlappingPrAndBadgeKeysBeforeReassignment() = runTest {
-    insertWeightPr(profile = "default", weight = 80.0, oneRepMax = 90.0, achievedAt = 10)
-    insertWeightPr(profile = "source", weight = 85.0, oneRepMax = 92.0, achievedAt = 20)
-    insertBadge(profile = "default", badgeId = "first_workout", earnedAt = 30, celebratedAt = null)
-    insertBadge(profile = "source", badgeId = "first_workout", earnedAt = 20, celebratedAt = 40)
+Initialize every repository fixture to `ActiveProfileContext.Ready` before creating the source
+profile. Use `createProfile`/`createAndActivateProfile`; do not insert an identity row behind a
+still-`Switching` fake.
 
-    assertTrue(repository.deleteProfile("source"))
+Pure policy tests must cover:
 
-    val pr = queries.selectPR("exercise", "OldSchool", "MAX_WEIGHT", "COMBINED", "default").executeAsOne()
-    assertEquals(85.0, pr.weight)
-    val badge = queries.selectEarnedBadgeById("first_workout", "default").executeAsOne()
-    assertEquals(20, badge.earnedAt)
-    assertEquals(40, badge.celebratedAt)
-    assertEquals(0, queries.selectPendingProfileLocalCleanup().executeAsList().size)
-}
+- every `MAX_WEIGHT` tie level: `weight -> oneRepMax -> achievedAt`;
+- every `MAX_VOLUME` tie level: `volume -> weight -> achievedAt`;
+- live rows beating tombstones and complete ties choosing the target;
+- both source-winner and target-winner paths while retaining the target numeric ID;
+- `uuid = winner.uuid ?: loser.uuid`, winner sync metadata, and nonblank exercise-name fallback;
+- earliest badge earned time, earliest non-null celebration, and the badge metadata-donor rules;
+- weighted MVT merging, including zero-count/newer-row and timestamp-tie behavior.
 
-@Test
-fun failedSettingsCleanupStaysQueuedUntilStartupRetry() = runTest {
-    safetyStore.failDeletes = true
-    repository.deleteProfile("source")
-    assertEquals(listOf("source"), pendingCleanupIds())
-    assertNull(repository.allProfiles.value.find { it.id == "source" })
+Add an Android-host schema-coverage test that introspects every SQLite table/column and requires
+every direct `profile_id` or `profileId` table to appear in the deletion policy. This must catch at
+least `ExerciseMvt`, `RoutineGroup`, `VelocityOneRepMaxEstimate`, all `External*` profile tables,
+`IntegrationStatus`, `IntegrationSyncCursor`, `UserProfilePreferences`, and
+`PendingProfileLocalCleanup`.
 
-    safetyStore.failDeletes = false
-    repository.retryPendingLocalCleanup()
-    assertTrue(pendingCleanupIds().isEmpty())
-    assertNull(settings.getStringOrNull("profile_source_safe_word"))
-}
+Repository tests must establish RED for:
 
-@Test
-fun deletingInactiveProfilePreservesActiveDatabaseAndReadyContext() = runTest {
-    val activeBefore = assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value)
-    createInactiveProfile("source")
+- active deletion emitting exactly `Switching(default) -> Ready(default)`;
+- inactive deletion targeting the current non-default Ready profile and emitting no `Switching`;
+- an injected before-commit failure emitting `Switching(target) -> prior Ready` for active delete,
+  while rolling back the source identity, active DB identity, preferences, every owned row, and the
+  cleanup journal;
+- every direct profile-scoped table following the explicit policy in Step 3;
+- overlapping PR/badge/MVT/external natural keys merging without unique-index failures;
+- source-only external rows and retained child graphs moving, while conflicting target rows remain
+  byte-for-byte target-owned;
+- Default remaining undeletable and target derived stats being recomputed.
 
-    assertTrue(repository.deleteProfile("source"))
+Seed meaningful, distinct local safety values, for example source
+`("source-secret", calibrated=true, confirmed=true, prompted=true)` and a different target value.
 
-    assertEquals(activeBefore.profile.id, queries.getActiveProfile().executeAsOne().id)
-    assertEquals(activeBefore.profile.id, assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id)
-}
-```
+Add a true restart cleanup test:
 
-- [ ] **Step 2: Run deletion tests and observe the current unique-index failure**
+1. Reach Ready, create the source, and fail source local-key deletion.
+2. Delete the source and assert SQL deletion committed while the source secret and journal remain.
+3. Construct a fresh `MigrationManager` over the same database/settings.
+4. Clear the failure and call `runRequiredMigrations()`.
+5. Assert all four source safety keys and the journal are gone, target safety is unchanged, and the
+   required migration state is `Ready`.
+
+- [ ] **Step 2: Run the focused tests and observe policy/coverage/transaction failures**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileDeletionMergePolicyTest*" --tests "*SqlDelightUserProfileRepositoryTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileDeletionMergePolicyTest*" --tests "*SqlDelightUserProfileRepositoryTest*" --tests "*MigrationManagerTest*" --tests "*ProfilePreferencesMigrationTest*" --console=plain
 ```
 
-Expected: FAIL with a unique constraint violation from `reassignPRProfile` or `reassignBadgeProfile`, and no cleanup journal behavior.
+Expected: FAIL because current deletion omits tables, collides on unique indexes, loses sync/identity
+metadata in migration merges, does not journal deletion cleanup transactionally, and does not provide
+the required context/fault semantics.
 
-- [ ] **Step 3: Add deterministic pure merge policies**
+- [ ] **Step 3: Define the complete deletion matrix and neutral merge policies**
+
+For deleting `sourceProfileId`, define exactly:
 
 ```kotlin
-data class PersonalRecordMergeKey(
-    val exerciseId: String,
-    val workoutMode: String,
-    val prType: String,
-    val phase: String,
-)
-
-fun choosePersonalRecordWinner(a: PersonalRecord, b: PersonalRecord): PersonalRecord {
-    val comparator = if (a.prType == "MAX_VOLUME") {
-        compareBy<PersonalRecord>({ it.volume }, { it.weight }, { it.achievedAt })
-    } else {
-        compareBy<PersonalRecord>({ it.weight }, { it.oneRepMax }, { it.achievedAt })
-    }
-    return maxOf(a, b, comparator)
+val targetProfileId = if (priorReady.profile.id == sourceProfileId) {
+    DEFAULT_PROFILE_ID
+} else {
+    priorReady.profile.id
 }
-
-data class EarnedBadgeMerge(
-    val earnedAt: Long,
-    val celebratedAt: Long?,
-)
-
-fun mergeEarnedBadges(a: EarnedBadge, b: EarnedBadge) = EarnedBadgeMerge(
-    earnedAt = minOf(a.earnedAt, b.earnedAt),
-    celebratedAt = listOfNotNull(a.celebratedAt, b.celebratedAt).minOrNull(),
-)
 ```
 
-Test MAX_WEIGHT tie-breaks `weight -> oneRepMax -> achievedAt`, MAX_VOLUME tie-breaks `volume -> weight -> achievedAt`, earliest badge earned time, and preservation of either celebration.
+Require the source to exist, reject Default, and require the target to exist.
 
-- [ ] **Step 4: Add exact merge-support SQL queries**
+| Tables | Deletion policy |
+|---|---|
+| `WorkoutSession`, `RoutineGroup`, `Routine`, `TrainingCycle`, `AssessmentResult`, `ProgressionEvent`, `StreakHistory`, `VelocityOneRepMaxEstimate` | Reassign source rows to target. |
+| `PersonalRecord`, `EarnedBadge` | Resolve normalized-key collisions, retain target row IDs, then reassign remaining source rows. |
+| `ExerciseMvt` | Merge same-exercise collisions, then reassign source-only rows. |
+| `GamificationStats`, `RpgAttributes` | Delete source and target aggregates in-transaction; recompute target after commit. |
+| `ExternalActivity`, `ExternalRoutine`, `ExternalRoutineFolder`, `ExternalProgram`, `ExternalExerciseTemplate`, `ExternalExerciseTemplateMapping`, `ExternalBodyMeasurement` | Target wins natural-key collisions byte-for-byte; remove the duplicate source row/children, then reassign source-only rows. |
+| `IntegrationStatus`, `IntegrationSyncCursor` | Delete source operational state; never transplant connection state or cursors. |
+| `UserProfilePreferences` | Delete source; leave target preferences unchanged. |
+| `PendingProfileLocalCleanup` | Enqueue source as the first SQL mutation and retain until local Settings cleanup succeeds. |
+| `UserProfile` | Delete source last. |
+| Profile local safety | Delete source keys only, after SQL commit. |
+
+For conflicting `ExternalRoutine` and `ExternalProgram` rows, delete source routine
+sets/exercises and program stats before their source parent. Source-only parents retain their IDs and
+children when reassigned.
+
+Use neutral data classes such as `ProfileMergePersonalRecord`, `ProfileMergeEarnedBadge`, and
+`ProfileMergeExerciseMvt`; do not reuse generated database rows, domain `PersonalRecord`, or
+`MigrationManager`-private canonical types.
+
+PR key and merge rules:
+
+- group by `exerciseId`, `normalizeWorkoutModeKey(workoutMode)`, `prType`, and `phase`;
+- collapse all raw workout-mode aliases and store the normalized mode on the retained row;
+- live beats tombstone;
+- `MAX_WEIGHT`: `weight -> oneRepMax -> achievedAt`;
+- `MAX_VOLUME`: `volume -> weight -> achievedAt`;
+- complete tie chooses target;
+- retain the lowest target numeric ID, or lowest source ID when no target row exists;
+- copy all winner business/sync fields, with blank winner exercise name falling back to the loser's
+  nonblank name;
+- set `uuid = winner.uuid ?: loser.uuid`; when source wins, delete the source duplicate before
+  assigning its globally unique UUID to the retained target row.
+
+Badge merge rules:
+
+- retain the target numeric ID/profile;
+- `earnedAt = minOf`, and `celebratedAt` is the earliest non-null celebration;
+- metadata donor is live over tombstone, then earlier-earned, then target on a full tie;
+- copy donor `updatedAt`, `serverId`, and `deletedAt`.
+
+MVT merge rules:
+
+- coerce counts nonnegative, sum them, and use a sample-count-weighted `personalMvtMs`;
+- `updatedAt = maxOf`;
+- if both counts are zero, use the newer row, target on a timestamp tie.
+
+- [ ] **Step 4: Add the SQLDelight adapters for every policy row**
 
 ```sql
 deletePersonalRecordById:
@@ -2594,8 +2635,10 @@ DELETE FROM PersonalRecord WHERE id = ?;
 updatePersonalRecordForProfileMerge:
 UPDATE PersonalRecord
 SET exerciseName = :exerciseName, weight = :weight, reps = :reps, oneRepMax = :oneRepMax,
-    achievedAt = :achievedAt, volume = :volume, updatedAt = :updatedAt, serverId = :serverId,
-    deletedAt = :deletedAt, cable_count = :cableCount, uuid = :uuid
+    achievedAt = :achievedAt, workoutMode = :workoutMode, prType = :prType,
+    volume = :volume, phase = :phase, updatedAt = :updatedAt, serverId = :serverId,
+    deletedAt = :deletedAt, cable_count = :cableCount, uuid = :uuid,
+    profile_id = :targetProfileId
 WHERE id = :targetId;
 
 deleteEarnedBadgeById:
@@ -2608,62 +2651,86 @@ SET earnedAt = :earnedAt, celebratedAt = :celebratedAt, updatedAt = :updatedAt,
 WHERE id = :targetId;
 ```
 
-Use existing `selectAllRecords(profileId)` and `selectAllEarnedBadges(profileId)` to build source/target maps. Delete the duplicate source row before copying a source winner's UUID into the retained target row.
+Also add:
 
-- [ ] **Step 5: Make deletion one SQL transaction plus post-commit cleanup**
+- `reassignRoutineGroupProfile` and `reassignVelocityOneRepMaxProfile`;
+- `selectAllExerciseMvtByProfile`, `deleteExerciseMvt`, an exact merged-row update/upsert, and
+  `reassignExerciseMvtProfile`;
+- profile-wide deletes for `IntegrationStatus` and `IntegrationSyncCursor`;
+- conflict-delete plus reassign queries for every external table in Step 3, including explicit
+  source-child deletion for conflicting routines/programs; and
+- any select-by-profile query required to adapt generated rows into the neutral merge models.
 
-Run deletion under `profileContextMutex`. Capture `priorReady` and `priorActiveProfileId` before changing anything. If the deleted profile is active, emit `ActiveProfileContext.Switching("default")` before the SQL transaction; otherwise keep the current Ready context mounted. On SQL failure, republish `priorReady` and rethrow. On commit, refresh identity flows and publish `Ready` for `postDeleteActiveProfileId`, which is Default only for an active-profile deletion and otherwise remains `priorActiveProfileId`, before best-effort local-key cleanup.
+Retain existing `selectAllRecords`, `selectAllEarnedBadges`, and non-conflicting reassignment
+queries. Generate the SQLDelight interfaces before Kotlin references new query names. The
+`ProfileScopedDataMerger` must use these generated queries rather than delete/reinsert or raw-driver
+type coupling.
 
-```kotlin
-val priorReady = _activeProfileContext.value as? ActiveProfileContext.Ready
-    ?: throw ProfileContextUnavailableException()
-val priorActiveProfileId = priorReady.profile.id
-val wasActive = priorActiveProfileId == id
-val postDeleteActiveProfileId = if (wasActive) targetProfileId else priorActiveProfileId
-if (wasActive) _activeProfileContext.value = ActiveProfileContext.Switching(targetProfileId)
+- [ ] **Step 5: Share the merger and make deletion one journaled transaction**
 
-database.transaction {
-    mergePersonalRecordCollisions(sourceProfileId = id, targetProfileId = targetProfileId)
-    mergeBadgeCollisions(sourceProfileId = id, targetProfileId = targetProfileId)
-    queries.reassignRoutineProfile(targetProfileId, id)
-    queries.reassignSessionProfile(targetProfileId, id)
-    queries.reassignPRProfile(targetProfileId, id)
-    queries.reassignTrainingCycleProfile(targetProfileId, id)
-    queries.reassignBadgeProfile(targetProfileId, id)
-    queries.reassignStreakProfile(targetProfileId, id)
-    queries.reassignAssessmentResultProfile(targetProfileId, id)
-    queries.reassignProgressionProfile(targetProfileId, id)
-    queries.deleteGamificationStatsByProfile(id)
-    queries.deleteGamificationStatsByProfile(targetProfileId)
-    queries.deleteRpgAttributesByProfile(id)
-    queries.deleteRpgAttributesByProfile(targetProfileId)
-    queries.deleteProfilePreferences(id)
-    queries.enqueueProfileLocalCleanup(id, currentTimeMillis())
-    queries.deleteProfile(id)
-    if (wasActive) queries.setActiveProfile("default")
-}
-refreshProfilesSync()
-publishReadyContext(postDeleteActiveProfileId)
-retryPendingLocalCleanup(id)
+Bind one `ProfileScopedDataMerger` in Koin and inject it into both
+`SqlDelightUserProfileRepository` and `MigrationManager`. Refactor migration/orphan PR and badge
+repair to use it; remove `CanonicalPersonalRecord`, `CanonicalEarnedBadge`, duplicate comparators,
+and the delete/reinsert merge that loses numeric IDs and sync metadata. Preserve normalized
+`OldSchool`/`Old School` collapse.
+
+Under `profileContextMutex`:
+
+1. Reject Default, require a `Ready` context, require source and target identities, and compute
+   `targetProfileId` exactly as Step 3.
+2. Emit `Switching(targetProfileId)` only when the source is active.
+3. In one transaction:
+
+   - enqueue `PendingProfileLocalCleanup(sourceProfileId)` as the first mutation;
+   - invoke `ProfileScopedDataMerger` for PR/badge/MVT/external collisions;
+   - reassign or delete every table in Step 3;
+   - delete both source and target derived aggregates;
+   - delete source preferences and then the source profile;
+   - set active target only for active deletion; and
+   - invoke a constructor-injected, default-no-op `beforeProfileDeletionCommit` fault hook.
+
+4. On transaction failure, restore the exact prior `Ready` value and rethrow. SQL data, profile,
+   active identity, preferences, and the newly enqueued journal must all roll back.
+5. After commit, refresh flows and publish `Ready(targetProfileId)`. Preserve the existing
+   reconciliation/recovery path if publication fails.
+6. Only after Ready publication call `retryPendingLocalCleanup(sourceProfileId)`, which retains the
+   journal on non-cancellation failure.
+7. Best-effort recompute target gamification/RPG through the injected `GamificationRepository`.
+
+The fault hook avoids brittle generated-query identifier matching and lets the test prove the
+journal exists inside the transaction but disappears on rollback.
+
+Required context sequences:
+
+```text
+active success: Switching(target) -> Ready(target)
+inactive success: no Switching
+active transaction failure: Switching(target) -> prior Ready
 ```
 
-Call Task 3's `retryPendingLocalCleanup(id)` after commit; it catches non-cancellation failures and leaves the row queued, and Task 4 already calls its all-row form during required startup migration. Inject the existing `GamificationRepository`; do not construct `SqlDelightGamificationRepository` inside `deleteProfile`.
+Update `FakeUserProfileRepository.deleteProfile` to match the target rule, active-only Switching,
+preference removal, cleanup queue/retry, injected failure controls, and exact rollback/emission
+semantics. Task 4's required startup migration remains the owner of draining leftover cleanup rows.
 
-- [ ] **Step 6: Pass collision, default guard, and cleanup tests**
+- [ ] **Step 6: Pass policy, schema, transaction, migration, DI, and native tests**
 
 Run:
 
 ```powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface --console=plain
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileDeletionMergePolicyTest*" --tests "*SqlDelightUserProfileRepositoryTest*" --tests "*ProfilePreferencesMigrationTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileDeletionMergePolicyTest*" --tests "*SqlDelightUserProfileRepositoryTest*" --tests "*MigrationManagerTest*" --tests "*ProfilePreferencesMigrationTest*" --tests "*KoinModuleVerifyTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 --console=plain
 ```
 
-Expected: PASS; the default profile remains undeletable, overlapping rows merge without constraint errors, SQL deletion commits even when Settings cleanup fails, and startup retry drains the journal.
+Expected: PASS for the complete schema policy, target/source/tie/UUID/sync/celebration merge cases,
+exact context emissions, rollback/journal ordering, active and inactive targets, external child graphs,
+fake parity, normalized orphan migration, true restart cleanup drain, Koin construction, and iOS
+compilation. Run `git diff --check` and confirm no `.sqm` was added.
 
 - [ ] **Step 7: Commit deletion hardening**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicy.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicyTest.kt shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicy.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileScopedDataMerger.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicyTest.kt shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt
 git commit -m "fix: merge profile data safely on deletion"
 ```
 
