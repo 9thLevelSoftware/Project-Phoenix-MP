@@ -17,6 +17,7 @@ class FakeAssessmentRepository : AssessmentRepository {
     val attemptedSessions = mutableListOf<SavedSession>()
     val savedSessions = mutableListOf<SavedSession>()
     var saveSessionFailure: Throwable? = null
+    var latestAssessmentFailure: Throwable? = null
     private val assessments = mutableListOf<AssessmentResultEntity>()
 
     override suspend fun saveAssessment(
@@ -53,9 +54,12 @@ class FakeAssessmentRepository : AssessmentRepository {
     override suspend fun getLatestAssessment(
         exerciseId: String,
         profileId: String,
-    ): AssessmentResultEntity? = assessments
-        .filter { it.exerciseId == exerciseId && it.profileId == profileId }
-        .maxByOrNull { it.createdAt }
+    ): AssessmentResultEntity? {
+        latestAssessmentFailure?.let { throw it }
+        return assessments
+            .filter { it.exerciseId == exerciseId && it.profileId == profileId }
+            .maxByOrNull { it.createdAt }
+    }
 
     override suspend fun deleteAssessment(id: Long) {
         assessments.removeAll { it.id == id }

@@ -694,6 +694,25 @@ AND deletedAt IS NULL
 AND (workingReps > 0 OR totalReps > 0)
 ORDER BY timestamp DESC;
 
+selectRecentCompletedSessionsForExercise:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+  AND exerciseId = :exerciseId
+  AND deletedAt IS NULL
+  AND (workingReps > 0 OR totalReps > 0)
+ORDER BY timestamp DESC, id DESC
+LIMIT :limit;
+
+selectMostRecentCompletedExerciseId:
+SELECT exerciseId FROM WorkoutSession
+WHERE profile_id = :profileId
+  AND exerciseId IS NOT NULL
+  AND TRIM(exerciseId) != ''
+  AND deletedAt IS NULL
+  AND (workingReps > 0 OR totalReps > 0)
+ORDER BY timestamp DESC, id DESC
+LIMIT 1;
+
 selectSessionById:
 SELECT * FROM WorkoutSession WHERE id = ?;
 

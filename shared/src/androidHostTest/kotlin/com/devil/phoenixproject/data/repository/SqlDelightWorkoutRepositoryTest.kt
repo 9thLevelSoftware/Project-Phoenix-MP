@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -89,6 +90,66 @@ class SqlDelightWorkoutRepositoryTest {
             val sessions = awaitItem()
             assertEquals(3, sessions.size)
             cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `recent completed sessions are profile exercise scoped newest first and limited`() = runTest {
+        repository.saveSession(workoutSession("old", "a", "bench", 10L, workingReps = 5))
+        repository.saveSession(workoutSession("total-only", "a", "bench", 20L, workingReps = 0, totalReps = 4))
+        repository.saveSession(workoutSession("a-tie", "a", "bench", 30L, workingReps = 3))
+        repository.saveSession(workoutSession("z-tie", "a", "bench", 30L, workingReps = 3))
+        repository.saveSession(workoutSession("wrong-exercise", "a", "squat", 50L, workingReps = 5))
+        repository.saveSession(workoutSession("wrong-profile", "b", "bench", 60L, workingReps = 5))
+        repository.saveSession(workoutSession("zero", "a", "bench", 70L, workingReps = 0, totalReps = 0))
+        repository.saveSession(workoutSession("deleted", "a", "bench", 80L, workingReps = 5))
+        database.vitruvianDatabaseQueries.softDeleteSession(
+            id = "deleted",
+            deletedAt = 81L,
+            updatedAt = 81L,
+        )
+
+        val result = repository.getRecentCompletedSessionsForExercise(
+            exerciseId = "bench",
+            profileId = "a",
+            limit = 3,
+        )
+
+        assertEquals(listOf("z-tie", "a-tie", "total-only"), result.map { it.id })
+    }
+
+    @Test
+    fun `most recent completed exercise uses deterministic live eligible row`() = runTest {
+        repository.saveSession(workoutSession("a-tie", "a", "bench", 30L, workingReps = 5))
+        repository.saveSession(workoutSession("z-tie", "a", "squat", 30L, workingReps = 0, totalReps = 2))
+        repository.saveSession(workoutSession("ghost", "a", "deadlift", 50L, workingReps = 0, totalReps = 0))
+        repository.saveSession(workoutSession("blank-exercise", "a", " ", 55L, workingReps = 5))
+        repository.saveSession(workoutSession("other-profile", "b", "row", 60L, workingReps = 5))
+        repository.saveSession(workoutSession("deleted", "a", "press", 70L, workingReps = 5))
+        database.vitruvianDatabaseQueries.softDeleteSession(
+            id = "deleted",
+            deletedAt = 71L,
+            updatedAt = 71L,
+        )
+
+        assertEquals("squat", repository.getMostRecentCompletedExerciseId("a"))
+    }
+
+    @Test
+    fun `bounded reads reject blank ownership and limits outside one through five`() = runTest {
+        assertFailsWith<IllegalArgumentException> {
+            repository.getRecentCompletedSessionsForExercise(" ", "a", 1)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            repository.getRecentCompletedSessionsForExercise("bench", " ", 1)
+        }
+        listOf(0, -1, MAX_RECENT_EXERCISE_SESSIONS + 1).forEach { invalidLimit ->
+            assertFailsWith<IllegalArgumentException> {
+                repository.getRecentCompletedSessionsForExercise("bench", "a", invalidLimit)
+            }
+        }
+        assertFailsWith<IllegalArgumentException> {
+            repository.getMostRecentCompletedExerciseId(" ")
         }
     }
 
@@ -396,6 +457,27 @@ class SqlDelightWorkoutRepositoryTest {
         workingReps = 10,
         exerciseId = "test-exercise",
         exerciseName = "Test Exercise",
+    )
+
+    private fun workoutSession(
+        id: String,
+        profileId: String,
+        exerciseId: String,
+        timestamp: Long,
+        workingReps: Int,
+        totalReps: Int = workingReps,
+    ): WorkoutSession = WorkoutSession(
+        id = id,
+        timestamp = timestamp,
+        mode = "OldSchool",
+        reps = totalReps,
+        weightPerCableKg = 40f,
+        duration = 1_000L,
+        totalReps = totalReps,
+        workingReps = workingReps,
+        exerciseId = exerciseId,
+        exerciseName = exerciseId,
+        profileId = profileId,
     )
 
     // ========== ISSUE #586: ROUTINE-TIME-ESTIMATION SQL ELIGIBILITY ==========

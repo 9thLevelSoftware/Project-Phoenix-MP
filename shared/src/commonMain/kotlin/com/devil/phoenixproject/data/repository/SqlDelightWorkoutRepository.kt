@@ -529,6 +529,33 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             .asFlow()
             .mapToList(Dispatchers.IO)
 
+    override suspend fun getRecentCompletedSessionsForExercise(
+        exerciseId: String,
+        profileId: String,
+        limit: Int,
+    ): List<WorkoutSession> {
+        require(exerciseId.isNotBlank()) { "exerciseId must not be blank" }
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
+        require(limit in 1..MAX_RECENT_EXERCISE_SESSIONS) {
+            "limit must be in 1..$MAX_RECENT_EXERCISE_SESSIONS"
+        }
+        return withContext(Dispatchers.IO) {
+            queries.selectRecentCompletedSessionsForExercise(
+                profileId = profileId,
+                exerciseId = exerciseId,
+                limit = limit.toLong(),
+                mapper = ::mapToSession,
+            ).executeAsList()
+        }
+    }
+
+    override suspend fun getMostRecentCompletedExerciseId(profileId: String): String? {
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
+        return withContext(Dispatchers.IO) {
+            queries.selectMostRecentCompletedExerciseId(profileId).executeAsOneOrNull()
+        }
+    }
+
     override suspend fun saveSession(session: WorkoutSession) {
         withContext(Dispatchers.IO) {
             queries.insertSession(

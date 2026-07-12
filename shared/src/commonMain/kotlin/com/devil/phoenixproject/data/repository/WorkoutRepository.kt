@@ -5,6 +5,8 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import kotlinx.coroutines.flow.Flow
 
+const val MAX_RECENT_EXERCISE_SESSIONS = 5
+
 /**
  * Personal record entity.
  */
@@ -62,6 +64,14 @@ interface WorkoutRepository {
      * `selectSessionsByRoutineSessionId` / `selectSessionsForPhasePRBackfill`.
      */
     fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>>
+
+    suspend fun getRecentCompletedSessionsForExercise(
+        exerciseId: String,
+        profileId: String,
+        limit: Int = MAX_RECENT_EXERCISE_SESSIONS,
+    ): List<WorkoutSession>
+
+    suspend fun getMostRecentCompletedExerciseId(profileId: String): String?
 
     /**
      * Get a specific workout session by ID

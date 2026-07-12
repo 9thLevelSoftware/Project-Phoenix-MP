@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.flowOf
  */
 class FakeVelocityOneRepMaxRepository : VelocityOneRepMaxRepository {
     var latestPassing: VelocityOneRepMaxEntity? = null
+    var latestPassingFailure: Throwable? = null
     var allPassing: List<VelocityOneRepMaxEntity> = emptyList()
 
     /**
@@ -22,8 +23,15 @@ class FakeVelocityOneRepMaxRepository : VelocityOneRepMaxRepository {
      */
     var hasEstimatesResult: Boolean = false
 
-    override suspend fun getLatestPassing(exerciseId: String, profileId: String): VelocityOneRepMaxEntity? =
-        latestPassing?.takeIf { it.exerciseId == exerciseId && it.profileId == profileId }
+    override suspend fun getLatestPassing(
+        exerciseId: String,
+        profileId: String,
+    ): VelocityOneRepMaxEntity? {
+        latestPassingFailure?.let { throw it }
+        return latestPassing?.takeIf {
+            it.exerciseId == exerciseId && it.profileId == profileId
+        }
+    }
     override suspend fun getAllPassing(profileId: String): List<VelocityOneRepMaxEntity> =
         allPassing.filter { it.profileId == profileId }
     override fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>> = flowOf(emptyList())

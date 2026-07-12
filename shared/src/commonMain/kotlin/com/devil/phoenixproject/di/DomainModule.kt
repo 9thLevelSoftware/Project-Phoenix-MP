@@ -23,6 +23,7 @@ import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ResolveCurrentOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
@@ -49,6 +50,7 @@ val domainModule = module {
 
     // Assessment
     single { AssessmentEngine() }
+    single { ResolveCurrentOneRepMaxUseCase(get(), get(), get()) }
 
     // Velocity-based 1RM (issue #517)
     single { MvtProvider() }

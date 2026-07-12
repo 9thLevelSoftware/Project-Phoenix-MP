@@ -2,6 +2,7 @@ package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PhaseStatisticsData
+import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.Routine
@@ -19,6 +20,12 @@ import kotlinx.coroutines.flow.map
  */
 class FakeWorkoutRepository : WorkoutRepository {
 
+    data class RecentCompletedRequest(
+        val exerciseId: String,
+        val profileId: String,
+        val limit: Int,
+    )
+
     private val sessions = mutableMapOf<String, WorkoutSession>()
     private val routines = mutableMapOf<String, Routine>()
     private val metrics = mutableMapOf<String, List<WorkoutMetric>>()
@@ -29,6 +36,10 @@ class FakeWorkoutRepository : WorkoutRepository {
     private val _routinesFlow = MutableStateFlow<List<Routine>>(emptyList())
     private val _personalRecordsFlow = MutableStateFlow<List<PersonalRecordEntity>>(emptyList())
     private val _phaseStatisticsFlow = MutableStateFlow<List<PhaseStatisticsData>>(emptyList())
+
+    val recentCompletedRequests = mutableListOf<RecentCompletedRequest>()
+    var recentCompletedFailure: Throwable? = null
+    var mostRecentCompletedExerciseFailure: Throwable? = null
 
     // Test control methods
     fun addSession(session: WorkoutSession) {
@@ -61,6 +72,9 @@ class FakeWorkoutRepository : WorkoutRepository {
         metrics.clear()
         personalRecords.clear()
         phaseStatistics.clear()
+        recentCompletedRequests.clear()
+        recentCompletedFailure = null
+        mostRecentCompletedExerciseFailure = null
         updateSessionsFlow()
         updateRoutinesFlow()
         updatePersonalRecordsFlow()
@@ -102,6 +116,44 @@ class FakeWorkoutRepository : WorkoutRepository {
                 session.workingReps > 0 || session.totalReps > 0
             }
         }
+
+    override suspend fun getRecentCompletedSessionsForExercise(
+        exerciseId: String,
+        profileId: String,
+        limit: Int,
+    ): List<WorkoutSession> {
+        require(exerciseId.isNotBlank())
+        require(profileId.isNotBlank())
+        require(limit in 1..MAX_RECENT_EXERCISE_SESSIONS)
+        recentCompletedRequests += RecentCompletedRequest(exerciseId, profileId, limit)
+        recentCompletedFailure?.let { throw it }
+        return sessions.values
+            .asSequence()
+            .filter { it.profileId == profileId && it.exerciseId == exerciseId }
+            .filter { it.workingReps > 0 || it.totalReps > 0 }
+            .sortedWith(
+                compareByDescending<WorkoutSession> { it.timestamp }
+                    .thenByDescending { it.id },
+            )
+            .take(limit)
+            .toList()
+    }
+
+    override suspend fun getMostRecentCompletedExerciseId(profileId: String): String? {
+        require(profileId.isNotBlank())
+        mostRecentCompletedExerciseFailure?.let { throw it }
+        return sessions.values
+            .asSequence()
+            .filter { it.profileId == profileId }
+            .filter { it.workingReps > 0 || it.totalReps > 0 }
+            .filter { !it.exerciseId.isNullOrBlank() }
+            .sortedWith(
+                compareByDescending<WorkoutSession> { it.timestamp }
+                    .thenByDescending { it.id },
+            )
+            .firstOrNull()
+            ?.exerciseId
+    }
 
     override suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long = sessions.values.count { it.exerciseId == exerciseId }.toLong()
 
