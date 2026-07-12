@@ -207,17 +207,6 @@ private fun ThemeModeSelector(
 }
 
 @Composable
-/*
- * Compatibility markers for the pre-Task-9 ProfileScreenContractTest only.
- * These are documentation, not executable Settings calls. Dialog invocation now
- * belongs to ProfileScreen; implementations belong to ProfileSafetyDialogs.
- * Remove this block when that legacy source contract is updated.
- *
- * SafeWordCalibrationDialog()
- * AdultsOnlyConfirmDialog(isSubmitting = false, errorMessage = null)
- * DominatrixUnlockDialog()
- * DiscoModeUnlockDialog()
- */
 private fun GlobalSettingsSectionCard(
     title: String,
     icon: ImageVector,

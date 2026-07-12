@@ -520,7 +520,7 @@ class ProfileScreenContractTest {
     }
 
     @Test
-    fun settingsDelegatesSharedDialogsAndMicrophoneDisposalIsRetained() {
+    fun settingsRelinquishesSharedDialogsAndMicrophoneDisposalIsRetained() {
         val settings = source(settingsPath)
         val dialogs = source(safetyDialogsPath)
         listOf(
@@ -529,9 +529,14 @@ class ProfileScreenContractTest {
             "DominatrixUnlockDialog(",
             "DiscoModeUnlockDialog(",
         ).forEach { call ->
-            assertContains(settings, call, message = call)
-            assertEquals(1, Regex("fun\\s+${call.removeSuffix("(")}\\(").findAll(dialogs).count())
-            assertFalse(settings.contains("private fun ${call.removeSuffix("(")}"))
+            val name = call.removeSuffix("(")
+            assertFalse(settings.contains(call), "Settings retained $call")
+            assertFalse(
+                Regex("(?m)^\\s*import\\s+[^\\n]*\\.$name\\s*$").containsMatchIn(settings),
+                "Settings retained the $name import",
+            )
+            assertEquals(1, Regex("fun\\s+$name\\(").findAll(dialogs).count())
+            assertFalse(settings.contains("private fun $name"))
         }
         listOf(
             "DisposableEffect(safeWord)",
@@ -540,10 +545,6 @@ class ProfileScreenContractTest {
             "stopListening()",
             "listener = null",
         ).forEach { contract -> assertContains(dialogs, contract, message = contract) }
-
-        val settingsAdultCall = parenthesizedCall(settings, "AdultsOnlyConfirmDialog(")
-        assertContains(settingsAdultCall, "isSubmitting = false")
-        assertContains(settingsAdultCall, "errorMessage = null")
 
         val adultDialog = bracedBlock(dialogs, "fun AdultsOnlyConfirmDialog(")
         assertContains(adultDialog, "errorMessage?.let")
