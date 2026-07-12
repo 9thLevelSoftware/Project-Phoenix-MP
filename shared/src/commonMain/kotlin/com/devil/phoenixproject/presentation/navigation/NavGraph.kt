@@ -37,7 +37,6 @@ import com.devil.phoenixproject.presentation.screen.*
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
-import com.devil.phoenixproject.util.BackupDestination
 import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -452,123 +451,46 @@ fun NavGraph(
                 popEnterTransition = { NavTransitions.tabFadeEnter() },
                 popExitTransition = { NavTransitions.tabFadeExit() },
             ) {
-                val weightUnit by viewModel.weightUnit.collectAsState()
-                val userPreferences by viewModel.userPreferences.collectAsState()
+                val globalSettings by viewModel.globalSettings.collectAsState()
                 val connectionError by viewModel.connectionError.collectAsState()
-                val connectionState by viewModel.connectionState.collectAsState()
-                val discoModeActive by viewModel.discoModeActive.collectAsState()
                 val backupStats by viewModel.backupStats.collectAsState()
                 // Refresh backup stats when Settings screen is displayed
-                androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshBackupStats() }
+                LaunchedEffect(Unit) { viewModel.refreshBackupStats() }
                 SettingsTab(
-                    weightUnit = weightUnit,
-                    enableVideoPlayback = userPreferences.enableVideoPlayback,
+                    enableVideoPlayback = globalSettings.enableVideoPlayback,
                     themeMode = themeMode,
                     dynamicColorAvailable = dynamicColorAvailable,
                     dynamicColorEnabled = dynamicColorEnabled,
-                    audioRepCountEnabled = userPreferences.audioRepCountEnabled,
-                    countdownBeepsEnabled = userPreferences.countdownBeepsEnabled,
-                    repSoundEnabled = userPreferences.repSoundEnabled,
-                    onCountdownBeepsChange = { viewModel.setCountdownBeepsEnabled(it) },
-                    onRepSoundChange = { viewModel.setRepSoundEnabled(it) },
-                    motionStartEnabled = userPreferences.motionStartEnabled,
-                    onMotionStartChange = { viewModel.setMotionStartEnabled(it) },
-                    autoStartRoutine = userPreferences.autoStartRoutine,
-                    onAutoStartRoutineChange = { viewModel.setAutoStartRoutine(it) },
-                    weightSuggestionsEnabled = userPreferences.weightSuggestionsEnabled,
-                    onWeightSuggestionsEnabledChange = { viewModel.setWeightSuggestionsEnabled(it) },
-                    summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
-                    autoStartCountdownSeconds = userPreferences.autoStartCountdownSeconds,
-                    selectedColorSchemeIndex = userPreferences.colorScheme,
-                    onWeightUnitChange = { viewModel.setWeightUnit(it) },
-                    onEnableVideoPlaybackChange = { viewModel.setEnableVideoPlayback(it) },
+                    onEnableVideoPlaybackChange = viewModel::setEnableVideoPlayback,
                     onThemeModeChange = onThemeModeChange,
                     onDynamicColorEnabledChange = onDynamicColorEnabledChange,
-                    onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
-                    onSummaryCountdownChange = { viewModel.setSummaryCountdownSeconds(it) },
-                    onAutoStartCountdownChange = { viewModel.setAutoStartCountdownSeconds(it) },
-                    onColorSchemeChange = { viewModel.setColorScheme(it) },
-                    onDeleteAllWorkouts = { viewModel.deleteAllWorkouts() },
-                    onNavigateToConnectionLogs = { navController.navigate(NavigationRoutes.ConnectionLogs.route) },
-                    onNavigateToDiagnostics = { navController.navigate(NavigationRoutes.Diagnostics.route) },
-                    onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) },
-                    onNavigateToLinkAccount = { navController.navigate(NavigationRoutes.LinkAccount.route) },
-                    onNavigateToIntegrations = { navController.navigate(NavigationRoutes.Integrations.route) },
-                    onNavigateToEquipmentRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
+                    onDeleteAllWorkouts = viewModel::deleteAllWorkouts,
+                    onNavigateToConnectionLogs = {
+                        navController.navigate(NavigationRoutes.ConnectionLogs.route)
+                    },
+                    onNavigateToDiagnostics = {
+                        navController.navigate(NavigationRoutes.Diagnostics.route)
+                    },
+                    onNavigateToLinkAccount = {
+                        navController.navigate(NavigationRoutes.LinkAccount.route)
+                    },
+                    onNavigateToIntegrations = {
+                        navController.navigate(NavigationRoutes.Integrations.route)
+                    },
                     connectionError = connectionError,
-                    onClearConnectionError = { viewModel.clearConnectionError() },
-                    onCancelAutoConnecting = { viewModel.cancelAutoConnecting() },
-                    onSetTitle = { viewModel.updateTopBarTitle(it) },
-                    // Disco mode Easter egg
-                    discoModeUnlocked = userPreferences.discoModeUnlocked,
-                    discoModeActive = discoModeActive,
-                    isConnected = connectionState is com.devil.phoenixproject.domain.model.ConnectionState.Connected,
-                    onDiscoModeUnlocked = { viewModel.unlockDiscoMode() },
-                    onDiscoModeToggle = { viewModel.toggleDiscoMode(it) },
-                    onPlayDiscoSound = { viewModel.emitDiscoSound() },
-                    onTestSounds = { viewModel.testSounds() },
-                    // Gamification toggle
-                    gamificationEnabled = userPreferences.gamificationEnabled,
-                    onGamificationEnabledChange = { viewModel.setGamificationEnabled(it) },
-                    // Issue #333: BLE small-MTU compatibility path
-                    bleCompatibilityMode = userPreferences.bleCompatibilityMode,
-                    onBleCompatibilityModeChange = { viewModel.setBleCompatibilityMode(it) },
-                    // Auto-backup (Phase 36)
-                    autoBackupEnabled = userPreferences.autoBackupEnabled,
-                    onAutoBackupEnabledChange = { viewModel.setAutoBackupEnabled(it) },
+                    onClearConnectionError = viewModel::clearConnectionError,
+                    onSetTitle = viewModel::updateTopBarTitle,
+                    onTestSounds = viewModel::testSounds,
+                    bleCompatibilityMode = globalSettings.bleCompatibilityMode,
+                    onBleCompatibilityModeChange = viewModel::setBleCompatibilityMode,
+                    autoBackupEnabled = globalSettings.autoBackupEnabled,
+                    onAutoBackupEnabledChange = viewModel::setAutoBackupEnabled,
                     backupStats = backupStats,
-                    onOpenBackupFolder = { viewModel.openBackupFolder() },
-                    // Custom backup destination (Phase 42)
-                    backupDestination = userPreferences.backupDestination,
-                    onBackupDestinationChange = { viewModel.setBackupDestination(it) },
-                    // Language preference
-                    selectedLanguage = userPreferences.language,
-                    onLanguageChange = { viewModel.setLanguage(it) },
-                    // Issue #141: Voice emergency stop
-                    voiceStopEnabled = userPreferences.voiceStopEnabled,
-                    onVoiceStopEnabledChange = { viewModel.setVoiceStopEnabled(it) },
-                    safeWord = userPreferences.safeWord,
-                    onSafeWordChange = { viewModel.setSafeWord(it) },
-                    safeWordCalibrated = userPreferences.safeWordCalibrated,
-                    onSafeWordCalibratedChange = { viewModel.setSafeWordCalibrated(it) },
-                    // Issue #266: Configurable weight increment
-                    weightIncrement = userPreferences.weightIncrement,
-                    onWeightIncrementChange = { viewModel.setWeightIncrement(it) },
-                    // Issue #229: Body weight for bodyweight exercise volume
-                    bodyWeightKg = userPreferences.bodyWeightKg,
-                    onBodyWeightKgChange = { viewModel.setBodyWeightKg(it) },
-                    // Issue #313: VBT power loss threshold
-                    velocityLossThresholdPercent = userPreferences.velocityLossThresholdPercent,
-                    onVelocityLossThresholdChange = { viewModel.setVelocityLossThreshold(it) },
-                    autoEndOnVelocityLoss = userPreferences.autoEndOnVelocityLoss,
-                    onAutoEndOnVelocityLossChange = { viewModel.setAutoEndOnVelocityLoss(it) },
-                    stallDetectionEnabled = userPreferences.stallDetectionEnabled,
-                    // Issue #517: system-wide default scaling basis
-                    defaultScalingBasis = userPreferences.defaultScalingBasis,
-                    onDefaultScalingBasisChange = { viewModel.setDefaultScalingBasis(it) },
-                    // Issue #595: routine-builder defaults for newly added cable exercises
-                    defaultRoutineExerciseUsePercentOfPR = userPreferences.defaultRoutineExerciseUsePercentOfPR,
-                    defaultRoutineExerciseWeightPercentOfPR = userPreferences.defaultRoutineExerciseWeightPercentOfPR,
-                    onDefaultRoutineExerciseUsePercentOfPRChange = { viewModel.setDefaultRoutineExerciseUsePercentOfPR(it) },
-                    onDefaultRoutineExerciseWeightPercentOfPRChange = { viewModel.setDefaultRoutineExerciseWeightPercentOfPR(it) },
-                    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
-                    verbalEncouragementEnabled = userPreferences.verbalEncouragementEnabled,
-                    onVerbalEncouragementEnabledChange = { viewModel.setVerbalEncouragementEnabled(it) },
-                    vulgarModeEnabled = userPreferences.vulgarModeEnabled,
-                    onVulgarModeEnabledChange = { viewModel.setVulgarModeEnabled(it) },
-                    vulgarTier = userPreferences.vulgarTier,
-                    onVulgarTierChange = { viewModel.setVulgarTier(it) },
-                    dominatrixModeUnlocked = userPreferences.dominatrixModeUnlocked,
-                    onDominatrixModeUnlockedChange = { viewModel.setDominatrixModeUnlocked(it) },
-                    dominatrixModeActive = userPreferences.dominatrixModeActive,
-                    onDominatrixModeActiveChange = { viewModel.setDominatrixModeActive(it) },
-                    adultsOnlyConfirmed = userPreferences.adultsOnlyConfirmed,
-                    onConfirmAdultsAndEnableVulgar = { viewModel.confirmAdultsAndEnableVulgar() },
-                    // Issue #611: one-shot 18+ modal gate. Read reactively from
-                    // UserPreferences so NavGraph recomposes when the flag changes.
-                    adultsOnlyPrompted = userPreferences.adultsOnlyPrompted,
-                    onAdultsOnlyPromptedChange = { viewModel.setAdultsOnlyPrompted(it) },
-                    onPlayDominatrixUnlockSound = { viewModel.emitDominatrixUnlockSound() },
+                    onOpenBackupFolder = viewModel::openBackupFolder,
+                    backupDestination = globalSettings.backupDestination,
+                    onBackupDestinationChange = viewModel::setBackupDestination,
+                    selectedLanguage = globalSettings.language,
+                    onLanguageChange = viewModel::setLanguage,
                 )
             }
 

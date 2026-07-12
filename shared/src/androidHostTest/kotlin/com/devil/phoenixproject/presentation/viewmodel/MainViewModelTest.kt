@@ -15,6 +15,7 @@ import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
@@ -334,7 +335,11 @@ class MainViewModelTest {
         viewModel.userPreferences.test {
             awaitItem() // Initial value
 
-            viewModel.setStopAtTop(true)
+            val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+            fakeUserProfileRepository.updateWorkout(
+                profileId,
+                WorkoutPreferences(stopAtTop = true),
+            )
 
             var updated = awaitItem()
             while (!updated.stopAtTop) {
@@ -346,6 +351,37 @@ class MainViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `globalSettings ignores profile updates and emits global updates`() =
+        runTest(testCoroutineRule.dispatcher) {
+            viewModel.globalSettings.test {
+                val initial = awaitItem()
+                assertEquals(initial, viewModel.globalSettings.value)
+
+                val profileId = assertNotNull(fakeUserProfileRepository.activeProfile.value).id
+                fakeUserProfileRepository.updateWorkout(
+                    profileId,
+                    WorkoutPreferences(stopAtTop = true),
+                )
+                advanceUntilIdle()
+
+                expectNoEvents()
+                assertEquals(initial, viewModel.globalSettings.value)
+
+                val updatedVideoPlayback = !initial.enableVideoPlayback
+                viewModel.setEnableVideoPlayback(updatedVideoPlayback)
+
+                val updated = awaitItem()
+                assertEquals(
+                    initial.copy(enableVideoPlayback = updatedVideoPlayback),
+                    updated,
+                )
+                assertEquals(updated, viewModel.globalSettings.value)
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
 
     // ========== Top Bar State Tests ==========
 
