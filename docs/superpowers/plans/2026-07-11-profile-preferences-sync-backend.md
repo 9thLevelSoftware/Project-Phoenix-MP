@@ -3649,6 +3649,7 @@ git commit -m "feat(sync): add profile preference wire contract"
 
 **Files:**
 - Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncDtos.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt`
@@ -3656,11 +3657,45 @@ git commit -m "feat(sync): add profile preference wire contract"
 
 **Interfaces:**
 - Consumes: schema-43 `UserProfilePreferences`, the foundation typed models/validator/codec, and Task 3's internal sync models.
-- Produces: an internal sync-only repository that snapshots dirty valid sections, reports invalid sections, applies push canonicals with generation guards, and merges pull canonicals without creating profiles.
+- Produces: an internal reusable wire-safety guard, a strict decoded-canonical column boundary, and a sync-only repository that snapshots dirty valid sections, reports invalid sections with category-only reasons, applies push canonicals with generation/revision guards, and merges pull canonicals without creating profiles.
+- Invariant: every invalid section is isolated by `(localProfileId, section, localGeneration)`, remains dirty, and is excluded from wire construction; neither raw JSON, string values, exception messages, nor payload fragments enter an issue reason or log.
 
 - [ ] **Step 1: Write failing row-owned-wrapper and invalid-section snapshot tests**
 
-Create `SqlDelightProfilePreferenceSyncRepositoryTest.kt` with an in-memory database using the existing Android-host database test fixture. Insert profile `profile-a`, insert its default preference row, and write typed LED/VBT values through `SqlDelightProfilePreferencesRepository`:
+Create `SqlDelightProfilePreferenceSyncRepositoryTest.kt` with an owned in-memory JDBC driver. Do not call `createTestDatabase()`: that helper intentionally hides its driver, while these boundary tests need the driver for valid-but-out-of-domain SQLite seeds. Use this exact fixture and the generated profile lookup for no-create assertions; do not construct `SqlDelightUserProfileRepository` or its unrelated safety/gamification dependencies:
+
+```kotlin
+private lateinit var driver: JdbcSqliteDriver
+private lateinit var database: VitruvianDatabase
+private lateinit var foundationRepository: SqlDelightProfilePreferencesRepository
+private lateinit var codec: ProfilePreferenceSyncCodec
+private lateinit var repository: SqlDelightProfilePreferenceSyncRepository
+
+@Before
+fun setup() {
+    driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+    VitruvianDatabase.Schema.create(driver)
+    database = VitruvianDatabase(driver)
+    foundationRepository = SqlDelightProfilePreferencesRepository(database)
+    codec = ProfilePreferenceSyncCodec()
+    repository = SqlDelightProfilePreferenceSyncRepository(database, codec)
+}
+
+@After
+fun tearDown() {
+    driver.close()
+}
+
+private fun createProfile(id: String) {
+    database.vitruvianDatabaseQueries.insertProfile(id, id, 0, 1, 0)
+}
+
+private fun assertProfileDoesNotExist(id: String) {
+    assertNull(database.vitruvianDatabaseQueries.getProfileById(id).executeAsOneOrNull())
+}
+```
+
+Import `JdbcSqliteDriver`, JUnit `Before`/`After`/`Test`, and the existing domain/foundation types. Insert profile `profile-a`, insert its default preference row, and write typed LED/VBT values through `SqlDelightProfilePreferencesRepository`:
 
 ```kotlin
 @Test
@@ -3712,7 +3747,10 @@ fun `malformed dirty document is reported and valid sibling remains syncable`() 
     assertTrue(snapshot.valid.any { it.key.section == ProfilePreferenceSectionName.RACK })
     assertTrue(snapshot.valid.none { it.key.section == ProfilePreferenceSectionName.WORKOUT })
     assertEquals(ProfilePreferenceSectionName.WORKOUT, snapshot.unsyncable.single().key.section)
-    assertTrue(snapshot.unsyncable.single().reason.startsWith("invalid local document:"))
+    assertEquals(
+        ProfilePreferenceSyncIssueReason.INVALID_LOCAL_DOCUMENT.name,
+        snapshot.unsyncable.single().reason,
+    )
 }
 
 private companion object {
@@ -3765,7 +3803,10 @@ fun `base revision max is syncable while max plus one is a dead letter`() = runT
         foundationRepository.get("profile-over").core.metadata.localGeneration,
         issue.localGeneration,
     )
-    assertTrue(issue.reason.startsWith("unrepresentable JSON integer: baseRevision="))
+    assertEquals(
+        ProfilePreferenceSyncIssueReason.UNREPRESENTABLE_JSON_INTEGER.name,
+        issue.reason,
+    )
     assertTrue(foundationRepository.get("profile-over").core.metadata.dirty)
 
     val second = repository.snapshotDirtySections()
@@ -3842,7 +3883,11 @@ fun `rack signed timestamp bounds stay JSON numbers and overflow is dead lettere
             it.key.localProfileId == profileId &&
                 it.key.section == ProfilePreferenceSectionName.RACK
         }
-        assertTrue(issue.reason.startsWith("unrepresentable JSON integer: $field="))
+        assertEquals(
+            ProfilePreferenceSyncIssueReason.UNREPRESENTABLE_JSON_INTEGER.name,
+            issue.reason,
+            field,
+        )
         assertTrue(foundationRepository.get(profileId).rack.metadata.dirty)
     }
 
@@ -3871,9 +3916,138 @@ fun `rack signed timestamp bounds stay JSON numbers and overflow is dead lettere
     }
     assertTrue(revalidated.localGeneration > oldGeneration)
 }
+
+private fun forceDirtyLedColorScheme(profileId: String, colorScheme: Long) {
+    driver.execute(
+        identifier = null,
+        sql = """
+            UPDATE UserProfilePreferences
+               SET led_color_scheme_id = ?, led_dirty = 1
+             WHERE profile_id = ?
+        """.trimIndent(),
+        parameters = 2,
+    ) {
+        bindLong(0, colorScheme)
+        bindString(1, profileId)
+    }
+}
+
+@Test
+fun `LED color scheme validates Int32 before conversion and never wraps`() = runTest {
+    mapOf(
+        "led-max" to Int.MAX_VALUE.toLong(),
+        "led-over" to Int.MAX_VALUE.toLong() + 1,
+        "led-wraps-to-zero" to 4_294_967_296L,
+    ).forEach { (profileId, value) ->
+        createProfile(profileId)
+        foundationRepository.insertDefaults(profileId)
+        forceDirtyLedColorScheme(profileId, value)
+    }
+
+    val snapshot = repository.snapshotDirtySections()
+    val max = snapshot.valid.single {
+        it.key.localProfileId == "led-max" && it.key.section == ProfilePreferenceSectionName.LED
+    }
+    assertEquals(Int.MAX_VALUE, max.payload.getValue("ledColorSchemeId").jsonPrimitive.int)
+    listOf("led-over", "led-wraps-to-zero").forEach { profileId ->
+        assertTrue(snapshot.valid.none {
+            it.key.localProfileId == profileId && it.key.section == ProfilePreferenceSectionName.LED
+        })
+        assertEquals(
+            ProfilePreferenceSyncIssueReason.INVALID_INT32.name,
+            snapshot.unsyncable.single {
+                it.key.localProfileId == profileId &&
+                    it.key.section == ProfilePreferenceSectionName.LED
+            }.reason,
+        )
+    }
+}
+
+private fun singleExerciseDefaults(exerciseId: String) = SingleExerciseDefaultsDocument(
+    exerciseId = exerciseId,
+    setReps = emptyList(),
+    weightPerCableKg = 20f,
+    setWeightsPerCableKg = emptyList(),
+    progressionKg = 0f,
+    setRestSeconds = emptyList(),
+    workoutModeId = 0,
+    eccentricLoadPercentage = 100,
+    echoLevelValue = 1,
+    duration = 0,
+    isAMRAP = false,
+    perSetRestTime = false,
+)
+
+@Test
+fun `Postgres incompatible text and normalized local only keys dead letter only their sections`() = runTest {
+    createProfile("nul-profile")
+    foundationRepository.insertDefaults("nul-profile")
+    foundationRepository.updateRack(
+        "nul-profile",
+        RackPreferences(
+            items = listOf(
+                RackItem(id = "rack-nul", name = "SECRET_SENTINEL\u0000", weightKg = 20f),
+            ),
+        ),
+        now = 20,
+    )
+
+    createProfile("surrogate-profile")
+    foundationRepository.insertDefaults("surrogate-profile")
+    foundationRepository.updateRack(
+        "surrogate-profile",
+        RackPreferences(
+            items = listOf(
+                RackItem(id = "rack-surrogate", name = "bad\uD800", weightKg = 20f),
+            ),
+        ),
+        now = 20,
+    )
+
+    val forbiddenKey = "safeWord\u0130"
+    createProfile("local-key-profile")
+    foundationRepository.insertDefaults("local-key-profile")
+    foundationRepository.updateWorkout(
+        "local-key-profile",
+        WorkoutPreferences(
+            singleExerciseDefaults = mapOf(
+                forbiddenKey to singleExerciseDefaults(forbiddenKey),
+            ),
+        ),
+        now = 20,
+    )
+
+    val snapshot = repository.snapshotDirtySections()
+    mapOf(
+        ProfilePreferenceSectionKey("nul-profile", ProfilePreferenceSectionName.RACK) to
+            ProfilePreferenceSyncIssueReason.INVALID_TEXT_TREE,
+        ProfilePreferenceSectionKey("surrogate-profile", ProfilePreferenceSectionName.RACK) to
+            ProfilePreferenceSyncIssueReason.INVALID_TEXT_TREE,
+        ProfilePreferenceSectionKey("local-key-profile", ProfilePreferenceSectionName.WORKOUT) to
+            ProfilePreferenceSyncIssueReason.LOCAL_ONLY_WIRE_KEY,
+    ).forEach { (key, expectedReason) ->
+        assertTrue(snapshot.valid.none { it.key == key })
+        val issue = snapshot.unsyncable.single { it.key == key }
+        assertEquals(expectedReason.name, issue.reason)
+        assertFalse(issue.reason.contains("SECRET_SENTINEL"))
+        assertFalse(issue.reason.contains(forbiddenKey))
+    }
+    assertTrue(snapshot.valid.any {
+        it.key == ProfilePreferenceSectionKey(
+            "nul-profile",
+            ProfilePreferenceSectionName.CORE,
+        )
+    })
+    assertTrue(snapshot.valid.any {
+        it.key == ProfilePreferenceSectionKey(
+            "local-key-profile",
+            ProfilePreferenceSectionName.RACK,
+        )
+    })
+}
 ```
 
-The fixture's `createProfile` calls the existing generated `insertProfile` query, and its in-memory `driver` is used only for the nonnegative MAX/MAX+1 boundary seeds above. Do not seed a negative `core_server_revision`: schema 43's `CHECK (core_server_revision >= 0)` correctly makes that database state impossible. Keep the codec's negative-base-revision branch as defense in depth for non-database callers. Import `jsonArray`, `jsonObject`, `jsonPrimitive`, `int`, `long`, and `boolean`; assertions inspect JSON elements, not stringified nested JSON. “Dead letter for the current generation” has an executable meaning: the issue carries that `localGeneration`, the section remains dirty, every snapshot excludes it from `valid` (so no wire DTO, chunk, or RPC retry can be created), and it remains diagnosable in `unsyncable`. A subsequent local edit increments the generation and is validated afresh. No value is rounded, coerced to a string, or sent repeatedly.
+The fixture's `createProfile` calls the existing generated `insertProfile` query, and its retained in-memory `driver` is used only for boundary states that the public foundation repository cannot create. Do not seed a negative `core_server_revision`: schema 43's `CHECK (core_server_revision >= 0)` correctly makes that database state impossible. Keep the codec's negative-base-revision branch as defense in depth for non-database callers. Import `jsonArray`, `jsonObject`, `jsonPrimitive`, `int`, `long`, and `boolean`; assertions inspect JSON elements, not stringified nested JSON. “Dead letter for the current generation” has an executable meaning: the issue carries that `localGeneration`, the section remains dirty, every snapshot excludes it from `valid` (so no wire DTO, chunk, or RPC retry can be created), and it remains diagnosable in `unsyncable`. A subsequent local edit increments the generation and is validated afresh. No value is rounded, wrapped, replacement-character-normalized, coerced to a string, or sent repeatedly.
 
 - [ ] **Step 2: Write failing generation-race and pull-merge tests**
 
@@ -3884,8 +4058,9 @@ private fun coreCanonical(
     revision: Long,
     bodyWeightKg: Double,
     updatedAt: Long = 1_783_771_200_000L,
+    profileId: String = "profile-a",
 ) = CanonicalProfilePreferenceSection(
-    key = ProfilePreferenceSectionKey("profile-a", ProfilePreferenceSectionName.CORE),
+    key = ProfilePreferenceSectionKey(profileId, ProfilePreferenceSectionName.CORE),
     documentVersion = 1,
     serverRevision = revision,
     serverUpdatedAtEpochMs = updatedAt,
@@ -3986,7 +4161,7 @@ fun `pull updates only clean nonnewer rows and never creates unknown profile`() 
     assertEquals(3, current.metadata.serverRevision)
     assertFalse(current.metadata.dirty)
     assertEquals(1, report.ignoredUnknownProfile)
-    assertTrue(userProfileRepository.allProfiles.value.none { it.id == "remote-only" })
+    assertProfileDoesNotExist("remote-only")
 }
 
 @Test
@@ -4036,6 +4211,379 @@ fun `equal revision different payload repairs clean row`() = runTest {
     assertEquals(200, repaired.metadata.updatedAt)
     assertFalse(repaired.metadata.dirty)
 }
+
+private fun canonical(
+    profileId: String,
+    section: ProfilePreferenceSectionName,
+    revision: Long,
+    variant: Int,
+    updatedAt: Long = 1_783_771_200_000L + variant,
+) = CanonicalProfilePreferenceSection(
+    key = ProfilePreferenceSectionKey(profileId, section),
+    documentVersion = 1,
+    serverRevision = revision,
+    serverUpdatedAtEpochMs = updatedAt,
+    payload = when (section) {
+        ProfilePreferenceSectionName.CORE -> buildJsonObject {
+            put("bodyWeightKg", 80 + variant)
+            put("weightUnit", "KG")
+            put("weightIncrement", 0.5)
+        }
+        ProfilePreferenceSectionName.RACK -> buildJsonObject {
+            put("version", 1)
+            putJsonArray("items") {
+                add(buildJsonObject {
+                    put("id", "rack-$variant")
+                    put("name", "Rack $variant")
+                    put("category", "OTHER")
+                    put("weightKg", variant)
+                    put("behavior", "ADDED_RESISTANCE")
+                    put("enabled", true)
+                    put("sortOrder", variant)
+                    put("createdAt", variant.toLong())
+                    put("updatedAt", variant.toLong())
+                })
+            }
+        }
+        ProfilePreferenceSectionName.WORKOUT -> buildJsonObject {
+            put("version", 1)
+            put("stopAtTop", variant % 2 == 1)
+        }
+        ProfilePreferenceSectionName.LED -> buildJsonObject {
+            put("ledColorSchemeId", variant)
+            putJsonObject("preferences") {
+                put("version", 1)
+                put("discoModeUnlocked", variant % 2 == 1)
+            }
+        }
+        ProfilePreferenceSectionName.VBT -> buildJsonObject {
+            put("vbtEnabled", variant % 2 == 0)
+            putJsonObject("preferences") {
+                put("version", 1)
+                put("velocityLossThresholdPercent", 20 + variant)
+            }
+        }
+    },
+)
+
+private fun assertVariant(preferences: UserProfilePreferences, variant: Int) {
+    assertEquals((80 + variant).toFloat(), preferences.core.value.bodyWeightKg)
+    assertEquals(WeightUnit.KG, preferences.core.value.weightUnit)
+    assertEquals(0.5f, preferences.core.value.weightIncrement)
+    assertEquals("rack-$variant", preferences.rack.value.items.single().id)
+    assertEquals(variant.toFloat(), preferences.rack.value.items.single().weightKg)
+    assertEquals(variant % 2 == 1, preferences.workout.value.stopAtTop)
+    assertEquals(variant, preferences.led.value.colorScheme)
+    assertEquals(variant % 2 == 1, preferences.led.value.discoModeUnlocked)
+    assertEquals(variant % 2 == 0, preferences.vbt.value.enabled)
+    assertEquals(20 + variant, preferences.vbt.value.velocityLossThresholdPercent)
+}
+
+private fun allMetadata(preferences: UserProfilePreferences) = listOf(
+    preferences.core.metadata,
+    preferences.rack.metadata,
+    preferences.workout.metadata,
+    preferences.led.metadata,
+    preferences.vbt.metadata,
+)
+
+private suspend fun acknowledgeAllDirty(profileId: String, revision: Long, variant: Int) {
+    val sent = repository.snapshotDirtySections().valid
+        .filter { it.key.localProfileId == profileId }
+        .associateBy { it.key.section }
+    repository.applyPushOutcomes(
+        ProfilePreferenceSectionName.entries.map { section ->
+            val snapshot = sent.getValue(section)
+            ProfilePreferencePushOutcome(
+                key = snapshot.key,
+                sentLocalGeneration = snapshot.localGeneration,
+                serverRevision = revision,
+                canonical = canonical(profileId, section, revision, variant),
+                rejectionReason = null,
+            )
+        },
+    )
+}
+
+@Test
+fun `matching generation push persists all five sections and row owned columns`() = runTest {
+    createProfile("push-all")
+    foundationRepository.insertDefaults("push-all")
+
+    acknowledgeAllDirty("push-all", revision = 2, variant = 1)
+
+    val preferences = foundationRepository.get("push-all")
+    assertVariant(preferences, variant = 1)
+    allMetadata(preferences).forEach { metadata ->
+        assertEquals(2, metadata.serverRevision)
+        assertFalse(metadata.dirty)
+    }
+    val row = database.vitruvianDatabaseQueries
+        .selectProfilePreferenceSyncRow("push-all")
+        .executeAsOne()
+    assertEquals(1L, row.led_color_scheme_id)
+    assertFalse(row.led_preferences_json.contains("colorScheme"))
+    assertEquals(0L, row.vbt_enabled)
+    assertFalse(row.vbt_preferences_json.contains("enabled"))
+}
+
+@Test
+fun `newer local generations preserve all five values while advancing revisions`() = runTest {
+    createProfile("race-all")
+    foundationRepository.insertDefaults("race-all")
+    val sent = repository.snapshotDirtySections().valid
+        .filter { it.key.localProfileId == "race-all" }
+        .associateBy { it.key.section }
+    foundationRepository.updateCore(
+        "race-all",
+        CoreProfilePreferences(95f, WeightUnit.KG, 1f),
+        now = 30,
+    )
+    foundationRepository.updateRack(
+        "race-all",
+        RackPreferences(items = listOf(RackItem(id = "local", name = "Local", weightKg = 9f))),
+        now = 30,
+    )
+    foundationRepository.updateWorkout(
+        "race-all",
+        WorkoutPreferences(stopAtTop = false, beepsEnabled = false),
+        now = 30,
+    )
+    foundationRepository.updateLed(
+        "race-all",
+        LedPreferences(colorScheme = 9, discoModeUnlocked = false),
+        now = 30,
+    )
+    foundationRepository.updateVbt(
+        "race-all",
+        VbtPreferences(enabled = true, velocityLossThresholdPercent = 45),
+        now = 30,
+    )
+
+    val report = repository.applyPushOutcomes(
+        ProfilePreferenceSectionName.entries.map { section ->
+            val snapshot = sent.getValue(section)
+            ProfilePreferencePushOutcome(
+                key = snapshot.key,
+                sentLocalGeneration = snapshot.localGeneration,
+                serverRevision = 4,
+                canonical = canonical("race-all", section, revision = 4, variant = 1),
+                rejectionReason = null,
+            )
+        },
+    )
+
+    val current = foundationRepository.get("race-all")
+    assertEquals(95f, current.core.value.bodyWeightKg)
+    assertEquals("local", current.rack.value.items.single().id)
+    assertFalse(current.workout.value.beepsEnabled)
+    assertEquals(9, current.led.value.colorScheme)
+    assertEquals(45, current.vbt.value.velocityLossThresholdPercent)
+    allMetadata(current).forEach { metadata ->
+        assertEquals(4, metadata.serverRevision)
+        assertTrue(metadata.dirty)
+    }
+    assertEquals(5, report.preservedNewerLocal)
+}
+
+@Test
+fun `clean pull applies all five sections and rejects every lower revision`() = runTest {
+    createProfile("pull-all")
+    foundationRepository.insertDefaults("pull-all")
+    acknowledgeAllDirty("pull-all", revision = 2, variant = 1)
+
+    val applied = repository.applyPulledSections(
+        ProfilePreferenceSectionName.entries.map { section ->
+            canonical("pull-all", section, revision = 3, variant = 2)
+        },
+    )
+    val afterHigher = foundationRepository.get("pull-all")
+    assertEquals(5, applied.applied)
+    assertVariant(afterHigher, variant = 2)
+    allMetadata(afterHigher).forEach { metadata ->
+        assertEquals(3, metadata.serverRevision)
+        assertFalse(metadata.dirty)
+    }
+
+    val lower = repository.applyPulledSections(
+        ProfilePreferenceSectionName.entries.map { section ->
+            canonical("pull-all", section, revision = 2, variant = 3)
+        },
+    )
+    assertEquals(0, lower.applied)
+    assertEquals(afterHigher, foundationRepository.get("pull-all"))
+}
+
+@Test
+fun `canonical null identity mismatch and revision mismatch remain dirty`() = runTest {
+    createProfile("invalid-outcome")
+    foundationRepository.insertDefaults("invalid-outcome")
+    foundationRepository.updateCore(
+        "invalid-outcome",
+        CoreProfilePreferences(bodyWeightKg = 80f),
+        now = 20,
+    )
+    val sent = repository.snapshotDirtySections().valid.single {
+        it.key.localProfileId == "invalid-outcome" &&
+            it.key.section == ProfilePreferenceSectionName.CORE
+    }
+
+    val noCanonical = repository.applyPushOutcomes(
+        listOf(ProfilePreferencePushOutcome(sent.key, sent.localGeneration, 2, null, null)),
+    )
+    assertEquals(0, noCanonical.applied)
+    assertTrue(foundationRepository.get("invalid-outcome").core.metadata.dirty)
+
+    val wrongKey = repository.applyPushOutcomes(
+        listOf(
+            ProfilePreferencePushOutcome(
+                sent.key,
+                sent.localGeneration,
+                2,
+                canonical("other-profile", ProfilePreferenceSectionName.CORE, 2, 1),
+                null,
+            ),
+        ),
+    )
+    val wrongRevision = repository.applyPushOutcomes(
+        listOf(
+            ProfilePreferencePushOutcome(
+                sent.key,
+                sent.localGeneration,
+                3,
+                canonical("invalid-outcome", ProfilePreferenceSectionName.CORE, 2, 1),
+                null,
+            ),
+        ),
+    )
+    assertEquals(1, wrongKey.invalid)
+    assertEquals(1, wrongRevision.invalid)
+    assertTrue(foundationRepository.get("invalid-outcome").core.metadata.dirty)
+}
+
+@Test
+fun `canonical revision bounds and malformed payload fail closed with category only reasons`() {
+    val max = coreCanonical(MAX_EXACT_JSON_INTEGER, 80.0)
+    assertIs<ProfilePreferenceCanonicalColumnsResult.Valid>(codec.decodeCanonical(max))
+    listOf(-1L, MAX_EXACT_JSON_INTEGER + 1).forEach { revision ->
+        val invalid = assertIs<ProfilePreferenceCanonicalColumnsResult.Invalid>(
+            codec.decodeCanonical(coreCanonical(revision, 80.0)),
+        )
+        assertEquals(ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_REVISION, invalid.reason)
+    }
+    val sentinel = "SECRET_SENTINEL"
+    val malformed = canonical("profile-a", ProfilePreferenceSectionName.WORKOUT, 3, 1)
+        .copy(payload = buildJsonObject {
+            put("version", 1)
+            put("repCountTiming", sentinel)
+        })
+    val invalid = assertIs<ProfilePreferenceCanonicalColumnsResult.Invalid>(
+        codec.decodeCanonical(malformed),
+    )
+    assertEquals(ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_PAYLOAD, invalid.reason)
+    assertFalse(invalid.reason.name.contains(sentinel))
+}
+
+@Test
+fun `malformed pulled canonical is isolated while valid sibling applies`() = runTest {
+    createProfile("malformed-pull")
+    foundationRepository.insertDefaults("malformed-pull")
+    acknowledgeAllDirty("malformed-pull", revision = 2, variant = 1)
+    val malformed = canonical(
+        "malformed-pull",
+        ProfilePreferenceSectionName.WORKOUT,
+        revision = 3,
+        variant = 2,
+    ).copy(payload = buildJsonObject {
+        put("version", 1)
+        put("repCountTiming", "SECRET_SENTINEL")
+    })
+
+    val report = repository.applyPulledSections(
+        listOf(
+            malformed,
+            canonical("malformed-pull", ProfilePreferenceSectionName.CORE, 3, 2),
+        ),
+    )
+
+    val current = foundationRepository.get("malformed-pull")
+    assertEquals(1, report.invalid)
+    assertEquals(1, report.applied)
+    assertTrue(current.workout.value.stopAtTop)
+    assertEquals(82f, current.core.value.bodyWeightKg)
+}
+
+@Test
+fun `matching generation requires dirty state and nonregressing revision`() = runTest {
+    createProfile("stale-push")
+    foundationRepository.insertDefaults("stale-push")
+    val sent = repository.snapshotDirtySections().valid.single {
+        it.key.localProfileId == "stale-push" &&
+            it.key.section == ProfilePreferenceSectionName.CORE
+    }
+    repository.applyPushOutcomes(
+        listOf(
+            ProfilePreferencePushOutcome(
+                sent.key,
+                sent.localGeneration,
+                6,
+                canonical("stale-push", ProfilePreferenceSectionName.CORE, 6, 6),
+                null,
+            ),
+        ),
+    )
+    val stale = ProfilePreferencePushOutcome(
+        sent.key,
+        sent.localGeneration,
+        5,
+        canonical("stale-push", ProfilePreferenceSectionName.CORE, 5, 5),
+        null,
+    )
+    assertEquals(0, repository.applyPushOutcomes(listOf(stale)).applied)
+
+    driver.execute(
+        null,
+        "UPDATE UserProfilePreferences SET core_dirty = 1 WHERE profile_id = ?",
+        1,
+    ) { bindString(0, "stale-push") }
+    assertEquals(0, repository.applyPushOutcomes(listOf(stale)).applied)
+    val current = foundationRepository.get("stale-push").core
+    assertEquals(86f, current.value.bodyWeightKg)
+    assertEquals(6, current.metadata.serverRevision)
+    assertTrue(current.metadata.dirty)
+}
+
+@Test
+fun `semantic numeric equality does not become equal revision divergence`() = runTest {
+    createProfile("numeric-equality")
+    foundationRepository.insertDefaults("numeric-equality")
+    val integerToken = coreCanonical(0, 80.0, profileId = "numeric-equality").copy(
+        payload = PortalWireJson.parseToJsonElement(
+            """{"bodyWeightKg":80,"weightUnit":"KG","weightIncrement":0.5}""",
+        ).jsonObject,
+    )
+    driver.execute(
+        null,
+        """
+            UPDATE UserProfilePreferences
+               SET body_weight_kg = 80, weight_unit = 'KG', weight_increment = 0.5,
+                   core_dirty = 0
+             WHERE profile_id = ?
+        """.trimIndent(),
+        1,
+    ) { bindString(0, "numeric-equality") }
+    val normalizedRow = database.vitruvianDatabaseQueries
+        .selectProfilePreferenceSyncRow("numeric-equality")
+        .executeAsOne()
+
+    assertFalse(codec.hasCanonicalDivergence(normalizedRow, integerToken))
+    assertTrue(
+        codec.hasCanonicalDivergence(
+            normalizedRow,
+            coreCanonical(0, 83.0, profileId = "numeric-equality"),
+        ),
+    )
+}
 ```
 
 - [ ] **Step 3: Run the repository tests and verify the red state**
@@ -4067,9 +4615,12 @@ selectProfilePreferenceSyncRow:
 SELECT *
 FROM UserProfilePreferences
 WHERE profile_id = :profile_id;
+
+selectChangedRowCount:
+SELECT changes();
 ```
 
-For push canonicals, add these ten query names. Each `apply...ForGeneration` updates only its section's value columns, `*_updated_at`, `*_server_revision`, and `*_dirty = 0`, guarded by `profile_id` and equality with `:sent_local_generation`. Each `advance...ForNewerGeneration` updates only `*_server_revision`, guarded by a strictly newer generation and a lower stored revision.
+For push canonicals, add these ten query names. Each `apply...ForGeneration` updates only its section's value columns, `*_updated_at`, `*_server_revision`, and `*_dirty = 0`, guarded by `profile_id`, equality with `:sent_local_generation`, `*_dirty = 1`, and `*_server_revision <= :server_revision`. The dirty guard rejects a delayed replay after a clean pull; the monotonic guard rejects revision regression even if a corrupt/replayed caller re-marks the same generation dirty. Each `advance...ForNewerGeneration` updates only `*_server_revision`, guarded by a strictly newer generation and a lower stored revision.
 
 | Section | Matching-generation query | Newer-generation query | Value columns |
 |---|---|---|---|
@@ -4091,7 +4642,9 @@ SET body_weight_kg = :body_weight_kg,
     core_server_revision = :server_revision,
     core_dirty = 0
 WHERE profile_id = :profile_id
-  AND core_local_generation = :sent_local_generation;
+  AND core_local_generation = :sent_local_generation
+  AND core_dirty = 1
+  AND core_server_revision <= :server_revision;
 
 advanceCoreRevisionForNewerGeneration:
 UPDATE UserProfilePreferences
@@ -4101,7 +4654,7 @@ WHERE profile_id = :profile_id
   AND core_server_revision < :server_revision;
 ```
 
-The RACK/WORKOUT/LED/VBT matching queries use the value columns in the table above and the corresponding section metadata names. Their newer-generation queries contain no value, timestamp, generation, or dirty assignment.
+The RACK/WORKOUT/LED/VBT matching queries use the value columns in the table above and the corresponding section metadata names, including both the exact `*_dirty = 1` and `*_server_revision <= :server_revision` guards. Their newer-generation queries contain no value, timestamp, generation, or dirty assignment.
 
 For pull canonicals, add `applyPulledCoreWhenClean`, `applyPulledRackWhenClean`, `applyPulledWorkoutWhenClean`, `applyPulledLedWhenClean`, and `applyPulledVbtWhenClean`. They update the same value/revision/timestamp columns and retain `dirty = 0`; their guard is exactly `profile_id = :profile_id AND *_dirty = 0 AND *_server_revision <= :server_revision`. The `<=` intentionally repairs equal-revision content divergence while rejecting lower server revisions. CORE establishes the exact shape:
 
@@ -4136,6 +4689,68 @@ internal val PortalWireJson = Json {
 }
 ```
 
+In `PortalSyncDtos.kt`, replace the private recursive guard with this internal reusable result. Both DTO initializers continue to call `requireValueOnlyProfilePreferencePayload`; Task 4 calls `profilePreferenceWireSafetyViolation` before a local section can enter the valid snapshot. This is the one implementation of ASCII-filter-then-lowercase local-only normalization and PostgreSQL-compatible UTF-16 validation; do not duplicate it in the codec:
+
+```kotlin
+internal enum class ProfilePreferenceWireSafetyViolation {
+    INVALID_TEXT_TREE,
+    LOCAL_ONLY_KEY,
+}
+
+private fun isPostgresCompatibleText(value: String): Boolean {
+    var index = 0
+    while (index < value.length) {
+        val codeUnit = value[index]
+        when {
+            codeUnit == '\u0000' -> return false
+            codeUnit in '\uD800'..'\uDBFF' -> {
+                if (index + 1 >= value.length || value[index + 1] !in '\uDC00'..'\uDFFF') {
+                    return false
+                }
+                index += 1
+            }
+            codeUnit in '\uDC00'..'\uDFFF' -> return false
+        }
+        index += 1
+    }
+    return true
+}
+
+internal fun profilePreferenceWireSafetyViolation(
+    value: kotlinx.serialization.json.JsonElement,
+): ProfilePreferenceWireSafetyViolation? = when (value) {
+    is kotlinx.serialization.json.JsonArray -> value.firstNotNullOfOrNull(
+        ::profilePreferenceWireSafetyViolation,
+    )
+    is kotlinx.serialization.json.JsonObject -> {
+        value.entries.firstNotNullOfOrNull { (key, child) ->
+            when {
+                !isPostgresCompatibleText(key) ->
+                    ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE
+                normalizedProfilePreferenceWireKey(key) in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS ->
+                    ProfilePreferenceWireSafetyViolation.LOCAL_ONLY_KEY
+                else -> profilePreferenceWireSafetyViolation(child)
+            }
+        }
+    }
+    is kotlinx.serialization.json.JsonPrimitive -> if (
+        value.isString && !isPostgresCompatibleText(value.content)
+    ) {
+        ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE
+    } else {
+        null
+    }
+}
+
+private fun requireValueOnlyProfilePreferencePayload(
+    value: kotlinx.serialization.json.JsonElement,
+) {
+    require(profilePreferenceWireSafetyViolation(value) == null) {
+        "Profile preference payload is not wire-safe"
+    }
+}
+```
+
 Then create `ProfilePreferenceSyncCodec.kt` as an internal class. It parses foundation codec output back to `JsonObject`, so JSON documents remain objects:
 
 ```kotlin
@@ -4145,12 +4760,11 @@ internal class ProfilePreferenceSyncCodec {
         const val MIN_EXACT_JSON_INTEGER = -9_007_199_254_740_991L
     }
 
-    private fun exactJsonIntegerIssue(field: String, value: Long): String? =
+    private fun exactJsonIntegerIssue(value: Long): ProfilePreferenceSyncIssueReason? =
         if (value in MIN_EXACT_JSON_INTEGER..MAX_EXACT_JSON_INTEGER) {
             null
         } else {
-            "unrepresentable JSON integer: $field=$value; exact range is " +
-                "$MIN_EXACT_JSON_INTEGER..$MAX_EXACT_JSON_INTEGER"
+            ProfilePreferenceSyncIssueReason.UNREPRESENTABLE_JSON_INTEGER
         }
 
     private fun document(encoded: String): JsonObject =
@@ -4178,28 +4792,42 @@ internal class ProfilePreferenceSyncCodec {
     fun workoutPayload(value: WorkoutPreferences): JsonObject =
         document(ProfilePreferencesCodec.encodeWorkout(value))
 
+    fun normalizedPayload(value: DecodedProfilePreferenceValue): JsonObject = when (value) {
+        is DecodedProfilePreferenceValue.Core -> corePayload(value.value)
+        is DecodedProfilePreferenceValue.Rack -> rackPayload(value.value)
+        is DecodedProfilePreferenceValue.Workout -> workoutPayload(value.value)
+        is DecodedProfilePreferenceValue.Led -> ledPayload(value.value)
+        is DecodedProfilePreferenceValue.Vbt -> vbtPayload(value.value)
+    }
+
     fun validateCanonicalPayload(
         section: ProfilePreferenceSectionName,
         documentVersion: Int,
         payload: JsonObject,
-    ): ProfilePreferencePayloadValidation = runCatching {
-        require(documentVersion == 1) { "unsupported document version" }
-        decodeAndValidateTypedValue(section, payload)
-    }.fold(
-        onSuccess = { ProfilePreferencePayloadValidation(isValid = true, reason = "") },
-        onFailure = { error ->
-            ProfilePreferencePayloadValidation(
-                isValid = false,
-                reason = error.message ?: "invalid canonical payload",
-            )
-        },
-    )
+    ): ProfilePreferencePayloadValidation {
+        val reason = canonicalPayloadIssue(section, documentVersion, payload)
+        return ProfilePreferencePayloadValidation(
+            isValid = reason == null,
+            reason = reason?.name.orEmpty(),
+        )
+    }
 }
 
 internal data class ProfilePreferencePayloadValidation(
     val isValid: Boolean,
     val reason: String,
 )
+
+internal enum class ProfilePreferenceSyncIssueReason {
+    INVALID_LOCAL_DOCUMENT,
+    UNREPRESENTABLE_JSON_INTEGER,
+    INVALID_INT32,
+    INVALID_TEXT_TREE,
+    LOCAL_ONLY_WIRE_KEY,
+    UNSUPPORTED_DOCUMENT_VERSION,
+    INVALID_CANONICAL_PAYLOAD,
+    INVALID_CANONICAL_REVISION,
+}
 
 internal sealed interface DecodedProfilePreferenceValue {
     data class Core(val value: CoreProfilePreferences) : DecodedProfilePreferenceValue
@@ -4208,9 +4836,46 @@ internal sealed interface DecodedProfilePreferenceValue {
     data class Led(val value: LedPreferences) : DecodedProfilePreferenceValue
     data class Vbt(val value: VbtPreferences) : DecodedProfilePreferenceValue
 }
+
+internal data class DecodedProfilePreferenceColumns(
+    val key: ProfilePreferenceSectionKey,
+    val documentVersion: Int,
+    val serverRevision: Long,
+    val serverUpdatedAtEpochMs: Long,
+    val value: DecodedProfilePreferenceValue,
+    val normalizedPayload: JsonObject,
+) {
+    val section: ProfilePreferenceSectionName get() = key.section
+}
+
+internal sealed interface ProfilePreferenceCanonicalColumnsResult {
+    data class Valid(
+        val columns: DecodedProfilePreferenceColumns,
+    ) : ProfilePreferenceCanonicalColumnsResult
+
+    data class Invalid(
+        val reason: ProfilePreferenceSyncIssueReason,
+    ) : ProfilePreferenceCanonicalColumnsResult
+}
+
+internal data class EncodedDirtyProfilePreferenceRow(
+    val valid: List<ProfilePreferenceSectionSyncDto>,
+    val unsyncable: List<ProfilePreferenceSyncIssue>,
+)
 ```
 
-Add `encodeDirtyRow(row)`, `decodeAndValidateTypedValue(section, payload)`, and `decodeCanonical(canonical)` methods. `encodeDirtyRow` decodes each dirty section independently with the foundation validator/codec. Before constructing any `ProfilePreferenceSectionSyncDto` or `PortalProfilePreferenceSectionMutationDto`, check that the section's `baseRevision` is nonnegative and no greater than `MAX_EXACT_JSON_INTEGER`; a negative in the exact-number interval gets `invalid local document: baseRevision must be nonnegative`, while either exact-number overflow gets `exactJsonIntegerIssue("baseRevision", value)`. For RACK, check every typed item's signed `createdAt` and `updatedAt` with `exactJsonIntegerIssue`. The Kotlin validator and Edge validator both allow repeated rack names and signed timestamps; only duplicate rack IDs and timestamps outside the exact JSON-number interval are rejected. Emit a valid sync DTO only when the foundation document and every wire integer pass. Otherwise emit a `ProfilePreferenceSyncIssue(key, localGeneration, reason)` retaining the current profile/section generation. The issue stays out of `valid`, so kotlinx.serialization never has an opportunity to round it or place it in a request; valid `Long` values use `JsonPrimitive(Long)` and therefore remain JSON numbers, never strings. The section's row timestamp, local generation, and server revision are otherwise preserved exactly.
+Add `encodeDirtyRow(row)`, `decodeAndValidateTypedValue(section, payload)`, `canonicalPayloadIssue(section, documentVersion, payload)`, and `decodeCanonical(canonical)` methods. `encodeDirtyRow` returns `EncodedDirtyProfilePreferenceRow` and catches each section independently; no exception from one section may abort a valid sibling. It decodes local JSON only through the foundation codec, checks the returned `ProfilePreferenceValidity`, and never syncs a fallback `.value` from an invalid document.
+
+Before constructing a `ProfilePreferenceSectionSyncDto`, apply these checks in order and emit only the fixed `ProfilePreferenceSyncIssueReason.name` as `reason`:
+
+1. A negative base revision is `INVALID_LOCAL_DOCUMENT`; a base revision outside the exact JSON integer interval is `UNREPRESENTABLE_JSON_INTEGER`.
+2. For RACK, every signed `createdAt` and `updatedAt` must be in the exact JSON integer interval. Repeated rack names remain valid; duplicate IDs remain invalid through the foundation validator.
+3. Before `row.led_color_scheme_id.toInt()`, require the stored `Long` to be in `Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()`; otherwise use `INVALID_INT32`. Schema 43 already excludes negative values, but the codec performs the complete conversion guard.
+4. Build the exact typed payload and call `profilePreferenceWireSafetyViolation`. Map `INVALID_TEXT_TREE` and `LOCAL_ONLY_KEY` to their corresponding sync issue reason. This must happen in Task 4 so Task 5's DTO constructor cannot throw while mapping the full valid snapshot.
+
+The issue retains the current profile/section generation and stays out of `valid`, so serialization, chunking, and RPC retry cannot see it. Valid `Long` values use `JsonPrimitive(Long)` and remain JSON numbers. Never retain an exception message, raw JSON, invalid string, numeric value, or payload fragment in a reason.
+
+`canonicalPayloadIssue` first requires document version 1, then the reusable wire-safety guard, then direct typed decoding/validation. It returns only a `ProfilePreferenceSyncIssueReason`; `runCatching` may contain decoder exceptions locally, but their messages are discarded. `decodeCanonical` additionally requires `serverRevision` in `0..MAX_EXACT_JSON_INTEGER`, returns `ProfilePreferenceCanonicalColumnsResult.Invalid(INVALID_CANONICAL_REVISION)` otherwise, and returns `Valid` with the exact key/revision/timestamp, typed value, and `normalizedPayload(value)` only after all checks pass.
 
 Use this exact typed decoding boundary; kotlinx.serialization document defaults remain compatible, while wrapper fields and JSON types are mandatory:
 
@@ -4260,7 +4925,95 @@ private fun decodeAndValidateTypedValue(
 }
 ```
 
-`validateCanonicalPayload` additionally checks `documentVersion == 1` and, for RACK/WORKOUT, equality with the decoded value's `version`; for LED/VBT it checks equality with the decoded `preferences.version`. `decodeCanonical` calls the same boundary and returns typed column values; it never substitutes defaults after malformed JSON, wrong JSON types, invalid enums, non-finite/range-invalid values, or version mismatches.
+Implement the version/safety/category boundary exactly once and have both public codec entry points call it:
+
+```kotlin
+private fun canonicalPayloadIssue(
+    section: ProfilePreferenceSectionName,
+    documentVersion: Int,
+    payload: JsonObject,
+): ProfilePreferenceSyncIssueReason? {
+    if (documentVersion != 1) {
+        return ProfilePreferenceSyncIssueReason.UNSUPPORTED_DOCUMENT_VERSION
+    }
+    when (profilePreferenceWireSafetyViolation(payload)) {
+        ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE ->
+            return ProfilePreferenceSyncIssueReason.INVALID_TEXT_TREE
+        ProfilePreferenceWireSafetyViolation.LOCAL_ONLY_KEY ->
+            return ProfilePreferenceSyncIssueReason.LOCAL_ONLY_WIRE_KEY
+        null -> Unit
+    }
+    val explicitEmbeddedVersion = runCatching {
+        when (section) {
+            ProfilePreferenceSectionName.CORE -> null
+            ProfilePreferenceSectionName.RACK,
+            ProfilePreferenceSectionName.WORKOUT ->
+                payload["version"]?.jsonPrimitive?.int
+            ProfilePreferenceSectionName.LED,
+            ProfilePreferenceSectionName.VBT ->
+                payload.getValue("preferences").jsonObject["version"]?.jsonPrimitive?.int
+        }
+    }.getOrElse {
+        return ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_PAYLOAD
+    }
+    if (explicitEmbeddedVersion != null && explicitEmbeddedVersion != documentVersion) {
+        return ProfilePreferenceSyncIssueReason.UNSUPPORTED_DOCUMENT_VERSION
+    }
+    val decoded = runCatching {
+        decodeAndValidateTypedValue(section, payload)
+    }.getOrElse {
+        return ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_PAYLOAD
+    }
+    val decodedVersion = when (decoded) {
+        is DecodedProfilePreferenceValue.Core -> 1
+        is DecodedProfilePreferenceValue.Rack -> decoded.value.version
+        is DecodedProfilePreferenceValue.Workout -> decoded.value.version
+        is DecodedProfilePreferenceValue.Led -> decoded.value.version
+        is DecodedProfilePreferenceValue.Vbt -> decoded.value.version
+    }
+    return if (decodedVersion == documentVersion) {
+        null
+    } else {
+        ProfilePreferenceSyncIssueReason.UNSUPPORTED_DOCUMENT_VERSION
+    }
+}
+
+fun decodeCanonical(
+    canonical: CanonicalProfilePreferenceSection,
+): ProfilePreferenceCanonicalColumnsResult {
+    if (canonical.serverRevision !in 0..MAX_EXACT_JSON_INTEGER) {
+        return ProfilePreferenceCanonicalColumnsResult.Invalid(
+            ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_REVISION,
+        )
+    }
+    canonicalPayloadIssue(
+        canonical.key.section,
+        canonical.documentVersion,
+        canonical.payload,
+    )?.let { reason ->
+        return ProfilePreferenceCanonicalColumnsResult.Invalid(reason)
+    }
+    val value = runCatching {
+        decodeAndValidateTypedValue(canonical.key.section, canonical.payload)
+    }.getOrElse {
+        return ProfilePreferenceCanonicalColumnsResult.Invalid(
+            ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_PAYLOAD,
+        )
+    }
+    return ProfilePreferenceCanonicalColumnsResult.Valid(
+        DecodedProfilePreferenceColumns(
+            key = canonical.key,
+            documentVersion = canonical.documentVersion,
+            serverRevision = canonical.serverRevision,
+            serverUpdatedAtEpochMs = canonical.serverUpdatedAtEpochMs,
+            value = value,
+            normalizedPayload = normalizedPayload(value),
+        ),
+    )
+}
+```
+
+`decodeCanonical` never substitutes defaults after malformed JSON, wrong JSON types, invalid enums, non-finite/range-invalid values, wire-unsafe text/keys, unsafe revisions, or version mismatches. Kotlin serialization defaults remain compatible only for omitted valid version-1 document fields.
 
 - [ ] **Step 6: Implement the internal repository with one transaction per profile**
 
@@ -4298,11 +5051,24 @@ internal class SqlDelightProfilePreferenceSyncRepository(
     ): ProfilePreferenceSyncApplyReport {
         var applied = 0
         var preserved = 0
+        var invalid = 0
         outcomes.groupBy { it.key.localProfileId }.forEach { (_, profileOutcomes) ->
             database.transaction {
                 profileOutcomes.forEach { outcome ->
                     val canonical = outcome.canonical ?: return@forEach
-                    val columns = codec.decodeCanonical(canonical)
+                    if (canonical.key != outcome.key ||
+                        canonical.serverRevision != outcome.serverRevision
+                    ) {
+                        invalid++
+                        return@forEach
+                    }
+                    val decoded = codec.decodeCanonical(canonical)
+                    if (decoded is ProfilePreferenceCanonicalColumnsResult.Invalid) {
+                        invalid++
+                        return@forEach
+                    }
+                    val columns =
+                        (decoded as ProfilePreferenceCanonicalColumnsResult.Valid).columns
                     if (applyCanonicalForGeneration(columns, outcome.sentLocalGeneration)) {
                         applied++
                     } else if (advanceRevisionForNewerGeneration(columns, outcome.sentLocalGeneration)) {
@@ -4311,7 +5077,11 @@ internal class SqlDelightProfilePreferenceSyncRepository(
                 }
             }
         }
-        return ProfilePreferenceSyncApplyReport(applied = applied, preservedNewerLocal = preserved)
+        return ProfilePreferenceSyncApplyReport(
+            applied = applied,
+            preservedNewerLocal = preserved,
+            invalid = invalid,
+        )
     }
 
     override suspend fun applyPulledSections(
@@ -4319,6 +5089,7 @@ internal class SqlDelightProfilePreferenceSyncRepository(
     ): ProfilePreferenceSyncApplyReport {
         var applied = 0
         var unknown = 0
+        var invalid = 0
         sections.groupBy { it.key.localProfileId }.forEach { (profileId, canonicals) ->
             database.transaction {
                 if (queries.selectProfilePreferenceSyncRow(profileId).executeAsOneOrNull() == null) {
@@ -4326,14 +5097,25 @@ internal class SqlDelightProfilePreferenceSyncRepository(
                     return@transaction
                 }
                 canonicals.forEach { canonical ->
-                    if (applyPulledWhenClean(codec.decodeCanonical(canonical))) applied++
+                    when (val decoded = codec.decodeCanonical(canonical)) {
+                        is ProfilePreferenceCanonicalColumnsResult.Invalid -> invalid++
+                        is ProfilePreferenceCanonicalColumnsResult.Valid -> {
+                            if (applyPulledWhenClean(decoded.columns)) applied++
+                        }
+                    }
                 }
             }
         }
-        return ProfilePreferenceSyncApplyReport(applied = applied, ignoredUnknownProfile = unknown)
+        return ProfilePreferenceSyncApplyReport(
+            applied = applied,
+            ignoredUnknownProfile = unknown,
+            invalid = invalid,
+        )
     }
 }
 ```
+
+A null canonical is an intentional no-op and does not increment `invalid`; its section remains dirty. A present canonical is defense-in-depth validated at the repository boundary even though Task 6's response mapper performs the same identity checks. Key mismatch, canonical/outcome revision mismatch, unsafe canonical revision, malformed payload, or wire-safety failure increments `invalid` and performs no SQL mutation. Never log or throw with the invalid content.
 
 Add this codec result and method; `currentState` uses the same row-owned LED/VBT wrapper methods as `encodeDirtyRow`:
 
@@ -4341,7 +5123,7 @@ Add this codec result and method; `currentState` uses the same row-owned LED/VBT
 internal data class CurrentProfilePreferenceSyncState(
     val serverRevision: Long,
     val dirty: Boolean,
-    val payload: JsonObject,
+    val normalizedPayload: JsonObject?,
 )
 
 fun currentState(
@@ -4351,63 +5133,94 @@ fun currentState(
     ProfilePreferenceSectionName.CORE -> CurrentProfilePreferenceSyncState(
         row.core_server_revision,
         row.core_dirty == 1L,
-        corePayload(
+        runCatching {
             CoreProfilePreferences(
                 row.body_weight_kg.toFloat(),
                 WeightUnit.valueOf(row.weight_unit),
                 row.weight_increment.toFloat(),
-            ),
-        ),
+            )
+        }.getOrNull()?.takeIf { ProfilePreferencesValidator.core(it).isEmpty() }
+            ?.let(::corePayload),
     )
     ProfilePreferenceSectionName.RACK -> CurrentProfilePreferenceSyncState(
         row.rack_server_revision,
         row.rack_dirty == 1L,
-        rackPayload(ProfilePreferencesCodec.decodeRack(row.equipment_rack_json).value),
+        ProfilePreferencesCodec.decodeRack(row.equipment_rack_json)
+            .takeIf { it.validity is ProfilePreferenceValidity.Valid }
+            ?.value
+            ?.let(::rackPayload),
     )
     ProfilePreferenceSectionName.WORKOUT -> CurrentProfilePreferenceSyncState(
         row.workout_server_revision,
         row.workout_dirty == 1L,
-        workoutPayload(ProfilePreferencesCodec.decodeWorkout(row.workout_preferences_json).value),
+        ProfilePreferencesCodec.decodeWorkout(row.workout_preferences_json)
+            .takeIf { it.validity is ProfilePreferenceValidity.Valid }
+            ?.value
+            ?.let(::workoutPayload),
     )
     ProfilePreferenceSectionName.LED -> CurrentProfilePreferenceSyncState(
         row.led_server_revision,
         row.led_dirty == 1L,
-        ledPayload(
-            ProfilePreferencesCodec.decodeLed(
-                row.led_preferences_json,
-                row.led_color_scheme_id.toInt(),
-            ).value,
-        ),
+        row.led_color_scheme_id
+            .takeIf { it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }
+            ?.toInt()
+            ?.let { ProfilePreferencesCodec.decodeLed(row.led_preferences_json, it) }
+            ?.takeIf { it.validity is ProfilePreferenceValidity.Valid }
+            ?.value
+            ?.let(::ledPayload),
     )
     ProfilePreferenceSectionName.VBT -> CurrentProfilePreferenceSyncState(
         row.vbt_server_revision,
         row.vbt_dirty == 1L,
-        vbtPayload(
-            ProfilePreferencesCodec.decodeVbt(
-                row.vbt_preferences_json,
-                row.vbt_enabled == 1L,
-            ).value,
-        ),
+        ProfilePreferencesCodec.decodeVbt(
+            row.vbt_preferences_json,
+            row.vbt_enabled == 1L,
+        ).takeIf { it.validity is ProfilePreferenceValidity.Valid }
+            ?.value
+            ?.let(::vbtPayload),
     )
+}
+
+fun hasCanonicalDivergence(
+    row: com.devil.phoenixproject.database.UserProfilePreferences,
+    columns: DecodedProfilePreferenceColumns,
+): Boolean {
+    val current = currentState(row, columns.section)
+    return !current.dirty &&
+        current.serverRevision == columns.serverRevision &&
+        current.normalizedPayload != columns.normalizedPayload
+}
+
+fun hasCanonicalDivergence(
+    row: com.devil.phoenixproject.database.UserProfilePreferences,
+    canonical: CanonicalProfilePreferenceSection,
+): Boolean = when (val decoded = decodeCanonical(canonical)) {
+    is ProfilePreferenceCanonicalColumnsResult.Invalid -> false
+    is ProfilePreferenceCanonicalColumnsResult.Valid ->
+        hasCanonicalDivergence(row, decoded.columns)
 }
 ```
 
-Before `applyPulledWhenClean`, read the row through `selectProfilePreferenceSyncRow`, call `codec.currentState(row, canonical.key.section)`, and when the row is clean, its server revision equals the canonical revision, and its reconstructed payload differs, log only the profile/section key as an invariant repair, then apply the canonical query:
+Before `applyPulledWhenClean`, read the row through `selectProfilePreferenceSyncRow` and use the decoded columns' normalized typed payload. Numeric token spelling (`80` versus `80.0`), omitted fields that decode to the same version-1 defaults, and object key order must not count as divergence. A null current normalized payload means the clean local row is malformed and therefore differs from a valid canonical. Log only the profile/section key for a true invariant repair, then apply the canonical query:
 
 ```kotlin
-if (!current.dirty &&
-    current.serverRevision == canonical.serverRevision &&
-    current.payload != canonical.payload
-) {
+if (codec.hasCanonicalDivergence(row, columns)) {
     Logger.w("ProfilePreferenceSync") {
-        "Repairing equal-revision canonical divergence for ${canonical.key}"
+        "Repairing equal-revision canonical divergence for ${columns.key}"
     }
 }
 ```
 
-Never log either payload.
+Never log either payload, decoder exception messages, or invalid values.
 
-Implement the three dispatch helpers as exhaustive `when (columns.section)` calls to the exact SQL query for CORE/RACK/WORKOUT/LED/VBT. After each update, use SQLDelight's `SELECT changes()` scalar query to return whether one row changed; add `selectChangedRowCount: SELECT changes();` beside the query matrix. A push outcome without a valid canonical is a no-op and remains dirty. Duplicate keys are rejected by the SyncManager response mapper before this repository is called.
+Implement the three dispatch helpers as exhaustive `when (columns.value)` calls, using the typed value carried by `DecodedProfilePreferenceColumns`:
+
+- CORE binds Float values as `Double`, `weightUnit.name`, and the canonical revision/timestamp.
+- RACK and WORKOUT persist `ProfilePreferencesCodec.encodeRack/encodeWorkout`.
+- LED persists `colorScheme.toLong()` separately and `ProfilePreferencesCodec.encodeLed`, which omits the row-owned color scheme.
+- VBT persists `enabled` as `1L`/`0L` separately and `ProfilePreferencesCodec.encodeVbt`, which omits the row-owned enabled flag.
+
+Each branch calls the exact section query from Step 4. Immediately after each update, call `queries.selectChangedRowCount().executeAsOne()` and return whether it is greater than zero; add `selectChangedRowCount: SELECT changes();` beside the query matrix. No SELECT or second mutation may occur between the guarded UPDATE and this scalar read. A push outcome without a canonical is a no-op and remains dirty. Task 6 rejects duplicate response keys, while this repository independently rejects canonical/outcome identity mismatches.
 
 - [ ] **Step 7: Run repository and foundation regression tests**
 
@@ -4417,12 +5230,12 @@ Run:
 .\gradlew.bat :shared:testAndroidHostTest --tests "*SqlDelightProfilePreferenceSyncRepositoryTest*" --tests "*SqlDelightProfilePreferencesRepositoryTest*" -Pskip.supabase.check=true
 ```
 
-Expected: PASS, including malformed-local retention, both in-flight response races, equal-revision repair, dirty-pull preservation, and unknown-profile no-create behavior.
+Expected: PASS, including category-only malformed-local dead letters, valid-sibling isolation, exact integer and LED Int32 boundaries, NUL/lone-surrogate/local-only-key isolation, all-five matching/newer-generation push dispatch, row-owned LED/VBT persistence, all-five higher/equal/lower pull dispatch, semantic numeric equality, true equal-revision repair, dirty-pull preservation, malformed-canonical isolation, canonical-null/identity/revision fail-closed behavior, and generated-query unknown-profile no-create behavior.
 
 - [ ] **Step 8: Commit the sync persistence boundary**
 
 ```powershell
-git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt
+git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncDtos.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt
 git commit -m "feat(sync): add profile preference sync repository"
 ```
 
@@ -5901,7 +6714,7 @@ Do not read or merge profile preferences before required migration `Ready`. Do n
 
 - [ ] **Step 6: Re-run the Task 4 persistence merge contract**
 
-Run the focused SQLDelight repository suite again after wiring pull. It must still prove clean+higher application, dirty+higher preservation, clean+equal repair, lower-revision ignore, matching/newer generation races, malformed canonical non-application, and unknown-profile no-create using literal CORE and WORKOUT fixtures.
+Run the focused SQLDelight repository suite again after wiring pull; Task 7 adds no new persistence behavior. It must re-run Task 4's already-green contract: all-five matching-generation push application, all-five newer-generation preservation, row-owned LED/VBT columns, all-five clean+higher application and lower-revision rejection, dirty-pull preservation, normalized `80` versus `80.0` equality, true equal-revision repair, malformed-canonical valid-sibling isolation, canonical-null and canonical/outcome identity no-ops, safe canonical revision boundaries, category-only local dead letters for malformed JSON/unsafe integers/LED Int32/NUL/lone-surrogate/local-only keys, and generated-query unknown-profile no-create behavior.
 
 - [ ] **Step 7: Run pull, pagination, invariant, and repository tests**
 
