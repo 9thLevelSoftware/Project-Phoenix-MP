@@ -70,18 +70,21 @@ open class FakePortalApiClient :
     var integrationSyncCallCount = 0
     var playgroundSimulationCallCount = 0
     var lastPushPayload: PortalSyncPayload? = null
+    val pushPayloads: MutableList<PortalSyncPayload> = mutableListOf()
+    var pushResultsQueue: MutableList<Result<PortalSyncPushResponse>>? = null
     var lastPullKnownEntityIds: KnownEntityIds? = null
     var lastPullDeviceId: String? = null
+    var lastPullProfileId: String? = null
     var lastPullCursor: String? = null
     var lastPullPageSize: Int? = null
     val pullCallCursors: MutableList<String?> = mutableListOf()
+    val pullCallProfileIds: MutableList<String?> = mutableListOf()
     val pullCallTimestampsMs: MutableList<Long> = mutableListOf()
     var pullTimestampSourceMs: () -> Long = { currentTimeMillis() }
     var lastIntegrationSyncRequest: IntegrationSyncRequest? = null
     var lastPlaygroundSimulationRequest: IntegrationPlaygroundSimulationRequest? = null
 
-    // Pagination support: list of results to return for successive pull calls
-    // If set, returns results from this list in order; when exhausted, falls back to pullResult
+    // A configured queue describes every expected logical call and fails when exhausted.
     var pullResultsQueue: MutableList<Result<PortalSyncPullResponse>>? = null
     var integrationSyncResultsQueue: MutableList<Result<IntegrationSyncResponse>>? = null
 
@@ -98,7 +101,8 @@ open class FakePortalApiClient :
     override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
         pushCallCount++
         lastPushPayload = payload
-        return pushResult
+        pushPayloads += payload
+        return pushResultsQueue?.removeExpectedResult() ?: pushResult
     }
 
     override suspend fun pullPortalPayload(
@@ -111,14 +115,14 @@ open class FakePortalApiClient :
         pullCallCount++
         lastPullKnownEntityIds = knownEntityIds
         lastPullDeviceId = deviceId
+        lastPullProfileId = profileId
+        pullCallProfileIds += profileId
         lastPullCursor = cursor
         lastPullPageSize = pageSize
         pullCallCursors += cursor
         pullCallTimestampsMs += pullTimestampSourceMs()
 
-        // Use queue if available, otherwise fallback to pullResult
-        val result = pullResultsQueue?.removeFirstOrNull() ?: pullResult
-        return result
+        return pullResultsQueue?.removeExpectedResult() ?: pullResult
     }
 
     override suspend fun callIntegrationSync(request: IntegrationSyncRequest): Result<IntegrationSyncResponse> {
@@ -134,4 +138,9 @@ open class FakePortalApiClient :
         lastPlaygroundSimulationRequest = request
         return playgroundSimulationResult
     }
+}
+
+private fun <T> MutableList<Result<T>>.removeExpectedResult(): Result<T> {
+    check(isNotEmpty()) { "FAKE_PORTAL_RESULT_QUEUE_EXHAUSTED" }
+    return removeAt(0)
 }

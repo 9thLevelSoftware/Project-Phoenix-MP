@@ -82,6 +82,15 @@ class ErrorClassificationTest {
     }
 
     @Test
+    fun status413IsPermanentAndNotRetryable() {
+        val result = classifyByStatusCode(413, "Payload too large")
+
+        assertEquals(SyncErrorCategory.PERMANENT, result.category)
+        assertFalse(result.isRetryable)
+        assertEquals(413, result.statusCode)
+    }
+
+    @Test
     fun status429IsTransientAndRetryable() {
         val result = classifyByStatusCode(429, "Too many requests")
 
