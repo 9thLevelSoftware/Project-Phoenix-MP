@@ -479,6 +479,76 @@ class ProfileSettingsSeparationContractTest {
         }
     }
 
+    @Test
+    fun profileSwitcherRemainsTheOnlyTaskOwnedPresentationRepositoryCaller() {
+        fun source(path: String): String = requireNotNull(readProjectFile(path)) { path }
+
+        val switcherPath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt"
+        val mainPath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt"
+        val justLiftPath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt"
+        val graphPath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt"
+        val profilePath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt"
+        val settingsPath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt"
+        val mainViewModelPath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt"
+        val sheetPath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt"
+        val dialogsPath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt"
+        val listItemPath =
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt"
+
+        val switcher = source(switcherPath)
+        val main = source(mainPath)
+        val graph = source(graphPath)
+        val profile = source(profilePath)
+        val sheet = source(sheetPath)
+        val dialogs = source(dialogsPath)
+        val listItem = source(listItemPath)
+
+        listOf(
+            "profiles.setActiveProfile(",
+            "profiles.createAndActivateProfile(",
+            "profiles.reconcileActiveProfileContext(",
+        ).forEach { call ->
+            assertEquals(1, Regex(Regex.escape(call)).findAll(switcher).count(), call)
+        }
+
+        val directRepositoryCall = Regex(
+            """\b(?:profiles|profileRepository|userProfileRepository)\s*\.\s*""" +
+                """(?:setActiveProfile|createAndActivateProfile|reconcileActiveProfileContext)\s*\(""",
+        )
+        mapOf(
+            mainPath to main,
+            justLiftPath to source(justLiftPath),
+            graphPath to graph,
+            profilePath to profile,
+            settingsPath to source(settingsPath),
+            mainViewModelPath to source(mainViewModelPath),
+            sheetPath to sheet,
+            dialogsPath to dialogs,
+            listItemPath to listItem,
+        ).forEach { (path, text) ->
+            assertFalse(directRepositoryCall.containsMatchIn(text), path)
+        }
+
+        assertEquals(1, Regex("""\bProfileSwitcherSheet\s*\(""").findAll(main).count())
+        assertContains(main, "profileSwitcherViewModel.openSwitcher()")
+        assertContains(graph, "onOpenProfileSwitcher = onOpenProfileSwitcher")
+        assertContains(profile, "onOpenProfileSwitcher")
+        assertFalse(sheet.contains("UserProfileRepository"))
+        assertFalse(dialogs.contains("UserProfileRepository"))
+        assertFalse(listItem.contains("UserProfileRepository"))
+        assertFalse(listItem.contains("onLongClick"))
+        assertFalse(listItem.contains("combinedClickable"))
+    }
+
     private fun source(path: String): String = requireNotNull(readProjectFile(path)) { path }
 
     private fun functionSignature(source: String, name: String): String {
