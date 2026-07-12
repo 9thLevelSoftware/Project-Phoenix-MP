@@ -24,8 +24,9 @@
 - Every preference JSON number destined for a Kotlin `Int` must be an integer in `-2_147_483_648..2_147_483_647`; every number destined for a Kotlin `Float` must survive `Math.fround` as finite and must not turn a nonzero input into zero. Every narrower Float business predicate applies to both the original JavaScript number and the narrowed Float32 result, so rounding cannot admit an out-of-range wire value. JavaScript safe-integer validation is reserved for Kotlin `Long` revisions and rack timestamps.
 - Every preference string value and object key must be PostgreSQL-compatible Unicode scalar text: U+0000 and unpaired UTF-16 high/low surrogates are rejected recursively before any privileged client exists, while valid supplementary pairs are accepted. Mutation Unicode validation occurs per non-duplicate, in-limit section inside its local rejection boundary, after envelope-level raw-span integrity checks; one invalid section must not suppress valid siblings.
 - Preference timestamps use one strict timezone-bearing RFC3339/ISO-instant parser with explicit calendar, day, time, fraction, and offset validation. Mutation audit timestamps, RPC canonicals, and pull canonicals share it; canonical output is normalized with `toISOString()`.
-- Preference sections are sent only in preference-only pushes after an ordinary payload has sent `allProfiles`. They are never attached to workout/session batches.
-- Pull never creates, renames, deletes, or resurrects a local profile. Unknown `localProfileId` values are logged and ignored.
+- Mobile preference diagnostics use fixed category names only. Logs never print a raw profile id, remote section string, `ProfilePreferenceSectionKey`, exception message, JSON/string/numeric value, or payload fragment; trusted local section enums and sanitized HTTP status codes are allowed.
+- Preference sections are sent only after an ordinary payload has sent `allProfiles`. Each preference-only body is freshly constructed from `deviceId`, `platform`, `lastSync`, and `profilePreferenceSections`; it carries no active `profileId`, `profileName`, `allProfiles`, or ordinary entity data and is never attached to workout/session batches.
+- Pull never creates, renames, deletes, or resurrects a local profile. Unknown `localProfileId` values are ignored and reported only as a sanitized count/category; the raw id is never logged.
 - Direct `PUBLIC`, `anon`, and `authenticated` DML on `public.local_profile_preferences` is revoked. Remote mutation is Edge-only.
 - Edge code verifies the user JWT, derives `user_id` from `auth.getUser`, and uses a server-only service-role client with an explicit verified `user_id` predicate for every privileged query. Returned Auth errors with status 400/401/403 are definitive credential rejection (401); 429, 5xx, missing/other status, malformed results, and thrown/rejected auth calls are operational failures (sanitized 503 with name-only logging). The service-role client is never constructed on either path.
 - The complete line-ending-normalized Edge handoff artifact is sealed by a pinned SHA-256 literal in `BackendHandoffContractTest`, in addition to focused fragment/allowlist tests.
@@ -3756,8 +3757,8 @@ fun `malformed dirty document is reported and valid sibling remains syncable`() 
 private companion object {
     const val MAX_EXACT_JSON_INTEGER = 9_007_199_254_740_991L
     const val MIN_EXACT_JSON_INTEGER = -9_007_199_254_740_991L
-    const val MIN_RFC3339_EPOCH_MS = -62_135_596_800_000L
-    const val MAX_RFC3339_EPOCH_MS = 253_402_300_799_999L
+    const val MIN_RFC3339_EPOCH_MILLIS = -62_135_596_800_000L
+    const val MAX_RFC3339_EPOCH_MILLIS = 253_402_300_799_999L
 }
 
 private fun forceDirtyCoreRevision(profileId: String, revision: Long) {
@@ -4049,7 +4050,7 @@ fun `Postgres incompatible text and normalized local only keys dead letter only 
 }
 ```
 
-Add boundary cases using the retained driver for both wrapper fields that Task 5 otherwise assumes are total. For each section timestamp column, `MIN_RFC3339_EPOCH_MS` and `MAX_RFC3339_EPOCH_MS` remain valid and serialize as four-digit-year RFC3339 instants; either adjacent millisecond is excluded from `valid` with only `INVALID_CLIENT_MODIFIED_AT`. Insert profiles with a blank id, an id containing U+0000, and an id containing a lone surrogate; every dirty section for those rows is excluded with only `INVALID_PROFILE_ID`, and neither the id nor a sentinel substring appears in any reason. A valid profile/section beside each invalid case remains syncable.
+Add boundary cases using the retained driver for both wrapper fields that Task 5 otherwise assumes are total. For each section timestamp column, `MIN_RFC3339_EPOCH_MILLIS` and `MAX_RFC3339_EPOCH_MILLIS` remain valid and serialize as four-digit-year RFC3339 instants; either adjacent millisecond is excluded from `valid` with only `INVALID_CLIENT_MODIFIED_AT`. Insert profiles with a blank id, an id containing U+0000, and an id containing a lone surrogate; every dirty section for those rows is excluded with only `INVALID_PROFILE_ID`, and neither the id nor a sentinel substring appears in any reason. A valid profile/section beside each invalid case remains syncable.
 
 The fixture's `createProfile` calls the existing generated `insertProfile` query, and its retained in-memory `driver` is used only for boundary states that the public foundation repository cannot create. Do not seed a negative `core_server_revision`: schema 43's `CHECK (core_server_revision >= 0)` correctly makes that database state impossible. Keep the codec's negative-base-revision branch as defense in depth for non-database callers. Import `jsonArray`, `jsonObject`, `jsonPrimitive`, `int`, `long`, and `boolean`; assertions inspect JSON elements, not stringified nested JSON. “Dead letter for the current generation” has an executable meaning: the issue carries that `localGeneration`, the section remains dirty, every snapshot excludes it from `valid` (so no wire DTO, chunk, or RPC retry can be created), and it remains diagnosable in `unsyncable`. A subsequent local edit increments the generation and is validated afresh. No value is rounded, wrapped, replacement-character-normalized, coerced to a string, or sent repeatedly.
 
@@ -4762,6 +4763,8 @@ internal class ProfilePreferenceSyncCodec {
     companion object {
         const val MAX_EXACT_JSON_INTEGER = 9_007_199_254_740_991L
         const val MIN_EXACT_JSON_INTEGER = -9_007_199_254_740_991L
+        const val MIN_RFC3339_EPOCH_MILLIS = -62_135_596_800_000L
+        const val MAX_RFC3339_EPOCH_MILLIS = 253_402_300_799_999L
     }
 
     private fun exactJsonIntegerIssue(value: Long): ProfilePreferenceSyncIssueReason? =
@@ -4876,7 +4879,7 @@ Before constructing a `ProfilePreferenceSectionSyncDto`, apply these checks in o
 
 1. Before section decoding, require `row.profile_id.isNotBlank()` and require `profilePreferenceWireSafetyViolation(JsonPrimitive(row.profile_id)) == null`. A blank or PostgreSQL-incompatible id yields `INVALID_PROFILE_ID` for every dirty section in that row; no DTO is constructed. The issue key may retain the id for local repair identity, but no later log may print that raw key.
 2. A negative base revision is `INVALID_LOCAL_DOCUMENT`; a base revision outside the exact JSON integer interval is `UNREPRESENTABLE_JSON_INTEGER`.
-3. Require the section's `*_updated_at` in `MIN_RFC3339_EPOCH_MS..MAX_RFC3339_EPOCH_MS`; otherwise use `INVALID_CLIENT_MODIFIED_AT`. These inclusive bounds are exactly `0001-01-01T00:00:00.000Z` through `9999-12-31T23:59:59.999Z`, keeping Task 5's `Instant.fromEpochMilliseconds(...).toString()` within the Edge four-digit-year contract.
+3. Require the section's `*_updated_at` in `MIN_RFC3339_EPOCH_MILLIS..MAX_RFC3339_EPOCH_MILLIS`; otherwise use `INVALID_CLIENT_MODIFIED_AT`. These inclusive bounds are exactly `0001-01-01T00:00:00.000Z` through `9999-12-31T23:59:59.999Z`, keeping Task 5's `Instant.fromEpochMilliseconds(...).toString()` within the Edge four-digit-year contract.
 4. For RACK, every signed `createdAt` and `updatedAt` must be in the exact JSON integer interval. Repeated rack names remain valid; duplicate IDs remain invalid through the foundation validator.
 5. Before `row.led_color_scheme_id.toInt()`, require the stored `Long` to be in `Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()`; otherwise use `INVALID_INT32`. Schema 43 already excludes negative values, but the codec performs the complete conversion guard.
 6. Build the exact typed payload and call `profilePreferenceWireSafetyViolation`. Map `INVALID_TEXT_TREE` and `LOCAL_ONLY_KEY` to their corresponding sync issue reason. This must happen in Task 4 so Task 5's DTO constructor cannot throw while mapping the full valid snapshot.
@@ -5209,17 +5212,17 @@ fun hasCanonicalDivergence(
 }
 ```
 
-Before `applyPulledWhenClean`, read the row through `selectProfilePreferenceSyncRow` and use the decoded columns' normalized typed payload. Numeric token spelling (`80` versus `80.0`), omitted fields that decode to the same version-1 defaults, and object key order must not count as divergence. A null current normalized payload means the clean local row is malformed and therefore differs from a valid canonical. Log only the profile/section key for a true invariant repair, then apply the canonical query:
+Before `applyPulledWhenClean`, read the row through `selectProfilePreferenceSyncRow` and use the decoded columns' normalized typed payload. Numeric token spelling (`80` versus `80.0`), omitted fields that decode to the same version-1 defaults, and object key order must not count as divergence. A null current normalized payload means the clean local row is malformed and therefore differs from a valid canonical. Log only the trusted section enum for a true invariant repair, then apply the canonical query:
 
 ```kotlin
 if (codec.hasCanonicalDivergence(row, columns)) {
     Logger.w("ProfilePreferenceSync") {
-        "Repairing equal-revision canonical divergence for ${columns.key}"
+        "Repairing equal-revision canonical divergence section=${columns.section.name}"
     }
 }
 ```
 
-Never log either payload, decoder exception messages, or invalid values.
+Never log the profile id/key, either payload, decoder exception messages, or invalid values.
 
 Implement the three dispatch helpers as exhaustive `when (columns.value)` calls, using the typed value carried by `DecodedProfilePreferenceColumns`:
 
@@ -5253,6 +5256,7 @@ git commit -m "feat(sync): add profile preference sync repository"
 
 **Files:**
 - Read: `docs/backend-handoff/profile-preference-byte-goldens.json`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncAdapter.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalPullAdapter.kt`
@@ -5262,12 +5266,12 @@ git commit -m "feat(sync): add profile preference sync repository"
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncPlannerTest.kt`
 
 **Interfaces:**
-- Consumes: Task 3's internal/wire DTOs and Task 4's strict sync codec.
-- Produces: valid mutation envelopes, validated canonicals, deterministic request chunks, and unsyncable-section diagnostics.
+- Consumes: Task 3's internal/wire DTOs and Task 4's strict sync codec. A section in Task 4's `valid` snapshot already has a nonblank PostgreSQL-compatible profile id, an RFC3339-representable client timestamp, an exact JSON-number revision, and a typed wire-safe payload.
+- Produces: valid mutation envelopes, canonicals accepted through Task 4's `decodeCanonical` boundary, deterministic request chunks that never exceed either byte cap, and fixed-category unsyncable-section diagnostics.
 
 - [ ] **Step 1: Write failing adapter tests**
 
-Create tests that assert the timestamp/revision/generation boundary and strict pull validation:
+Create tests that assert the timestamp/revision/generation boundary and strict pull validation. Use only fixed `ProfilePreferenceSyncIssueReason.name` values in invalid results:
 
 ```kotlin
 @Test
@@ -5287,9 +5291,10 @@ fun `push adapter maps audit timestamp but keeps generation off wire`() {
 
     val prepared = PortalSyncAdapter.toPortalProfilePreferenceMutation(source)
 
-    assertEquals(9, prepared.sentLocalGeneration)
+    assertEquals(9L, prepared.sentLocalGeneration)
     assertEquals(9_007_199_254_740_991L, prepared.wire.baseRevision)
     assertEquals("CORE", prepared.wire.section)
+    assertEquals("2026-07-11T12:00:00Z", prepared.wire.clientModifiedAt)
     val encoded = PortalWireJson.encodeToJsonElement(
         PortalProfilePreferenceSectionMutationDto.serializer(),
         prepared.wire,
@@ -5309,20 +5314,79 @@ fun `pull adapter rejects document version mismatch without fallback`() {
         section = "VBT",
         documentVersion = 2,
         serverRevision = 3,
-        serverUpdatedAt = "2026-07-11T12:00:00Z",
+        serverUpdatedAt = "2026-07-11T12:00:00.000Z",
         payload = buildJsonObject {
             put("vbtEnabled", true)
             putJsonObject("preferences") { put("version", 1) }
         },
     )
 
-    assertIs<ProfilePreferenceCanonicalDecodeResult.Invalid>(
+    val invalid = assertIs<ProfilePreferenceCanonicalDecodeResult.Invalid>(
         PortalPullAdapter.toCanonicalProfilePreferenceSection(wire),
     )
+    assertEquals(ProfilePreferenceSyncIssueReason.UNSUPPORTED_DOCUMENT_VERSION.name, invalid.reason)
+}
+
+private fun coreCanonicalWire(
+    revision: Long = 3,
+    localProfileId: String = "profile-a",
+    serverUpdatedAt: String = "2026-07-11T12:00:00.000Z",
+) = PortalProfilePreferenceSectionCanonicalDto(
+    localProfileId = localProfileId,
+    section = "CORE",
+    documentVersion = 1,
+    serverRevision = revision,
+    serverUpdatedAt = serverUpdatedAt,
+    payload = buildJsonObject {
+        put("bodyWeightKg", 82.5)
+        put("weightUnit", "KG")
+        put("weightIncrement", 0.5)
+    },
+)
+
+@Test
+fun `pull adapter enforces exact canonical revision interval`() {
+    assertIs<ProfilePreferenceCanonicalDecodeResult.Valid>(
+        PortalPullAdapter.toCanonicalProfilePreferenceSection(
+            coreCanonicalWire(revision = 9_007_199_254_740_991L),
+        ),
+    )
+
+    listOf(-1L, 9_007_199_254_740_992L).forEach { revision ->
+        val invalid = assertIs<ProfilePreferenceCanonicalDecodeResult.Invalid>(
+            PortalPullAdapter.toCanonicalProfilePreferenceSection(
+                coreCanonicalWire(revision = revision),
+            ),
+        )
+        assertEquals(ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_REVISION.name, invalid.reason)
+    }
+}
+
+@Test
+fun `pull adapter rejects wrapper identity timestamp and section with category only`() {
+    val sentinel = "SECRET_REMOTE_SENTINEL"
+    val cases = listOf(
+        coreCanonicalWire(localProfileId = " ") to
+            ProfilePreferenceSyncIssueReason.INVALID_PROFILE_ID,
+        coreCanonicalWire(localProfileId = "$sentinel\u0000") to
+            ProfilePreferenceSyncIssueReason.INVALID_PROFILE_ID,
+        coreCanonicalWire(serverUpdatedAt = "+10000-01-01T00:00:00.000Z") to
+            ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_TIMESTAMP,
+        coreCanonicalWire().copy(section = sentinel) to
+            ProfilePreferenceSyncIssueReason.UNSUPPORTED_SECTION,
+    )
+
+    cases.forEach { (wire, expectedReason) ->
+        val invalid = assertIs<ProfilePreferenceCanonicalDecodeResult.Invalid>(
+            PortalPullAdapter.toCanonicalProfilePreferenceSection(wire),
+        )
+        assertEquals(expectedReason.name, invalid.reason)
+        assertFalse(sentinel in invalid.reason)
+    }
 }
 ```
 
-Place the first test in `PortalSyncAdapterProfilePreferencesTest.kt` and the second in `PortalPullAdapterProfilePreferencesTest.kt`, with the required Kotlin test and JSON imports.
+Place the push test in `PortalSyncAdapterProfilePreferencesTest.kt` and every pull fixture/test in `PortalPullAdapterProfilePreferencesTest.kt`, with the required Kotlin test and JSON imports. The `-1/MAX/MAX+1` table is mandatory: Task 7 must never receive an unsafe revision in a nominally valid canonical.
 
 - [ ] **Step 2: Write failing planner boundary tests**
 
@@ -5343,6 +5407,7 @@ fun `planner isolates oversized section and keeps valid siblings`() {
     assertEquals(1, plan.unsyncable.size)
     assertEquals(ProfilePreferenceSectionName.RACK, plan.unsyncable.single().key.section)
     assertEquals(1L, plan.unsyncable.single().localGeneration)
+    assertEquals(ProfilePreferenceSyncIssueReason.SECTION_TOO_LARGE.name, plan.unsyncable.single().reason)
     assertEquals(listOf(ProfilePreferenceSectionName.CORE), plan.chunks.single().ledger.keys.map { it.section })
 }
 
@@ -5363,11 +5428,7 @@ fun `every planned request stays within preference request cap`() {
 
 @Test
 fun `shared raw byte goldens pin scanner spans and inclusive boundaries`() {
-    val recipes = PortalWireJson.decodeFromString<ProfilePreferenceByteGoldenRecipes>(
-        assertNotNull(
-            readProjectFile("docs/backend-handoff/profile-preference-byte-goldens.json"),
-        ),
-    )
+    val recipes = byteGoldenRecipes()
     assertEquals(1, recipes.version)
 
     recipes.sectionTargetBytes.forEach { target ->
@@ -5420,7 +5481,8 @@ fun `shared raw byte goldens pin scanner spans and inclusive boundaries`() {
             target == 524_289,
             completeRaw.encodeToByteArray().size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES,
         )
-        assertEquals(1, scanProfilePreferenceElementSpans(completeRaw).size)
+        val span = scanProfilePreferenceElementSpans(completeRaw).single()
+        assertEquals(sectionRaw, completeRaw.substring(span.start, span.endExclusive))
         val decodedRequest = PortalWireJson.decodeFromString(
             PortalSyncPayload.serializer(),
             completeRaw,
@@ -5433,7 +5495,187 @@ fun `shared raw byte goldens pin scanner spans and inclusive boundaries`() {
 }
 ```
 
-Import `readProjectFile`, `kotlinx.serialization.Serializable`, `JsonArray`, and `assertNotNull`. Add the serializable `ProfilePreferenceByteGoldenRecipes` shape with fields matching the exact Task 2 artifact, plus `fillAsciiPadding(template, marker, targetBytes)`. The helper requires exactly one marker, removes it to measure the UTF-8 fixed bytes, requires a nonnegative padding count, inserts only ASCII `x`, and asserts the result is exactly `targetBytes`. Add these deterministic mutation helpers in the same test file:
+The shared raw artifact is a scanner/decoder oracle. Because the production serializer uses `encodeDefaults = true`, add separate tests over the real `encodePortalSyncPayload` output; do not claim that the hand-authored request template is the serializer's byte output:
+
+```kotlin
+@Test
+fun `planner enforces actual reencoded section boundaries`() {
+    val recipes = byteGoldenRecipes()
+    recipes.sectionTargetBytes.forEach { target ->
+        val raw = fillAsciiPadding(
+            recipes.sectionRawTemplate,
+            recipes.paddingMarker,
+            target,
+        )
+        val wire = PortalWireJson.decodeFromString(
+            PortalProfilePreferenceSectionMutationDto.serializer(),
+            raw,
+        )
+        val section = ProfilePreferenceSectionName.valueOf(wire.section)
+        val prepared = PreparedProfilePreferenceMutation(
+            wire = wire,
+            key = ProfilePreferenceSectionKey(wire.localProfileId, section),
+            sentLocalGeneration = 1,
+        )
+        val reencoded = encodePortalSyncPayload(minimalPayload(listOf(prepared)))
+        val actualBytes = reencoded.preferenceElementByteCount(
+            reencoded.preferenceElementSpans.single(),
+        )
+        assertEquals(target, actualBytes)
+
+        val plan = planProfilePreferencePushChunks(basePayload(), listOf(prepared))
+        if (target <= MAX_PROFILE_PREFERENCE_SECTION_BYTES) {
+            assertTrue(plan.unsyncable.isEmpty())
+            assertEquals(listOf(prepared.key), plan.chunks.single().ledger.keys.toList())
+        } else {
+            assertTrue(plan.chunks.isEmpty())
+            assertEquals(
+                ProfilePreferenceSyncIssueReason.SECTION_TOO_LARGE.name,
+                plan.unsyncable.single().reason,
+            )
+        }
+    }
+}
+
+@Test
+fun `actual encoder request boundary is inclusive and overflow is split`() {
+    listOf(MAX_PROFILE_PREFERENCE_REQUEST_BYTES, MAX_PROFILE_PREFERENCE_REQUEST_BYTES + 1)
+        .forEach { target ->
+            val mutations = requestSizedMutations(target)
+            val encoded = encodePortalSyncPayload(minimalPayload(mutations))
+            assertEquals(target, encoded.rawBytes.size)
+            assertTrue(
+                encoded.preferenceElementSpans.all { span ->
+                    encoded.preferenceElementByteCount(span) <=
+                        MAX_PROFILE_PREFERENCE_SECTION_BYTES
+                },
+            )
+
+            val plan = planProfilePreferencePushChunks(basePayload(), mutations)
+            assertTrue(plan.unsyncable.isEmpty())
+            if (target == MAX_PROFILE_PREFERENCE_REQUEST_BYTES) {
+                assertEquals(1, plan.chunks.size)
+                assertEquals(target, encodePortalSyncPayload(plan.chunks.single().payload).rawBytes.size)
+            } else {
+                assertTrue(plan.chunks.size > 1)
+            }
+            plan.chunks.forEach { chunk ->
+                assertTrue(
+                    encodePortalSyncPayload(chunk.payload).rawBytes.size <=
+                        MAX_PROFILE_PREFERENCE_REQUEST_BYTES,
+                )
+                assertEquals(
+                    chunk.payload.profilePreferenceSections.orEmpty().size,
+                    chunk.ledger.size,
+                )
+            }
+        }
+}
+
+@Test
+fun `one item request overflow is diagnosed and never emitted`() {
+    val base = PortalSyncPayload(
+        deviceId = "x".repeat(MAX_PROFILE_PREFERENCE_REQUEST_BYTES),
+        lastSync = 0,
+    )
+    val mutation = preparedMutation("profile-a", ProfilePreferenceSectionName.CORE, 32)
+
+    val plan = planProfilePreferencePushChunks(base, listOf(mutation))
+
+    assertTrue(plan.chunks.isEmpty())
+    assertEquals(ProfilePreferenceSyncIssueReason.REQUEST_TOO_LARGE.name, plan.unsyncable.single().reason)
+}
+
+@Test
+fun `planner excludes every duplicate key and preserves unique sibling`() {
+    val first = preparedMutation("profile-a", ProfilePreferenceSectionName.CORE, 32)
+    val second = first.copy(sentLocalGeneration = 2)
+    val sibling = preparedMutation("profile-b", ProfilePreferenceSectionName.RACK, 32)
+
+    val plan = planProfilePreferencePushChunks(basePayload(), listOf(second, sibling, first))
+
+    val duplicateIssues = plan.unsyncable.filter { it.key == first.key }
+    assertEquals(listOf(1L, 2L), duplicateIssues.map { it.localGeneration })
+    assertTrue(
+        duplicateIssues.all {
+            it.reason == ProfilePreferenceSyncIssueReason.DUPLICATE_SECTION.name
+        },
+    )
+    assertEquals(listOf(sibling.key), plan.chunks.single().ledger.keys.toList())
+}
+
+@Test
+fun `planner is permutation deterministic and strips profile metadata`() {
+    val sentinel = "SECRET_PROFILE_SENTINEL"
+    val base = basePayload().copy(
+        profileId = "$sentinel\u0000",
+        profileName = sentinel,
+        allProfiles = listOf(LocalProfileDto(sentinel, sentinel, 0)),
+    )
+    val mutations = List(6) { index ->
+        preparedMutation("profile-$index", ProfilePreferenceSectionName.RACK, 100_000)
+    }
+
+    val forward = planProfilePreferencePushChunks(base, mutations)
+    val reversed = planProfilePreferencePushChunks(base, mutations.reversed())
+
+    assertEquals(
+        forward.chunks.map { encodePortalSyncPayload(it.payload).raw },
+        reversed.chunks.map { encodePortalSyncPayload(it.payload).raw },
+    )
+    assertEquals(
+        forward.chunks.map { it.ledger.entries.toList() },
+        reversed.chunks.map { it.ledger.entries.toList() },
+    )
+    forward.chunks.forEach { chunk ->
+        assertNull(chunk.payload.profileId)
+        assertNull(chunk.payload.profileName)
+        assertNull(chunk.payload.allProfiles)
+        assertFalse(sentinel in encodePortalSyncPayload(chunk.payload).raw)
+        assertEquals(chunk.payload.profilePreferenceSections.orEmpty().size, chunk.ledger.size)
+    }
+}
+
+@Test
+fun `scanner decodes escaped top level key and ignores nested decoy`() {
+    val escapedKey = "\\u0070rofilePreferenceSections"
+    val element = """{"text":"brackets ] } , [ { and quote \" and slash \\"}"""
+    val raw = """{"nested":{"profilePreferenceSections":[0]},"$escapedKey":[$element]}"""
+
+    val span = scanProfilePreferenceElementSpans(raw).single()
+
+    assertEquals(element, raw.substring(span.start, span.endExclusive))
+}
+
+@Test
+fun `scanner rejects escaped duplicate and malformed structure with fixed messages`() {
+    val escapedKey = "\\u0070rofilePreferenceSections"
+    val duplicate = """{"profilePreferenceSections":[],"$escapedKey":[]}"""
+    assertEquals(
+        "DUPLICATE_PROFILE_PREFERENCE_SECTIONS",
+        assertFailsWith<IllegalArgumentException> {
+            scanProfilePreferenceElementSpans(duplicate)
+        }.message,
+    )
+
+    val sentinel = "SECRET_SCAN_SENTINEL"
+    mapOf(
+        "[]" to "INVALID_JSON_ROOT",
+        """{"profilePreferenceSections":[}""" to "INVALID_JSON_STRUCTURE",
+        """{"profilePreferenceSections":[]} $sentinel""" to "TRAILING_JSON_DATA",
+    ).forEach { (raw, expected) ->
+        val error = assertFailsWith<IllegalArgumentException> {
+            scanProfilePreferenceElementSpans(raw)
+        }
+        assertEquals(expected, error.message)
+        assertFalse(sentinel in error.message.orEmpty())
+    }
+    assertTrue(scanProfilePreferenceElementSpans("""{"other":[]}""").isEmpty())
+    assertTrue(scanProfilePreferenceElementSpans("""{"profilePreferenceSections":[]}""").isEmpty())
+}
+```
+
+Import `readProjectFile`, `kotlinx.serialization.Serializable`, `JsonArray`, `assertFailsWith`, `assertNotNull`, and `assertNull`. Add the serializable `ProfilePreferenceByteGoldenRecipes` shape with fields matching the exact Task 2 artifact, plus `fillAsciiPadding(template, marker, targetBytes)`. The helper requires exactly one marker, removes it to measure the UTF-8 fixed bytes, requires a nonnegative padding count, inserts only ASCII `x`, and asserts the result is exactly `targetBytes`. Add these deterministic mutation helpers in the same test file:
 
 ```kotlin
 private fun preparedMutation(
@@ -5454,6 +5696,40 @@ private fun preparedMutation(
         key = key,
         sentLocalGeneration = 1,
     )
+}
+
+private fun byteGoldenRecipes() =
+    PortalWireJson.decodeFromString<ProfilePreferenceByteGoldenRecipes>(
+        assertNotNull(
+            readProjectFile("docs/backend-handoff/profile-preference-byte-goldens.json"),
+        ),
+    )
+
+private fun minimalPayload(
+    mutations: List<PreparedProfilePreferenceMutation>,
+) = PortalSyncPayload(
+    deviceId = "device",
+    platform = "android",
+    lastSync = 0,
+    profilePreferenceSections = mutations.map { it.wire },
+)
+
+private fun requestSizedMutations(targetBytes: Int): List<PreparedProfilePreferenceMutation> {
+    val seeds = List(3) { index ->
+        preparedMutation("profile-$index", ProfilePreferenceSectionName.RACK, payloadChars = 0)
+    }
+    val fixedBytes = encodePortalSyncPayload(minimalPayload(seeds)).rawBytes.size
+    val paddingBytes = targetBytes - fixedBytes
+    require(paddingBytes >= 0)
+    return seeds.mapIndexed { index, seed ->
+        val padding = paddingBytes / seeds.size +
+            if (index < paddingBytes % seeds.size) 1 else 0
+        seed.copy(
+            wire = seed.wire.copy(
+                payload = buildJsonObject { put("padding", "x".repeat(padding)) },
+            ),
+        )
+    }
 }
 
 private fun basePayload() = PortalSyncPayload(
@@ -5505,9 +5781,33 @@ internal fun encodePortalSyncPayload(payload: PortalSyncPayload): EncodedPortalS
 }
 ```
 
-Implement `scanProfilePreferenceElementSpans(raw)` as a small index scanner over the complete encoded root object. Decode top-level property-name escapes, require at most one `profilePreferenceSections` key, recursively skip JSON values while tracking object/array nesting, and scan strings by honoring every backslash escape so quotes/brackets inside strings never change structure. For the preference array, pin each element's start after leading JSON whitespace and its exclusive end immediately after the value but before separator whitespace/comma/closing bracket. Require matching delimiters, no trailing non-whitespace, and an array span count equal to the typed list. Measure only `raw.substring(start, endExclusive).encodeToByteArray()`; neither this helper nor its callers may reconstruct an element with `JSON.stringify`, `toString`, or a second serialization. The shared decimal/exponent/escape/multibyte goldens are the executable scanner oracle.
+Implement `scanProfilePreferenceElementSpans(raw)` as a small index scanner over the complete encoded root object. Decode every valid JSON escape in top-level property names before comparing them, require at most one decoded `profilePreferenceSections` key, recursively skip JSON values while tracking object/array nesting, and scan strings by honoring every backslash escape so quotes, commas, and brackets inside strings never change structure. A nested property with the same name is a decoy, not the top-level field. For the preference array, pin each element's start after leading JSON whitespace and its exclusive end immediately after the value but before separator whitespace/comma/closing bracket. Require matching delimiters, no trailing non-whitespace, and an array span count equal to the typed list.
+
+All scanner failures are `IllegalArgumentException`s with one of these fixed messages and no raw substring, property value, or exception message appended: `INVALID_JSON_ROOT`, `INVALID_JSON_STRUCTURE`, `INVALID_PROFILE_PREFERENCE_ARRAY`, `DUPLICATE_PROFILE_PREFERENCE_SECTIONS`, or `TRAILING_JSON_DATA`. Measure only `raw.substring(start, endExclusive).encodeToByteArray()`; neither this helper nor its callers may reconstruct an element with `JSON.stringify`, `toString`, or a second serialization. The shared decimal/exponent/escape/multibyte goldens and the escaped-key/nested-decoy tests are the executable scanner oracle.
 
 - [ ] **Step 5: Implement the push and pull adapters**
+
+First extend Task 4's category enum in `ProfilePreferenceSyncCodec.kt`; this is the complete enum after Task 5. Keep the Task 4 companion's `MIN_RFC3339_EPOCH_MILLIS` and `MAX_RFC3339_EPOCH_MILLIS` constants at `-62_135_596_800_000L` and `253_402_300_799_999L` so push and pull share the same four-digit-year interval:
+
+```kotlin
+internal enum class ProfilePreferenceSyncIssueReason {
+    INVALID_PROFILE_ID,
+    INVALID_LOCAL_DOCUMENT,
+    INVALID_CLIENT_MODIFIED_AT,
+    UNREPRESENTABLE_JSON_INTEGER,
+    INVALID_INT32,
+    INVALID_TEXT_TREE,
+    LOCAL_ONLY_WIRE_KEY,
+    UNSUPPORTED_SECTION,
+    UNSUPPORTED_DOCUMENT_VERSION,
+    INVALID_CANONICAL_PAYLOAD,
+    INVALID_CANONICAL_REVISION,
+    INVALID_CANONICAL_TIMESTAMP,
+    SECTION_TOO_LARGE,
+    REQUEST_TOO_LARGE,
+    DUPLICATE_SECTION,
+}
+```
 
 Add this push mapper to `PortalSyncAdapter`:
 
@@ -5530,50 +5830,52 @@ fun toPortalProfilePreferenceMutation(
 )
 ```
 
-Add this pull mapper to `PortalPullAdapter`; the stateless Task 4 sync codec validates the exact section wrapper without replacing invalid content with defaults:
+Add this pull mapper to `PortalPullAdapter`. Parse the wrapper identity and timestamp first, construct one candidate, and then call Task 4's stronger `decodeCanonical` boundary so document, payload, and exact JSON revision checks cannot drift. The repository repeats the same decode before SQL mutation as defense in depth:
 
 ```kotlin
 fun toCanonicalProfilePreferenceSection(
     dto: PortalProfilePreferenceSectionCanonicalDto,
 ): ProfilePreferenceCanonicalDecodeResult {
-    val section = ProfilePreferenceSectionName.entries.firstOrNull { it.name == dto.section }
-        ?: return ProfilePreferenceCanonicalDecodeResult.Invalid(
-            dto.localProfileId,
-            dto.section,
-            "unsupported section",
+    fun invalid(reason: ProfilePreferenceSyncIssueReason) =
+        ProfilePreferenceCanonicalDecodeResult.Invalid(
+            localProfileId = dto.localProfileId,
+            section = dto.section,
+            reason = reason.name,
         )
+
+    if (dto.localProfileId.isBlank() ||
+        profilePreferenceWireSafetyViolation(JsonPrimitive(dto.localProfileId)) != null
+    ) {
+        return invalid(ProfilePreferenceSyncIssueReason.INVALID_PROFILE_ID)
+    }
+    val section = ProfilePreferenceSectionName.entries.firstOrNull { it.name == dto.section }
+        ?: return invalid(ProfilePreferenceSyncIssueReason.UNSUPPORTED_SECTION)
     val updatedAt = runCatching {
         kotlin.time.Instant.parse(dto.serverUpdatedAt).toEpochMilliseconds()
-    }.getOrElse {
-        return ProfilePreferenceCanonicalDecodeResult.Invalid(
-            dto.localProfileId,
-            dto.section,
-            "invalid serverUpdatedAt",
-        )
+    }.getOrNull()
+    if (updatedAt == null ||
+        updatedAt !in ProfilePreferenceSyncCodec.MIN_RFC3339_EPOCH_MILLIS..
+            ProfilePreferenceSyncCodec.MAX_RFC3339_EPOCH_MILLIS
+    ) {
+        return invalid(ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_TIMESTAMP)
     }
-    val validation = ProfilePreferenceSyncCodec().validateCanonicalPayload(
-        section = section,
+
+    val candidate = CanonicalProfilePreferenceSection(
+        key = ProfilePreferenceSectionKey(dto.localProfileId, section),
         documentVersion = dto.documentVersion,
+        serverRevision = dto.serverRevision,
+        serverUpdatedAtEpochMs = updatedAt,
         payload = dto.payload,
     )
-    if (!validation.isValid) {
-        return ProfilePreferenceCanonicalDecodeResult.Invalid(
-            dto.localProfileId,
-            dto.section,
-            validation.reason,
-        )
+    return when (val decoded = ProfilePreferenceSyncCodec().decodeCanonical(candidate)) {
+        is ProfilePreferenceCanonicalColumnsResult.Invalid -> invalid(decoded.reason)
+        is ProfilePreferenceCanonicalColumnsResult.Valid ->
+            ProfilePreferenceCanonicalDecodeResult.Valid(candidate)
     }
-    return ProfilePreferenceCanonicalDecodeResult.Valid(
-        CanonicalProfilePreferenceSection(
-            key = ProfilePreferenceSectionKey(dto.localProfileId, section),
-            documentVersion = dto.documentVersion,
-            serverRevision = dto.serverRevision,
-            serverUpdatedAtEpochMs = updatedAt,
-            payload = dto.payload,
-        ),
-    )
 }
 ```
+
+Import `kotlinx.serialization.json.JsonPrimitive` in `PortalPullAdapter.kt`. Do not catch or retain decoder exception messages; every invalid result carries only an enum name.
 
 - [ ] **Step 6: Implement deterministic section/request chunking**
 
@@ -5581,8 +5883,6 @@ Create `ProfilePreferenceSyncPlanner.kt`:
 
 ```kotlin
 package com.devil.phoenixproject.data.sync
-
-import kotlinx.serialization.encodeToString
 
 internal const val MAX_PROFILE_PREFERENCE_SECTION_BYTES = 256 * 1024
 internal const val MAX_PROFILE_PREFERENCE_REQUEST_BYTES = 512 * 1024
@@ -5601,83 +5901,117 @@ internal fun planProfilePreferencePushChunks(
     basePayload: PortalSyncPayload,
     mutations: List<PreparedProfilePreferenceMutation>,
 ): ProfilePreferencePushPlan {
-    fun encodedPayload(items: List<PreparedProfilePreferenceMutation>): PortalSyncPayload =
-        basePayload.copy(
-            sessions = emptyList(),
-            telemetry = emptyList(),
-            routines = emptyList(),
-            deletedRoutineIds = emptyList(),
-            cycles = emptyList(),
-            deletedCycleIds = emptyList(),
-            rpgAttributes = null,
-            badges = emptyList(),
-            gamificationStats = null,
-            phaseStatistics = emptyList(),
-            exerciseSignatures = emptyList(),
-            assessments = emptyList(),
-            customExercises = emptyList(),
-            externalActivities = emptyList(),
-            personalRecords = emptyList(),
-            allProfiles = null,
-            profilePreferenceSections = items.map { it.wire },
-        )
-    val sorted = mutations.sortedWith(
-        compareBy<PreparedProfilePreferenceMutation>({ it.key.localProfileId }, { it.key.section.ordinal }),
+    fun preferencePayload(items: List<PreparedProfilePreferenceMutation>) = PortalSyncPayload(
+        deviceId = basePayload.deviceId,
+        platform = basePayload.platform,
+        lastSync = basePayload.lastSync,
+        profilePreferenceSections = items.map { it.wire },
     )
+
+    val sorted = mutations.sortedWith(
+        compareBy<PreparedProfilePreferenceMutation>(
+            { it.key.localProfileId },
+            { it.key.section.ordinal },
+            { it.sentLocalGeneration },
+        ),
+    )
+    val duplicateKeys = sorted.groupingBy { it.key }
+        .eachCount()
+        .filterValues { it > 1 }
+        .keys
     val valid = mutableListOf<PreparedProfilePreferenceMutation>()
     val issues = mutableListOf<ProfilePreferenceSyncIssue>()
+
     sorted.forEach { mutation ->
-        val oneElement = encodePortalSyncPayload(encodedPayload(listOf(mutation)))
-        val bytes = oneElement.preferenceElementByteCount(
-            oneElement.preferenceElementSpans.single(),
-        )
-        if (bytes > MAX_PROFILE_PREFERENCE_SECTION_BYTES) {
+        if (mutation.key in duplicateKeys) {
             issues += ProfilePreferenceSyncIssue(
                 key = mutation.key,
                 localGeneration = mutation.sentLocalGeneration,
-                reason = "section exceeds 262144 encoded bytes",
+                reason = ProfilePreferenceSyncIssueReason.DUPLICATE_SECTION.name,
             )
-        } else {
-            valid += mutation
+            return@forEach
         }
+
+        val oneElement = encodePortalSyncPayload(preferencePayload(listOf(mutation)))
+        val sectionBytes = oneElement.preferenceElementByteCount(
+            oneElement.preferenceElementSpans.single(),
+        )
+        val reason = when {
+            sectionBytes > MAX_PROFILE_PREFERENCE_SECTION_BYTES ->
+                ProfilePreferenceSyncIssueReason.SECTION_TOO_LARGE
+            oneElement.rawBytes.size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES ->
+                ProfilePreferenceSyncIssueReason.REQUEST_TOO_LARGE
+            else -> null
+        }
+        if (reason != null) {
+            issues += ProfilePreferenceSyncIssue(
+                key = mutation.key,
+                localGeneration = mutation.sentLocalGeneration,
+                reason = reason.name,
+            )
+            return@forEach
+        }
+        valid += mutation
     }
 
     val chunks = mutableListOf<ProfilePreferencePushChunk>()
     var current = mutableListOf<PreparedProfilePreferenceMutation>()
     fun emit() {
         if (current.isEmpty()) return
+        val payload = preferencePayload(current)
+        val encoded = encodePortalSyncPayload(payload)
+        check(encoded.rawBytes.size <= MAX_PROFILE_PREFERENCE_REQUEST_BYTES) {
+            "PROFILE_PREFERENCE_PLANNER_OVERSIZED_REQUEST"
+        }
+        val ledger = current.associate { it.key to it.sentLocalGeneration }
+        check(ledger.size == current.size &&
+            ledger.size == payload.profilePreferenceSections.orEmpty().size
+        ) {
+            "PROFILE_PREFERENCE_LEDGER_CARDINALITY_MISMATCH"
+        }
         chunks += ProfilePreferencePushChunk(
-            payload = encodedPayload(current),
-            ledger = current.associate { it.key to it.sentLocalGeneration },
+            payload = payload,
+            ledger = ledger,
         )
         current = mutableListOf()
     }
 
     valid.forEach { mutation ->
         val candidate = current + mutation
-        val bytes = encodePortalSyncPayload(encodedPayload(candidate)).rawBytes.size
-        if (current.isNotEmpty() && bytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES) emit()
+        val bytes = encodePortalSyncPayload(preferencePayload(candidate)).rawBytes.size
+        if (bytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES) emit()
         current += mutation
     }
     emit()
+
+    check(
+        chunks.all {
+            encodePortalSyncPayload(it.payload).rawBytes.size <=
+                MAX_PROFILE_PREFERENCE_REQUEST_BYTES
+        },
+    ) {
+        "PROFILE_PREFERENCE_PLANNER_OVERSIZED_REQUEST"
+    }
     return ProfilePreferencePushPlan(chunks = chunks, unsyncable = issues)
 }
 ```
+
+The one-item full-request check occurs before greedy chunking, so `emit()` may rely on every first item fitting. Duplicate keys never enter a request or ledger, and every duplicate occurrence receives its own generation-specific `DUPLICATE_SECTION` issue while valid siblings continue. `preferencePayload` intentionally does not copy `profileId`, `profileName`, `allProfiles`, or any ordinary entity data from `basePayload`.
 
 - [ ] **Step 7: Run the focused adapter/planner tests and verify they pass**
 
 Run:
 
 ```powershell
-.\gradlew.bat :shared:testAndroidHostTest --tests "*PortalSyncAdapterProfilePreferencesTest*" --tests "*PortalPullAdapterProfilePreferencesTest*" --tests "*ProfilePreferenceSyncPlannerTest*" -Pskip.supabase.check=true
+.\gradlew.bat :shared:testAndroidHostTest --tests "*PortalSyncAdapterProfilePreferencesTest*" --tests "*PortalPullAdapterProfilePreferencesTest*" --tests "*ProfilePreferenceSyncPlannerTest*" --tests "*ProfilePreferenceSyncDtosTest*" --tests "*PortalSyncAdapterTest*" --tests "*PortalPullAdapterTest*" --tests "*SqlDelightProfilePreferenceSyncRepositoryTest*" -Pskip.supabase.check=true
 ```
 
-Expected: PASS.
+Expected: PASS, including Task 3 wire DTO guards, existing adapter behavior, and Task 4's duplicate validation at the persistence boundary.
 
 - [ ] **Step 8: Commit adapters and deterministic chunk planning**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncAdapter.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalPullAdapter.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncPlanner.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalSyncAdapterProfilePreferencesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullAdapterProfilePreferencesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncPlannerTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncAdapter.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalPullAdapter.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncPlanner.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalSyncAdapterProfilePreferencesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullAdapterProfilePreferencesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncPlannerTest.kt
 git commit -m "feat(sync): map and chunk profile preference sections"
 ```
 
@@ -5691,8 +6025,8 @@ git commit -m "feat(sync): map and chunk profile preference sections"
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalApiClientProfilePreferenceLimitsTest.kt`
 
 **Interfaces:**
-- Consumes: Task 5's `PortalWireJson` and size constants.
-- Produces: transport defense-in-depth and a fake capable of metadata-first/chunk/legacy-response tests.
+- Consumes: Task 5's `PortalWireJson`, `encodePortalSyncPayload`, exact `rawBytes`, spans, and size constants.
+- Produces: transport defense in depth that sizes and sends the same never-mutated UTF-8 byte array, plus a fake capable of metadata-first/chunk/legacy-response tests.
 
 - [ ] **Step 1: Write failing transport limit tests**
 
@@ -5701,10 +6035,13 @@ Create `PortalApiClientProfilePreferenceLimitsTest.kt`:
 ```kotlin
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.testutil.readProjectFile
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
@@ -5737,7 +6074,7 @@ class PortalApiClientProfilePreferenceLimitsTest {
 
         assertIs<PortalApiException>(error)
         assertEquals(413, error.statusCode)
-        assertTrue(error.message.orEmpty().contains("262144"))
+        assertEquals("SECTION_TOO_LARGE: cap=262144", error.message)
     }
 
     @Test
@@ -5769,7 +6106,22 @@ class PortalApiClientProfilePreferenceLimitsTest {
 
         assertIs<PortalApiException>(error)
         assertEquals(413, error.statusCode)
-        assertTrue(error.message.orEmpty().contains("524288"))
+        assertEquals("REQUEST_TOO_LARGE: cap=524288", error.message)
+    }
+
+    @Test
+    fun `transport sends exact shared bytes used for both limits`() {
+        val source = assertNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalApiClient.kt",
+            ),
+        )
+
+        assertTrue("json(PortalWireJson)" in source)
+        assertTrue("val encoded = encodePortalSyncPayload(payload)" in source)
+        assertTrue("setBody(encoded.rawBytes)" in source)
+        assertFalse(Regex("""setBody[(]encoded[.]raw[)]""").containsMatchIn(source))
+        assertFalse(Regex("""private\s+val\s+json\s*=\s*Json""").containsMatchIn(source))
     }
 }
 ```
@@ -5786,38 +6138,52 @@ Expected: FAIL because the call reaches authentication or does not return a 413 
 
 - [ ] **Step 3: Reuse `PortalWireJson` and add preference-specific guards**
 
-Remove `PortalApiClient`'s private `Json` construction and use the exact `encodePortalSyncPayload` result for both the HTTP body and both preference guards. Before the existing overall byte check, add:
+Remove the `kotlinx.serialization.json.Json` import and `PortalApiClient`'s private `Json` construction. Configure response decoding with the same shared instance:
+
+```kotlin
+install(ContentNegotiation) {
+    json(PortalWireJson)
+}
+```
+
+Inside `pushPortalPayload`, call `encodePortalSyncPayload` exactly once and use its `rawBytes` for every limit and for the request body. Before the existing overall byte check, add:
 
 ```kotlin
 val encoded = encodePortalSyncPayload(payload)
-payload.profilePreferenceSections?.zip(encoded.preferenceElementSpans)
-    ?.forEach { (section, span) ->
-    val sectionBytes = encoded.preferenceElementByteCount(span)
-    if (sectionBytes > MAX_PROFILE_PREFERENCE_SECTION_BYTES) {
+if (payload.profilePreferenceSections != null) {
+    encoded.preferenceElementSpans.forEach { span ->
+        if (encoded.preferenceElementByteCount(span) > MAX_PROFILE_PREFERENCE_SECTION_BYTES) {
+            return Result.failure(
+                PortalApiException(
+                    "SECTION_TOO_LARGE: cap=$MAX_PROFILE_PREFERENCE_SECTION_BYTES",
+                    statusCode = 413,
+                ),
+            )
+        }
+    }
+    if (encoded.rawBytes.size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES) {
         return Result.failure(
             PortalApiException(
-                "Profile preference section ${section.localProfileId}/${section.section} is " +
-                    "$sectionBytes bytes; cap is $MAX_PROFILE_PREFERENCE_SECTION_BYTES bytes.",
+                "REQUEST_TOO_LARGE: cap=$MAX_PROFILE_PREFERENCE_REQUEST_BYTES",
                 statusCode = 413,
             ),
         )
     }
 }
+```
 
-if (payload.profilePreferenceSections != null &&
-    encoded.rawBytes.size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES
-) {
-    return Result.failure(
-        PortalApiException(
-            "Profile preference request is ${encoded.rawBytes.size} bytes; " +
-                "cap is $MAX_PROFILE_PREFERENCE_REQUEST_BYTES bytes.",
-            statusCode = 413,
-        ),
-    )
+Retain the existing `MAX_PAYLOAD_BYTES` check against `encoded.rawBytes` after this block. Replace every remaining `serialized` reference in this method and send the exact already-counted bytes:
+
+```kotlin
+httpClient.post("${supabaseConfig.url}/functions/v1/mobile-sync-push") {
+    bearerAuth(token)
+    header("apikey", supabaseConfig.anonKey)
+    header("Content-Type", "application/json")
+    setBody(encoded.rawBytes)
 }
 ```
 
-Send `encoded.raw` as the request body, and retain the existing `MAX_PAYLOAD_BYTES` check against `encoded.rawBytes` after this block. Thus a non-null preference field, including an empty array, always applies 512 KiB to the complete raw `PortalSyncPayload`; without that field only the existing 9,500,000-byte overall cap applies.
+Do not mutate `encoded.rawBytes`, call `encodeToByteArray` again, or use the encoded `String` as the body: the same byte array is measured by the per-section/full-request/overall guards and written to HTTP. A non-null preference field, including an empty array, always applies 512 KiB to the complete raw `PortalSyncPayload`; without that field only the existing 9,500,000-byte overall cap applies. Preference-specific errors are fixed categories plus the public cap only; they never include profile identity, section values, or measured user-data sizes.
 
 - [ ] **Step 4: Extend the fake for multi-request orchestration**
 
@@ -5891,7 +6257,7 @@ git commit -m "feat(sync): enforce profile preference payload limits"
 
 **Interfaces:**
 - Consumes: Task 4's internal persistence adapter, the data-foundation migration gate, Task 5's planner, and Task 6's transport/fakes.
-- Produces: metadata-first preference-only pushes and race-safe canonical/rejection application.
+- Produces: metadata-first minimal preference-only pushes, race-safe canonical/rejection application, and reusable sanitized diagnostic-line helpers that never expose raw profile ids, remote section strings, issue keys, exception messages, or payload fragments.
 
 - [ ] **Step 1: Add the focused fake sync repository with captures**
 
@@ -5956,8 +6322,14 @@ fun `ordinary metadata push precedes preference-only chunks`() = runTest {
     assertEquals(2, harness.api.pushPayloads.size)
     assertNotNull(harness.api.pushPayloads[0].allProfiles)
     assertNull(harness.api.pushPayloads[0].profilePreferenceSections)
-    assertNull(harness.api.pushPayloads[1].allProfiles)
-    assertEquals(1, harness.api.pushPayloads[1].profilePreferenceSections?.size)
+    val preferencePayload = harness.api.pushPayloads[1]
+    assertNull(preferencePayload.profileId)
+    assertNull(preferencePayload.profileName)
+    assertNull(preferencePayload.allProfiles)
+    assertTrue(preferencePayload.sessions.isEmpty())
+    assertTrue(preferencePayload.routines.isEmpty())
+    assertTrue(preferencePayload.personalRecords.isEmpty())
+    assertEquals(1, preferencePayload.profilePreferenceSections?.size)
 }
 
 @Test
@@ -6082,8 +6454,8 @@ fun `accepted canonical carries sent generation into repository outcome`() = run
     harness.manager(migrationReady = true).sync()
 
     val outcome = harness.preferenceSyncRepository.appliedPushOutcomes.single().single()
-    assertEquals(8, outcome.sentLocalGeneration)
-    assertEquals(4, outcome.serverRevision)
+    assertEquals(8L, outcome.sentLocalGeneration)
+    assertEquals(4L, outcome.serverRevision)
     assertNull(outcome.rejectionReason)
 }
 
@@ -6112,9 +6484,9 @@ fun `canonical conflict is applied only through generation ledger`() = runTest {
     harness.manager(migrationReady = true).sync()
 
     val outcome = harness.preferenceSyncRepository.appliedPushOutcomes.single().single()
-    assertEquals(11, outcome.sentLocalGeneration)
+    assertEquals(11L, outcome.sentLocalGeneration)
     assertEquals("REVISION_CONFLICT", outcome.rejectionReason)
-    assertEquals(6, outcome.canonical?.serverRevision)
+    assertEquals(6L, outcome.canonical?.serverRevision)
 }
 
 @Test
@@ -6197,7 +6569,52 @@ fun `rejection canonical key or revision mismatch invalidates only that ledger k
         assertEquals(4L, outcomes.single().serverRevision)
     }
 }
+
+@Test
+fun `profile preference diagnostics never expose raw identities sections or messages`() {
+    val sentinel = "SECRET_PROFILE_DIAGNOSTIC_SENTINEL"
+    val key = ProfilePreferenceSectionKey(
+        localProfileId = "$sentinel\u0000",
+        section = ProfilePreferenceSectionName.CORE,
+    )
+    val lines = listOf(
+        profilePreferenceIssueLogLine(
+            ProfilePreferenceSyncIssue(
+                key = key,
+                localGeneration = 9,
+                reason = ProfilePreferenceSyncIssueReason.INVALID_PROFILE_ID.name,
+            ),
+        ),
+        profilePreferenceDuplicateResultLogLine(key),
+        profilePreferenceInvalidCanonicalLogLine(
+            ProfilePreferenceCanonicalDecodeResult.Invalid(
+                localProfileId = sentinel,
+                section = sentinel,
+                reason = sentinel,
+            ),
+        ),
+        profilePreferenceChunkFailureLogLine(
+            PortalApiException(sentinel, statusCode = 503),
+        ),
+    )
+
+    assertEquals(
+        listOf(
+            "PROFILE_PREFERENCE_NOT_SENT section=CORE reason=INVALID_PROFILE_ID",
+            "PROFILE_PREFERENCE_DUPLICATE_RESULT section=CORE",
+            "PROFILE_PREFERENCE_INVALID_CANONICAL reason=INVALID_PROFILE_PREFERENCE_DIAGNOSTIC",
+            "PROFILE_PREFERENCE_CHUNK_FAILED status=503",
+        ),
+        lines,
+    )
+    lines.forEach { line ->
+        assertFalse(sentinel in line)
+        assertFalse('\u0000' in line)
+    }
+}
 ```
+
+Import `assertFalse` for the sentinel diagnostic test. The test passes attacker-controlled text through every diagnostic helper, including the later pull helper, without relying on a logging backend.
 
 Task 4's SQLDelight sync repository tests separately mutate the row after snapshot and prove that both acceptance and conflict outcomes advance the server revision without overwriting the newer payload or clearing dirty state.
 
@@ -6275,20 +6692,47 @@ The existing session-batch failure contract remains unchanged. A rate limit reac
 
 - [ ] **Step 7: Implement the preference-only push loop**
 
-After all ordinary batches succeed and after `allProfiles` has been sent, call:
+Add these module-internal pure diagnostic helpers in `SyncManager.kt`; production logging in Tasks 7 and 8 must call them rather than interpolating raw objects or throwable messages:
+
+```kotlin
+private val PROFILE_PREFERENCE_REASON_NAMES =
+    ProfilePreferenceSyncIssueReason.entries.mapTo(mutableSetOf<String>()) { it.name }
+
+private fun safeProfilePreferenceReason(reason: String): String =
+    reason.takeIf { it in PROFILE_PREFERENCE_REASON_NAMES }
+        ?: "INVALID_PROFILE_PREFERENCE_DIAGNOSTIC"
+
+internal fun profilePreferenceIssueLogLine(issue: ProfilePreferenceSyncIssue): String =
+    "PROFILE_PREFERENCE_NOT_SENT section=${issue.key.section.name} " +
+        "reason=${safeProfilePreferenceReason(issue.reason)}"
+
+internal fun profilePreferenceDuplicateResultLogLine(
+    key: ProfilePreferenceSectionKey,
+): String = "PROFILE_PREFERENCE_DUPLICATE_RESULT section=${key.section.name}"
+
+internal fun profilePreferenceInvalidCanonicalLogLine(
+    invalid: ProfilePreferenceCanonicalDecodeResult.Invalid,
+): String = "PROFILE_PREFERENCE_INVALID_CANONICAL " +
+    "reason=${safeProfilePreferenceReason(invalid.reason)}"
+
+internal fun profilePreferenceChunkFailureLogLine(error: Throwable?): String {
+    val status = (error as? PortalApiException)?.statusCode?.toString() ?: "UNKNOWN"
+    return "PROFILE_PREFERENCE_CHUNK_FAILED status=$status"
+}
+```
+
+These helpers intentionally omit `localProfileId`, the raw remote `section`, `ProfilePreferenceSectionKey.toString()`, local generation, exception class/message, and all values. After all ordinary batches succeed and after `allProfiles` has been sent, call the preference loop with only `deviceId`, `platform`, and `lastSync`:
 
 ```kotlin
 private suspend fun pushDirtyProfilePreferences(
     deviceId: String,
     platform: String,
     lastSync: Long,
-    activeProfileId: String,
-    activeProfileName: String,
 ) {
     if (!isProfilePreferenceMigrationReady()) return
     val snapshot = profilePreferenceSyncRepository.snapshotDirtySections()
     snapshot.unsyncable.forEach { issue ->
-        Logger.w("SyncManager") { "Profile preference ${issue.key} not sent: ${issue.reason}" }
+        Logger.w("SyncManager") { profilePreferenceIssueLogLine(issue) }
     }
     val prepared = snapshot.valid.map(PortalSyncAdapter::toPortalProfilePreferenceMutation)
     if (prepared.isEmpty()) return
@@ -6297,19 +6741,17 @@ private suspend fun pushDirtyProfilePreferences(
         deviceId = deviceId,
         platform = platform,
         lastSync = lastSync,
-        profileId = activeProfileId,
-        profileName = activeProfileName,
     )
     val plan = planProfilePreferencePushChunks(base, prepared)
     plan.unsyncable.forEach { issue ->
-        Logger.w("SyncManager") { "Profile preference ${issue.key} not sent: ${issue.reason}" }
+        Logger.w("SyncManager") { profilePreferenceIssueLogLine(issue) }
     }
 
     for (chunk in plan.chunks) {
         val result = pushPayloadWithRateLimit(chunk.payload)
         if (result.isFailure) {
             Logger.w("SyncManager") {
-                "Profile preference chunk remains dirty: ${result.exceptionOrNull()?.message}"
+                profilePreferenceChunkFailureLogLine(result.exceptionOrNull())
             }
             return
         }
@@ -6395,7 +6837,7 @@ internal fun buildProfilePreferencePushOutcomes(
     }
     return candidates.groupBy(PreferenceOutcomeCandidate::key).mapNotNull { (key, entries) ->
         if (entries.size != 1 || responseCounts[key] != 1) {
-            Logger.w("SyncManager") { "Duplicate profile preference result for $key" }
+            Logger.w("SyncManager") { profilePreferenceDuplicateResultLogLine(key) }
             return@mapNotNull null
         }
         val candidate = entries.single()
@@ -6410,7 +6852,17 @@ internal fun buildProfilePreferencePushOutcomes(
 }
 ```
 
-Call `pushDirtyProfilePreferences` after the ordinary batch loop and before external-activity/PR acknowledgement stamping. Preserve and return the ordinary `lastResponse` so existing entity rejection handling remains intact.
+Call it after the ordinary batch loop and before external-activity/PR acknowledgement stamping:
+
+```kotlin
+pushDirtyProfilePreferences(
+    deviceId = deviceId,
+    platform = platform,
+    lastSync = lastSync,
+)
+```
+
+Do not pass the active profile id or name. Preserve and return the ordinary `lastResponse` so existing entity rejection handling remains intact.
 
 - [ ] **Step 8: Extend batching tests for metadata ordering and physical rate accounting**
 
@@ -6700,9 +7152,7 @@ if (isProfilePreferenceMigrationReady()) {
         PortalPullAdapter::toCanonicalProfilePreferenceSection,
     )
     decoded.filterIsInstance<ProfilePreferenceCanonicalDecodeResult.Invalid>().forEach { invalid ->
-        Logger.w("SyncManager") {
-            "Ignored invalid profile preference ${invalid.localProfileId}/${invalid.section}: ${invalid.reason}"
-        }
+        Logger.w("SyncManager") { profilePreferenceInvalidCanonicalLogLine(invalid) }
     }
     val valid = decoded
         .filterIsInstance<ProfilePreferenceCanonicalDecodeResult.Valid>()
