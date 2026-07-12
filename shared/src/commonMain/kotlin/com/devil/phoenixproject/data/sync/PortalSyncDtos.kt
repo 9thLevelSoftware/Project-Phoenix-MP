@@ -399,6 +399,72 @@ data class PortalAssessmentResultDto(
 @Serializable
 data class LocalProfileDto(val id: String, val name: String, val colorIndex: Int)
 
+private val LOCAL_ONLY_PROFILE_PREFERENCE_KEYS = setOf(
+    "safeword",
+    "safewordcalibrated",
+    "adultsonlyconfirmed",
+    "adultsonlyprompted",
+    "localgeneration",
+    "dirty",
+    "legacymigrationversion",
+)
+
+private fun normalizedProfilePreferenceWireKey(key: String): String =
+    key
+        .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
+        .lowercase()
+
+private fun requireValueOnlyProfilePreferencePayload(value: kotlinx.serialization.json.JsonElement) {
+    when (value) {
+        is kotlinx.serialization.json.JsonArray ->
+            value.forEach(::requireValueOnlyProfilePreferencePayload)
+        is kotlinx.serialization.json.JsonObject -> value.forEach { (key, child) ->
+            require(normalizedProfilePreferenceWireKey(key) !in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS) {
+                "Local-only profile preference fields are not wire-safe"
+            }
+            requireValueOnlyProfilePreferencePayload(child)
+        }
+        else -> Unit
+    }
+}
+
+@Serializable
+data class PortalProfilePreferenceSectionMutationDto(
+    val localProfileId: String,
+    val section: String,
+    val documentVersion: Int,
+    val baseRevision: Long,
+    val clientModifiedAt: String,
+    val payload: kotlinx.serialization.json.JsonObject,
+) {
+    init {
+        requireValueOnlyProfilePreferencePayload(payload)
+    }
+}
+
+@Serializable
+data class PortalProfilePreferenceSectionCanonicalDto(
+    val localProfileId: String,
+    val section: String,
+    val documentVersion: Int,
+    val serverRevision: Long,
+    val serverUpdatedAt: String,
+    val payload: kotlinx.serialization.json.JsonObject,
+) {
+    init {
+        requireValueOnlyProfilePreferencePayload(payload)
+    }
+}
+
+@Serializable
+data class ProfilePreferenceSectionRejectionDto(
+    val localProfileId: String,
+    val section: String,
+    val serverRevision: Long,
+    val reason: String,
+    val canonicalSection: PortalProfilePreferenceSectionCanonicalDto? = null,
+)
+
 // ─── Push Response ──────────────────────────────────────────────────
 
 /**
@@ -435,6 +501,9 @@ data class PortalSyncPushResponse(
     )
     val externalActivityIds: List<String> = emptyList(),
     val externalActivityKeys: List<ExternalActivityAckDto> = emptyList(),
+    val profilePreferencesAccepted: Boolean? = null,
+    val canonicalProfilePreferenceSections: List<PortalProfilePreferenceSectionCanonicalDto> = emptyList(),
+    val profilePreferenceRejections: List<ProfilePreferenceSectionRejectionDto> = emptyList(),
     /**
      * Per-entity LWW rejections. Empty when SYNC_LWW_ENABLED is false on
      * the server or when every incoming row cleared the LWW gate. Phase 3.2.
@@ -554,6 +623,7 @@ data class PortalSyncPayload(
     val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
     // Dedicated personal_records rows; authoritative over legacy set PR hints.
     val personalRecords: List<PortalPersonalRecordDto> = emptyList(),
+    val profilePreferenceSections: List<PortalProfilePreferenceSectionMutationDto>? = null,
 )
 
 // ─── External Activities (Integration sync) ──────────────────────────
@@ -647,6 +717,7 @@ data class PortalSyncPullResponse(
     val gamificationStats: PullGamificationStatsDto? = null,
     // Profile data separation: profile list from portal (round-trip)
     val localProfiles: List<LocalProfileDto>? = null,
+    val profilePreferenceSections: List<PortalProfilePreferenceSectionCanonicalDto>? = null,
     // External integration activities (paid users only)
     val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
 )
