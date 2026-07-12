@@ -5856,13 +5856,9 @@ fun toPortalProfilePreferenceMutation(
 )
 ```
 
-Add this pull mapper to `PortalPullAdapter`. Parse the wrapper identity and timestamp first, construct one candidate, and then call Task 4's stronger `decodeCanonical` boundary so document, payload, and exact JSON revision checks cannot drift. `Instant.parse` alone is too permissive: Kotlin 2.4 accepts an expanded `+002026` year and normalizes it to 2026, while the Edge contract requires exactly four unsigned year digits. Gate the complete Edge RFC3339 grammar before parsing. The repository repeats the same decode before SQL mutation as defense in depth:
+Add this pull mapper to `PortalPullAdapter`. Parse the wrapper identity and timestamp first, construct one candidate, and then call Task 4's stronger `decodeCanonical` boundary so document, payload, and exact JSON revision checks cannot drift. `Instant.parse` alone is too permissive: Kotlin 2.4 accepts an expanded `+002026` year and normalizes it to 2026, while the Edge contract requires exactly four unsigned year digits. Add `ProfilePreferenceSyncCodec.parseStrictRfc3339EpochMilliseconds`: use `matchEntire` with the complete Edge grammar, validate year/calendar/clock and offsets through `23:59`, rebuild the validated local date-time with `Z`, parse that local instant, and then subtract a positive offset or add a negative offset in milliseconds. Do not parse the original offset form directly, because Kotlin rejects Edge-valid offsets above `18:00`. Test exact `+23:59` and `-23:59` conversions as well as expanded-year rejection. The repository repeats the same decode before SQL mutation as defense in depth:
 
 ```kotlin
-private val PROFILE_PREFERENCE_RFC3339_INSTANT = Regex(
-    """^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$""",
-)
-
 fun toCanonicalProfilePreferenceSection(
     dto: PortalProfilePreferenceSectionCanonicalDto,
 ): ProfilePreferenceCanonicalDecodeResult {
@@ -5880,12 +5876,9 @@ fun toCanonicalProfilePreferenceSection(
     }
     val section = ProfilePreferenceSectionName.entries.firstOrNull { it.name == dto.section }
         ?: return invalid(ProfilePreferenceSyncIssueReason.UNSUPPORTED_SECTION)
-    if (!PROFILE_PREFERENCE_RFC3339_INSTANT.matches(dto.serverUpdatedAt)) {
-        return invalid(ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_TIMESTAMP)
-    }
-    val updatedAt = runCatching {
-        kotlin.time.Instant.parse(dto.serverUpdatedAt).toEpochMilliseconds()
-    }.getOrNull()
+    val updatedAt = ProfilePreferenceSyncCodec.parseStrictRfc3339EpochMilliseconds(
+        dto.serverUpdatedAt,
+    )
     if (updatedAt == null ||
         updatedAt !in ProfilePreferenceSyncCodec.MIN_RFC3339_EPOCH_MILLIS..
             ProfilePreferenceSyncCodec.MAX_RFC3339_EPOCH_MILLIS
