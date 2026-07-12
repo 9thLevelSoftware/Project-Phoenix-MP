@@ -18,12 +18,14 @@ import com.devil.phoenixproject.testutil.createTestDatabase
 import com.russhwolf.settings.MapSettings
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Test
 
 class ProfilePreferencesMigrationTest {
@@ -90,6 +92,25 @@ class ProfilePreferencesMigrationTest {
         assertEquals(1, fixture.preferenceRepository.get("b").legacyMigrationVersion)
         assertEquals(RequiredMigrationState.Ready, fixture.migration.requiredMigrationState.value)
         assertEquals(1, fixture.settings.getInt("migration_repair_version", 0))
+    }
+
+    @Test
+    fun failedRequiredMigrationUnblocksAwaitersWithTheFailure() = runTest {
+        val fixture = fixture()
+        fixture.createProfiles("a")
+        fixture.safetyStore.failProfileId = "a"
+        fixture.migration.runRequiredMigrations()
+        val failedState = assertIs<RequiredMigrationState.Failed>(
+            fixture.migration.requiredMigrationState.value,
+        )
+
+        val failure = assertFailsWith<IllegalStateException> {
+            withTimeout(100) {
+                fixture.migration.awaitRequiredMigrations()
+            }
+        }
+
+        assertEquals(failedState.message, failure.message)
     }
 
     @Test

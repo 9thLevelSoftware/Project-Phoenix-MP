@@ -7,6 +7,9 @@ import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutExportBuilder
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.preferences.toDocument
+import com.devil.phoenixproject.data.preferences.toLegacySingleExerciseDefaults
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -31,6 +34,7 @@ import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -1705,35 +1709,35 @@ class ActiveSessionEngine(
     }
 
     suspend fun getJustLiftDefaults(): JustLiftDefaults {
-        val prefsDefaults = preferencesManager.getJustLiftDefaults()
-        return JustLiftDefaults(
-            weightPerCableKg = prefsDefaults.weightPerCableKg,
-            weightChangePerRep = kotlin.math.round(prefsDefaults.weightChangePerRep).toInt(),
-            workoutModeId = prefsDefaults.workoutModeId,
-            eccentricLoadPercentage = prefsDefaults.eccentricLoadPercentage,
-            echoLevelValue = prefsDefaults.echoLevelValue,
-            stallDetectionEnabled = prefsDefaults.stallDetectionEnabled,
-            repCountTimingName = prefsDefaults.repCountTimingName,
-            restSeconds = prefsDefaults.restSeconds,
-        )
+        return settingsManager.getJustLiftDefaultsDocument().toRuntimeJustLiftDefaults()
     }
 
     fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
-        scope.launch {
-            val prefsDefaults = com.devil.phoenixproject.data.preferences.JustLiftDefaults(
-                weightPerCableKg = defaults.weightPerCableKg,
-                weightChangePerRep = defaults.weightChangePerRep.toFloat(),
-                workoutModeId = defaults.workoutModeId,
-                eccentricLoadPercentage = defaults.eccentricLoadPercentage,
-                echoLevelValue = defaults.echoLevelValue,
-                stallDetectionEnabled = defaults.stallDetectionEnabled,
-                repCountTimingName = defaults.repCountTimingName,
-                restSeconds = defaults.restSeconds,
-            )
-            preferencesManager.saveJustLiftDefaults(prefsDefaults)
-            Logger.d("saveJustLiftDefaults: weight=${defaults.weightPerCableKg}kg, mode=${defaults.workoutModeId}, restSeconds=${defaults.restSeconds}")
-        }
+        settingsManager.saveJustLiftDefaultsDocument(defaults.toDocument())
+        Logger.d("saveJustLiftDefaults: weight=${defaults.weightPerCableKg}kg, mode=${defaults.workoutModeId}, restSeconds=${defaults.restSeconds}")
     }
+
+    private fun JustLiftDefaults.toDocument() = JustLiftDefaultsDocument(
+        workoutModeId = workoutModeId,
+        weightPerCableKg = weightPerCableKg,
+        weightChangePerRep = weightChangePerRep.toFloat(),
+        eccentricLoadPercentage = eccentricLoadPercentage,
+        echoLevelValue = echoLevelValue,
+        stallDetectionEnabled = stallDetectionEnabled,
+        repCountTimingName = repCountTimingName,
+        restSeconds = restSeconds,
+    )
+
+    private fun JustLiftDefaultsDocument.toRuntimeJustLiftDefaults() = JustLiftDefaults(
+        workoutModeId = workoutModeId,
+        weightPerCableKg = weightPerCableKg,
+        weightChangePerRep = weightChangePerRep.roundToInt(),
+        eccentricLoadPercentage = eccentricLoadPercentage,
+        echoLevelValue = echoLevelValue,
+        stallDetectionEnabled = stallDetectionEnabled,
+        repCountTimingName = repCountTimingName,
+        restSeconds = restSeconds,
+    )
 
     private suspend fun saveJustLiftDefaultsFromWorkout() {
         val params = coordinator._workoutParameters.value
@@ -1743,7 +1747,7 @@ class ActiveSessionEngine(
         val echoLevelVal = if (params.isEchoMode) params.echoLevel.levelValue else 0
 
         try {
-            val defaults = com.devil.phoenixproject.data.preferences.JustLiftDefaults(
+            val defaults = JustLiftDefaultsDocument(
                 workoutModeId = params.programMode.modeValue,
                 weightPerCableKg = params.weightPerCableKg.coerceAtLeast(0.1f),
                 weightChangePerRep = params.progressionRegressionKg,
@@ -1753,20 +1757,21 @@ class ActiveSessionEngine(
                 repCountTimingName = params.repCountTiming.name,
                 restSeconds = params.justLiftRestSeconds,
             )
-            preferencesManager.saveJustLiftDefaults(defaults)
+            settingsManager.saveJustLiftDefaultsDocument(defaults)
             Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
         } catch (e: Exception) {
             Logger.e(e) { "Failed to save Just Lift defaults: ${e.message}" }
         }
     }
 
-    suspend fun getSingleExerciseDefaults(exerciseId: String): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = preferencesManager.getSingleExerciseDefaults(exerciseId)
+    suspend fun getSingleExerciseDefaults(
+        exerciseId: String,
+    ): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? =
+        settingsManager.getSingleExerciseDefaultsDocument(exerciseId)?.toLegacySingleExerciseDefaults()
 
     fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) {
-        scope.launch {
-            preferencesManager.saveSingleExerciseDefaults(defaults)
-            Logger.d("saveSingleExerciseDefaults: exerciseId=${defaults.exerciseId}")
-        }
+        settingsManager.saveSingleExerciseDefaultsDocument(defaults.toDocument())
+        Logger.d("saveSingleExerciseDefaults: exerciseId=${defaults.exerciseId}")
     }
 
     private suspend fun saveSingleExerciseDefaultsFromWorkout() {
@@ -1812,7 +1817,7 @@ class ActiveSessionEngine(
                 perSetRestTime = currentExercise.perSetRestTime,
                 defaultRackItemIds = currentExercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct(),
             )
-            preferencesManager.saveSingleExerciseDefaults(defaults)
+            settingsManager.saveSingleExerciseDefaultsDocument(defaults.toDocument())
             Logger.d { "Saved Single Exercise defaults for ${currentExercise.exercise.name}" }
         } catch (e: IllegalArgumentException) {
             Logger.e(e) { "Failed to save Single Exercise defaults - validation error" }
@@ -2440,6 +2445,10 @@ class ActiveSessionEngine(
     }
 
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) {
+        if (userProfileRepository.activeProfileContext.value !is ActiveProfileContext.Ready) {
+            Logger.w { "Workout start ignored while profile context is switching" }
+            return
+        }
         Logger.d { "startWorkout called: skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode" }
         Logger.d { "startWorkout: loadedRoutine=${coordinator._loadedRoutine.value?.name}, params=${coordinator._workoutParameters.value}" }
 

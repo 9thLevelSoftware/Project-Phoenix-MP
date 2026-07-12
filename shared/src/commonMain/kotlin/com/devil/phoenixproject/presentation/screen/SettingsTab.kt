@@ -408,10 +408,9 @@ fun SettingsTab(
     dominatrixModeActive: Boolean = false,
     onDominatrixModeActiveChange: (Boolean) -> Unit = {},
     adultsOnlyConfirmed: Boolean = false,
-    onAdultsOnlyConfirmedChange: (Boolean) -> Unit = {},
-    // Issue #611 (PR-followup #613): one-shot 18+ modal gate reader + writer. Lives
-    // outside UserPreferences by design (architecture §3); read on every vulgar-on
-    // toggle, written once per install by either confirm OR decline callback.
+    onConfirmAdultsAndEnableVulgar: () -> Unit = {},
+    // Issue #611 (PR-followup #613): profile-local one-shot 18+ modal gate.
+    // Read reactively from the active profile and written by confirm or decline.
     adultsOnlyPrompted: Boolean = false,
     onAdultsOnlyPromptedChange: (Boolean) -> Unit = {},
     onPlayDominatrixUnlockSound: () -> Unit = {},
@@ -458,7 +457,7 @@ fun SettingsTab(
     var dominatrixEasterEggTapCount by remember { mutableStateOf(0) }
     var lastDominatrixTapTime by remember { mutableStateOf(0L) }
     var showDominatrixUnlockDialog by remember { mutableStateOf(false) }
-    // Issue #611: 18+ Adults Only modal state. Fires once per install on first vulgar-on.
+    // Issue #611: 18+ Adults Only modal state. Fires once per profile on first vulgar-on.
     var showAdultsOnlyDialog by remember { mutableStateOf(false) }
     // Voice emergency stop state (moved from VoiceEmergencyStopSection for consolidation)
     var showCalibrationDialog by remember { mutableStateOf(false) }
@@ -3025,16 +3024,12 @@ fun SettingsTab(
         )
     }
 
-    // Issue #611: 18+ Adults Only confirmation modal (fires once per install on first vulgar-on)
+    // Issue #611: 18+ Adults Only confirmation modal (fires once per profile on first vulgar-on)
     if (showAdultsOnlyDialog) {
         AdultsOnlyConfirmDialog(
             onConfirm = {
                 showAdultsOnlyDialog = false
-                // Confirm: write both confirmed (cascade-enable path) and prompted
-                // (one-shot gate). Mirrors SettingsPreferencesManager.setAdultsOnlyConfirmed.
-                onAdultsOnlyConfirmedChange(true)
-                onAdultsOnlyPromptedChange(true)
-                onVulgarModeEnabledChange(true)
+                onConfirmAdultsAndEnableVulgar()
             },
             onDecline = {
                 showAdultsOnlyDialog = false
@@ -3700,12 +3695,10 @@ private fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
 }
 
 /**
- * Issue #611: 18+ Adults Only confirmation modal. Fires once per install when
- * the user toggles Vulgar Mode from off to on. Confirm flips
- * adultsOnlyConfirmed first then re-issues the vulgar-mode setter; decline
- * only persists the one-shot decline-remember flag (`adultsOnlyPrompted`) so
- * the modal never re-prompts — see VerbalEncouragementPreferenceCascadeTest
- * "decline path leaves modal dormant on subsequent vulgar-on toggles".
+ * Issue #611: 18+ Adults Only confirmation modal. Fires once per active profile
+ * when the user toggles Vulgar Mode from off to on. Confirm performs the
+ * serialized consent-and-enable mutation; decline only persists that profile's
+ * one-shot `adultsOnlyPrompted` flag so the modal does not re-prompt.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

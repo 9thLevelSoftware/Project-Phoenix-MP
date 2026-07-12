@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.di
 
 import com.devil.phoenixproject.data.migration.MigrationManager
+import com.devil.phoenixproject.data.migration.RequiredMigrationGate
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -99,8 +100,9 @@ val domainModule = module {
             legacyProfilePreferencesReader = get(),
         )
     }
+    single<RequiredMigrationGate> { get<MigrationManager>() }
 
     // Voice / Safe Word (Issue #141)
     // SafeWordListenerFactory is provided by platformModule
-    single { SafeWordDetectionManager(get(), get()) }
+    single { SafeWordDetectionManager(get<UserProfileRepository>(), get()) }
 }

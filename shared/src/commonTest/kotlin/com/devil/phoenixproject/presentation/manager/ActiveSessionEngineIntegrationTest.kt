@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -17,6 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertIs
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 
@@ -34,12 +37,96 @@ import kotlinx.coroutines.test.runTest
 class ActiveSessionEngineIntegrationTest {
 
     @Test
+    fun workoutStartIsRejectedWhileProfileContextIsSwitching() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeUserProfileRepo.recoverPendingProfileTransitionForStartup()
+
+            harness.activeSessionEngine.startWorkout()
+            advanceUntilIdle()
+
+            assertIs<com.devil.phoenixproject.domain.model.WorkoutState.Idle>(
+                harness.activeSessionEngine.coordinator.workoutState.value,
+            )
+            assertEquals(0, harness.fakeBleRepo.workoutParameters.size)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun quickStartDefaultsFollowActiveProfileAndRoundTripWithoutLoss() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val justLiftA = JustLiftDefaults(
+                weightPerCableKg = 31.5f,
+                weightChangePerRep = 3,
+                workoutModeId = 10,
+                eccentricLoadPercentage = 120,
+                echoLevelValue = 3,
+                stallDetectionEnabled = false,
+                repCountTimingName = "BOTTOM",
+                restSeconds = 95,
+            )
+            val singleA = SingleExerciseDefaults(
+                exerciseId = "bench",
+                setReps = listOf(8, null, 6),
+                weightPerCableKg = 42.5f,
+                setWeightsPerCableKg = listOf(40f, 42.5f, 45f),
+                progressionKg = 2.5f,
+                setRestSeconds = listOf(60, 75, 90),
+                workoutModeId = 4,
+                eccentricLoadPercentage = 130,
+                echoLevelValue = 2,
+                duration = 45,
+                isAMRAP = true,
+                perSetRestTime = true,
+                defaultRackItemIds = listOf("vest", "belt"),
+            )
+
+            harness.activeSessionEngine.saveJustLiftDefaults(justLiftA)
+            harness.activeSessionEngine.saveSingleExerciseDefaults(singleA)
+            advanceUntilIdle()
+
+            assertEquals(justLiftA, harness.activeSessionEngine.getJustLiftDefaults())
+            assertEquals(singleA, harness.activeSessionEngine.getSingleExerciseDefaults("bench"))
+
+            harness.fakeUserProfileRepo.setActiveProfileForTest(id = "profile-b")
+            advanceUntilIdle()
+            assertEquals(20f, harness.activeSessionEngine.getJustLiftDefaults().weightPerCableKg)
+            assertNull(harness.activeSessionEngine.getSingleExerciseDefaults("bench"))
+
+            val readyB = assertIs<ActiveProfileContext.Ready>(
+                harness.fakeUserProfileRepo.activeProfileContext.value,
+            )
+            harness.fakeUserProfileRepo.updateWorkout(
+                readyB.profile.id,
+                readyB.preferences.workout.value.copy(
+                    justLiftDefaults = readyB.preferences.workout.value.justLiftDefaults.copy(
+                        weightPerCableKg = 18f,
+                        weightChangePerRep = 2.6f,
+                    ),
+                ),
+            )
+            assertEquals(18f, harness.activeSessionEngine.getJustLiftDefaults().weightPerCableKg)
+            assertEquals(3, harness.activeSessionEngine.getJustLiftDefaults().weightChangePerRep)
+
+            harness.fakeUserProfileRepo.setActiveProfileForTest(id = "default")
+            advanceUntilIdle()
+            assertEquals(justLiftA, harness.activeSessionEngine.getJustLiftDefaults())
+            assertEquals(singleA, harness.activeSessionEngine.getSingleExerciseDefaults("bench"))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun bodyweightAndVbtFeaturesCoexistWithoutConstructorFailure() = runTest {
         val harness = DWSMTestHarness(this)
         advanceUntilIdle()
 
         // Enable both bodyweight volume tracking and VBT auto-end simultaneously
-        harness.fakePrefsManager.setPreferences(
+        harness.setActiveProfilePreferences(
             UserPreferences(
                 bodyWeightKg = 85f,
                 autoEndOnVelocityLoss = true,
@@ -69,7 +156,7 @@ class ActiveSessionEngineIntegrationTest {
         advanceUntilIdle()
 
         // Set auto-start routine AND VBT thresholds together
-        harness.fakePrefsManager.setPreferences(
+        harness.setActiveProfilePreferences(
             UserPreferences(
                 autoStartRoutine = true,
                 autoStartCountdownSeconds = 3,
@@ -106,7 +193,7 @@ class ActiveSessionEngineIntegrationTest {
         assertFalse(prefs.autoBackupEnabled, "autoBackupEnabled should default to false")
 
         // Set only autoStartRoutine — other features should remain at defaults
-        harness.fakePrefsManager.setAutoStartRoutine(true)
+        harness.settingsManager.setAutoStartRoutine(true)
         advanceUntilIdle()
 
         prefs = harness.settingsManager.userPreferences.value
@@ -117,7 +204,7 @@ class ActiveSessionEngineIntegrationTest {
         assertFalse(prefs.autoBackupEnabled, "autoBackupEnabled unchanged")
 
         // Set only bodyWeightKg — autoStartRoutine should remain true
-        harness.fakePrefsManager.setBodyWeightKg(75f)
+        harness.setActiveBodyWeightKg(75f)
         advanceUntilIdle()
 
         prefs = harness.settingsManager.userPreferences.value
@@ -142,7 +229,7 @@ class ActiveSessionEngineIntegrationTest {
             "Coordinator should reflect default VBT threshold",
         )
 
-        harness.fakePrefsManager.setPreferences(
+        harness.setActiveProfilePreferences(
             UserPreferences(
                 autoEndOnVelocityLoss = true,
                 velocityLossThresholdPercent = 35,

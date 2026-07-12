@@ -1,7 +1,11 @@
 package com.devil.phoenixproject.data.integration
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.migration.RequiredMigrationFailedException
+import com.devil.phoenixproject.data.migration.RequiredMigrationGate
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.ProfileContextUnavailableException
+import com.devil.phoenixproject.data.repository.StaleProfileContextException
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
@@ -29,7 +33,7 @@ class HealthBodyWeightSyncManager(
     private val bodyWeightReader: HealthBodyWeightReader,
     private val externalActivityRepository: ExternalActivityRepository,
     private val externalMeasurementRepository: ExternalMeasurementRepository,
-    private val preferencesManager: PreferencesManager,
+    private val requiredMigrationGate: RequiredMigrationGate,
     private val userProfileRepository: UserProfileRepository,
     private val providerResolver: () -> IntegrationProvider = {
         if (isIosPlatform) IntegrationProvider.APPLE_HEALTH else IntegrationProvider.GOOGLE_HEALTH
@@ -44,8 +48,17 @@ class HealthBodyWeightSyncManager(
     }
 
     suspend fun syncLatestFromConnectedPlatform(): HealthBodyWeightSyncResult {
+        val ready = try {
+            awaitReadyProfile()
+        } catch (error: RequiredMigrationFailedException) {
+            bodyWeightSyncLog.w(error) { "Body-weight sync blocked by required migration failure" }
+            return HealthBodyWeightSyncResult.Failed(error)
+        } catch (error: ProfileContextUnavailableException) {
+            bodyWeightSyncLog.w(error) { "Body-weight sync blocked while active profile was switching" }
+            return HealthBodyWeightSyncResult.Failed(error)
+        }
         val provider = providerResolver()
-        val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+        val profileId = ready.profile.id
         val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
 
         if (status?.status != ConnectionStatus.CONNECTED) {
@@ -114,8 +127,18 @@ class HealthBodyWeightSyncManager(
             profileId = profileId,
             syncedAt = now,
         )
+        try {
+            userProfileRepository.mutateCore(ready.profile.id) { latest ->
+                latest.copy(bodyWeightKg = sample.weightKg)
+            }
+        } catch (error: StaleProfileContextException) {
+            bodyWeightSyncLog.w(error) { "Body-weight sync stopped after active profile changed" }
+            return HealthBodyWeightSyncResult.Failed(error)
+        } catch (error: ProfileContextUnavailableException) {
+            bodyWeightSyncLog.w(error) { "Body-weight sync stopped while active profile was switching" }
+            return HealthBodyWeightSyncResult.Failed(error)
+        }
         externalMeasurementRepository.upsertMeasurements(listOf(measurement))
-        preferencesManager.setBodyWeightKg(sample.weightKg)
         updateConnectedStatus(
             provider = provider,
             profileId = profileId,
@@ -123,6 +146,12 @@ class HealthBodyWeightSyncManager(
             errorMessage = null,
         )
         return HealthBodyWeightSyncResult.Synced(sample = sample, measurement = measurement)
+    }
+
+    private suspend fun awaitReadyProfile(): ActiveProfileContext.Ready {
+        requiredMigrationGate.awaitRequiredMigrations()
+        return userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+            ?: throw ProfileContextUnavailableException()
     }
 
     private suspend fun updateConnectedStatus(

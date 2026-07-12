@@ -4,7 +4,7 @@ import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.ScannedDevice
-import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
+import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -34,8 +34,8 @@ import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
-import com.russhwolf.settings.MapSettings
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -70,6 +70,8 @@ class MainViewModelTest {
     private lateinit var fakeRepMetricRepository: FakeRepMetricRepository
     private lateinit var repCounter: RepCounterFromMachine
     private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
+    private lateinit var fakeUserProfileRepository: FakeUserProfileRepository
+    private lateinit var profileEquipmentRackRepository: ProfileEquipmentRackRepository
 
     @Before
     fun setup() {
@@ -84,6 +86,11 @@ class MainViewModelTest {
         fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
         resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository, FakeVelocityOneRepMaxRepository())
+        fakeUserProfileRepository = FakeUserProfileRepository().apply { setActiveProfileForTest() }
+        profileEquipmentRackRepository = ProfileEquipmentRackRepository(
+            fakeUserProfileRepository,
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main),
+        )
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
@@ -99,10 +106,10 @@ class MainViewModelTest {
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
             recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase(),
-            equipmentRackRepository = SettingsEquipmentRackRepository(MapSettings()),
+            equipmentRackRepository = profileEquipmentRackRepository,
             applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase(),
             dataBackupManager = FakeDataBackupManager(),
-            userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
+            userProfileRepository = fakeUserProfileRepository,
             workoutServiceController = NoOpWorkoutServiceController,
             computeVelocityOneRepMaxUseCase = com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase(
                 workoutPoints = { _, _, _ -> emptyList() },
@@ -143,6 +150,7 @@ class MainViewModelTest {
         // cancellation, leaving all ViewModel coroutines alive and polluting the test
         // dispatcher's scheduler for subsequent tests (UncaughtExceptionsBeforeTest).
         viewModel.viewModelScope.cancel()
+        profileEquipmentRackRepository.close()
     }
 
     // ========== Initial State Tests ==========
@@ -326,14 +334,12 @@ class MainViewModelTest {
         viewModel.userPreferences.test {
             awaitItem() // Initial value
 
-            fakePreferencesManager.setPreferences(
-                UserPreferences(
-                    weightUnit = WeightUnit.LB,
-                    stopAtTop = true,
-                ),
-            )
+            viewModel.setStopAtTop(true)
 
-            val updated = awaitItem()
+            var updated = awaitItem()
+            while (!updated.stopAtTop) {
+                updated = awaitItem()
+            }
             assertEquals(WeightUnit.LB, updated.weightUnit)
             assertTrue(updated.stopAtTop)
 

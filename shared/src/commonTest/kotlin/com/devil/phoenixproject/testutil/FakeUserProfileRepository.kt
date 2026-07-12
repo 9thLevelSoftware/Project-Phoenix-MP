@@ -196,6 +196,23 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
+    override suspend fun mutateCore(
+        profileId: String,
+        transform: (CoreProfilePreferences) -> CoreProfilePreferences,
+    ) {
+        mutateActiveProfile(profileId) { current, now ->
+            val value = transform(current.core.value)
+            require(ProfilePreferencesValidator.core(value).isEmpty())
+            current.copy(
+                core = current.core.copy(
+                    value = value,
+                    validity = ProfilePreferenceValidity.Valid,
+                    metadata = current.core.metadata.advanced(now),
+                ),
+            )
+        }
+    }
+
     override suspend fun updateRack(profileId: String, value: RackPreferences) {
         require(ProfilePreferencesValidator.rack(value).isEmpty())
         mutateActiveProfile(profileId) { current, now ->

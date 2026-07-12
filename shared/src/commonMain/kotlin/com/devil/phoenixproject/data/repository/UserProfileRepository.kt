@@ -93,6 +93,11 @@ interface UserProfileRepository {
     suspend fun refreshProfiles()
     suspend fun ensureDefaultProfile()
     suspend fun updateCore(profileId: String, value: CoreProfilePreferences)
+    /** Atomically transforms the latest active core section after validating [profileId]. */
+    suspend fun mutateCore(
+        profileId: String,
+        transform: (CoreProfilePreferences) -> CoreProfilePreferences,
+    )
     suspend fun updateRack(profileId: String, value: RackPreferences)
     suspend fun updateWorkout(profileId: String, value: WorkoutPreferences)
     suspend fun updateLed(profileId: String, value: LedPreferences)
@@ -308,6 +313,17 @@ class SqlDelightUserProfileRepository(
             profilePreferencesRepository.updateCore(profileId, value, currentTimeMillis())
         }
 
+    override suspend fun mutateCore(
+        profileId: String,
+        transform: (CoreProfilePreferences) -> CoreProfilePreferences,
+    ) = mutateActiveProfile(profileId) { context ->
+        profilePreferencesRepository.updateCore(
+            profileId,
+            transform(context.preferences.core.value),
+            currentTimeMillis(),
+        )
+    }
+
     override suspend fun updateRack(profileId: String, value: RackPreferences) =
         mutateActiveProfile(profileId) {
             profilePreferencesRepository.updateRack(profileId, value, currentTimeMillis())
@@ -446,7 +462,7 @@ class SqlDelightUserProfileRepository(
 
     private suspend fun mutateActiveProfile(
         expectedProfileId: String,
-        write: suspend () -> Unit,
+        write: suspend (ActiveProfileContext.Ready) -> Unit,
     ) {
         profileContextMutex.withLock {
             val context = _activeProfileContext.value as? ActiveProfileContext.Ready
@@ -454,7 +470,7 @@ class SqlDelightUserProfileRepository(
             if (context.profile.id != expectedProfileId) {
                 throw StaleProfileContextException(expectedProfileId, context.profile.id)
             }
-            write()
+            write(context)
             publishReadyContext(expectedProfileId)
         }
     }

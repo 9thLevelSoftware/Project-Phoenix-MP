@@ -137,7 +137,7 @@ class MainViewModel constructor(
     )
 
     // === Phase 1b: SettingsManager (extracted from this class) ===
-    val settingsManager = SettingsManager(preferencesManager, bleRepository, viewModelScope)
+    val settingsManager = SettingsManager(preferencesManager, userProfileRepository, viewModelScope)
 
     // === Phase 1a: HistoryManager (extracted from this class) ===
     val historyManager = HistoryManager(workoutRepository, personalRecordRepository, userProfileRepository, viewModelScope)
@@ -378,6 +378,8 @@ class MainViewModel constructor(
         settingsManager.setDominatrixModeActive(active)
     fun setAdultsOnlyConfirmed(confirmed: Boolean) =
         settingsManager.setAdultsOnlyConfirmed(confirmed)
+    fun confirmAdultsAndEnableVulgar() =
+        settingsManager.confirmAdultsAndEnableVulgar()
 
     // Issue #611 (PR-followup #613): one-shot decline-remember gate for the 18+
     // Adults Only modal. Thin wrapper around SettingsManager; used by SettingsTab's
@@ -693,10 +695,8 @@ class MainViewModel constructor(
     val discoModeActive: StateFlow<Boolean> = bleRepository.discoModeActive
 
     fun unlockDiscoMode() {
-        viewModelScope.launch {
-            preferencesManager.setDiscoModeUnlocked(true)
-            Logger.i { "DISCO MODE UNLOCKED!" }
-        }
+        settingsManager.setDiscoModeUnlocked(true)
+        Logger.i { "DISCO MODE UNLOCKED!" }
     }
 
     fun toggleDiscoMode(enabled: Boolean) {

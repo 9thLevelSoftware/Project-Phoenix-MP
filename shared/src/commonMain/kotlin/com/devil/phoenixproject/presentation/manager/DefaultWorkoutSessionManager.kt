@@ -194,7 +194,7 @@ class DefaultWorkoutSessionManager(
 
     // ===== Coordinator: Shared state bus for all workout state =====
     val coordinator = run {
-        val prefs = preferencesManager.preferencesFlow.value
+        val prefs = settingsManager.userPreferences.value
         WorkoutCoordinator(
             _hapticEvents = _hapticEvents,
             velocityLossThresholdPercent = prefs.velocityLossThresholdPercent.toFloat(),
@@ -307,7 +307,7 @@ class DefaultWorkoutSessionManager(
 
         scope.launch {
             try {
-                preferencesManager.preferencesFlow.collect { prefs ->
+                settingsManager.userPreferences.collect { prefs ->
                     coordinator.updateVbtSettings(
                         velocityLossThresholdPercent = prefs.velocityLossThresholdPercent.toFloat(),
                         autoEndOnVelocityLoss = prefs.autoEndOnVelocityLoss,

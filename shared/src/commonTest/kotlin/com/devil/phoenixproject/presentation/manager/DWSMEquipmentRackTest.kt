@@ -287,7 +287,7 @@ class DWSMEquipmentRackTest {
                 rackItem("assist", 10f, RackItemBehavior.COUNTERWEIGHT),
             ),
         )
-        harness.fakePrefsManager.setSummaryCountdownSeconds(10)
+        harness.setActiveSummaryCountdownSeconds(10)
         val routine = Routine(
             id = "routine-issue-536-autoplay",
             name = "Vest Leak Autoplay Repro",
@@ -379,7 +379,7 @@ class DWSMEquipmentRackTest {
         harness.activeSessionEngine.handleSetCompletion()
         advanceUntilIdle()
 
-        val defaults = harness.fakePrefsManager.getSingleExerciseDefaults(exerciseId)
+        val defaults = harness.activeSessionEngine.getSingleExerciseDefaults(exerciseId)
         assertEquals(listOf("vest"), defaults?.defaultRackItemIds)
         harness.cleanup()
     }

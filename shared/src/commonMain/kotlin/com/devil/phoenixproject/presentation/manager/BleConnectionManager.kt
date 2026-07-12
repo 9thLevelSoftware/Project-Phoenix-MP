@@ -13,8 +13,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -82,6 +85,30 @@ class BleConnectionManager(
             }
         }
 
+        scope.launch {
+            try {
+                combine(
+                    bleRepository.connectionState,
+                    settingsManager.userPreferences.map { it.colorScheme },
+                ) { connection, color ->
+                    (connection is ConnectionState.Connected) to color
+                }
+                    .distinctUntilChanged()
+                    .collect { (connected, color) ->
+                        bleRepository.setLastColorSchemeIndex(color)
+                        if (connected) {
+                            bleRepository.setColorScheme(color).onFailure { error ->
+                                Logger.e(error) { "Failed to apply active profile LED color" }
+                            }
+                        }
+                    }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Logger.e(error) { "Error collecting active profile LED color" }
+            }
+        }
+
         // Connection state observer for detecting connection loss during workout (Issue #42)
         // When connection is lost during an active workout, show the ConnectionLostDialog
         // Moved from MainViewModel init block
@@ -94,14 +121,6 @@ class BleConnectionManager(
                             wasConnected = true
                             // Clear any previous connection lost alert when reconnected
                             _connectionLostDuringWorkout.value = false
-                            // Issue #179: Initialize LED color scheme on connection
-                            try {
-                                val savedColorScheme = settingsManager.userPreferences.value.colorScheme
-                                bleRepository.setColorScheme(savedColorScheme)
-                                Logger.d { "Initialized LED color scheme to saved preference: $savedColorScheme" }
-                            } catch (e: Exception) {
-                                Logger.e(e) { "Failed to initialize LED color scheme on connection" }
-                            }
                         }
 
                         is ConnectionState.Disconnected, is ConnectionState.Error -> {

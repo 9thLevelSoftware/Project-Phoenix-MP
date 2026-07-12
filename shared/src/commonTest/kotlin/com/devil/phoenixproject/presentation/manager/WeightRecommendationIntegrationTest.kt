@@ -191,7 +191,7 @@ class WeightRecommendationIntegrationTest {
         expectActive: Boolean = true,
     ): DWSMTestHarness {
         val harness = DWSMTestHarness(this)
-        harness.fakePrefsManager.setPreferences(preferences)
+        harness.setActiveProfilePreferences(preferences)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
         harness.dwsm.loadRoutine(routine)

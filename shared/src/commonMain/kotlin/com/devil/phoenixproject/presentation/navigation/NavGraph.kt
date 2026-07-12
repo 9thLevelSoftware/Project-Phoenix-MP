@@ -436,7 +436,7 @@ fun NavGraph(
                     dominatrixModeActive = userPreferences.dominatrixModeActive,
                     onDominatrixModeActiveChange = { viewModel.setDominatrixModeActive(it) },
                     adultsOnlyConfirmed = userPreferences.adultsOnlyConfirmed,
-                    onAdultsOnlyConfirmedChange = { viewModel.setAdultsOnlyConfirmed(it) },
+                    onConfirmAdultsAndEnableVulgar = { viewModel.confirmAdultsAndEnableVulgar() },
                     // Issue #611: one-shot 18+ modal gate. Read reactively from
                     // UserPreferences so NavGraph recomposes when the flag changes.
                     adultsOnlyPrompted = userPreferences.adultsOnlyPrompted,

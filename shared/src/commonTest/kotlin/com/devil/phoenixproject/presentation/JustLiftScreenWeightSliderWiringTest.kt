@@ -124,6 +124,28 @@ class JustLiftScreenWeightSliderWiringTest {
         )
     }
 
+    @Test
+    fun justLiftDefaultsReloadWhenReadyProfileChanges() {
+        val src = readJustLiftScreenSource()
+
+        assertTrue(
+            src.contains("profileRepository.activeProfileContext.collectAsState()"),
+            "JustLiftScreen must observe the atomic active-profile context before loading profile defaults.",
+        )
+        assertTrue(
+            src.contains("LaunchedEffect(readyProfileId)"),
+            "Just Lift defaults must reload whenever the Ready profile ID changes.",
+        )
+        assertTrue(
+            src.contains("defaultsProfileId == readyProfileId"),
+            "Parameter writes must stay disabled until defaults belong to the current Ready profile.",
+        )
+        assertTrue(
+            !src.contains("LaunchedEffect(Unit) {\n        if (!defaultsLoaded)"),
+            "A one-shot defaults load leaks profile A's values after an in-place switch to profile B.",
+        )
+    }
+
     private fun readJustLiftScreenSource(): String {
         // Read from disk via the KMP-compatible `readProjectFile` expect/actual helper
         // (under testutil/). The test runs in commonTest of the same Gradle module that

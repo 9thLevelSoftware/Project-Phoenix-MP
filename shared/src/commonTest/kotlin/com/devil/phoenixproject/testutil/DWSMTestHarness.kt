@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.testutil
 
-import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
+import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
@@ -13,7 +15,6 @@ import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceSnapshot
-import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -67,8 +68,7 @@ class DWSMTestHarness(val testScope: TestScope) {
     val fakeRepMetricRepo = FakeRepMetricRepository()
     val fakeBiomechanicsRepo = FakeBiomechanicsRepository()
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
-    val fakeEquipmentRackRepo = SettingsEquipmentRackRepository(MapSettings())
-    val fakeUserProfileRepo = FakeUserProfileRepository()
+    val fakeUserProfileRepo = FakeUserProfileRepository().apply { setActiveProfileForTest() }
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeExerciseRepo, FakeVelocityOneRepMaxRepository())
@@ -86,7 +86,8 @@ class DWSMTestHarness(val testScope: TestScope) {
     private val dwsmScope = CoroutineScope(StandardTestDispatcher(testScope.testScheduler) + dwsmJob)
     val workoutScope: CoroutineScope get() = dwsmScope
 
-    val settingsManager = SettingsManager(fakePrefsManager, fakeBleRepo, dwsmScope)
+    val fakeEquipmentRackRepo = ProfileEquipmentRackRepository(fakeUserProfileRepo, dwsmScope)
+    val settingsManager = SettingsManager(fakePrefsManager, fakeUserProfileRepo, dwsmScope)
     val gamificationManager = GamificationManager(
         fakeGamificationRepo,
         fakePRRepo,
@@ -138,6 +139,110 @@ class DWSMTestHarness(val testScope: TestScope) {
 
     /** Convenience accessor for the active session engine (workout lifecycle, BLE, auto-stop, rest timer) */
     val activeSessionEngine get() = dwsm.activeSessionEngine
+
+    private fun readyProfile(): ActiveProfileContext.Ready =
+        fakeUserProfileRepo.activeProfileContext.value as ActiveProfileContext.Ready
+
+    suspend fun setActiveBodyWeightKg(value: Float) {
+        val ready = readyProfile()
+        fakeUserProfileRepo.updateCore(
+            ready.profile.id,
+            ready.preferences.core.value.copy(bodyWeightKg = value),
+        )
+    }
+
+    suspend fun setActiveSummaryCountdownSeconds(value: Int) {
+        val ready = readyProfile()
+        fakeUserProfileRepo.updateWorkout(
+            ready.profile.id,
+            ready.preferences.workout.value.copy(summaryCountdownSeconds = value),
+        )
+    }
+
+    suspend fun setActiveCountdownBeepsEnabled(value: Boolean) {
+        val ready = readyProfile()
+        fakeUserProfileRepo.updateWorkout(
+            ready.profile.id,
+            ready.preferences.workout.value.copy(countdownBeepsEnabled = value),
+        )
+    }
+
+    suspend fun setActiveProfilePreferences(value: UserPreferences) {
+        val initial = readyProfile()
+        fakeUserProfileRepo.updateCore(
+            initial.profile.id,
+            initial.preferences.core.value.copy(
+                bodyWeightKg = value.bodyWeightKg,
+                weightUnit = value.weightUnit,
+                weightIncrement = value.weightIncrement,
+            ),
+        )
+        var ready = readyProfile()
+        fakeUserProfileRepo.updateWorkout(
+            ready.profile.id,
+            ready.preferences.workout.value.copy(
+                stopAtTop = value.stopAtTop,
+                beepsEnabled = value.beepsEnabled,
+                stallDetectionEnabled = value.stallDetectionEnabled,
+                audioRepCountEnabled = value.audioRepCountEnabled,
+                repCountTiming = value.repCountTiming,
+                summaryCountdownSeconds = value.summaryCountdownSeconds,
+                autoStartCountdownSeconds = value.autoStartCountdownSeconds,
+                gamificationEnabled = value.gamificationEnabled,
+                autoStartRoutine = value.autoStartRoutine,
+                countdownBeepsEnabled = value.countdownBeepsEnabled,
+                repSoundEnabled = value.repSoundEnabled,
+                motionStartEnabled = value.motionStartEnabled,
+                weightSuggestionsEnabled = value.weightSuggestionsEnabled,
+                defaultRoutineExerciseUsePercentOfPR = value.defaultRoutineExerciseUsePercentOfPR,
+                defaultRoutineExerciseWeightPercentOfPR = value.defaultRoutineExerciseWeightPercentOfPR,
+                voiceStopEnabled = value.voiceStopEnabled,
+            ),
+        )
+        ready = readyProfile()
+        fakeUserProfileRepo.updateLed(
+            ready.profile.id,
+            ready.preferences.led.value.copy(
+                colorScheme = value.colorScheme,
+                discoModeUnlocked = value.discoModeUnlocked,
+            ),
+        )
+        ready = readyProfile()
+        fakeUserProfileRepo.updateVbt(
+            ready.profile.id,
+            ready.preferences.vbt.value.copy(
+                enabled = value.vbtEnabled,
+                velocityLossThresholdPercent = value.velocityLossThresholdPercent,
+                autoEndOnVelocityLoss = value.autoEndOnVelocityLoss,
+                defaultScalingBasis = value.defaultScalingBasis,
+                verbalEncouragementEnabled = value.verbalEncouragementEnabled,
+                vulgarModeEnabled = value.vulgarModeEnabled,
+                vulgarTier = value.vulgarTier,
+                dominatrixModeUnlocked = value.dominatrixModeUnlocked,
+                dominatrixModeActive = value.dominatrixModeActive,
+            ),
+        )
+        ready = readyProfile()
+        fakeUserProfileRepo.updateLocalSafety(
+            ready.profile.id,
+            ready.localSafety.copy(
+                safeWord = value.safeWord,
+                safeWordCalibrated = value.safeWordCalibrated,
+                adultsOnlyConfirmed = value.adultsOnlyConfirmed,
+                adultsOnlyPrompted = value.adultsOnlyPrompted,
+            ),
+        )
+        fakePrefsManager.setPreferences(
+            fakePrefsManager.preferencesFlow.value.copy(
+                enableVideoPlayback = value.enableVideoPlayback,
+                autoBackupEnabled = value.autoBackupEnabled,
+                backupDestination = value.backupDestination,
+                language = value.language,
+                velocityOneRepMaxBackfillDone = value.velocityOneRepMaxBackfillDone,
+                bleCompatibilityMode = value.bleCompatibilityMode,
+            ),
+        )
+    }
 
     /**
      * Cancel all DWSM coroutines to prevent UncompletedCoroutinesError.

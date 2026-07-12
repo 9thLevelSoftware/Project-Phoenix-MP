@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.integration.HealthBodyWeightReader
 import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
 import com.devil.phoenixproject.data.integration.HealthIntegrationBodyWeightReader
 import com.devil.phoenixproject.data.integration.IntegrationManager
+import com.devil.phoenixproject.data.migration.RequiredMigrationGate
 import com.devil.phoenixproject.data.repository.*
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
@@ -35,7 +36,15 @@ val syncModule = module {
         )
     }
     single<HealthBodyWeightReader> { HealthIntegrationBodyWeightReader(get()) }
-    single { HealthBodyWeightSyncManager(get(), get(), get(), get(), get()) }
+    single {
+        HealthBodyWeightSyncManager(
+            bodyWeightReader = get(),
+            externalActivityRepository = get(),
+            externalMeasurementRepository = get(),
+            requiredMigrationGate = get<RequiredMigrationGate>(),
+            userProfileRepository = get(),
+        )
+    }
     single { SyncTriggerManager(get(), get(), get()) }
     single { IntegrationManager(get(), get(), get(), get(), get(), get(), get()) }
 

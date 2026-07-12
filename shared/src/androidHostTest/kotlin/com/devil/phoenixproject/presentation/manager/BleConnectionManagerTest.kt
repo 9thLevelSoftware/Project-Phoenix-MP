@@ -1,8 +1,10 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.testutil.FakeBleRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -27,11 +29,48 @@ class BleConnectionManagerTest {
 
     private lateinit var fakeBleRepository: FakeBleRepository
     private lateinit var fakePreferencesManager: FakePreferencesManager
+    private lateinit var fakeProfileRepository: FakeUserProfileRepository
 
     @Before
     fun setup() {
         fakeBleRepository = FakeBleRepository()
         fakePreferencesManager = FakePreferencesManager()
+        fakeProfileRepository = FakeUserProfileRepository().apply { setActiveProfileForTest() }
+    }
+
+    @Test
+    fun `connected BLE follows active profile LED scheme`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val profiles = FakeUserProfileRepository().apply {
+                setActiveProfileForTest(id = "profile-a")
+                updateLed("profile-a", LedPreferences(colorScheme = 2))
+            }
+            val settingsManager = SettingsManager(fakePreferencesManager, profiles, managerScope)
+            BleConnectionManager(
+                fakeBleRepository,
+                settingsManager,
+                FakeWorkoutStateProvider(active = false),
+                MutableSharedFlow(),
+                managerScope,
+            )
+            advanceUntilIdle()
+
+            fakeBleRepository.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            profiles.setActiveProfileForTest(id = "profile-b")
+            profiles.updateLed("profile-b", LedPreferences(colorScheme = 7))
+            advanceUntilIdle()
+
+            assertEquals(7, fakeBleRepository.colorSchemeCommands.last())
+            fakeBleRepository.simulateDisconnect()
+            advanceUntilIdle()
+            fakeBleRepository.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            assertEquals(listOf(7, 7), fakeBleRepository.colorSchemeCommands.takeLast(2))
+        } finally {
+            managerScope.cancel()
+        }
     }
 
     @Test
@@ -40,7 +79,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = true)
             val settingsManager =
-                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+                SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
             val manager =
                 BleConnectionManager(
                     fakeBleRepository,
@@ -72,7 +111,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
             val settingsManager =
-                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+                SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
             val manager =
                 BleConnectionManager(
                     fakeBleRepository,
@@ -100,7 +139,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
             val settingsManager =
-                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+                SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
             val manager =
                 BleConnectionManager(
                     fakeBleRepository,
@@ -135,7 +174,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
             val settingsManager =
-                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+                SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
             val manager =
                 BleConnectionManager(
                     fakeBleRepository,
@@ -168,7 +207,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
             val settingsManager =
-                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+                SettingsManager(fakePreferencesManager, fakeProfileRepository, managerScope)
             val manager =
                 BleConnectionManager(
                     fakeBleRepository,

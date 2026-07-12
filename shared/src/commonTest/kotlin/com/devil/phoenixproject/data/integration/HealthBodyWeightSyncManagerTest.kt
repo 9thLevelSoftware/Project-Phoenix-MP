@@ -1,7 +1,12 @@
 package com.devil.phoenixproject.data.integration
 
+import com.devil.phoenixproject.data.migration.RequiredMigrationGate
+import com.devil.phoenixproject.data.migration.RequiredMigrationFailedException
+import com.devil.phoenixproject.data.migration.RequiredMigrationState
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeExternalMeasurementRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
@@ -9,16 +14,41 @@ import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runCurrent
 
 class HealthBodyWeightSyncManagerTest {
+
+    private class FakeMigrationGate(
+        initialState: RequiredMigrationState = RequiredMigrationState.Ready,
+    ) : RequiredMigrationGate {
+        val state = MutableStateFlow(initialState)
+        override val requiredMigrationState: StateFlow<RequiredMigrationState> =
+            state
+
+        override suspend fun awaitRequiredMigrations() {
+            when (val terminal = state.first {
+                it is RequiredMigrationState.Ready || it is RequiredMigrationState.Failed
+            }) {
+                RequiredMigrationState.Ready -> Unit
+                is RequiredMigrationState.Failed -> throw RequiredMigrationFailedException(terminal.message)
+                else -> error("Required migration gate returned a non-terminal state")
+            }
+        }
+    }
 
     private class FakeHealthBodyWeightReader : HealthBodyWeightReader {
         var available = true
         var bodyWeightReadPermission = true
         var readResult: Result<HealthBodyWeightSample?> = Result.success(null)
         var readCallCount = 0
+        var beforeRead: suspend () -> Unit = {}
 
         override suspend fun isAvailable(): Boolean = available
 
@@ -26,6 +56,7 @@ class HealthBodyWeightSyncManagerTest {
 
         override suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?> {
             readCallCount++
+            beforeRead()
             return readResult
         }
     }
@@ -86,7 +117,9 @@ class HealthBodyWeightSyncManagerTest {
         val result = harness.manager.syncLatestFromConnectedPlatform()
 
         assertTrue(result is HealthBodyWeightSyncResult.Synced)
-        assertEquals(81.5f, harness.preferences.preferencesFlow.value.bodyWeightKg)
+        val ready = assertIs<ActiveProfileContext.Ready>(harness.profiles.activeProfileContext.value)
+        assertEquals(81.5f, ready.preferences.core.value.bodyWeightKg)
+        assertEquals(72f, harness.preferences.preferencesFlow.value.bodyWeightKg)
         val measurement = harness.measurements.measurements.single()
         assertEquals("scale-1", measurement.externalId)
         assertEquals(IntegrationProvider.GOOGLE_HEALTH, measurement.provider)
@@ -123,12 +156,99 @@ class HealthBodyWeightSyncManagerTest {
         val result = harness.manager.syncLatestFromConnectedPlatform()
 
         assertTrue(result is HealthBodyWeightSyncResult.Synced)
-        assertEquals(82f, harness.preferences.preferencesFlow.value.bodyWeightKg)
+        assertEquals(
+            82f,
+            assertIs<ActiveProfileContext.Ready>(harness.profiles.activeProfileContext.value)
+                .preferences.core.value.bodyWeightKg,
+        )
         assertEquals(1, harness.measurements.measurements.size)
         assertEquals(82.0, harness.measurements.measurements.single().value)
     }
 
-    private class Harness {
+    @Test
+    fun profileTransitionDuringImportReturnsFailedWithoutInsertingMeasurement() = runTest {
+        val harness = Harness()
+        harness.connectHealth()
+        harness.reader.readResult = Result.success(sample(weightKg = 81.5f))
+        harness.reader.beforeRead = {
+            harness.profiles.recoverPendingProfileTransitionForStartup()
+        }
+
+        val result = harness.manager.syncLatestFromConnectedPlatform()
+
+        assertIs<HealthBodyWeightSyncResult.Failed>(result)
+        assertEquals(emptyList(), harness.measurements.measurements)
+    }
+
+    @Test
+    fun coreChangesDuringHealthReadArePreservedWhenBodyWeightIsWritten() = runTest {
+        val harness = Harness()
+        harness.connectHealth()
+        harness.reader.readResult = Result.success(sample(weightKg = 81.5f))
+        harness.reader.beforeRead = {
+            val ready = assertIs<ActiveProfileContext.Ready>(harness.profiles.activeProfileContext.value)
+            harness.profiles.updateCore(
+                ready.profile.id,
+                ready.preferences.core.value.copy(
+                    weightUnit = WeightUnit.LB,
+                    weightIncrement = 5f,
+                ),
+            )
+        }
+
+        val result = harness.manager.syncLatestFromConnectedPlatform()
+
+        assertIs<HealthBodyWeightSyncResult.Synced>(result)
+        val core = assertIs<ActiveProfileContext.Ready>(harness.profiles.activeProfileContext.value)
+            .preferences.core.value
+        assertEquals(81.5f, core.bodyWeightKg)
+        assertEquals(WeightUnit.LB, core.weightUnit)
+        assertEquals(5f, core.weightIncrement)
+    }
+
+    @Test
+    fun healthImportWaitsForRequiredMigrationAndWritesActiveCore() = runTest {
+        val gate = FakeMigrationGate(RequiredMigrationState.Applying)
+        val harness = Harness(gate)
+        harness.connectHealth()
+        harness.reader.readResult = Result.success(sample(weightKg = 81f))
+
+        val result = async { harness.manager.syncLatestFromConnectedPlatform() }
+        runCurrent()
+        assertEquals(
+            0f,
+            assertIs<ActiveProfileContext.Ready>(harness.profiles.activeProfileContext.value)
+                .preferences.core.value.bodyWeightKg,
+        )
+
+        gate.state.value = RequiredMigrationState.Ready
+
+        assertIs<HealthBodyWeightSyncResult.Synced>(result.await())
+        assertEquals(
+            81f,
+            assertIs<ActiveProfileContext.Ready>(harness.profiles.activeProfileContext.value)
+                .preferences.core.value.bodyWeightKg,
+        )
+    }
+
+    @Test
+    fun failedRequiredMigrationReturnsFailedWithoutReadingHealthData() = runTest {
+        val gate = FakeMigrationGate(RequiredMigrationState.Failed("migration failed"))
+        val harness = Harness(gate)
+        harness.connectHealth()
+        harness.reader.readResult = Result.success(sample(weightKg = 81f))
+
+        val result = harness.manager.syncLatestFromConnectedPlatform()
+
+        val failed = assertIs<HealthBodyWeightSyncResult.Failed>(result)
+        assertEquals("migration failed", failed.error.message)
+        assertEquals(0, harness.reader.readCallCount)
+        assertEquals(emptyList(), harness.measurements.measurements)
+    }
+
+    private class Harness(
+        migrationGate: RequiredMigrationGate = FakeMigrationGate(),
+    ) {
         val reader = FakeHealthBodyWeightReader()
         val activities = FakeExternalActivityRepository()
         val measurements = FakeExternalMeasurementRepository()
@@ -140,7 +260,7 @@ class HealthBodyWeightSyncManagerTest {
             bodyWeightReader = reader,
             externalActivityRepository = activities,
             externalMeasurementRepository = measurements,
-            preferencesManager = preferences,
+            requiredMigrationGate = migrationGate,
             userProfileRepository = profiles,
             providerResolver = { IntegrationProvider.GOOGLE_HEALTH },
             nowProvider = { 123_456L },

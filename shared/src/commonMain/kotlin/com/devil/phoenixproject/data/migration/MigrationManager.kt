@@ -59,7 +59,7 @@ class MigrationManager(
     private val profileLocalSafetyStore: ProfileLocalSafetyStore,
     private val legacyProfilePreferencesReader: LegacyProfilePreferencesReader,
     private val driver: SqlDriver? = null,
-) {
+) : RequiredMigrationGate {
     private val log = Logger.withTag("MigrationManager")
 
     companion object {
@@ -83,7 +83,7 @@ class MigrationManager(
     private val _requiredMigrationState = MutableStateFlow<RequiredMigrationState>(
         RequiredMigrationState.NotStarted,
     )
-    val requiredMigrationState: StateFlow<RequiredMigrationState> =
+    override val requiredMigrationState: StateFlow<RequiredMigrationState> =
         _requiredMigrationState.asStateFlow()
 
     private val _profileScopeRepairState = MutableStateFlow<ProfileScopeRepairState>(ProfileScopeRepairState.Idle)
@@ -199,8 +199,14 @@ class MigrationManager(
         }
     }
 
-    suspend fun awaitRequiredMigrations() {
-        requiredMigrationState.first { it is RequiredMigrationState.Ready }
+    override suspend fun awaitRequiredMigrations() {
+        when (val terminal = requiredMigrationState.first {
+            it is RequiredMigrationState.Ready || it is RequiredMigrationState.Failed
+        }) {
+            RequiredMigrationState.Ready -> Unit
+            is RequiredMigrationState.Failed -> throw RequiredMigrationFailedException(terminal.message)
+            else -> error("Required migration gate returned a non-terminal state")
+        }
     }
 
     private suspend fun migrateProfilePreferences() {

@@ -20,7 +20,11 @@ import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.koin.dsl.module
+import org.koin.dsl.onClose
 
 val dataModule = module {
     // Database
@@ -59,7 +63,14 @@ val dataModule = module {
     single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
     single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
     single<ProgressionRepository> { SqlDelightProgressionRepository(get()) }
-    single<EquipmentRackRepository> { SettingsEquipmentRackRepository(get()) }
+    single<EquipmentRackRepository> {
+        ProfileEquipmentRackRepository(
+            profiles = get(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        )
+    } onClose { repository ->
+        (repository as? ProfileEquipmentRackRepository)?.close()
+    }
 
     // Smart Suggestions Repository
     single<SmartSuggestionsRepository> { SqlDelightSmartSuggestionsRepository(get()) }
