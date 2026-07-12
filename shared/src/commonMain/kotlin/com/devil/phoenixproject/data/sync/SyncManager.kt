@@ -161,6 +161,53 @@ internal fun profilePreferenceInvalidCanonicalLogLine(
 ): String = "PROFILE_PREFERENCE_INVALID_CANONICAL " +
     "reason=${safeProfilePreferenceReason(invalid.reason)}"
 
+internal enum class ProfilePreferencePullDiagnosticCategory {
+    INVALID_CANONICAL,
+    DUPLICATE_KEY,
+    LATER_PAGE_IGNORED,
+    UNKNOWN_PROFILE,
+    REPOSITORY_INVALID,
+}
+
+internal data class ProfilePreferencePullPlan(
+    val valid: List<CanonicalProfilePreferenceSection>,
+    val invalidCanonicalCount: Int,
+    val duplicateKeyCount: Int,
+)
+
+private fun profilePreferencePullEnvelopeKey(
+    dto: PortalProfilePreferenceSectionCanonicalDto,
+): ProfilePreferenceSectionKey? {
+    val section = ProfilePreferenceSectionName.entries.firstOrNull { it.name == dto.section }
+        ?: return null
+    return ProfilePreferenceSectionKey(dto.localProfileId, section)
+}
+
+internal fun planProfilePreferencePullSections(
+    dtos: List<PortalProfilePreferenceSectionCanonicalDto>,
+): ProfilePreferencePullPlan {
+    val keyCounts = dtos.mapNotNull(::profilePreferencePullEnvelopeKey)
+        .groupingBy { it }
+        .eachCount()
+    val duplicateKeys = keyCounts.filterValues { it > 1 }.keys
+    val decoded = dtos.map(PortalPullAdapter::toCanonicalProfilePreferenceSection)
+    return ProfilePreferencePullPlan(
+        valid = decoded
+            .filterIsInstance<ProfilePreferenceCanonicalDecodeResult.Valid>()
+            .map { it.section }
+            .filterNot { it.key in duplicateKeys },
+        invalidCanonicalCount = decoded.count {
+            it is ProfilePreferenceCanonicalDecodeResult.Invalid
+        },
+        duplicateKeyCount = duplicateKeys.size,
+    )
+}
+
+internal fun profilePreferencePullCountLogLine(
+    category: ProfilePreferencePullDiagnosticCategory,
+    count: Int,
+): String = "PROFILE_PREFERENCE_PULL category=${category.name} count=$count"
+
 internal fun profilePreferenceChunkFailureLogLine(error: Throwable?): String {
     val status = (error as? PortalApiException)?.statusCode?.toString() ?: "UNKNOWN"
     return "PROFILE_PREFERENCE_CHUNK_FAILED status=$status"
@@ -1519,6 +1566,7 @@ class SyncManager(
                 pullResponse.cycles.size +
                 pullResponse.badges.size +
                 pullResponse.personalRecords.size +
+                (pullResponse.profilePreferenceSections?.size ?: 0) +
                 (if (pullResponse.rpgAttributes != null) 1 else 0) +
                 (if (pullResponse.gamificationStats != null) 1 else 0) +
                 pullResponse.externalActivities.size
@@ -1549,8 +1597,13 @@ class SyncManager(
                 }
             }
 
-            // Merge this page atomically
-            val mergeResult = mergePullPage(pullResponse, lastSync, mergeProfileId)
+            // Merge this page in preference-first repository order
+            val mergeResult = mergePullPage(
+                pullResponse = pullResponse,
+                lastSync = lastSync,
+                mergeProfileId = mergeProfileId,
+                isFirstPage = pagesProcessed == 1,
+            )
             if (mergeResult.isFailure) {
                 // Map Result<Unit> to Result<Long> for consistent return type
                 return Result.failure(mergeResult.exceptionOrNull() ?: PortalApiException("Merge failed"))
@@ -1586,20 +1639,94 @@ class SyncManager(
         return Result.success(finalSyncTime)
     }
 
+    private suspend fun applyPulledProfilePreferences(
+        dtos: List<PortalProfilePreferenceSectionCanonicalDto>?,
+        isFirstPage: Boolean,
+    ) {
+        val sections = dtos.orEmpty()
+        if (sections.isEmpty()) return
+        if (!isFirstPage) {
+            Logger.w("SyncManager") {
+                profilePreferencePullCountLogLine(
+                    ProfilePreferencePullDiagnosticCategory.LATER_PAGE_IGNORED,
+                    sections.size,
+                )
+            }
+            return
+        }
+        if (!isProfilePreferenceMigrationReady()) return
+
+        val safeFailureLogger: (String) -> Unit = { line ->
+            Logger.w("SyncManager") { line }
+        }
+        val plan = isolateProfilePreferenceFailure(
+            ProfilePreferenceLocalFailureStage.PULL_RESPONSE_MAPPING,
+            safeFailureLogger,
+        ) {
+            planProfilePreferencePullSections(sections)
+        } ?: return
+        if (plan.invalidCanonicalCount > 0) {
+            Logger.w("SyncManager") {
+                profilePreferencePullCountLogLine(
+                    ProfilePreferencePullDiagnosticCategory.INVALID_CANONICAL,
+                    plan.invalidCanonicalCount,
+                )
+            }
+        }
+        if (plan.duplicateKeyCount > 0) {
+            Logger.w("SyncManager") {
+                profilePreferencePullCountLogLine(
+                    ProfilePreferencePullDiagnosticCategory.DUPLICATE_KEY,
+                    plan.duplicateKeyCount,
+                )
+            }
+        }
+        if (plan.valid.isEmpty()) return
+
+        val report = isolateProfilePreferenceFailure(
+            ProfilePreferenceLocalFailureStage.PULL_APPLY,
+            safeFailureLogger,
+        ) {
+            profilePreferenceSyncRepository.applyPulledSections(plan.valid)
+        } ?: return
+        if (report.ignoredUnknownProfile > 0) {
+            Logger.i("SyncManager") {
+                profilePreferencePullCountLogLine(
+                    ProfilePreferencePullDiagnosticCategory.UNKNOWN_PROFILE,
+                    report.ignoredUnknownProfile,
+                )
+            }
+        }
+        if (report.invalid > 0) {
+            Logger.w("SyncManager") {
+                profilePreferencePullCountLogLine(
+                    ProfilePreferencePullDiagnosticCategory.REPOSITORY_INVALID,
+                    report.invalid,
+                )
+            }
+        }
+    }
+
     /**
-     * Merge a single pull page atomically into local database.
-     * Extracted from pullRemoteChangesWithResult for pagination support.
+     * Merge one pull page in preference-first order.
+     *
+     * Preference sections commit through ProfilePreferenceSyncRepository before ordinary
+     * entities. SyncRepository's ordinary merge owns its own transaction, while session LWW,
+     * preferences, notes, RPG, and external activities may use separate repository transactions.
+     * A later ordinary failure therefore does not roll back an earlier preference commit.
+     * The caller leaves lastSync unchanged and retries the page; revision guards make replay
+     * idempotent and dirty-section predicates preserve concurrent local edits.
      */
     private suspend fun mergePullPage(
         pullResponse: PortalSyncPullResponse,
         lastSync: Long,
         mergeProfileId: String,
+        isFirstPage: Boolean,
     ): Result<Unit> {
-        // ====================================================================================
-        // ATOMIC MERGE: All SyncRepository-managed entities are merged in a single transaction.
-        // This ensures all-or-nothing semantics: if any entity type fails, the entire page
-        // rolls back to prevent partial state.
-        // ====================================================================================
+        applyPulledProfilePreferences(
+            dtos = pullResponse.profilePreferenceSections,
+            isFirstPage = isFirstPage,
+        )
 
         // 1. Prepare sessions with exercise lookup (pre-transaction to avoid DB calls in transaction)
         var unmatchedExerciseCount = 0
@@ -1691,18 +1818,15 @@ class SyncManager(
             }
             .toMap()
 
-        // 3. Execute atomic merge (all or nothing). Sessions are merged via
-        // the LWW path (mergeSessionsLww) when SYNC_LWW_ENABLED is implicit
-        // through the presence of incoming updatedAt; falls back to the
-        // legacy INSERT OR IGNORE behavior when the map has no entries
-        // (older Edge Function payloads pre-Phase-3.2).
+        // 3. Execute ordinary repository merges. Sessions use the LWW path when incoming
+        // updatedAt values are present and fall back to legacy INSERT OR IGNORE otherwise.
+        // These calls may commit independently of the preference repository call above.
         val sessionsHaveUpdatedAt = sessionUpdatedAtById.values.any { it > 0L }
         try {
             if (sessionsHaveUpdatedAt) {
                 syncRepository.mergeSessionsLww(mobileSessions, sessionUpdatedAtById)
-                // Routines/cycles/badges/stats/PRs still go through the atomic
-                // path. Pass an empty session list to skip the legacy
-                // INSERT OR IGNORE branch (already handled by LWW).
+                // Routines/cycles/badges/stats/PRs still use SyncRepository's transaction.
+                // Pass an empty session list because LWW already handled sessions.
                 syncRepository.mergeAllPullData(
                     sessions = emptyList(),
                     routines = pullResponse.routines,
@@ -1726,8 +1850,8 @@ class SyncManager(
                 )
             }
 
-            // Phase 3.5: persist session-level notes after the atomic merge
-            // succeeds. Kept outside the main transaction so a notes-table
+            // Phase 3.5: persist session-level notes after ordinary repository merges
+            // succeed. Kept outside the main transaction so a notes-table
             // failure cannot roll back session data.
             if (sessionNotesMap.isNotEmpty()) {
                 try {
@@ -1741,22 +1865,21 @@ class SyncManager(
             }
 
             Logger.d("SyncManager") {
-                "Atomic merge complete: ${mobileSessions.size} sessions (${mobileSessions.count { it.exerciseId != null }} with exerciseId), " +
+                "Ordinary pull merge complete: ${mobileSessions.size} sessions (${mobileSessions.count { it.exerciseId != null }} with exerciseId), " +
                     "${pullResponse.routines.size} routines, ${pullResponse.cycles.size} cycles, " +
                     "${pullResponse.badges.size} badges, ${prDtos.size} PRs, " +
                     "${sessionNotesMap.size} session notes"
             }
         } catch (e: Exception) {
-            Logger.e(e) { "Atomic merge failed - transaction rolled back. No entities were persisted." }
+            Logger.e(e) {
+                "Ordinary pull merge failed; lastSync will not advance and earlier per-repository " +
+                    "merges may remain for idempotent retry."
+            }
             return Result.failure(PortalApiException("Pull merge failed: ${e.message}"))
         }
 
-        // ====================================================================================
-        // NON-ATOMIC MERGES: RPG attributes and external activities are managed by separate
-        // repositories. They are merged after the atomic transaction since they have different
-        // conflict resolution strategies and don't need to be atomic with core sync data.
-        // If these fail, the core sync data is still preserved.
-        // ====================================================================================
+        // RPG attributes and external activities use separate repositories and conflict rules.
+        // Failures here do not roll back already committed ordinary or preference data.
 
         try {
             // RPG attributes — server wins (overwrite local)
@@ -1816,7 +1939,7 @@ class SyncManager(
         }
         } catch (e: Exception) {
             Logger.w(e) {
-                "Non-atomic post-merge (RPG/external activities) failed; " +
+                "Separate post-merge repository work (RPG/external activities) failed; " +
                     "non-fatal, core sync data is preserved."
             }
         }

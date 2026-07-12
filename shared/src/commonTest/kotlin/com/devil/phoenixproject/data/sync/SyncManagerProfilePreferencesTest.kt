@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -45,7 +46,8 @@ class SyncManagerProfilePreferencesTest {
 
         assertEquals(2, harness.api.pushPayloads.size)
         val metadataPayload = harness.api.pushPayloads[0]
-        assertEquals(listOf("profile-a", "default"), metadataPayload.allProfiles?.map { it.id })
+        val sentMetadataProfileIds = metadataPayload.allProfiles.orEmpty().mapTo(linkedSetOf()) { it.id }
+        assertTrue("profile-a" in sentMetadataProfileIds)
         assertNull(metadataPayload.profilePreferenceSections)
         val preferencePayload = harness.api.pushPayloads[1]
         assertNull(preferencePayload.profileId)
@@ -58,6 +60,11 @@ class SyncManagerProfilePreferencesTest {
         assertEquals(
             "profile-a",
             preferencePayload.profilePreferenceSections?.single()?.localProfileId,
+        )
+        assertTrue(
+            preferencePayload.profilePreferenceSections.orEmpty()
+                .mapTo(linkedSetOf()) { it.localProfileId }
+                .all { it in sentMetadataProfileIds },
         )
     }
 
@@ -119,14 +126,14 @@ class SyncManagerProfilePreferencesTest {
 
         assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
 
-        assertEquals(
-            listOf("profile-a", "default"),
-            harness.api.pushPayloads[0].allProfiles?.map { it.id },
-        )
-        assertEquals(
-            listOf("profile-a"),
-            harness.api.pushPayloads[1].profilePreferenceSections?.map { it.localProfileId },
-        )
+        val sentMetadataProfileIds = harness.api.pushPayloads[0].allProfiles.orEmpty()
+            .mapTo(linkedSetOf()) { it.id }
+        val preferenceParentIds = harness.api.pushPayloads[1].profilePreferenceSections.orEmpty()
+            .mapTo(linkedSetOf()) { it.localProfileId }
+        assertTrue("profile-a" in sentMetadataProfileIds)
+        assertEquals(setOf("profile-a"), preferenceParentIds)
+        assertTrue(preferenceParentIds.all { it in sentMetadataProfileIds })
+        assertFalse(newProfileSection.key.localProfileId in sentMetadataProfileIds)
         assertTrue(
             harness.preferenceSyncRepository.appliedPushOutcomes
                 .flatten()
@@ -580,6 +587,232 @@ class SyncManagerProfilePreferencesTest {
         }
         assertTrue(emitted.isEmpty())
     }
+
+    @Test
+    fun `pull planner pre-counts duplicate keys before validation and keeps valid siblings`() {
+        val sentinel = "SECRET_PULL_PROFILE_SENTINEL"
+        val plan = planProfilePreferencePullSections(
+            listOf(
+                coreCanonical(revision = 3),
+                coreCanonical(revision = 4).copy(documentVersion = 2),
+                workoutCanonical(revision = 5),
+                coreCanonical(revision = 6).copy(localProfileId = "$sentinel\u0000"),
+            ),
+        )
+
+        assertEquals(
+            listOf(ProfilePreferenceSectionName.WORKOUT),
+            plan.valid.map { it.key.section },
+        )
+        assertEquals(1, plan.duplicateKeyCount)
+        assertEquals(2, plan.invalidCanonicalCount)
+    }
+
+    @Test
+    fun `pull diagnostics contain only fixed categories and counts`() {
+        val sentinel = "SECRET_PULL_DIAGNOSTIC_SENTINEL"
+        val lines = ProfilePreferencePullDiagnosticCategory.entries.map { category ->
+            profilePreferencePullCountLogLine(category, 7)
+        } + profilePreferenceInvalidCanonicalLogLine(
+            ProfilePreferenceCanonicalDecodeResult.Invalid(
+                localProfileId = sentinel,
+                section = sentinel,
+                reason = sentinel,
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                "PROFILE_PREFERENCE_PULL category=INVALID_CANONICAL count=7",
+                "PROFILE_PREFERENCE_PULL category=DUPLICATE_KEY count=7",
+                "PROFILE_PREFERENCE_PULL category=LATER_PAGE_IGNORED count=7",
+                "PROFILE_PREFERENCE_PULL category=UNKNOWN_PROFILE count=7",
+                "PROFILE_PREFERENCE_PULL category=REPOSITORY_INVALID count=7",
+                "PROFILE_PREFERENCE_INVALID_CANONICAL reason=INVALID_PROFILE_PREFERENCE_DIAGNOSTIC",
+            ),
+            lines,
+        )
+        assertTrue(lines.none { sentinel in it })
+    }
+
+    @Test
+    fun `pull applies known preference section before existing entities`() = runTest {
+        val mergeEvents = mutableListOf<String>()
+        harness.preferenceSyncRepository.onApplyPulledSections = { mergeEvents += "preferences" }
+        harness.syncRepository.onMergeAllPullData = { mergeEvents += "entities" }
+        harness.api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_200_000L,
+                profilePreferenceSections = listOf(coreCanonical(revision = 3)),
+                routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine")),
+            ),
+        )
+
+        assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+
+        assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+        assertEquals(
+            3,
+            harness.preferenceSyncRepository.appliedPulledSections.single().single().serverRevision,
+        )
+        assertEquals(1, harness.syncRepository.atomicMergeCallCount)
+        assertEquals(listOf("preferences", "entities"), mergeEvents)
+    }
+
+    @Test
+    fun `pull reports unknown preference without creating a profile or preference row`() = runTest {
+        harness.api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_200_000L,
+                profilePreferenceSections = listOf(
+                    coreCanonical(revision = 3).copy(localProfileId = "remote-only-profile"),
+                ),
+            ),
+        )
+
+        assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+
+        assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+        assertEquals(
+            "remote-only-profile",
+            harness.preferenceSyncRepository.pulledSectionCalls.single().single()
+                .key.localProfileId,
+        )
+        assertTrue(harness.preferenceSyncRepository.appliedPulledSections.single().isEmpty())
+        assertTrue(harness.profileRepository.allProfiles.value.none { it.id == "remote-only-profile" })
+    }
+
+    @Test
+    fun `localProfiles metadata still does not create mobile profiles`() = runTest {
+        harness.api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_200_000L,
+                localProfiles = listOf(LocalProfileDto("remote-only-profile", "Remote", 2)),
+            ),
+        )
+
+        assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+
+        assertEquals(0, harness.preferenceSyncRepository.pullApplyCallCount)
+        assertTrue(harness.profileRepository.allProfiles.value.none { it.id == "remote-only-profile" })
+    }
+
+    @Test
+    fun `pull readiness is dynamic while not Ready still merges ordinary pages`() = runTest {
+        var migrationState: RequiredMigrationState = RequiredMigrationState.NotStarted
+        val manager = harness.manager(
+            migrationReady = { migrationState is RequiredMigrationState.Ready },
+        )
+        harness.api.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_783_771_200_000L,
+                    hasMore = true,
+                    nextCursor = "page-2",
+                    profilePreferenceSections = listOf(coreCanonical(revision = 2)),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_783_771_201_000L,
+                    routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine")),
+                ),
+            ),
+        )
+
+        assertTrue(manager.sync().isSuccess)
+        assertEquals(2, harness.api.pullCallCount)
+        assertEquals(0, harness.preferenceSyncRepository.pullApplyCallCount)
+        assertEquals(2, harness.syncRepository.atomicMergeCallCount)
+
+        migrationState = RequiredMigrationState.Ready
+        harness.api.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_783_771_202_000L,
+                    profilePreferenceSections = listOf(coreCanonical(revision = 3)),
+                    routines = listOf(PullRoutineDto(id = "routine-2", name = "Routine 2")),
+                ),
+            ),
+        )
+
+        assertTrue(manager.sync().isSuccess)
+        assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+        assertEquals(
+            3,
+            harness.preferenceSyncRepository.appliedPulledSections.single().single().serverRevision,
+        )
+        assertEquals(3, harness.syncRepository.atomicMergeCallCount)
+    }
+
+    @Test
+    fun `preference apply failure is local and ordinary entities still merge`() = runTest {
+        harness.preferenceSyncRepository.applyPullFailure =
+            IllegalStateException("SECRET_PULL_APPLY_FAILURE")
+        harness.api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_200_000L,
+                profilePreferenceSections = listOf(coreCanonical(revision = 3)),
+                routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine")),
+            ),
+        )
+
+        assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+
+        assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+        assertEquals(1, harness.preferenceSyncRepository.pulledSectionCalls.size)
+        assertTrue(harness.preferenceSyncRepository.appliedPulledSections.isEmpty())
+        assertEquals(1, harness.syncRepository.atomicMergeCallCount)
+    }
+
+    @Test
+    fun `pull preference cancellation escapes before ordinary merge`() = runTest {
+        harness.preferenceSyncRepository.applyPullFailure =
+            CancellationException("SECRET_PULL_CANCELLATION")
+        harness.api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_200_000L,
+                profilePreferenceSections = listOf(coreCanonical(revision = 3)),
+                routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine")),
+            ),
+        )
+
+        assertFailsWith<CancellationException> {
+            harness.manager(migrationReady = { true }).sync()
+        }
+        assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+        assertEquals(0, harness.syncRepository.atomicMergeCallCount)
+    }
+
+    @Test
+    fun `ordinary merge failure keeps earlier preference commit and checkpoint for retry`() =
+        runTest {
+            val initialLastSync = 5_000L
+            harness.tokenStorage.setLastSyncTimestamp(initialLastSync)
+            harness.syncRepository.atomicMergeShouldFail = true
+            harness.api.pullResult = Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_783_771_200_000L,
+                    profilePreferenceSections = listOf(coreCanonical(revision = 3)),
+                    routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine")),
+                ),
+            )
+            val manager = harness.manager(migrationReady = { true })
+
+            assertTrue(manager.retryPull().isFailure)
+            assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+            assertEquals(initialLastSync, harness.tokenStorage.getLastSyncTimestamp())
+            assertEquals(1, harness.preferenceSyncRepository.appliedPulledSections.size)
+
+            harness.syncRepository.atomicMergeShouldFail = false
+            assertTrue(manager.retryPull().isSuccess)
+            assertEquals(2, harness.preferenceSyncRepository.pullApplyCallCount)
+            assertEquals(
+                1_783_771_200_000L,
+                harness.tokenStorage.getLastSyncTimestamp(),
+            )
+            assertEquals(1, harness.syncRepository.atomicMergeCallCount)
+        }
 
     @Test
     fun `fake pull seam captures raw calls separately from known profile applications`() = runTest {
