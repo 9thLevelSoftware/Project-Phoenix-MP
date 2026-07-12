@@ -21,8 +21,8 @@
 - All new request and response fields are additive and have backward-compatible constructor defaults.
 - A single preference mutation's exact raw UTF-8 JSON element span is at most 262,144 bytes. Whenever `profilePreferenceSections` is present, the complete original HTTP `PortalSyncPayload` byte sequence is at most 524,288 bytes. Edge counts `request.arrayBuffer()` bytes before one fatal UTF-8 decode, rejects a leading UTF-8 BOM/U+FEFF, and scans only the successfully decoded string. The existing 9,500,000-byte endpoint cap remains in force for requests without that field.
 - Kotlin `Long` values serialized as JSON numbers must be in `-9_007_199_254_740_991L..9_007_199_254_740_991L` before entering a preference DTO. The current kotlinx.serialization wire emits JSON numbers, while Edge parses JavaScript `Number` values; out-of-range `baseRevision` and rack timestamps are dead-lettered locally for their current generation with an explicit diagnostic instead of being rounded or retried forever.
-- Every preference JSON number destined for a Kotlin `Int` must be an integer in `-2_147_483_648..2_147_483_647`; every number destined for a Kotlin `Float` must survive `Math.fround` as finite and must not turn a nonzero input into zero. Narrower business predicates still apply after narrowing. JavaScript safe-integer validation is reserved for Kotlin `Long` revisions and rack timestamps.
-- Every preference string value and object key must be PostgreSQL-compatible Unicode scalar text: U+0000 and unpaired UTF-16 high/low surrogates are rejected recursively before any privileged client exists, while valid supplementary pairs are accepted.
+- Every preference JSON number destined for a Kotlin `Int` must be an integer in `-2_147_483_648..2_147_483_647`; every number destined for a Kotlin `Float` must survive `Math.fround` as finite and must not turn a nonzero input into zero. Every narrower Float business predicate applies to both the original JavaScript number and the narrowed Float32 result, so rounding cannot admit an out-of-range wire value. JavaScript safe-integer validation is reserved for Kotlin `Long` revisions and rack timestamps.
+- Every preference string value and object key must be PostgreSQL-compatible Unicode scalar text: U+0000 and unpaired UTF-16 high/low surrogates are rejected recursively before any privileged client exists, while valid supplementary pairs are accepted. Mutation Unicode validation occurs per non-duplicate, in-limit section inside its local rejection boundary, after envelope-level raw-span integrity checks; one invalid section must not suppress valid siblings.
 - Preference timestamps use one strict timezone-bearing RFC3339/ISO-instant parser with explicit calendar, day, time, fraction, and offset validation. Mutation audit timestamps, RPC canonicals, and pull canonicals share it; canonical output is normalized with `toISOString()`.
 - Preference sections are sent only in preference-only pushes after an ordinary payload has sent `allProfiles`. They are never attached to workout/session batches.
 - Pull never creates, renames, deletes, or resurrects a local profile. Unknown `localProfileId` values are logged and ignored.
@@ -1341,6 +1341,8 @@ fun `edge executable contract authenticates validates fully then performs scoped
         "requirePostgresTextTree",
         "requireInt32",
         "requireFloat32",
+        "!predicate(value)",
+        "!predicate(narrowed)",
         "requireSafeJsonLong",
         "requireRfc3339Instant",
         "INT32_MIN = -2_147_483_648",
@@ -1401,6 +1403,7 @@ fun `edge executable contract authenticates validates fully then performs scoped
     )
 
     assertTrue("rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES" in code)
+    assertFalse("requirePostgresTextTree(rawMutation" in code)
     assertFalse(Regex("""\buserId\s*[?:]?\s*:\s*string""").containsMatchIn(code))
     assertFalse(Regex("""console[.](?:log|info|warn|error)[(][^)]*SERVICE_ROLE""").containsMatchIn(code))
 }
@@ -2138,7 +2141,7 @@ const requireFloat32 = (
   field: string,
   predicate: (number: number) => boolean = () => true,
 ): number => {
-  if (typeof value !== "number" || !Number.isFinite(value)) fail(field);
+  if (typeof value !== "number" || !Number.isFinite(value) || !predicate(value)) fail(field);
   const narrowed = Math.fround(value);
   if (!Number.isFinite(narrowed) || (value !== 0 && narrowed === 0) || !predicate(narrowed)) {
     fail(field);
@@ -2648,9 +2651,6 @@ function parsePreferenceEnvelope(
     fail("body.profilePreferenceSections.span");
   }
   rawMutations.forEach((rawMutation, index) => {
-    requirePostgresTextTree(rawMutation, "body.profilePreferenceSections[" + index + "]");
-  });
-  rawMutations.forEach((rawMutation, index) => {
     const span = rawContext.preferenceElementSpans[index];
     let reparsed: unknown;
     try {
@@ -2663,6 +2663,8 @@ function parsePreferenceEnvelope(
     }
   });
 
+  // Raw-span structural/reparse failures above are envelope-level 400 errors. From this point,
+  // duplicate, size, and schema/Unicode outcomes are isolated to their section identities.
   const identityCounts = new Map<string, number>();
   rawMutations.forEach((rawMutation) => {
     const identity = rawPreferenceIdentity(rawMutation);
@@ -2721,7 +2723,7 @@ function parsePreferenceEnvelope(
 }
 ```
 
-Authenticate with an anon client, parse and validate the complete body, and only then construct or call the privileged client. `validateExistingMobileSyncPushBody` below means the existing strict, side-effect-free validator for every non-preference field in `PUSH_BODY_KEYS`; wire it to the endpoint's real parser and add a regression proving a malformed final ordinary or preference item causes zero admin table/RPC calls:
+Authenticate with an anon client, parse and validate the complete body, and only then construct or call the privileged client. `validateExistingMobileSyncPushBody` below means the existing strict, side-effect-free validator for every non-preference field in `PUSH_BODY_KEYS`; it must neither recurse into nor revalidate `profilePreferenceSections`, because `parsePreferenceMutation` owns that field's per-section Unicode/schema rejection boundary. Wire the ordinary validator to the endpoint's real parser and add a regression proving a malformed final ordinary or preference item causes zero admin table/RPC calls:
 
 ```typescript
 const authorization = req.headers.get("Authorization");
@@ -3199,7 +3201,7 @@ Implement the manifest with real database and function tests, not string searche
 - In that pgTAP file, temporarily grant table DML inside the test transaction solely to exercise RLS. Set authenticated JWT claims for owner A and owner B, prove each CRUD operation sees/mutates only its own composite parent, and prove owner A cannot update a row's `user_id` to owner B because the `WITH CHECK` predicate fails. Do not claim that RLS makes a same-owner `local_profile_id` immutable; no trigger is part of this plan. Revoke the temporary grants and verify the production ACLs again before rollback.
 - Seed two composite profile keys and call the real mutation function for all five sections. Prove base revision 0 accepts revision 1, the next matching base accepts exactly the next revision, a stale base returns `REVISION_CONFLICT` plus byte/equality-identical canonical JSON, and mutating one section leaves all four sibling payloads/revisions unchanged. For every call, prove the targeted row keeps its `user_id` and `local_profile_id`, the non-target key is untouched, and the RPC cannot mutate either key. Exercise explicit `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, `VALIDATION_FAILED`, and `UNKNOWN_PROFILE` rows.
 - In `mobile-sync-push/index.test.ts`, invoke the exported handler with injected anon/admin clients and two real local Supabase users. Cover missing/malformed bearer headers and returned Auth errors with each of 400, 401, and 403 as HTTP 401. Separately inject returned 429, 500, and 503 errors, an error with no status, a null/malformed result, a success without a user, and thrown/rejected `getUser` calls; each is a generic 503 whose captured log object has exactly the `name` key. Every auth failure constructs/calls zero admin clients. Also cover attempted cross-user profile mutation and the absence of any request-body `userId` authority. Spy on every privileged table/RPC method and prove malformed data in the final ordinary or preference item produces zero privileged calls.
-- Table-drive every required and unknown key, primitive type, enum, range, nested object, duplicate rack id, duplicate `(localProfileId, section)`, all five version-1 wrappers, every unsupported wrapper/embedded version, and recursive normalized local-only names. For Kotlin `Int`, prove rack `sortOrder` accepts exactly -2147483648 and 2147483647 and rejects either adjacent overflow; cover workout `setReps`/`duration` and LED color scheme with both Int32 and their narrower business rules. For Kotlin `Float`, prove `Float.MAX_VALUE` and the smallest nonzero Float32 survive where business rules allow, while positive/negative Float32 overflow and nonzero underflow-to-zero are rejected; retain each domain predicate. Safe JSON integers apply only to Long revisions/timestamps. Recursively test raw and escaped U+0000 plus lone high/low surrogates in nested string values and `singleExerciseDefaults`/other object keys; each is rejected pre-admin, while a valid supplementary pair/emoji passes. Rack names may repeat, and signed safe-integer `createdAt`/`updatedAt` values are accepted. Pre-count duplicate section identities before size or document validation; assert exactly one `DUPLICATE_SECTION` rejection per duplicated key, zero RPC calls for every occurrence of that key, and one RPC for each valid non-duplicated sibling.
+- Table-drive every required and unknown key, primitive type, enum, range, nested object, duplicate rack id, duplicate `(localProfileId, section)`, all five version-1 wrappers, every unsupported wrapper/embedded version, and recursive normalized local-only names. For Kotlin `Int`, prove rack `sortOrder` accepts exactly -2147483648 and 2147483647 and rejects either adjacent overflow; cover workout `setReps`/`duration` and LED color scheme with both Int32 and their narrower business rules. For Kotlin `Float`, prove `Float.MAX_VALUE` and the smallest nonzero Float32 survive where business rules allow, while positive/negative Float32 overflow and nonzero underflow-to-zero are rejected; apply every business predicate to both the original JavaScript number and its `Math.fround` result. In CORE, accept exact `bodyWeightKg` values `20` and `300`, but reject exact adjacent inputs `19.9999999` and `300.00001` even though Float32 rounding produces `20` and `300`. For the nonnegative RACK `weightKg` JSONB field, accept `0` and the smallest positive Float32, but reject exact `-1e-46` rather than allowing its `-0` Float32 result through. Safe JSON integers apply only to Long revisions/timestamps. Recursively test raw and escaped U+0000 plus lone high/low surrogates in nested string values and `singleExerciseDefaults`/other object keys; each is rejected pre-admin, while a valid supplementary pair/emoji passes. Put one such Unicode-invalid unique-key section beside a valid unique-key sibling and assert exactly one `VALIDATION_FAILED` for the invalid key, zero RPC calls for that key, and one successful RPC for the valid sibling. Keep malformed raw-span structure or a raw/parsed element mismatch as an envelope-level HTTP 400 with zero privileged calls. Rack names may repeat, and signed safe-integer `createdAt`/`updatedAt` values are accepted. Pre-count duplicate section identities before size or document validation; assert exactly one `DUPLICATE_SECTION` rejection per duplicated key, zero RPC calls for every occurrence of that key, and one RPC for each valid non-duplicated sibling.
 - Table-drive the shared strict instant helper through mutation, RPC canonical, and pull paths. Reject numeric/string `0`, prose dates, date-only/space forms, February 30, invalid leap days/times/offsets, and any missing timezone. Accept valid `Z`, fractional-second, and positive/negative-offset instants and assert canonical output is the exact `toISOString()` normalization.
 - Send raw `Uint8Array` bodies through the real handler. Reject a leading UTF-8 BOM, truncated sequences, overlong encodings, and isolated continuation bytes with HTTP 400 and zero admin construction/calls; accept a legitimately encoded U+FFFD scalar. Use the shared byte-golden artifact to build original bodies at exactly 262143, 262144, and 262145 bytes for one preference array element and exactly 524287, 524288, and 524289 bytes for the complete HTTP `PortalSyncPayload`. Assert inclusive limits from the original `Uint8Array.byteLength`, HTTP 413 only for full-request overflow when the preference field is present, per-section `SECTION_TOO_LARGE` for section overflow, exact scanner offsets despite whitespace/escapes/nesting, and that a large ordinary request below 9,500,000 bytes without the preference field is not subjected to the preference cap.
 - Inject RPC error, null data, empty array, two rows, malformed canonical, mismatched revision, and unknown rejection reason. Each must return generic 5xx, log only `{ name }`, expose no payload/profile/token/secret/error message, and never emit `VALIDATION_FAILED`. A well-formed domain rejection continues with valid siblings.
