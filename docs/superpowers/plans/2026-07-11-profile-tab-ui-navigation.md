@@ -3941,55 +3941,210 @@ git commit -m "refactor: extract profile identity components"
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePersonalRecordRepository.kt`
 
 **Interfaces:**
-- Consumes: `ActiveProfileContext`, `ExerciseRepository`, Task 2's bounded history methods and resolver, and `PersonalRecordRepository.getAllPRsForExercise`.
-- Produces: one route-scoped `ProfileUiState`, per-profile in-memory selection restoration, three independently loadable insight blocks, and typed UI events used by Tasks 6 and 8.
+- Consumes: `ActiveProfileContext`, `ExerciseRepository`, Task 2's bounded history methods and
+  resolver, `PersonalRecordRepository.getAllPRsForExercise`, and the constructor-stable
+  `ExternalMeasurementRepository` reserved for Task 8.
+- Produces: one route-scoped `ProfileUiState`, per-profile in-memory selection restoration,
+  recoverable `selectionFailure`, three independently loadable insight blocks, same-profile Ready
+  refresh without data reset, and typed UI events used by Tasks 6 and 8.
 
-- [ ] **Step 1: Add deterministic test controls to existing fakes**
+- [ ] **Step 1: Add current-code-compatible deterministic controls to the existing fakes**
 
-Add these helpers without weakening their production interfaces:
+`FakeUserProfileRepository` currently owns `profiles`, `preferenceFlows`, `localSafety`,
+`ensurePreferenceFlow`, `setActiveIdentityLocked`, and `publishReady`; it does **not** own
+`preferencesByProfile` or `localSafetyByProfile`. Add the helpers below using those exact current
+members. Replace the body of `createProfileLocked` with the delegating form so production-like fake
+creation and UI-test seeding share the same preference construction and identity-flow updates:
 
 ```kotlin
-// FakeUserProfileRepository
-fun seedReadyProfileForTest(profileId: String, name: String = profileId): UserProfile {
-    val profile = seedProfileWithDefaultPreferences(profileId = profileId, name = name)
+fun seedReadyProfileForTest(
+    profileId: String,
+    name: String = profileId,
+    colorIndex: Int = 0,
+): UserProfile {
+    seedProfileWithDefaultPreferences(profileId, name, colorIndex)
     emitReadyForTest(profileId)
-    return profile
+    return profiles.getValue(profileId)
 }
 
-fun emitSwitchingForTest(targetProfileId: String) {
+fun emitSwitchingForTest(targetProfileId: String?) {
     _activeProfileContext.value = ActiveProfileContext.Switching(targetProfileId)
 }
 
 fun emitReadyForTest(profileId: String) {
-    val profile = profiles.getValue(profileId)
-    _activeProfileContext.value = ActiveProfileContext.Ready(
-        profile = profile,
-        preferences = preferencesByProfile.getValue(profileId),
-        localSafety = localSafetyByProfile.getValue(profileId),
-    )
+    require(profiles.containsKey(profileId)) { "Unknown profile: $profileId" }
+    setActiveIdentityLocked(profileId)
+    publishReady(profileId)
 }
 
-// FakePersonalRecordRepository
-var getAllForExerciseFailure: Throwable? = null
+private fun seedProfileWithDefaultPreferences(
+    profileId: String,
+    name: String,
+    colorIndex: Int,
+): UserProfile {
+    require(profileId.isNotBlank()) { "Profile ID must not be blank" }
+    val trimmedName = name.trim()
+    require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
+    require(!profiles.containsKey(profileId)) { "Profile already exists: $profileId" }
+    val profile = UserProfile(
+        id = profileId,
+        name = trimmedName,
+        colorIndex = colorIndex,
+        createdAt = currentTimeMillis(),
+        isActive = false,
+    )
+    profiles[profileId] = profile
+    ensurePreferenceFlow(profileId)
+    localSafety.getOrPut(profileId) { ProfileLocalSafetyPreferences() }
+    updateIdentityFlows()
+    return profile
+}
 
-override suspend fun getAllPRsForExercise(exerciseId: String, profileId: String): List<PersonalRecord> {
+private fun createProfileLocked(
+    name: String,
+    colorIndex: Int,
+    id: String = generateUUID(),
+): UserProfile = seedProfileWithDefaultPreferences(
+    profileId = id,
+    name = name,
+    colorIndex = colorIndex,
+)
+```
+
+`emitReadyForTest` must update the identity map before publishing Ready. A test context whose
+`Ready.profile.isActive` is false while `activeProfile` points elsewhere is not acceptable fake
+parity.
+
+Add a request record, an ordinary/cancellation failure seam, and a suspend hook to
+`FakePersonalRecordRepository`. The hook runs after a profile-filtered snapshot is captured and
+allows tests to hold or deliberately make one read non-cooperative without changing the production
+interface:
+
+```kotlin
+data class GetAllForExerciseRequest(
+    val exerciseId: String,
+    val profileId: String,
+)
+
+val getAllForExerciseRequests = mutableListOf<GetAllForExerciseRequest>()
+var getAllForExerciseFailure: Throwable? = null
+var beforeGetAllForExerciseReturn: (suspend (String, String) -> Unit)? = null
+
+fun reset() {
+    records.clear()
+    updateCalls.clear()
+    getAllForExerciseRequests.clear()
+    getAllForExerciseFailure = null
+    beforeGetAllForExerciseReturn = null
+    updateRecordsFlow()
+}
+
+override suspend fun getAllPRsForExercise(
+    exerciseId: String,
+    profileId: String,
+): List<PersonalRecord> {
+    getAllForExerciseRequests += GetAllForExerciseRequest(exerciseId, profileId)
     getAllForExerciseFailure?.let { throw it }
-    return records.values.filter { it.exerciseId == exerciseId && it.profileId == profileId }
+    val result = records.values
+        .filter { it.exerciseId == exerciseId && it.profileId == profileId }
+        .sortedByDescending { it.timestamp }
+    beforeGetAllForExerciseReturn?.invoke(exerciseId, profileId)
+    return result
 }
 ```
 
-The data-foundation plan owns the maps, `MutableStateFlow`, and its fake's internal default-preference seeding path. Name that internal path `seedProfileWithDefaultPreferences(profileId, name)` and reuse it from both this helper and the fake's create operation; do not duplicate section metadata construction in UI tests.
+Failure is checked before reading records. `reset()` must clear every new control so existing fake
+users retain the documented clean-reset behavior.
 
-- [ ] **Step 2: Write failing tests for profile restoration, fallback, clearing, and partial failure**
+- [ ] **Step 2: Write the complete failing lifecycle, isolation, and partial-failure suite**
 
-Use `TestCoroutineRule` and the repository fakes. The core restoration test is:
+Use `TestCoroutineRule`, `runTest`, and fresh fakes per test. Construct the real Task 2 resolver so
+the ViewModel test covers its actual repository calls:
 
 ```kotlin
 @get:Rule
 val coroutineRule = TestCoroutineRule()
 
+private lateinit var profiles: FakeUserProfileRepository
+private lateinit var exercises: FakeExerciseRepository
+private lateinit var workouts: FakeWorkoutRepository
+private lateinit var personalRecords: FakePersonalRecordRepository
+private lateinit var velocity: FakeVelocityOneRepMaxRepository
+private lateinit var assessments: FakeAssessmentRepository
+private lateinit var externalMeasurements: FakeExternalMeasurementRepository
+
+@Before
+fun setUp() {
+    profiles = FakeUserProfileRepository()
+    exercises = FakeExerciseRepository()
+    workouts = FakeWorkoutRepository()
+    personalRecords = FakePersonalRecordRepository()
+    velocity = FakeVelocityOneRepMaxRepository()
+    assessments = FakeAssessmentRepository()
+    externalMeasurements = FakeExternalMeasurementRepository()
+}
+
+private fun createViewModel() = ProfileViewModel(
+    profiles = profiles,
+    exercises = exercises,
+    workouts = workouts,
+    personalRecords = personalRecords,
+    resolveCurrentOneRepMax = ResolveCurrentOneRepMaxUseCase(
+        velocityRepository = velocity,
+        assessmentRepository = assessments,
+        workoutRepository = workouts,
+    ),
+    externalMeasurements = externalMeasurements,
+)
+
+private fun session(
+    id: String,
+    profileId: String,
+    exerciseId: String,
+    timestamp: Long,
+    weightPerCableKg: Float = 40f,
+    workingReps: Int = 5,
+) = WorkoutSession(
+    id = id,
+    profileId = profileId,
+    exerciseId = exerciseId,
+    exerciseName = exerciseId,
+    timestamp = timestamp,
+    weightPerCableKg = weightPerCableKg,
+    workingReps = workingReps,
+    totalReps = workingReps,
+)
+
+private fun record(
+    id: Long,
+    profileId: String,
+    exerciseId: String,
+    prType: PRType,
+    weightPerCableKg: Float,
+    oneRepMax: Float,
+    volume: Float,
+) = PersonalRecord(
+    id = id,
+    profileId = profileId,
+    exerciseId = exerciseId,
+    exerciseName = exerciseId,
+    weightPerCableKg = weightPerCableKg,
+    reps = 5,
+    oneRepMax = oneRepMax,
+    timestamp = id,
+    workoutMode = "Old School",
+    prType = prType,
+    volume = volume,
+)
+```
+
+The core test must drain the `StandardTestDispatcher` after **every** Switching emission. Emitting
+Switching and Ready back-to-back can be conflated by `StateFlow` and does not prove stale-state
+clearing:
+
+```kotlin
 @Test
-fun `A to B to A restores each valid in-memory exercise selection`() = runTest {
+fun `A to B to A restores selection and Switching clears all visible profile data`() = runTest {
     val bench = Exercise(name = "Bench", muscleGroup = "Chest", id = "bench")
     val squat = Exercise(name = "Squat", muscleGroup = "Legs", id = "squat")
     exercises.addExercise(bench)
@@ -3997,31 +4152,91 @@ fun `A to B to A restores each valid in-memory exercise selection`() = runTest {
     profiles.seedReadyProfileForTest("a", name = "A")
     profiles.seedReadyProfileForTest("b", name = "B")
     val viewModel = createViewModel()
+    runCurrent()
 
+    profiles.emitSwitchingForTest("a")
+    runCurrent()
     profiles.emitReadyForTest("a")
     advanceUntilIdle()
     viewModel.selectExercise(bench)
     advanceUntilIdle()
 
     profiles.emitSwitchingForTest("b")
-    assertNull(viewModel.uiState.value.selectedExercise)
+    runCurrent()
+    val switching = viewModel.uiState.value
+    assertIs<ActiveProfileContext.Switching>(switching.context)
+    assertNull(switching.selectedExercise)
+    assertNull(switching.missingExerciseId)
+    assertNull(switching.selectionFailure)
+    assertIs<ProfileLoadable.Empty>(switching.currentOneRepMax)
+    assertIs<ProfileLoadable.Empty>(switching.prHighlights)
+    assertIs<ProfileLoadable.Empty>(switching.recentSessions)
+
     profiles.emitReadyForTest("b")
     advanceUntilIdle()
     viewModel.selectExercise(squat)
     advanceUntilIdle()
 
     profiles.emitSwitchingForTest("a")
+    runCurrent()
     profiles.emitReadyForTest("a")
     advanceUntilIdle()
     assertEquals("bench", viewModel.uiState.value.selectedExercise?.id)
 }
 ```
 
-Add three more tests:
+Add exactly these thirteen additional tests, for fourteen Task 5 tests total:
 
-1. No saved selection resolves `WorkoutRepository.getMostRecentCompletedExerciseId(profileId)` and then validates that ID through `ExerciseRepository.getExerciseById`.
-2. A deleted saved exercise resolves the profile's most recent completed exercise; if that ID is also absent from the exercise repository, selection is `null` and the missing-exercise UI state is shown.
-3. When `getAllPRsForExercise` throws, `prHighlights` becomes `Failed` while `currentOneRepMax` and `recentSessions` still become `Ready`.
+| Test name | Exact setup and assertions |
+|---|---|
+| `no saved selection uses only the Ready profile recent exercise` | Add newer B/Squat and older A/Bench completed sessions, clear `recentCompletedRequests` immediately before entering A, and assert Bench is selected. Assert every resulting request has `profileId == "a"`, `exerciseId == "bench"`, and `limit == MAX_RECENT_EXERCISE_SESSIONS`. |
+| `deleted saved exercise reports the unresolved profile fallback id` | Select Bench for A, switch to B with a dispatcher drain, call `exercises.reset()`, retain an A/Bench completed session, return to A, and assert `selectedExercise == null`, `missingExerciseId == "bench"`, and `selectionFailure == null`. |
+| `selection fallback failure is distinct from missing and the collector recovers` | Set `mostRecentCompletedExerciseFailure = IllegalStateException("fallback")`, enter A, and assert `selectionFailure` is that failure while `missingExerciseId == null`. Clear the failure, emit Switching and drain, emit Ready, and assert fallback selection loads; this proves the long-lived collector survived. |
+| `null resolver and empty repositories use explicit empty contracts` | Select a valid exercise with no estimates, PRs, or sessions. Assert 1RM is `Empty`, PRs are `Ready(ProfilePrHighlights(null, null, null))`, and sessions are `Ready(emptyList())`. |
+| `PR failure does not blank one rep max or recent sessions` | Seed one valid A/Bench session, set `getAllForExerciseFailure = IllegalStateException("prs")`, select Bench, and assert PR is `Failed` while 1RM and sessions are `Ready`. |
+| `resolver failure does not blank PRs or recent sessions` | Seed one valid A/Bench session, set `velocity.latestPassingFailure = IllegalStateException("1rm")`, select Bench, and assert only 1RM is `Failed`; PRs and sessions are `Ready`. |
+| `recent session failure does not blank an earlier source one rep max or PRs` | Save a valid A/Bench assessment before selecting, set `recentCompletedFailure = IllegalStateException("recent")`, and assert assessment-backed 1RM and PRs are `Ready` while sessions are `Failed`. Seeding the assessment is required because the resolver otherwise uses the same failing history API. |
+| `mixed A and B records sessions and selections never cross profiles` | Seed different A/B sessions and PR maxima for the same exercise, load A then B with a drained Switching state, and assert each state contains only its profile's timestamps and PR values. Assert `getAllForExerciseRequests` contains the captured profile ID for every publication. |
+| `same profile Ready refresh updates context without restarting insights` | Load A fully, capture all three loadables plus `workouts.recentCompletedRequests.size` and `personalRecords.getAllForExerciseRequests.size`, call `profiles.updateCore("a", ready.preferences.core.value.copy(bodyWeightKg = 82f))`, and assert the context contains 82 kg while selection, loadables, and both counts are unchanged. |
+| `nullable blank and switching time selections are ignored` | Pass exercises with null and blank IDs, then emit Switching without draining and call `selectExercise` again. Assert no new insight requests occur and B has no saved selection when Ready arrives. This proves the method checks repository context, not only lagging UI state. |
+| `cooperative insight cancellation is never converted to Failed` | Suspend the A PR hook with `awaitCancellation()`, emit Switching and drain, and assert all three branches are `Empty` in the Switching state with no `Failed` value. |
+| `non cooperative slow A result cannot overwrite B` | Use the suspend hook shown below, switch to B after A starts, and assert B's PR values remain after the canceled A call deliberately returns. |
+| `non finite and non positive PR values are excluded per field` | Add NaN, infinity, zero, negative, and valid values across both PR types. Assert each highlight contains only the maximum finite positive value for its own mapping. |
+
+Use this exact non-cooperative hook in the stale-result test. It swallows cancellation only inside
+the test seam so the A repository call returns and exercises the publication guard:
+
+```kotlin
+val aStarted = CompletableDeferred<Unit>()
+val staleAReturned = CompletableDeferred<Unit>()
+personalRecords.beforeGetAllForExerciseReturn = { _, profileId ->
+    if (profileId == "a") {
+        aStarted.complete(Unit)
+        try {
+            awaitCancellation()
+        } catch (_: CancellationException) {
+            // Deliberately non-cooperative test double: return a stale A snapshot.
+        }
+        staleAReturned.complete(Unit)
+    }
+}
+
+profiles.emitReadyForTest("a")
+advanceUntilIdle()
+viewModel.selectExercise(bench)
+aStarted.await()
+profiles.emitSwitchingForTest("b")
+runCurrent()
+profiles.emitReadyForTest("b")
+advanceUntilIdle()
+staleAReturned.await()
+assertEquals(expectedBHighlights, assertIs<ProfileLoadable.Ready<ProfilePrHighlights>>(
+    viewModel.uiState.value.prHighlights,
+).value)
+```
+
+Every `PersonalRecord` and `WorkoutSession` fixture in these tests must set `profileId` explicitly;
+their domain defaults are `"default"` and would make an A/B isolation test a false positive.
 
 - [ ] **Step 3: Run the ViewModel tests and confirm the red state**
 
@@ -4032,6 +4247,9 @@ Run:
 ```
 
 Expected: FAIL to compile because `ProfileViewModel`, its state, and fake controls are absent.
+Record the compile error for `ProfileViewModel` or `selectionFailure` as the RED evidence. A failure
+caused by `JAVA_HOME`, dependency resolution, or another test does not count. At RED, only the two
+fake files and `ProfileViewModelTest.kt` may be modified.
 
 - [ ] **Step 4: Define stable UI state with independent insight loads**
 
@@ -4053,6 +4271,7 @@ data class ProfileUiState(
     val context: ActiveProfileContext? = null,
     val selectedExercise: Exercise? = null,
     val missingExerciseId: String? = null,
+    val selectionFailure: Throwable? = null,
     val currentOneRepMax: ProfileLoadable<CurrentOneRepMax> = ProfileLoadable.Empty,
     val prHighlights: ProfileLoadable<ProfilePrHighlights> = ProfileLoadable.Empty,
     val recentSessions: ProfileLoadable<List<WorkoutSession>> = ProfileLoadable.Empty,
@@ -4066,11 +4285,15 @@ sealed interface ProfileUiEvent {
 }
 ```
 
-Do not put localized strings or raw JSON in the ViewModel.
+`missingExerciseId` means the repository successfully resolved an ID that the exercise catalog no
+longer contains. `selectionFailure` means selection/fallback lookup failed; never translate a
+repository exception into "missing exercise." This is the Task 6 boundary: that consumer must
+render `selectionFailure` with `profile_insights_load_failed` before its ordinary null-selection
+empty state. Do not put localized strings or raw JSON in the ViewModel.
 
 - [ ] **Step 5: Implement profile-bound selection lifecycle**
 
-Construct the ViewModel with:
+Construct the ViewModel with the existing Koin-bound repository types:
 
 ```kotlin
 class ProfileViewModel(
@@ -4083,87 +4306,411 @@ class ProfileViewModel(
 ) : ViewModel()
 ```
 
-Maintain `private val selectedExerciseIds = mutableMapOf<String, String>()` and one cancellable `insightsJob`. Collect `profiles.activeProfileContext` with `collectLatest`:
+`externalMeasurements` is intentionally constructor-stable but unused until Task 8 adds
+profile-scoped body-weight attribution; retain it and use `FakeExternalMeasurementRepository` in
+Task 5 tests.
+
+Maintain per-profile selection only inside this route-scoped instance. A second Ready emission for
+the **same** profile is normal: `updateProfile`, every preference mutation, and local-safety updates
+all republish `ActiveProfileContext.Ready`. It must refresh `context` without reconstructing
+`ProfileUiState`, clearing loadables, resetting later mutation-busy fields, or re-querying insights.
 
 ```kotlin
-when (val context = context) {
-    is ActiveProfileContext.Switching -> {
-        insightsJob?.cancel()
-        _uiState.value = ProfileUiState(context = context)
+private val _uiState = MutableStateFlow(ProfileUiState())
+val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+
+private val selectedExerciseIds = mutableMapOf<String, String>()
+private var resolvedSelectionProfileId: String? = null
+private var insightsJob: Job? = null
+
+init {
+    viewModelScope.launch {
+        profiles.activeProfileContext.collectLatest { context ->
+            when (context) {
+                is ActiveProfileContext.Switching -> {
+                    insightsJob?.cancel()
+                    resolvedSelectionProfileId = null
+                    _uiState.value = ProfileUiState(context = context)
+                }
+
+                is ActiveProfileContext.Ready -> applyReadyContext(context)
+            }
+        }
+    }
+}
+
+private suspend fun applyReadyContext(context: ActiveProfileContext.Ready) {
+    val profileId = context.profile.id
+    val currentProfileId =
+        (_uiState.value.context as? ActiveProfileContext.Ready)?.profile?.id
+
+    if (currentProfileId == profileId && resolvedSelectionProfileId == profileId) {
+        updateIfProfileCurrent(profileId) { state -> state.copy(context = context) }
+        return
     }
 
-    is ActiveProfileContext.Ready -> {
-        val profileId = context.profile.id
+    insightsJob?.cancel()
+    _uiState.value = ProfileUiState(context = context)
+    try {
+        require(profileId.isNotBlank()) { "Ready profile ID must not be blank" }
         val savedId = selectedExerciseIds[profileId]
-        val saved = savedId?.let { exercises.getExerciseById(it) }
+        val saved = savedId?.let { validExercise(it) }
         val fallbackId = if (saved == null) {
             workouts.getMostRecentCompletedExerciseId(profileId)
         } else {
             null
         }
-        val fallback = fallbackId?.let { exercises.getExerciseById(it) }
+        val fallback = fallbackId?.let { validExercise(it) }
         val selected = saved ?: fallback
+        if (!isProfileCurrent(profileId)) return
+
+        resolvedSelectionProfileId = profileId
         selected?.id?.let { selectedExerciseIds[profileId] = it }
-        _uiState.value = ProfileUiState(
-            context = context,
-            selectedExercise = selected,
-            missingExerciseId = (fallbackId ?: savedId).takeIf { selected == null },
+        updateIfProfileCurrent(profileId) { state ->
+            state.copy(
+                context = context,
+                selectedExercise = selected,
+                missingExerciseId = (fallbackId ?: savedId)
+                    ?.takeIf { it.isNotBlank() && selected == null },
+                selectionFailure = null,
+            )
+        }
+        selected?.let { loadInsights(profileId, it) }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        resolvedSelectionProfileId = null
+        updateIfProfileCurrent(profileId) { state ->
+            state.copy(
+                context = context,
+                selectedExercise = null,
+                missingExerciseId = null,
+                selectionFailure = error,
+            )
+        }
+    }
+}
+
+private suspend fun validExercise(requestedId: String): Exercise? {
+    if (requestedId.isBlank()) return null
+    return exercises.getExerciseById(requestedId)
+        ?.takeIf { it.id == requestedId && !it.id.isNullOrBlank() }
+}
+```
+
+Guard both repository truth and the potentially lagging UI snapshot. This prevents a picker tap after
+the repository entered Switching from being saved under the previous profile:
+
+```kotlin
+fun selectExercise(exercise: Exercise) {
+    val exerciseId = exercise.id?.takeIf { it.isNotBlank() } ?: return
+    val uiReady = uiState.value.context as? ActiveProfileContext.Ready ?: return
+    val repositoryReady =
+        profiles.activeProfileContext.value as? ActiveProfileContext.Ready ?: return
+    val profileId = uiReady.profile.id
+    if (repositoryReady.profile.id != profileId) return
+
+    selectedExerciseIds[profileId] = exerciseId
+    resolvedSelectionProfileId = profileId
+    updateIfProfileCurrent(profileId) { state ->
+        state.copy(
+            selectedExercise = exercise,
+            missingExerciseId = null,
+            selectionFailure = null,
         )
-        selected?.let { loadInsights(context, it) }
+    }
+    if (isSelectionCurrent(profileId, exerciseId)) {
+        loadInsights(profileId, exercise)
+    }
+}
+
+private fun isProfileCurrent(profileId: String): Boolean {
+    val repositoryReady =
+        profiles.activeProfileContext.value as? ActiveProfileContext.Ready ?: return false
+    val uiReady = uiState.value.context as? ActiveProfileContext.Ready ?: return false
+    return repositoryReady.profile.id == profileId && uiReady.profile.id == profileId
+}
+
+private fun isSelectionCurrent(profileId: String, exerciseId: String): Boolean =
+    isProfileCurrent(profileId) &&
+        uiState.value.selectedExercise?.id == exerciseId &&
+        selectedExerciseIds[profileId] == exerciseId
+
+private inline fun updateIfProfileCurrent(
+    profileId: String,
+    transform: (ProfileUiState) -> ProfileUiState,
+) {
+    _uiState.update { state ->
+        val repositoryReady = profiles.activeProfileContext.value as? ActiveProfileContext.Ready
+        val uiReady = state.context as? ActiveProfileContext.Ready
+        if (repositoryReady?.profile?.id == profileId && uiReady?.profile?.id == profileId) {
+            transform(state)
+        } else {
+            state
+        }
+    }
+}
+
+private inline fun updateIfSelectionCurrent(
+    profileId: String,
+    exerciseId: String,
+    transform: (ProfileUiState) -> ProfileUiState,
+) {
+    _uiState.update { state ->
+        val repositoryReady = profiles.activeProfileContext.value as? ActiveProfileContext.Ready
+        val uiReady = state.context as? ActiveProfileContext.Ready
+        if (
+            repositoryReady?.profile?.id == profileId &&
+            uiReady?.profile?.id == profileId &&
+            state.selectedExercise?.id == exerciseId &&
+            selectedExerciseIds[profileId] == exerciseId
+        ) {
+            transform(state)
+        } else {
+            state
+        }
     }
 }
 ```
 
-`selectExercise(exercise)` must accept only a non-null/nonblank ID and only while the current context is `Ready`; save the ID under that Ready profile and reload. Every load captures both profile ID and exercise ID, cancels the prior job, and checks that pair again before publishing results so slow A results cannot render after switching to B.
+Do not guard publication with only `selectedExerciseIds`: that map intentionally retains A while B
+is active. Do not catch selection lookup with `runCatching`, because it also catches cancellation.
 
 - [ ] **Step 6: Load 1RM, PR highlights, and five sessions independently**
 
-Start all three branches in a `supervisorScope`; publish `Loading` first, catch `CancellationException` separately, and publish only the failed branch on ordinary exceptions. Use these mappings:
+Set all three branches to Loading in one guarded update, then start them as children of one
+`supervisorScope`. The helper rethrows cancellation before the ordinary `Exception` catch and
+checks repository profile, UI profile, selected exercise, and saved selection again before every
+publication:
+
+```kotlin
+private fun loadInsights(profileId: String, exercise: Exercise) {
+    val exerciseId = exercise.id?.takeIf { it.isNotBlank() } ?: return
+    insightsJob?.cancel()
+    updateIfSelectionCurrent(profileId, exerciseId) { state ->
+        state.copy(
+            currentOneRepMax = ProfileLoadable.Loading,
+            prHighlights = ProfileLoadable.Loading,
+            recentSessions = ProfileLoadable.Loading,
+        )
+    }
+    if (!isSelectionCurrent(profileId, exerciseId)) return
+
+    insightsJob = viewModelScope.launch {
+        supervisorScope {
+            launch {
+                loadBranch(
+                    profileId = profileId,
+                    exerciseId = exerciseId,
+                    load = {
+                        resolveCurrentOneRepMax(exerciseId, profileId)
+                            ?.let { ProfileLoadable.Ready(it) }
+                            ?: ProfileLoadable.Empty
+                    },
+                    publish = { state, value -> state.copy(currentOneRepMax = value) },
+                )
+            }
+            launch {
+                loadBranch(
+                    profileId = profileId,
+                    exerciseId = exerciseId,
+                    load = {
+                        ProfileLoadable.Ready(
+                            personalRecords.getAllPRsForExercise(exerciseId, profileId)
+                                .toHighlights(),
+                        )
+                    },
+                    publish = { state, value -> state.copy(prHighlights = value) },
+                )
+            }
+            launch {
+                loadBranch(
+                    profileId = profileId,
+                    exerciseId = exerciseId,
+                    load = {
+                        ProfileLoadable.Ready(
+                            workouts.getRecentCompletedSessionsForExercise(
+                                exerciseId = exerciseId,
+                                profileId = profileId,
+                                limit = MAX_RECENT_EXERCISE_SESSIONS,
+                            ),
+                        )
+                    },
+                    publish = { state, value -> state.copy(recentSessions = value) },
+                )
+            }
+        }
+    }
+}
+
+private suspend fun <T> loadBranch(
+    profileId: String,
+    exerciseId: String,
+    load: suspend () -> ProfileLoadable<T>,
+    publish: (ProfileUiState, ProfileLoadable<T>) -> ProfileUiState,
+) {
+    val result: ProfileLoadable<T> = try {
+        load()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        ProfileLoadable.Failed(error)
+    }
+    updateIfSelectionCurrent(profileId, exerciseId) { state ->
+        publish(state, result)
+    }
+}
+```
+
+Use the canonical PR field mappings and reject non-finite/non-positive values independently:
 
 ```kotlin
 private fun List<PersonalRecord>.toHighlights() = ProfilePrHighlights(
-    maxWeightPerCableKg = filter { it.prType == PRType.MAX_WEIGHT }
+    maxWeightPerCableKg = asSequence()
+        .filter { it.prType == PRType.MAX_WEIGHT }
         .map { it.weightPerCableKg }
         .filter { it.isFinite() && it > 0f }
         .maxOrNull(),
-    estimatedOneRepMaxPerCableKg = map { it.oneRepMax }.filter { it.isFinite() && it > 0f }.maxOrNull(),
-    maxVolumeKg = filter { it.prType == PRType.MAX_VOLUME }
+    estimatedOneRepMaxPerCableKg = asSequence()
+        .map { it.oneRepMax }
+        .filter { it.isFinite() && it > 0f }
+        .maxOrNull(),
+    maxVolumeKg = asSequence()
+        .filter { it.prType == PRType.MAX_VOLUME }
         .map { it.volume }
         .filter { it.isFinite() && it > 0f }
         .maxOrNull(),
 )
 ```
 
-```kotlin
-val oneRepMax = resolveCurrentOneRepMax(exerciseId, profileId)
-val records = personalRecords.getAllPRsForExercise(exerciseId, profileId)
-val sessions = workouts.getRecentCompletedSessionsForExercise(
-    exerciseId = exerciseId,
-    profileId = profileId,
-    limit = MAX_RECENT_EXERCISE_SESSIONS,
-)
-```
-
 Import `MAX_RECENT_EXERCISE_SESSIONS`. Treat a null resolver result as `ProfileLoadable.Empty`, not failure. Treat no PR rows as `Ready(ProfilePrHighlights(null, null, null))` and no sessions as `Ready(emptyList())`.
+
+When velocity and assessment are absent, Task 2's resolver reads the same bounded history API that
+the recent-sessions branch reads, so one load may produce two identical
+`recentCompletedRequests`. Tests must not assert a single call. To isolate a recent-history failure
+from the 1RM branch, seed a valid velocity or assessment result first.
 
 - [ ] **Step 7: Register the route-scoped factory and make tests green**
 
 ```kotlin
-factory { ProfileViewModel(get(), get(), get(), get(), get(), get()) }
+import com.devil.phoenixproject.presentation.viewmodel.ProfileViewModel
+
+factory {
+    ProfileViewModel(
+        profiles = get(),
+        exercises = get(),
+        workouts = get(),
+        personalRecords = get(),
+        resolveCurrentOneRepMax = get(),
+        externalMeasurements = get(),
+    )
+}
 ```
 
-Run:
+All six dependencies already exist in `dataModule`/`domainModule`; do not add duplicate bindings.
+Run the focused tests, fake regressions, Koin verification, and both production/test Native
+compilers in one forced gate:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileViewModelTest*" --tests "*ResolveCurrentOneRepMaxUseCaseTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' `
+    :shared:testAndroidHostTest `
+    --tests "*ProfileViewModelTest*" `
+    --tests "*ResolveCurrentOneRepMaxUseCaseTest*" `
+    --tests "*KoinModuleVerifyTest*" `
+    --tests "*SqlDelightUserProfileRepositoryTest*" `
+    --tests "*PersonalRecordRepositoryTest*" `
+    :shared:compileAndroidMain `
+    :shared:compileKotlinIosArm64 `
+    :shared:compileTestKotlinIosArm64 `
+    --rerun-tasks `
+    --console=plain
 ```
 
-Expected: BUILD SUCCESSFUL; selection is isolated per profile, stale data clears during Switching, and one failed insight branch does not blank the others.
+Expected: BUILD SUCCESSFUL. `compileTestKotlinIosArm64` is required because both modified fakes live
+in `commonTest`; an Android-host pass alone does not prove their Native compatibility.
+
+Assert the focused suite actually executed all fourteen tests:
+
+```powershell
+$resultPath = 'shared/build/test-results/testAndroidHostTest/' +
+    'TEST-com.devil.phoenixproject.presentation.viewmodel.ProfileViewModelTest.xml'
+[xml]$result = Get-Content -Raw $resultPath
+$suite = $result.testsuite
+if (
+    [int]$suite.tests -ne 14 -or
+    [int]$suite.failures -ne 0 -or
+    [int]$suite.errors -ne 0 -or
+    [int]$suite.skipped -ne 0
+) {
+    throw "Unexpected ProfileViewModelTest result: tests=$($suite.tests) " +
+        "failures=$($suite.failures) errors=$($suite.errors) skipped=$($suite.skipped)"
+}
+```
+
+Run intent-specific static checks:
+
+```powershell
+$viewModel = Get-Content -Raw `
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt'
+$presentation = Get-Content -Raw `
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/PresentationModule.kt'
+
+if ([regex]::Matches($presentation, 'factory\s*\{\s*ProfileViewModel\(').Count -ne 1) {
+    throw 'Expected exactly one route-scoped ProfileViewModel factory'
+}
+if ($viewModel -match 'catch\s*\([^)]*Throwable') {
+    throw 'ProfileViewModel must not catch Throwable'
+}
+$cancellationCatch = $viewModel.IndexOf('catch (error: CancellationException)')
+$ordinaryCatch = $viewModel.IndexOf('catch (error: Exception)')
+if ($cancellationCatch -lt 0 -or $ordinaryCatch -lt 0 -or $cancellationCatch -gt $ordinaryCatch) {
+    throw 'CancellationException must be caught and rethrown before ordinary Exception'
+}
+foreach ($required in @(
+    'catch (error: CancellationException)',
+    'catch (error: Exception)',
+    'profiles.activeProfileContext.value',
+    'updateIfProfileCurrent',
+    'updateIfSelectionCurrent',
+    'resolvedSelectionProfileId',
+    'selectionFailure',
+    'MAX_RECENT_EXERCISE_SESSIONS'
+)) {
+    if (-not $viewModel.Contains($required)) {
+        throw "ProfileViewModel is missing required lifecycle guard: $required"
+    }
+}
+```
+
+Expected: exactly one factory, no broad `Throwable` catch, and every captured-context guard present.
 
 - [ ] **Step 8: Commit the profile state layer**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/PresentationModule.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePersonalRecordRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt
+$expected = @(
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/PresentationModule.kt'
+    'shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt'
+    'shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePersonalRecordRepository.kt'
+    'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt'
+) | Sort-Object
+$actual = @(git status --porcelain=v1 | ForEach-Object { $_.Substring(3) } | Sort-Object)
+$scopeDiff = Compare-Object -ReferenceObject $expected -DifferenceObject $actual
+if ($scopeDiff) {
+    $scopeDiff | Format-Table -AutoSize
+    throw 'Task 5 worktree scope differs from the five-file state contract'
+}
+git diff --check -- $expected
+if ($LASTEXITCODE -ne 0) { throw 'Task 5 diff check failed' }
+git add -- $expected
+$staged = @(git diff --cached --name-only | Sort-Object)
+$stagedDiff = Compare-Object -ReferenceObject $expected -DifferenceObject $staged
+if ($stagedDiff) {
+    $stagedDiff | Format-Table -AutoSize
+    throw 'Task 5 staged scope differs from the five-file state contract'
+}
+git diff --cached --check
+if ($LASTEXITCODE -ne 0) { throw 'Task 5 cached diff check failed' }
 git commit -m "feat: add profile scoped insights state"
 ```
 
