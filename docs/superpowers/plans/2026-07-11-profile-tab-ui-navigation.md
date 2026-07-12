@@ -7481,3 +7481,436 @@ if(git status --porcelain){ throw "Task 10 left a dirty worktree" }
 Expected: one test-only path committed and a clean worktree. No production, repository, migration, resource, or platform file belongs to Task 10.
 
 ---
+
+### Task 11: Verify DI, Migrations, Cross-Target Compilation, and the Finished User Flows — Authoritative Final Contract
+
+> **Authoritative precedence:** This block replaces the removed historical Task 11 in commit `af421bec`. Execute it only after Tasks 8, 9, and 10 are committed. It is a verification-only final gate: it may not edit, format, stage, commit, deploy, or repair anything.
+
+**Files:**
+- Verify only: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
+- Verify only: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
+- Verify only: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt`
+- Verify only: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt`
+- Verify only: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/PresentationModule.kt`
+- Verify only: `shared/src/androidMain/kotlin/com/devil/phoenixproject/di/PlatformModule.android.kt`
+- Verify only: `shared/src/iosMain/kotlin/com/devil/phoenixproject/di/PlatformModule.ios.kt`
+- Verify only: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt`
+- Verify only: schema 43, `42.sqm`, `MigrationStatements.kt`, `SchemaManifest.kt`, migration tests, profile preference sync code/tests, and the three tracked `docs/backend-handoff/profile-preference*` artifacts.
+- Modify: none.
+
+**Interfaces:**
+- Consumes: the complete data-foundation and sync/backend-handoff plans; Task 7's root switcher and 17/8/7 contracts; Task 8's 88 counted preference/UI/runtime tests; Task 9's global-only Settings contract; and Task 10's final 9/8/17 ownership guard.
+- Produces: immutable evidence for schema and migration parity, DI, privacy, local-only ownership, the full shared suite, Android and iOS compilation, Android unit/lint/package gates, and realistic local emulator acceptance.
+- Final count correction: Task 9's 157-test list becomes **158** after Task 10 changes `ProfileSettingsSeparationContractTest` from eight to nine. Task 10 remains a distinct **34-test** ownership gate: 9 + 8 + 17.
+
+**Non-negotiable boundary:** A failure belongs to the earlier task that owns the failing file or behavior. Stop, report `NOT READY`, and return it to that task. Task 11 never weakens an assertion, edits a source/test/plan file, runs a formatter, stages a repair, creates a commit, or creates an empty verification commit.
+
+Run every step in the same PowerShell session so `$task11StartHead` and `$task11Branch` remain available through the final immutable-state check.
+
+- [ ] **Step 1: Freeze the clean branch, immutable HEAD, and reviewed ranges**
+
+~~~powershell
+$expectedBranch = 'codex/add-profile-tab'
+$task11Branch = git branch --show-current
+$task11StartHead = git rev-parse HEAD
+if ($LASTEXITCODE -ne 0 -or -not $task11StartHead) { throw 'Could not capture Task 11 start HEAD' }
+if ($task11Branch -ne $expectedBranch) {
+    throw "Task 11 requires $expectedBranch, found $task11Branch"
+}
+
+$dirty = @(git status --porcelain=v1 --untracked-files=all)
+if ($dirty.Count -ne 0) {
+    $dirty | ForEach-Object { Write-Host $_ }
+    throw 'Task 11 requires Tasks 8-10 committed and a clean worktree'
+}
+git diff --cached --quiet
+if ($LASTEXITCODE -ne 0) { throw 'Task 11 requires an empty index' }
+
+foreach ($baseline in @('af421bec', '6ddf9031')) {
+    git rev-parse --verify "$baseline^{commit}" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Missing reviewed baseline $baseline" }
+    git merge-base --is-ancestor $baseline HEAD
+    if ($LASTEXITCODE -ne 0) { throw "$baseline is not an ancestor of HEAD" }
+}
+
+"Task 11 branch=$task11Branch head=$task11StartHead"
+"Feature range: af421bec..$task11StartHead"
+"Sync range: 6ddf9031..$task11StartHead"
+~~~
+
+Expected: `codex/add-profile-tab`, both immutable baselines are ancestors, the index and worktree are empty, and no earlier task remains in progress. Do not continue from a dirty or detached checkout.
+
+- [ ] **Step 2: Enforce every hardened Task 7-10 count before running tests**
+
+~~~powershell
+$finalCounts = [ordered]@{
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModelTest.kt'=17
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt'=8
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt'=7
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt'=46
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=15
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferencePolicyTest.kt'=4
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/VbtEnabledRuntimeTest.kt'=7
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/voice/SafeWordDetectionManagerTest.kt'=2
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/VerbalEncouragementPreferenceCascadeTest.kt'=11
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/AdultModePresentationTest.kt'=3
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'=9
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModelTest.kt'=33
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt'=3
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/manager/SettingsManagerTest.kt'=16
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/SettingsPreferencesManagerTest.kt'=10
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt'=7
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightProfilePreferencesRepositoryTest.kt'=8
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt'=26
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/ProfilePreferencesCodecTest.kt'=19
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncDtosTest.kt'=4
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt'=1
+}
+foreach ($entry in $finalCounts.GetEnumerator()) {
+    if (-not (Test-Path -LiteralPath $entry.Key)) { throw "Missing counted suite $($entry.Key)" }
+    $actual = (Select-String -Path $entry.Key -Pattern '^\s*@Test').Count
+    if ($actual -ne $entry.Value) {
+        throw "$($entry.Key): expected $($entry.Value), found $actual"
+    }
+}
+$uniqueTotal = ($finalCounts.Values | Measure-Object -Sum).Sum
+if ($uniqueTotal -ne 256) { throw "Expected 256 unique counted tests, found $uniqueTotal" }
+
+$task8Total = 46 + 15 + 4 + 7 + 2 + 11 + 3
+$task9AfterTask10Total = 9 + 33 + 15 + 8 + 3 + 16 + 10 + 7 + 8 + 26 + 19 + 4
+$task10Total = 9 + 8 + 17
+if ($task8Total -ne 88) { throw "Expected Task 8 count 88, found $task8Total" }
+if ($task9AfterTask10Total -ne 158) {
+    throw "Expected post-Task-10 Task 9 count 158, found $task9AfterTask10Total"
+}
+if ($task10Total -ne 34) { throw "Expected Task 10 count 34, found $task10Total" }
+
+function Assert-CleanJUnit(
+    [string]$label,
+    [Nullable[int]]$expectedTotal = $null,
+    [bool]$allowSkipped = $false
+) {
+    $files = @(Get-ChildItem 'shared/build/test-results/testAndroidHostTest' -Filter 'TEST-*.xml')
+    if ($files.Count -eq 0) { throw "$label produced no JUnit XML" }
+    $suites = $files | ForEach-Object { [xml](Get-Content -Raw $_.FullName) }
+    $tests = ($suites | ForEach-Object { [int]$_.testsuite.tests } | Measure-Object -Sum).Sum
+    $failures = ($suites | ForEach-Object {
+        [int]$_.testsuite.failures + [int]$_.testsuite.errors
+    } | Measure-Object -Sum).Sum
+    $skipped = ($suites | ForEach-Object { [int]$_.testsuite.skipped } | Measure-Object -Sum).Sum
+    if ($failures -ne 0 -or (-not $allowSkipped -and $skipped -ne 0)) {
+        throw "${label}: tests=$tests failures/errors=$failures skipped=$skipped"
+    }
+    if ($null -ne $expectedTotal -and $tests -ne $expectedTotal) {
+        throw "${label}: expected $expectedTotal tests, found $tests"
+    }
+    Write-Host "${label}: $tests tests, failures/errors=$failures skipped=$skipped"
+    return $tests
+}
+~~~
+
+Expected: all 21 source counts match, their unique sum is 256, Task 8 is 88, the post-Task-10 Task 9 list is 158, Task 10 is 34, and the reusable XML verifier is loaded for later steps.
+
+- [ ] **Step 3: Run the exact hardened UI, preference, Settings, and ownership suites**
+
+Run each command with forced execution, then inspect the XML before starting the next command:
+
+~~~powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.viewmodel.ProfileSwitcherViewModelTest" --tests "com.devil.phoenixproject.presentation.navigation.ProfileNavigationContractTest" --tests "com.devil.phoenixproject.presentation.components.ProfileIdentityPolicyTest" --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Task 7 final suite failed' }
+Assert-CleanJUnit 'Task 7 final suite' 32
+
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.viewmodel.ProfileViewModelTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileScreenContractTest" --tests "com.devil.phoenixproject.presentation.components.ProfilePreferencePolicyTest" --tests "com.devil.phoenixproject.presentation.manager.VbtEnabledRuntimeTest" --tests "com.devil.phoenixproject.domain.voice.SafeWordDetectionManagerTest" --tests "com.devil.phoenixproject.data.preferences.VerbalEncouragementPreferenceCascadeTest" --tests "com.devil.phoenixproject.presentation.components.AdultModePresentationTest" --tests "com.devil.phoenixproject.data.preferences.ProfilePreferencesCodecTest" --tests "com.devil.phoenixproject.testutil.FakeExternalIntegrationRepositoriesTest" --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Task 8 final suite failed' }
+Assert-CleanJUnit 'Task 8 counted plus codec/fake suite' 109
+
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.screen.ProfileSettingsSeparationContractTest" --tests "com.devil.phoenixproject.presentation.viewmodel.MainViewModelTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileScreenContractTest" --tests "com.devil.phoenixproject.presentation.navigation.ProfileNavigationContractTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileResourceContractTest" --tests "com.devil.phoenixproject.presentation.manager.SettingsManagerTest" --tests "com.devil.phoenixproject.data.preferences.SettingsPreferencesManagerTest" --tests "com.devil.phoenixproject.data.migration.ProfilePreferencesMigrationTest" --tests "com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepositoryTest" --tests "com.devil.phoenixproject.data.sync.SqlDelightProfilePreferenceSyncRepositoryTest" --tests "com.devil.phoenixproject.data.preferences.ProfilePreferencesCodecTest" --tests "com.devil.phoenixproject.data.sync.ProfilePreferenceSyncDtosTest" --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Post-Task-10 Settings regression suite failed' }
+Assert-CleanJUnit 'Post-Task-10 Settings regression suite' 158
+
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.screen.ProfileSettingsSeparationContractTest" --tests "com.devil.phoenixproject.presentation.navigation.ProfileNavigationContractTest" --tests "com.devil.phoenixproject.presentation.viewmodel.ProfileSwitcherViewModelTest" --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Task 10 ownership suite failed' }
+Assert-CleanJUnit 'Task 10 ownership suite' 34
+~~~
+
+Expected: 32, 109, 158, and 34 tests respectively, each with zero failures, errors, or skips. Wildcard `*Profile*` is forbidden because it cannot prove the hardened suite inventory.
+
+- [ ] **Step 4: Regenerate SQLDelight and prove the exact schema-43/42.sqm migration boundary**
+
+~~~powershell
+$schemaOutput = & .\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest --rerun-tasks --console=plain 2>&1
+$schemaExit = $LASTEXITCODE
+$schemaOutput | ForEach-Object { Write-Host $_ }
+if ($schemaExit -ne 0) { throw 'SQLDelight generation/migration/manifest gate failed' }
+$schemaText = $schemaOutput -join [Environment]::NewLine
+if ($schemaText -notmatch 'Schema manifest validated: 389 columns across 46 tables, all covered[.]') {
+    throw 'Expected the reviewed 389-column/46-table schema manifest result'
+}
+
+$sharedBuild = Get-Content -Raw 'shared/build.gradle.kts'
+if ($sharedBuild -notmatch 'version\s*=\s*43') { throw 'SQLDelight schema version is not 43' }
+$migrationPath = 'shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm'
+git ls-files --error-unmatch -- $migrationPath | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Tracked 42.sqm migration is missing' }
+$migration = Get-Content -Raw -LiteralPath $migrationPath
+$fallback = Get-Content -Raw 'shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt'
+foreach ($token in @(
+    'CREATE TABLE UserProfilePreferences',
+    'CREATE TABLE PendingProfileLocalCleanup',
+    'CREATE TABLE PendingProfileContextRecovery',
+    'INSERT OR IGNORE INTO UserProfilePreferences(profile_id)',
+    'SELECT id FROM UserProfile'
+)) {
+    if (-not $migration.Contains($token)) { throw "42.sqm missing $token" }
+    if (-not $fallback.Contains($token)) { throw "MigrationStatements fallback missing $token" }
+}
+
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.data.local.SchemaParityTest" --tests "com.devil.phoenixproject.data.local.SchemaManifestTest" --tests "com.devil.phoenixproject.data.migration.ProfilePreferencesMigrationTest" --tests "com.devil.phoenixproject.data.migration.MigrationManagerTest" --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Schema parity or required-migration suite failed' }
+Assert-CleanJUnit 'Schema and required-migration suite'
+~~~
+
+Expected: schema version 43, tracked `42.sqm`, the same three-table/seed boundary in `42.sqm` and the fallback, manifest output 389/46, and clean parity, legacy-copy, retry, reconciliation, and awaited boot-gate tests. The canonical schema remains seed-free at creation time; the parity tests are authoritative for executable DDL equality.
+
+- [ ] **Step 5: Run the exact mobile sync/backend-handoff, repository-race, privacy, and DI gates**
+
+This is local mobile-repository verification only. Every command retains `-Pskip.supabase.check=true`.
+
+~~~powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.data.sync.BackendHandoffContractTest" --tests "com.devil.phoenixproject.data.sync.ProfilePreferenceSyncDtosTest" --tests "com.devil.phoenixproject.data.sync.ProfilePreferenceSyncPlannerTest" --tests "com.devil.phoenixproject.data.sync.PortalSyncAdapterProfilePreferencesTest" --tests "com.devil.phoenixproject.data.sync.PortalPullAdapterProfilePreferencesTest" --tests "com.devil.phoenixproject.data.sync.PortalApiClientProfilePreferenceLimitsTest" --tests "com.devil.phoenixproject.testutil.FakePortalApiClientTest" --tests "com.devil.phoenixproject.data.sync.ErrorClassificationTest" --tests "com.devil.phoenixproject.data.sync.ClientRateLimiterTest" --tests "com.devil.phoenixproject.data.sync.SyncManagerProfilePreferencesTest" --tests "com.devil.phoenixproject.data.sync.PortalPushLimitsTest" --tests "com.devil.phoenixproject.data.sync.PortalPullPaginationTest" --tests "com.devil.phoenixproject.data.sync.PortalTokenRefreshTest" --tests "com.devil.phoenixproject.data.sync.SyncManagerTest" --tests "com.devil.phoenixproject.data.sync.SyncInvariantCheckerTest" --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Focused sync/transport/privacy suite failed' }
+$syncFocusedTotal = Assert-CleanJUnit 'Focused sync/transport/privacy suite'
+if ($syncFocusedTotal -le 0) { throw 'Focused sync suite executed zero tests' }
+
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.data.sync.SqlDelightProfilePreferenceSyncRepositoryTest" --tests "com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepositoryTest" --tests "com.devil.phoenixproject.data.migration.ProfilePreferencesMigrationTest" --tests "com.devil.phoenixproject.data.migration.MigrationManagerTest" --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Repository race/migration-gate suite failed' }
+Assert-CleanJUnit 'Repository race/migration-gate suite'
+
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.di.KoinModuleVerifyTest" --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Koin graph verification failed' }
+Assert-CleanJUnit 'Koin graph verification' 1
+~~~
+
+Run the local-only handoff and privacy inventory:
+
+~~~powershell
+$handoffFiles = @(
+'docs/backend-handoff/profile-preferences-supabase.sql',
+'docs/backend-handoff/profile-preferences-edge-functions.md',
+'docs/backend-handoff/profile-preference-byte-goldens.json'
+)
+foreach ($path in $handoffFiles) {
+    git ls-files --error-unmatch -- $path | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Missing tracked backend handoff artifact $path" }
+}
+$handoffTest = Get-Content -Raw 'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/BackendHandoffContractTest.kt'
+if ($handoffTest -match 'e3b0c44298fc1c149afbf4c8996fb924') {
+    throw 'Backend handoff still uses the empty-string digest sentinel'
+}
+
+$diPaths = @(
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt',
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt',
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt',
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/PresentationModule.kt'
+)
+$diText = @($diPaths | ForEach-Object { Get-Content -Raw -LiteralPath $_ }) -join [Environment]::NewLine
+foreach ($binding in @(
+    'single<ProfilePreferencesRepository>',
+    'single<ProfileLocalSafetyStore>',
+    'single<UserProfileRepository>',
+    'single<RequiredMigrationGate>',
+    'single<ProfilePreferenceSyncRepository>',
+    'ProfilePreferenceSyncCodec()',
+    'ProfileViewModel(',
+    'ProfileSwitcherViewModel(profiles = get())'
+)) {
+    if (-not $diText.Contains($binding)) { throw "Required DI binding missing: $binding" }
+}
+$settingsManagerBinding = @(rg -n 'single<SettingsManager>|factory\s*\{\s*SettingsManager' shared/src/commonMain/kotlin/com/devil/phoenixproject/di -g '*.kt')
+if ($LASTEXITCODE -gt 1) { throw 'SettingsManager DI scan failed' }
+if ($settingsManagerBinding) { throw 'SettingsManager must remain MainViewModel-owned, not a singleton/factory' }
+
+$ownerFiles = @(rg -l 'setActiveProfile\(|createAndActivateProfile\(|reconcileActiveProfileContext\(' shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation -g '*.kt')
+if ($LASTEXITCODE -gt 1) { throw 'Presentation ownership scan failed' }
+$ownerFiles = @($ownerFiles | ForEach-Object { $_ -replace '\\','/' } | Sort-Object -Unique)
+$expectedOwner = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt'
+if ($ownerFiles.Count -ne 1 -or $ownerFiles[0] -ne $expectedOwner) {
+    throw "Presentation switch/create/reconcile owners=[$($ownerFiles -join ', ')]"
+}
+
+$deleted = @(
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSidePanel.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EditProfileDialog.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/DeleteProfileDialog.kt'
+)
+if (@($deleted | Where-Object { Test-Path -LiteralPath $_ }).Count -ne 0) {
+    throw 'A Task 7 legacy selector file returned'
+}
+$legacy = @(rg -n '\b(ProfileSidePanel|ProfileSpeedDial|EditProfileDialog|DeleteProfileDialog|AddProfileDialog|showAddProfileDialog)\b' shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation -g '*.kt')
+if ($LASTEXITCODE -gt 1) { throw 'Legacy symbol scan failed' }
+if ($legacy) { throw "Legacy selector symbols remain: $($legacy -join [Environment]::NewLine)" }
+
+$featureSurfaces = @(
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync'
+)
+$unfinished = @(rg -n 'TODO|TBD|NotImplementedError|error\("placeholder' $featureSurfaces -g 'Profile*.kt' -g 'SettingsTab.kt' -g 'NavGraph.kt')
+if ($LASTEXITCODE -gt 1) { throw 'Feature unfinished-marker scan failed' }
+if ($unfinished) { throw "Feature-owned unfinished marker remains: $($unfinished -join [Environment]::NewLine)" }
+
+$oneArgumentWrites = @(rg -n 'profiles\.update(Core|Rack|Workout|Led|Vbt|LocalSafety)\([^,\r\n]+\)' shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation -g '*.kt')
+if ($LASTEXITCODE -gt 1) { throw 'Explicit profile-ID write scan failed' }
+if ($oneArgumentWrites) { throw 'A profile preference write omitted its explicit profile ID' }
+
+$mobileSecretHits = @(rg -n 'SUPABASE_SERVICE_ROLE_KEY|serviceRoleKey' shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync -g '*.kt')
+if ($LASTEXITCODE -gt 1) { throw 'Mobile service-role scan failed' }
+if ($mobileSecretHits) { throw 'A service-role secret identifier entered mobile sync code' }
+
+$portalTargets = @(git diff --name-only '6ddf9031..HEAD' | Where-Object { $_ -match '^supabase/' })
+if ($portalTargets) { throw "Mobile feature range contains portal targets: $($portalTargets -join ', ')" }
+~~~
+
+Expected: one Koin test, all required focused-store/gate/sync/root-ViewModel bindings, no `SettingsManager` application binding or DI cycle, one presentation switch/create/reconcile owner, no legacy selectors, no feature-owned unfinished marker, explicit profile IDs on preference writes, a non-sentinel sealed backend handoff, no mobile service-role secret identifier, and no `supabase/` path.
+
+The contract tests are authoritative for the remaining privacy invariants: exactly five sync sections; `localGeneration` never serialized; safe word, calibration, and adult consent/prompt values appear only in the approved normalized rejection denylists and never in sync/backup values; preference-only payloads contain no active-profile metadata or ordinary entities; pull never creates identities; and diagnostics contain fixed categories/counts rather than raw identifiers, values, payloads, or exception messages.
+
+- [ ] **Step 6: Enforce the strict no-remote boundary**
+
+Task 11 must not invoke or install a Supabase CLI; use a Supabase MCP/project integration or Dashboard; authenticate to a portal; execute remote SQL; run `supabase start`, `db reset`, `db push`, migration list/repair, lint, or advisors; create a remote migration; deploy an Edge Function; or modify any portal checkout, remote branch, database object, or external state.
+
+The `External Portal Handoff Acceptance Checklist` in `2026-07-11-profile-preferences-sync-backend.md` remains documentation for a separately authorized portal owner. It is not Task 11. The mobile handoff may be locally verified while remote deployment remains an explicit release-enablement dependency.
+
+Expected: all verification remains local and every Gradle command uses quoted `'-Pskip.supabase.check=true'`. Record in the final handoff: `No Supabase CLI/MCP/Dashboard/remote action was performed.`
+
+- [ ] **Step 7: Run the full fresh shared, Android, iOS, unit, lint, and package gates**
+
+Run separately so each platform boundary has its own exit evidence:
+
+~~~powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --continue --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Full shared Android-host suite failed' }
+$fullSharedTotal = Assert-CleanJUnit 'Full shared Android-host suite' $null $true
+if ($fullSharedTotal -lt 256) { throw "Full shared suite executed only $fullSharedTotal tests" }
+$profileSkipped = @(Get-ChildItem 'shared/build/test-results/testAndroidHostTest' -Filter 'TEST-*.xml' | Where-Object {
+    $_.Name -match 'Profile|SettingsManager|SafeWord|VerbalEncouragement|Migration|KoinModule'
+} | ForEach-Object {
+    [xml]$xml = Get-Content -Raw $_.FullName
+    if ([int]$xml.testsuite.skipped -ne 0) { $_.Name }
+})
+if ($profileSkipped) { throw "Profile feature suites were skipped: $($profileSkipped -join ', ')" }
+
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileAndroidMain --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Android shared-main compilation failed' }
+
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'iOS main/test compilation failed' }
+
+.\gradlew.bat '-Pskip.supabase.check=true' :androidApp:testDebugUnitTest :androidApp:lintDebug :androidApp:assembleDebug --continue --rerun-tasks --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Android unit/lint/assemble gate failed' }
+$apk = Get-Item 'androidApp/build/outputs/apk/debug/androidApp-debug.apk' -ErrorAction Stop
+if ($apk.Length -le 0) { throw 'Debug APK is empty' }
+"Debug APK: $($apk.FullName) ($($apk.Length) bytes)"
+~~~
+
+Expected: the dynamically counted full shared suite is clean with no skipped profile-feature suite; Android common code compiles; iOS main and common tests compile; Android unit tests and `lintDebug` pass; and a non-empty debug APK is produced.
+
+- [ ] **Step 8: Record, but do not broaden into, the known repository-wide Spotless baseline**
+
+At authoring time, read-only `spotlessCheck` fails `:spotlessKotlinCheck` on 210 Kotlin files (three displayed plus 207 additional). This is a known repository-wide baseline, not permission to mutate 210 files and not evidence that formatting is green.
+
+~~~powershell
+$beforeSpotlessHead = git rev-parse HEAD
+$beforeSpotlessStatus = @(git status --porcelain=v1 --untracked-files=all)
+$spotlessOutput = & .\gradlew.bat '-Pskip.supabase.check=true' spotlessCheck --rerun-tasks --console=plain 2>&1
+$spotlessExit = $LASTEXITCODE
+$spotlessOutput | ForEach-Object { Write-Host $_ }
+$spotlessViolationCount = @(
+    Get-ChildItem 'build/spotless-clean/spotlessKotlin' -Recurse -File -ErrorAction SilentlyContinue
+).Count
+if ($spotlessExit -eq 0) {
+    'Spotless unexpectedly reached a clean repository baseline; record BUILD SUCCESSFUL.'
+} elseif (($spotlessOutput -join [Environment]::NewLine) -notmatch 'spotlessKotlinCheck') {
+    throw 'Spotless failed for a reason other than the known Kotlin formatting baseline'
+} else {
+    "Known Spotless baseline reproduced: $spotlessViolationCount Kotlin files"
+}
+if ((git rev-parse HEAD) -ne $beforeSpotlessHead) { throw 'Spotless changed HEAD' }
+$afterSpotlessStatus = @(git status --porcelain=v1 --untracked-files=all)
+if (Compare-Object $beforeSpotlessStatus $afterSpotlessStatus) {
+    throw 'spotlessCheck changed tracked/untracked source state'
+}
+~~~
+
+Never run `spotlessApply`, a path-scoped apply, or a broad formatting commit in Task 11. Report Spotless as either newly green or as the exact reproduced baseline; do not call it passing when it failed. `git diff --check` and Android `lintDebug` remain hard final gates. If repository policy requires Spotless green, open a separate cleanup task with its own scope and review.
+
+- [ ] **Step 9: Perform realistic local/offline emulator acceptance**
+
+Use the Step 7 debug APK, a disposable Android emulator, and local data only. Record the emulator model, API level, pixel size, density, calculated width in dp, APK path, and pass/fail for every row below. Do not sign in or enable portal sync. Disable emulator networking before creating test profiles.
+
+The manual matrix is:
+
+1. Fresh install at 320dp width: exactly five icon-only root tabs render without clipping in Analytics → Workout → Insights → Profile → Settings order.
+2. Profile tap navigates and restores saved tab state. Profile long press produces haptic feedback, opens the sole root sheet, and does not navigate. With TalkBack enabled, Profile exposes separate labeled click and long-click actions.
+3. Create local profiles A and B. Creation activates only after success. Give A and B distinct body weight/unit/increment, rack, workout timers/audio/auto-start/scaling, LED, VBT, verbal, and local safety values. A → B swaps all values; B → A restores A exactly.
+4. Select different exercises for A and B. A → B → A restores each selection without flashing stale metrics. Verify current 1RM precedence, three PR highlights, five-session history, and the empty state with deterministic local workout data.
+5. Edit the active profile. Default exposes no delete action. A non-default active profile can be deleted through the guarded flow and its data is reassigned according to the tested merge policy.
+6. Equipment Rack and Achievements open only from Profile. The ready-list order is header, insights, achievements, preferences heading, preferences. Settings shows only its eight global groups in the required order.
+7. Home edge gestures and Just Lift expose no profile selector. Disabling VBT suppresses live evaluation/feedback without hiding historical VBT/assessment insights.
+8. Upgrade fixture: start from a disposable emulator snapshot whose app data was created by the reviewed schema-42 APK with populated legacy global preferences. Install the current APK with `adb install -r` without clearing data. Verify the awaited boot gate, one normalized copy into the active profile, product defaults for a newly created profile, and a Ready active context after reconciliation. If this reviewed fixture is unavailable, record the migration manual row as `NOT VERIFIED` and the final verdict is `NOT READY`; Task 11 may not create repository code or a remote service to fake it.
+
+Repository failure injection, `Switching(null)`, stale-token races, partial insight failures, sync privacy, and acknowledgement conflicts remain automated unless an already-reviewed deterministic local fixture exists. Do not claim those as manually exercised from an ordinary build.
+
+Expected: a recorded, reproducible local/offline acceptance result. Any failed or unverified required row blocks the final verdict and returns to its owning task; no remote account or Supabase state is touched.
+
+- [ ] **Step 10: Prove immutable scope and write the evidence-only handoff**
+
+~~~powershell
+git diff --check 'af421bec..HEAD'
+if ($LASTEXITCODE -ne 0) { throw 'Feature range has whitespace errors' }
+git diff --check '6ddf9031..HEAD'
+if ($LASTEXITCODE -ne 0) { throw 'Sync range has whitespace errors' }
+
+$featureRange = @(git diff --name-only 'af421bec..HEAD')
+$forbiddenArtifacts = @($featureRange | Where-Object {
+    $_ -match '(^|/)(build|out)/' -or
+    $_ -match '[.](apk|aab|klib|class)$' -or
+    $_ -match '^supabase/'
+})
+if ($forbiddenArtifacts) {
+    throw "Tracked generated/portal artifacts in feature range: $($forbiddenArtifacts -join ', ')"
+}
+
+git diff --stat 'af421bec..HEAD'
+git diff --stat '6ddf9031..HEAD'
+if ((git branch --show-current) -ne $task11Branch) { throw 'Task 11 changed branches' }
+if ((git rev-parse HEAD) -ne $task11StartHead) { throw 'Task 11 changed HEAD' }
+git diff --cached --quiet
+if ($LASTEXITCODE -ne 0) { throw 'Task 11 staged files' }
+$finalDirty = @(git status --porcelain=v1 --untracked-files=all)
+if ($finalDirty.Count -ne 0) {
+    $finalDirty | ForEach-Object { Write-Host $_ }
+    throw 'Task 11 left a dirty worktree'
+}
+~~~
+
+The final handoff response, not a repository file, records:
+
+- branch and unchanged start/end HEAD;
+- exact 32, 109, 158, 34, schema/migration, sync, Koin, and full-suite XML totals with failures/errors/skips;
+- schema 43, tracked `42.sqm`, and manifest 389/46 evidence;
+- Android, iOS main/test, Android unit, lint, APK, and emulator/API/320dp evidence;
+- Spotless's actual green result or exact known-baseline failure count, never a false pass;
+- privacy, ownership, Settings separation, local-only, legacy-removal, and no-remote audit outcomes;
+- the exact statement `No Supabase CLI/MCP/Dashboard/remote action was performed.`; and
+- `READY` only if every hard and manual gate passed, otherwise `NOT READY` with each failure routed to its owning earlier task.
+
+Expected: both reviewed ranges pass whitespace/scope inspection, no generated build or portal target is tracked, branch and HEAD are unchanged, the index/worktree are empty, and Task 11 creates no commit.
+
+---
