@@ -108,6 +108,8 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCaseTest.kt` — resolver precedence, normalization, invalid-value, and profile-isolation tests.
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt` — profile-selection restoration and independent insight/mutation-state tests.
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModelProfileScopeTest.kt` — explicit assessment profile propagation.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/AssessmentProfileOwnershipTest.kt` — initial Switching/Ready binding and mid-wizard profile-change invalidation.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentResourceContractTest.kt` — localized assessment-save failure copy across selectable locales.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt` — five-item order and tap/long-press source wiring guard.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt` — Settings pruning and obsolete-selector source guard.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt` — required Profile keys across selectable locale files.
@@ -122,6 +124,7 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt` — map the new SQLDelight reads.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/AssessmentRepository.kt` — make profile ID required.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepository.kt` — preserve explicit profile in all assessment/session rows.
+- `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngine.kt` — keep assessment regression and clamp values in total kilograms.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModel.kt` — accept and forward an explicit Ready profile ID.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentWizardScreen.kt` — bind Results acceptance to the explicit route profile.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt` — replace split session/velocity hero logic with the shared resolver.
@@ -141,6 +144,7 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePersonalRecordRepository.kt` — controllable insight-read failure.
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepositoryTest.kt` — completed-session query filters and limit.
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepositoryTest.kt` — explicit IDs, unit contract, and isolation.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngineTest.kt` — total-kilogram hardware ceiling.
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt` — existing graph verification test; no new extra type should be needed.
 - `shared/src/commonMain/composeResources/values/strings.xml` — English Profile/navigation/insights/preferences/errors copy.
 - `shared/src/commonMain/composeResources/values-nl/strings.xml` — Dutch copy.
@@ -162,16 +166,28 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 **Files:**
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt`
 - Create: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModelProfileScopeTest.kt`
+- Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/AssessmentProfileOwnershipTest.kt`
+- Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentResourceContractTest.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/AssessmentRepository.kt:38-95`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepository.kt:56-171`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngine.kt:46-52`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModel.kt:270-321`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentWizardScreen.kt:66-129`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt:685-760`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepositoryTest.kt:26-58`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngineTest.kt:119-134`
+- Modify: `shared/src/commonMain/composeResources/values/strings.xml`
+- Modify: `shared/src/commonMain/composeResources/values-nl/strings.xml`
+- Modify: `shared/src/commonMain/composeResources/values-de/strings.xml`
+- Modify: `shared/src/commonMain/composeResources/values-es/strings.xml`
+- Modify: `shared/src/commonMain/composeResources/values-fr/strings.xml`
 
 **Interfaces:**
-- Consumes: a Ready `ActiveProfileContext.profile.id` from the data-foundation plan.
-- Produces: `AssessmentViewModel.acceptResult(profileId: String, overrideKg: Float? = null)` and assessment repository methods whose `profileId: String` arguments have no default value.
+- Consumes: the data-foundation plan's `ActiveProfileContext` stream. Initial `Switching` waits without constructing the wizard; the first `Ready` profile becomes the immutable owner of that route entry.
+- Produces: `AssessmentViewModel.acceptResult(profileId: String, overrideKg: Float? = null)`, `AssessmentUiEvent.SaveFailed`, and assessment repository/entity APIs whose `profileId: String` arguments have no default value.
+- Unit contract: wizard loads, assessment estimates, and overrides are total kilograms; `WorkoutSession.weightPerCableKg` and `Exercise.oneRepMaxKg` are per-cable kilograms. Persistence divides only the session average and exercise 1RM, never the assessment row.
+- Lifecycle contract: after ownership is captured, `Switching` or a different `Ready.profile.id` invalidates and pops the route. It must never rebind an in-progress A wizard to B.
+- Failure contract: non-cancellation saves restore `Results` and emit exactly one localized `SaveFailed` event. Cancellation is rethrown, and repository compensation runs in `NonCancellable` before either failure escapes.
 
 - [ ] **Step 1: Create a recording fake assessment repository**
 
@@ -186,12 +202,15 @@ import kotlinx.coroutines.flow.flowOf
 class FakeAssessmentRepository : AssessmentRepository {
     data class SavedSession(
         val exerciseId: String,
-        val estimatedOneRepMaxKg: Float,
-        val userOverrideKg: Float?,
+        val estimatedOneRepMaxTotalKg: Float,
+        val userOverrideTotalKg: Float?,
+        val weightPerCableKg: Float,
         val profileId: String,
     )
 
+    val attemptedSessions = mutableListOf<SavedSession>()
     val savedSessions = mutableListOf<SavedSession>()
+    var saveSessionFailure: Throwable? = null
     private val assessments = mutableListOf<AssessmentResultEntity>()
 
     override suspend fun saveAssessment(
@@ -202,6 +221,7 @@ class FakeAssessmentRepository : AssessmentRepository {
         userOverrideKg: Float?,
         profileId: String,
     ): Long {
+        require(profileId.isNotBlank())
         val id = assessments.size.toLong() + 1L
         assessments += AssessmentResultEntity(
             id = id,
@@ -246,7 +266,17 @@ class FakeAssessmentRepository : AssessmentRepository {
         weightPerCableKg: Float,
         profileId: String,
     ): String {
-        savedSessions += SavedSession(exerciseId, estimatedOneRepMaxKg, userOverrideKg, profileId)
+        require(profileId.isNotBlank())
+        val captured = SavedSession(
+            exerciseId = exerciseId,
+            estimatedOneRepMaxTotalKg = estimatedOneRepMaxKg,
+            userOverrideTotalKg = userOverrideKg,
+            weightPerCableKg = weightPerCableKg,
+            profileId = profileId,
+        )
+        attemptedSessions += captured
+        saveSessionFailure?.let { throw it }
+        savedSessions += captured
         saveAssessment(
             exerciseId = exerciseId,
             estimatedOneRepMaxKg = estimatedOneRepMaxKg,
@@ -260,18 +290,26 @@ class FakeAssessmentRepository : AssessmentRepository {
 }
 ```
 
+The fake records an attempted call before the failure seam and records a successful save only afterward. This distinction is required for the ordinary-error and cancellation tests; do not make a thrown save look committed.
+
 - [ ] **Step 2: Write the failing ViewModel profile-propagation test**
 
 ```kotlin
 package com.devil.phoenixproject.presentation.viewmodel
 
+import app.cash.turbine.test
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.testutil.FakeAssessmentRepository
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
+import com.devil.phoenixproject.testutil.TestCoroutineRule
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
@@ -280,7 +318,77 @@ class AssessmentViewModelProfileScopeTest {
     val coroutineRule = TestCoroutineRule()
 
     @Test
-    fun acceptResult_forwardsExplicitProfileId() = runTest {
+    fun acceptResult_forwardsExplicitProfileAndPreservesUnitBoundary() = runTest {
+        val assessmentRepository = FakeAssessmentRepository()
+        val viewModel = readyViewModel(assessmentRepository)
+        reachResults(viewModel)
+
+        viewModel.acceptResult(profileId = "athlete-a", overrideKg = 120f)
+        advanceUntilIdle()
+
+        val saved = assessmentRepository.savedSessions.single()
+        assertEquals("athlete-a", saved.profileId)
+        assertEquals(120f, saved.userOverrideTotalKg)
+        assertEquals(30f, saved.weightPerCableKg)
+        assertIs<AssessmentStep.Complete>(viewModel.currentStep.value)
+        assertEquals(120f, (viewModel.currentStep.value as AssessmentStep.Complete).finalOneRepMaxKg)
+    }
+
+    @Test
+    fun acceptResult_rejectsBlankProfileBeforeStartingSave() = runTest {
+        val assessmentRepository = FakeAssessmentRepository()
+        val viewModel = readyViewModel(assessmentRepository)
+        reachResults(viewModel)
+
+        assertFailsWith<IllegalArgumentException> {
+            viewModel.acceptResult(profileId = " ")
+        }
+
+        assertIs<AssessmentStep.Results>(viewModel.currentStep.value)
+        assertEquals(emptyList(), assessmentRepository.attemptedSessions)
+    }
+
+    @Test
+    fun ordinarySaveFailureRestoresResultsAndEmitsOneEvent() = runTest {
+        val assessmentRepository = FakeAssessmentRepository().apply {
+            saveSessionFailure = IllegalStateException("test failure")
+        }
+        val viewModel = readyViewModel(assessmentRepository)
+        reachResults(viewModel)
+
+        viewModel.events.test {
+            viewModel.acceptResult(profileId = "athlete-a")
+            advanceUntilIdle()
+
+            assertEquals(AssessmentUiEvent.SaveFailed, awaitItem())
+            expectNoEvents()
+            assertIs<AssessmentStep.Results>(viewModel.currentStep.value)
+            assertEquals("athlete-a", assessmentRepository.attemptedSessions.single().profileId)
+            assertEquals(emptyList(), assessmentRepository.savedSessions)
+        }
+    }
+
+    @Test
+    fun cancellationIsNotConvertedIntoRetryOrFailureEvent() = runTest {
+        val assessmentRepository = FakeAssessmentRepository().apply {
+            saveSessionFailure = CancellationException("test cancellation")
+        }
+        val viewModel = readyViewModel(assessmentRepository)
+        reachResults(viewModel)
+
+        viewModel.events.test {
+            viewModel.acceptResult(profileId = "athlete-a")
+            advanceUntilIdle()
+
+            expectNoEvents()
+            assertIs<AssessmentStep.Saving>(viewModel.currentStep.value)
+            assertEquals("athlete-a", assessmentRepository.attemptedSessions.single().profileId)
+        }
+    }
+
+    private fun readyViewModel(
+        assessmentRepository: FakeAssessmentRepository,
+    ): AssessmentViewModel {
         val exerciseRepository = FakeExerciseRepository().apply {
             addExercise(
                 Exercise(
@@ -291,45 +399,165 @@ class AssessmentViewModelProfileScopeTest {
                 ),
             )
         }
-        val assessmentRepository = FakeAssessmentRepository()
-        val viewModel = AssessmentViewModel(
+        return AssessmentViewModel(
             exerciseRepository = exerciseRepository,
             assessmentRepository = assessmentRepository,
             assessmentEngine = AssessmentEngine(),
         )
+    }
 
+    private suspend fun TestScope.reachResults(viewModel: AssessmentViewModel) {
         advanceUntilIdle()
         viewModel.selectExerciseById("bench")
         advanceUntilIdle()
         viewModel.recordSet(40f, 3, 1.0f, 1.1f)
         viewModel.recordSet(80f, 3, 0.25f, 0.30f)
-        viewModel.acceptResult(profileId = "athlete-a")
-        advanceUntilIdle()
-
-        assertEquals("athlete-a", assessmentRepository.savedSessions.single().profileId)
+        assertIs<AssessmentStep.Results>(viewModel.currentStep.value)
     }
 }
 ```
 
-- [ ] **Step 3: Run the focused test and confirm the red state**
+- [ ] **Step 3: Write failing route-ownership, resource, and total-ceiling tests**
+
+Create `AssessmentProfileOwnershipTest.kt`:
+
+```kotlin
+package com.devil.phoenixproject.presentation.navigation
+
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class AssessmentProfileOwnershipTest {
+    @Test
+    fun `initial switching waits and first ready profile binds`() {
+        assertEquals(
+            AssessmentProfileDestinationState.Waiting,
+            resolveAssessmentProfileDestination(
+                ownerProfileId = null,
+                context = ActiveProfileContext.Switching("athlete-a"),
+            ),
+        )
+        assertEquals(
+            AssessmentProfileDestinationState.Capture("athlete-a"),
+            resolveAssessmentProfileDestination(null, ready("athlete-a")),
+        )
+    }
+
+    @Test
+    fun `bound wizard never rebinds during or after a profile switch`() {
+        assertEquals(
+            AssessmentProfileDestinationState.Bound("athlete-a"),
+            resolveAssessmentProfileDestination("athlete-a", ready("athlete-a")),
+        )
+        assertEquals(
+            AssessmentProfileDestinationState.Invalidated,
+            resolveAssessmentProfileDestination(
+                "athlete-a",
+                ActiveProfileContext.Switching("athlete-b"),
+            ),
+        )
+        assertEquals(
+            AssessmentProfileDestinationState.Invalidated,
+            resolveAssessmentProfileDestination("athlete-a", ready("athlete-b")),
+        )
+    }
+
+    private fun ready(profileId: String): ActiveProfileContext.Ready {
+        val repository = FakeUserProfileRepository()
+        repository.setActiveProfileForTest(profileId)
+        return repository.activeProfileContext.value as ActiveProfileContext.Ready
+    }
+}
+```
+
+Create `AssessmentResourceContractTest.kt`:
+
+```kotlin
+package com.devil.phoenixproject.presentation.screen
+
+import com.devil.phoenixproject.testutil.readProjectFile
+import kotlin.test.Test
+import kotlin.test.assertContains
+import kotlin.test.assertNotNull
+
+class AssessmentResourceContractTest {
+    @Test
+    fun `save failure copy exists in every selectable locale`() {
+        listOf(
+            "values",
+            "values-nl",
+            "values-de",
+            "values-es",
+            "values-fr",
+        ).forEach { directory ->
+            val path = "src/commonMain/composeResources/$directory/strings.xml"
+            val source = readProjectFile(path)
+            assertNotNull(source, "Could not read $path")
+            assertContains(source, """name="assessment_save_failed"""", path)
+        }
+    }
+}
+```
+
+In `AssessmentEngineTest.kt`, replace the old per-cable clamp test:
+
+```kotlin
+@Test
+fun `estimateOneRepMax clamps total result at dual cable hardware maximum`() {
+    val result = engine.estimateOneRepMax(
+        listOf(
+            LoadVelocityPoint(100f, 1.0f),
+            LoadVelocityPoint(105f, 0.99f),
+        ),
+    )
+
+    assertNotNull(result)
+    assertEquals(220f, result.estimatedOneRepMaxKg, 0.1f)
+}
+```
+
+- [ ] **Step 4: Run the focused tests and confirm the red state**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*AssessmentViewModelProfileScopeTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*AssessmentViewModelProfileScopeTest*" --tests "*AssessmentProfileOwnershipTest*" --tests "*AssessmentResourceContractTest*" --tests "*AssessmentEngineTest*" --console=plain
 ```
 
-Expected: FAIL to compile because `acceptResult` does not yet accept `profileId`.
+Expected: FAIL because the explicit-ID/event APIs, destination-state resolver, localized key, and 220 kg total clamp do not exist yet.
 
-- [ ] **Step 4: Remove assessment profile defaults and forward the explicit ID**
+- [ ] **Step 5: Remove assessment profile defaults and enforce total-kilogram engine semantics**
 
-Change both declarations in `AssessmentRepository` so the last argument is required:
+In `AssessmentRepository.kt`, change the existing entity property from `val profileId: String = "default"` to `val profileId: String`. In both `saveAssessment` and `saveAssessmentSession`, change the existing final parameter from `profileId: String = "default"` to `profileId: String`:
 
 ```kotlin
 profileId: String,
 ```
 
-Change `AssessmentViewModel`:
+Keep `userOverrideKg` optional, but document `estimatedOneRepMaxKg` and `userOverrideKg` as total kilograms and `weightPerCableKg` as per-cable kilograms. Every current caller is in this Task's inventory: the two `SqlDelightAssessmentRepositoryTest` calls and `AssessmentViewModel` for `saveAssessmentSession`; the new fake/repository isolation tests for `saveAssessment`; the two `NavGraph` calls for `AssessmentWizardScreen`; and `AssessmentWizardScreen` for `acceptResult`. Do not retain a compatibility overload.
+
+In `AssessmentEngine.kt`, make its existing total-valued regression agree with the wizard and persistence contract:
+
+```kotlin
+val estimatedLoad = ((config.oneRmVelocityMs.toDouble() - intercept) / slope)
+    .coerceAtLeast(1.0)
+    .coerceAtMost((Constants.MAX_WEIGHT_PER_CABLE_KG * 2f).toDouble())
+```
+
+Add `AssessmentUiEvent` at top level beside `AssessmentStep`, then add the two flow properties inside `AssessmentViewModel`:
+
+```kotlin
+sealed interface AssessmentUiEvent {
+    data object SaveFailed : AssessmentUiEvent
+}
+
+private val _events = MutableSharedFlow<AssessmentUiEvent>(extraBufferCapacity = 1)
+val events: SharedFlow<AssessmentUiEvent> = _events.asSharedFlow()
+```
+
+Import `kotlin.coroutines.cancellation.CancellationException`, `kotlinx.coroutines.flow.MutableSharedFlow`, `SharedFlow`, and `asSharedFlow`. Then replace `acceptResult`:
 
 ```kotlin
 fun acceptResult(profileId: String, overrideKg: Float? = null) {
@@ -373,14 +601,17 @@ fun acceptResult(profileId: String, overrideKg: Float? = null) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Logger.e("Failed to save assessment: ${e.message}")
+            Logger.e(e) { "Failed to save assessment" }
             _currentStep.value = current
+            _events.emit(AssessmentUiEvent.SaveFailed)
         }
     }
 }
 ```
 
-- [ ] **Step 5: Pass a Ready profile through the wizard and both routes**
+The profile ID is validated synchronously before `Saving`, so blank ownership never launches a write. Estimated/override values forwarded to the repository and shown in `Complete` remain total kilograms; only `weightPerCableKg = avgWeight / 2f` crosses to per-cable storage.
+
+- [ ] **Step 6: Bind each route entry to its first Ready profile and wire failure feedback**
 
 Change the screen signature and Results binding:
 
@@ -397,6 +628,16 @@ fun AssessmentWizardScreen(
     require(profileId.isNotBlank())
     val currentStep by viewModel.currentStep.collectAsState()
     val exercises by viewModel.exercises.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val saveFailureMessage = stringResource(Res.string.assessment_save_failed)
+    LaunchedEffect(viewModel, saveFailureMessage) {
+        viewModel.events.collect { event ->
+            when (event) {
+                AssessmentUiEvent.SaveFailed ->
+                    snackbarHostState.showSnackbar(saveFailureMessage)
+            }
+        }
+    }
 }
 ```
 
@@ -415,28 +656,253 @@ is AssessmentStep.Results -> ResultsContent(
 )
 ```
 
-In each assessment destination, gate composition on the data-foundation context:
+Import `AssessmentUiEvent` beside the existing `AssessmentStep`/`AssessmentViewModel` imports. Add `SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))` as the final child of the screen's existing outer `Box` so one event produces one visible message without replacing authoritative `Results` state.
+
+In `NavGraph.kt`, add this pure state resolver outside `NavGraph`:
 
 ```kotlin
-val profileRepository: UserProfileRepository = koinInject()
-val activeContext by profileRepository.activeProfileContext.collectAsState()
-val ready = activeContext as? ActiveProfileContext.Ready
-if (ready != null) {
-    AssessmentWizardScreen(
-        viewModel = assessmentViewModel,
-        profileId = ready.profile.id,
-        themeMode = themeMode,
-        onNavigateBack = { navController.popBackStack() },
-        metricsFlow = viewModel.currentMetric,
-    )
+internal sealed interface AssessmentProfileDestinationState {
+    data object Waiting : AssessmentProfileDestinationState
+    data class Capture(val profileId: String) : AssessmentProfileDestinationState
+    data class Bound(val profileId: String) : AssessmentProfileDestinationState
+    data object Invalidated : AssessmentProfileDestinationState
+}
+
+internal fun resolveAssessmentProfileDestination(
+    ownerProfileId: String?,
+    context: ActiveProfileContext,
+): AssessmentProfileDestinationState = when {
+    ownerProfileId == null && context is ActiveProfileContext.Switching ->
+        AssessmentProfileDestinationState.Waiting
+    ownerProfileId == null && context is ActiveProfileContext.Ready ->
+        AssessmentProfileDestinationState.Capture(context.profile.id)
+    context is ActiveProfileContext.Ready && context.profile.id == ownerProfileId ->
+        AssessmentProfileDestinationState.Bound(requireNotNull(ownerProfileId))
+    else -> AssessmentProfileDestinationState.Invalidated
 }
 ```
 
-For the preselected route, include `exerciseId = exerciseId` in the same call.
+Add one helper used by both assessment destinations:
 
-- [ ] **Step 6: Make repository tests explicit and add isolation coverage**
+```kotlin
+@Composable
+private fun AssessmentDestination(
+    exerciseId: String?,
+    themeMode: ThemeMode,
+    metricsFlow: StateFlow<WorkoutMetric?>,
+    onNavigateBack: () -> Unit,
+) {
+    val profileRepository: UserProfileRepository = koinInject()
+    val activeContext by profileRepository.activeProfileContext.collectAsState()
+    var ownerProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+    val destinationState = resolveAssessmentProfileDestination(
+        ownerProfileId = ownerProfileId,
+        context = activeContext,
+    )
 
-Add `profileId = "athlete-a"` to the existing save calls, then add:
+    LaunchedEffect(destinationState) {
+        when (destinationState) {
+            is AssessmentProfileDestinationState.Capture ->
+                ownerProfileId = destinationState.profileId
+            AssessmentProfileDestinationState.Invalidated -> onNavigateBack()
+            is AssessmentProfileDestinationState.Bound,
+            AssessmentProfileDestinationState.Waiting -> Unit
+        }
+    }
+
+    when (destinationState) {
+        is AssessmentProfileDestinationState.Bound -> {
+            val assessmentViewModel: AssessmentViewModel = koinViewModel()
+            AssessmentWizardScreen(
+                viewModel = assessmentViewModel,
+                profileId = destinationState.profileId,
+                exerciseId = exerciseId,
+                themeMode = themeMode,
+                onNavigateBack = onNavigateBack,
+                metricsFlow = metricsFlow,
+            )
+        }
+        is AssessmentProfileDestinationState.Capture,
+        AssessmentProfileDestinationState.Waiting,
+        AssessmentProfileDestinationState.Invalidated,
+        -> Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            LoadingIndicator(LoadingIndicatorSize.Large)
+        }
+    }
+}
+```
+
+Import `ActiveProfileContext`, `UserProfileRepository`, `WorkoutMetric`, `StateFlow`, `androidx.compose.runtime.saveable.rememberSaveable`, and `org.koin.compose.viewmodel.koinViewModel`. Saving the captured string across recreation prevents an A-owned retained route from silently binding to current profile B. Route-scoped `koinViewModel` is required: popping an invalidated entry must clear the ViewModel and cancel its save job.
+
+Delete both existing `val assessmentViewModel: AssessmentViewModel = koinInject()` lines. Replace both inline wizard constructions with:
+
+```kotlin
+AssessmentDestination(
+    exerciseId = null,
+    themeMode = themeMode,
+    metricsFlow = viewModel.currentMetric,
+    onNavigateBack = { navController.popBackStack() },
+)
+```
+
+For the preselected route, use the same call with `exerciseId = exerciseId`. Do not read `activeProfile.value` and do not update `ownerProfileId` after its first non-null value.
+
+Add the localized failure key:
+
+```xml
+<!-- values -->
+<string name="assessment_save_failed">Couldn’t save the assessment. Try again.</string>
+<!-- values-nl -->
+<string name="assessment_save_failed">De krachtmeting kon niet worden opgeslagen. Probeer het opnieuw.</string>
+<!-- values-de -->
+<string name="assessment_save_failed">Die Kraftmessung konnte nicht gespeichert werden. Versuche es erneut.</string>
+<!-- values-es -->
+<string name="assessment_save_failed">No se pudo guardar la evaluación. Inténtalo de nuevo.</string>
+<!-- values-fr -->
+<string name="assessment_save_failed">Impossible d’enregistrer l’évaluation. Réessayez.</string>
+```
+
+Each line goes only in its named locale file. The route behavior is:
+
+- initial `Switching`: render a loading indicator and do not construct the wizard;
+- first `Ready(A)`: capture A and render the A-owned wizard;
+- later `Switching` or `Ready(B)`: remove the wizard immediately and pop; never render its state with B;
+- cancellation from that pop reaches `acceptResult` and the repository unchanged.
+
+- [ ] **Step 7: Make persistence atomic under error/cancellation and prove profile/unit isolation**
+
+In `SqlDelightAssessmentRepository`, call `require(profileId.isNotBlank())` before either save performs work. `saveAssessment` continues to persist its estimate and override unchanged because those columns are total kilograms.
+
+Import `kotlinx.coroutines.NonCancellable` and `kotlin.coroutines.cancellation.CancellationException`. Replace `saveAssessmentSession` completely:
+
+```kotlin
+override suspend fun saveAssessmentSession(
+    exerciseId: String,
+    exerciseName: String,
+    estimatedOneRepMaxKg: Float,
+    loadVelocityDataJson: String,
+    userOverrideKg: Float?,
+    totalReps: Int,
+    durationMs: Long,
+    weightPerCableKg: Float,
+    profileId: String,
+): String = withContext(Dispatchers.IO) {
+    require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
+    val previousOneRepMaxPerCableKg =
+        exerciseRepository.getExerciseById(exerciseId)?.oneRepMaxKg
+    val sessionId = generateUUID()
+    val session = WorkoutSession(
+        id = sessionId,
+        timestamp = currentTimeMillis(),
+        mode = "OldSchool",
+        reps = totalReps,
+        weightPerCableKg = weightPerCableKg,
+        duration = durationMs,
+        totalReps = totalReps,
+        exerciseId = exerciseId,
+        exerciseName = exerciseName,
+        routineName = ASSESSMENT_ROUTINE_NAME,
+        profileId = profileId,
+    )
+
+    var insertedResultId: Long? = null
+    try {
+        workoutRepository.saveSession(session)
+        queries.insertAssessmentResult(
+            exerciseId = exerciseId,
+            estimatedOneRepMaxKg = estimatedOneRepMaxKg.toDouble(),
+            loadVelocityData = loadVelocityDataJson,
+            assessmentSessionId = sessionId,
+            userOverrideKg = userOverrideKg?.toDouble(),
+            createdAt = currentTimeMillis(),
+            profile_id = profileId,
+        )
+        insertedResultId = queries.lastInsertRowId().executeAsOne()
+
+        val finalOneRepMaxTotalKg = userOverrideKg ?: estimatedOneRepMaxKg
+        exerciseRepository.updateOneRepMax(
+            exerciseId,
+            finalOneRepMaxTotalKg / 2f,
+        )
+    } catch (failure: Throwable) {
+        withContext(NonCancellable) {
+            insertedResultId?.let { id ->
+                runCatching { queries.deleteAssessmentResult(id) }
+            }
+            runCatching { workoutRepository.deleteSession(sessionId) }
+            runCatching {
+                queries.updateOneRepMax(
+                    previousOneRepMaxPerCableKg?.toDouble(),
+                    exerciseId,
+                )
+            }
+        }
+        if (failure is CancellationException) throw failure
+        Logger.w(failure) {
+            "Assessment save failed; compensated session, result, and exercise 1RM"
+        }
+        throw failure
+    }
+
+    sessionId
+}
+```
+
+The `try` begins before `saveSession` so cancellation at any write boundary attempts cleanup. Cleanup is non-cancellable and restores the prior per-cable exercise 1RM through the local SQLDelight query, avoiding an injected/failing `ExerciseRepository` during compensation. The original cancellation or error always escapes.
+
+Replace the two existing save-session tests with the complete unit/profile contract:
+
+```kotlin
+@Test
+fun `saveAssessmentSession keeps estimate total and stores session and exercise per cable`() = runTest {
+    val sessionId = repository.saveAssessmentSession(
+        exerciseId = "bench-press",
+        exerciseName = "Bench Press",
+        estimatedOneRepMaxKg = 100f,
+        loadVelocityDataJson = "[]",
+        userOverrideKg = null,
+        totalReps = 9,
+        durationMs = 60_000L,
+        weightPerCableKg = 30f,
+        profileId = "athlete-a",
+    )
+
+    val session = workoutRepository.getSession(sessionId)
+    val assessment = repository.getLatestAssessment("bench-press", "athlete-a")
+    assertEquals("athlete-a", session?.profileId)
+    assertEquals(30f, session?.weightPerCableKg)
+    assertEquals(100f, assessment?.estimatedOneRepMaxKg)
+    assertNull(assessment?.userOverrideKg)
+    assertEquals(sessionId, assessment?.assessmentSessionId)
+    assertEquals(50f, exerciseRepository.getExerciseById("bench-press")?.oneRepMaxKg)
+}
+
+@Test
+fun `saveAssessmentSession keeps override total and updates exercise per cable`() = runTest {
+    val sessionId = repository.saveAssessmentSession(
+        exerciseId = "bench-press",
+        exerciseName = "Bench Press",
+        estimatedOneRepMaxKg = 100f,
+        loadVelocityDataJson = "[]",
+        userOverrideKg = 120f,
+        totalReps = 9,
+        durationMs = 60_000L,
+        weightPerCableKg = 30f,
+        profileId = "athlete-a",
+    )
+
+    val assessment = repository.getLatestAssessment("bench-press", "athlete-a")
+    assertEquals(100f, assessment?.estimatedOneRepMaxKg)
+    assertEquals(120f, assessment?.userOverrideKg)
+    assertEquals(sessionId, assessment?.assessmentSessionId)
+    assertEquals(60f, exerciseRepository.getExerciseById("bench-press")?.oneRepMaxKg)
+}
+```
+
+Then add explicit profile isolation:
 
 ```kotlin
 @Test
@@ -463,20 +929,151 @@ fun `latest assessment is isolated by explicit profile`() = runTest {
 }
 ```
 
-- [ ] **Step 7: Run assessment tests and confirm green**
+Prove the repository rejects blank ownership before any write:
+
+```kotlin
+@Test
+fun `blank profile IDs are rejected before assessment writes`() = runTest {
+    assertFailsWith<IllegalArgumentException> {
+        repository.saveAssessment(
+            exerciseId = "bench-press",
+            estimatedOneRepMaxKg = 100f,
+            loadVelocityDataJson = "[]",
+            sessionId = null,
+            userOverrideKg = null,
+            profileId = " ",
+        )
+    }
+    assertFailsWith<IllegalArgumentException> {
+        repository.saveAssessmentSession(
+            exerciseId = "bench-press",
+            exerciseName = "Bench Press",
+            estimatedOneRepMaxKg = 100f,
+            loadVelocityDataJson = "[]",
+            userOverrideKg = null,
+            totalReps = 9,
+            durationMs = 60_000L,
+            weightPerCableKg = 30f,
+            profileId = " ",
+        )
+    }
+
+    assertNull(repository.getLatestAssessment("bench-press", " "))
+    assertEquals(emptyList(), workoutRepository.getAllSessions(" ").first())
+}
+```
+
+Add compensation coverage:
+
+```kotlin
+@Test
+fun `ordinary failure removes partial rows and restores prior per-cable 1RM`() = runTest {
+    exerciseRepository.updateOneRepMax("bench-press", 40f)
+    val failingRepository = repositoryFailingAfterExerciseUpdate(
+        IllegalStateException("test failure"),
+    )
+
+    assertFailsWith<IllegalStateException> {
+        failingRepository.saveAssessmentSession(
+            exerciseId = "bench-press",
+            exerciseName = "Bench Press",
+            estimatedOneRepMaxKg = 100f,
+            loadVelocityDataJson = "[]",
+            userOverrideKg = null,
+            totalReps = 9,
+            durationMs = 60_000L,
+            weightPerCableKg = 30f,
+            profileId = "athlete-a",
+        )
+    }
+
+    assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
+    assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
+    assertEquals(40f, exerciseRepository.getExerciseById("bench-press")?.oneRepMaxKg)
+}
+
+@Test
+fun `cancellation compensates partial rows and escapes unchanged`() = runTest {
+    exerciseRepository.updateOneRepMax("bench-press", 40f)
+    val failingRepository = repositoryFailingAfterExerciseUpdate(
+        CancellationException("test cancellation"),
+    )
+
+    assertFailsWith<CancellationException> {
+        failingRepository.saveAssessmentSession(
+            exerciseId = "bench-press",
+            exerciseName = "Bench Press",
+            estimatedOneRepMaxKg = 100f,
+            loadVelocityDataJson = "[]",
+            userOverrideKg = 120f,
+            totalReps = 9,
+            durationMs = 60_000L,
+            weightPerCableKg = 30f,
+            profileId = "athlete-a",
+        )
+    }
+
+    assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
+    assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
+    assertEquals(40f, exerciseRepository.getExerciseById("bench-press")?.oneRepMaxKg)
+}
+
+private fun repositoryFailingAfterExerciseUpdate(
+    failure: Throwable,
+): SqlDelightAssessmentRepository {
+    val failingExerciseRepository = object : ExerciseRepository by exerciseRepository {
+        override suspend fun updateOneRepMax(exerciseId: String, oneRepMaxKg: Float?) {
+            exerciseRepository.updateOneRepMax(exerciseId, oneRepMaxKg)
+            throw failure
+        }
+    }
+    return SqlDelightAssessmentRepository(
+        database,
+        workoutRepository,
+        failingExerciseRepository,
+    )
+}
+```
+
+Import `kotlin.coroutines.cancellation.CancellationException`, `kotlin.test.assertFailsWith`, `assertNull`, and `kotlinx.coroutines.flow.first`. These are real post-write failures: the delegate changes `Exercise.oneRepMaxKg` before throwing, so the tests prove all three compensations rather than only a pre-write exception.
+
+- [ ] **Step 8: Run focused tests, compile every caller, and scan removed defaults**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*AssessmentViewModelProfileScopeTest*" --tests "*SqlDelightAssessmentRepositoryTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*AssessmentViewModelProfileScopeTest*" --tests "*AssessmentProfileOwnershipTest*" --tests "*AssessmentResourceContractTest*" --tests "*AssessmentEngineTest*" --tests "*SqlDelightAssessmentRepositoryTest*" --rerun --console=plain
 ```
 
-Expected: BUILD SUCCESSFUL; all assessment profile and unit tests pass.
+Expected: BUILD SUCCESSFUL; every filter resolves to a positive test count with zero failures, errors, or skipped tests.
 
-- [ ] **Step 8: Commit the assessment ownership slice**
+Compile common production/test call sites for both configured platform families:
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/AssessmentRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentWizardScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModelProfileScopeTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepositoryTest.kt
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileAndroidMain :shared:compileAndroidHostTest :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --console=plain
+```
+
+Expected: BUILD SUCCESSFUL. The configured iOS tasks are `compileKotlinIosArm64` and `compileTestKotlinIosArm64`; there is no `compileKotlinIosSimulatorArm64` task in this repository.
+
+Run the exact ownership/default scan:
+
+```powershell
+$assessmentApi = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/AssessmentRepository.kt'
+$defaults = rg -n 'profileId: String = "default"' $assessmentApi
+if ($LASTEXITCODE -eq 0) {
+    $defaults
+    throw 'Assessment profile defaults remain'
+}
+rg -n 'AssessmentResultEntity\(' shared/src --glob '*.kt'
+rg -n '\b(saveAssessment|saveAssessmentSession|getAssessmentsByExercise|getLatestAssessment|acceptResult|AssessmentWizardScreen)\s*\(' shared/src --glob '*.kt'
+```
+
+Expected: the guard exits normally because no assessment API/entity profile default remains. The constructor/caller inventories are limited to the repository interface/implementation, `AssessmentViewModel`, `AssessmentWizardScreen`, the two `NavGraph` destinations, `FakeAssessmentRepository`, and the focused tests; every invocation passes or receives an explicit profile ID.
+
+- [ ] **Step 9: Commit the assessment ownership slice**
+
+```powershell
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/AssessmentRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngine.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentWizardScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModelProfileScopeTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/AssessmentProfileOwnershipTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentResourceContractTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepositoryTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngineTest.kt shared/src/commonMain/composeResources/values/strings.xml shared/src/commonMain/composeResources/values-nl/strings.xml shared/src/commonMain/composeResources/values-de/strings.xml shared/src/commonMain/composeResources/values-es/strings.xml shared/src/commonMain/composeResources/values-fr/strings.xml
 git commit -m "fix: scope strength assessments to active profile"
 ```
 
