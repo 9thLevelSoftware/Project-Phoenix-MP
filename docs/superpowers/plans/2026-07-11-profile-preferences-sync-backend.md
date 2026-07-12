@@ -3756,6 +3756,8 @@ fun `malformed dirty document is reported and valid sibling remains syncable`() 
 private companion object {
     const val MAX_EXACT_JSON_INTEGER = 9_007_199_254_740_991L
     const val MIN_EXACT_JSON_INTEGER = -9_007_199_254_740_991L
+    const val MIN_RFC3339_EPOCH_MS = -62_135_596_800_000L
+    const val MAX_RFC3339_EPOCH_MS = 253_402_300_799_999L
 }
 
 private fun forceDirtyCoreRevision(profileId: String, revision: Long) {
@@ -4046,6 +4048,8 @@ fun `Postgres incompatible text and normalized local only keys dead letter only 
     })
 }
 ```
+
+Add boundary cases using the retained driver for both wrapper fields that Task 5 otherwise assumes are total. For each section timestamp column, `MIN_RFC3339_EPOCH_MS` and `MAX_RFC3339_EPOCH_MS` remain valid and serialize as four-digit-year RFC3339 instants; either adjacent millisecond is excluded from `valid` with only `INVALID_CLIENT_MODIFIED_AT`. Insert profiles with a blank id, an id containing U+0000, and an id containing a lone surrogate; every dirty section for those rows is excluded with only `INVALID_PROFILE_ID`, and neither the id nor a sentinel substring appears in any reason. A valid profile/section beside each invalid case remains syncable.
 
 The fixture's `createProfile` calls the existing generated `insertProfile` query, and its retained in-memory `driver` is used only for boundary states that the public foundation repository cannot create. Do not seed a negative `core_server_revision`: schema 43's `CHECK (core_server_revision >= 0)` correctly makes that database state impossible. Keep the codec's negative-base-revision branch as defense in depth for non-database callers. Import `jsonArray`, `jsonObject`, `jsonPrimitive`, `int`, `long`, and `boolean`; assertions inspect JSON elements, not stringified nested JSON. “Dead letter for the current generation” has an executable meaning: the issue carries that `localGeneration`, the section remains dirty, every snapshot excludes it from `valid` (so no wire DTO, chunk, or RPC retry can be created), and it remains diagnosable in `unsyncable`. A subsequent local edit increments the generation and is validated afresh. No value is rounded, wrapped, replacement-character-normalized, coerced to a string, or sent repeatedly.
 
@@ -4819,7 +4823,9 @@ internal data class ProfilePreferencePayloadValidation(
 )
 
 internal enum class ProfilePreferenceSyncIssueReason {
+    INVALID_PROFILE_ID,
     INVALID_LOCAL_DOCUMENT,
+    INVALID_CLIENT_MODIFIED_AT,
     UNREPRESENTABLE_JSON_INTEGER,
     INVALID_INT32,
     INVALID_TEXT_TREE,
@@ -4868,10 +4874,12 @@ Add `encodeDirtyRow(row)`, `decodeAndValidateTypedValue(section, payload)`, `can
 
 Before constructing a `ProfilePreferenceSectionSyncDto`, apply these checks in order and emit only the fixed `ProfilePreferenceSyncIssueReason.name` as `reason`:
 
-1. A negative base revision is `INVALID_LOCAL_DOCUMENT`; a base revision outside the exact JSON integer interval is `UNREPRESENTABLE_JSON_INTEGER`.
-2. For RACK, every signed `createdAt` and `updatedAt` must be in the exact JSON integer interval. Repeated rack names remain valid; duplicate IDs remain invalid through the foundation validator.
-3. Before `row.led_color_scheme_id.toInt()`, require the stored `Long` to be in `Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()`; otherwise use `INVALID_INT32`. Schema 43 already excludes negative values, but the codec performs the complete conversion guard.
-4. Build the exact typed payload and call `profilePreferenceWireSafetyViolation`. Map `INVALID_TEXT_TREE` and `LOCAL_ONLY_KEY` to their corresponding sync issue reason. This must happen in Task 4 so Task 5's DTO constructor cannot throw while mapping the full valid snapshot.
+1. Before section decoding, require `row.profile_id.isNotBlank()` and require `profilePreferenceWireSafetyViolation(JsonPrimitive(row.profile_id)) == null`. A blank or PostgreSQL-incompatible id yields `INVALID_PROFILE_ID` for every dirty section in that row; no DTO is constructed. The issue key may retain the id for local repair identity, but no later log may print that raw key.
+2. A negative base revision is `INVALID_LOCAL_DOCUMENT`; a base revision outside the exact JSON integer interval is `UNREPRESENTABLE_JSON_INTEGER`.
+3. Require the section's `*_updated_at` in `MIN_RFC3339_EPOCH_MS..MAX_RFC3339_EPOCH_MS`; otherwise use `INVALID_CLIENT_MODIFIED_AT`. These inclusive bounds are exactly `0001-01-01T00:00:00.000Z` through `9999-12-31T23:59:59.999Z`, keeping Task 5's `Instant.fromEpochMilliseconds(...).toString()` within the Edge four-digit-year contract.
+4. For RACK, every signed `createdAt` and `updatedAt` must be in the exact JSON integer interval. Repeated rack names remain valid; duplicate IDs remain invalid through the foundation validator.
+5. Before `row.led_color_scheme_id.toInt()`, require the stored `Long` to be in `Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()`; otherwise use `INVALID_INT32`. Schema 43 already excludes negative values, but the codec performs the complete conversion guard.
+6. Build the exact typed payload and call `profilePreferenceWireSafetyViolation`. Map `INVALID_TEXT_TREE` and `LOCAL_ONLY_KEY` to their corresponding sync issue reason. This must happen in Task 4 so Task 5's DTO constructor cannot throw while mapping the full valid snapshot.
 
 The issue retains the current profile/section generation and stays out of `valid`, so serialization, chunking, and RPC retry cannot see it. Valid `Long` values use `JsonPrimitive(Long)` and remain JSON numbers. Never retain an exception message, raw JSON, invalid string, numeric value, or payload fragment in a reason.
 
