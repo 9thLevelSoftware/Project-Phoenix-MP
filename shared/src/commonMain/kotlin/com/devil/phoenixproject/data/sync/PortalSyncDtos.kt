@@ -414,17 +414,61 @@ private fun normalizedProfilePreferenceWireKey(key: String): String =
         .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
         .lowercase()
 
-private fun requireValueOnlyProfilePreferencePayload(value: kotlinx.serialization.json.JsonElement) {
-    when (value) {
-        is kotlinx.serialization.json.JsonArray ->
-            value.forEach(::requireValueOnlyProfilePreferencePayload)
-        is kotlinx.serialization.json.JsonObject -> value.forEach { (key, child) ->
-            require(normalizedProfilePreferenceWireKey(key) !in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS) {
-                "Local-only profile preference fields are not wire-safe"
+internal enum class ProfilePreferenceWireSafetyViolation {
+    INVALID_TEXT_TREE,
+    LOCAL_ONLY_KEY,
+}
+
+internal fun isPostgresCompatibleText(value: String): Boolean {
+    var index = 0
+    while (index < value.length) {
+        val codeUnit = value[index]
+        when {
+            codeUnit == '\u0000' -> return false
+            codeUnit in '\uD800'..'\uDBFF' -> {
+                if (index + 1 >= value.length || value[index + 1] !in '\uDC00'..'\uDFFF') {
+                    return false
+                }
+                index += 1
             }
-            requireValueOnlyProfilePreferencePayload(child)
+            codeUnit in '\uDC00'..'\uDFFF' -> return false
         }
-        else -> Unit
+        index += 1
+    }
+    return true
+}
+
+internal fun profilePreferenceWireSafetyViolation(
+    value: kotlinx.serialization.json.JsonElement,
+): ProfilePreferenceWireSafetyViolation? = when (value) {
+    is kotlinx.serialization.json.JsonArray -> value.firstNotNullOfOrNull(
+        ::profilePreferenceWireSafetyViolation,
+    )
+    is kotlinx.serialization.json.JsonObject -> {
+        value.entries.firstNotNullOfOrNull { (key, child) ->
+            when {
+                !isPostgresCompatibleText(key) ->
+                    ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE
+                normalizedProfilePreferenceWireKey(key) in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS ->
+                    ProfilePreferenceWireSafetyViolation.LOCAL_ONLY_KEY
+                else -> profilePreferenceWireSafetyViolation(child)
+            }
+        }
+    }
+    is kotlinx.serialization.json.JsonPrimitive -> if (
+        value.isString && !isPostgresCompatibleText(value.content)
+    ) {
+        ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE
+    } else {
+        null
+    }
+}
+
+private fun requireValueOnlyProfilePreferencePayload(
+    value: kotlinx.serialization.json.JsonElement,
+) {
+    require(profilePreferenceWireSafetyViolation(value) == null) {
+        "Profile preference payload is not wire-safe"
     }
 }
 

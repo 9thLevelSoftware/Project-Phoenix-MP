@@ -2230,6 +2230,172 @@ SET vbt_enabled = ?, vbt_preferences_json = ?, vbt_updated_at = ?,
     vbt_local_generation = vbt_local_generation + 1, vbt_dirty = 1
 WHERE profile_id = ?;
 
+selectDirtyProfilePreferenceRows:
+SELECT *
+FROM UserProfilePreferences
+WHERE core_dirty = 1
+   OR rack_dirty = 1
+   OR workout_dirty = 1
+   OR led_dirty = 1
+   OR vbt_dirty = 1
+ORDER BY profile_id;
+
+selectProfilePreferenceSyncRow:
+SELECT *
+FROM UserProfilePreferences
+WHERE profile_id = :profile_id;
+
+selectChangedRowCount:
+SELECT changes();
+
+applyCoreCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET body_weight_kg = :body_weight_kg,
+    weight_unit = :weight_unit,
+    weight_increment = :weight_increment,
+    core_updated_at = :server_updated_at,
+    core_server_revision = :server_revision,
+    core_dirty = 0
+WHERE profile_id = :profile_id
+  AND core_local_generation = :sent_local_generation
+  AND core_dirty = 1
+  AND core_server_revision <= :server_revision;
+
+advanceCoreRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET core_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND core_local_generation > :sent_local_generation
+  AND core_server_revision < :server_revision;
+
+applyRackCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET equipment_rack_json = :equipment_rack_json,
+    rack_updated_at = :server_updated_at,
+    rack_server_revision = :server_revision,
+    rack_dirty = 0
+WHERE profile_id = :profile_id
+  AND rack_local_generation = :sent_local_generation
+  AND rack_dirty = 1
+  AND rack_server_revision <= :server_revision;
+
+advanceRackRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET rack_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND rack_local_generation > :sent_local_generation
+  AND rack_server_revision < :server_revision;
+
+applyWorkoutCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET workout_preferences_json = :workout_preferences_json,
+    workout_updated_at = :server_updated_at,
+    workout_server_revision = :server_revision,
+    workout_dirty = 0
+WHERE profile_id = :profile_id
+  AND workout_local_generation = :sent_local_generation
+  AND workout_dirty = 1
+  AND workout_server_revision <= :server_revision;
+
+advanceWorkoutRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET workout_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND workout_local_generation > :sent_local_generation
+  AND workout_server_revision < :server_revision;
+
+applyLedCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET led_color_scheme_id = :led_color_scheme_id,
+    led_preferences_json = :led_preferences_json,
+    led_updated_at = :server_updated_at,
+    led_server_revision = :server_revision,
+    led_dirty = 0
+WHERE profile_id = :profile_id
+  AND led_local_generation = :sent_local_generation
+  AND led_dirty = 1
+  AND led_server_revision <= :server_revision;
+
+advanceLedRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET led_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND led_local_generation > :sent_local_generation
+  AND led_server_revision < :server_revision;
+
+applyVbtCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET vbt_enabled = :vbt_enabled,
+    vbt_preferences_json = :vbt_preferences_json,
+    vbt_updated_at = :server_updated_at,
+    vbt_server_revision = :server_revision,
+    vbt_dirty = 0
+WHERE profile_id = :profile_id
+  AND vbt_local_generation = :sent_local_generation
+  AND vbt_dirty = 1
+  AND vbt_server_revision <= :server_revision;
+
+advanceVbtRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET vbt_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND vbt_local_generation > :sent_local_generation
+  AND vbt_server_revision < :server_revision;
+
+applyPulledCoreWhenClean:
+UPDATE UserProfilePreferences
+SET body_weight_kg = :body_weight_kg,
+    weight_unit = :weight_unit,
+    weight_increment = :weight_increment,
+    core_updated_at = :server_updated_at,
+    core_server_revision = :server_revision,
+    core_dirty = 0
+WHERE profile_id = :profile_id
+  AND core_dirty = 0
+  AND core_server_revision <= :server_revision;
+
+applyPulledRackWhenClean:
+UPDATE UserProfilePreferences
+SET equipment_rack_json = :equipment_rack_json,
+    rack_updated_at = :server_updated_at,
+    rack_server_revision = :server_revision,
+    rack_dirty = 0
+WHERE profile_id = :profile_id
+  AND rack_dirty = 0
+  AND rack_server_revision <= :server_revision;
+
+applyPulledWorkoutWhenClean:
+UPDATE UserProfilePreferences
+SET workout_preferences_json = :workout_preferences_json,
+    workout_updated_at = :server_updated_at,
+    workout_server_revision = :server_revision,
+    workout_dirty = 0
+WHERE profile_id = :profile_id
+  AND workout_dirty = 0
+  AND workout_server_revision <= :server_revision;
+
+applyPulledLedWhenClean:
+UPDATE UserProfilePreferences
+SET led_color_scheme_id = :led_color_scheme_id,
+    led_preferences_json = :led_preferences_json,
+    led_updated_at = :server_updated_at,
+    led_server_revision = :server_revision,
+    led_dirty = 0
+WHERE profile_id = :profile_id
+  AND led_dirty = 0
+  AND led_server_revision <= :server_revision;
+
+applyPulledVbtWhenClean:
+UPDATE UserProfilePreferences
+SET vbt_enabled = :vbt_enabled,
+    vbt_preferences_json = :vbt_preferences_json,
+    vbt_updated_at = :server_updated_at,
+    vbt_server_revision = :server_revision,
+    vbt_dirty = 0
+WHERE profile_id = :profile_id
+  AND vbt_dirty = 0
+  AND vbt_server_revision <= :server_revision;
+
 applyLegacyProfilePreferences:
 UPDATE UserProfilePreferences
 SET schema_version = 1,
