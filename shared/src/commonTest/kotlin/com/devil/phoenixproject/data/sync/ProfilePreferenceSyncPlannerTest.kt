@@ -328,6 +328,18 @@ class ProfilePreferenceSyncPlannerTest {
         )
     }
 
+    @Test
+    fun `scanner rejects non array preference field with fixed message`() {
+        val raw = """{"profilePreferenceSections":{}}"""
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            scanProfilePreferenceElementSpans(raw)
+        }
+
+        assertEquals("INVALID_PROFILE_PREFERENCE_ARRAY", error.message)
+        assertFalse(raw in error.message.orEmpty())
+    }
+
     @Serializable
     private data class ProfilePreferenceByteGoldenRecipes(
         val version: Int,

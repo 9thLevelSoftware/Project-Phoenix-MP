@@ -73,6 +73,52 @@ class PortalPullAdapterProfilePreferencesTest {
         }
     }
 
+    @Test
+    fun `pull adapter rejects non contract timestamp spellings and calendar values`() {
+        listOf(
+            "+002026-07-11T12:00:00Z",
+            "+000001-01-01T00:00:00Z",
+            "2026-07-11t12:00:00Z",
+            "2026-07-11T12:00:00z",
+            "2026-07-11T12:00:00+00",
+            "2025-02-29T12:00:00Z",
+            "2026-07-11T24:00:00Z",
+            "2026-07-11T12:00:00+24:00",
+            "2026-07-11T12:00:00.1234567890Z",
+        ).forEach { timestamp ->
+            val invalid = assertIs<ProfilePreferenceCanonicalDecodeResult.Invalid>(
+                PortalPullAdapter.toCanonicalProfilePreferenceSection(
+                    coreCanonicalWire(serverUpdatedAt = timestamp),
+                ),
+            )
+            assertEquals(
+                ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_TIMESTAMP.name,
+                invalid.reason,
+            )
+            assertFalse(timestamp in invalid.reason)
+        }
+    }
+
+    @Test
+    fun `pull adapter accepts canonical Edge timestamp forms`() {
+        listOf(
+            "0001-01-01T00:00:00Z" to -62_135_596_800_000L,
+            "2026-07-11T12:00:00Z" to 1_783_771_200_000L,
+            "2026-07-11T12:00:00.1Z" to 1_783_771_200_100L,
+            "2026-07-11T14:30:00.123456789+02:30" to 1_783_771_200_123L,
+            "2026-07-11T12:00:00+23:59" to 1_783_684_860_000L,
+            "2026-07-11T12:00:00-23:59" to 1_783_857_540_000L,
+            "9999-12-31T23:59:59.999Z" to 253_402_300_799_999L,
+        ).forEach { (timestamp, expectedEpochMs) ->
+            val valid = assertIs<ProfilePreferenceCanonicalDecodeResult.Valid>(
+                PortalPullAdapter.toCanonicalProfilePreferenceSection(
+                    coreCanonicalWire(serverUpdatedAt = timestamp),
+                ),
+            )
+            assertEquals(expectedEpochMs, valid.section.serverUpdatedAtEpochMs)
+        }
+    }
+
     private fun coreCanonicalWire(
         revision: Long = 3,
         localProfileId: String = "profile-a",

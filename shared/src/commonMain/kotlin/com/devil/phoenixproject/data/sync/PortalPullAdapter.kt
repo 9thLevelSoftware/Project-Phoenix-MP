@@ -38,9 +38,9 @@ object PortalPullAdapter {
         }
         val section = ProfilePreferenceSectionName.entries.firstOrNull { it.name == dto.section }
             ?: return invalid(ProfilePreferenceSyncIssueReason.UNSUPPORTED_SECTION)
-        val updatedAt = runCatching {
-            kotlin.time.Instant.parse(dto.serverUpdatedAt).toEpochMilliseconds()
-        }.getOrNull()
+        val updatedAt = ProfilePreferenceSyncCodec.parseStrictRfc3339EpochMilliseconds(
+            dto.serverUpdatedAt,
+        )
         if (updatedAt == null ||
             updatedAt !in ProfilePreferenceSyncCodec.MIN_RFC3339_EPOCH_MILLIS..
                 ProfilePreferenceSyncCodec.MAX_RFC3339_EPOCH_MILLIS

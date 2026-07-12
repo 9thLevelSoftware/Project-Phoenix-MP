@@ -28,6 +28,73 @@ internal class ProfilePreferenceSyncCodec {
         const val MIN_EXACT_JSON_INTEGER = -9_007_199_254_740_991L
         const val MIN_RFC3339_EPOCH_MILLIS = -62_135_596_800_000L
         const val MAX_RFC3339_EPOCH_MILLIS = 253_402_300_799_999L
+
+        private val RFC3339_INSTANT = Regex(
+            """([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|([+-])([0-9]{2}):([0-9]{2}))""",
+        )
+
+        fun parseStrictRfc3339EpochMilliseconds(value: String): Long? {
+            val match = RFC3339_INSTANT.matchEntire(value) ?: return null
+            val year = match.groupValues[1].toInt()
+            val month = match.groupValues[2].toInt()
+            val day = match.groupValues[3].toInt()
+            val hour = match.groupValues[4].toInt()
+            val minute = match.groupValues[5].toInt()
+            val second = match.groupValues[6].toInt()
+            val fraction = match.groupValues[7]
+            val zone = match.groupValues[8]
+            val offsetSign = match.groupValues[9]
+            val offsetHour = if (zone == "Z") 0 else match.groupValues[10].toInt()
+            val offsetMinute = if (zone == "Z") 0 else match.groupValues[11].toInt()
+            if (year < 1 ||
+                month !in 1..12 ||
+                day !in 1..daysInMonth(year, month) ||
+                hour > 23 ||
+                minute > 59 ||
+                second > 59 ||
+                offsetHour > 23 ||
+                offsetMinute > 59
+            ) {
+                return null
+            }
+            val localInstant = buildString {
+                append(match.groupValues[1])
+                append('-')
+                append(match.groupValues[2])
+                append('-')
+                append(match.groupValues[3])
+                append('T')
+                append(match.groupValues[4])
+                append(':')
+                append(match.groupValues[5])
+                append(':')
+                append(match.groupValues[6])
+                if (fraction.isNotEmpty()) {
+                    append('.')
+                    append(fraction)
+                }
+                append('Z')
+            }
+            val localEpochMilliseconds = runCatching {
+                kotlin.time.Instant.parse(localInstant).toEpochMilliseconds()
+            }.getOrNull() ?: return null
+            val offsetMilliseconds = (offsetHour * 60L + offsetMinute) * 60_000L
+            return when (offsetSign) {
+                "+" -> localEpochMilliseconds - offsetMilliseconds
+                "-" -> localEpochMilliseconds + offsetMilliseconds
+                else -> localEpochMilliseconds
+            }
+        }
+
+        private fun isLeapYear(year: Int): Boolean =
+            year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+
+        private fun daysInMonth(year: Int, month: Int): Int = when (month) {
+            1, 3, 5, 7, 8, 10, 12 -> 31
+            4, 6, 9, 11 -> 30
+            2 -> if (isLeapYear(year)) 29 else 28
+            else -> 0
+        }
     }
 
     private data class LocalPayload(
