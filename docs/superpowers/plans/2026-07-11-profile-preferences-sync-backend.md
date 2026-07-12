@@ -6719,9 +6719,12 @@ internal class FakeProfilePreferenceSyncRepository : ProfilePreferenceSyncReposi
     var snapshotCallCount = 0
     var snapshotFailure: Exception? = null
     var applyPushFailure: Exception? = null
+    var applyPullFailure: Exception? = null
     var knownProfileIds: Set<String> = setOf("profile-a")
     var onApplyPulledSections: (() -> Unit)? = null
+    var pullApplyCallCount = 0
     val appliedPushOutcomes = mutableListOf<List<ProfilePreferencePushOutcome>>()
+    val pulledSectionCalls = mutableListOf<List<CanonicalProfilePreferenceSection>>()
     val appliedPulledSections = mutableListOf<List<CanonicalProfilePreferenceSection>>()
 
     override suspend fun snapshotDirtySections(): ProfilePreferenceDirtySnapshot {
@@ -6741,6 +6744,9 @@ internal class FakeProfilePreferenceSyncRepository : ProfilePreferenceSyncReposi
     override suspend fun applyPulledSections(
         sections: List<CanonicalProfilePreferenceSection>,
     ): ProfilePreferenceSyncApplyReport {
+        pullApplyCallCount++
+        pulledSectionCalls += sections
+        applyPullFailure?.let { throw it }
         onApplyPulledSections?.invoke()
         val known = sections.filter { it.key.localProfileId in knownProfileIds }
         appliedPulledSections += known
@@ -6789,7 +6795,8 @@ fun `ordinary metadata push precedes preference-only chunks`() = runTest {
 
     assertEquals(2, harness.api.pushPayloads.size)
     val metadataPayload = harness.api.pushPayloads[0]
-    assertEquals(listOf("profile-a"), metadataPayload.allProfiles?.map { it.id })
+    val metadataProfileIds = metadataPayload.allProfiles.orEmpty().mapTo(linkedSetOf()) { it.id }
+    assertTrue("profile-a" in metadataProfileIds)
     assertNull(metadataPayload.profilePreferenceSections)
     val preferencePayload = harness.api.pushPayloads[1]
     assertNull(preferencePayload.profileId)
@@ -6799,10 +6806,10 @@ fun `ordinary metadata push precedes preference-only chunks`() = runTest {
     assertTrue(preferencePayload.routines.isEmpty())
     assertTrue(preferencePayload.personalRecords.isEmpty())
     assertEquals(1, preferencePayload.profilePreferenceSections?.size)
-    assertEquals(
-        "profile-a",
-        preferencePayload.profilePreferenceSections?.single()?.localProfileId,
-    )
+    val preferenceProfileIds = preferencePayload.profilePreferenceSections.orEmpty()
+        .mapTo(linkedSetOf()) { it.localProfileId }
+    assertEquals(setOf("profile-a"), preferenceProfileIds)
+    assertTrue(preferenceProfileIds.all { it in metadataProfileIds })
 }
 
 @Test
@@ -6863,11 +6870,14 @@ fun `snapshot profiles absent from the sent metadata set are deferred`() = runTe
 
     assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
 
-    assertEquals(listOf("profile-a"), harness.api.pushPayloads[0].allProfiles?.map { it.id })
-    assertEquals(
-        listOf("profile-a"),
-        harness.api.pushPayloads[1].profilePreferenceSections?.map { it.localProfileId },
-    )
+    val sentMetadataProfileIds = harness.api.pushPayloads[0].allProfiles.orEmpty()
+        .mapTo(linkedSetOf()) { it.id }
+    val sentPreferenceProfileIds = harness.api.pushPayloads[1].profilePreferenceSections.orEmpty()
+        .mapTo(linkedSetOf()) { it.localProfileId }
+    assertTrue("profile-a" in sentMetadataProfileIds)
+    assertTrue("profile-created-during-ordinary-push" !in sentMetadataProfileIds)
+    assertEquals(setOf("profile-a"), sentPreferenceProfileIds)
+    assertTrue(sentPreferenceProfileIds.all { it in sentMetadataProfileIds })
     assertTrue(
         harness.preferenceSyncRepository.appliedPushOutcomes
             .flatten()
@@ -7599,6 +7609,8 @@ internal enum class ProfilePreferenceLocalFailureStage {
     CHUNK_PLANNING,
     RESPONSE_MAPPING,
     OUTCOME_APPLY,
+    PULL_RESPONSE_MAPPING,
+    PULL_APPLY,
 }
 
 internal fun profilePreferenceIssueLogLine(issue: ProfilePreferenceSyncIssue): String =
@@ -7968,12 +7980,66 @@ git commit -m "feat(sync): push revisioned profile preference sections"
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerProfilePreferencesTest.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullPaginationTest.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeSyncRepository.kt`
+- Consume: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeProfilePreferenceSyncRepository.kt` — Task 7's attempted-call/raw-input and successful-known-application captures.
 
 **Interfaces:**
-- Consumes: canonical pull DTOs, the strict pull adapter, and Task 4's transactional sync repository.
-- Produces: unknown-profile-safe, preference-first pull convergence without changing `localProfiles` lifecycle behavior.
+- Consumes: canonical pull DTOs, Task 5's strict pull adapter, Task 4's guarded transactional preference repository, and Task 7's dynamic readiness lambda plus `PULL_RESPONSE_MAPPING`/`PULL_APPLY` cancellation-safe isolation stages.
+- Produces: first-page-only, duplicate-key-safe, unknown-profile-safe, preference-first pull convergence without changing `localProfiles` lifecycle behavior or overwriting a concurrent dirty local edit.
 
-- [ ] **Step 1: Write failing pull ordering and unknown-profile tests**
+- [ ] **Step 1: Write failing pure pull-planning and sanitized-diagnostic tests**
+
+Add to `SyncManagerProfilePreferencesTest`:
+
+```kotlin
+@Test
+fun `pull planner pre-counts duplicate keys before validation and keeps valid siblings`() {
+    val sentinel = "SECRET_PULL_PROFILE_SENTINEL"
+    val plan = planProfilePreferencePullSections(
+        listOf(
+            coreCanonical(revision = 3),
+            coreCanonical(revision = 4).copy(documentVersion = 2),
+            workoutCanonical(revision = 5),
+            coreCanonical(revision = 6).copy(localProfileId = "$sentinel\u0000"),
+        ),
+    )
+
+    assertEquals(
+        listOf(ProfilePreferenceSectionName.WORKOUT),
+        plan.valid.map { it.key.section },
+    )
+    assertEquals(1, plan.duplicateKeyCount)
+    assertEquals(2, plan.invalidCanonicalCount)
+}
+
+@Test
+fun `pull diagnostics contain only fixed categories and counts`() {
+    val sentinel = "SECRET_PULL_DIAGNOSTIC_SENTINEL"
+    val lines = ProfilePreferencePullDiagnosticCategory.entries.map { category ->
+        profilePreferencePullCountLogLine(category, 7)
+    } + profilePreferenceInvalidCanonicalLogLine(
+        ProfilePreferenceCanonicalDecodeResult.Invalid(
+            localProfileId = sentinel,
+            section = sentinel,
+            reason = sentinel,
+        ),
+    )
+
+    assertEquals(
+        listOf(
+            "PROFILE_PREFERENCE_PULL category=INVALID_CANONICAL count=7",
+            "PROFILE_PREFERENCE_PULL category=DUPLICATE_KEY count=7",
+            "PROFILE_PREFERENCE_PULL category=LATER_PAGE_IGNORED count=7",
+            "PROFILE_PREFERENCE_PULL category=UNKNOWN_PROFILE count=7",
+            "PROFILE_PREFERENCE_PULL category=REPOSITORY_INVALID count=7",
+            "PROFILE_PREFERENCE_INVALID_CANONICAL reason=INVALID_PROFILE_PREFERENCE_DIAGNOSTIC",
+        ),
+        lines,
+    )
+    assertTrue(lines.none { sentinel in it })
+}
+```
+
+- [ ] **Step 2: Write failing ordering, unknown-profile, and lifecycle tests**
 
 Add to `SyncManagerProfilePreferencesTest`:
 
@@ -7981,12 +8047,8 @@ Add to `SyncManagerProfilePreferencesTest`:
 @Test
 fun `pull applies known preference section before existing entities`() = runTest {
     val mergeEvents = mutableListOf<String>()
-    harness.preferenceSyncRepository.onApplyPulledSections = {
-        mergeEvents += "preferences"
-    }
-    harness.syncRepository.onMergeAllPullData = {
-        mergeEvents += "entities"
-    }
+    harness.preferenceSyncRepository.onApplyPulledSections = { mergeEvents += "preferences" }
+    harness.syncRepository.onMergeAllPullData = { mergeEvents += "entities" }
     harness.api.pullResult = Result.success(
         PortalSyncPullResponse(
             syncTime = 1_783_771_200_000L,
@@ -7997,16 +8059,14 @@ fun `pull applies known preference section before existing entities`() = runTest
 
     assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
 
-    assertEquals(
-        3,
-        harness.preferenceSyncRepository.appliedPulledSections.single().single().serverRevision,
-    )
+    assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+    assertEquals(3, harness.preferenceSyncRepository.appliedPulledSections.single().single().serverRevision)
     assertEquals(1, harness.syncRepository.atomicMergeCallCount)
     assertEquals(listOf("preferences", "entities"), mergeEvents)
 }
 
 @Test
-fun `pull ignores preference for profile absent on device`() = runTest {
+fun `pull reports unknown preference without creating a profile or preference row`() = runTest {
     harness.api.pullResult = Result.success(
         PortalSyncPullResponse(
             syncTime = 1_783_771_200_000L,
@@ -8018,7 +8078,12 @@ fun `pull ignores preference for profile absent on device`() = runTest {
 
     assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
 
-    assertTrue(harness.preferenceSyncRepository.appliedPulledSections.flatten().isEmpty())
+    assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+    assertEquals(
+        "remote-only-profile",
+        harness.preferenceSyncRepository.pulledSectionCalls.single().single().key.localProfileId,
+    )
+    assertTrue(harness.preferenceSyncRepository.appliedPulledSections.single().isEmpty())
     assertTrue(harness.profileRepository.allProfiles.value.none { it.id == "remote-only-profile" })
 }
 
@@ -8031,13 +8096,14 @@ fun `localProfiles metadata still does not create mobile profiles`() = runTest {
         ),
     )
 
-    harness.manager(migrationReady = { true }).sync()
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
 
+    assertEquals(0, harness.preferenceSyncRepository.pullApplyCallCount)
     assertTrue(harness.profileRepository.allProfiles.value.none { it.id == "remote-only-profile" })
 }
 ```
 
-The focused fake's `knownProfileIds` defaults to `profile-a` and filters captured pull applications. Task 4 proves the production repository performs the equivalent check against schema-43 rows without creating either a profile or a preference row.
+The focused fake records every attempted repository call in `pulledSectionCalls` before its injected `applyPullFailure`, then records only successful known-profile applications in `appliedPulledSections` after that failure seam. Task 4 proves the production repository performs the equivalent schema-43 row lookup without creating either a profile or a preference row. `SyncManager` must not prefilter through a potentially stale `allProfiles.value`; the repository owns the transactional existence check.
 
 Add this test-only hook to `FakeSyncRepository` and invoke it immediately after the simulated-failure guard and before `atomicMergeCallCount++` in `mergeAllPullData`:
 
@@ -8048,7 +8114,56 @@ var onMergeAllPullData: (() -> Unit)? = null
 onMergeAllPullData?.invoke()
 ```
 
-- [ ] **Step 2: Write a failing preference-only pagination test**
+- [ ] **Step 3: Write failing dynamic-readiness, first-page-only, and pagination tests**
+
+Add to `SyncManagerProfilePreferencesTest`:
+
+```kotlin
+@Test
+fun `pull readiness is dynamic while not Ready still merges ordinary pages`() = runTest {
+    var migrationState: RequiredMigrationState = RequiredMigrationState.NotStarted
+    val manager = harness.manager(
+        migrationReady = { migrationState is RequiredMigrationState.Ready },
+    )
+    harness.api.pullResultsQueue = mutableListOf(
+        Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_200_000L,
+                hasMore = true,
+                nextCursor = "page-2",
+                profilePreferenceSections = listOf(coreCanonical(revision = 2)),
+            ),
+        ),
+        Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_201_000L,
+                routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine")),
+            ),
+        ),
+    )
+
+    assertTrue(manager.sync().isSuccess)
+    assertEquals(2, harness.api.pullCallCount)
+    assertEquals(0, harness.preferenceSyncRepository.pullApplyCallCount)
+    assertEquals(2, harness.syncRepository.atomicMergeCallCount)
+
+    migrationState = RequiredMigrationState.Ready
+    harness.api.pullResultsQueue = mutableListOf(
+        Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_202_000L,
+                profilePreferenceSections = listOf(coreCanonical(revision = 3)),
+                routines = listOf(PullRoutineDto(id = "routine-2", name = "Routine 2")),
+            ),
+        ),
+    )
+
+    assertTrue(manager.sync().isSuccess)
+    assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+    assertEquals(3, harness.preferenceSyncRepository.appliedPulledSections.single().single().serverRevision)
+    assertEquals(3, harness.syncRepository.atomicMergeCallCount)
+}
+```
 
 Add to `PortalPullPaginationTest`:
 
@@ -8079,6 +8194,42 @@ fun preferenceOnlyPageCountsAsNonEmptyAndContinuesPagination() = runTest {
     assertEquals(2, fakeApi.pullCallCount)
     assertEquals(listOf(null, "page-2"), fakeApi.pullCallCursors)
 }
+
+@Test
+fun laterPagePreferenceIsIgnoredButStillKeepsPaginationMoving() = runTest {
+    authenticate()
+    fakeApi.pullResultsQueue = mutableListOf(
+        Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_200_000L,
+                hasMore = true,
+                nextCursor = "page-2",
+                routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine 1")),
+            ),
+        ),
+        Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_201_000L,
+                hasMore = true,
+                nextCursor = "page-3",
+                profilePreferenceSections = listOf(coreCanonicalForPull(revision = 9)),
+            ),
+        ),
+        Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_202_000L,
+                routines = listOf(PullRoutineDto(id = "routine-3", name = "Routine 3")),
+            ),
+        ),
+    )
+
+    assertTrue(createManager().sync().isSuccess)
+
+    assertEquals(3, fakeApi.pullCallCount)
+    assertEquals(listOf(null, "page-2", "page-3"), fakeApi.pullCallCursors)
+    assertEquals(0, fakeProfilePreferenceSyncRepo.pullApplyCallCount)
+    assertEquals(3, fakeSyncRepo.atomicMergeCallCount)
+}
 ```
 
 Add this local pull fixture:
@@ -8099,7 +8250,80 @@ private fun coreCanonicalForPull(revision: Long) =
     )
 ```
 
-- [ ] **Step 3: Run the tests and verify pull handling failures**
+- [ ] **Step 4: Write failing failure-isolation and partial-commit tests**
+
+Add to `SyncManagerProfilePreferencesTest`:
+
+```kotlin
+@Test
+fun `preference apply failure is local and ordinary entities still merge`() = runTest {
+    harness.preferenceSyncRepository.applyPullFailure =
+        IllegalStateException("SECRET_PULL_APPLY_FAILURE")
+    harness.api.pullResult = Result.success(
+        PortalSyncPullResponse(
+            syncTime = 1_783_771_200_000L,
+            profilePreferenceSections = listOf(coreCanonical(revision = 3)),
+            routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine")),
+        ),
+    )
+
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+
+    assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+    assertEquals(1, harness.preferenceSyncRepository.pulledSectionCalls.size)
+    assertTrue(harness.preferenceSyncRepository.appliedPulledSections.isEmpty())
+    assertEquals(1, harness.syncRepository.atomicMergeCallCount)
+}
+
+@Test
+fun `pull preference cancellation escapes before ordinary merge`() = runTest {
+    harness.preferenceSyncRepository.applyPullFailure =
+        CancellationException("SECRET_PULL_CANCELLATION")
+    harness.api.pullResult = Result.success(
+        PortalSyncPullResponse(
+            syncTime = 1_783_771_200_000L,
+            profilePreferenceSections = listOf(coreCanonical(revision = 3)),
+            routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine")),
+        ),
+    )
+
+    assertFailsWith<CancellationException> {
+        harness.manager(migrationReady = { true }).sync()
+    }
+    assertEquals(1, harness.preferenceSyncRepository.pullApplyCallCount)
+    assertEquals(0, harness.syncRepository.atomicMergeCallCount)
+}
+
+@Test
+fun `ordinary merge failure keeps earlier preference commit and checkpoint for retry`() = runTest {
+    val initialLastSync = 5_000L
+    harness.tokenStorage.setLastSyncTimestamp(initialLastSync)
+    harness.syncRepository.atomicMergeShouldFail = true
+    harness.api.pullResult = Result.success(
+        PortalSyncPullResponse(
+            syncTime = 1_783_771_200_000L,
+            profilePreferenceSections = listOf(coreCanonical(revision = 3)),
+            routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine")),
+        ),
+    )
+    val manager = harness.manager(migrationReady = { true })
+
+    assertTrue(manager.retryPull().isFailure)
+    assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+    assertEquals(initialLastSync, harness.tokenStorage.getLastSyncTimestamp())
+    assertEquals(1, harness.preferenceSyncRepository.appliedPulledSections.size)
+
+    harness.syncRepository.atomicMergeShouldFail = false
+    assertTrue(manager.retryPull().isSuccess)
+    assertEquals(2, harness.preferenceSyncRepository.pullApplyCallCount)
+    assertEquals(1_783_771_200_000L, harness.tokenStorage.getLastSyncTimestamp())
+    assertEquals(1, harness.syncRepository.atomicMergeCallCount)
+}
+```
+
+Import `kotlin.coroutines.cancellation.CancellationException`, `assertFailsWith`, and `assertIs`. Task 7's enum-wide `isolateProfilePreferenceFailure` test supplies the pure throwing-block coverage for `PULL_RESPONSE_MAPPING`; the tests above prove that production orchestration uses `PULL_APPLY`, records an attempted raw call before failure, and rethrows cancellation unchanged.
+
+- [ ] **Step 5: Run the tests and verify pull handling failures**
 
 Run:
 
@@ -8107,9 +8331,66 @@ Run:
 .\gradlew.bat :shared:testAndroidHostTest --tests "*SyncManagerProfilePreferencesTest*" --tests "*PortalPullPaginationTest*" -Pskip.supabase.check=true
 ```
 
-Expected: FAIL because preference sections are not counted or merged.
+Expected: FAIL because pull planning, first-page context, pagination counting, isolated application, and preference-first merge wiring do not exist.
 
-- [ ] **Step 4: Count preference-only pull pages correctly**
+- [ ] **Step 6: Implement pure duplicate-safe pull planning and fixed diagnostics**
+
+Add to `SyncManager.kt` with an explicit `ProfilePreferenceSectionName` import:
+
+```kotlin
+internal enum class ProfilePreferencePullDiagnosticCategory {
+    INVALID_CANONICAL,
+    DUPLICATE_KEY,
+    LATER_PAGE_IGNORED,
+    UNKNOWN_PROFILE,
+    REPOSITORY_INVALID,
+}
+
+internal data class ProfilePreferencePullPlan(
+    val valid: List<CanonicalProfilePreferenceSection>,
+    val invalidCanonicalCount: Int,
+    val duplicateKeyCount: Int,
+)
+
+private fun profilePreferencePullEnvelopeKey(
+    dto: PortalProfilePreferenceSectionCanonicalDto,
+): ProfilePreferenceSectionKey? {
+    val section = ProfilePreferenceSectionName.entries.firstOrNull { it.name == dto.section }
+        ?: return null
+    return ProfilePreferenceSectionKey(dto.localProfileId, section)
+}
+
+internal fun planProfilePreferencePullSections(
+    dtos: List<PortalProfilePreferenceSectionCanonicalDto>,
+): ProfilePreferencePullPlan {
+    // Count supported outer keys before canonical validation. A malformed duplicate must
+    // invalidate its otherwise-valid twin rather than hide behind decoder rejection.
+    val keyCounts = dtos.mapNotNull(::profilePreferencePullEnvelopeKey)
+        .groupingBy { it }
+        .eachCount()
+    val duplicateKeys = keyCounts.filterValues { it > 1 }.keys
+    val decoded = dtos.map(PortalPullAdapter::toCanonicalProfilePreferenceSection)
+    return ProfilePreferencePullPlan(
+        valid = decoded
+            .filterIsInstance<ProfilePreferenceCanonicalDecodeResult.Valid>()
+            .map { it.section }
+            .filterNot { it.key in duplicateKeys },
+        invalidCanonicalCount = decoded.count {
+            it is ProfilePreferenceCanonicalDecodeResult.Invalid
+        },
+        duplicateKeyCount = duplicateKeys.size,
+    )
+}
+
+internal fun profilePreferencePullCountLogLine(
+    category: ProfilePreferencePullDiagnosticCategory,
+    count: Int,
+): String = "PROFILE_PREFERENCE_PULL category=${category.name} count=$count"
+```
+
+The duplicate set is internal only. Never interpolate a key, raw profile id, raw remote section, decoder result, exception, or payload. Unsupported outer section strings cannot form a trusted key and count only as invalid canonicals. Every duplicate supported `(localProfileId, section)` key is dropped in full, while unrelated valid siblings continue.
+
+- [ ] **Step 7: Count raw preference presence and pass explicit first-page context**
 
 Add preference sections to `pageEntityCount`:
 
@@ -8125,39 +8406,152 @@ val pageEntityCount = pullResponse.sessions.size +
     pullResponse.externalActivities.size
 ```
 
-- [ ] **Step 5: Apply validated preference sections first**
+Raw presence counts on every page even when migration is not Ready or the page is later ignored. This keeps the existing empty-page guard from truncating pagination before later ordinary entities.
 
-At the start of `mergePullPage`, before preparing sessions, add:
+After `pagesProcessed++`, pass an explicit first-page flag rather than inferring permission inside the merge from DTO presence:
 
 ```kotlin
-if (isProfilePreferenceMigrationReady()) {
-    val decoded = pullResponse.profilePreferenceSections.orEmpty().map(
-        PortalPullAdapter::toCanonicalProfilePreferenceSection,
-    )
-    decoded.filterIsInstance<ProfilePreferenceCanonicalDecodeResult.Invalid>().forEach { invalid ->
-        Logger.w("SyncManager") { profilePreferenceInvalidCanonicalLogLine(invalid) }
+val mergeResult = mergePullPage(
+    pullResponse = pullResponse,
+    lastSync = lastSync,
+    mergeProfileId = mergeProfileId,
+    isFirstPage = pagesProcessed == 1,
+)
+
+private suspend fun mergePullPage(
+    pullResponse: PortalSyncPullResponse,
+    lastSync: Long,
+    mergeProfileId: String,
+    isFirstPage: Boolean,
+): Result<Unit> {
+```
+
+- [ ] **Step 8: Apply validated first-page sections before ordinary preparation**
+
+Add this helper to `SyncManager`:
+
+```kotlin
+private suspend fun applyPulledProfilePreferences(
+    dtos: List<PortalProfilePreferenceSectionCanonicalDto>?,
+    isFirstPage: Boolean,
+) {
+    val sections = dtos.orEmpty()
+    if (sections.isEmpty()) return
+    if (!isFirstPage) {
+        Logger.w("SyncManager") {
+            profilePreferencePullCountLogLine(
+                ProfilePreferencePullDiagnosticCategory.LATER_PAGE_IGNORED,
+                sections.size,
+            )
+        }
+        return
     }
-    val valid = decoded
-        .filterIsInstance<ProfilePreferenceCanonicalDecodeResult.Valid>()
-        .map { it.section }
-    if (valid.isNotEmpty()) {
-        val report = profilePreferenceSyncRepository.applyPulledSections(valid)
-        if (report.ignoredUnknownProfile > 0) {
-            Logger.i("SyncManager") {
-                "Ignored ${report.ignoredUnknownProfile} profile preference sections for absent profiles"
-            }
+    if (!isProfilePreferenceMigrationReady()) return
+
+    val safeFailureLogger: (String) -> Unit = { line ->
+        Logger.w("SyncManager") { line }
+    }
+    val plan = isolateProfilePreferenceFailure(
+        ProfilePreferenceLocalFailureStage.PULL_RESPONSE_MAPPING,
+        safeFailureLogger,
+    ) {
+        planProfilePreferencePullSections(sections)
+    } ?: return
+    if (plan.invalidCanonicalCount > 0) {
+        Logger.w("SyncManager") {
+            profilePreferencePullCountLogLine(
+                ProfilePreferencePullDiagnosticCategory.INVALID_CANONICAL,
+                plan.invalidCanonicalCount,
+            )
+        }
+    }
+    if (plan.duplicateKeyCount > 0) {
+        Logger.w("SyncManager") {
+            profilePreferencePullCountLogLine(
+                ProfilePreferencePullDiagnosticCategory.DUPLICATE_KEY,
+                plan.duplicateKeyCount,
+            )
+        }
+    }
+    if (plan.valid.isEmpty()) return
+
+    val report = isolateProfilePreferenceFailure(
+        ProfilePreferenceLocalFailureStage.PULL_APPLY,
+        safeFailureLogger,
+    ) {
+        profilePreferenceSyncRepository.applyPulledSections(plan.valid)
+    } ?: return
+    if (report.ignoredUnknownProfile > 0) {
+        Logger.i("SyncManager") {
+            profilePreferencePullCountLogLine(
+                ProfilePreferencePullDiagnosticCategory.UNKNOWN_PROFILE,
+                report.ignoredUnknownProfile,
+            )
+        }
+    }
+    if (report.invalid > 0) {
+        Logger.w("SyncManager") {
+            profilePreferencePullCountLogLine(
+                ProfilePreferencePullDiagnosticCategory.REPOSITORY_INVALID,
+                report.invalid,
+            )
         }
     }
 }
 ```
 
-Do not read or merge profile preferences before required migration `Ready`. Do not inspect or apply `pullResponse.localProfiles`.
+Call it at the very start of `mergePullPage`, before session lookup/preparation and every ordinary merge:
 
-- [ ] **Step 6: Re-run the Task 4 persistence merge contract**
+```kotlin
+applyPulledProfilePreferences(
+    dtos = pullResponse.profilePreferenceSections,
+    isFirstPage = isFirstPage,
+)
+```
 
-Run the focused SQLDelight repository suite again after wiring pull; Task 7 adds no new persistence behavior. It must re-run Task 4's already-green contract: all-five matching-generation push application, all-five newer-generation preservation, row-owned LED/VBT columns, all-five clean+higher application and lower-revision rejection, dirty-pull preservation, normalized `80` versus `80.0` equality, true equal-revision repair, malformed-canonical valid-sibling isolation, canonical-null and canonical/outcome identity no-ops, safe canonical revision boundaries, category-only local dead letters for malformed JSON/unsafe integers/LED Int32/NUL/lone-surrogate/local-only keys, and generated-query unknown-profile no-create behavior.
+Only raw list size may be observed for pagination/later-page protocol diagnostics before migration `Ready`; do not decode or call the repository until the dynamic lambda returns true. Never inspect or apply `pullResponse.localProfiles`. Non-cancellation mapping/application failures stop only preference handling for this page; ordinary entities continue. Cancellation escapes unchanged.
 
-- [ ] **Step 7: Run pull, pagination, invariant, and repository tests**
+- [ ] **Step 9: Document and log the actual partial-commit boundary**
+
+Replace the `mergePullPage` KDoc and all-or-nothing page comments with this contract:
+
+```kotlin
+/**
+ * Merge one pull page in preference-first order.
+ *
+ * Preference sections commit through ProfilePreferenceSyncRepository before ordinary
+ * entities. SyncRepository's ordinary merge owns its own transaction, while session LWW,
+ * preferences, notes, RPG, and external activities may use separate repository transactions.
+ * A later ordinary failure therefore does not roll back an earlier preference commit.
+ * The caller leaves lastSync unchanged and retries the page; revision guards make replay
+ * idempotent and dirty-section predicates preserve concurrent local edits.
+ */
+```
+
+Change the ordinary failure log to avoid claiming that the entire page rolled back or that nothing persisted:
+
+```kotlin
+Logger.e(e) {
+    "Ordinary pull merge failed; lastSync will not advance and earlier per-repository " +
+        "merges may remain for idempotent retry."
+}
+```
+
+Also rename `// Merge this page atomically` in the pagination loop to `// Merge this page in preference-first repository order`. The approved semantics are explicit:
+
+- an ordinary merge failure retains an already committed preference canonical;
+- the pull fails, `lastSync` does not advance, and `retryPull` replays from the prior checkpoint;
+- replay is safe because pull queries require clean state and a non-regressing server revision;
+- an isolated preference-local failure does not discard ordinary entities, and the backend reoffers the current canonical on the first page of a later sync;
+- no Task 8 comment or log may claim page-wide all-or-nothing behavior.
+
+- [ ] **Step 10: Re-run the Task 4 persistence merge contract**
+
+Run the focused SQLDelight repository suite again after wiring pull. It must re-run Task 4's already-green contract: all-five matching-generation push application, all-five newer-generation preservation, row-owned LED/VBT columns, all-five clean+higher application and lower-revision rejection, dirty-pull preservation, normalized `80` versus `80.0` equality, true equal-revision repair, malformed-canonical valid-sibling isolation, canonical-null and canonical/outcome identity no-ops, safe canonical revision boundaries, category-only local dead letters for malformed JSON/unsafe integers/LED Int32/NUL/lone-surrogate/local-only keys, and generated-query unknown-profile no-create behavior.
+
+The concurrency authority remains the generated `applyPulled*WhenClean` predicates: `profile_id = ? AND *_dirty = 0 AND *_server_revision <= ?`. Do not add a manager-side profile or dirty-state precheck. An edit before the repository transaction makes the row dirty; an edit after canonical application advances generation/dirty state normally; SQLDelight serializes a simultaneous edit against the transaction.
+
+- [ ] **Step 11: Run pull, pagination, invariant, and repository tests**
 
 Run:
 
@@ -8167,7 +8561,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit preference-first pull convergence**
+- [ ] **Step 12: Commit preference-first pull convergence**
 
 ```powershell
 git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/SyncManager.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerProfilePreferencesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullPaginationTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeSyncRepository.kt
