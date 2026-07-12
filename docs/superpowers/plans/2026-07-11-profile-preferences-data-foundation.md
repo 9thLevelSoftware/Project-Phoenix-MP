@@ -2741,69 +2741,71 @@ git commit -m "fix: merge profile data safely on deletion"
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.kt`
 - Modify: `shared/src/androidMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.android.kt`
 - Modify: `shared/src/iosMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.ios.kt`
-- Modify platform DI binding files returned by `rg -n "BaseDataBackupManager|DataBackupManager\(" shared/src/androidMain shared/src/iosMain`.
+- Modify: `shared/src/androidMain/kotlin/com/devil/phoenixproject/di/PlatformModule.android.kt`
+- Modify: `shared/src/iosMain/kotlin/com/devil/phoenixproject/di/PlatformModule.ios.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/util/BackupSerializationTest.kt`
-- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/util/BackupJsonNavigatorTest.kt`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/util/DataBackupManagerRoutineNameTest.kt`
+- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/util/BackupJsonNavigatorTest.kt`
+- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt` only if constructor verification needs an updated extra type.
 
 **Interfaces:**
-- Consumes: typed profile preferences and repository updates from Task 3.
-- Produces: backup schema v5 with per-profile sections and deterministic v1-v4 rack compatibility.
+- Consumes: `ProfilePreferencesRepository`, `UserProfileRepository.reconcileActiveProfileContext()`, typed section values and validators from Task 3, and the profile-aware runtime boundary from Task 5.
+- Produces: backup schema v5, identical buffered/streaming preference behavior, deterministic v1-v4 rack compatibility, and a reconciled active profile after every successful restore.
+- Privacy boundary: profile-local voice phrase, voice calibration, adult confirmation, and adult-prompt state never enter the backup model, exporter, importer, or backup-manager constructor.
 
-- [ ] **Step 1: Write failing privacy, round-trip, and legacy-presence tests**
+- [ ] **Step 1: Write the complete failing compatibility, privacy, parity, and recovery matrix**
 
-```kotlin
-@Test
-fun v5ExportsTypedProfileValuesWithoutLocalSafetyOrSyncMetadata() {
-    val encoded = json.encodeToString(sampleV5Backup())
-    assertContains(encoded, "\"profilePreferences\"")
-    assertContains(encoded, "\"bodyWeightKg\":82.0")
-    assertFalse(encoded.contains("safeWord"))
-    assertFalse(encoded.contains("Calibrated"))
-    assertFalse(encoded.contains("adultsOnly"))
-    assertFalse(encoded.contains("localGeneration"))
-    assertFalse(encoded.contains("serverRevision"))
-    assertFalse(encoded.contains("dirty"))
-    assertFalse(encoded.contains("equipmentRackItems"))
-}
+Add focused tests with two profiles (`profile-a` and `profile-b`) and distinct values for all five sections. Exercise both `importFromJson` and the protected streaming path exposed by `StreamingImportRoundTripTest`.
 
-@Test
-fun v4RackPresenceDistinguishesMissingEmptyAndNonEmpty() = runTest {
-    importV4(dataWithoutRackField())
-    assertEquals(listOf("existing"), rackIds("default"))
-    importV4(dataWithRackField("[]"))
-    assertEquals(emptyList(), rackIds("default"))
-    importV4(dataWithRackField("[{\"id\":\"legacy\",\"name\":\"Vest\",\"weightKg\":5.0}]"))
-    assertEquals(listOf("legacy"), rackIds("default"))
-}
+The required matrix is:
 
-@Test
-fun v5ExportOmitsInvalidSectionInsteadOfSerializingTypedFallback() = runTest {
-    writeRawWorkoutJson(profileId = "default", raw = "{not-json")
+| Backup version | `profilePreferences` | `equipmentRackItems` | Expected restore |
+|---|---|---|---|
+| v1-v3 | Ignore even if supplied | Ignore even if supplied | Existing profile preferences and rack remain unchanged |
+| v4 | Ignore | Missing property | No rack change |
+| v4 | Ignore | Present empty array | Clear rack for every eligible represented profile, or the active fallback when none is eligible |
+| v4 | Ignore | Present non-empty array | Merge by item ID for every eligible represented profile, or the active fallback when none is eligible |
+| v5 | Restore valid sections independently | Ignore even if supplied | Restore only entries whose profile ID is represented by backup `userProfiles` and exists after identity import |
+| v6+ | Restore the known v5 fields and ignore unknown fields | Ignore | Same known-field behavior as v5, with the existing forward-compatibility warning |
 
-    val entry = exportV5().data.profilePreferences.single { it.profileId == "default" }
+Add these assertions:
 
-    assertNull(entry.workout)
-    assertNotNull(entry.core)
-    assertNotNull(entry.rack)
-    assertNotNull(entry.led)
-    assertNotNull(entry.vbt)
-}
-```
+1. A buffered v5 export contains `profilePreferences`, preserves A/B values, and does not contain `equipmentRackItems`.
+2. The same export contains no sync metadata field names or values: `localGeneration`, `serverRevision`, or `dirty`.
+3. Seed a distinctive safe-word phrase plus calibrated/confirmed/prompted local state. Neither buffered nor streaming output may contain the phrase or any `safeWord`, calibration, or adult-consent field, and importing a backup must leave the target's existing local-safety values unchanged.
+4. Corrupt one stored section while keeping its siblings valid. Export omits that section as null/absent rather than serializing its typed fallback; valid siblings still export.
+5. Import a section with a wrong JSON kind or invalid typed value. Count exactly one `entitiesWithErrors`, log/skip that section, and restore its valid siblings and normal workout entities.
+6. An entry for a profile that exists in the target database but is absent from backup `userProfiles` is ignored.
+7. An entry named in backup preferences but whose backup identity did not become present in SQLite is ignored.
+8. Import through normal `ProfilePreferencesRepository.update*` APIs: the target section's `serverRevision` is retained, local generation advances, and dirty becomes true.
+9. v4 missing, empty, explicit-null, scalar, malformed-item-array, and valid non-empty rack inputs remain distinguishable in both import paths. Missing is a no-op, empty clears, explicit null/scalar/malformed typed arrays are counted and non-destructive, and a valid non-empty merge replaces matching IDs in existing order before appending new imported IDs in backup order.
+10. With usable backup profile IDs, v4 applies to those profiles and never also mutates the active fallback. With no usable represented profile, it applies only to the current active existing profile.
+11. v5 ignores a supplied legacy rack even when `profilePreferences` is empty.
+12. A v6 payload restores known v5 sections while unknown root, data, entry, and section fields are ignored.
+13. Import the same payload into identical databases through buffered and streaming paths, then compare typed values and section metadata.
+14. Extend `StreamingImportRoundTripTest` so its export/import/re-export assertions cover both profile identities and all five preference sections, not only entity counts.
+15. Add an adversarial streaming document whose `data` appears before root `version`, whose `profilePreferences` appears before `userProfiles`, and whose legacy rack appears before both. The final root version must control behavior.
+16. A successful import observes restored preferences from inside a recording/delegating `UserProfileRepository.reconcileActiveProfileContext()` and records one reconciliation before `Result.success`.
+17. Inject an unexpected preference-repository failure after the database transaction commits. The import returns failure, reconciliation is still attempted, the restore failure stays primary, and a reconciliation failure is attached as suppressed rather than replacing it.
+18. Imported `UserProfileBackup.isActive` values never switch the target app profile. Cover zero, one, and multiple backup rows marked active in both import paths; preserve the pre-import active ID when it still exists and assert exactly one SQLite identity is active afterward.
+19. Cover active-identity fallback deterministically: when the captured active ID is unavailable, choose `default` if present, otherwise the first represented profile that actually exists. A streaming failure after committed identity writes must normalize by the same policy before reconciliation.
+20. Inject `selectAllUserProfilesSync()` failure separately into buffered and streaming export. Both exports must fail; neither may emit a successful backup with empty `userProfiles`/`profilePreferences`, and the streaming writer must still clean up its partial file.
 
-Add buffered-versus-streaming equality, A/B profile round trip, invalid-section omission on export, malformed-one-section skip on import, v1-v3 no-rack no-op, and target-server-revision-retained/dirty-on-import cases.
+Use dependencies bound to the same test database. A recording repository should delegate every operation to the real `UserProfileRepository` and intercept only `reconcileActiveProfileContext()`; do not use a disconnected fake whose profile flows cannot see imported SQL rows.
 
-- [ ] **Step 2: Run backup tests and verify v4 is still current**
+- [ ] **Step 2: Run the backup tests and prove the v4 implementation fails the new contract**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*BackupSerializationTest*" --tests "*BackupJsonNavigatorTest*" --tests "*DataBackupManager*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*BackupSerializationTest*" --tests "*BackupJsonNavigatorTest*" --tests "*StreamingImportRoundTripTest*" --tests "*DataBackupManager*" --console=plain
 ```
 
-Expected: FAIL because `CURRENT_BACKUP_VERSION` is 4 and no profile preference payload exists.
+Expected: FAIL because `CURRENT_BACKUP_VERSION` is 4, the rack field cannot distinguish missing from empty in the buffered model, streaming applies rack before it knows the final version, and there is no profile-preference payload or post-import reconciliation.
 
-- [ ] **Step 3: Define the v5 wire model with independently decodable section objects**
+- [ ] **Step 3: Define the v5 wire model and explicit privacy boundary**
+
+In `BackupModels.kt`, bump the version and add independently decodable section elements:
 
 ```kotlin
 const val CURRENT_BACKUP_VERSION: Int = 5
@@ -2817,37 +2819,115 @@ data class ProfilePreferencesBackup(
     val led: JsonElement? = null,
     val vbt: JsonElement? = null,
 )
+```
 
+Update `BackupContent` without changing the wire name of the legacy field:
+
+```kotlin
 @Serializable
 data class BackupContent(
-    val workoutSessions: List<WorkoutSessionBackup> = emptyList(),
-    val metricSamples: List<MetricSampleBackup> = emptyList(),
-    val routines: List<RoutineBackup> = emptyList(),
-    val routineExercises: List<RoutineExerciseBackup> = emptyList(),
-    val supersets: List<SupersetBackup> = emptyList(),
-    val personalRecords: List<PersonalRecordBackup> = emptyList(),
-    val trainingCycles: List<TrainingCycleBackup> = emptyList(),
-    val cycleDays: List<CycleDayBackup> = emptyList(),
-    val cycleProgress: List<CycleProgressBackup> = emptyList(),
-    val cycleProgressions: List<CycleProgressionBackup> = emptyList(),
-    val plannedSets: List<PlannedSetBackup> = emptyList(),
-    val completedSets: List<CompletedSetBackup> = emptyList(),
-    val progressionEvents: List<ProgressionEventBackup> = emptyList(),
-    val earnedBadges: List<EarnedBadgeBackup> = emptyList(),
-    val streakHistory: List<StreakHistoryBackup> = emptyList(),
-    val gamificationStats: GamificationStatsBackup? = null,
+    // Existing entity fields remain unchanged and in their current order.
     val userProfiles: List<UserProfileBackup> = emptyList(),
     val profilePreferences: List<ProfilePreferencesBackup> = emptyList(),
     @SerialName("equipmentRackItems")
-    val legacyEquipmentRackItems: List<RackItem>? = null,
-    val sessionNotes: List<SessionNotesBackup> = emptyList(),
-    val routineGroups: List<RoutineGroupBackup> = emptyList(),
+    val legacyEquipmentRackItems: JsonElement? = null,
+    // Remaining existing entity fields remain unchanged.
 )
 ```
 
-`JsonElement` keeps each preference section independently decodable even when a corrupt file supplies the wrong JSON kind. `decodeBackupSection` requires an object and returns null for an invalid kind, unsupported version, or failed typed validation. Update the privacy summary text to state that sync metadata, voice phrase, calibration, and consent are excluded.
+`JsonElement` is deliberate for both preference sections and the legacy rack. A scalar, explicit null, or array containing a malformed `RackItem` must survive root decoding so the common v4 decoder can classify it as recoverable, non-destructive invalid input. A typed `List<RackItem>?` is forbidden because it either loses absent-versus-explicit-null presence or aborts the whole buffered backup before valid sibling data can import.
 
-- [ ] **Step 4: Export the same section values in buffered and streaming paths**
+Before decoding buffered `BackupData`, parse the root once and capture property presence independently from its raw element:
+
+```kotlin
+val rootElement = json.parseToJsonElement(jsonString)
+val rootObject = rootElement.jsonObject
+val dataObject = rootObject["data"]?.jsonObject
+    ?: throw IllegalArgumentException("Backup data object is missing or invalid")
+val legacyRackFieldPresent = dataObject.containsKey("equipmentRackItems")
+val legacyRackElement = dataObject["equipmentRackItems"]
+val backup = json.decodeFromJsonElement<BackupData>(rootElement)
+```
+
+This preserves all five states: absent (`containsKey == false`), valid empty array, explicit `JsonNull`, scalar/wrong JSON kind, and an array whose members fail typed `RackItem` decoding. Only the valid empty array is a destructive clear.
+
+Configure `BaseDataBackupManager.json` as:
+
+```kotlin
+protected val json = Json {
+    prettyPrint = false
+    ignoreUnknownKeys = true
+    encodeDefaults = true
+    explicitNulls = false
+}
+```
+
+Update the backup schema history and `BackupPrivacyMetadata.userFacingSummary` to state that full personal-data exports include profile training preferences but exclude auth/runtime secrets, section sync bookkeeping, voice phrase, voice calibration, and adult consent/prompt state.
+
+Do not add `ProfileLocalSafetyPreferences`, `ProfileLocalSafetyStore`, section metadata, `schemaVersion`, or `legacyMigrationVersion` to any backup wire type.
+
+- [ ] **Step 4: Replace the obsolete equipment-rack dependency with the two profile repositories**
+
+After v5 export and v4 restore use the preference aggregate directly, `BaseDataBackupManager` no longer needs `EquipmentRackRepository`. Replace its constructor with:
+
+```kotlin
+abstract class BaseDataBackupManager(
+    private val database: VitruvianDatabase,
+    private val profilePreferencesRepository: ProfilePreferencesRepository,
+    private val userProfileRepository: UserProfileRepository,
+) : DataBackupManager
+```
+
+Thread both dependencies through the platform classes:
+
+```kotlin
+class AndroidDataBackupManager(
+    private val context: Context,
+    database: VitruvianDatabase,
+    private val preferencesManager: PreferencesManager,
+    private val destinationResolver: BackupDestinationResolver,
+    profilePreferencesRepository: ProfilePreferencesRepository,
+    userProfileRepository: UserProfileRepository,
+) : BaseDataBackupManager(
+    database,
+    profilePreferencesRepository,
+    userProfileRepository,
+)
+```
+
+```kotlin
+class IosDataBackupManager(
+    database: VitruvianDatabase,
+    private val preferencesManager: PreferencesManager,
+    private val destinationResolver: BackupDestinationResolver,
+    profilePreferencesRepository: ProfilePreferencesRepository,
+    userProfileRepository: UserProfileRepository,
+) : BaseDataBackupManager(
+    database,
+    profilePreferencesRepository,
+    userProfileRepository,
+)
+```
+
+Update the real bindings:
+
+```kotlin
+single<DataBackupManager> {
+    AndroidDataBackupManager(androidContext(), get(), get(), get(), get(), get())
+}
+```
+
+```kotlin
+single<DataBackupManager> {
+    IosDataBackupManager(get(), get(), get(), get(), get())
+}
+```
+
+Update both Android-host `TestDataBackupManager` subclasses in `DataBackupManagerRoutineNameTest.kt` and `BackupJsonNavigatorTest.kt`. Build a real `ProfilePreferencesRepository` and a real or recording/delegating `UserProfileRepository` against the same `VitruvianDatabase`. Do not pass `SettingsEquipmentRackRepository` or inject/read `ProfileLocalSafetyStore` from backup code.
+
+- [ ] **Step 5: Export the same typed sections in buffered and streaming paths**
+
+Share one validity-aware conversion:
 
 ```kotlin
 private inline fun <reified T> Json.encodeValidBackupSection(
@@ -2868,99 +2948,349 @@ private fun UserProfilePreferences.toBackup(json: Json) = ProfilePreferencesBack
 )
 ```
 
-Inject `ProfilePreferencesRepository` into `BaseDataBackupManager`, load preferences for every exported `UserProfile`, and populate `profilePreferences`. Invalid/unsupported stored sections must serialize as absent/null rather than their typed fallback values; valid sibling sections still export. In the streaming writer, emit `profilePreferences` using the same serializer and omit `equipmentRackItems` for v5. Never read `ProfileLocalSafetyStore` during export.
+In `exportAllData`, identity loading is a required root operation:
 
-Set `explicitNulls = false` on the backup `Json` instance while retaining `ignoreUnknownKeys = true` and `encodeDefaults = true`; this makes the nullable legacy rack field absent in a v5 buffered export. The streaming writer must omit that property explicitly.
+```kotlin
+val userProfiles = queries.selectAllUserProfilesSync().executeAsList()
+```
 
-- [ ] **Step 5: Import profiles first, then restore sections as local edits**
+Do not retain the current `runCatching { selectAllUserProfilesSync() }.getOrElse { emptyList() }` fallback. A failed identity query must fail the buffered export before preferences are assembled. Then load `profilePreferencesRepository.get(profile.id)` for every exported `UserProfile` and populate `BackupContent.profilePreferences`. Do not synthesize typed defaults if the preference row itself is unexpectedly missing; fail the export rather than silently claiming a complete backup.
 
-Move the existing user-profile import block to the start of the database import transaction. For every profile represented by the backup—newly inserted or already present—call `queries.insertDefaultProfilePreferences(profile.id, 1)` in that transaction so a preference row exists without inheriting the active profile. After that entity transaction succeeds, process each v5 `ProfilePreferencesBackup` only when its `profileId` now exists:
+In `streamExportToWriter`, execute the same direct, fatal `selectAllUserProfilesSync()` query before deriving profile preferences or writing a successful identity/preferences payload. Do not catch it to an empty list. Load the same small per-profile preference list and serialize it with `ProfilePreferencesBackup.serializer()`. Emit `userProfiles` and `profilePreferences` and explicitly omit `equipmentRackItems`. Both export paths must use `toBackup`; neither may inspect raw Settings keys or `ProfileLocalSafetyStore`. The existing outer streaming-export failure path remains responsible for closing and deleting the partial writer.
+
+Invalid/unsupported stored sections serialize as absent/null while valid siblings remain present. Because `explicitNulls = false`, the buffered v5 encoder also omits the nullable legacy rack field.
+
+- [ ] **Step 6: Import buffered profile identities first and seed preference rows atomically**
+
+In `importFromJson`, keep duplicate-detection snapshots outside the transaction, but move the entire user-profile import block to the first operation inside the database transaction, before sessions, routine groups, routines, PRs, cycles, badges, or any other profile-linked entity. Capture the target app's active identity before any import write, using the existing deterministic profile order when repairing a legacy multiple-active state:
+
+```kotlin
+val preImportActiveProfileId = queries.getAllProfiles()
+    .executeAsList()
+    .firstOrNull { it.isActive == 1L }
+    ?.id
+```
+
+Collect distinct decoded backup identity IDs in wire order:
+
+```kotlin
+val representedProfileIds = backup.data.userProfiles
+    .map(UserProfileBackup::id)
+    .toCollection(linkedSetOf())
+```
+
+Backup `isActive` is informational only and must never switch the target app. During entry handling, insert every new identity inactive, leave every existing identity's active flag untouched, and seed the aggregate for both:
+
+```kotlin
+backup.data.userProfiles.distinctBy(UserProfileBackup::id).forEach { profile ->
+    if (profile.id !in existingUserProfileIds) {
+        queries.insertUserProfileIgnore(
+            id = profile.id,
+            name = profile.name,
+            colorIndex = profile.colorIndex.toLong(),
+            createdAt = profile.createdAt,
+            isActive = 0L,
+        )
+        userProfilesImported++
+    } else {
+        userProfilesSkipped++
+    }
+    queries.insertDefaultProfilePreferences(profile.id, 1L)
+}
+normalizeImportedActiveIdentity(preImportActiveProfileId, representedProfileIds)
+```
+
+Do not catch and continue an infrastructure failure between identity insertion and `insertDefaultProfilePreferences`; those two writes must remain an invariant of the outer transaction. Remove the old late user-profile block. The subsequent deferred helper re-queries SQLite and intersects represented IDs with rows that actually exist, so an orphan preference entry can never create an identity.
+
+Use one identity normalizer from both import paths and post-commit recovery:
+
+```kotlin
+private fun normalizeImportedActiveIdentity(
+    preImportActiveProfileId: String?,
+    representedProfileIds: Set<String>,
+): String {
+    val existingProfileIds = queries.selectAllUserProfileIds()
+        .executeAsList()
+        .toSet()
+    val activeProfileId = preImportActiveProfileId
+        ?.takeIf { it in existingProfileIds }
+        ?: "default".takeIf { it in existingProfileIds }
+        ?: representedProfileIds.firstOrNull { it in existingProfileIds }
+        ?: error("No usable profile identity after backup import")
+
+    queries.setActiveProfile(activeProfileId)
+    return activeProfileId
+}
+```
+
+Call it inside the same outer buffered transaction immediately after identity insertion/seeding. `setActiveProfile` is the one atomic normalization write: it clears every other active flag and selects exactly one preserved/fallback identity. The selection order is fixed: captured pre-import active when still present, otherwise Default, otherwise the first usable represented identity. Never consult imported `isActive` flags.
+
+Declare `var activeIdentityNormalized = false` beside the buffered import's `databaseWorkCommitted`/`reconciliationAttempted` state. Set both `databaseWorkCommitted = true` and `activeIdentityNormalized = true` only after the outer buffered transaction containing identity insertion, seeding, normalization, and entity writes returns successfully.
+
+- [ ] **Step 7: Implement one common deferred restore helper for both import paths**
+
+Define a common payload:
+
+```kotlin
+private data class DeferredProfileRestore(
+    val backupVersion: Int,
+    val profilePreferences: List<ProfilePreferencesBackup>,
+    val legacyRackFieldPresent: Boolean,
+    val legacyRackElement: JsonElement?,
+    val representedProfileIds: Set<String>,
+)
+```
+
+At restore time, never trust the payload IDs alone:
+
+```kotlin
+val profileIdsAfterImport = queries.selectAllUserProfileIds()
+    .executeAsList()
+    .toSet()
+val eligibleProfileIds = deferred.representedProfileIds
+    .filterTo(linkedSetOf()) { it in profileIdsAfterImport }
+```
+
+Decode and validate without enclosing the repository update in the decode catch:
 
 ```kotlin
 private inline fun <reified T> decodeBackupSection(
     profileId: String,
-    section: String,
+    sectionName: String,
     element: JsonElement,
     validate: (T) -> List<String>,
-    onInvalid: (profileId: String, section: String) -> Unit,
+    onInvalid: (String, String, Throwable?) -> Unit,
 ): T? = runCatching {
     val value = json.decodeFromJsonElement<T>(element.jsonObject)
-    require(validate(value).isEmpty())
+    val validationErrors = validate(value)
+    require(validationErrors.isEmpty()) { validationErrors.joinToString(",") }
     value
-}.onFailure {
-    Logger.w { "Backup import skipped invalid profile preference section profile=$profileId section=$section" }
-    onInvalid(profileId, section)
-}.getOrNull()
-
-private suspend fun importProfilePreferences(
-    entry: ProfilePreferencesBackup,
-    now: Long,
-    onInvalid: (profileId: String, section: String) -> Unit,
-) {
-    entry.core?.let { decodeBackupSection(entry.profileId, "core", it, ProfilePreferencesValidator::core, onInvalid) }
-        ?.let { profilePreferencesRepository.updateCore(entry.profileId, it, now) }
-    entry.rack?.let { decodeBackupSection(entry.profileId, "rack", it, ProfilePreferencesValidator::rack, onInvalid) }
-        ?.let { profilePreferencesRepository.updateRack(entry.profileId, it, now) }
-    entry.workout?.let { decodeBackupSection(entry.profileId, "workout", it, ProfilePreferencesValidator::workout, onInvalid) }
-        ?.let { profilePreferencesRepository.updateWorkout(entry.profileId, it, now) }
-    entry.led?.let { decodeBackupSection(entry.profileId, "led", it, ProfilePreferencesValidator::led, onInvalid) }
-        ?.let { profilePreferencesRepository.updateLed(entry.profileId, it, now) }
-    entry.vbt?.let { decodeBackupSection(entry.profileId, "vbt", it, ProfilePreferencesValidator::vbt, onInvalid) }
-        ?.let { profilePreferencesRepository.updateVbt(entry.profileId, it, now) }
-}
+}.fold(
+    onSuccess = { it },
+    onFailure = {
+        onInvalid(profileId, sectionName, it)
+        null
+    },
+)
 ```
 
-Each normal update increments local generation, marks dirty, and retains the target row's server revision. Count a malformed section in `entitiesWithErrors`, log profile ID plus section name, and continue with other sections and workout entities.
+For each skipped section, increment `entitiesWithErrors` once and log the profile ID and section name. Decode/validation failures are recoverable. Unexpected failures from `profilePreferencesRepository.get` or `update*` are storage failures and must propagate to the import result rather than being mislabeled as malformed backup data.
 
-For legacy imports, implement exactly:
+Decode the v4 rack independently from root and preference-section decoding:
 
 ```kotlin
-val profileIdsAfterImport = queries.selectAllUserProfileIds().executeAsList().toSet()
-val targetProfileIds = backup.data.userProfiles
-    .map { it.id }
-    .filter { it in profileIdsAfterImport }
-    .distinct()
-
-when {
-    backup.version < 4 -> Unit
-    backup.version == 4 && backup.data.legacyEquipmentRackItems == null -> Unit
-    backup.version == 4 -> {
-        val items = backup.data.legacyEquipmentRackItems.orEmpty()
-        targetProfileIds.ifEmpty {
-            listOf(queries.getActiveProfile().executeAsOneOrNull()?.id ?: "default")
-        }
-            .forEach { profileId ->
-                val current = profilePreferencesRepository.get(profileId).rack.value
-                val mergedItems = if (items.isEmpty()) {
-                    emptyList()
-                } else {
-                    val importedById = items.filter { it.id.isNotBlank() }.distinctBy { it.id }.associateBy { it.id }
-                    val existingIds = current.items.map { it.id }.toSet()
-                    current.items.map { importedById[it.id] ?: it } + importedById.values.filterNot { it.id in existingIds }
-                }
-                profilePreferencesRepository.updateRack(profileId, current.copy(items = mergedItems), now)
-            }
+private fun decodeLegacyV4Rack(
+    element: JsonElement?,
+    onInvalid: (String, String, Throwable?) -> Unit,
+): List<RackItem>? {
+    if (element == null) {
+        onInvalid("backup", "equipmentRackItems", null)
+        return null
     }
-    else -> Unit
+    return runCatching {
+        json.decodeFromJsonElement<List<RackItem>>(element)
+    }.fold(
+        onSuccess = { it },
+        onFailure = {
+            onInvalid("backup", "equipmentRackItems", it)
+            null
+        },
+    )
 }
 ```
 
-The streaming parser must track whether the `equipmentRackItems` property token was present; absent and present-empty are distinct.
+This function is called only when the property-presence bit is true and the final version is exactly 4. `JsonNull`, a scalar/object, and an array with any malformed typed member all return null after one recoverable error and make no rack write. A successfully decoded empty list remains distinguishable and clears.
 
-- [ ] **Step 6: Pass backup compatibility and parity tests**
+Implement the exact version behavior:
+
+```kotlin
+when {
+    deferred.backupVersion < 4 -> Unit
+
+    deferred.backupVersion == 4 && !deferred.legacyRackFieldPresent -> Unit
+
+    deferred.backupVersion == 4 -> restoreLegacyV4Rack(
+        items = decodeLegacyV4Rack(deferred.legacyRackElement, onInvalid),
+        eligibleProfileIds = eligibleProfileIds,
+        profileIdsAfterImport = profileIdsAfterImport,
+        now = now,
+        onInvalid = onInvalid,
+    )
+
+    deferred.backupVersion >= 5 -> restoreV5ProfilePreferences(
+        entries = deferred.profilePreferences,
+        eligibleProfileIds = eligibleProfileIds,
+        now = now,
+        onInvalid = onInvalid,
+    )
+}
+```
+
+`restoreLegacyV4Rack` returns without mutation when the decoded `items` argument is null. For a valid array, choose targets exactly once:
+
+```kotlin
+val targetProfileIds = eligibleProfileIds.ifEmpty {
+    listOfNotNull(
+        queries.getActiveProfile()
+            .executeAsOneOrNull()
+            ?.id
+            ?.takeIf { it in profileIdsAfterImport },
+    )
+}
+```
+
+Do not add the active profile when eligible represented targets exist. A present empty list writes `RackPreferences(items = emptyList())` to every target. A non-empty list filters blank IDs, resolves duplicate imported IDs deterministically, replaces matching existing items without reordering existing rows, then appends genuinely new imported items in backup order. Validate the final `RackPreferences` before `updateRack`; a malformed candidate is counted and skipped for that target.
+
+For v5 and newer, ignore the legacy rack field unconditionally. Process only entries whose `profileId` is in `eligibleProfileIds`, decode every non-null section independently with the real `ProfilePreferencesValidator`, and call:
+
+```kotlin
+profilePreferencesRepository.updateCore(profileId, value, now)
+profilePreferencesRepository.updateRack(profileId, value, now)
+profilePreferencesRepository.updateWorkout(profileId, value, now)
+profilePreferencesRepository.updateLed(profileId, value, now)
+profilePreferencesRepository.updateVbt(profileId, value, now)
+```
+
+These existing SQLDelight updates intentionally preserve each target server revision, increment local generation, set dirty, and stamp the local import time. Do not write raw preference SQL or restore backup sync metadata.
+
+- [ ] **Step 8: Make streaming import defer all order-dependent profile state until root end**
+
+The root JSON object is unordered. `importFromStream` must not decide v4/v5 behavior when it first sees a data field. Track these values for the entire parse:
+
+```kotlin
+val preImportActiveProfileId = queries.getAllProfiles()
+    .executeAsList()
+    .firstOrNull { it.isActive == 1L }
+    ?.id
+var backupVersion = 1
+val deferredPreferenceEntries = mutableListOf<ProfilePreferencesBackup>()
+var legacyRackFieldPresent = false
+var legacyRackElement: JsonElement? = null
+val representedProfileIds = linkedSetOf<String>()
+var databaseWorkCommitted = false
+var activeIdentityNormalized = false
+var reconciliationAttempted = false
+```
+
+Change the data-field handlers:
+
+1. `equipmentRackItems`: set `legacyRackFieldPresent = true`, capture the complete value with `nav.nextValueAsString()`, and parse only that raw value to `JsonElement`. Do not decode it as `List<RackItem>` and do not call the old `importEquipmentRackItems`. This preserves `JsonNull`, scalar/object, empty array, and malformed typed members until the common root-end v4 decoder.
+2. `profilePreferences`: stream the outer array one entry at a time, decode each `ProfilePreferencesBackup`, count malformed entry objects, and retain the successfully decoded entries. Do not restore them yet.
+3. `userProfiles`: keep streaming identities in their own database transaction. Insert new identities with `isActive = 0L`, never update an existing identity's active flag from backup input, seed `queries.insertDefaultProfilePreferences(profile.id, 1L)` in that same transaction for both new and existing identities, and add successfully decoded IDs to `representedProfileIds` in wire order.
+4. Root `version`: update `backupVersion` wherever it appears; no prior data handler may have consumed version-sensitive state.
+
+Set `databaseWorkCommitted = true` immediately after each existing streaming entity-type transaction returns. This matters because streaming import is intentionally multi-transaction and a malformed later field can fail after earlier rows committed.
+
+Only after `nav.endObject()` for the root:
+
+1. In one database transaction, call `normalizeImportedActiveIdentity(preImportActiveProfileId, representedProfileIds)`. Only after that transaction returns, set `databaseWorkCommitted = true` and `activeIdentityNormalized = true`. This is the only operation that applies active flags and guarantees exactly one preserved/fallback identity.
+2. Build `DeferredProfileRestore` using the final root version, preference entries, rack presence/raw `JsonElement`, and buffered represented profile IDs. Do not predecode the rack here; the common helper owns typed v4 decoding.
+3. Invoke the same deferred restore/reconciliation completion used by buffered import.
+
+The adversarial-order test must prove:
+
+```text
+data/profilePreferences
+→ data/equipmentRackItems
+→ data/userProfiles
+→ root version
+→ root end
+→ normalize exactly one target active identity
+→ one version-correct deferred restore
+```
+
+Do not buffer sessions, metrics, or other potentially large tables; only the small profile preference/rack payload and identity-ID set are deferred.
+
+- [ ] **Step 9: Reconcile after restore and on every post-commit failure**
+
+Successful buffered and streaming imports must have this exact order:
+
+```text
+database identity/entity writes
+→ normalize exactly one active identity from pre-import state
+→ deferred profile-preference or v4 rack restore
+→ userProfileRepository.reconcileActiveProfileContext()
+→ Result.success
+```
+
+Wrap deferred restore so reconciliation is still attempted when preference storage fails after the database commit:
+
+```kotlin
+private suspend fun restoreDeferredAndReconcile(
+    deferred: DeferredProfileRestore,
+    now: Long,
+    onInvalid: (String, String, Throwable?) -> Unit,
+) {
+    try {
+        restoreDeferredProfileState(deferred, now, onInvalid)
+    } catch (restoreFailure: Throwable) {
+        val reconcileFailure = runCatching {
+            withContext(NonCancellable) {
+                userProfileRepository.reconcileActiveProfileContext()
+            }
+        }.exceptionOrNull()
+        reconcileFailure?.let(restoreFailure::addSuppressed)
+        throw restoreFailure
+    }
+
+    userProfileRepository.reconcileActiveProfileContext()
+}
+```
+
+Set `reconciliationAttempted = true` immediately before calling this wrapper because it guarantees an attempt on both its success and restore-failure paths. If the normal reconciliation call itself fails, the import fails.
+
+In each outer catch, when `databaseWorkCommitted` is true and `reconciliationAttempted` is false, first reapply the same active-identity normalization and then make one best-effort reconciliation. Attempt reconciliation even if normalization itself fails:
+
+```kotlin
+withContext(NonCancellable) {
+    val normalizationFailure = if (activeIdentityNormalized) {
+        null
+    } else {
+        runCatching {
+            database.transaction {
+                normalizeImportedActiveIdentity(
+                    preImportActiveProfileId,
+                    representedProfileIds,
+                )
+            }
+            activeIdentityNormalized = true
+        }.exceptionOrNull()
+    }
+    normalizationFailure?.let(importFailure::addSuppressed)
+
+    val reconcileFailure = runCatching {
+        userProfileRepository.reconcileActiveProfileContext()
+    }.exceptionOrNull()
+    reconcileFailure?.let(importFailure::addSuppressed)
+}
+```
+
+Keep the original import/parse failure primary. Do not normalize/reconcile a buffered transaction that rolled back before commit. Buffered import sets `activeIdentityNormalized` only after its all-entity transaction commits; streaming sets it only after the root-end normalization transaction commits. A streaming failure after earlier entity work but before root-end normalization therefore runs normalization before reconciliation, while a later failure does not perform a redundant active write. Imported backup `isActive` flags are never consulted on either the success or recovery path.
+
+Construct and return `Result.success(ImportResult(...))` only after the wrapper completes. Reconciliation may read local safety while rebuilding `Ready`, but backup code must never serialize, overwrite, clear, or derive local-safety values.
+
+- [ ] **Step 10: Pass focused backup, parity, DI, and platform compilation checks**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*BackupSerializationTest*" --tests "*BackupJsonNavigatorTest*" --tests "*DataBackupManager*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*BackupSerializationTest*" --tests "*BackupJsonNavigatorTest*" --tests "*StreamingImportRoundTripTest*" --tests "*DataBackupManager*" --tests "*KoinModuleVerifyTest*" --console=plain
 ```
 
-Expected: PASS for identical buffered/streaming v5 values, local-only exclusions, A/B round trip, dirty/revision semantics, malformed-section isolation, and v1-v4 rack behavior.
+Expected: PASS for the full v1-v6 matrix, A/B section round trip, local-only privacy, metadata semantics, malformed-section isolation, identity allow-listing, buffered/streaming parity, adversarial field ordering, and reconciliation recovery behavior.
 
-- [ ] **Step 7: Commit backup v5**
+Then run:
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/util/BackupModels.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.kt shared/src/androidMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.android.kt shared/src/iosMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.ios.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/util/BackupSerializationTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/util/BackupJsonNavigatorTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/util/DataBackupManagerRoutineNameTest.kt shared/src/androidMain/kotlin/com/devil/phoenixproject/di/PlatformModule.android.kt shared/src/iosMain/kotlin/com/devil/phoenixproject/di/PlatformModule.ios.kt
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinAndroid :shared:compileKotlinIosSimulatorArm64 --console=plain
+```
+
+Expected: PASS with the updated Android/iOS constructors and platform bindings.
+
+- [ ] **Step 11: Commit backup v5**
+
+```powershell
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/util/BackupModels.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.kt shared/src/androidMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.android.kt shared/src/iosMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.ios.kt shared/src/androidMain/kotlin/com/devil/phoenixproject/di/PlatformModule.android.kt shared/src/iosMain/kotlin/com/devil/phoenixproject/di/PlatformModule.ios.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/util/BackupSerializationTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/util/DataBackupManagerRoutineNameTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/util/BackupJsonNavigatorTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt
 git commit -m "feat: back up profile preferences in schema v5"
 ```
 
