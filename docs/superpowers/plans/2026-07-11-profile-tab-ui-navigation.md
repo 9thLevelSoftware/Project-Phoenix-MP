@@ -6685,100 +6685,279 @@ Expected: exact scope and clean worktree.
 
 ---
 
-### Task 9: Prune Settings to Global App Configuration Only
+### Task 9: Prune Settings to Global App Configuration Only — Authoritative Contract
 
-**Files:**
-- Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt:305-3900`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt:320-446`
+**Exact implementation allowlist (five paths):**
+- Modify: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt
+- Modify: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt
+- Modify: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt
+- Modify: shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModelTest.kt
+- Create: shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt
+
+**Verify unchanged:** SettingsManager, PreferencesManager, UserProfileRepository, every SQLDelight schema/migration, profile-preference codec and sync DTO/adapter/repository, ProfilePreferenceSections, ProfileSafetyDialogs, AdultModePresentation, ProfileScreen, ProfileNavigationContractTest, ProfileScreenContractTest, ProfileResourceContractTest, and all locale XML files.
 
 **Interfaces:**
-- Consumes: global `UserPreferences` fields retained by the data-foundation plan and Task 8's replacement Profile controls/dialogs.
-- Produces: a Settings surface containing only app/device/global configuration, plus a source guard preventing profile controls from drifting back.
+- Consumes: Task 7's Profile route/rack/badges ownership and Task 8's ProfilePreferenceSections, shared ProfileSafetyDialogs, profile preference callbacks, and transient Disco/Dominatrix actions.
+- Produces: a structurally global Settings route and SettingsTab, SettingsGlobalUiState sourced only from raw global preferences, a reduced MainViewModel write surface, and source contracts that prevent profile-owned controls from drifting back.
+- Adds exactly nine tests: eight new ProfileSettingsSeparationContractTest cases plus one MainViewModelTest case. One existing MainViewModel test is rewritten without changing its count.
 
-- [ ] **Step 1: Write the failing Settings/Profile separation contract**
+**Boundary:** this task is presentation-only. SettingsManager remains the compatibility facade used by runtime managers and its tests. Do not remove its delegated profile setters. MainViewModel may retain profile-overlaid read APIs needed by workout consumers, but Settings and MainViewModel must no longer expose profile-owned writes.
 
-```kotlin
-package com.devil.phoenixproject.presentation.screen
+- [ ] **Step 1: Start clean and prove the Task 7/8 handoff**
 
-import com.devil.phoenixproject.testutil.readProjectFile
-import kotlin.test.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+Run before editing:
 
-class ProfileSettingsSeparationContractTest {
-    private val settings = requireNotNull(readProjectFile(
-        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt",
-    ))
-    private val profile = requireNotNull(readProjectFile(
-        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt",
-    ))
-    private val graph = requireNotNull(readProjectFile(
-        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt",
-    ))
+~~~powershell
+if(git status --porcelain){ throw "Task 9 requires a clean worktree" }
+$profile='shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt'
+$dialogs='shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSafetyDialogs.kt'
+$requiredProfile=@('ProfilePreferenceSections(','onNavigateToEquipmentRack','onNavigateToBadges','TestTags.ACTION_BADGES')
+$requiredDialogs=@('fun SafeWordCalibrationDialog(','fun AdultsOnlyConfirmDialog(','fun DominatrixUnlockDialog(','fun DiscoModeUnlockDialog(','DisposableEffect(safeWord)')
+foreach($symbol in $requiredProfile){ if(-not (Select-String -Quiet -LiteralPath $profile -SimpleMatch $symbol)){ throw "Task 8 Profile handoff missing: $symbol" } }
+foreach($symbol in $requiredDialogs){ if(-not (Select-String -Quiet -LiteralPath $dialogs -SimpleMatch $symbol)){ throw "Task 8 dialog handoff missing: $symbol" } }
+~~~
 
-    @Test
-    fun settingsHasOnlyGlobalCallbackSurface() {
-        listOf(
-            "onWeightUnitChange", "onWeightIncrementChange", "onBodyWeightKgChange",
-            "onNavigateToEquipmentRack", "onAudioRepCountChange", "onSummaryCountdownChange",
-            "onColorSchemeChange", "onGamificationEnabledChange", "onVoiceStopEnabledChange",
-            "onSafeWordChange", "onVelocityLossThresholdChange", "onVulgarModeEnabledChange",
-            "onNavigateToBadges", "SafeWordCalibrationDialog", "DominatrixUnlockDialog",
-            "DiscoModeUnlockDialog", "UserProfileRepository", "ExternalMeasurementRepository",
-        ).forEach { forbidden -> assertFalse(settings.contains(forbidden), forbidden) }
+Expected: clean worktree and all handoff symbols present. Task 9 removes only Settings-owned modal state, imports, and call sites for the four shared dialogs. It must not edit or copy their implementations.
 
-        listOf(
-            "onEnableVideoPlaybackChange", "onThemeModeChange", "onLanguageChange",
-            "onNavigateToIntegrations", "onBackupDestinationChange",
-            "onBleCompatibilityModeChange", "onTestSounds", "onNavigateToDiagnostics",
-        ).forEach { retained -> assertTrue(settings.contains(retained), retained) }
-    }
+Confirm inherited contract counts before Task 9:
 
-    @Test
-    fun profileOwnsAchievementsAndTypedPreferenceSections() {
-        assertTrue(profile.contains("ProfilePreferenceSections("))
-        assertTrue(profile.contains("onNavigateToBadges"))
-        assertTrue(profile.contains("ACTION_BADGES"))
-    }
-
-    @Test
-    fun settingsDestinationPassesNoProfileOwnedSetter() {
-        val start = graph.indexOf("route = NavigationRoutes.Settings.route")
-        val end = graph.indexOf("route = NavigationRoutes.EquipmentRack.route", start)
-        val destination = graph.substring(start, end)
-        assertFalse(destination.contains("setBodyWeightKg"))
-        assertFalse(destination.contains("setColorScheme"))
-        assertFalse(destination.contains("setVelocityLossThreshold"))
-        assertFalse(destination.contains("setSafeWord"))
-    }
-
-    @Test
-    fun retainedVideoCardConsumesItsCompleteResourceInventory() {
-        listOf(
-            "settings_video_behavior",
-            "settings_show_exercise_videos",
-            "settings_show_exercise_videos_description",
-        ).forEach { key -> assertTrue(settings.contains("Res.string.$key"), key) }
-    }
+~~~powershell
+$handoffCounts=@{
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt'=8
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=14
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt'=3
 }
-```
+foreach($entry in $handoffCounts.GetEnumerator()){ $actual=(Select-String -Path $entry.Key -Pattern '^\s*@Test').Count; if($actual -ne $entry.Value){ throw "$($entry.Key): expected $($entry.Value), found $actual" } }
+~~~
 
-- [ ] **Step 2: Run the separation contract and confirm the red state**
+- [ ] **Step 2: Create the exact eight-case separation contract**
 
-Run:
+Create ProfileSettingsSeparationContractTest with exactly these eight tests:
 
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileSettingsSeparationContractTest*" --console=plain
-```
+1. settingsTabExposesExactGlobalOnlySignature — extract the SettingsTab declaration and require the exact signature from Step 5, including no callback defaults and only modifier defaulting.
+2. settingsContainsNoCanonicalProfileOwnedSymbolOrModalState — scan the bounded SettingsTab declaration/body against the complete Settings inventory below.
+3. settingsRemovesOnlyTask8DialogCallSitesAndKeepsSharedDialogOwnership — require no shared-dialog call/import in Settings, require all four functions in ProfileSafetyDialogs, and require DisposableEffect(safeWord) there.
+4. globalSectionsStayInRequiredOrderAndVideoUsesLocalizedResources — require the eight section groups in Step 7 in order, all three video string resources in Settings, and one declaration per key in each of the five existing locale XML files.
+5. profileOwnsAchievementsRackAndPreferenceSectionsInRequiredOrder — require unconditional Achievements before Preferences, ProfilePreferenceSections, onNavigateToEquipmentRack, and no corresponding Settings card/callback.
+6. settingsDestinationCollectsOnlyGlobalSettingsConnectionErrorAndBackupStats — extract only NavigationRoutes.Settings and require those three collected flows, the exact global callback wiring, and no canonical Settings/route forbidden symbol.
+7. mainViewModelExposesNoProfileWriteWrappersAndKeepsRequiredReadAndTransientApis — reject the complete MainViewModel removal inventory, require private settingsManager, and retain the read/global/transient inventory in Step 4.
+8. profileOwnsRackAndBadgesNavigationWhileDestinationsRemainUnique — require only the Profile destination to navigate to EquipmentRack and Badges, and require each destination registration exactly once.
 
-Expected: FAIL with the current profile-owned callback surface and cards still present in Settings.
+The canonical Settings/route forbidden inventory is one list; apply it to the SettingsTab signature/body and the bounded Settings destination:
 
-- [ ] **Step 3: Reduce SettingsTab to an explicit global-only API**
+~~~text
+weightUnit
+onWeightUnitChange
+weightIncrement
+onWeightIncrementChange
+bodyWeightKg
+onBodyWeightKgChange
+onNavigateToEquipmentRack
+audioRepCountEnabled
+onAudioRepCountChange
+summaryCountdownSeconds
+onSummaryCountdownChange
+autoStartCountdownSeconds
+onAutoStartCountdownChange
+countdownBeepsEnabled
+onCountdownBeepsChange
+repSoundEnabled
+onRepSoundChange
+motionStartEnabled
+onMotionStartChange
+autoStartRoutine
+onAutoStartRoutineChange
+weightSuggestionsEnabled
+onWeightSuggestionsEnabledChange
+selectedColorSchemeIndex
+onColorSchemeChange
+discoModeUnlocked
+discoModeActive
+isConnected
+onDiscoModeUnlocked
+onDiscoModeToggle
+onPlayDiscoSound
+gamificationEnabled
+onGamificationEnabledChange
+voiceStopEnabled
+onVoiceStopEnabledChange
+safeWord
+onSafeWordChange
+safeWordCalibrated
+onSafeWordCalibratedChange
+velocityLossThresholdPercent
+onVelocityLossThresholdChange
+autoEndOnVelocityLoss
+onAutoEndOnVelocityLossChange
+stallDetectionEnabled
+defaultScalingBasis
+onDefaultScalingBasisChange
+defaultRoutineExerciseUsePercentOfPR
+onDefaultRoutineExerciseUsePercentOfPRChange
+defaultRoutineExerciseWeightPercentOfPR
+onDefaultRoutineExerciseWeightPercentOfPRChange
+verbalEncouragementEnabled
+onVerbalEncouragementEnabledChange
+vulgarModeEnabled
+onVulgarModeEnabledChange
+vulgarTier
+onVulgarTierChange
+dominatrixModeUnlocked
+onDominatrixModeUnlockedChange
+dominatrixModeActive
+onDominatrixModeActiveChange
+adultsOnlyConfirmed
+onConfirmAdultsAndEnableVulgar
+adultsOnlyPrompted
+onAdultsOnlyPromptedChange
+onPlayDominatrixUnlockSound
+onNavigateToBadges
+UserProfileRepository
+ExternalMeasurementRepository
+SafeWordCalibrationDialog
+AdultsOnlyConfirmDialog
+DominatrixUnlockDialog
+DiscoModeUnlockDialog
+activeProfileId
+healthBodyWeightMeasurements
+latestMatchingHealthBodyWeight
+localWeightUnit
+showWeightIncrementDialog
+showBodyWeightDialog
+bodyWeightInput
+localSafeWord
+showCalibrationDialog
+easterEggTapCount
+lastTapTime
+showDiscoUnlockDialog
+dominatrixEasterEggTapCount
+lastDominatrixTapTime
+showDominatrixUnlockDialog
+showAdultsOnlyDialog
+onCancelAutoConnecting
+~~~
 
-Replace the function signature with this bounded surface:
+onCancelAutoConnecting is dormant global plumbing rather than a profile preference, but it is forbidden by the same bounded surface contract because Settings never invokes it.
 
-```kotlin
+The canonical MainViewModel profile-write removal inventory is:
+
+~~~text
+setWeightUnit
+setStopAtTop
+setStallDetectionEnabled
+setAudioRepCountEnabled
+setRepCountTiming
+setSummaryCountdownSeconds
+setAutoStartCountdownSeconds
+setColorScheme
+setWeightIncrement
+setAutoStartRoutine
+setBodyWeightKg
+setGamificationEnabled
+setCountdownBeepsEnabled
+setRepSoundEnabled
+setMotionStartEnabled
+setVoiceStopEnabled
+setSafeWord
+setSafeWordCalibrated
+setVelocityLossThreshold
+setAutoEndOnVelocityLoss
+setWeightSuggestionsEnabled
+setDefaultScalingBasis
+setDefaultRoutineExerciseUsePercentOfPR
+setDefaultRoutineExerciseWeightPercentOfPR
+setVerbalEncouragementEnabled
+setVulgarModeEnabled
+setVulgarTier
+setDominatrixModeUnlocked
+setDominatrixModeActive
+setAdultsOnlyConfirmed
+confirmAdultsAndEnableVulgar
+setAdultsOnlyPrompted
+isAdultsOnlyPrompted
+unlockDiscoMode
+cancelAutoConnecting
+~~~
+
+Match function declarations or callable references, not comments or unrelated domain fields. The contract must also reject public val settingsManager.
+
+- [ ] **Step 3: Establish strict RED before production changes**
+
+Add the eight source-contract tests. In MainViewModelTest, rewrite the existing userPreferences updates when preferences change test to update the active profile's WorkoutPreferences through FakeUserProfileRepository.updateWorkout; do not call the soon-to-be-removed viewModel.setStopAtTop. This preserves profile-overlaid read coverage with no test-count change.
+
+Add one test named globalSettings ignores profile updates and emits global updates. It must:
+
+- collect the initial globalSettings value;
+- update only the active profile's WorkoutPreferences through the fake repository and prove no globalSettings emission/value change;
+- call setEnableVideoPlayback with the opposite value;
+- require exactly the corresponding globalSettings emission.
+
+Before editing production, enforce eight and 33 tests, then run strict RED:
+
+~~~powershell
+$redCounts=@{
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'=8
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModelTest.kt'=33
+}
+foreach($entry in $redCounts.GetEnumerator()){ $actual=(Select-String -Path $entry.Key -Pattern '^\s*@Test').Count; if($actual -ne $entry.Value){ throw "$($entry.Key): expected $($entry.Value), found $actual" } }
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.screen.ProfileSettingsSeparationContractTest" --tests "com.devil.phoenixproject.presentation.viewmodel.MainViewModelTest" --rerun-tasks --console=plain
+if($LASTEXITCODE -eq 0){ throw "Strict RED failed: production already satisfies the new contracts" }
+~~~
+
+Expected: FAIL because Settings still owns profile symbols and MainViewModel.globalSettings does not yet exist. Do not weaken assertions to obtain RED.
+
+- [ ] **Step 4: Add raw-global state and reduce MainViewModel's write boundary**
+
+Add this structurally global state in MainViewModel.kt:
+
+~~~kotlin
+data class SettingsGlobalUiState(
+    val enableVideoPlayback: Boolean,
+    val bleCompatibilityMode: BleCompatibilitySetting,
+    val autoBackupEnabled: Boolean,
+    val backupDestination: BackupDestination,
+    val language: String,
+)
+~~~
+
+Map directly from PreferencesManager.preferencesFlow, never from SettingsManager.userPreferences:
+
+~~~kotlin
+private fun UserPreferences.toSettingsGlobalUiState() = SettingsGlobalUiState(
+    enableVideoPlayback = enableVideoPlayback,
+    bleCompatibilityMode = bleCompatibilityMode,
+    autoBackupEnabled = autoBackupEnabled,
+    backupDestination = backupDestination,
+    language = language,
+)
+
+val globalSettings: StateFlow<SettingsGlobalUiState> =
+    preferencesManager.preferencesFlow
+        .map(UserPreferences::toSettingsGlobalUiState)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            preferencesManager.preferencesFlow.value.toSettingsGlobalUiState(),
+        )
+~~~
+
+Make settingsManager private. Remove every wrapper in the canonical MainViewModel removal inventory. In particular, remove dormant cancelAutoConnecting and persisted unlockDiscoMode; do not remove the underlying manager/repository APIs.
+
+Retain these MainViewModel boundaries:
+
+- Profile-overlaid reads needed by workout consumers: userPreferences, weightUnit, enableVideoPlayback, autoplayEnabled.
+- Global Settings writes: setEnableVideoPlayback, setBleCompatibilityMode, setAutoBackupEnabled, setBackupDestination, setLanguage.
+- Global Settings actions: deleteAllWorkouts, clearConnectionError, updateTopBarTitle, testSounds, refreshBackupStats, openBackupFolder.
+- Task 8 transient hardware/actions: toggleDiscoMode, emitDiscoSound, emitDominatrixUnlockSound.
+- Existing non-Settings APIs unrelated to this migration.
+
+The removed profile writes now flow exclusively through ProfileViewModel/UserProfileRepository. Do not delete SettingsManager compatibility setters because runtime managers and unchanged tests still depend on its active-profile facade. Keep velocityOneRepMaxBackfillDone internal and unrendered.
+
+- [ ] **Step 5: Replace SettingsTab with the exact global-only signature**
+
+Use exactly this public signature. No callback has a default; modifier is the only defaulted parameter.
+
+~~~kotlin
 @Composable
 fun SettingsTab(
     enableVideoPlayback: Boolean,
@@ -6795,7 +6974,6 @@ fun SettingsTab(
     onNavigateToIntegrations: () -> Unit,
     connectionError: String?,
     onClearConnectionError: () -> Unit,
-    onCancelAutoConnecting: () -> Unit,
     onSetTitle: (String) -> Unit,
     onTestSounds: () -> Unit,
     bleCompatibilityMode: BleCompatibilitySetting,
@@ -6810,75 +6988,268 @@ fun SettingsTab(
     onLanguageChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 )
-```
+~~~
 
-Keep default arguments only where the current call sites genuinely omit an optional platform capability; do not retain dormant profile callbacks.
+Remove unused imports only after the body is pruned. Do not retain onCancelAutoConnecting in the signature or route.
 
-- [ ] **Step 4: Delete profile-owned cards, state, injections, and private dialog implementations**
+- [ ] **Step 6: Remove profile-owned Settings cards and modal ownership by symbol**
 
-Remove these source regions and any now-unused imports/state:
+Delete profile-owned UI using the canonical inventory and semantic card/state anchors, not historical line ranges. Remove:
 
-- Weight unit, increment, body weight, and Equipment Rack: current lines 713–1067.
-- Workout Preferences: current lines 1264–1840, after extracting the global video row in Step 5.
-- LED/disco persisted controls: current lines 1841–2032.
-- VBT/verbal/adult controls: current lines 2033–2362.
-- conditional Achievements navigation: current lines 2665–2744.
-- modal dispatch for Disco/Dominatrix and all safety/adult/disco dialog helpers: current lines 3014–3053 and 3295–3900; Task 8 now owns them.
-- `UserProfileRepository`, `ExternalMeasurementRepository`, active-profile/default fallback, health-measurement collection, weight dialog state, safe-word state, easter-egg counters, and every corresponding callback parameter.
+- body weight, weight unit/increment, Equipment Rack;
+- workout timers, rep/audio/motion/auto-start/scaling/weight-suggestion defaults;
+- LED scheme, Disco persisted unlock/taps/toggle;
+- gamification and Achievements;
+- voice-stop, safe word/calibration;
+- VBT threshold/auto-end/stall controls;
+- verbal encouragement, vulgar tier/consent, Dominatrix state/taps;
+- every profile-only remember/derived/local state listed in the inventory.
 
-Do not remove route implementations for Equipment Rack or Badges; Profile now links to them.
+Task 8 already extracted dialog implementations. Remove only Settings imports, modal state, and call sites for SafeWordCalibrationDialog, AdultsOnlyConfirmDialog, DominatrixUnlockDialog, and DiscoModeUnlockDialog. Do not edit ProfileSafetyDialogs or AdultModePresentation and do not attempt to delete private implementations from Settings.
 
-- [ ] **Step 5: Preserve the global video control as its own compact card**
+Settings must have neither Equipment Rack nor Achievements cards/callbacks after pruning.
 
-Before deleting Workout Preferences, extract its video row into a standalone card placed after Language:
+- [ ] **Step 7: Retain global content in fixed order and add the localized video card**
 
-```kotlin
-SettingsSectionCard(
-    title = stringResource(Res.string.settings_video_behavior),
-    icon = Icons.Default.VideoLibrary,
+The final Settings visual order is exactly:
+
+1. donation/support;
+2. Portal/cloud plus health/external integrations;
+3. appearance/theme/dynamic color;
+4. language;
+5. video;
+6. data management, backup/restore, and delete history;
+7. BLE, logs, diagnostics, developer tools, and sound test;
+8. app information/version.
+
+Preserve existing global behavior inside those groups. Do not render velocityOneRepMaxBackfillDone. Do not delete resources.
+
+Add these exact private components to SettingsTab.kt:
+
+~~~kotlin
+@Composable
+private fun GlobalSettingsSectionCard(
+    title: String,
+    icon: ImageVector,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    SettingsSwitchRow(
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(imageVector = icon, contentDescription = null)
+                Text(text = title, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun GlobalSettingsSwitchRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp)
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+~~~
+
+Import ColumnScope, defaultMinSize, toggleable, Role, and ImageVector as needed. Parent toggleable semantics provide the checked state, Switch role, and a minimum 48dp target without a double callback.
+
+Place this card immediately after Language:
+
+~~~kotlin
+GlobalSettingsSectionCard(
+    title = stringResource(Res.string.settings_video_behavior),
+    icon = Icons.Default.Tune,
+) {
+    GlobalSettingsSwitchRow(
         title = stringResource(Res.string.settings_show_exercise_videos),
-        description = stringResource(Res.string.settings_show_exercise_videos_description),
+        description = stringResource(
+            Res.string.settings_show_exercise_videos_description,
+        ),
         checked = enableVideoPlayback,
         onCheckedChange = onEnableVideoPlaybackChange,
     )
 }
-```
+~~~
 
-If the file has no reusable `SettingsSectionCard`/`SettingsSwitchRow`, extract those exact small primitives from an existing retained card in the same file rather than duplicating a second visual style.
+The three video keys already exist exactly once in English, German, Spanish, French, and Dutch:
 
-- [ ] **Step 6: Preserve the exact global sections and simplify NavGraph**
+~~~text
+settings_video_behavior
+settings_show_exercise_videos
+settings_show_exercise_videos_description
+~~~
 
-Retain, in current visual order:
+Use them; do not edit locale XML. Remove the current hardcoded English video title/description.
 
-1. donation/support;
-2. Portal/cloud sync and health/external integrations;
-3. appearance/theme/dynamic color;
-4. language;
-5. video behavior;
-6. backup/restore/destination/delete-history data management;
-7. BLE compatibility, connection logs, diagnostics, developer tools, and sound test;
-8. app version/info.
+- [ ] **Step 8: Make the Settings destination consume global state only**
 
-Update the Settings destination to collect/pass only the global fields in the new signature. Remove all Profile-owned MainViewModel setter calls from that destination. Keep `velocityOneRepMaxBackfillDone` internal and unrendered.
+Inside only NavigationRoutes.Settings, collect:
 
-- [ ] **Step 7: Make the separation contract and retained-global regressions green**
+~~~kotlin
+val globalSettings by viewModel.globalSettings.collectAsState()
+val connectionError by viewModel.connectionError.collectAsState()
+val backupStats by viewModel.backupStats.collectAsState()
+~~~
 
-Run:
+Keep the existing one-shot refreshBackupStats call. Pass SettingsTab values only from globalSettings or existing NavGraph global inputs:
 
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileSettingsSeparationContractTest*" --tests "*SettingsManagerTest*" --tests "*SettingsPreferencesManagerTest*" :shared:compileKotlinIosArm64 :androidApp:assembleDebug --console=plain
-```
+~~~kotlin
+enableVideoPlayback = globalSettings.enableVideoPlayback,
+themeMode = themeMode,
+dynamicColorAvailable = dynamicColorAvailable,
+dynamicColorEnabled = dynamicColorEnabled,
+bleCompatibilityMode = globalSettings.bleCompatibilityMode,
+autoBackupEnabled = globalSettings.autoBackupEnabled,
+backupDestination = globalSettings.backupDestination,
+selectedLanguage = globalSettings.language,
+~~~
 
-Expected: BUILD SUCCESSFUL; Settings has no profile-owned callbacks or repository reads, global preferences still pass, and the Profile route owns Achievements/preferences.
+Wire only the exact SettingsTab callbacks in Step 5 to retained global MainViewModel actions, global theme/dynamic callbacks, or global destinations. The Settings destination must not collect weightUnit, userPreferences, connectionState, or discoModeActive and must not invoke any canonical profile-owned MainViewModel wrapper.
 
-- [ ] **Step 8: Commit the Settings migration**
+Remove onNavigateToEquipmentRack, onNavigateToBadges, onCancelAutoConnecting, and all Task 8 transient/persisted profile wiring from Settings.
 
-```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt
+- [ ] **Step 9: Preserve Profile and destination ownership**
+
+Do not edit ProfileScreen. The separation contract must prove its ready list remains:
+
+~~~text
+profile-header
+exercise-insights
+achievements
+preferences-heading
+profile-preferences
+~~~
+
+Achievements is unconditional and appears before Preferences. Profile owns onNavigateToEquipmentRack and onNavigateToBadges. Only the Profile NavGraph destination supplies those callbacks.
+
+Do not add destination registrations. NavigationRoutes.Badges and NavigationRoutes.EquipmentRack must each be registered exactly once. Settings has neither navigation callback; Profile has both.
+
+- [ ] **Step 10: Prove data, migration, sync, and resources are untouched**
+
+This task must not modify:
+
+- SettingsManager.kt or PreferencesManager.kt;
+- UserProfileRepository.kt or any profile preference repository;
+- .sq/.sqm schema or migration files;
+- ProfilePreferencesCodec, PortalSyncDtos/SyncModels, PortalSyncAdapter, PortalPullAdapter, or sync repositories;
+- ProfilePreferenceSections, ProfileSafetyDialogs, AdultModePresentation, or ProfileScreen;
+- any composeResources XML file.
+
+The exact five-path scope gate in Step 12 is authoritative. The unchanged regression classes in Step 11 additionally prove compatibility behavior, migration, persistence, codec, and sync remain intact.
+
+- [ ] **Step 11: Enforce exact 156-test count and run the focused/regression suite**
+
+Enforce these exact counts:
+
+~~~powershell
+$counts=@{
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'=8
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModelTest.kt'=33
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=14
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt'=8
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt'=3
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/manager/SettingsManagerTest.kt'=16
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/SettingsPreferencesManagerTest.kt'=10
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt'=7
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightProfilePreferencesRepositoryTest.kt'=8
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt'=26
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/ProfilePreferencesCodecTest.kt'=19
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncDtosTest.kt'=4
+}
+$total=0
+foreach($entry in $counts.GetEnumerator()){ $actual=(Select-String -Path $entry.Key -Pattern '^\s*@Test').Count; if($actual -ne $entry.Value){ throw "$($entry.Key): expected $($entry.Value), found $actual" }; $total += $actual }
+if($total -ne 156){ throw "Expected 156 focused tests, found $total" }
+~~~
+
+Run all 156 with forced execution:
+
+~~~powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.screen.ProfileSettingsSeparationContractTest" --tests "com.devil.phoenixproject.presentation.viewmodel.MainViewModelTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileScreenContractTest" --tests "com.devil.phoenixproject.presentation.navigation.ProfileNavigationContractTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileResourceContractTest" --tests "com.devil.phoenixproject.presentation.manager.SettingsManagerTest" --tests "com.devil.phoenixproject.data.preferences.SettingsPreferencesManagerTest" --tests "com.devil.phoenixproject.data.migration.ProfilePreferencesMigrationTest" --tests "com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepositoryTest" --tests "com.devil.phoenixproject.data.sync.SqlDelightProfilePreferenceSyncRepositoryTest" --tests "com.devil.phoenixproject.data.preferences.ProfilePreferencesCodecTest" --tests "com.devil.phoenixproject.data.sync.ProfilePreferenceSyncDtosTest" --rerun-tasks --console=plain
+~~~
+
+Expected: BUILD SUCCESSFUL, exactly 156 counted tests. This includes the final Task 7 ProfileNavigationContractTest count of eight and Task 8 ProfileScreenContractTest count of fourteen.
+
+- [ ] **Step 12: Run target gates, enforce exact five-path scope, and commit**
+
+Run each target gate separately with forced execution:
+
+~~~powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileAndroidMain --rerun-tasks --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --rerun-tasks --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :androidApp:assembleDebug --rerun-tasks --console=plain
+~~~
+
+Expected: all three commands BUILD SUCCESSFUL. Android compilation, iOS main/test compilation, and the Android application assembly are separate mandatory gates.
+
+Enforce exact changed and staged scope with rename detection disabled:
+
+~~~powershell
+$allowed=@(
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt',
+'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt',
+'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModelTest.kt',
+'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'
+)
+$changed=@((@(git diff --no-renames --name-only)+@(git ls-files --others --exclude-standard))|Sort-Object -Unique)
+$missing=@($allowed|Where-Object{$_ -notin $changed})
+$extra=@($changed|Where-Object{$_ -notin $allowed})
+if($missing -or $extra){ throw "Changed scope mismatch missing=[$($missing -join ', ')] extra=[$($extra -join ', ')]" }
+git diff --check
+git add -A -- $allowed
+$staged=@(git diff --cached --no-renames --name-only|Sort-Object -Unique)
+$missing=@($allowed|Where-Object{$_ -notin $staged})
+$extra=@($staged|Where-Object{$_ -notin $allowed})
+if($missing -or $extra){ throw "Staged scope mismatch missing=[$($missing -join ', ')] extra=[$($extra -join ', ')]" }
+git diff --cached --check
 git commit -m "refactor: keep settings global only"
-```
+~~~
+
+Post-commit, require the same exact five paths and a clean worktree:
+
+~~~powershell
+$committed=@(git show --no-renames --name-only --format= HEAD|Where-Object{$_}|Sort-Object -Unique)
+$missing=@($allowed|Where-Object{$_ -notin $committed})
+$extra=@($committed|Where-Object{$_ -notin $allowed})
+if($missing -or $extra){ throw "Committed scope mismatch missing=[$($missing -join ', ')] extra=[$($extra -join ', ')]" }
+if(git status --porcelain){ throw "Task 9 left a dirty worktree" }
+~~~
+
+Expected: exact five-path implementation commit and clean worktree.
 
 ---
 
