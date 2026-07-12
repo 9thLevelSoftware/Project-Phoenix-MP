@@ -19,12 +19,16 @@
 - `localGeneration` is device-local, monotonic, and never serialized.
 - The current Kotlin push request type is `PortalSyncPayload`; do not introduce a duplicate `PortalSyncPushRequest` type.
 - All new request and response fields are additive and have backward-compatible constructor defaults.
-- A single preference mutation's exact raw UTF-8 JSON element span is at most 262,144 bytes. Whenever `profilePreferenceSections` is present, the complete raw HTTP `PortalSyncPayload` is at most 524,288 bytes. The existing 9,500,000-byte endpoint cap remains in force for requests without that field.
+- A single preference mutation's exact raw UTF-8 JSON element span is at most 262,144 bytes. Whenever `profilePreferenceSections` is present, the complete original HTTP `PortalSyncPayload` byte sequence is at most 524,288 bytes. Edge counts `request.arrayBuffer()` bytes before one fatal UTF-8 decode, rejects a leading UTF-8 BOM/U+FEFF, and scans only the successfully decoded string. The existing 9,500,000-byte endpoint cap remains in force for requests without that field.
 - Kotlin `Long` values serialized as JSON numbers must be in `-9_007_199_254_740_991L..9_007_199_254_740_991L` before entering a preference DTO. The current kotlinx.serialization wire emits JSON numbers, while Edge parses JavaScript `Number` values; out-of-range `baseRevision` and rack timestamps are dead-lettered locally for their current generation with an explicit diagnostic instead of being rounded or retried forever.
+- Every preference JSON number destined for a Kotlin `Int` must be an integer in `-2_147_483_648..2_147_483_647`; every number destined for a Kotlin `Float` must survive `Math.fround` as finite and must not turn a nonzero input into zero. Narrower business predicates still apply after narrowing. JavaScript safe-integer validation is reserved for Kotlin `Long` revisions and rack timestamps.
+- Every preference string value and object key must be PostgreSQL-compatible Unicode scalar text: U+0000 and unpaired UTF-16 high/low surrogates are rejected recursively before any privileged client exists, while valid supplementary pairs are accepted.
+- Preference timestamps use one strict timezone-bearing RFC3339/ISO-instant parser with explicit calendar, day, time, fraction, and offset validation. Mutation audit timestamps, RPC canonicals, and pull canonicals share it; canonical output is normalized with `toISOString()`.
 - Preference sections are sent only in preference-only pushes after an ordinary payload has sent `allProfiles`. They are never attached to workout/session batches.
 - Pull never creates, renames, deletes, or resurrects a local profile. Unknown `localProfileId` values are logged and ignored.
 - Direct `PUBLIC`, `anon`, and `authenticated` DML on `public.local_profile_preferences` is revoked. Remote mutation is Edge-only.
-- Edge code verifies the user JWT, derives `user_id` from `auth.getUser`, and uses a server-only service-role client with an explicit verified `user_id` predicate for every privileged query.
+- Edge code verifies the user JWT, derives `user_id` from `auth.getUser`, and uses a server-only service-role client with an explicit verified `user_id` predicate for every privileged query. Returned Auth errors with status 400/401/403 are definitive credential rejection (401); 429, 5xx, missing/other status, malformed results, and thrown/rejected auth calls are operational failures (sanitized 503 with name-only logging). The service-role client is never constructed on either path.
+- The complete line-ending-normalized Edge handoff artifact is sealed by a pinned SHA-256 literal in `BackendHandoffContractTest`, in addition to focused fragment/allowlist tests.
 - The service-role secret is never sent to mobile, returned in an Edge response, written to logs, or copied into either handoff artifact.
 - Backend code is not deployed from this repository. The repository produces executable SQL and an exact portal implementation contract only.
 - Keep the handoff aligned with Supabase's official [RLS guidance](https://supabase.com/docs/guides/database/postgres/row-level-security), [Edge authorization-header guidance](https://supabase.com/docs/guides/functions/auth-headers), and [2026 Data API exposure change](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically); include these links in the Edge handoff artifact.
@@ -125,12 +129,14 @@ This plan adds a focused internal `ProfilePreferenceSyncRepository` and `SqlDeli
 ```kotlin
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.auth.sha256
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class BackendHandoffContractTest {
@@ -904,7 +910,7 @@ Extend the committed Task 1 test rather than adding a second SQL parser. Replace
 tests to call the final helper, and keep Task 1's quote/comment/dollar-aware
 `topLevelStatements` → `normalizeStatement` pipeline. The table-only commit is intentionally
 13 statements; this Task 2 RED step changes the final contract to the exact 19-statement chain.
-Add these helpers/tests to `BackendHandoffContractTest`:
+Add imports for `com.devil.phoenixproject.data.auth.sha256` and `assertNotEquals`, then add these helpers/tests to `BackendHandoffContractTest`. The known SHA-256-of-empty-string value is an intentional RED sentinel, not an accepted final hash. Only after Step 5 writes and reviews the complete Edge handoff may its actual LF-normalized digest replace the RHS of `EXPECTED_EDGE_HANDOFF_SHA256`; the final value must be a concrete independent 64-character lowercase literal and must never be computed from `edgeContract()` at assertion time.
 
 ```kotlin
 private fun edgeContract(): String = assertNotNull(
@@ -931,6 +937,22 @@ private val exactByteGoldenArtifact = """
 
 private fun normalizedTrackedText(value: String): String =
     value.replace("\r\n", "\n").removeSuffix("\n")
+
+private val SHA256_EMPTY_RED_SENTINEL =
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+// Task 2 RED only. Step 5 replaces this RHS with the reviewed artifact's concrete digest.
+private val EXPECTED_EDGE_HANDOFF_SHA256 = SHA256_EMPTY_RED_SENTINEL
+
+private fun normalizedEdgeHandoff(value: String): String =
+    value.replace("\r\n", "\n").replace('\r', '\n')
+
+private fun ByteArray.lowerHex(): String = joinToString("") {
+    (it.toInt() and 0xff).toString(16).padStart(2, '0')
+}
+
+private fun edgeHandoffSha256(value: String): String =
+    sha256(normalizedEdgeHandoff(value).encodeToByteArray()).lowerHex()
 
 private fun executableTypeScript(): String = Regex(
     pattern = """(?s)```typescript\s+(.*?)```""",
@@ -1302,6 +1324,12 @@ fun `edge executable contract authenticates validates fully then performs scoped
     val code = executableTypeScript()
     listOf(
         "auth.getUser(userJwt)",
+        "authOperationalFailure",
+        "status === 400 || status === 401 || status === 403",
+        "{ status: 503 }",
+        "req.arrayBuffer()",
+        "TextDecoder(\"utf-8\", { fatal: true",
+        "hasLeadingUtf8Bom",
         "SUPABASE_SERVICE_ROLE_KEY",
         "parsePreferenceEnvelope",
         "validateCorePayload",
@@ -1310,6 +1338,13 @@ fun `edge executable contract authenticates validates fully then performs scoped
         "validateLedPayload",
         "validateVbtPayload",
         "LOCAL_ONLY_KEYS",
+        "requirePostgresTextTree",
+        "requireInt32",
+        "requireFloat32",
+        "requireSafeJsonLong",
+        "requireRfc3339Instant",
+        "INT32_MIN = -2_147_483_648",
+        "originalBodyBytes.byteLength",
         "MAX_PROFILE_PREFERENCE_SECTION_BYTES = 262_144",
         "MAX_PROFILE_PREFERENCE_REQUEST_BYTES = 524_288",
         "scanTopLevelJsonObject",
@@ -1323,7 +1358,7 @@ fun `edge executable contract authenticates validates fully then performs scoped
         ".eq(\"user_id\", verifiedUserId)",
         ".eq(\"local_profile_id\", requestedProfileId)",
         "throw new PreferenceInfrastructureError",
-        "new Date(value).toISOString()",
+        "normalized.toISOString()",
     ).forEach { fragment -> assertTrue(fragment in code, fragment) }
 
     fun quotedInitializer(pattern: String): List<String> {
@@ -1379,6 +1414,32 @@ fun `shared byte golden artifact is the exact cross-language oracle`() {
 }
 
 @Test
+fun `complete normalized Edge handoff is sealed by a pinned digest`() {
+    val original = normalizedEdgeHandoff(edgeContract())
+    val actual = edgeHandoffSha256(original)
+    assertEquals(
+        EXPECTED_EDGE_HANDOFF_SHA256,
+        actual,
+        "After writing and reviewing the exact handoff, pin this digest: $actual",
+    )
+    assertNotEquals(
+        SHA256_EMPTY_RED_SENTINEL,
+        EXPECTED_EDGE_HANDOFF_SHA256,
+        "The Task 2 RED sentinel must not survive Step 5",
+    )
+
+    val appended = original +
+        "\n```typescript\nthrow new Error(\"appended executable mutation\");\n```\n"
+    val inverted = original.replaceFirst(
+        "rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES",
+        "rawBodyBytes <= MAX_PROFILE_PREFERENCE_REQUEST_BYTES",
+    )
+    assertNotEquals(original, inverted, "Digest mutation target must exist")
+    assertNotEquals(EXPECTED_EDGE_HANDOFF_SHA256, edgeHandoffSha256(appended))
+    assertNotEquals(EXPECTED_EDGE_HANDOFF_SHA256, edgeHandoffSha256(inverted))
+}
+
+@Test
 fun `edge handoff names executable portal tests rather than prose-only assurances`() {
     assertEquals(
         setOf(
@@ -1386,7 +1447,10 @@ fun `edge handoff names executable portal tests rather than prose-only assurance
             "database:temporary-grant-owner-rls-and-cross-owner-user-id-protection",
             "database:base-revision-accept-and-stale-canonical-conflict",
             "edge:auth-and-cross-user-profile-rejection",
+            "edge:auth-rejection-vs-operational-outage-classification",
             "edge:strict-five-section-validation-and-local-only-rejection",
+            "edge:kotlin-int32-float32-unicode-and-rfc3339-parity",
+            "edge:fatal-utf8-bom-and-original-byte-enforcement",
             "edge:section-262143-262144-262145-byte-boundaries",
             "edge:envelope-524287-524288-524289-byte-boundaries",
             "edge:unexpected-rpc-error-is-sanitized-5xx",
@@ -1409,7 +1473,7 @@ Run:
 .\gradlew.bat :shared:testAndroidHostTest --tests "com.devil.phoenixproject.data.sync.BackendHandoffContractTest" -Pskip.supabase.check=true
 ```
 
-Expected: FAIL because the RPC and Edge handoff are absent.
+Expected: FAIL because the RPC/Edge handoff and hardening fragments are absent; after the handoff is first written, the deliberate empty-digest RED sentinel still fails until Step 5 pins the reviewed complete artifact digest.
 
 - [ ] **Step 3: Add a canonical-section SQL projection**
 
@@ -1776,7 +1840,7 @@ interface MobileSyncPullResponseAdditions {
 }
 ```
 
-`REVISION_CONFLICT`, `VALIDATION_FAILED`, `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, and `UNKNOWN_PROFILE` are domain rejections returned by the RPC and may coexist with successful sibling sections. `SECTION_TOO_LARGE` and `DUPLICATE_SECTION` are Edge validation rejections. Authentication, transport, PostgREST/RPC, permission, timeout, malformed-RPC-row, and pull-query failures are infrastructure errors: they return a sanitized HTTP 5xx and are never relabeled as a domain rejection. Document version `1` is the only supported version; any other wrapper version, or an embedded `version` other than `1`, uses `UNSUPPORTED_DOCUMENT_VERSION` instead of a generic validation reason.
+`REVISION_CONFLICT`, `VALIDATION_FAILED`, `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, and `UNKNOWN_PROFILE` are domain rejections returned by the RPC and may coexist with successful sibling sections. `SECTION_TOO_LARGE` and `DUPLICATE_SECTION` are Edge validation rejections. A missing/malformed bearer header or a returned `auth.getUser` Auth error whose numeric status is exactly 400, 401, or 403 is a definitive credential rejection and returns 401. Returned Auth errors with 429, 5xx, any other/missing status, malformed success/no-user results, and thrown/rejected calls are operational auth failures: return a generic 503, log only `{ name }`, and never construct the admin client. Transport, PostgREST/RPC, permission, timeout, malformed-RPC-row, and pull-query failures are likewise sanitized infrastructure 5xx responses and are never relabeled as domain rejection. Document version `1` is the only supported version; any other wrapper version, or an embedded `version` other than `1`, uses `UNSUPPORTED_DOCUMENT_VERSION` instead of a generic validation reason.
 
 Put these executable runtime parsers in `mobile-sync-push/index.ts` (or import them from a tested sibling module without changing their behavior). This is the complete request allowlist and the complete version-1 schema for all five wrappers; no schema library may silently strip unknown keys or coerce strings into numbers/booleans:
 
@@ -1806,6 +1870,8 @@ class PreferenceInfrastructureError extends Error {
 const MAX_PROFILE_PREFERENCE_SECTION_BYTES = 262_144;
 const MAX_PROFILE_PREFERENCE_REQUEST_BYTES = 524_288;
 const MAX_MOBILE_SYNC_REQUEST_BYTES = 9_500_000;
+const INT32_MIN = -2_147_483_648;
+const INT32_MAX = 2_147_483_647;
 const utf8Bytes = (rawJson: string): number =>
   new TextEncoder().encode(rawJson).byteLength;
 
@@ -1867,12 +1933,45 @@ const requireRecord = (value: unknown, field: string): JsonRecord => {
   return value as JsonRecord;
 };
 
+const requirePostgresString = (value: unknown, field: string): string => {
+  if (typeof value !== "string") fail(field);
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit === 0) fail(field);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) fail(field);
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      fail(field);
+    }
+  }
+  return value;
+};
+
+function requirePostgresTextTree(value: unknown, field: string): void {
+  if (typeof value === "string") {
+    requirePostgresString(value, field);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => requirePostgresTextTree(child, field + "[" + index + "]"));
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  Object.entries(value as JsonRecord).forEach(([key, child]) => {
+    requirePostgresString(key, field + ".<key>");
+    requirePostgresTextTree(child, field + "." + key);
+  });
+}
+
 const requireExactRecord = (
   value: unknown,
   keys: readonly string[],
   field: string,
 ): JsonRecord => {
   const record = requireRecord(value, field);
+  requirePostgresTextTree(record, field);
   const allowed = new Set(keys);
   for (const key of Object.keys(record)) {
     if (!allowed.has(key)) fail(field + "." + key);
@@ -2034,16 +2133,35 @@ const requireBoolean = (value: unknown, field: string): boolean => {
   return value;
 };
 
-const requireFiniteNumber = (
+const requireFloat32 = (
   value: unknown,
   field: string,
   predicate: (number: number) => boolean = () => true,
 ): number => {
-  if (typeof value !== "number" || !Number.isFinite(value) || !predicate(value)) fail(field);
+  if (typeof value !== "number" || !Number.isFinite(value)) fail(field);
+  const narrowed = Math.fround(value);
+  if (!Number.isFinite(narrowed) || (value !== 0 && narrowed === 0) || !predicate(narrowed)) {
+    fail(field);
+  }
+  return narrowed;
+};
+
+const requireInt32 = (
+  value: unknown,
+  field: string,
+  predicate: (number: number) => boolean = () => true,
+): number => {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < INT32_MIN ||
+    value > INT32_MAX ||
+    !predicate(value)
+  ) fail(field);
   return value;
 };
 
-const requireSafeInteger = (
+const requireSafeJsonLong = (
   value: unknown,
   field: string,
   predicate: (number: number) => boolean = () => true,
@@ -2053,8 +2171,9 @@ const requireSafeInteger = (
 };
 
 const requireNonBlank = (value: unknown, field: string): string => {
-  if (typeof value !== "string" || value.trim().length === 0) fail(field);
-  return value;
+  const text = requirePostgresString(value, field);
+  if (text.trim().length === 0) fail(field);
+  return text;
 };
 
 const requireEnum = <T extends string>(
@@ -2062,18 +2181,49 @@ const requireEnum = <T extends string>(
   allowed: readonly T[],
   field: string,
 ): T => {
-  if (typeof value !== "string" || !allowed.includes(value as T)) fail(field);
-  return value as T;
+  const text = requirePostgresString(value, field);
+  if (!allowed.includes(text as T)) fail(field);
+  return text as T;
 };
 
 const requireVersionOne = (value: unknown, field: string): 1 => {
-  if (value !== 1) fail(field, "UNSUPPORTED_DOCUMENT_VERSION");
+  const version = requireInt32(value, field);
+  if (version !== 1) fail(field, "UNSUPPORTED_DOCUMENT_VERSION");
   return 1;
 };
 
-const requireIsoTimestamp = (value: unknown, field: string): string => {
-  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) fail(field);
-  return value;
+const RFC3339_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+const isLeapYear = (year: number): boolean =>
+  year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+
+const daysInMonth = (year: number, month: number): number =>
+  [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 0;
+
+const requireRfc3339Instant = (value: unknown, field: string): string => {
+  const text = requirePostgresString(value, field);
+  const match = RFC3339_INSTANT.exec(text);
+  if (!match) fail(field);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[8] === "Z" ? 0 : Number(match[10]);
+  const offsetMinute = match[8] === "Z" ? 0 : Number(match[11]);
+  if (
+    year < 1 ||
+    month < 1 || month > 12 ||
+    day < 1 || day > daysInMonth(year, month) ||
+    hour > 23 || minute > 59 || second > 59 ||
+    offsetHour > 23 || offsetMinute > 59
+  ) fail(field);
+  const epoch = Date.parse(text);
+  if (!Number.isFinite(epoch)) fail(field);
+  const normalized = new Date(epoch);
+  return normalized.toISOString();
 };
 
 const rejectLocalOnlyKeys = (value: unknown, field = "profilePreferenceSections"): void => {
@@ -2122,13 +2272,13 @@ function validateCorePayload(value: unknown): JsonRecord {
     ["bodyWeightKg", "weightUnit", "weightIncrement"],
     "payload",
   );
-  requireFiniteNumber(
+  requireFloat32(
     payload.bodyWeightKg,
     "payload.bodyWeightKg",
     (number) => number === 0 || (number >= 20 && number <= 300),
   );
   requireEnum(payload.weightUnit, ["KG", "LB"] as const, "payload.weightUnit");
-  requireFiniteNumber(
+  requireFloat32(
     payload.weightIncrement,
     "payload.weightIncrement",
     (number) => number === -1 || number > 0,
@@ -2148,12 +2298,12 @@ function validateRackPayload(value: unknown): JsonRecord {
     if (ids.has(id)) fail(field + ".id");
     ids.add(id);
     requireEnum(item.category, RACK_CATEGORIES, field + ".category");
-    requireFiniteNumber(item.weightKg, field + ".weightKg", (number) => number >= 0);
+    requireFloat32(item.weightKg, field + ".weightKg", (number) => number >= 0);
     requireEnum(item.behavior, RACK_BEHAVIORS, field + ".behavior");
     requireBoolean(item.enabled, field + ".enabled");
-    requireSafeInteger(item.sortOrder, field + ".sortOrder");
-    requireSafeInteger(item.createdAt, field + ".createdAt");
-    requireSafeInteger(item.updatedAt, field + ".updatedAt");
+    requireInt32(item.sortOrder, field + ".sortOrder");
+    requireSafeJsonLong(item.createdAt, field + ".createdAt");
+    requireSafeJsonLong(item.updatedAt, field + ".updatedAt");
   });
   return payload;
 }
@@ -2209,26 +2359,26 @@ const WORKOUT_KEYS = [
 
 function validateJustLiftDefaults(value: unknown, field: string): void {
   const defaults = requireExactRecord(value, JUST_LIFT_KEYS, field);
-  requireSafeInteger(
+  requireInt32(
     defaults.workoutModeId,
     field + ".workoutModeId",
     (number) => WORKOUT_MODES.includes(number as typeof WORKOUT_MODES[number]),
   );
-  requireFiniteNumber(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
-  requireFiniteNumber(defaults.weightChangePerRep, field + ".weightChangePerRep");
-  requireSafeInteger(
+  requireFloat32(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
+  requireFloat32(defaults.weightChangePerRep, field + ".weightChangePerRep");
+  requireInt32(
     defaults.eccentricLoadPercentage,
     field + ".eccentricLoadPercentage",
     (number) => number >= 0 && number <= 150,
   );
-  requireSafeInteger(
+  requireInt32(
     defaults.echoLevelValue,
     field + ".echoLevelValue",
     (number) => number >= 0 && number <= 3,
   );
   requireBoolean(defaults.stallDetectionEnabled, field + ".stallDetectionEnabled");
   requireEnum(defaults.repCountTimingName, REP_COUNT_TIMINGS, field + ".repCountTimingName");
-  requireSafeInteger(
+  requireInt32(
     defaults.restSeconds,
     field + ".restSeconds",
     (number) => number === 0 || (number >= 5 && number <= 300),
@@ -2245,39 +2395,39 @@ function validateSingleExerciseDefaults(
   if (mapKey.trim().length === 0 || exerciseId !== mapKey) fail(field + ".exerciseId");
   requireArray(defaults.setReps, field + ".setReps").forEach((rep, index) => {
     if (rep !== null) {
-      requireSafeInteger(rep, field + ".setReps[" + index + "]", (number) => number >= 0);
+      requireInt32(rep, field + ".setReps[" + index + "]", (number) => number >= 0);
     }
   });
-  requireFiniteNumber(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
+  requireFloat32(defaults.weightPerCableKg, field + ".weightPerCableKg", (number) => number >= 0);
   requireArray(defaults.setWeightsPerCableKg, field + ".setWeightsPerCableKg")
-    .forEach((weight, index) => requireFiniteNumber(
+    .forEach((weight, index) => requireFloat32(
       weight,
       field + ".setWeightsPerCableKg[" + index + "]",
       (number) => number >= 0,
     ));
-  requireFiniteNumber(defaults.progressionKg, field + ".progressionKg");
+  requireFloat32(defaults.progressionKg, field + ".progressionKg");
   requireArray(defaults.setRestSeconds, field + ".setRestSeconds")
-    .forEach((rest, index) => requireSafeInteger(
+    .forEach((rest, index) => requireInt32(
       rest,
       field + ".setRestSeconds[" + index + "]",
       (number) => number === 0 || (number >= 5 && number <= 300),
     ));
-  requireSafeInteger(
+  requireInt32(
     defaults.workoutModeId,
     field + ".workoutModeId",
     (number) => WORKOUT_MODES.includes(number as typeof WORKOUT_MODES[number]),
   );
-  requireSafeInteger(
+  requireInt32(
     defaults.eccentricLoadPercentage,
     field + ".eccentricLoadPercentage",
     (number) => number >= 0 && number <= 150,
   );
-  requireSafeInteger(
+  requireInt32(
     defaults.echoLevelValue,
     field + ".echoLevelValue",
     (number) => number >= 0 && number <= 3,
   );
-  requireSafeInteger(defaults.duration, field + ".duration", (number) => number >= 0);
+  requireInt32(defaults.duration, field + ".duration", (number) => number >= 0);
   requireBoolean(defaults.isAMRAP, field + ".isAMRAP");
   requireBoolean(defaults.perSetRestTime, field + ".perSetRestTime");
   const rackIds = requireArray(defaults.defaultRackItemIds, field + ".defaultRackItemIds")
@@ -2306,17 +2456,17 @@ function validateWorkoutPayload(value: unknown): JsonRecord {
     "voiceStopEnabled",
   ].forEach((key) => requireBoolean(payload[key], "payload." + key));
   requireEnum(payload.repCountTiming, REP_COUNT_TIMINGS, "payload.repCountTiming");
-  requireSafeInteger(
+  requireInt32(
     payload.summaryCountdownSeconds,
     "payload.summaryCountdownSeconds",
     (number) => [-1, 0, 5, 10, 15, 20, 25, 30].includes(number),
   );
-  requireSafeInteger(
+  requireInt32(
     payload.autoStartCountdownSeconds,
     "payload.autoStartCountdownSeconds",
     (number) => number >= 2 && number <= 10,
   );
-  requireSafeInteger(
+  requireInt32(
     payload.defaultRoutineExerciseWeightPercentOfPR,
     "payload.defaultRoutineExerciseWeightPercentOfPR",
     (number) => number >= 50 && number <= 120,
@@ -2342,7 +2492,7 @@ function validateLedPayload(value: unknown): JsonRecord {
     ["ledColorSchemeId", "preferences"],
     "payload",
   );
-  requireSafeInteger(
+  requireInt32(
     payload.ledColorSchemeId,
     "payload.ledColorSchemeId",
     (number) => number >= 0,
@@ -2376,7 +2526,7 @@ function validateVbtPayload(value: unknown): JsonRecord {
     "payload.preferences",
   );
   requireVersionOne(preferences.version, "payload.preferences.version");
-  requireSafeInteger(
+  requireInt32(
     preferences.velocityLossThresholdPercent,
     "payload.preferences.velocityLossThresholdPercent",
     (number) => number >= 10 && number <= 50,
@@ -2409,6 +2559,7 @@ function validateVbtPayload(value: unknown): JsonRecord {
 }
 
 function parsePreferenceMutation(value: unknown): PortalProfilePreferenceSectionMutation {
+  requirePostgresTextTree(value, "mutation");
   rejectLocalOnlyKeys(value);
   const mutation = requireExactRecord(value, MUTATION_KEYS, "mutation");
   const localProfileId = requireNonBlank(mutation.localProfileId, "mutation.localProfileId");
@@ -2417,14 +2568,16 @@ function parsePreferenceMutation(value: unknown): PortalProfilePreferenceSection
     fail("mutation.section", "UNSUPPORTED_SECTION");
   }
   const section = mutation.section as ProfilePreferenceSection;
-  const documentVersion = requireSafeInteger(mutation.documentVersion, "mutation.documentVersion");
-  requireVersionOne(documentVersion, "mutation.documentVersion");
-  const baseRevision = requireSafeInteger(
+  const documentVersion = requireVersionOne(
+    mutation.documentVersion,
+    "mutation.documentVersion",
+  );
+  const baseRevision = requireSafeJsonLong(
     mutation.baseRevision,
     "mutation.baseRevision",
     (number) => number >= 0,
   );
-  const clientModifiedAt = requireIsoTimestamp(
+  const clientModifiedAt = requireRfc3339Instant(
     mutation.clientModifiedAt,
     "mutation.clientModifiedAt",
   );
@@ -2494,6 +2647,9 @@ function parsePreferenceEnvelope(
   if (rawMutations.length !== rawContext.preferenceElementSpans.length) {
     fail("body.profilePreferenceSections.span");
   }
+  rawMutations.forEach((rawMutation, index) => {
+    requirePostgresTextTree(rawMutation, "body.profilePreferenceSections[" + index + "]");
+  });
   rawMutations.forEach((rawMutation, index) => {
     const span = rawContext.preferenceElementSpans[index];
     let reparsed: unknown;
@@ -2569,7 +2725,7 @@ Authenticate with an anon client, parse and validate the complete body, and only
 
 ```typescript
 const authorization = req.headers.get("Authorization");
-if (!authorization?.startsWith("Bearer ")) {
+if (!authorization?.startsWith("Bearer ") || authorization.length === "Bearer ".length) {
   return new Response(JSON.stringify({ error: "Missing bearer token" }), { status: 401 });
 }
 const userJwt = authorization.slice("Bearer ".length);
@@ -2577,16 +2733,95 @@ const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   global: { headers: { Authorization: authorization } },
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const { data: userData, error: userError } = await authClient.auth.getUser(userJwt);
-if (userError || !userData.user) {
-  return new Response(JSON.stringify({ error: "Invalid bearer token" }), { status: 401 });
-}
-const verifiedUserId = userData.user.id;
 
-const rawBody = await req.text();
-const rawBodyBytes = new TextEncoder().encode(rawBody).byteLength;
+const safeErrorName = (error: unknown, fallback: string): string => {
+  let candidate = fallback;
+  if (error instanceof Error) {
+    candidate = error.name;
+  } else if (
+    typeof error === "object" && error !== null &&
+    typeof (error as JsonRecord).name === "string"
+  ) {
+    candidate = (error as JsonRecord).name as string;
+  }
+  return /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(candidate) ? candidate : fallback;
+};
+
+const authOperationalFailure = (error: unknown): Response => {
+  console.error({ name: safeErrorName(error, "AuthOperationalFailure") });
+  return new Response(
+    JSON.stringify({ error: "Authentication service unavailable" }),
+    { status: 503 },
+  );
+};
+
+const returnedAuthStatus = (error: unknown): number | null => {
+  if (typeof error !== "object" || error === null) return null;
+  const record = error as JsonRecord;
+  const status = record.status ?? record.statusCode;
+  return typeof status === "number" && Number.isInteger(status) ? status : null;
+};
+
+let authResult: unknown;
+try {
+  authResult = await authClient.auth.getUser(userJwt);
+} catch (error) {
+  return authOperationalFailure(error);
+}
+if (typeof authResult !== "object" || authResult === null) {
+  return authOperationalFailure({ name: "AuthUnexpectedResult" });
+}
+const authRecord = authResult as JsonRecord;
+const userError = authRecord.error;
+if (userError !== null && userError !== undefined) {
+  const status = returnedAuthStatus(userError);
+  if (status === 400 || status === 401 || status === 403) {
+    return new Response(JSON.stringify({ error: "Invalid bearer token" }), { status: 401 });
+  }
+  return authOperationalFailure(userError);
+}
+const userData = authRecord.data;
+if (typeof userData !== "object" || userData === null) {
+  return authOperationalFailure({ name: "AuthUnexpectedResult" });
+}
+const verifiedUser = (userData as JsonRecord).user;
+if (
+  typeof verifiedUser !== "object" || verifiedUser === null ||
+  typeof (verifiedUser as JsonRecord).id !== "string" ||
+  ((verifiedUser as JsonRecord).id as string).length === 0
+) {
+  return authOperationalFailure({ name: "AuthUnexpectedResult" });
+}
+const verifiedUserId = (verifiedUser as JsonRecord).id as string;
+
+let originalBodyBytes: Uint8Array;
+try {
+  originalBodyBytes = new Uint8Array(await req.arrayBuffer());
+} catch (error) {
+  console.error({ name: safeErrorName(error, "RequestBodyReadFailure") });
+  return new Response(JSON.stringify({ error: "Request unavailable" }), { status: 503 });
+}
+const rawBodyBytes = originalBodyBytes.byteLength;
 if (rawBodyBytes > MAX_MOBILE_SYNC_REQUEST_BYTES) {
   return new Response(JSON.stringify({ error: "Request too large" }), { status: 413 });
+}
+const hasLeadingUtf8Bom =
+  originalBodyBytes.length >= 3 &&
+  originalBodyBytes[0] === 0xef &&
+  originalBodyBytes[1] === 0xbb &&
+  originalBodyBytes[2] === 0xbf;
+if (hasLeadingUtf8Bom) {
+  return new Response(JSON.stringify({ error: "Invalid sync request" }), { status: 400 });
+}
+let rawBody: string;
+try {
+  rawBody = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
+    .decode(originalBodyBytes);
+} catch {
+  return new Response(JSON.stringify({ error: "Invalid sync request" }), { status: 400 });
+}
+if (rawBody.startsWith("\uFEFF")) {
+  return new Response(JSON.stringify({ error: "Invalid sync request" }), { status: 400 });
 }
 
 let topLevelScan: TopLevelJsonScan;
@@ -2634,7 +2869,7 @@ const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 });
 ```
 
-The 9,500,000-byte cap counts the original HTTP body only when `profilePreferenceSections` is absent. Whenever that top-level field is present, the 524,288-byte cap applies to the complete raw HTTP `PortalSyncPayload`, including all whitespace, ordinary fields, and preference fields. The 262,144-byte cap applies to each exact raw JSON array-element span, measured from the pinned scanner offsets with a quote-, escape-, and nesting-aware scan; it is never reconstructed with `JSON.stringify`. Reject a duplicate relevant top-level key, element-count mismatch, or reparsed-span/value mismatch before constructing the admin client. Exact-size payloads are accepted; 262,145 and 524,289 bytes are rejected. `clientModifiedAt` is validated ISO audit metadata and is never used for ordering.
+The 9,500,000-byte cap counts `originalBodyBytes.byteLength` only when `profilePreferenceSections` is absent. Whenever that top-level field is present, the 524,288-byte cap applies to that same complete original byte sequence, including all whitespace, ordinary fields, and preference fields. Reject oversize requests from the original count, never from a decoded/re-encoded surrogate. The 262,144-byte cap applies to each exact raw JSON array-element span measured by the quote-, escape-, and nesting-aware scanner. Only after one fatal valid-UTF-8 decode and explicit no-BOM check is `TextEncoder.encode(rawBody.slice(span.start, span.end))` byte-identical to the corresponding original octets: valid UTF-8 has a unique encoding and JSON structural offsets fall on scalar boundaries. It is never reconstructed with `JSON.stringify`. Reject malformed UTF-8, a leading BOM/U+FEFF, a duplicate relevant top-level key, element-count mismatch, or reparsed-span/value mismatch before constructing the admin client. Exact-size payloads are accepted; 262,145 and 524,289 bytes are rejected. `clientModifiedAt` is strict timezone-bearing RFC3339 audit metadata normalized by the shared instant helper and is never used for ordering.
 
 Treat only a successfully parsed RPC row as a domain result. Use the exact runtime parser and loop below so empty/multiple/malformed rows, unknown rejection reasons, permission failures, and PostgREST errors are infrastructure failures rather than fabricated `VALIDATION_FAILED` results:
 
@@ -2669,6 +2904,7 @@ function parseInfrastructureCanonical(
   mutation: PortalProfilePreferenceSectionMutation,
 ): PortalProfilePreferenceSectionCanonical {
   try {
+    requirePostgresTextTree(value, "canonical");
     const canonical = requireExactRecord(
       value,
       [
@@ -2685,7 +2921,7 @@ function parseInfrastructureCanonical(
     if (canonical.section !== mutation.section) fail("canonical.section");
     requireVersionOne(canonical.documentVersion, "canonical.documentVersion");
     const serverRevision = infrastructureRevision(canonical.serverRevision);
-    const serverUpdatedAt = requireIsoTimestamp(
+    const serverUpdatedAt = requireRfc3339Instant(
       canonical.serverUpdatedAt,
       "canonical.serverUpdatedAt",
     );
@@ -2826,7 +3062,7 @@ verify_jwt = true
 verify_jwt = true
 ```
 
-In `mobile-sync-pull/index.ts`, repeat the same bearer-token/`auth.getUser(userJwt)` verification, derive `verifiedUserId` only from the verified user, and construct the service-role client only after authentication. Use an explicit verified-owner predicate, then map the typed columns/documents into the same canonical wrappers returned by the mutation RPC:
+In `mobile-sync-pull/index.ts`, reuse the exact bearer-token/`auth.getUser(userJwt)` classifier above: only returned Auth errors with 400/401/403 become 401; 429/5xx/other or missing status, malformed results, and thrown/rejected calls become name-only-logged generic 503 responses. Derive `verifiedUserId` only from the verified user, and construct the service-role client only after successful authentication and strict pull-request validation. Use an explicit verified-owner predicate, then map the typed columns/documents into the same canonical wrappers returned by the mutation RPC:
 
 ```typescript
 const canonical = (
@@ -2844,7 +3080,8 @@ const canonical = (
   payload,
 });
 
-const canonicalTimestamp = (value: string): string => new Date(value).toISOString();
+const canonicalTimestamp = (value: unknown): string =>
+  requireRfc3339Instant(value, "pull.serverUpdatedAt");
 
 async function loadFirstPageProfilePreferences(
   cursor: string | null | undefined,
@@ -2942,7 +3179,10 @@ database:exact-function-acls-and-no-client-dml
 database:temporary-grant-owner-rls-and-cross-owner-user-id-protection
 database:base-revision-accept-and-stale-canonical-conflict
 edge:auth-and-cross-user-profile-rejection
+edge:auth-rejection-vs-operational-outage-classification
 edge:strict-five-section-validation-and-local-only-rejection
+edge:kotlin-int32-float32-unicode-and-rfc3339-parity
+edge:fatal-utf8-bom-and-original-byte-enforcement
 edge:section-262143-262144-262145-byte-boundaries
 edge:envelope-524287-524288-524289-byte-boundaries
 edge:unexpected-rpc-error-is-sanitized-5xx
@@ -2958,13 +3198,16 @@ Implement the manifest with real database and function tests, not string searche
 - In `supabase/tests/database/profile_preferences.test.sql`, use pgTAP in a transaction. Assert the two exact function identities/signatures, `SECURITY INVOKER`, empty `search_path`, owner, volatility, return shapes, and execute ACLs; assert `PUBLIC`, `anon`, and `authenticated` have neither function execute nor table DML while `service_role` has only the intended table/function privileges.
 - In that pgTAP file, temporarily grant table DML inside the test transaction solely to exercise RLS. Set authenticated JWT claims for owner A and owner B, prove each CRUD operation sees/mutates only its own composite parent, and prove owner A cannot update a row's `user_id` to owner B because the `WITH CHECK` predicate fails. Do not claim that RLS makes a same-owner `local_profile_id` immutable; no trigger is part of this plan. Revoke the temporary grants and verify the production ACLs again before rollback.
 - Seed two composite profile keys and call the real mutation function for all five sections. Prove base revision 0 accepts revision 1, the next matching base accepts exactly the next revision, a stale base returns `REVISION_CONFLICT` plus byte/equality-identical canonical JSON, and mutating one section leaves all four sibling payloads/revisions unchanged. For every call, prove the targeted row keeps its `user_id` and `local_profile_id`, the non-target key is untouched, and the RPC cannot mutate either key. Exercise explicit `UNSUPPORTED_SECTION`, `UNSUPPORTED_DOCUMENT_VERSION`, `VALIDATION_FAILED`, and `UNKNOWN_PROFILE` rows.
-- In `mobile-sync-push/index.test.ts`, invoke the exported handler with injected anon/admin clients and two real local Supabase users. Cover missing/invalid JWT, attempted cross-user profile mutation, and the absence of any request-body `userId` authority. Spy on every privileged table/RPC method and prove malformed data in the final ordinary item or final preference item produces zero privileged calls.
-- Table-drive every required and unknown key, primitive type, enum, range, nested object, duplicate rack id, duplicate `(localProfileId, section)`, all five version-1 wrappers, every unsupported wrapper/embedded version, and recursive normalized local-only names. Rack names may repeat, and signed safe-integer `createdAt`/`updatedAt` values are accepted. Pre-count duplicate section identities before size or document validation; assert exactly one `DUPLICATE_SECTION` rejection per duplicated key, zero RPC calls for every occurrence of that key, and one RPC for each valid non-duplicated sibling.
-- Use the shared byte-golden artifact described below to build complete raw bodies at exactly 262143, 262144, and 262145 bytes for one preference array element and exactly 524287, 524288, and 524289 bytes for the complete raw HTTP `PortalSyncPayload`. Assert inclusive limits, HTTP 413 only for full-request overflow when the preference field is present, per-section `SECTION_TOO_LARGE` for section overflow, exact scanner offsets despite whitespace/escapes/nesting, and that a large ordinary sync body below 9,500,000 bytes without the preference field is not incorrectly subjected to the preference request cap.
+- In `mobile-sync-push/index.test.ts`, invoke the exported handler with injected anon/admin clients and two real local Supabase users. Cover missing/malformed bearer headers and returned Auth errors with each of 400, 401, and 403 as HTTP 401. Separately inject returned 429, 500, and 503 errors, an error with no status, a null/malformed result, a success without a user, and thrown/rejected `getUser` calls; each is a generic 503 whose captured log object has exactly the `name` key. Every auth failure constructs/calls zero admin clients. Also cover attempted cross-user profile mutation and the absence of any request-body `userId` authority. Spy on every privileged table/RPC method and prove malformed data in the final ordinary or preference item produces zero privileged calls.
+- Table-drive every required and unknown key, primitive type, enum, range, nested object, duplicate rack id, duplicate `(localProfileId, section)`, all five version-1 wrappers, every unsupported wrapper/embedded version, and recursive normalized local-only names. For Kotlin `Int`, prove rack `sortOrder` accepts exactly -2147483648 and 2147483647 and rejects either adjacent overflow; cover workout `setReps`/`duration` and LED color scheme with both Int32 and their narrower business rules. For Kotlin `Float`, prove `Float.MAX_VALUE` and the smallest nonzero Float32 survive where business rules allow, while positive/negative Float32 overflow and nonzero underflow-to-zero are rejected; retain each domain predicate. Safe JSON integers apply only to Long revisions/timestamps. Recursively test raw and escaped U+0000 plus lone high/low surrogates in nested string values and `singleExerciseDefaults`/other object keys; each is rejected pre-admin, while a valid supplementary pair/emoji passes. Rack names may repeat, and signed safe-integer `createdAt`/`updatedAt` values are accepted. Pre-count duplicate section identities before size or document validation; assert exactly one `DUPLICATE_SECTION` rejection per duplicated key, zero RPC calls for every occurrence of that key, and one RPC for each valid non-duplicated sibling.
+- Table-drive the shared strict instant helper through mutation, RPC canonical, and pull paths. Reject numeric/string `0`, prose dates, date-only/space forms, February 30, invalid leap days/times/offsets, and any missing timezone. Accept valid `Z`, fractional-second, and positive/negative-offset instants and assert canonical output is the exact `toISOString()` normalization.
+- Send raw `Uint8Array` bodies through the real handler. Reject a leading UTF-8 BOM, truncated sequences, overlong encodings, and isolated continuation bytes with HTTP 400 and zero admin construction/calls; accept a legitimately encoded U+FFFD scalar. Use the shared byte-golden artifact to build original bodies at exactly 262143, 262144, and 262145 bytes for one preference array element and exactly 524287, 524288, and 524289 bytes for the complete HTTP `PortalSyncPayload`. Assert inclusive limits from the original `Uint8Array.byteLength`, HTTP 413 only for full-request overflow when the preference field is present, per-section `SECTION_TOO_LARGE` for section overflow, exact scanner offsets despite whitespace/escapes/nesting, and that a large ordinary request below 9,500,000 bytes without the preference field is not subjected to the preference cap.
 - Inject RPC error, null data, empty array, two rows, malformed canonical, mismatched revision, and unknown rejection reason. Each must return generic 5xx, log only `{ name }`, expose no payload/profile/token/secret/error message, and never emit `VALIDATION_FAILED`. A well-formed domain rejection continues with valid siblings.
 - With real RPC calls and `Promise.all`, prove same-section concurrent base-0 writes yield one revision-1 acceptance and one canonical conflict, while different-section base-0 writes both reach revision 1 and preserve both documents. Assert one returned row per call.
 - For lost acknowledgement, commit A directly, force the handler's later B RPC to fail after A has committed, discard the failed response, and retry the original A mutation at base 0. Assert the retry is a canonical revision-1 conflict and the stored revision remains 1; then retry B normally and assert convergence.
-- In `mobile-sync-pull/index.test.ts`, seed all five typed documents through the mutation RPC, invoke first-page pull as the owner, and deep-compare every canonical wrapper to the mutation responses, including normalized ISO timestamps. Assert both owner predicates are applied, a cross-user profile cannot be read, an absent row is not created, later cursor pages omit `profilePreferenceSections`, and every response retains `syncTime`.
+- In `mobile-sync-pull/index.test.ts`, repeat the exact auth classification matrix, seed all five typed documents through the mutation RPC, invoke first-page pull as the owner, and deep-compare every canonical wrapper to the mutation responses, including strict RFC3339 `toISOString()` normalization. Inject malformed database timestamps and string/object-key Unicode to prove a name-only-logged generic 5xx rather than silent normalization. Assert both owner predicates are applied, a cross-user profile cannot be read, an absent row is not created, later cursor pages omit `profilePreferenceSections`, and every response retains `syncTime`.
+
+After the exact `profile-preferences-edge-functions.md` content—including prose, comments, every fence, configuration, and the manifest—is written and reviewed, run `BackendHandoffContractTest` once. Its mismatch message prints the LF-normalized SHA-256 produced by the existing pure Kotlin implementation. Review the complete focused artifact diff, replace only the RHS of `EXPECTED_EDGE_HANDOFF_SHA256` with that concrete 64-character lowercase digest, and rerun. The empty-string sentinel must be gone. Never derive the expected value from the file, never place the digest inside the hashed handoff, and repin only when a reviewed handoff edit is intentional. The appended/inverted-executable mutation assertions must continue proving the seal detects drift.
 
 Run this exact portal verification sequence from the portal repository:
 
@@ -2994,7 +3237,7 @@ Run:
 .\gradlew.bat :shared:testAndroidHostTest --tests "com.devil.phoenixproject.data.sync.BackendHandoffContractTest" -Pskip.supabase.check=true
 ```
 
-Expected: PASS.
+Expected: PASS with the concrete non-sentinel Edge digest, exact golden artifact, exact 19-statement SQL envelope, new hardening fragments, and expanded manifest all sealed.
 
 - [ ] **Step 7: Commit the atomic backend handoff**
 
@@ -5779,8 +6022,11 @@ The portal implementer must record all of these results before the mobile releas
 - [ ] Supabase security and performance advisors were run; every finding is fixed or documented with a concrete disposition.
 - [ ] Direct `anon` and `authenticated` table SELECT/INSERT/UPDATE/DELETE fail under normal grants.
 - [ ] Temporary-grant RLS tests prove owner SELECT/INSERT/UPDATE/DELETE and cross-owner `user_id` reassignment rejection in an isolated transaction; they do not claim same-owner `local_profile_id` immutability.
-- [ ] Edge tests prove the JWT-derived user can mutate only that user's composite-key rows.
-- [ ] Cross-user `localProfileId`, forged revisions/timestamps, unsupported versions, malformed payloads, exact raw section spans over 256 KiB, and complete raw requests over 512 KiB whenever the preference field is present are rejected using the shared cross-language goldens.
+- [ ] Edge tests prove the JWT-derived user can mutate only that user's composite-key rows; returned 400/401/403 Auth errors map to 401 while operational/malformed/thrown auth failures map to generic 503 with name-only logs and zero admin construction.
+- [ ] Cross-user `localProfileId`, forged revisions/timestamps, unsupported versions, malformed payloads, exact raw section spans over 256 KiB, and complete original-byte requests over 512 KiB whenever the preference field is present are rejected using the shared cross-language goldens.
+- [ ] Raw-handler tests reject BOM and malformed UTF-8 before admin, use original `Uint8Array.byteLength` for caps, and accept valid U+FFFD.
+- [ ] Int32, Float32 overflow/nonzero-underflow, recursive PostgreSQL Unicode scalar, and strict timezone-bearing RFC3339 boundary matrices pass in push/RPC/pull paths.
+- [ ] `BackendHandoffContractTest` contains a reviewed non-sentinel SHA-256 literal sealing the complete LF-normalized Edge handoff; appended/inverted executable mutations fail it.
 - [ ] Same-section concurrent first writes produce one revision-1 winner and one canonical conflict.
 - [ ] Different-section concurrent first writes both succeed at revision 1 without overwriting either section.
 - [ ] Lost-ack retry converges through a canonical revision conflict.
