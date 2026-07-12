@@ -1705,6 +1705,8 @@ git commit -m "feat: migrate legacy profile preferences at startup"
 
 **Files:**
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/PreferencesManager.kt`
+- Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/RequiredMigrationGate.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/SettingsManager.kt`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/manager/SettingsManagerTest.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/EquipmentRackRepository.kt`
@@ -1712,15 +1714,21 @@ git commit -m "feat: migrate legacy profile preferences at startup"
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/integration/HealthBodyWeightSyncManager.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/integration/HealthBodyWeightSyncManagerTest.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordDetectionManager.kt`
+- Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/voice/SafeWordDetectionManagerTest.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/DefaultWorkoutSessionManager.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutUiState.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ActiveWorkoutScreen.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/BleConnectionManager.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt`
-- Modify affected tests and fakes found with `rg -n "PreferencesManager|SettingsManager|EquipmentRackRepository" shared/src/*Test`.
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/DWSMTestHarness.kt`
+- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModelTest.kt`
+- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/e2e/WorkoutFlowE2ETest.kt`
+- Modify affected tests and fakes found with `rg -n "PreferencesManager|SettingsManager|EquipmentRackRepository" shared/src/commonTest shared/src/androidHostTest`.
 
 **Interfaces:**
 - Consumes: Task 3's active `Ready` context and whole-section update methods.
@@ -1743,9 +1751,9 @@ fun profileSetterWritesRepositoryAndLeavesLegacyStoreUntouched() = runTest {
 @Test
 fun equipmentRackFollowsActiveProfile() = runTest {
     setActive("a")
-    rackRepository.replaceItems(listOf(rackItem("a-item")))
+    rackRepository.saveItems(listOf(rackItem("a-item")))
     setActive("b")
-    rackRepository.replaceItems(listOf(rackItem("b-item")))
+    rackRepository.saveItems(listOf(rackItem("b-item")))
 
     assertEquals(listOf("b-item"), rackRepository.getItems().map { it.id })
     setActive("a")
@@ -1754,28 +1762,28 @@ fun equipmentRackFollowsActiveProfile() = runTest {
 
 @Test
 fun healthImportWaitsForRequiredMigrationAndWritesActiveCore() = runTest {
-    migrationState.value = RequiredMigrationState.Applying
-    manager.importBodyWeightKg(81f)
+    val result = async { manager.syncLatestFromConnectedPlatform() }
+    runCurrent()
     assertEquals(0f, activeCore().bodyWeightKg)
-    migrationState.value = RequiredMigrationState.Ready
-    advanceUntilIdle()
+    migrationGate.state.value = RequiredMigrationState.Ready
+    assertIs<HealthBodyWeightSyncResult.Synced>(result.await())
     assertEquals(81f, activeCore().bodyWeightKg)
 }
 ```
 
-Add tests that voice stop is effectively false when intent is true but the active profile lacks a calibrated phrase, adult-only modes are ineffective without local consent, Just Lift/default exercise settings change on profile switch, and BLE reconnect/profile switch receives the active LED scheme.
+Add tests that voice stop is effectively false when intent is true but the active profile lacks a calibrated phrase, Just Lift/default exercise settings change on profile switch, active-profile setter cascades preserve the existing adult-consent invariants, and BLE reconnect/profile switch receives the active LED scheme. Task 6 owns the final runtime assertion that persisted adult-mode intent remains ineffective without local confirmation.
 
 Add this start-gate regression:
 
 ```kotlin
 @Test
 fun workoutStartIsRejectedWhileProfileContextIsSwitching() = runTest {
-    profileRepository.emitSwitchingForTest("profile-b")
+    profileRepository.recoverPendingProfileTransitionForStartup()
     engine.startWorkout()
     advanceUntilIdle()
 
-    assertIs<WorkoutState.Idle>(engine.workoutState.value)
-    assertEquals(0, fakeBleRepository.startWorkoutCalls)
+    assertIs<WorkoutState.Idle>(engine.coordinator.workoutState.value)
+    assertEquals(0, fakeBleRepository.workoutParameters.size)
 }
 ```
 
@@ -1784,7 +1792,7 @@ fun workoutStartIsRejectedWhileProfileContextIsSwitching() = runTest {
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*SettingsManagerTest*" --tests "*EquipmentRackRepositoryTest*" --tests "*HealthBodyWeightSyncManagerTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*SettingsManagerTest*" --tests "*EquipmentRackRepositoryTest*" --tests "*HealthBodyWeightSyncManagerTest*" --tests "*SafeWordDetectionManagerTest*" --tests "*BleConnectionManagerTest*" --tests "*ActiveSessionEngineIntegrationTest*" --console=plain
 ```
 
 Expected: FAIL because current setters and rack/body-weight consumers use global `PreferencesManager`.
@@ -1795,7 +1803,6 @@ Expected: FAIL because current setters and rack/body-weight consumers use global
 class SettingsManager(
     private val globalPreferences: PreferencesManager,
     private val userProfileRepository: UserProfileRepository,
-    private val bleRepository: BleRepository,
     private val scope: CoroutineScope,
 ) {
     val userPreferences: StateFlow<UserPreferences> = combine(
@@ -1842,37 +1849,69 @@ class SettingsManager(
 }
 ```
 
-Implement each profile setter as a copy of the active typed section followed by the matching repository update. Keep theme/video/language/backup/BLE/backfill setters delegated to `globalPreferences`. Keep legacy profile getters only for migration; mark them `@Deprecated("Legacy migration read only")` where call-site churn permits.
+Implement each profile setter as a serialized mutation of the active typed section. Capture the originating profile ID before launching, re-read the latest section after taking its section mutex, and verify the same profile is still active before writing. This prevents both an A-originated action from landing in B and queued same-section setters from overwriting one another with an old whole-section snapshot. Keep theme/video/language/backup/BLE-compatibility/backfill setters delegated to `globalPreferences`. Keep legacy profile getters only for migration; mark them `@Deprecated("Legacy migration read only")` where call-site churn permits. Hardware LED application belongs to `BleConnectionManager`, so `SettingsManager` no longer takes `BleRepository`.
 
 ```kotlin
+private val coreUpdates = Mutex()
+private val workoutUpdates = Mutex()
+private val ledUpdates = Mutex()
+private val vbtAndSafetyUpdates = Mutex()
+
 private fun ready(): ActiveProfileContext.Ready =
     userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
         ?: throw ProfileContextUnavailableException()
 
-private fun updateCore(transform: (CoreProfilePreferences) -> CoreProfilePreferences) = scope.launch {
-    val context = ready()
-    userProfileRepository.updateCore(context.profile.id, transform(context.preferences.core.value))
+private fun readyFor(expectedId: String): ActiveProfileContext.Ready {
+    val current = ready()
+    if (current.profile.id != expectedId) {
+        throw StaleProfileContextException(expectedId, current.profile.id)
+    }
+    return current
 }
 
-private fun updateWorkout(transform: (WorkoutPreferences) -> WorkoutPreferences) = scope.launch {
-    val context = ready()
-    userProfileRepository.updateWorkout(context.profile.id, transform(context.preferences.workout.value))
+private fun <T> updateSection(
+    mutex: Mutex,
+    read: (ActiveProfileContext.Ready) -> T,
+    write: suspend (String, T) -> Unit,
+    transform: (ActiveProfileContext.Ready, T) -> T?,
+) {
+    val expectedId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
+        ?.profile?.id
+        ?: run {
+            Logger.w { "Profile preference update ignored while switching" }
+            return
+        }
+    scope.launch {
+        try {
+            mutex.withLock {
+                val current = readyFor(expectedId)
+                val next = transform(current, read(current)) ?: return@withLock
+                write(expectedId, next)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: ProfileContextUnavailableException) {
+            Logger.w(error) { "Profile preference update skipped while switching" }
+        } catch (error: StaleProfileContextException) {
+            Logger.w(error) { "Profile preference update skipped after profile switch" }
+        }
+    }
 }
 
-private fun updateLed(transform: (LedPreferences) -> LedPreferences) = scope.launch {
-    val context = ready()
-    userProfileRepository.updateLed(context.profile.id, transform(context.preferences.led.value))
-}
+private fun updateCore(transform: (CoreProfilePreferences) -> CoreProfilePreferences) =
+    updateSection(coreUpdates, { it.preferences.core.value }, userProfileRepository::updateCore) { _, value -> transform(value) }
 
-private fun updateVbt(transform: (VbtPreferences) -> VbtPreferences) = scope.launch {
-    val context = ready()
-    userProfileRepository.updateVbt(context.profile.id, transform(context.preferences.vbt.value))
-}
+private fun updateWorkout(transform: (WorkoutPreferences) -> WorkoutPreferences) =
+    updateSection(workoutUpdates, { it.preferences.workout.value }, userProfileRepository::updateWorkout) { _, value -> transform(value) }
 
-private fun updateSafety(transform: (ProfileLocalSafetyPreferences) -> ProfileLocalSafetyPreferences) = scope.launch {
-    val context = ready()
-    userProfileRepository.updateLocalSafety(context.profile.id, transform(context.localSafety))
-}
+private fun updateLed(transform: (LedPreferences) -> LedPreferences) =
+    updateSection(ledUpdates, { it.preferences.led.value }, userProfileRepository::updateLed) { _, value -> transform(value) }
+
+private fun updateVbt(transform: (ActiveProfileContext.Ready, VbtPreferences) -> VbtPreferences?) =
+    updateSection(vbtAndSafetyUpdates, { it.preferences.vbt.value }, userProfileRepository::updateVbt, transform)
+
+private fun updateSafety(transform: (ActiveProfileContext.Ready, ProfileLocalSafetyPreferences) -> ProfileLocalSafetyPreferences) =
+    updateSection(vbtAndSafetyUpdates, { it.localSafety }, userProfileRepository::updateLocalSafety, transform)
 
 fun setWeightUnit(value: WeightUnit) = updateCore { it.copy(weightUnit = value) }
 fun setWeightIncrement(value: Float) = updateCore { it.copy(weightIncrement = value) }
@@ -1891,50 +1930,169 @@ fun setRepSoundEnabled(value: Boolean) = updateWorkout { it.copy(repSoundEnabled
 fun setMotionStartEnabled(value: Boolean) = updateWorkout { it.copy(motionStartEnabled = value) }
 fun setWeightSuggestionsEnabled(value: Boolean) = updateWorkout { it.copy(weightSuggestionsEnabled = value) }
 fun setDefaultRoutineExerciseUsePercentOfPR(value: Boolean) = updateWorkout { it.copy(defaultRoutineExerciseUsePercentOfPR = value) }
-fun setDefaultRoutineExerciseWeightPercentOfPR(value: Int) = updateWorkout { it.copy(defaultRoutineExerciseWeightPercentOfPR = value) }
+fun setDefaultRoutineExerciseWeightPercentOfPR(value: Int) = updateWorkout { it.copy(defaultRoutineExerciseWeightPercentOfPR = value.coerceIn(50, 120)) }
 fun setVoiceStopEnabled(value: Boolean) = updateWorkout { it.copy(voiceStopEnabled = value) }
 fun setColorScheme(value: Int) = updateLed { it.copy(colorScheme = value) }
 fun setDiscoModeUnlocked(value: Boolean) = updateLed { it.copy(discoModeUnlocked = value) }
-fun setVbtEnabled(value: Boolean) = updateVbt { it.copy(enabled = value) }
-fun setVelocityLossThreshold(value: Int) = updateVbt { it.copy(velocityLossThresholdPercent = value) }
-fun setAutoEndOnVelocityLoss(value: Boolean) = updateVbt { it.copy(autoEndOnVelocityLoss = value) }
-fun setDefaultScalingBasis(value: ScalingBasis) = updateVbt { it.copy(defaultScalingBasis = value) }
-fun setVerbalEncouragementEnabled(value: Boolean) = updateVbt { it.copy(verbalEncouragementEnabled = value) }
-fun setVulgarModeEnabled(value: Boolean) = updateVbt { it.copy(vulgarModeEnabled = value) }
-fun setVulgarTier(value: VulgarTier) = updateVbt { it.copy(vulgarTier = value) }
-fun setDominatrixModeUnlocked(value: Boolean) = updateVbt { it.copy(dominatrixModeUnlocked = value) }
-fun setDominatrixModeActive(value: Boolean) = updateVbt { it.copy(dominatrixModeActive = value) }
-fun setSafeWord(value: String?) = updateSafety { it.copy(safeWord = value) }
-fun setSafeWordCalibrated(value: Boolean) = updateSafety { it.copy(safeWordCalibrated = value) }
-fun setAdultsOnlyConfirmed(value: Boolean) = updateSafety { it.copy(adultsOnlyConfirmed = value) }
-fun setAdultsOnlyPrompted(value: Boolean) = updateSafety { it.copy(adultsOnlyPrompted = value) }
+fun setVbtEnabled(value: Boolean) = updateVbt { _, current -> current.copy(enabled = value) }
+fun setVelocityLossThreshold(value: Int) = updateVbt { _, current -> current.copy(velocityLossThresholdPercent = value.coerceIn(10, 50)) }
+fun setAutoEndOnVelocityLoss(value: Boolean) = updateVbt { _, current -> current.copy(autoEndOnVelocityLoss = value) }
+fun setDefaultScalingBasis(value: ScalingBasis) = updateVbt { _, current -> current.copy(defaultScalingBasis = value) }
+fun setVerbalEncouragementEnabled(value: Boolean) = updateVbt { _, current ->
+    if (value) current.copy(verbalEncouragementEnabled = true)
+    else current.copy(verbalEncouragementEnabled = false, vulgarModeEnabled = false, dominatrixModeActive = false)
+}
+fun setVulgarModeEnabled(value: Boolean) = updateVbt { context, current ->
+    when {
+        value && !context.localSafety.adultsOnlyPrompted -> null
+        !value -> current.copy(vulgarModeEnabled = false, dominatrixModeActive = false)
+        else -> current.copy(vulgarModeEnabled = true)
+    }
+}
+fun setVulgarTier(value: VulgarTier) = updateVbt { _, current -> current.copy(vulgarTier = value) }
+fun setDominatrixModeUnlocked(value: Boolean) = updateVbt { _, current -> current.copy(dominatrixModeUnlocked = value) }
+fun setDominatrixModeActive(value: Boolean) = updateVbt { context, current ->
+    if (value && (!current.dominatrixModeUnlocked || !current.vulgarModeEnabled || !context.localSafety.adultsOnlyConfirmed)) null
+    else current.copy(dominatrixModeActive = value)
+}
+fun setSafeWord(value: String?) = updateSafety { _, current -> current.copy(safeWord = value) }
+fun setSafeWordCalibrated(value: Boolean) = updateSafety { _, current -> current.copy(safeWordCalibrated = value) }
+fun setAdultsOnlyConfirmed(value: Boolean) = updateSafety { _, current ->
+    current.copy(adultsOnlyConfirmed = value, adultsOnlyPrompted = true)
+}
+fun isAdultsOnlyPrompted(): Boolean = ready().localSafety.adultsOnlyPrompted
+fun setAdultsOnlyPrompted(value: Boolean) = updateSafety { _, current -> current.copy(adultsOnlyPrompted = value) }
+
+fun confirmAdultsAndEnableVulgar() {
+    val expectedId = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
+        ?.profile?.id ?: return
+    scope.launch {
+        try {
+            vbtAndSafetyUpdates.withLock {
+                val before = readyFor(expectedId)
+                userProfileRepository.updateLocalSafety(
+                    expectedId,
+                    before.localSafety.copy(adultsOnlyConfirmed = true, adultsOnlyPrompted = true),
+                )
+                val afterSafety = readyFor(expectedId)
+                userProfileRepository.updateVbt(
+                    expectedId,
+                    afterSafety.preferences.vbt.value.copy(vulgarModeEnabled = true),
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: ProfileContextUnavailableException) {
+            Logger.w(error) { "Adult consent update stopped while switching" }
+        } catch (error: StaleProfileContextException) {
+            Logger.w(error) { "Adult consent update stopped after profile switch" }
+        }
+    }
+}
 ```
+
+Keep the existing clamp/cascade regression behavior in `SettingsManagerTest`: routine default percentage `50..120`; velocity threshold `10..50`; verbal-off clears vulgar and active Dominatrix; vulgar-off clears active Dominatrix; vulgar-on requires `adultsOnlyPrompted`; Dominatrix-on requires unlocked + vulgar intent + local confirmation; confirmation atomically implies prompted; prompted-only never changes confirmation. Disabling `vbtEnabled` preserves every subordinate VBT value. Expose `MainViewModel.confirmAdultsAndEnableVulgar`, add one `SettingsTab` callback for it, wire that callback in `NavGraph`, and replace the dialog's immediate confirmed → prompted → vulgar callback trio with the composite call. Add a queued/concurrent regression proving the composite never reads stale consent or enables profile B. The legacy `VerbalEncouragementPreferenceCascadeTest` remains unchanged as migration-source coverage; port the equivalent active-profile facade assertions into `SettingsManagerTest`.
 
 - [ ] **Step 4: Make rack, body-weight, quick-start, safety, and LED consumers active-profile aware**
 
 Use these concrete boundaries:
 
 ```kotlin
+interface RequiredMigrationGate {
+    val requiredMigrationState: StateFlow<RequiredMigrationState>
+    suspend fun awaitRequiredMigrations()
+}
+
+class MigrationManager(/* existing required dependencies */) : RequiredMigrationGate {
+    override val requiredMigrationState: StateFlow<RequiredMigrationState> = /* existing state */
+    override suspend fun awaitRequiredMigrations() { /* existing implementation */ }
+}
+
 class ProfileEquipmentRackRepository(
     private val profiles: UserProfileRepository,
+    private val scope: CoroutineScope,
 ) : EquipmentRackRepository {
-    override val items: Flow<List<RackItem>> = profiles.activeProfileContext
-        .map { (it as? ActiveProfileContext.Ready)?.preferences?.rack?.value?.items.orEmpty() }
-        .distinctUntilChanged()
+    private val mutations = Mutex()
 
-    override suspend fun replaceItems(items: List<RackItem>) {
-        val ready = profiles.activeProfileContext.value as? ActiveProfileContext.Ready
+    private fun items(context: ActiveProfileContext): List<RackItem> =
+        (context as? ActiveProfileContext.Ready)?.preferences?.rack?.value?.items.orEmpty()
+
+    override val rackItems: StateFlow<List<RackItem>> = profiles.activeProfileContext
+        .map(::items)
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, items(profiles.activeProfileContext.value))
+
+    private fun ready(): ActiveProfileContext.Ready =
+        profiles.activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
-        profiles.updateRack(ready.profile.id, ready.preferences.rack.value.copy(items = items))
+
+    private fun readyFor(expectedId: String): ActiveProfileContext.Ready {
+        val current = ready()
+        if (current.profile.id != expectedId) {
+            throw StaleProfileContextException(expectedId, current.profile.id)
+        }
+        return current
     }
+
+    private suspend fun mutate(
+        expectedId: String,
+        transform: (RackPreferences) -> RackPreferences,
+    ) = mutations.withLock {
+        val current = readyFor(expectedId)
+        profiles.updateRack(expectedId, transform(current.preferences.rack.value))
+    }
+
+    override suspend fun getItems(): List<RackItem> = ready().preferences.rack.value.items
+
+    override suspend fun saveItems(items: List<RackItem>) {
+        val expectedId = ready().profile.id
+        mutate(expectedId) { it.copy(items = items) }
+    }
+
+    override suspend fun upsert(item: RackItem) {
+        val expectedId = ready().profile.id
+        mutate(expectedId) { current ->
+            val items = current.items.toMutableList()
+            val index = items.indexOfFirst { it.id == item.id }
+            if (index >= 0) items[index] = item else items += item
+            current.copy(items = items)
+        }
+    }
+
+    override suspend fun delete(id: String) {
+        val expectedId = ready().profile.id
+        mutate(expectedId) { current -> current.copy(items = current.items.filterNot { it.id == id }) }
+    }
+
+    override suspend fun resolveActiveItems(selection: ActiveRackSelection): List<RackItem> {
+        val byId = getItems().filter { it.enabled }.associateBy { it.id }
+        return selection.distinctItemIds.mapNotNull(byId::get)
+    }
+
+    fun close() = scope.cancel()
 }
 
 private suspend fun awaitReadyProfile(): ActiveProfileContext.Ready {
-    migrationManager.awaitRequiredMigrations()
+    requiredMigrationGate.awaitRequiredMigrations()
     return userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
         ?: throw ProfileContextUnavailableException()
 }
 ```
+
+Keep `SettingsEquipmentRackRepository` as the explicit legacy implementation, but replace its production `DataModule` binding with a lifecycle-cleaned singleton:
+
+```kotlin
+single<EquipmentRackRepository> {
+    ProfileEquipmentRackRepository(
+        profiles = get(),
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    )
+} onClose { repository ->
+    (repository as? ProfileEquipmentRackRepository)?.close()
+}
+```
+
+Tests pass `backgroundScope` explicitly so no eager collector survives the test. Bind `single<RequiredMigrationGate> { get<MigrationManager>() }` in `DomainModule`. Replace `PreferencesManager` in `HealthBodyWeightSyncManager` with `RequiredMigrationGate`, and use named arguments in `SyncModule` so the changed same-arity constructor cannot silently swap dependencies.
 
 Call `awaitReadyProfile()` at the start of the existing `syncLatestFromConnectedPlatform()` flow, use its profile ID instead of falling back to `"default"`, and replace the global write with:
 
@@ -1948,7 +2106,37 @@ externalMeasurementRepository.upsertMeasurements(listOf(measurement))
 
 Perform the core update before inserting `ExternalBodyMeasurement`, and convert `StaleProfileContextException` into `HealthBodyWeightSyncResult.Failed` so a concurrent switch never writes the new profile.
 
-Change `SafeWordDetectionManager` to consume effective state derived from `ActiveProfileContext.Ready`: intent, nonblank phrase, calibration, and local adult consent all must agree before their respective runtime feature activates. Change `DefaultWorkoutSessionManager` and `ActiveSessionEngine` quick-start reads to `SettingsManager.userPreferences` or the ready workout section. Change MainViewModel's disco unlock write to `updateLed`. Change BLE color application to collect active LED changes while connected, not just the initial connect snapshot.
+Change `SafeWordDetectionManager` to consume `ActiveProfileContext.Ready`: voice-stop intent, a nonblank local phrase, and local calibration must all agree before the listener starts. Because `SafeWordListener` is a final expect/actual class, keep the new common test at the factory boundary: a factory whose `create` body increments a counter then throws proves invalid effective state never invokes it and a fully valid active context does invoke it, without introducing a production listener abstraction solely for tests. Existing platform listener tests remain unchanged. Change `DefaultWorkoutSessionManager` and `ActiveSessionEngine` quick-start reads to `SettingsManager.userPreferences` or the ready workout section. Change MainViewModel's disco unlock write to `updateLed`.
+
+Move hardware color application entirely into `BleConnectionManager`; `SettingsManager.setColorScheme` only persists the active LED section. Replace the connect-only snapshot with a combined collector so both reconnect and profile switch reapply the correct scheme:
+
+```kotlin
+scope.launch {
+    try {
+        combine(
+            bleRepository.connectionState,
+            settingsManager.userPreferences.map { it.colorScheme },
+        ) { connection, color ->
+            (connection is ConnectionState.Connected) to color
+        }
+            .distinctUntilChanged()
+            .collect { (connected, color) ->
+                bleRepository.setLastColorSchemeIndex(color)
+                if (connected) {
+                    bleRepository.setColorScheme(color).onFailure { error ->
+                        Logger.e(error) { "Failed to apply active profile LED color" }
+                    }
+                }
+            }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Logger.e(error) { "Error collecting active profile LED color" }
+    }
+}
+```
+
+Keeping disconnected `(false, color)` emissions ensures reconnecting with the same color still emits `(true, color)` and reapplies it.
 
 Insert this as the first executable block in the existing `ActiveSessionEngine.startWorkout` method, before logging or coordinator mutation:
 
@@ -1959,29 +2147,38 @@ if (userProfileRepository.activeProfileContext.value !is ActiveProfileContext.Re
 }
 ```
 
-Map quick-start values explicitly at the ActiveSessionEngine boundary:
+Expose document-level quick-start accessors on `SettingsManager` so saves reuse its profile-ID capture and serialized workout mutation:
+
+```kotlin
+fun getSingleExerciseDefaultsDocument(exerciseId: String): SingleExerciseDefaultsDocument? =
+    ready().preferences.workout.value.singleExerciseDefaults[exerciseId]
+
+fun saveSingleExerciseDefaultsDocument(document: SingleExerciseDefaultsDocument) =
+    updateWorkout { current ->
+        current.copy(singleExerciseDefaults = current.singleExerciseDefaults + (document.exerciseId to document))
+    }
+
+fun getJustLiftDefaultsDocument(): JustLiftDefaultsDocument =
+    ready().preferences.workout.value.justLiftDefaults
+
+fun saveJustLiftDefaultsDocument(document: JustLiftDefaultsDocument) =
+    updateWorkout { current -> current.copy(justLiftDefaults = document) }
+```
+
+Map runtime values explicitly at the `ActiveSessionEngine` boundary, reusing the existing complete single-exercise converters in `ProfileWorkoutDefaultsMapper.kt`:
 
 ```kotlin
 suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? =
-    ready().preferences.workout.value.singleExerciseDefaults[exerciseId]?.toLegacySingleExerciseDefaults()
+    settingsManager.getSingleExerciseDefaultsDocument(exerciseId)?.toLegacySingleExerciseDefaults()
 
-fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) = scope.launch {
-    val context = ready()
-    val current = context.preferences.workout.value
-    userProfileRepository.updateWorkout(
-        context.profile.id,
-        current.copy(singleExerciseDefaults = current.singleExerciseDefaults + (defaults.exerciseId to defaults.toDocument())),
-    )
-}
+fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) =
+    settingsManager.saveSingleExerciseDefaultsDocument(defaults.toDocument())
 
 suspend fun getJustLiftDefaults(): JustLiftDefaults =
-    ready().preferences.workout.value.justLiftDefaults.toRuntimeJustLiftDefaults()
+    settingsManager.getJustLiftDefaultsDocument().toRuntimeJustLiftDefaults()
 
-fun saveJustLiftDefaults(defaults: JustLiftDefaults) = scope.launch {
-    val context = ready()
-    val current = context.preferences.workout.value
-    userProfileRepository.updateWorkout(context.profile.id, current.copy(justLiftDefaults = defaults.toDocument()))
-}
+fun saveJustLiftDefaults(defaults: JustLiftDefaults) =
+    settingsManager.saveJustLiftDefaultsDocument(defaults.toDocument())
 
 private fun JustLiftDefaults.toDocument() = JustLiftDefaultsDocument(
     workoutModeId = workoutModeId,
@@ -2006,24 +2203,27 @@ private fun JustLiftDefaultsDocument.toRuntimeJustLiftDefaults() = JustLiftDefau
 )
 ```
 
-Tests assert lossless round trips, including rack item IDs and per-set arrays. The Just Lift display-unit increment intentionally rounds at the existing runtime boundary, matching its current `Int` type.
+Route `saveJustLiftDefaultsFromWorkout` and `saveSingleExerciseDefaultsFromWorkout` through the same document accessors; no active-profile quick-start path may call legacy `PreferencesManager`. Tests assert lossless round trips, including rack item IDs and per-set arrays. The Just Lift display-unit increment intentionally rounds at the existing runtime boundary, matching its current `Int` type.
 
 - [ ] **Step 5: Update direct construction sites and pass focused tests**
 
-Update MainViewModel's direct SettingsManager construction, DefaultWorkoutSessionManager tests/fakes, ActiveSessionEngine test fixtures, SafeWord fixtures, and BLE manager fixtures to provide `UserProfileRepository`. Remove profile-owned writes from `PreferencesManager`; retain the old keys and snapshot-reading APIs.
+Update MainViewModel's direct construction to `SettingsManager(preferencesManager, userProfileRepository, viewModelScope)`. Initialize a single shared `FakeUserProfileRepository().apply { setActiveProfileForTest() }` in the DWSM harness, MainViewModel tests, workout E2E tests, ActiveSessionEngine fixtures, SafeWord fixtures, and BLE fixtures; pass that same ready fake to every profile-aware collaborator in the fixture. Use `recoverPendingProfileTransitionForStartup()` when a test specifically needs `Switching`. Remove profile-owned writes from `PreferencesManager`; retain the old keys and snapshot-reading APIs for Task 4 migration. Keep `SettingsEquipmentRackRepository` available but unbound in production.
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*SettingsManagerTest*" --tests "*SettingsPreferencesManagerTest*" --tests "*EquipmentRackRepositoryTest*" --tests "*HealthBodyWeightSyncManagerTest*" --tests "*SafeWord*" --tests "*BleConnectionManagerTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*SettingsManagerTest*" --tests "*SettingsPreferencesManagerTest*" --tests "*EquipmentRackRepositoryTest*" --tests "*HealthBodyWeightSyncManagerTest*" --tests "*SafeWordDetectionManagerTest*" --tests "*BleConnectionManagerTest*" --tests "*ActiveSessionEngineIntegrationTest*" --tests "*MainViewModelTest*" --tests "*WorkoutFlowE2ETest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*DWSM*" --tests "*BodyweightRackLoadTest*" --tests "*CycleRoutineLoadFallbackTest*" --tests "*Issue593BodyweightRepEntryTest*" --tests "*WarmupProgressionTest*" --tests "*WarmupTransitionToneTest*" --tests "*WeightRecommendationIntegrationTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileAndroidMain :shared:testAndroidHostTest --tests "*KoinModuleVerifyTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --console=plain
 ```
 
-Expected: PASS; A/B consumers change immediately and legacy values remain unchanged after profile setters.
+Expected: PASS; A/B consumers change immediately, stale queued actions never mutate the newly active profile, same-section setters do not lose sibling changes, legacy values remain unchanged after profile setters, the production Koin graph resolves the new gate/rack/health boundaries, and the unfiltered host suite catches every shared fake/constructor call site.
 
 - [ ] **Step 6: Commit active-profile consumer routing**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/PreferencesManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/SettingsManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/EquipmentRackRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/integration/HealthBodyWeightSyncManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordDetectionManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/DefaultWorkoutSessionManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/BleConnectionManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/SettingsPreferencesManagerTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/repository/EquipmentRackRepositoryTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/integration/HealthBodyWeightSyncManagerTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/ble/KableBleConnectionManagerTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePreferencesManager.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/DWSMTestHarness.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/DWSMWorkoutLifecycleTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/DWSMRoutineFlowTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/DWSMEquipmentRackTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngineIntegrationTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/manager/SettingsManagerTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/manager/BleConnectionManagerTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/domain/voice/SafeWordListenerIosAudioTapGuardTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/RequiredMigrationGate.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/PreferencesManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/SettingsManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/EquipmentRackRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/integration/HealthBodyWeightSyncManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordDetectionManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/DefaultWorkoutSessionManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/BleConnectionManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt shared/src/commonTest shared/src/androidHostTest
 git commit -m "refactor: route training settings through active profile"
 ```
 
@@ -2646,32 +2846,47 @@ git commit -m "feat: back up profile preferences in schema v5"
 **Files:**
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt`
 - Modify any platform constructor binding identified in Tasks 4, 5, and 8.
 
 **Interfaces:**
 - Consumes: every implementation in this plan.
-- Produces: a verified Android/iOS Koin graph and the stable foundation required by both later plans.
+- Produces: a statically verified common/Android-host Koin graph, successful iOS DI compilation, and the stable foundation required by both later plans.
 
-- [ ] **Step 1: Add a failing Koin graph test for every new boundary**
+- [ ] **Step 1: Keep the existing static Koin graph verification current**
 
 ```kotlin
+private val platformProvidedTypes = listOf(
+    DriverFactory::class,
+    Settings::class,
+    BleRepository::class,
+    CsvExporter::class,
+    CsvImporter::class,
+    DataBackupManager::class,
+    ConnectivityChecker::class,
+    SupabaseConfig::class,
+    SafeWordListenerFactory::class,
+    HealthIntegration::class,
+    HealthWorkoutWriter::class,
+    WorkoutServiceController::class,
+    Function0::class,
+    Function2::class,
+    Function3::class,
+    Function4::class,
+    Function5::class,
+)
+
 @Test
-fun profilePreferenceFoundationResolves() {
-    startTestKoin().use { koin ->
-        assertIs<SqlDelightProfilePreferencesRepository>(koin.get<ProfilePreferencesRepository>())
-        assertIs<SettingsProfileLocalSafetyStore>(koin.get<ProfileLocalSafetyStore>())
-        assertNotNull(koin.get<LegacyProfilePreferencesReader>())
-        assertNotNull(koin.get<UserProfileRepository>())
-        assertNotNull(koin.get<MigrationManager>())
-        assertNotNull(koin.get<SettingsManager>())
-        assertNotNull(koin.get<DataBackupManager>())
-    }
+fun verifyAppModule() {
+    appModule.verify(extraTypes = platformProvidedTypes)
 }
 ```
 
-- [ ] **Step 2: Run Koin verification and confirm missing bindings**
+Do not invent a runtime `startTestKoin().use` fixture: the project has no such helper, and its platform graph needs concrete Android dependencies. The JVM `verify` test cross-checks every constructor definition in `appModule`; Task 5's focused behavior tests establish the concrete gate/rack/health/safe-word implementations, and Step 5 separately compiles the iOS module.
+
+- [ ] **Step 2: Run Koin verification**
 
 Run:
 
@@ -2679,16 +2894,11 @@ Run:
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*KoinModuleVerifyTest*" --console=plain
 ```
 
-Expected: FAIL only for bindings introduced after Task 4, such as refactored manager/health/safety consumers or changed backup constructor dependencies. The focused preference stores, expanded `UserProfileRepository`, legacy reader, and expanded `MigrationManager` bindings already compile from Tasks 3-4.
+Expected: PASS. If it fails, a Task 3-8 binding or required `extraTypes` entry was missed; fix that omission before continuing rather than documenting an expected partial graph.
 
 - [ ] **Step 3: Complete the remaining graph bindings**
 
-```kotlin
-single { SettingsManager(globalPreferences = get(), userProfileRepository = get(), bleRepository = get(), scope = get()) }
-single<EquipmentRackRepository> { ProfileEquipmentRackRepository(get()) }
-```
-
-Retain and verify Task 3's focused-store/expanded `UserProfileRepository` registrations and Task 4's legacy-reader/expanded `MigrationManager` registrations; do not add duplicate definitions. Update health import, safe-word, backup, MainViewModel, and platform host bindings with their new arguments. Avoid a dependency cycle: `UserProfileRepository` may depend on focused stores and gamification, but neither focused store may depend on `UserProfileRepository`.
+Retain and verify Task 3's focused-store/expanded `UserProfileRepository` registrations, Task 4's legacy-reader/expanded `MigrationManager`, and Task 5's `RequiredMigrationGate`, profile rack, health, and safe-word registrations; do not add duplicate definitions. `SettingsManager` remains owned by `MainViewModel` because it requires `viewModelScope`; do not register it as an application singleton. Repair only genuine omissions reported by `verify`, then update any remaining MainViewModel/platform host arguments. Avoid a dependency cycle: `UserProfileRepository` may depend on focused stores and gamification, but neither focused store may depend on `UserProfileRepository`.
 
 - [ ] **Step 4: Run focused and full shared verification**
 
@@ -2727,7 +2937,7 @@ Expected: the first command finds only deprecated legacy-migration read compatib
 - [ ] **Step 7: Commit final wiring**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt
 git commit -m "chore: wire profile preference foundation"
 ```
 
