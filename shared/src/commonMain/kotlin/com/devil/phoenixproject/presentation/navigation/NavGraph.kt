@@ -25,18 +25,91 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.savedstate.read
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.screen.*
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.BackupDestination
+import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.insights_title
+
+internal sealed interface AssessmentProfileDestinationState {
+    data class Bound(val profileId: String) : AssessmentProfileDestinationState
+
+    data object Invalidated : AssessmentProfileDestinationState
+}
+
+internal fun resolveAssessmentProfileDestination(
+    routeProfileId: String,
+    context: ActiveProfileContext,
+): AssessmentProfileDestinationState = if (
+    routeProfileId.isNotBlank() &&
+    context is ActiveProfileContext.Ready &&
+    context.profile.id == routeProfileId
+) {
+    AssessmentProfileDestinationState.Bound(routeProfileId)
+} else {
+    AssessmentProfileDestinationState.Invalidated
+}
+
+@Composable
+private fun AssessmentDestination(
+    routeProfileId: String,
+    exerciseId: String?,
+    themeMode: ThemeMode,
+    metricsFlow: StateFlow<WorkoutMetric?>,
+    onNavigateBack: () -> Unit,
+) {
+    val profileRepository: UserProfileRepository = koinInject()
+    val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
+    val destinationState = resolveAssessmentProfileDestination(
+        routeProfileId = routeProfileId,
+        context = activeProfileContext,
+    )
+    LaunchedEffect(destinationState) {
+        if (destinationState == AssessmentProfileDestinationState.Invalidated) {
+            onNavigateBack()
+        }
+    }
+
+    when (destinationState) {
+        is AssessmentProfileDestinationState.Bound -> {
+            val assessmentViewModel: AssessmentViewModel = koinViewModel()
+            AssessmentWizardScreen(
+                viewModel = assessmentViewModel,
+                profileId = destinationState.profileId,
+                exerciseId = exerciseId,
+                themeMode = themeMode,
+                onNavigateBack = onNavigateBack,
+                metricsFlow = metricsFlow,
+            )
+        }
+
+        AssessmentProfileDestinationState.Invalidated -> Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            LoadingIndicator(LoadingIndicatorSize.Large)
+        }
+    }
+}
+
+@Composable
+private fun readyAssessmentProfileId(): String? {
+    val profileRepository: UserProfileRepository = koinInject()
+    val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
+    return (activeProfileContext as? ActiveProfileContext.Ready)?.profile?.id
+}
 
 /**
  * Main navigation graph for the app.
@@ -244,11 +317,15 @@ fun NavGraph(
                 popEnterTransition = { NavTransitions.tabFadeEnter() },
                 popExitTransition = { NavTransitions.tabFadeExit() },
             ) {
+                val assessmentProfileId = readyAssessmentProfileId()
                 AnalyticsScreen(
                     viewModel = viewModel,
                     themeMode = themeMode,
-                    onNavigateToStrengthAssessment = {
-                        navController.navigate(NavigationRoutes.StrengthAssessmentPicker.route)
+                    assessmentProfileId = assessmentProfileId,
+                    onNavigateToStrengthAssessment = { profileId ->
+                        navController.navigate(
+                            NavigationRoutes.StrengthAssessmentPicker.createRoute(profileId),
+                        )
                     },
                 )
             }
@@ -309,11 +386,18 @@ fun NavGraph(
                     return@composable
                 }
 
+                val assessmentProfileId = readyAssessmentProfileId()
                 ExerciseDetailScreen(
                     exerciseId = exerciseId,
                     navController = navController,
                     viewModel = viewModel,
                     themeMode = themeMode,
+                    assessmentProfileId = assessmentProfileId,
+                    onNavigateToStrengthAssessment = { profileId ->
+                        navController.navigate(
+                            NavigationRoutes.StrengthAssessment.createRoute(profileId, exerciseId),
+                        )
+                    },
                 )
             }
 
@@ -685,44 +769,7 @@ fun NavGraph(
             // Strength Assessment Picker - no exercise pre-selected
             composable(
                 route = NavigationRoutes.StrengthAssessmentPicker.route,
-                enterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300),
-                    )
-                },
-                exitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300),
-                    )
-                },
-                popEnterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300),
-                    )
-                },
-                popExitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300),
-                    )
-                },
-            ) {
-                val assessmentViewModel: AssessmentViewModel = koinInject()
-                AssessmentWizardScreen(
-                    viewModel = assessmentViewModel,
-                    themeMode = themeMode,
-                    onNavigateBack = { navController.popBackStack() },
-                    metricsFlow = viewModel.currentMetric,
-                )
-            }
-
-            // Strength Assessment with pre-selected exercise
-            composable(
-                route = NavigationRoutes.StrengthAssessment.route,
-                arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
+                arguments = listOf(navArgument("profileId") { type = NavType.StringType }),
                 enterTransition = {
                     slideIntoContainer(
                         towards = AnimatedContentTransitionScope.SlideDirection.Left,
@@ -748,10 +795,55 @@ fun NavGraph(
                     )
                 },
             ) { backStackEntry ->
-                val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") } ?: ""
-                val assessmentViewModel: AssessmentViewModel = koinInject()
-                AssessmentWizardScreen(
-                    viewModel = assessmentViewModel,
+                val profileId =
+                    backStackEntry.arguments?.read { getStringOrNull("profileId") }.orEmpty()
+                AssessmentDestination(
+                    routeProfileId = profileId,
+                    exerciseId = null,
+                    themeMode = themeMode,
+                    onNavigateBack = { navController.popBackStack() },
+                    metricsFlow = viewModel.currentMetric,
+                )
+            }
+
+            // Strength Assessment with pre-selected exercise
+            composable(
+                route = NavigationRoutes.StrengthAssessment.route,
+                arguments = listOf(
+                    navArgument("profileId") { type = NavType.StringType },
+                    navArgument("exerciseId") { type = NavType.StringType },
+                ),
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) { backStackEntry ->
+                val profileId =
+                    backStackEntry.arguments?.read { getStringOrNull("profileId") }.orEmpty()
+                val exerciseId =
+                    backStackEntry.arguments?.read { getStringOrNull("exerciseId") }.orEmpty()
+                AssessmentDestination(
+                    routeProfileId = profileId,
                     exerciseId = exerciseId,
                     themeMode = themeMode,
                     onNavigateBack = { navController.popBackStack() },

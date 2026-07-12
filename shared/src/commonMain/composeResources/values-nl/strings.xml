@@ -321,6 +321,7 @@
     <string name="actual_weight_label">Werkelijk gebruikt gewicht (kg)</string>
     <string name="mean_velocity_label">Gemiddelde snelheid (m/s)</string>
     <string name="cancel_assessment">Beoordeling annuleren</string>
+    <string name="assessment_save_failed">De krachtmeting kon niet worden opgeslagen. Probeer het opnieuw.</string>
     <string name="enter_estimate_label">Voer je eigen schatting in (kg)</string>
     <string name="leave_empty_hint">Laat leeg om de berekende waarde te gebruiken</string>
     <string name="enter_valid_number">Voer een geldig getal in</string>

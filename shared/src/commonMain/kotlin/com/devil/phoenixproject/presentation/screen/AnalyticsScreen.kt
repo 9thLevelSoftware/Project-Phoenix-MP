@@ -264,7 +264,8 @@ fun ProgressTab(
 fun AnalyticsScreen(
     viewModel: MainViewModel,
     themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
-    onNavigateToStrengthAssessment: () -> Unit,
+    assessmentProfileId: String?,
+    onNavigateToStrengthAssessment: (String) -> Unit,
 ) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
@@ -478,7 +479,9 @@ fun AnalyticsScreen(
                         exerciseRepository = viewModel.exerciseRepository,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
-                        onNavigateToStrengthAssessment = onNavigateToStrengthAssessment,
+                        onNavigateToStrengthAssessment = {
+                            assessmentProfileId?.let(onNavigateToStrengthAssessment)
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
 

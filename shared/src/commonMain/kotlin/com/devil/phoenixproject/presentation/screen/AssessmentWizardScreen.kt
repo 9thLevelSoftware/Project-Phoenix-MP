@@ -32,6 +32,7 @@ import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
+import com.devil.phoenixproject.presentation.viewmodel.AssessmentUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
@@ -65,13 +66,25 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 @Composable
 fun AssessmentWizardScreen(
     viewModel: AssessmentViewModel,
+    profileId: String,
     exerciseId: String? = null,
     themeMode: ThemeMode,
     onNavigateBack: () -> Unit,
     metricsFlow: StateFlow<WorkoutMetric?>? = null,
 ) {
+    require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
     val currentStep by viewModel.currentStep.collectAsState()
     val exercises by viewModel.exercises.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val saveFailureMessage = stringResource(Res.string.assessment_save_failed)
+    LaunchedEffect(viewModel, saveFailureMessage) {
+        viewModel.events.collect { event ->
+            when (event) {
+                AssessmentUiEvent.SaveFailed ->
+                    snackbarHostState.showSnackbar(saveFailureMessage)
+            }
+        }
+    }
 
     // Auto-select exercise if ID is provided
     LaunchedEffect(exerciseId, exercises) {
@@ -124,7 +137,12 @@ fun AssessmentWizardScreen(
 
                     is AssessmentStep.Results -> ResultsContent(
                         step = step,
-                        onAccept = viewModel::acceptResult,
+                        onAccept = { overrideKg ->
+                            viewModel.acceptResult(
+                                profileId = profileId,
+                                overrideKg = overrideKg,
+                            )
+                        },
                         onDiscard = viewModel::reset,
                     )
 
@@ -137,6 +155,10 @@ fun AssessmentWizardScreen(
                 }
             }
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 
@@ -280,13 +302,6 @@ private fun ExerciseSelectionContent(
                                 text = exercise.muscleGroup,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (exercise.oneRepMaxKg != null) {
-                            Text(
-                                text = "${exercise.oneRepMaxKg} kg",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.tertiary,
                             )
                         }
                     }

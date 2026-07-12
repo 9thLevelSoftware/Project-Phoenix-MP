@@ -2005,6 +2005,12 @@ DELETE FROM ProgressionEvent WHERE id = ?;
 updateOneRepMax:
 UPDATE Exercise SET one_rep_max_kg = ? WHERE id = ?;
 
+restoreOneRepMaxIfCurrent:
+UPDATE Exercise
+SET one_rep_max_kg = :previousOneRepMaxKg
+WHERE id = :exerciseId
+  AND one_rep_max_kg = :attemptedOneRepMaxKg;
+
 getExercisesWithOneRepMax:
 SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
 

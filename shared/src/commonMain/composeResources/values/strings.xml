@@ -376,6 +376,7 @@
     <string name="actual_weight_label">Actual Weight Used (kg)</string>
     <string name="mean_velocity_label">Mean Velocity (m/s)</string>
     <string name="cancel_assessment">Cancel Assessment</string>
+    <string name="assessment_save_failed">Couldn’t save the assessment. Try again.</string>
     <string name="enter_estimate_label">Enter your own estimate (kg)</string>
     <string name="leave_empty_hint">Leave empty to use the calculated value</string>
     <string name="enter_valid_number">Please enter a valid number</string>

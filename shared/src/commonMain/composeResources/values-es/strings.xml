@@ -320,6 +320,7 @@
     <string name="actual_weight_label">Peso realmente usado (kg)</string>
     <string name="mean_velocity_label">Velocidad media (m/s)</string>
     <string name="cancel_assessment">Cancelar evaluación</string>
+    <string name="assessment_save_failed">No se pudo guardar la evaluación. Inténtalo de nuevo.</string>
     <string name="enter_estimate_label">Ingresa tu propia estimación (kg)</string>
     <string name="leave_empty_hint">Deja vacío para usar el valor calculado</string>
     <string name="enter_valid_number">Por favor ingresa un número válido</string>

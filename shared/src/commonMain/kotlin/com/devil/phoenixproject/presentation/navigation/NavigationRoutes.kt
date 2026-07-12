@@ -47,10 +47,20 @@ sealed class NavigationRoutes(val route: String) {
     object LinkAccount : NavigationRoutes("link_account")
 
     // Strength Assessment - VBT-based 1RM estimation with BLE velocity capture
-    object StrengthAssessment : NavigationRoutes("strength_assessment/{exerciseId}") {
-        fun createRoute(exerciseId: String) = "strength_assessment/${exerciseId.encodeRouteSegment()}"
+    object StrengthAssessment : NavigationRoutes("strength_assessment/{profileId}/{exerciseId}") {
+        fun createRoute(profileId: String, exerciseId: String): String {
+            require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
+            require(exerciseId.isNotBlank()) { "Assessment exerciseId must not be blank" }
+            return "strength_assessment/${profileId.encodeRouteSegment()}/${exerciseId.encodeRouteSegment()}"
+        }
     }
-    object StrengthAssessmentPicker : NavigationRoutes("strength_assessment_picker")
+
+    object StrengthAssessmentPicker : NavigationRoutes("strength_assessment_picker/{profileId}") {
+        fun createRoute(profileId: String): String {
+            require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
+            return "strength_assessment_picker/${profileId.encodeRouteSegment()}"
+        }
+    }
 
     // Integration routes
     object Integrations : NavigationRoutes("integrations")

@@ -320,6 +320,7 @@
     <string name="actual_weight_label">Tatsächlich verwendetes Gewicht (kg)</string>
     <string name="mean_velocity_label">Durchschnittsgeschwindigkeit (m/s)</string>
     <string name="cancel_assessment">Bewertung abbrechen</string>
+    <string name="assessment_save_failed">Die Kraftmessung konnte nicht gespeichert werden. Versuche es erneut.</string>
     <string name="enter_estimate_label">Eigene Schätzung eingeben (kg)</string>
     <string name="leave_empty_hint">Leer lassen, um den berechneten Wert zu verwenden</string>
     <string name="enter_valid_number">Bitte gib eine gültige Zahl ein</string>

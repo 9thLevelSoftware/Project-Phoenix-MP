@@ -33,7 +33,6 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.presentation.components.charts.ProgressionLineChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
-import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
@@ -55,7 +54,14 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewModel: MainViewModel, themeMode: ThemeMode) {
+fun ExerciseDetailScreen(
+    exerciseId: String,
+    navController: NavController,
+    viewModel: MainViewModel,
+    themeMode: ThemeMode,
+    assessmentProfileId: String?,
+    onNavigateToStrengthAssessment: (String) -> Unit,
+) {
     val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
@@ -168,11 +174,9 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
                 item {
                     OutlinedButton(
                         onClick = {
-                            navController.navigate(
-                                NavigationRoutes.StrengthAssessment.createRoute(exerciseId),
-                            )
+                            assessmentProfileId?.let(onNavigateToStrengthAssessment)
                         },
-                        enabled = isConnected,
+                        enabled = isConnected && assessmentProfileId != null,
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.small,
                     ) {
