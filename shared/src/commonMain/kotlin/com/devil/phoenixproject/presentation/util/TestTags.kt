@@ -32,6 +32,7 @@ object TestTags {
     const val SCREEN_ANALYTICS = "screen-analytics"
     const val SCREEN_SMART_INSIGHTS = "screen-smart-insights"
     const val SCREEN_SETTINGS = "screen-settings"
+    const val SCREEN_PROFILE = "screen-profile"
     const val SCREEN_LINK_ACCOUNT = "screen-link-account"
     const val SCREEN_BADGES = "screen-badges"
     const val SCREEN_CONNECTION_LOGS = "screen-connection-logs"

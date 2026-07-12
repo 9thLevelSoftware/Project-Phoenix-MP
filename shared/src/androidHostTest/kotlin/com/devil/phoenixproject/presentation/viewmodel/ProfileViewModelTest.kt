@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
+import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -18,12 +19,17 @@ import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -520,6 +526,283 @@ class ProfileViewModelTest {
                 viewModel.uiState.value.prHighlights,
             ).value,
         )
+    }
+
+    @Test
+    fun `trimmed normalized update targets current Ready and succeeds after authoritative value`() = runTest {
+        profiles.seedReadyProfileForTest("a", name = "Before", colorIndex = 2)
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        runCurrent()
+
+        viewModel.updateIdentity("  After  ", 99)
+
+        val inFlight = assertNotNull(viewModel.uiState.value.identityMutation)
+        assertEquals("a", inFlight.profileId)
+        assertEquals(ProfileIdentityMutationKind.UPDATE, inFlight.kind)
+        advanceUntilIdle()
+
+        assertEquals(
+            FakeUserProfileRepository.UpdateProfileRequest("a", "After", 0),
+            profiles.updateProfileRequests.single(),
+        )
+        val ready = assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value)
+        assertEquals("After", ready.profile.name)
+        assertEquals(0, ready.profile.colorIndex)
+        assertNull(viewModel.uiState.value.identityMutation)
+        assertEquals(listOf<ProfileUiEvent>(ProfileUiEvent.IdentityUpdated("a")), events)
+    }
+
+    @Test
+    fun `ordinary update failure preserves authoritative state clears token and emits scoped failure`() = runTest {
+        profiles.seedReadyProfileForTest("a", name = "Before", colorIndex = 2)
+        profiles.updateProfileFailure = IllegalStateException("update failed")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        runCurrent()
+
+        viewModel.updateIdentity("After", 3)
+        advanceUntilIdle()
+
+        val ready = assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value)
+        assertEquals("Before", ready.profile.name)
+        assertEquals(2, ready.profile.colorIndex)
+        assertNull(viewModel.uiState.value.identityMutation)
+        assertEquals(
+            listOf<ProfileUiEvent>(ProfileUiEvent.IdentityUpdateFailed("a", ProfileIdentityMutationKind.UPDATE)),
+            events,
+        )
+    }
+
+    @Test
+    fun `identity cancellation emits no terminal event and clears only its token`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateProfileFailure = CancellationException("cancel update")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        runCurrent()
+
+        viewModel.updateIdentity("After", 1)
+        val token = assertNotNull(viewModel.uiState.value.identityMutation).token
+        advanceUntilIdle()
+
+        assertTrue(token > 0)
+        assertNull(viewModel.uiState.value.identityMutation)
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun `overlapping update and delete are rejected synchronously`() = runTest {
+        profiles.seedReadyProfileForTest("default")
+        profiles.seedReadyProfileForTest("a")
+        val updateGate = CompletableDeferred<Unit>()
+        profiles.beforeUpdateProfileMutation = { updateGate.await() }
+        val viewModel = createViewModel()
+        runCurrent()
+
+        viewModel.updateIdentity("After", 1)
+        runCurrent()
+        viewModel.deleteActiveProfile()
+
+        assertTrue(viewModel.uiState.value.identityMutationInFlight)
+        assertTrue(profiles.deleteActiveProfileRequests.isEmpty())
+        updateGate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, profiles.updateProfileRequests.size)
+    }
+
+    @Test
+    fun `same profile Ready refresh preserves mutation token without restarting insights`() = runTest {
+        val bench = exercise("bench")
+        exercises.addExercise(bench)
+        profiles.seedReadyProfileForTest("a")
+        val viewModel = createViewModel()
+        runCurrent()
+        viewModel.selectExercise(bench)
+        advanceUntilIdle()
+        val recentCalls = workouts.recentCompletedRequests.size
+        val prCalls = personalRecords.getAllForExerciseRequests.size
+        val updateGate = CompletableDeferred<Unit>()
+        profiles.beforeUpdateProfileMutation = { updateGate.await() }
+
+        viewModel.updateIdentity("After", 1)
+        runCurrent()
+        val token = assertNotNull(viewModel.uiState.value.identityMutation).token
+        val ready = assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value)
+        profiles.updateCore(
+            "a",
+            ready.preferences.core.value.copy(bodyWeightKg = 82f),
+        )
+        runCurrent()
+
+        assertEquals(token, assertNotNull(viewModel.uiState.value.identityMutation).token)
+        assertEquals(82f, assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context).preferences.core.value.bodyWeightKg)
+        assertEquals(recentCalls, workouts.recentCompletedRequests.size)
+        assertEquals(prCalls, personalRecords.getAllForExerciseRequests.size)
+        updateGate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `gated update followed by A to B cannot mutate B or publish stale A event`() = runTest {
+        profiles.seedReadyProfileForTest("b", name = "B")
+        profiles.seedReadyProfileForTest("a", name = "A")
+        val updateStarted = CompletableDeferred<Unit>()
+        profiles.beforeUpdateProfileMutation = { request ->
+            if (request.profileId == "a") {
+                updateStarted.complete(Unit)
+                try {
+                    awaitCancellation()
+                } catch (_: CancellationException) {
+                    // Deliberately non-cooperative so post-call publication guards are exercised.
+                }
+            }
+        }
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        runCurrent()
+
+        viewModel.updateIdentity("Stale A", 3)
+        runCurrent()
+        updateStarted.await()
+        profiles.emitSwitchingForTest("b")
+        runCurrent()
+        profiles.emitReadyForTest("b")
+        advanceUntilIdle()
+
+        val ready = assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value)
+        assertEquals("b", ready.profile.id)
+        assertEquals("B", ready.profile.name)
+        assertTrue(events.isEmpty())
+        assertNull(viewModel.uiState.value.identityMutation)
+    }
+
+    @Test
+    fun `Default deletion never reaches repository`() = runTest {
+        profiles.seedReadyProfileForTest("default")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        runCurrent()
+
+        viewModel.deleteActiveProfile()
+        advanceUntilIdle()
+
+        assertTrue(profiles.deleteActiveProfileRequests.isEmpty())
+        assertFalse(viewModel.uiState.value.identityMutationInFlight)
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun `successful active deletion emits scoped ProfileDeleted after busy clears`() = runTest {
+        profiles.seedReadyProfileForTest("default")
+        profiles.seedReadyProfileForTest("a")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        val busyWhenObserved = mutableListOf<Boolean>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.collect { event ->
+                events += event
+                busyWhenObserved += viewModel.uiState.value.identityMutationInFlight
+            }
+        }
+        runCurrent()
+
+        viewModel.deleteActiveProfile()
+        advanceUntilIdle()
+
+        assertEquals(listOf("a"), profiles.deleteActiveProfileRequests)
+        assertEquals(listOf<ProfileUiEvent>(ProfileUiEvent.ProfileDeleted("a")), events)
+        assertEquals(listOf(false), busyWhenObserved)
+        assertEquals(
+            "default",
+            assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value).profile.id,
+        )
+    }
+
+    @Test
+    fun `false active deletion emits scoped delete failure`() = runTest {
+        profiles.seedReadyProfileForTest("default")
+        profiles.seedReadyProfileForTest("a")
+        profiles.deleteActiveProfileResultOverride = false
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        runCurrent()
+
+        viewModel.deleteActiveProfile()
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf<ProfileUiEvent>(ProfileUiEvent.IdentityUpdateFailed("a", ProfileIdentityMutationKind.DELETE)),
+            events,
+        )
+        assertNull(viewModel.uiState.value.identityMutation)
+    }
+
+    @Test
+    fun `ordinary delete exception emits scoped failure and preserves active profile`() = runTest {
+        profiles.seedReadyProfileForTest("default")
+        profiles.seedReadyProfileForTest("a")
+        profiles.deleteProfileFailure = IllegalStateException("delete failed")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        runCurrent()
+
+        viewModel.deleteActiveProfile()
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf<ProfileUiEvent>(ProfileUiEvent.IdentityUpdateFailed("a", ProfileIdentityMutationKind.DELETE)),
+            events,
+        )
+        assertEquals(
+            "a",
+            assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value).profile.id,
+        )
+        assertNull(viewModel.uiState.value.identityMutation)
+    }
+
+    @Test
+    fun `recovery exception emits only scoped recovery event`() = runTest {
+        profiles.seedReadyProfileForTest("default")
+        profiles.seedReadyProfileForTest("a")
+        val recovery = ProfileContextRecoveryException(IllegalStateException("reconcile"))
+        profiles.deleteProfileFailure = recovery
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        runCurrent()
+
+        viewModel.deleteActiveProfile()
+        advanceUntilIdle()
+
+        assertEquals(1, events.size)
+        val event = assertIs<ProfileUiEvent.ProfileRecoveryRequired>(events.single())
+        assertEquals("a", event.profileId)
+        assertSame(recovery, event.cause)
+        assertNull(viewModel.uiState.value.identityMutation)
     }
 
     private fun createViewModel() = ProfileViewModel(

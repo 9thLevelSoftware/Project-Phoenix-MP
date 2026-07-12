@@ -89,6 +89,7 @@ interface UserProfileRepository {
     suspend fun createAndActivateProfile(name: String, colorIndex: Int): UserProfile
     suspend fun updateProfile(id: String, name: String, colorIndex: Int)
     suspend fun deleteProfile(id: String): Boolean
+    suspend fun deleteActiveProfile(expectedProfileId: String): Boolean
     suspend fun setActiveProfile(id: String)
     suspend fun refreshProfiles()
     suspend fun ensureDefaultProfile()
@@ -203,14 +204,31 @@ class SqlDelightUserProfileRepository(
     }
 
     override suspend fun deleteProfile(id: String): Boolean = profileContextMutex.withLock {
-        if (id == DEFAULT_PROFILE_ID) return@withLock false
+        deleteProfileLocked(id, requireActive = false)
+    }
+
+    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean =
+        profileContextMutex.withLock {
+            val ready = _activeProfileContext.value as? ActiveProfileContext.Ready
+                ?: throw ProfileContextUnavailableException()
+            if (ready.profile.id != expectedProfileId) {
+                throw StaleProfileContextException(expectedProfileId, ready.profile.id)
+            }
+            deleteProfileLocked(expectedProfileId, requireActive = true)
+        }
+
+    private suspend fun deleteProfileLocked(id: String, requireActive: Boolean): Boolean {
+        if (id == DEFAULT_PROFILE_ID) return false
 
         val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
-        if (queries.getProfileById(id).executeAsOneOrNull() == null) return@withLock false
+        if (requireActive && previous.profile.id != id) {
+            throw StaleProfileContextException(id, previous.profile.id)
+        }
+        if (queries.getProfileById(id).executeAsOneOrNull() == null) return false
 
         val wasActive = previous.profile.id == id
-        val targetProfileId = if (wasActive) DEFAULT_PROFILE_ID else previous.profile.id
+        val targetProfileId = if (requireActive || wasActive) DEFAULT_PROFILE_ID else previous.profile.id
         requireNotNull(queries.getProfileById(targetProfileId).executeAsOneOrNull()) {
             "Profile deletion target missing: $targetProfileId"
         }
@@ -278,7 +296,7 @@ class SqlDelightUserProfileRepository(
             }
         }
 
-        true
+        return true
     }
 
     override suspend fun setActiveProfile(id: String) {

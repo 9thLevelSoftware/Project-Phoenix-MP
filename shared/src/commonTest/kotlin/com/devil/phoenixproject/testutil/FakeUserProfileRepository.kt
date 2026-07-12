@@ -40,6 +40,20 @@ class FakeUserProfileRepository : UserProfileRepository {
     var failBeforeProfileDeletionCommit: Boolean = false
     var failLocalCleanupDeletes: Boolean = false
 
+    data class UpdateProfileRequest(
+        val profileId: String,
+        val name: String,
+        val colorIndex: Int,
+    )
+
+    val updateProfileRequests = mutableListOf<UpdateProfileRequest>()
+    val deleteActiveProfileRequests = mutableListOf<String>()
+    var updateProfileFailure: Throwable? = null
+    var deleteProfileFailure: Throwable? = null
+    var deleteActiveProfileResultOverride: Boolean? = null
+    var beforeUpdateProfileMutation: (suspend (UpdateProfileRequest) -> Unit)? = null
+    var beforeDeleteActiveProfileMutation: (suspend (String) -> Unit)? = null
+
     private val _activeProfile = MutableStateFlow<UserProfile?>(null)
     override val activeProfile: StateFlow<UserProfile?> = _activeProfile.asStateFlow()
 
@@ -125,6 +139,10 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     override suspend fun updateProfile(id: String, name: String, colorIndex: Int) {
+        val request = UpdateProfileRequest(id, name, colorIndex)
+        updateProfileRequests += request
+        updateProfileFailure?.let { throw it }
+        beforeUpdateProfileMutation?.invoke(request)
         mutex.withLock {
             val trimmedName = name.trim()
             require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
@@ -138,13 +156,35 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
+    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean {
+        deleteActiveProfileRequests += expectedProfileId
+        deleteProfileFailure?.let { throw it }
+        beforeDeleteActiveProfileMutation?.invoke(expectedProfileId)
+        deleteActiveProfileResultOverride?.let { return it }
+        return mutex.withLock {
+            val ready = _activeProfileContext.value as? ActiveProfileContext.Ready
+                ?: throw ProfileContextUnavailableException()
+            if (ready.profile.id != expectedProfileId) {
+                throw StaleProfileContextException(expectedProfileId, ready.profile.id)
+            }
+            deleteProfileLocked(expectedProfileId, requireActive = true)
+        }
+    }
+
     override suspend fun deleteProfile(id: String): Boolean = mutex.withLock {
-        if (id == DEFAULT_PROFILE_ID) return@withLock false
+        deleteProfileLocked(id, requireActive = false)
+    }
+
+    private fun deleteProfileLocked(id: String, requireActive: Boolean): Boolean {
+        if (id == DEFAULT_PROFILE_ID) return false
         val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
-        profiles[id] ?: return@withLock false
+        if (requireActive && previous.profile.id != id) {
+            throw StaleProfileContextException(id, previous.profile.id)
+        }
+        profiles[id] ?: return false
         val wasActive = previous.profile.id == id
-        val targetProfileId = if (wasActive) DEFAULT_PROFILE_ID else previous.profile.id
+        val targetProfileId = if (requireActive || wasActive) DEFAULT_PROFILE_ID else previous.profile.id
         require(profiles.containsKey(targetProfileId)) { "Profile deletion target missing: $targetProfileId" }
         if (wasActive) {
             _activeProfileContext.value = ActiveProfileContext.Switching(targetProfileId)
@@ -178,7 +218,7 @@ class FakeUserProfileRepository : UserProfileRepository {
         updateIdentityFlows()
         publishReady(targetProfileId)
         retryPendingLocalCleanupLocked(id)
-        true
+        return true
     }
 
     override suspend fun setActiveProfile(id: String) {

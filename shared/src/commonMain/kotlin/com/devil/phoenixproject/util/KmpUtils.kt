@@ -74,6 +74,13 @@ object KmpUtils {
         val dateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
 
         return when (pattern) {
+            "MMM d" -> {
+                val monthName = dateTime.month.name.take(3).lowercase().replaceFirstChar {
+                    it.uppercase()
+                }
+                "$monthName ${dateTime.day}"
+            }
+
             "MMM dd, yyyy" -> {
                 val monthName = dateTime.month.name.take(3).lowercase().replaceFirstChar {
                     it.uppercase()

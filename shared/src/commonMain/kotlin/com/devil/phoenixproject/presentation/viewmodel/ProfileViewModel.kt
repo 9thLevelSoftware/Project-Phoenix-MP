@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.Exercise
@@ -15,12 +16,18 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.usecase.CurrentOneRepMax
 import com.devil.phoenixproject.domain.usecase.ResolveCurrentOneRepMaxUseCase
+import com.devil.phoenixproject.presentation.components.canDeleteProfile
+import com.devil.phoenixproject.presentation.components.normalizedProfileColorIndex
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -38,6 +45,14 @@ data class ProfilePrHighlights(
     val maxVolumeKg: Float?,
 )
 
+enum class ProfileIdentityMutationKind { UPDATE, DELETE }
+
+data class ProfileIdentityMutation(
+    val token: Long,
+    val profileId: String,
+    val kind: ProfileIdentityMutationKind,
+)
+
 data class ProfileUiState(
     val context: ActiveProfileContext? = null,
     val selectedExercise: Exercise? = null,
@@ -46,13 +61,24 @@ data class ProfileUiState(
     val currentOneRepMax: ProfileLoadable<CurrentOneRepMax> = ProfileLoadable.Empty,
     val prHighlights: ProfileLoadable<ProfilePrHighlights> = ProfileLoadable.Empty,
     val recentSessions: ProfileLoadable<List<WorkoutSession>> = ProfileLoadable.Empty,
-)
+    val identityMutation: ProfileIdentityMutation? = null,
+) {
+    val identityMutationInFlight: Boolean
+        get() = identityMutation != null
+}
 
 sealed interface ProfileUiEvent {
     data object PreferenceUpdateFailed : ProfileUiEvent
-    data object IdentityUpdateFailed : ProfileUiEvent
-    data object IdentityUpdated : ProfileUiEvent
-    data object ProfileDeleted : ProfileUiEvent
+    data class IdentityUpdateFailed(
+        val profileId: String,
+        val kind: ProfileIdentityMutationKind,
+    ) : ProfileUiEvent
+    data class IdentityUpdated(val profileId: String) : ProfileUiEvent
+    data class ProfileDeleted(val profileId: String) : ProfileUiEvent
+    data class ProfileRecoveryRequired(
+        val profileId: String,
+        val cause: ProfileContextRecoveryException,
+    ) : ProfileUiEvent
 }
 
 class ProfileViewModel(
@@ -66,10 +92,14 @@ class ProfileViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+    private val _events = Channel<ProfileUiEvent>(Channel.BUFFERED)
+    val events: Flow<ProfileUiEvent> = _events.receiveAsFlow()
 
     private val selectedExerciseIds = mutableMapOf<String, String>()
     private var resolvedSelectionProfileId: String? = null
     private var insightsJob: Job? = null
+    private var identityJob: Job? = null
+    private var nextIdentityToken = 0L
 
     init {
         viewModelScope.launch {
@@ -77,8 +107,16 @@ class ProfileViewModel(
                 when (context) {
                     is ActiveProfileContext.Switching -> {
                         insightsJob?.cancel()
+                        if (_uiState.value.identityMutation?.kind == ProfileIdentityMutationKind.UPDATE) {
+                            identityJob?.cancel()
+                        }
                         resolvedSelectionProfileId = null
-                        _uiState.value = ProfileUiState(context = context)
+                        _uiState.update { state ->
+                            ProfileUiState(
+                                context = context,
+                                identityMutation = state.identityMutation,
+                            )
+                        }
                     }
 
                     is ActiveProfileContext.Ready -> applyReadyContext(context)
@@ -109,6 +147,112 @@ class ProfileViewModel(
         }
     }
 
+    fun updateIdentity(name: String, colorIndex: Int) {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) return
+        val profileId = currentIdentityProfileId() ?: return
+        startIdentityMutation(profileId, ProfileIdentityMutationKind.UPDATE) {
+            if (currentIdentityProfileId() != profileId) return@startIdentityMutation null
+            profiles.updateProfile(
+                id = profileId,
+                name = trimmedName,
+                colorIndex = normalizedProfileColorIndex(colorIndex),
+            )
+            if (currentIdentityProfileId() == profileId) {
+                ProfileUiEvent.IdentityUpdated(profileId)
+            } else {
+                null
+            }
+        }
+    }
+
+    fun deleteActiveProfile() {
+        val uiReady = uiState.value.context as? ActiveProfileContext.Ready ?: return
+        val profileId = currentIdentityProfileId() ?: return
+        if (!canDeleteProfile(uiReady.profile)) return
+        startIdentityMutation(profileId, ProfileIdentityMutationKind.DELETE) {
+            if (profiles.deleteActiveProfile(profileId)) {
+                ProfileUiEvent.ProfileDeleted(profileId)
+            } else {
+                ProfileUiEvent.IdentityUpdateFailed(
+                    profileId,
+                    ProfileIdentityMutationKind.DELETE,
+                )
+            }
+        }
+    }
+
+    private fun currentIdentityProfileId(): String? {
+        val uiReady = uiState.value.context as? ActiveProfileContext.Ready ?: return null
+        val repositoryReady =
+            profiles.activeProfileContext.value as? ActiveProfileContext.Ready ?: return null
+        return uiReady.profile.id.takeIf {
+            it.isNotBlank() &&
+                it == repositoryReady.profile.id &&
+                uiReady.profile.isActive &&
+                repositoryReady.profile.isActive
+        }
+    }
+
+    private fun startIdentityMutation(
+        profileId: String,
+        kind: ProfileIdentityMutationKind,
+        action: suspend () -> ProfileUiEvent?,
+    ) {
+        val mutation = ProfileIdentityMutation(
+            token = ++nextIdentityToken,
+            profileId = profileId,
+            kind = kind,
+        )
+        while (true) {
+            val state = _uiState.value
+            val ready = state.context as? ActiveProfileContext.Ready ?: return
+            if (
+                state.identityMutation != null ||
+                ready.profile.id != profileId ||
+                currentIdentityProfileId() != profileId
+            ) {
+                return
+            }
+            if (_uiState.compareAndSet(state, state.copy(identityMutation = mutation))) break
+        }
+
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            var terminalEvent: ProfileUiEvent? = null
+            try {
+                terminalEvent = action()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: ProfileContextRecoveryException) {
+                terminalEvent = ProfileUiEvent.ProfileRecoveryRequired(profileId, error)
+            } catch (error: Exception) {
+                terminalEvent = ProfileUiEvent.IdentityUpdateFailed(profileId, kind)
+            } finally {
+                val ownsMutation = clearIdentityMutation(mutation.token)
+                val currentEnoughToPublish =
+                    kind != ProfileIdentityMutationKind.UPDATE || currentIdentityProfileId() == profileId
+                if (ownsMutation && currentEnoughToPublish) {
+                    terminalEvent?.let(_events::trySend)
+                }
+            }
+        }
+        identityJob = job
+        job.start()
+    }
+
+    private fun clearIdentityMutation(token: Long): Boolean {
+        var cleared = false
+        _uiState.update { state ->
+            if (state.identityMutation?.token == token) {
+                cleared = true
+                state.copy(identityMutation = null)
+            } else {
+                state
+            }
+        }
+        return cleared
+    }
+
     private suspend fun applyReadyContext(context: ActiveProfileContext.Ready) {
         val profileId = context.profile.id
         val currentProfileId =
@@ -120,7 +264,12 @@ class ProfileViewModel(
         }
 
         insightsJob?.cancel()
-        _uiState.value = ProfileUiState(context = context)
+        _uiState.update { state ->
+            ProfileUiState(
+                context = context,
+                identityMutation = state.identityMutation,
+            )
+        }
         try {
             require(profileId.isNotBlank()) { "Ready profile ID must not be blank" }
             val savedId = selectedExerciseIds[profileId]

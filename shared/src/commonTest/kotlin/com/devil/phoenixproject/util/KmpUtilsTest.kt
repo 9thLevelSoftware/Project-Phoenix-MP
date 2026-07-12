@@ -2,6 +2,8 @@ package com.devil.phoenixproject.util
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * Tests for KmpUtils.formatFloat, focused on the non-finite guard.
@@ -13,6 +15,15 @@ import kotlin.test.assertEquals
  * instead of crashing.
  */
 class KmpUtilsTest {
+
+    @Test
+    fun formatTimestamp_compactMonthDay_doesNotFallBackToNumericDate() {
+        val formatted = KmpUtils.formatTimestamp(1_718_452_800_000L, "MMM d")
+
+        assertTrue(Regex("[A-Z][a-z]{2} \\d{1,2}").matches(formatted), formatted)
+        assertFalse('/' in formatted, formatted)
+        assertFalse(',' in formatted, formatted)
+    }
 
     @Test
     fun formatFloat_nan_withDecimals_returnsZeroNoThrow() {

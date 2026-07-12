@@ -27,6 +27,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.drop
@@ -37,6 +39,8 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SqlDelightUserProfileRepositoryTest {
@@ -559,6 +563,66 @@ class SqlDelightUserProfileRepositoryTest {
         assertNull(
             database.vitruvianDatabaseQueries.selectProfilePreferences(created.id)
                 .executeAsOneOrNull(),
+        )
+    }
+
+    @Test
+    fun deleteActiveProfileRejectsAStaleExpectedIdWithoutMutation() = runTest {
+        ready()
+        val stale = repository.createAndActivateProfile("Stale", 1)
+        val current = repository.createAndActivateProfile("Current", 2)
+
+        assertFailsWith<StaleProfileContextException> {
+            repository.deleteActiveProfile(stale.id)
+        }
+
+        assertNotNull(database.vitruvianDatabaseQueries.getProfileById(stale.id).executeAsOneOrNull())
+        assertNotNull(database.vitruvianDatabaseQueries.getProfileById(current.id).executeAsOneOrNull())
+        assertEquals(
+            current.id,
+            assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id,
+        )
+    }
+
+    @Test
+    fun deleteActiveProfileRacingAQueuedSwitchReassignsOnlyToDefault() = runTest {
+        val deletionEntered = CountDownLatch(1)
+        val releaseDeletion = CountDownLatch(1)
+        repository = createRepository(
+            database,
+            preferenceStore,
+            safetyStore,
+            beforeProfileDeletionCommit = {
+                deletionEntered.countDown()
+                check(releaseDeletion.await(5, TimeUnit.SECONDS))
+            },
+        )
+        ready()
+        val source = repository.createAndActivateProfile("Source", 1)
+        val next = repository.createProfile("Next", 2)
+        insertWorkoutSession("atomic-delete-session", 5, 20.0, source.id)
+
+        val deletion = async(Dispatchers.Default) {
+            repository.deleteActiveProfile(source.id)
+        }
+        assertTrue(deletionEntered.await(5, TimeUnit.SECONDS))
+        val switch = async(Dispatchers.Default) {
+            repository.setActiveProfile(next.id)
+        }
+        releaseDeletion.countDown()
+
+        assertTrue(deletion.await())
+        switch.await()
+
+        assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+        assertEquals(
+            "default",
+            database.vitruvianDatabaseQueries.selectSessionById("atomic-delete-session")
+                .executeAsOne().profile_id,
+        )
+        assertEquals(
+            next.id,
+            assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id,
         )
     }
 
