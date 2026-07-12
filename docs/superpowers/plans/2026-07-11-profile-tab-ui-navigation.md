@@ -25,7 +25,7 @@
 - Use a route-scoped `ProfileViewModel`; do not add Profile selection/insight state to `MainViewModel`.
 - Exercise selection is an in-memory map keyed by profile ID for the lifetime of the Profile root navigation entry. It is not persisted through backup, SQL, or process death.
 - On profile change, clear rendered exercise data while the new `ActiveProfileContext` is `Switching`; restore a still-valid saved selection for that profile, otherwise resolve that profile's most recent completed exercise.
-- The current-1RM precedence is latest passing velocity estimate, then latest profile-scoped assessment, then the most recent profile-scoped completed-session estimate through `OneRepMaxCalculator.estimate`.
+- The current-1RM precedence is latest passing valid velocity estimate, then the latest profile-scoped assessment's first valid override/estimate, then the newest valid estimate among at most five recent profile-scoped completed sessions through `OneRepMaxCalculator.estimate`.
 - Velocity and session values are per-cable kilograms. Assessment result and override values are total kilograms and must be divided by two before the shared resolver returns them.
 - Never use `Exercise.oneRepMaxKg` as the Profile/Exercise Detail resolver fallback.
 - Assessment save APIs require an explicit Ready profile ID; remove silent `"default"` parameters from assessment persistence.
@@ -106,6 +106,7 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt` — measurements, rack, workout behavior, LED, VBT, and safety cards with typed state/callbacks.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSafetyDialogs.kt` — safe-word calibration, adult confirmation, Dominatrix unlock, and Disco unlock dialogs moved out of Settings.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCaseTest.kt` — resolver precedence, normalization, invalid-value, and profile-isolation tests.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailOneRepMaxLoadTest.kt` — latest-request token, real cancellation, ordinary-error, and legacy-read guards.
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt` — profile-selection restoration and independent insight/mutation-state tests.
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModelProfileScopeTest.kt` — explicit assessment profile propagation.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/AssessmentProfileOwnershipTest.kt` — immutable route ownership, Ready-gated callsites, and A→Switching→B invalidation.
@@ -115,7 +116,7 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt` — required Profile keys across selectable locale files.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt` — picker, chart, compact-history, and partial-error source guard.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt` — palette wrapping and Default-delete policy.
-- `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt` — controllable assessment repository for resolver/ViewModel tests.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt` — controllable assessment saves and latest-read failures for resolver/ViewModel tests.
 
 ### Modify
 
@@ -140,14 +141,14 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt` — unchanged repository ownership but verified against new repository contracts.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt` — shared resolver binding.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/PresentationModule.kt` — ProfileViewModel binding.
-- `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt` — new limited-session methods.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt` — bounded deterministic session reads, request capture, and read failures.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeVelocityOneRepMaxRepository.kt` — injectable latest-read failure.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt` — data-foundation identity, context, captured-ID update, and injectable-failure APIs.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePersonalRecordRepository.kt` — controllable insight-read failure.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutesTest.kt` — assessment route ownership/encoding and blank-ID rejection.
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepositoryTest.kt` — completed-session query filters and limit.
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepositoryTest.kt` — explicit IDs, unit contract, and isolation.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngineTest.kt` — total-kilogram hardware ceiling.
-- `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt` — existing graph verification test; no new extra type should be needed.
 - `shared/src/commonMain/composeResources/values/strings.xml` — English Profile/navigation/insights/preferences/errors copy.
 - `shared/src/commonMain/composeResources/values-nl/strings.xml` — Dutch copy.
 - `shared/src/commonMain/composeResources/values-de/strings.xml` — German copy.
@@ -1030,8 +1031,6 @@ override suspend fun saveAssessmentSession(
     require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
     return withContext(ioDispatcher) {
         assessmentWriteMutex.withLock {
-            val previousOneRepMaxPerCableKg =
-                exerciseRepository.getExerciseById(exerciseId)?.oneRepMaxKg
             val attemptedOneRepMaxPerCableKg =
                 (userOverrideKg ?: estimatedOneRepMaxKg) / 2f
             val sessionId = generateUUID()
@@ -1050,6 +1049,7 @@ override suspend fun saveAssessmentSession(
             )
 
             var insertedResultId: Long? = null
+            var previousOneRepMaxPerCableKg: Float? = null
             var exerciseWriteAttempted = false
             try {
                 workoutRepository.saveSession(session)
@@ -1064,6 +1064,8 @@ override suspend fun saveAssessmentSession(
                 )
                 insertedResultId = queries.lastInsertRowId().executeAsOne()
 
+                previousOneRepMaxPerCableKg =
+                    exerciseRepository.getExerciseById(exerciseId)?.oneRepMaxKg
                 exerciseWriteAttempted = true
                 exerciseRepository.updateOneRepMax(
                     exerciseId,
@@ -1101,7 +1103,7 @@ override suspend fun saveAssessmentSession(
 }
 ```
 
-The mutex is acquired before the 1RM snapshot and held through success or compensation. The `try` begins before `saveSession`, so cancellation at any write boundary cleans up owned rows. `exerciseWriteAttempted` stays false for session/result pre-write failures; once true, restoration is still conditional on the SQL compare-and-set. Cleanup is non-cancellable, uses the local SQLDelight query rather than the injected/failing `ExerciseRepository`, and rethrows the identical original error or `CancellationException`.
+The mutex covers the full logical save, but the prior 1RM snapshot is intentionally read immediately before the exercise write, after the session/result writes, so it cannot become stale merely because those earlier writes took time. The `try` begins before `saveSession`, so cancellation at any write boundary cleans up owned rows. `exerciseWriteAttempted` stays false for session/result/pre-snapshot failures; once true, restoration is still conditional on the SQL compare-and-set. Cleanup is non-cancellable, uses the local SQLDelight query rather than the injected/failing `ExerciseRepository`, and propagates the original failure type and stable message (coroutine stack-trace recovery may copy the exception object).
 
 Replace the two existing save-session tests with the complete unit/profile contract:
 
@@ -1282,9 +1284,10 @@ fun `ordinary post-write failure removes rows and restores prior per-cable 1RM`(
     val failure = IllegalStateException("test failure")
     val failingRepository = repositoryFailingAfterExerciseUpdate(failure)
 
-    assertSame(failure, assertFailsWith<IllegalStateException> {
+    val thrown = assertFailsWith<IllegalStateException> {
         saveSession(failingRepository)
-    })
+    }
+    assertEquals(failure.message, thrown.message)
 
     assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
     assertNull(failingRepository.getLatestAssessment("bench-press", "athlete-a"))
@@ -1311,9 +1314,10 @@ fun `pre-write failure preserves a concurrent exercise 1RM update`() = runTest {
         exerciseRepository,
     )
 
-    assertSame(failure, assertFailsWith<IllegalStateException> {
+    val thrown = assertFailsWith<IllegalStateException> {
         saveSession(target)
-    })
+    }
+    assertEquals(failure.message, thrown.message)
 
     assertNull(target.getLatestAssessment("bench-press", "athlete-a"))
     assertEquals(55f, exerciseRepository.getExerciseById("bench-press")?.oneRepMaxKg)
@@ -1327,9 +1331,10 @@ fun `CAS compensation preserves newer 1RM after an attempted exercise write`() =
         exerciseRepository.updateOneRepMax("bench-press", 55f)
     }
 
-    assertSame(failure, assertFailsWith<IllegalStateException> {
+    val thrown = assertFailsWith<IllegalStateException> {
         saveSession(target)
-    })
+    }
+    assertEquals(failure.message, thrown.message)
 
     assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
     assertNull(target.getLatestAssessment("bench-press", "athlete-a"))
@@ -1365,7 +1370,8 @@ fun `real child cancellation runs NonCancellable compensation and escapes unchan
     val original = CancellationException("test cancellation")
     child.cancel(original)
     runCurrent()
-    assertSame(original, assertFailsWith<CancellationException> { child.await() })
+    val thrown = assertFailsWith<CancellationException> { child.await() }
+    assertEquals(original.message, thrown.message)
 
     assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
     assertNull(target.getLatestAssessment("bench-press", "athlete-a"))
@@ -1415,7 +1421,10 @@ fun `failing and successful saves for one exercise serialize snapshot write and 
 
     releaseFirstFailure.complete(Unit)
     runCurrent()
-    assertSame(firstFailure, failing.await().exceptionOrNull())
+    val firstThrown = assertIs<IllegalStateException>(
+        failing.await().exceptionOrNull(),
+    )
+    assertEquals(firstFailure.message, firstThrown.message)
     val successfulSessionId = succeeding.await()
 
     assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
@@ -1450,7 +1459,7 @@ private fun repositoryFailingAfterExerciseUpdate(
 }
 ```
 
-Import `CompletableDeferred`, `Dispatchers`, `async`, `awaitAll`, `awaitCancellation`, `StandardTestDispatcher`, `runCurrent`, `CancellationException`, `assertFailsWith`, `assertNull`, `assertSame`, and `kotlinx.coroutines.flow.first`. The pre-write test proves the guard; the newer-value test proves SQL CAS; the real child cancellation proves `NonCancellable` cleanup and exact cancellation propagation; the controlled dispatcher test proves snapshot/write/compensation serialization without timing sleeps.
+Import `CompletableDeferred`, `Dispatchers`, `async`, `awaitAll`, `awaitCancellation`, `StandardTestDispatcher`, `runCurrent`, `CancellationException`, `assertFailsWith`, `assertIs`, `assertNull`, and `kotlinx.coroutines.flow.first`. Assert propagated exception type plus stable message, not referential identity: coroutine stack-trace recovery may copy an exception. The pre-write test proves the guard; the newer-value test proves SQL CAS; the real child cancellation proves `NonCancellable` cleanup and cancellation propagation; the controlled dispatcher test proves snapshot/write/compensation serialization without timing sleeps, and its failing child returns `runCatching` so it cannot cancel the parent test.
 
 - [ ] **Step 8: Run focused tests, compile every caller, and scan removed defaults**
 
@@ -1540,48 +1549,89 @@ git commit -m "fix: scope strength assessments to active profile"
 **Files:**
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCase.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCaseTest.kt`
-- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq:652-814`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/WorkoutRepository.kt:25-80`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt:523-530,1043-1135`
-- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt:20-160`
+- Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailOneRepMaxLoadTest.kt`
+- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/WorkoutRepository.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeVelocityOneRepMaxRepository.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepositoryTest.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt:58-164,278-380`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt`
 
 **Interfaces:**
-- Consumes: explicit profile-safe Assessment APIs from Task 1; `VelocityOneRepMaxRepository.getLatestPassing`; `OneRepMaxCalculator.estimate`.
-- Produces: `WorkoutRepository.getMostRecentCompletedExerciseId`, `WorkoutRepository.getRecentCompletedSessionsForExercise`, and `ResolveCurrentOneRepMaxUseCase.invoke(exerciseId, profileId): CurrentOneRepMax?` for Tasks 5 and 6.
+- Consumes: Task 1's explicit profile-safe Assessment APIs and Ready-gated `ExerciseDetailScreen.assessmentProfileId`; `VelocityOneRepMaxRepository.getLatestPassing`; `OneRepMaxCalculator.estimate`.
+- Produces: `MAX_RECENT_EXERCISE_SESSIONS = 5`, strict `WorkoutRepository.getMostRecentCompletedExerciseId`, bounded `WorkoutRepository.getRecentCompletedSessionsForExercise`, `WorkoutSession.estimatedOneRepMaxPerCableOrNull()`, and `ResolveCurrentOneRepMaxUseCase.invoke(exerciseId, profileId): CurrentOneRepMax?` for Tasks 5 and 6.
+- Error contract: repository validation failures and source read failures propagate from the resolver, because swallowing a failed higher-priority read could incorrectly select a lower source. Exercise Detail catches only ordinary failures into its own 1RM-card state; it rethrows cancellation and leaves charts/history usable.
 
 - [ ] **Step 1: Write failing SQLDelight repository tests for eligibility and limit**
 
-Add two tests using the test class's existing database/repository setup:
+Add three tests using the test class's existing database/repository setup. The first two deliberately create equal timestamps so the secondary ID ordering is observable:
 
 ```kotlin
 @Test
 fun `recent completed sessions are profile exercise scoped newest first and limited`() = runTest {
-    repository.saveSession(workoutSession(id = "a-old", profileId = "a", exerciseId = "bench", timestamp = 10L, workingReps = 5))
-    repository.saveSession(workoutSession(id = "a-new", profileId = "a", exerciseId = "bench", timestamp = 30L, workingReps = 3))
-    repository.saveSession(workoutSession(id = "a-other", profileId = "a", exerciseId = "squat", timestamp = 40L, workingReps = 5))
-    repository.saveSession(workoutSession(id = "b-new", profileId = "b", exerciseId = "bench", timestamp = 50L, workingReps = 5))
-    repository.saveSession(workoutSession(id = "a-zero", profileId = "a", exerciseId = "bench", timestamp = 60L, workingReps = 0, totalReps = 0))
+    repository.saveSession(workoutSession("old", "a", "bench", 10L, workingReps = 5))
+    repository.saveSession(workoutSession("total-only", "a", "bench", 20L, workingReps = 0, totalReps = 4))
+    repository.saveSession(workoutSession("a-tie", "a", "bench", 30L, workingReps = 3))
+    repository.saveSession(workoutSession("z-tie", "a", "bench", 30L, workingReps = 3))
+    repository.saveSession(workoutSession("wrong-exercise", "a", "squat", 50L, workingReps = 5))
+    repository.saveSession(workoutSession("wrong-profile", "b", "bench", 60L, workingReps = 5))
+    repository.saveSession(workoutSession("zero", "a", "bench", 70L, workingReps = 0, totalReps = 0))
+    repository.saveSession(workoutSession("deleted", "a", "bench", 80L, workingReps = 5))
+    database.vitruvianDatabaseQueries.softDeleteSession(
+        id = "deleted",
+        deletedAt = 81L,
+        updatedAt = 81L,
+    )
 
     val result = repository.getRecentCompletedSessionsForExercise(
         exerciseId = "bench",
         profileId = "a",
-        limit = 1,
+        limit = 3,
     )
 
-    assertEquals(listOf("a-new"), result.map { it.id })
+    assertEquals(listOf("z-tie", "a-tie", "total-only"), result.map { it.id })
 }
 
 @Test
-fun `most recent completed exercise ignores zero rep rows`() = runTest {
-    repository.saveSession(workoutSession(id = "bench", profileId = "a", exerciseId = "bench", timestamp = 10L, workingReps = 5))
-    repository.saveSession(workoutSession(id = "ghost", profileId = "a", exerciseId = "squat", timestamp = 20L, workingReps = 0, totalReps = 0))
+fun `most recent completed exercise uses deterministic live eligible row`() = runTest {
+    repository.saveSession(workoutSession("a-tie", "a", "bench", 30L, workingReps = 5))
+    repository.saveSession(workoutSession("z-tie", "a", "squat", 30L, workingReps = 0, totalReps = 2))
+    repository.saveSession(workoutSession("ghost", "a", "deadlift", 50L, workingReps = 0, totalReps = 0))
+    repository.saveSession(workoutSession("blank-exercise", "a", " ", 55L, workingReps = 5))
+    repository.saveSession(workoutSession("other-profile", "b", "row", 60L, workingReps = 5))
+    repository.saveSession(workoutSession("deleted", "a", "press", 70L, workingReps = 5))
+    database.vitruvianDatabaseQueries.softDeleteSession(
+        id = "deleted",
+        deletedAt = 71L,
+        updatedAt = 71L,
+    )
 
-    assertEquals("bench", repository.getMostRecentCompletedExerciseId("a"))
+    assertEquals("squat", repository.getMostRecentCompletedExerciseId("a"))
+}
+
+@Test
+fun `bounded reads reject blank ownership and limits outside one through five`() = runTest {
+    assertFailsWith<IllegalArgumentException> {
+        repository.getRecentCompletedSessionsForExercise(" ", "a", 1)
+    }
+    assertFailsWith<IllegalArgumentException> {
+        repository.getRecentCompletedSessionsForExercise("bench", " ", 1)
+    }
+    listOf(0, -1, MAX_RECENT_EXERCISE_SESSIONS + 1).forEach { invalidLimit ->
+        assertFailsWith<IllegalArgumentException> {
+            repository.getRecentCompletedSessionsForExercise("bench", "a", invalidLimit)
+        }
+    }
+    assertFailsWith<IllegalArgumentException> {
+        repository.getMostRecentCompletedExerciseId(" ")
+    }
 }
 ```
+
+Import `MAX_RECENT_EXERCISE_SESSIONS` and `kotlin.test.assertFailsWith`. The deleted rows must be created normally and tombstoned through the existing `softDeleteSession(id, deletedAt, updatedAt)` query so the SQL `deletedAt IS NULL` predicate, rather than test fixture omission, is exercised.
 
 Add this local helper using the current `WorkoutSession` constructor defaults:
 
@@ -1629,27 +1679,29 @@ WHERE profile_id = :profileId
   AND exerciseId = :exerciseId
   AND deletedAt IS NULL
   AND (workingReps > 0 OR totalReps > 0)
-ORDER BY timestamp DESC
+ORDER BY timestamp DESC, id DESC
 LIMIT :limit;
 
 selectMostRecentCompletedExerciseId:
 SELECT exerciseId FROM WorkoutSession
 WHERE profile_id = :profileId
   AND exerciseId IS NOT NULL
-  AND exerciseId != ''
+  AND TRIM(exerciseId) != ''
   AND deletedAt IS NULL
   AND (workingReps > 0 OR totalReps > 0)
-ORDER BY timestamp DESC
+ORDER BY timestamp DESC, id DESC
 LIMIT 1;
 ```
 
-Add to `WorkoutRepository`:
+Add the shared cap and methods to `WorkoutRepository.kt`:
 
 ```kotlin
+const val MAX_RECENT_EXERCISE_SESSIONS = 5
+
 suspend fun getRecentCompletedSessionsForExercise(
     exerciseId: String,
     profileId: String,
-    limit: Int = 5,
+    limit: Int = MAX_RECENT_EXERCISE_SESSIONS,
 ): List<WorkoutSession>
 
 suspend fun getMostRecentCompletedExerciseId(profileId: String): String?
@@ -1664,46 +1716,85 @@ override suspend fun getRecentCompletedSessionsForExercise(
     exerciseId: String,
     profileId: String,
     limit: Int,
-): List<WorkoutSession> = withContext(Dispatchers.IO) {
-    require(limit > 0) { "limit must be positive" }
-    queries.selectRecentCompletedSessionsForExercise(
-        profileId = profileId,
-        exerciseId = exerciseId,
-        limit = limit.toLong(),
-        mapper = ::mapToSession,
-    ).executeAsList()
+): List<WorkoutSession> {
+    require(exerciseId.isNotBlank()) { "exerciseId must not be blank" }
+    require(profileId.isNotBlank()) { "profileId must not be blank" }
+    require(limit in 1..MAX_RECENT_EXERCISE_SESSIONS) {
+        "limit must be in 1..$MAX_RECENT_EXERCISE_SESSIONS"
+    }
+    return withContext(Dispatchers.IO) {
+        queries.selectRecentCompletedSessionsForExercise(
+            profileId = profileId,
+            exerciseId = exerciseId,
+            limit = limit.toLong(),
+            mapper = ::mapToSession,
+        ).executeAsList()
+    }
 }
 
-override suspend fun getMostRecentCompletedExerciseId(profileId: String): String? =
-    withContext(Dispatchers.IO) {
+override suspend fun getMostRecentCompletedExerciseId(profileId: String): String? {
+    require(profileId.isNotBlank()) { "profileId must not be blank" }
+    return withContext(Dispatchers.IO) {
         queries.selectMostRecentCompletedExerciseId(profileId).executeAsOneOrNull()
     }
+}
 ```
 
-Fake:
+Import `MAX_RECENT_EXERCISE_SESSIONS`. Validate before dispatching so the production and fake contracts fail identically without touching storage.
+
+Fake: inside `FakeWorkoutRepository`, add the nested request type, read-failure controls, and request recording for resolver/error-bound tests, then mirror the same guards and deterministic ordering:
 
 ```kotlin
+data class RecentCompletedRequest(
+    val exerciseId: String,
+    val profileId: String,
+    val limit: Int,
+)
+
+val recentCompletedRequests = mutableListOf<RecentCompletedRequest>()
+var recentCompletedFailure: Throwable? = null
+var mostRecentCompletedExerciseFailure: Throwable? = null
+
 override suspend fun getRecentCompletedSessionsForExercise(
     exerciseId: String,
     profileId: String,
     limit: Int,
-): List<WorkoutSession> = sessions.values
-    .asSequence()
-    .filter { it.profileId == profileId && it.exerciseId == exerciseId }
-    .filter { it.workingReps > 0 || it.totalReps > 0 }
-    .sortedByDescending { it.timestamp }
-    .take(limit)
-    .toList()
+): List<WorkoutSession> {
+    require(exerciseId.isNotBlank())
+    require(profileId.isNotBlank())
+    require(limit in 1..MAX_RECENT_EXERCISE_SESSIONS)
+    recentCompletedRequests += RecentCompletedRequest(exerciseId, profileId, limit)
+    recentCompletedFailure?.let { throw it }
+    return sessions.values
+        .asSequence()
+        .filter { it.profileId == profileId && it.exerciseId == exerciseId }
+        .filter { it.workingReps > 0 || it.totalReps > 0 }
+        .sortedWith(
+            compareByDescending<WorkoutSession> { it.timestamp }
+                .thenByDescending { it.id },
+        )
+        .take(limit)
+        .toList()
+}
 
-override suspend fun getMostRecentCompletedExerciseId(profileId: String): String? =
-    sessions.values
+override suspend fun getMostRecentCompletedExerciseId(profileId: String): String? {
+    require(profileId.isNotBlank())
+    mostRecentCompletedExerciseFailure?.let { throw it }
+    return sessions.values
         .asSequence()
         .filter { it.profileId == profileId }
         .filter { it.workingReps > 0 || it.totalReps > 0 }
         .filter { !it.exerciseId.isNullOrBlank() }
-        .maxByOrNull { it.timestamp }
+        .sortedWith(
+            compareByDescending<WorkoutSession> { it.timestamp }
+                .thenByDescending { it.id },
+        )
+        .firstOrNull()
         ?.exerciseId
+}
 ```
+
+Also clear `recentCompletedRequests` and reset both failures to null inside the fake's existing `reset()`. The fake has no `deletedAt` field on `WorkoutSession`; its delete helper removes rows, while the SQLDelight tests own tombstone filtering. Do not silently accept `take(0)` or `take(-1)` in the fake.
 
 - [ ] **Step 5: Generate SQLDelight interfaces and make query tests green**
 
@@ -1713,21 +1804,56 @@ Run:
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:testAndroidHostTest --tests "*SqlDelightWorkoutRepositoryTest*" --console=plain
 ```
 
-Expected: BUILD SUCCESSFUL; both new repository tests pass.
+Expected: BUILD SUCCESSFUL; all three new repository tests pass, including deterministic ties, tombstones, total-reps-only eligibility, and validation parity.
 
 - [ ] **Step 6: Write failing resolver precedence and normalization tests**
+
+First extend the Task 1/read fakes with failures that are thrown before returning data:
+
+```kotlin
+// FakeVelocityOneRepMaxRepository
+var latestPassingFailure: Throwable? = null
+
+override suspend fun getLatestPassing(
+    exerciseId: String,
+    profileId: String,
+): VelocityOneRepMaxEntity? {
+    latestPassingFailure?.let { throw it }
+    return latestPassing?.takeIf {
+        it.exerciseId == exerciseId && it.profileId == profileId
+    }
+}
+
+// FakeAssessmentRepository
+var latestAssessmentFailure: Throwable? = null
+
+override suspend fun getLatestAssessment(
+    exerciseId: String,
+    profileId: String,
+): AssessmentResultEntity? {
+    latestAssessmentFailure?.let { throw it }
+    return assessments
+        .filter { it.exerciseId == exerciseId && it.profileId == profileId }
+        .maxByOrNull { it.createdAt }
+}
+```
+
+Do not add fallback behavior to these fakes: failures must let resolver and Exercise Detail tests prove their explicit error contracts.
 
 ```kotlin
 package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
+import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeAssessmentRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class ResolveCurrentOneRepMaxUseCaseTest {
@@ -1756,6 +1882,7 @@ class ResolveCurrentOneRepMaxUseCaseTest {
             CurrentOneRepMax(70f, CurrentOneRepMaxSource.VELOCITY, 30L),
             resolver("bench", "athlete-a"),
         )
+        assertEquals(emptyList(), workouts.recentCompletedRequests)
     }
 
     @Test
@@ -1774,6 +1901,29 @@ class ResolveCurrentOneRepMaxUseCaseTest {
     }
 
     @Test
+    fun `invalid assessment override falls through to its valid estimate`() = runTest {
+        seedAssessment(totalKg = 120f, overrideKg = Float.NaN)
+
+        assertEquals(
+            CurrentOneRepMax(60f, CurrentOneRepMaxSource.ASSESSMENT, 1L),
+            resolver("bench", "athlete-a"),
+        )
+    }
+
+    @Test
+    fun `invalid velocity falls through to valid assessment`() = runTest {
+        seedAssessment(totalKg = 120f)
+        velocity.latestPassing = velocityEstimate(
+            perCableKg = Float.POSITIVE_INFINITY,
+            profileId = "athlete-a",
+            exerciseId = "bench",
+        )
+
+        assertEquals(CurrentOneRepMaxSource.ASSESSMENT, resolver("bench", "athlete-a")?.source)
+        assertEquals(60f, resolver("bench", "athlete-a")?.perCableKg)
+    }
+
+    @Test
     fun `session fallback uses canonical hybrid and never another profile`() = runTest {
         seedSession(perCableKg = 100f, reps = 5, profileId = "athlete-b", timestamp = 40L)
         seedSession(perCableKg = 100f, reps = 5, profileId = "athlete-a", timestamp = 20L)
@@ -1786,24 +1936,136 @@ class ResolveCurrentOneRepMaxUseCaseTest {
     }
 
     @Test
-    fun `invalid sources fall through and no source returns null`() = runTest {
-        velocity.latestPassing = VelocityOneRepMaxEntity(
-            id = 1L,
-            exerciseId = "bench",
-            estimatedPerCableKg = Float.NaN,
-            mvtUsedMs = 0.3f,
-            r2 = 0.95f,
-            distinctLoads = 3,
-            passedQualityGate = true,
-            computedAt = 30L,
-            profileId = "athlete-a",
-        )
+    fun `session fallback skips newest invalid estimate and uses newest valid bounded row`() = runTest {
+        seedSession(perCableKg = 100f, reps = 5, timestamp = 20L)
+        seedSession(perCableKg = Float.NaN, reps = 5, timestamp = 30L)
 
-        assertNull(resolver("bench", "athlete-a"))
+        val result = resolver("bench", "athlete-a")
+
+        assertEquals(112.5f, result?.perCableKg)
+        assertEquals(20L, result?.measuredAt)
+        assertEquals(
+            FakeWorkoutRepository.RecentCompletedRequest(
+                exerciseId = "bench",
+                profileId = "athlete-a",
+                limit = MAX_RECENT_EXERCISE_SESSIONS,
+            ),
+            workouts.recentCompletedRequests.single(),
+        )
     }
 
-    private suspend fun seedAssessment(totalKg: Float) {
-        assessments.saveAssessment("bench", totalKg, "[]", null, null, "athlete-a")
+    @Test
+    fun `session helper uses total reps fallback and rejects invalid load or reps`() {
+        val base = session(perCableKg = 100f, workingReps = 0, totalReps = 5)
+
+        assertEquals(112.5f, base.estimatedOneRepMaxPerCableOrNull())
+        assertNull(base.copy(weightPerCableKg = Float.NaN).estimatedOneRepMaxPerCableOrNull())
+        assertNull(base.copy(weightPerCableKg = 0f).estimatedOneRepMaxPerCableOrNull())
+        assertNull(base.copy(workingReps = 0, totalReps = 0).estimatedOneRepMaxPerCableOrNull())
+        assertNull(base.copy(workingReps = -1, totalReps = -1).estimatedOneRepMaxPerCableOrNull())
+    }
+
+    @Test
+    fun `wrong profile and exercise at higher sources cannot block current session`() = runTest {
+        velocity.latestPassing = velocityEstimate(
+            perCableKg = 200f,
+            profileId = "athlete-b",
+            exerciseId = "squat",
+        )
+        seedAssessment(
+            totalKg = 400f,
+            profileId = "athlete-b",
+            exerciseId = "squat",
+        )
+        seedSession(perCableKg = 100f, reps = 5, profileId = "athlete-a", timestamp = 20L)
+
+        assertEquals(CurrentOneRepMaxSource.SESSION, resolver("bench", "athlete-a")?.source)
+    }
+
+    @Test
+    fun `only five newest sessions are inspected and all invalid sources return null`() = runTest {
+        velocity.latestPassing = velocityEstimate(perCableKg = Float.NaN)
+        seedAssessment(totalKg = -1f, overrideKg = Float.POSITIVE_INFINITY)
+        seedSession(perCableKg = 100f, reps = 5, timestamp = 1L)
+        repeat(MAX_RECENT_EXERCISE_SESSIONS) { index ->
+            seedSession(perCableKg = Float.NaN, reps = 5, timestamp = 10L + index)
+        }
+
+        assertNull(resolver("bench", "athlete-a"))
+        assertEquals(MAX_RECENT_EXERCISE_SESSIONS, workouts.recentCompletedRequests.single().limit)
+    }
+
+    @Test
+    fun `blank IDs fail before reading any source`() = runTest {
+        assertFailsWith<IllegalArgumentException> { resolver(" ", "athlete-a") }
+        assertFailsWith<IllegalArgumentException> { resolver("bench", " ") }
+        assertEquals(emptyList(), workouts.recentCompletedRequests)
+    }
+
+    @Test
+    fun `fake bounded read validation mirrors production`() = runTest {
+        assertFailsWith<IllegalArgumentException> {
+            workouts.getRecentCompletedSessionsForExercise(" ", "athlete-a", 1)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            workouts.getRecentCompletedSessionsForExercise("bench", " ", 1)
+        }
+        listOf(0, MAX_RECENT_EXERCISE_SESSIONS + 1).forEach { limit ->
+            assertFailsWith<IllegalArgumentException> {
+                workouts.getRecentCompletedSessionsForExercise("bench", "athlete-a", limit)
+            }
+        }
+        assertFailsWith<IllegalArgumentException> {
+            workouts.getMostRecentCompletedExerciseId(" ")
+        }
+        assertEquals(emptyList(), workouts.recentCompletedRequests)
+    }
+
+    @Test
+    fun `ordinary higher source failure propagates instead of selecting a lower source`() = runTest {
+        seedAssessment(totalKg = 120f)
+        velocity.latestPassingFailure = IllegalStateException("velocity unavailable")
+
+        val thrown = assertFailsWith<IllegalStateException> {
+            resolver("bench", "athlete-a")
+        }
+        assertEquals("velocity unavailable", thrown.message)
+    }
+
+    @Test
+    fun `cancellation from any source propagates`() = runTest {
+        assessments.latestAssessmentFailure = CancellationException("profile changed")
+
+        val thrown = assertFailsWith<CancellationException> {
+            resolver("bench", "athlete-a")
+        }
+        assertEquals("profile changed", thrown.message)
+    }
+
+    @Test
+    fun `session read failure propagates when higher sources are absent`() = runTest {
+        workouts.recentCompletedFailure = IllegalStateException("history unavailable")
+
+        val thrown = assertFailsWith<IllegalStateException> {
+            resolver("bench", "athlete-a")
+        }
+        assertEquals("history unavailable", thrown.message)
+    }
+
+    private suspend fun seedAssessment(
+        totalKg: Float,
+        overrideKg: Float? = null,
+        exerciseId: String = "bench",
+        profileId: String = "athlete-a",
+    ) {
+        assessments.saveAssessment(
+            exerciseId,
+            totalKg,
+            "[]",
+            null,
+            overrideKg,
+            profileId,
+        )
     }
 
     private fun seedSession(
@@ -1813,21 +2075,52 @@ class ResolveCurrentOneRepMaxUseCaseTest {
         timestamp: Long = 10L,
     ) {
         workouts.addSession(
-            WorkoutSession(
-                id = "$profileId-$timestamp",
-                timestamp = timestamp,
-                mode = "OldSchool",
-                reps = reps,
-                weightPerCableKg = perCableKg,
-                duration = 1_000L,
-                totalReps = reps,
+            session(
+                perCableKg = perCableKg,
                 workingReps = reps,
-                exerciseId = "bench",
-                exerciseName = "Bench Press",
+                totalReps = reps,
                 profileId = profileId,
+                timestamp = timestamp,
             ),
         )
     }
+
+    private fun session(
+        perCableKg: Float,
+        workingReps: Int,
+        totalReps: Int,
+        profileId: String = "athlete-a",
+        exerciseId: String = "bench",
+        timestamp: Long = 10L,
+    ) = WorkoutSession(
+        id = "$profileId-$exerciseId-$timestamp-$perCableKg",
+        timestamp = timestamp,
+        mode = "OldSchool",
+        reps = totalReps,
+        weightPerCableKg = perCableKg,
+        duration = 1_000L,
+        totalReps = totalReps,
+        workingReps = workingReps,
+        exerciseId = exerciseId,
+        exerciseName = exerciseId,
+        profileId = profileId,
+    )
+
+    private fun velocityEstimate(
+        perCableKg: Float,
+        profileId: String = "athlete-a",
+        exerciseId: String = "bench",
+    ) = VelocityOneRepMaxEntity(
+        id = 1L,
+        exerciseId = exerciseId,
+        estimatedPerCableKg = perCableKg,
+        mvtUsedMs = 0.3f,
+        r2 = 0.95f,
+        distinctLoads = 3,
+        passedQualityGate = true,
+        computedAt = 30L,
+        profileId = profileId,
+    )
 }
 ```
 
@@ -1847,8 +2140,10 @@ Expected: FAIL to compile because the result/source/use-case types do not exist.
 package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.data.repository.AssessmentRepository
+import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 
 enum class CurrentOneRepMaxSource {
@@ -1863,6 +2158,18 @@ data class CurrentOneRepMax(
     val measuredAt: Long,
 )
 
+fun WorkoutSession.estimatedOneRepMaxPerCableOrNull(): Float? {
+    val load = weightPerCableKg.takeIf { it.isFinite() && it > 0f } ?: return null
+    val reps = workingReps.takeIf { it > 0 }
+        ?: totalReps.takeIf { it > 0 }
+        ?: return null
+    return OneRepMaxCalculator.estimate(load, reps)
+        .takeIf { it.isFinite() && it > 0f }
+}
+
+private fun Float.validPositiveOrNull(): Float? =
+    takeIf { it.isFinite() && it > 0f }
+
 class ResolveCurrentOneRepMaxUseCase(
     private val velocityRepository: VelocityOneRepMaxRepository,
     private val assessmentRepository: AssessmentRepository,
@@ -1873,140 +2180,488 @@ class ResolveCurrentOneRepMaxUseCase(
         require(profileId.isNotBlank())
 
         velocityRepository.getLatestPassing(exerciseId, profileId)
-            ?.takeIf { it.estimatedPerCableKg.isFinite() && it.estimatedPerCableKg > 0f }
+            ?.takeIf {
+                it.exerciseId == exerciseId &&
+                    it.profileId == profileId &&
+                    it.passedQualityGate
+            }
+            ?.let { estimate ->
+                estimate.estimatedPerCableKg.validPositiveOrNull()
+                    ?.let { estimate to it }
+            }
             ?.let {
                 return CurrentOneRepMax(
-                    perCableKg = it.estimatedPerCableKg,
+                    perCableKg = it.second,
                     source = CurrentOneRepMaxSource.VELOCITY,
-                    measuredAt = it.computedAt,
+                    measuredAt = it.first.computedAt,
                 )
             }
 
         assessmentRepository.getLatestAssessment(exerciseId, profileId)?.let { assessment ->
-            val totalKg = assessment.userOverrideKg ?: assessment.estimatedOneRepMaxKg
-            val perCableKg = totalKg / 2f
-            if (perCableKg.isFinite() && perCableKg > 0f) {
-                return CurrentOneRepMax(
-                    perCableKg = perCableKg,
-                    source = CurrentOneRepMaxSource.ASSESSMENT,
-                    measuredAt = assessment.createdAt,
-                )
+            if (assessment.exerciseId == exerciseId && assessment.profileId == profileId) {
+                val validTotalKg = assessment.userOverrideKg?.validPositiveOrNull()
+                    ?: assessment.estimatedOneRepMaxKg.validPositiveOrNull()
+                val perCableKg = validTotalKg?.div(2f)?.validPositiveOrNull()
+                if (perCableKg != null) {
+                    return CurrentOneRepMax(
+                        perCableKg = perCableKg,
+                        source = CurrentOneRepMaxSource.ASSESSMENT,
+                        measuredAt = assessment.createdAt,
+                    )
+                }
             }
         }
 
-        val session = workoutRepository
-            .getRecentCompletedSessionsForExercise(exerciseId, profileId, limit = 1)
-            .firstOrNull()
-            ?: return null
-        val reps = session.workingReps.takeIf { it > 0 } ?: session.totalReps
-        val estimate = OneRepMaxCalculator.estimate(session.weightPerCableKg, reps)
-        return estimate
-            .takeIf { it.isFinite() && it > 0f }
-            ?.let { CurrentOneRepMax(it, CurrentOneRepMaxSource.SESSION, session.timestamp) }
+        workoutRepository.getRecentCompletedSessionsForExercise(
+            exerciseId = exerciseId,
+            profileId = profileId,
+            limit = MAX_RECENT_EXERCISE_SESSIONS,
+        ).forEach { session ->
+            if (session.exerciseId == exerciseId && session.profileId == profileId) {
+                val estimate = session.estimatedOneRepMaxPerCableOrNull()
+                if (estimate != null) {
+                    return CurrentOneRepMax(
+                        perCableKg = estimate,
+                        source = CurrentOneRepMaxSource.SESSION,
+                        measuredAt = session.timestamp,
+                    )
+                }
+            }
+        }
+        return null
     }
 }
 ```
+
+There is intentionally no `try/catch` in the resolver. A failure at velocity or assessment means precedence is unknown; a session read failure means fallback is unavailable. All ordinary failures and `CancellationException` therefore propagate. Invalid values are data fallthrough, not exceptions. The shared session extension is the only session-estimate calculation used by both this resolver and Exercise Detail.
 
 - [ ] **Step 9: Register the use case and make resolver tests green**
 
 Add to `DomainModule.kt`:
 
 ```kotlin
+import com.devil.phoenixproject.domain.usecase.ResolveCurrentOneRepMaxUseCase
+
 single { ResolveCurrentOneRepMaxUseCase(get(), get(), get()) }
 ```
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ResolveCurrentOneRepMaxUseCaseTest*" --tests "*KoinModuleVerifyTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ResolveCurrentOneRepMaxUseCaseTest*" --tests "*KoinModuleVerifyTest*" --rerun --console=plain
 ```
 
-Expected: BUILD SUCCESSFUL; resolver and Koin graph tests pass.
+Expected: BUILD SUCCESSFUL; the resolver suite and existing `KoinModuleVerifyTest.verifyAppModule` pass without adding the use case to `extraTypes`. It is an application-owned binding whose three repositories already resolve from `appModule`.
 
-- [ ] **Step 10: Replace Exercise Detail's split hero with the shared resolver**
+- [ ] **Step 10: Write failing Exercise Detail latest-request, cancellation, and error-isolation tests**
 
-Inject and load the resolution:
-
-```kotlin
-val resolveCurrentOneRepMax: ResolveCurrentOneRepMaxUseCase = koinInject()
-val profileId by viewModel.activeProfileId.collectAsState()
-var currentResolution by remember(exerciseId, profileId) {
-    mutableStateOf<CurrentOneRepMax?>(null)
-}
-LaunchedEffect(exerciseId, profileId, exerciseSessions) {
-    currentResolution = resolveCurrentOneRepMax(exerciseId, profileId)
-}
-```
-
-Replace `OneRepMaxCard`'s velocity argument with the resolution:
+Create `ExerciseDetailOneRepMaxLoadTest.kt`:
 
 ```kotlin
-@Composable
-private fun OneRepMaxCard(
-    resolution: CurrentOneRepMax?,
-    previousSessionOneRepMax: Float?,
-    weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String,
-) {
-    val sessionDelta = if (
-        resolution?.source == CurrentOneRepMaxSource.SESSION &&
-        previousSessionOneRepMax != null
-    ) {
-        resolution.perCableKg - previousSessionOneRepMax
-    } else {
-        null
-    }
-    val sourceLabel = when (resolution?.source) {
-        CurrentOneRepMaxSource.VELOCITY -> "Velocity estimate"
-        CurrentOneRepMaxSource.ASSESSMENT -> "Strength assessment"
-        CurrentOneRepMaxSource.SESSION -> "Recent completed session"
-        null -> "No profile-scoped estimate"
-    }
+package com.devil.phoenixproject.presentation.screen
 
-    Card(
-        modifier = Modifier.fillMaxWidth().shadow(8.dp, MaterialTheme.shapes.medium),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text("CURRENT 1RM", style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                resolution?.let { formatWeight(it.perCableKg, weightUnit) } ?: "No data",
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
+import com.devil.phoenixproject.domain.usecase.CurrentOneRepMax
+import com.devil.phoenixproject.domain.usecase.CurrentOneRepMaxSource
+import com.devil.phoenixproject.testutil.readProjectFile
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.test.Test
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+
+class ExerciseDetailOneRepMaxLoadTest {
+    private val requestA = ExerciseDetailOneRepMaxRequest("bench", "athlete-a", emptyList())
+    private val requestB = ExerciseDetailOneRepMaxRequest("bench", "athlete-b", emptyList())
+    private val resultA = CurrentOneRepMax(50f, CurrentOneRepMaxSource.SESSION, 10L)
+    private val resultB = CurrentOneRepMax(60f, CurrentOneRepMaxSource.ASSESSMENT, 20L)
+
+    @Test
+    fun `late completion from A cannot overwrite Ready B`() = runTest {
+        val gate = ExerciseDetailOneRepMaxLoadGate()
+        val states = mutableListOf<ExerciseDetailOneRepMaxState>()
+        val aStarted = CompletableDeferred<Unit>()
+        val releaseA = CompletableDeferred<Unit>()
+        val loadA = async {
+            loadExerciseDetailOneRepMax(
+                request = requestA,
+                gate = gate,
+                resolve = { _, _ ->
+                    aStarted.complete(Unit)
+                    releaseA.await()
+                    resultA
+                },
+                publish = states::add,
             )
-            Text(sourceLabel, style = MaterialTheme.typography.bodySmall)
-            if (sessionDelta != null && sessionDelta != 0f) {
-                Text(
-                    "${if (sessionDelta > 0f) "+" else ""}${formatWeight(sessionDelta, weightUnit)} from last",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
+        }
+        runCurrent()
+        aStarted.await()
+
+        loadExerciseDetailOneRepMax(
+            request = requestB,
+            gate = gate,
+            resolve = { _, _ -> resultB },
+            publish = states::add,
+        )
+        releaseA.complete(Unit)
+        loadA.await()
+
+        assertEquals(
+            listOf(
+                ExerciseDetailOneRepMaxState.Loading,
+                ExerciseDetailOneRepMaxState.Loading,
+                ExerciseDetailOneRepMaxState.Ready(resultB),
+            ),
+            states,
+        )
+    }
+
+    @Test
+    fun `late error from A cannot replace Ready B with Failed`() = runTest {
+        val gate = ExerciseDetailOneRepMaxLoadGate()
+        val states = mutableListOf<ExerciseDetailOneRepMaxState>()
+        val aStarted = CompletableDeferred<Unit>()
+        val releaseA = CompletableDeferred<Unit>()
+        val loadA = async {
+            loadExerciseDetailOneRepMax(
+                request = requestA,
+                gate = gate,
+                resolve = { _, _ ->
+                    aStarted.complete(Unit)
+                    releaseA.await()
+                    error("late A failure")
+                },
+                publish = states::add,
+            )
+        }
+        runCurrent()
+        aStarted.await()
+        loadExerciseDetailOneRepMax(
+            request = requestB,
+            gate = gate,
+            resolve = { _, _ -> resultB },
+            publish = states::add,
+        )
+        releaseA.complete(Unit)
+        loadA.await()
+
+        assertEquals(ExerciseDetailOneRepMaxState.Ready(resultB), states.last())
+        assertFalse(states.contains(ExerciseDetailOneRepMaxState.Failed))
+    }
+
+    @Test
+    fun `cancellation escapes and is never rendered as failure`() = runTest {
+        val states = mutableListOf<ExerciseDetailOneRepMaxState>()
+        val started = CompletableDeferred<Unit>()
+        val child = async {
+            loadExerciseDetailOneRepMax(
+                request = requestA,
+                gate = ExerciseDetailOneRepMaxLoadGate(),
+                resolve = { _, _ ->
+                    started.complete(Unit)
+                    awaitCancellation()
+                },
+                publish = states::add,
+            )
+        }
+        runCurrent()
+        started.await()
+
+        val cause = CancellationException("profile switched")
+        child.cancel(cause)
+        val thrown = assertFailsWith<CancellationException> { child.await() }
+
+        assertEquals(cause.message, thrown.message)
+        assertEquals(listOf(ExerciseDetailOneRepMaxState.Loading), states)
+    }
+
+    @Test
+    fun `ordinary current-request error fails only the one rep max branch`() = runTest {
+        val states = mutableListOf<ExerciseDetailOneRepMaxState>()
+
+        loadExerciseDetailOneRepMax(
+            request = requestA,
+            gate = ExerciseDetailOneRepMaxLoadGate(),
+            resolve = { _, _ -> error("resolver unavailable") },
+            publish = states::add,
+        )
+
+        assertEquals(
+            listOf(
+                ExerciseDetailOneRepMaxState.Loading,
+                ExerciseDetailOneRepMaxState.Failed,
+            ),
+            states,
+        )
+    }
+
+    @Test
+    fun `screen has one resolver path and no legacy profile or velocity read`() {
+        val source = readProjectFile(
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt",
+        )
+        assertNotNull(source)
+        assertContains(source, "assessmentProfileId")
+        assertContains(source, "loadExerciseDetailOneRepMax(")
+        assertContains(source, "estimatedOneRepMaxPerCableOrNull()")
+        assertContains(source, "catch (cancellation: CancellationException)")
+        assertContains(source, "VolumeChartCard(")
+        assertContains(source, "items(exerciseSessions")
+        assertFalse(source.contains("viewModel.activeProfileId"))
+        assertFalse(source.contains("velocityOneRepMaxRepository"))
+        assertFalse(source.contains("VelocityOneRepMaxEntity"))
+    }
+}
+```
+
+This uses a real canceled child and compares cancellation type/message rather than object identity. The stale test intentionally leaves A running while B completes; only the current token may publish.
+
+- [ ] **Step 11: Replace Exercise Detail's split hero with a token-gated shared-resolver load**
+
+Add these internal presentation types/functions in `ExerciseDetailScreen.kt` above the composable:
+
+```kotlin
+internal data class ExerciseDetailOneRepMaxRequest(
+    val exerciseId: String,
+    val profileId: String,
+    val completedSessions: List<WorkoutSession>,
+)
+
+internal data class ExerciseDetailOneRepMaxLoadToken(
+    val generation: Long,
+    val request: ExerciseDetailOneRepMaxRequest,
+)
+
+internal class ExerciseDetailOneRepMaxLoadGate {
+    private var generation = 0L
+    private var active: ExerciseDetailOneRepMaxLoadToken? = null
+
+    fun begin(request: ExerciseDetailOneRepMaxRequest): ExerciseDetailOneRepMaxLoadToken =
+        ExerciseDetailOneRepMaxLoadToken(++generation, request).also { active = it }
+
+    fun isCurrent(token: ExerciseDetailOneRepMaxLoadToken): Boolean = active == token
+}
+
+internal sealed interface ExerciseDetailOneRepMaxState {
+    data object Loading : ExerciseDetailOneRepMaxState
+    data class Ready(val resolution: CurrentOneRepMax?) : ExerciseDetailOneRepMaxState
+    data object Failed : ExerciseDetailOneRepMaxState
+}
+
+internal suspend fun loadExerciseDetailOneRepMax(
+    request: ExerciseDetailOneRepMaxRequest,
+    gate: ExerciseDetailOneRepMaxLoadGate,
+    resolve: suspend (exerciseId: String, profileId: String) -> CurrentOneRepMax?,
+    publish: (ExerciseDetailOneRepMaxState) -> Unit,
+) {
+    val token = gate.begin(request)
+    publish(ExerciseDetailOneRepMaxState.Loading)
+    try {
+        val resolution = resolve(request.exerciseId, request.profileId)
+        if (gate.isCurrent(token)) {
+            publish(ExerciseDetailOneRepMaxState.Ready(resolution))
+        }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        if (gate.isCurrent(token)) {
+            publish(ExerciseDetailOneRepMaxState.Failed)
         }
     }
 }
 ```
 
-Retain the assessment button and velocity/assessment history access regardless of `vbtEnabled`. Replace the hardcoded source strings with resource keys in Task 3.
+The gate is confined to the Compose effect context; it is a latest-request token, not a cross-thread lock. The request includes the exact completed-session snapshot so a save/edit for the same exercise/profile creates a new generation. In `ExerciseDetailScreen`:
 
-- [ ] **Step 11: Run focused and Exercise Detail regression tests**
+1. Inject `ResolveCurrentOneRepMaxUseCase`. Delete the `VelocityOneRepMaxEntity` import, direct `velocityOneRepMaxRepository.getLatestPassing` state/effect, and `viewModel.activeProfileId` collection.
+2. Treat Task 1's nullable `assessmentProfileId` parameter as the only Ready profile source. While it is null, render no old resolution and make no resolver call.
+3. Filter local sessions by exact profile, exercise, and completion, then order ties deterministically:
 
-Run:
-
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ResolveCurrentOneRepMaxUseCaseTest*" --tests "*VelocityOneRepMaxRepositoryTest*" --tests "*OneRepMaxCalculatorTest*" --console=plain
+```kotlin
+val profileId = assessmentProfileId
+val exerciseSessions = remember(allWorkoutSessions, exerciseId, profileId) {
+    if (profileId == null) {
+        emptyList()
+    } else {
+        allWorkoutSessions
+            .asSequence()
+            .filter { it.profileId == profileId && it.exerciseId == exerciseId }
+            .filter { it.workingReps > 0 || it.totalReps > 0 }
+            .sortedWith(
+                compareByDescending<WorkoutSession> { it.timestamp }
+                    .thenByDescending { it.id },
+            )
+            .toList()
+    }
+}
 ```
 
-Expected: BUILD SUCCESSFUL; all selected tests pass.
+4. Key the state holder itself by the full request, clearing stale UI synchronously before the new effect runs; use the load gate as a second defense against non-cooperative old reads:
 
-- [ ] **Step 12: Commit the query/resolver slice**
+```kotlin
+val resolveCurrentOneRepMax: ResolveCurrentOneRepMaxUseCase = koinInject()
+val loadGate = remember { ExerciseDetailOneRepMaxLoadGate() }
+val request = remember(exerciseId, profileId, exerciseSessions) {
+    profileId?.let {
+        ExerciseDetailOneRepMaxRequest(
+            exerciseId = exerciseId,
+            profileId = it,
+            completedSessions = exerciseSessions,
+        )
+    }
+}
+val stateHolder = remember(request) {
+    mutableStateOf<ExerciseDetailOneRepMaxState>(
+        ExerciseDetailOneRepMaxState.Loading,
+    )
+}
+val oneRepMaxState by stateHolder
+
+LaunchedEffect(request, resolveCurrentOneRepMax) {
+    val currentRequest = request ?: return@LaunchedEffect
+    loadExerciseDetailOneRepMax(
+        request = currentRequest,
+        gate = loadGate,
+        resolve = resolveCurrentOneRepMax::invoke,
+        publish = { stateHolder.value = it },
+    )
+}
+```
+
+5. Use `WorkoutSession.estimatedOneRepMaxPerCableOrNull()` for chart and delta data. Never duplicate working-reps/load validation:
+
+```kotlin
+val validSessionEstimatesNewestFirst = remember(exerciseSessions) {
+    exerciseSessions.mapNotNull { session ->
+        session.estimatedOneRepMaxPerCableOrNull()
+            ?.let { estimate -> session.timestamp to estimate }
+    }
+}
+val oneRepMaxData = remember(validSessionEstimatesNewestFirst) {
+    validSessionEstimatesNewestFirst.reversed()
+}
+val previousSessionOneRepMax =
+    validSessionEstimatesNewestFirst.getOrNull(1)?.second
+```
+
+Change `OneRepMaxCard` to accept `state: ExerciseDetailOneRepMaxState` and `previousSessionOneRepMax`. Extract a resolution only from `Ready`. Show a delta only when its source is `SESSION`; `Loading` and `Failed` affect only this card and must not hide the history list/charts or assessment button. Keep the assessment action visible regardless of `vbtEnabled`. Task 3 replaces temporary source/empty/error labels with localized resources.
+
+- [ ] **Step 12: Run exact focused suites, inspect XML counts, compile callers, and scan legacy paths**
+
+Run generation plus focused tests:
 
 ```powershell
-git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/WorkoutRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCase.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCaseTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepositoryTest.kt
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:testAndroidHostTest --tests "*SqlDelightWorkoutRepositoryTest*" --tests "*ResolveCurrentOneRepMaxUseCaseTest*" --tests "*ExerciseDetailOneRepMaxLoadTest*" --tests "*KoinModuleVerifyTest*" --tests "*VelocityOneRepMaxRepositoryTest*" --tests "*OneRepMaxCalculatorTest*" --rerun --console=plain
+```
+
+Expected: BUILD SUCCESSFUL. Verify every exact requested class executed at least one JUnit case:
+
+```powershell
+$resultRoot = 'shared/build/test-results/testAndroidHostTest'
+$documents = @(
+    Get-ChildItem $resultRoot -Filter 'TEST-*.xml' |
+        ForEach-Object { [xml](Get-Content $_.FullName -Raw) }
+)
+$expectedClasses = @(
+    'com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepositoryTest',
+    'com.devil.phoenixproject.domain.usecase.ResolveCurrentOneRepMaxUseCaseTest',
+    'com.devil.phoenixproject.presentation.screen.ExerciseDetailOneRepMaxLoadTest',
+    'com.devil.phoenixproject.di.KoinModuleVerifyTest',
+    'com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepositoryTest',
+    'com.devil.phoenixproject.util.OneRepMaxCalculatorTest'
+)
+foreach ($className in $expectedClasses) {
+    $count = 0
+    foreach ($document in $documents) {
+        $count += @(
+            $document.SelectNodes("//testcase[@classname='$className']")
+        ).Count
+    }
+    if ($count -lt 1) {
+        throw "No executed test cases found for $className"
+    }
+    Write-Output "$className : $count"
+}
+```
+
+Compile production and test callers for both configured platform families:
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileAndroidMain :shared:compileAndroidHostTest :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --console=plain
+```
+
+Expected: BUILD SUCCESSFUL. Then run exact implementation/caller scans:
+
+```powershell
+rg -n 'getRecentCompletedSessionsForExercise|getMostRecentCompletedExerciseId' shared/src --glob '*.kt'
+rg -n 'ResolveCurrentOneRepMaxUseCase' shared/src --glob '*.kt'
+
+$legacyDetailReads = rg -n 'viewModel\.activeProfileId|velocityOneRepMaxRepository|VelocityOneRepMaxEntity' shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt
+if ($LASTEXITCODE -eq 0) {
+    $legacyDetailReads
+    throw 'Exercise Detail still has a legacy profile or velocity read'
+}
+
+$newestOnlyResolver = rg -n -U 'getRecentCompletedSessionsForExercise\([\s\S]{0,300}?limit\s*=\s*1' shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCase.kt
+if ($LASTEXITCODE -eq 0) {
+    $newestOnlyResolver
+    throw 'Resolver still inspects only the newest session'
+}
+
+$implementationRoots = @(
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository',
+    'shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil'
+)
+$implementations = @(
+    rg -l -U 'class\s+\w+[^\{]*:\s*WorkoutRepository' $implementationRoots --glob '*.kt' |
+        ForEach-Object { $_ -replace '\\', '/' } |
+        Sort-Object
+)
+$expectedImplementations = @(
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt',
+    'shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt'
+) | Sort-Object
+if (Compare-Object $expectedImplementations $implementations) {
+    Compare-Object $expectedImplementations $implementations
+    throw 'WorkoutRepository implementation inventory changed'
+}
+
+$resolverBindings = @(
+    rg -n 'single\s*\{\s*ResolveCurrentOneRepMaxUseCase\(' shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt
+)
+if ($resolverBindings.Count -ne 1) {
+    $resolverBindings
+    throw "Expected one resolver binding, found $($resolverBindings.Count)"
+}
+
+$resolverProductionFiles = @(
+    rg -l 'ResolveCurrentOneRepMaxUseCase' shared/src/commonMain --glob '*.kt' |
+        ForEach-Object { $_ -replace '\\', '/' } |
+        Sort-Object
+)
+$expectedResolverProductionFiles = @(
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt',
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCase.kt',
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt'
+) | Sort-Object
+if (Compare-Object $expectedResolverProductionFiles $resolverProductionFiles) {
+    Compare-Object $expectedResolverProductionFiles $resolverProductionFiles
+    throw 'Resolver production caller inventory changed'
+}
+```
+
+Expected at Task 2 completion: bounded-method callers are the interface, production/fake repositories, resolver, and focused tests; Task 5 later adds `ProfileViewModel`. The resolver is bound exactly once in `DomainModule` and consumed by Exercise Detail plus focused tests; Task 5 later adds the Profile consumer. The implementation list is exactly `SqlDelightWorkoutRepository` and `FakeWorkoutRepository`.
+
+- [ ] **Step 13: Commit the query/resolver slice**
+
+```powershell
+git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/WorkoutRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCase.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCaseTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailOneRepMaxLoadTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeVelocityOneRepMaxRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepositoryTest.kt
 git commit -m "feat: resolve profile scoped exercise one rep max"
 ```
 
@@ -2902,11 +3557,11 @@ val records = personalRecords.getAllPRsForExercise(exerciseId, profileId)
 val sessions = workouts.getRecentCompletedSessionsForExercise(
     exerciseId = exerciseId,
     profileId = profileId,
-    limit = 5,
+    limit = MAX_RECENT_EXERCISE_SESSIONS,
 )
 ```
 
-Treat a null resolver result as `ProfileLoadable.Empty`, not failure. Treat no PR rows as `Ready(ProfilePrHighlights(null, null, null))` and no sessions as `Ready(emptyList())`.
+Import `MAX_RECENT_EXERCISE_SESSIONS`. Treat a null resolver result as `ProfileLoadable.Empty`, not failure. Treat no PR rows as `Ready(ProfilePrHighlights(null, null, null))` and no sessions as `Ready(emptyList())`.
 
 - [ ] **Step 7: Register the route-scoped factory and make tests green**
 
