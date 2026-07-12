@@ -6702,10 +6702,12 @@ git commit -m "feat(sync): enforce profile preference payload limits"
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerTest.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalTokenRefreshTest.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullPaginationTest.kt`
+- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt`
+- Test: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt`
 
 **Interfaces:**
 - Consumes: Task 4's internal persistence adapter, the data-foundation migration gate, Task 5's planner, and Task 6's transport/fakes.
-- Produces: metadata-first minimal preference-only pushes, race-safe canonical/rejection application, and reusable sanitized diagnostic-line helpers that never expose raw profile ids, remote section strings, issue keys, exception messages, or payload fragments.
+- Produces: exact-parent metadata-first minimal preference-only pushes, race-safe canonical/rejection application, non-cancellation preference-local failure isolation that preserves ordinary acknowledgements, and reusable sanitized diagnostic-line helpers that never expose raw profile ids, remote section strings, issue keys, exception messages, or payload fragments.
 
 - [ ] **Step 1: Add the focused fake sync repository with captures**
 
@@ -6715,6 +6717,8 @@ Create `FakeProfilePreferenceSyncRepository.kt`:
 internal class FakeProfilePreferenceSyncRepository : ProfilePreferenceSyncRepository {
     var dirtySnapshot = ProfilePreferenceDirtySnapshot(emptyList(), emptyList())
     var snapshotCallCount = 0
+    var snapshotFailure: Exception? = null
+    var applyPushFailure: Exception? = null
     var knownProfileIds: Set<String> = setOf("profile-a")
     var onApplyPulledSections: (() -> Unit)? = null
     val appliedPushOutcomes = mutableListOf<List<ProfilePreferencePushOutcome>>()
@@ -6722,12 +6726,14 @@ internal class FakeProfilePreferenceSyncRepository : ProfilePreferenceSyncReposi
 
     override suspend fun snapshotDirtySections(): ProfilePreferenceDirtySnapshot {
         snapshotCallCount++
+        snapshotFailure?.let { throw it }
         return dirtySnapshot
     }
 
     override suspend fun applyPushOutcomes(
         outcomes: List<ProfilePreferencePushOutcome>,
     ): ProfilePreferenceSyncApplyReport {
+        applyPushFailure?.let { throw it }
         appliedPushOutcomes += outcomes
         return ProfilePreferenceSyncApplyReport(applied = outcomes.size)
     }
@@ -6746,9 +6752,23 @@ internal class FakeProfilePreferenceSyncRepository : ProfilePreferenceSyncReposi
 }
 ```
 
-- [ ] **Step 2: Write failing metadata-first, readiness, and legacy-backend tests**
+- [ ] **Step 2: Write failing exact-parent metadata, readiness, and legacy-backend tests**
 
-Create `SyncManagerProfilePreferencesTest.kt` with a `Harness` that owns `FakePortalApiClient`, `PortalTokenStorage(MapSettings())`, the existing sync/gamification/metric/profile/activity fakes, and `FakeProfilePreferenceSyncRepository`. Include these assertions:
+Create `SyncManagerProfilePreferencesTest.kt` with a `Harness` that owns `FakePortalApiClient`, `PortalTokenStorage(MapSettings())`, the existing sync/gamification/metric/profile/activity fakes, and `FakeProfilePreferenceSyncRepository`. The harness must seed the exact profile used by every nominal preference fixture before a sync; otherwise `ensureDefaultProfile()` would send only `default` metadata while a `profile-a` preference test falsely passes on call order alone:
+
+```kotlin
+init {
+    profileRepository.setActiveProfileForTest("profile-a")
+    tokenStorage.saveAuth(
+        PortalAuthResponse(
+            token = "token",
+            user = PortalUser("user", "u@example.com", null, false),
+        ),
+    )
+}
+```
+
+Include these assertions:
 
 ```kotlin
 @Test
@@ -6765,11 +6785,12 @@ fun `ordinary metadata push precedes preference-only chunks`() = runTest {
         ),
     )
 
-    assertTrue(harness.manager(migrationReady = true).sync().isSuccess)
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
 
     assertEquals(2, harness.api.pushPayloads.size)
-    assertNotNull(harness.api.pushPayloads[0].allProfiles)
-    assertNull(harness.api.pushPayloads[0].profilePreferenceSections)
+    val metadataPayload = harness.api.pushPayloads[0]
+    assertEquals(listOf("profile-a"), metadataPayload.allProfiles?.map { it.id })
+    assertNull(metadataPayload.profilePreferenceSections)
     val preferencePayload = harness.api.pushPayloads[1]
     assertNull(preferencePayload.profileId)
     assertNull(preferencePayload.profileName)
@@ -6778,20 +6799,97 @@ fun `ordinary metadata push precedes preference-only chunks`() = runTest {
     assertTrue(preferencePayload.routines.isEmpty())
     assertTrue(preferencePayload.personalRecords.isEmpty())
     assertEquals(1, preferencePayload.profilePreferenceSections?.size)
+    assertEquals(
+        "profile-a",
+        preferencePayload.profilePreferenceSections?.single()?.localProfileId,
+    )
 }
 
 @Test
-fun `migration not ready never reads or sends profile preferences`() = runTest {
+fun `migration readiness is read dynamically and only Ready enables preferences`() = runTest {
     harness.preferenceSyncRepository.dirtySnapshot = ProfilePreferenceDirtySnapshot(
         valid = listOf(coreSection(generation = 1)),
         unsyncable = emptyList(),
     )
+    harness.api.pushResultsQueue = mutableListOf(
+        successResponse(),
+        successResponse(),
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(coreCanonical(revision = 1)),
+        ),
+    )
+    var migrationState: RequiredMigrationState = RequiredMigrationState.NotStarted
+    val manager = harness.manager(
+        migrationReady = { migrationState is RequiredMigrationState.Ready },
+    )
 
-    assertTrue(harness.manager(migrationReady = false).sync().isSuccess)
+    assertTrue(manager.sync().isSuccess)
 
     assertEquals(1, harness.api.pushPayloads.size)
     assertEquals(0, harness.preferenceSyncRepository.snapshotCallCount)
     assertTrue(harness.preferenceSyncRepository.appliedPushOutcomes.isEmpty())
+
+    migrationState = RequiredMigrationState.Ready
+    assertTrue(manager.sync().isSuccess)
+
+    assertEquals(3, harness.api.pushPayloads.size)
+    assertEquals(1, harness.preferenceSyncRepository.snapshotCallCount)
+    assertEquals(
+        listOf("profile-a"),
+        harness.api.pushPayloads.last().profilePreferenceSections?.map { it.localProfileId },
+    )
+}
+
+@Test
+fun `snapshot profiles absent from the sent metadata set are deferred`() = runTest {
+    val newProfileSection = workoutSection(generation = 2).copy(
+        key = ProfilePreferenceSectionKey(
+            "profile-created-during-ordinary-push",
+            ProfilePreferenceSectionName.WORKOUT,
+        ),
+    )
+    harness.preferenceSyncRepository.dirtySnapshot = ProfilePreferenceDirtySnapshot(
+        valid = listOf(coreSection(generation = 1), newProfileSection),
+        unsyncable = emptyList(),
+    )
+    harness.api.pushResultsQueue = mutableListOf(
+        successResponse(),
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(coreCanonical(revision = 1)),
+        ),
+    )
+
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+
+    assertEquals(listOf("profile-a"), harness.api.pushPayloads[0].allProfiles?.map { it.id })
+    assertEquals(
+        listOf("profile-a"),
+        harness.api.pushPayloads[1].profilePreferenceSections?.map { it.localProfileId },
+    )
+    assertTrue(
+        harness.preferenceSyncRepository.appliedPushOutcomes
+            .flatten()
+            .none { it.key == newProfileSection.key },
+    )
+}
+
+@Test
+fun `ordinary push failure never snapshots or sends preferences`() = runTest {
+    harness.preferenceSyncRepository.dirtySnapshot = ProfilePreferenceDirtySnapshot(
+        valid = listOf(coreSection(generation = 1)),
+        unsyncable = emptyList(),
+    )
+    harness.api.pushResultsQueue = mutableListOf(
+        Result.failure(PortalApiException("ordinary sentinel", statusCode = 503)),
+    )
+
+    assertTrue(harness.manager(migrationReady = { true }).sync().isFailure)
+
+    assertEquals(1, harness.api.pushPayloads.size)
+    assertEquals(0, harness.preferenceSyncRepository.snapshotCallCount)
+    assertTrue(harness.api.pushPayloads.none { it.profilePreferenceSections != null })
 }
 
 @Test
@@ -6802,17 +6900,38 @@ fun `legacy backend leaves every preference section dirty`() = runTest {
     )
     harness.api.pushResultsQueue = mutableListOf(successResponse(), successResponse())
 
-    assertTrue(harness.manager(migrationReady = true).sync().isSuccess)
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
 
+    assertEquals(2, harness.api.pushPayloads.size)
     assertTrue(harness.preferenceSyncRepository.appliedPushOutcomes.isEmpty())
+}
+
+@Test
+fun `strict legacy 400 leaves preferences dirty and preserves ordinary acknowledgement`() = runTest {
+    val ordinary = ordinarySession()
+    harness.syncRepository.workoutSessionsToReturn = listOf(ordinary)
+    harness.preferenceSyncRepository.dirtySnapshot = ProfilePreferenceDirtySnapshot(
+        valid = listOf(coreSection(generation = 1)),
+        unsyncable = emptyList(),
+    )
+    harness.api.pushResultsQueue = mutableListOf(
+        successResponse(),
+        Result.failure(PortalApiException("legacy body sentinel", statusCode = 400)),
+    )
+
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+
+    assertEquals(2, harness.api.pushPayloads.size)
+    assertTrue(harness.preferenceSyncRepository.appliedPushOutcomes.isEmpty())
+    assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
 }
 ```
 
-Use this exact constructor boundary in `Harness.manager`; initialize authentication once in the harness with `tokenStorage.saveAuth(PortalAuthResponse("token", PortalUser("user", "u@example.com", null, false)))`:
+Use this exact constructor boundary in `Harness.manager`. The readiness lambda is retained, not evaluated while constructing the manager, so one singleton observes `NotStarted`/`Applying`/`Failed` as false and a later `Ready` as true:
 
 ```kotlin
 fun manager(
-    migrationReady: Boolean,
+    migrationReady: () -> Boolean = { true },
     rateLimiter: ClientRateLimiter = ClientRateLimiter(),
 ) = SyncManager(
     apiClient = api,
@@ -6825,7 +6944,7 @@ fun manager(
     externalActivityRepository = externalActivityRepository,
     velocityOneRepMaxRepository = velocityOneRepMaxRepository,
     rateLimiter = rateLimiter,
-    isProfilePreferenceMigrationReady = { migrationReady },
+    isProfilePreferenceMigrationReady = migrationReady,
 )
 
 private fun coreSection(generation: Long) = ProfilePreferenceSectionSyncDto(
@@ -6878,6 +6997,45 @@ private fun successResponse(
     canonicalProfilePreferenceSections = canonicalProfilePreferenceSections,
     profilePreferenceRejections = profilePreferenceRejections,
 )
+
+private fun ordinarySession() = WorkoutSession(
+    id = "ordinary-session",
+    timestamp = 1_783_771_200_000L,
+    mode = "OldSchool",
+    reps = 10,
+    weightPerCableKg = 20f,
+    totalReps = 10,
+    exerciseId = "ordinary-exercise",
+    exerciseName = "Ordinary Exercise",
+    routineSessionId = null,
+    profileId = "profile-a",
+)
+
+private fun multiChunkSnapshot(): ProfilePreferenceDirtySnapshot {
+    fun largeBoundarySection(
+        section: ProfilePreferenceSectionName,
+        generation: Long,
+    ) = ProfilePreferenceSectionSyncDto(
+        key = ProfilePreferenceSectionKey("profile-a", section),
+        documentVersion = 1,
+        baseRevision = 0,
+        clientModifiedAtEpochMs = 1_783_771_200_000L,
+        localGeneration = generation,
+        // This focused orchestration fixture is wire-safe and below the 256 KiB
+        // element cap. Three such unique sections exceed one 512 KiB request.
+        payload = buildJsonObject { put("padding", "x".repeat(180_000)) },
+    )
+
+    return ProfilePreferenceDirtySnapshot(
+        valid = listOf(
+            coreSection(generation = 1),
+            largeBoundarySection(ProfilePreferenceSectionName.RACK, generation = 2),
+            largeBoundarySection(ProfilePreferenceSectionName.WORKOUT, generation = 3),
+            largeBoundarySection(ProfilePreferenceSectionName.LED, generation = 4),
+        ),
+        unsyncable = emptyList(),
+    )
+}
 ```
 
 - [ ] **Step 3: Write failing acknowledgement and in-flight generation tests**
@@ -6899,7 +7057,7 @@ fun `accepted canonical carries sent generation into repository outcome`() = run
         ),
     )
 
-    harness.manager(migrationReady = true).sync()
+    harness.manager(migrationReady = { true }).sync()
 
     val outcome = harness.preferenceSyncRepository.appliedPushOutcomes.single().single()
     assertEquals(8L, outcome.sentLocalGeneration)
@@ -6929,12 +7087,124 @@ fun `canonical conflict is applied only through generation ledger`() = runTest {
         ),
     )
 
-    harness.manager(migrationReady = true).sync()
+    harness.manager(migrationReady = { true }).sync()
 
     val outcome = harness.preferenceSyncRepository.appliedPushOutcomes.single().single()
     assertEquals(11L, outcome.sentLocalGeneration)
     assertEquals("REVISION_CONFLICT", outcome.rejectionReason)
     assertEquals(6L, outcome.canonical?.serverRevision)
+}
+
+@Test
+fun `first preference chunk failure is nonfatal and attempts no later chunk`() = runTest {
+    val ordinary = ordinarySession()
+    harness.syncRepository.workoutSessionsToReturn = listOf(ordinary)
+    harness.preferenceSyncRepository.dirtySnapshot = multiChunkSnapshot()
+    harness.api.pushResultsQueue = mutableListOf(
+        successResponse(),
+        Result.failure(PortalApiException("first chunk sentinel", statusCode = 503)),
+    )
+
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+
+    assertEquals(2, harness.api.pushPayloads.size)
+    assertEquals(1, harness.api.pushPayloads.count { it.profilePreferenceSections != null })
+    assertTrue(harness.preferenceSyncRepository.appliedPushOutcomes.isEmpty())
+    assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
+}
+
+@Test
+fun `later preference chunk failure keeps earlier outcome and ordinary acknowledgement`() = runTest {
+    val ordinary = ordinarySession()
+    harness.syncRepository.workoutSessionsToReturn = listOf(ordinary)
+    harness.preferenceSyncRepository.dirtySnapshot = multiChunkSnapshot()
+    harness.api.pushResultsQueue = mutableListOf(
+        successResponse(),
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(coreCanonical(revision = 1)),
+        ),
+        Result.failure(PortalApiException("later chunk sentinel", statusCode = 503)),
+    )
+
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+
+    assertEquals(3, harness.api.pushPayloads.size)
+    assertEquals(
+        listOf(ProfilePreferenceSectionName.CORE),
+        harness.preferenceSyncRepository.appliedPushOutcomes
+            .flatten()
+            .map { it.key.section },
+    )
+    assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
+}
+
+@Test
+fun `lost preference response applies nothing and unchanged retry converges by conflict`() = runTest {
+    harness.preferenceSyncRepository.dirtySnapshot = ProfilePreferenceDirtySnapshot(
+        valid = listOf(coreSection(generation = 7)),
+        unsyncable = emptyList(),
+    )
+    val conflict = ProfilePreferenceSectionRejectionDto(
+        localProfileId = "profile-a",
+        section = "CORE",
+        serverRevision = 1,
+        reason = "REVISION_CONFLICT",
+        canonicalSection = coreCanonical(revision = 1),
+    )
+    harness.api.pushResultsQueue = mutableListOf(
+        successResponse(),
+        Result.failure(PortalApiException("lost response sentinel", statusCode = 503)),
+        successResponse(),
+        successResponse(
+            profilePreferencesAccepted = true,
+            profilePreferenceRejections = listOf(conflict),
+        ),
+    )
+    val manager = harness.manager(migrationReady = { true })
+
+    assertTrue(manager.sync().isSuccess)
+    assertTrue(harness.preferenceSyncRepository.appliedPushOutcomes.isEmpty())
+
+    assertTrue(manager.sync().isSuccess)
+    val outcome = harness.preferenceSyncRepository.appliedPushOutcomes.single().single()
+    assertEquals(7L, outcome.sentLocalGeneration)
+    assertEquals("REVISION_CONFLICT", outcome.rejectionReason)
+    assertEquals(1L, outcome.canonical?.serverRevision)
+}
+
+@Test
+fun `preference local failures never erase the successful ordinary acknowledgement`() = runTest {
+    val ordinary = ordinarySession()
+    harness.syncRepository.workoutSessionsToReturn = listOf(ordinary)
+    harness.preferenceSyncRepository.snapshotFailure = IllegalStateException("snapshot sentinel")
+    harness.api.pushResultsQueue = mutableListOf(successResponse())
+
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+    assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
+    assertEquals(1, harness.api.pushPayloads.size)
+}
+
+@Test
+fun `outcome apply failure is isolated after a complete preference response`() = runTest {
+    val ordinary = ordinarySession()
+    harness.syncRepository.workoutSessionsToReturn = listOf(ordinary)
+    harness.preferenceSyncRepository.dirtySnapshot = ProfilePreferenceDirtySnapshot(
+        valid = listOf(coreSection(generation = 1)),
+        unsyncable = emptyList(),
+    )
+    harness.preferenceSyncRepository.applyPushFailure = IllegalStateException("apply sentinel")
+    harness.api.pushResultsQueue = mutableListOf(
+        successResponse(),
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(coreCanonical(revision = 1)),
+        ),
+    )
+
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
+    assertEquals(listOf(ordinary.id), harness.syncRepository.updateSessionTimestampCalls)
+    assertTrue(harness.preferenceSyncRepository.appliedPushOutcomes.isEmpty())
 }
 
 @Test
@@ -7019,6 +7289,73 @@ fun `rejection canonical key or revision mismatch invalidates only that ledger k
 }
 
 @Test
+fun `missing unknown and malformed response entries leave only their ledger keys dirty`() {
+    val coreKey = coreSection(generation = 11).key
+    val workoutKey = workoutSection(generation = 12).key
+    val ledger = mapOf(coreKey to 11L, workoutKey to 12L)
+    val workout = workoutCanonical(revision = 4)
+    val cases = listOf(
+        // CORE is missing. A response for a key outside the ledger cannot fill or poison it.
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(
+                workout,
+                coreCanonical(9).copy(localProfileId = "remote-only"),
+            ),
+        ),
+        // Count the malformed known-key rejection before reason validation. It poisons the
+        // otherwise-valid CORE canonical, while WORKOUT remains independently applicable.
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(coreCanonical(7), workout),
+            profilePreferenceRejections = listOf(
+                ProfilePreferenceSectionRejectionDto(
+                    localProfileId = "profile-a",
+                    section = "CORE",
+                    serverRevision = 7,
+                    reason = "UNSAFE_REMOTE_REASON_SENTINEL",
+                    canonicalSection = coreCanonical(7),
+                ),
+            ),
+        ),
+        // Only REVISION_CONFLICT may carry a state-changing canonical.
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(workout),
+            profilePreferenceRejections = listOf(
+                ProfilePreferenceSectionRejectionDto(
+                    localProfileId = "profile-a",
+                    section = "CORE",
+                    serverRevision = 7,
+                    reason = "VALIDATION_FAILED",
+                    canonicalSection = coreCanonical(7),
+                ),
+            ),
+        ),
+        // A conflict without its mandatory canonical is malformed and cannot mutate CORE.
+        successResponse(
+            profilePreferencesAccepted = true,
+            canonicalProfilePreferenceSections = listOf(workout),
+            profilePreferenceRejections = listOf(
+                ProfilePreferenceSectionRejectionDto(
+                    localProfileId = "profile-a",
+                    section = "CORE",
+                    serverRevision = 7,
+                    reason = "REVISION_CONFLICT",
+                    canonicalSection = null,
+                ),
+            ),
+        ),
+    )
+
+    cases.forEach { response ->
+        val outcomes = buildProfilePreferencePushOutcomes(response, ledger)
+        assertEquals(listOf(workoutKey), outcomes.map { it.key })
+        assertEquals(12L, outcomes.single().sentLocalGeneration)
+    }
+}
+
+@Test
 fun `profile preference diagnostics never expose raw identities sections or messages`() {
     val sentinel = "SECRET_PROFILE_DIAGNOSTIC_SENTINEL"
     val key = ProfilePreferenceSectionKey(
@@ -7033,6 +7370,14 @@ fun `profile preference diagnostics never expose raw identities sections or mess
                 reason = ProfilePreferenceSyncIssueReason.INVALID_PROFILE_ID.name,
             ),
         ),
+        profilePreferenceIssueLogLine(
+            ProfilePreferenceSyncIssue(
+                key = key,
+                localGeneration = 9,
+                reason = sentinel,
+            ),
+        ),
+        profilePreferenceMetadataDeferredLogLine(key),
         profilePreferenceDuplicateResultLogLine(key),
         profilePreferenceInvalidCanonicalLogLine(
             ProfilePreferenceCanonicalDecodeResult.Invalid(
@@ -7044,14 +7389,20 @@ fun `profile preference diagnostics never expose raw identities sections or mess
         profilePreferenceChunkFailureLogLine(
             PortalApiException(sentinel, statusCode = 503),
         ),
+        profilePreferenceLocalFailureLogLine(
+            ProfilePreferenceLocalFailureStage.RESPONSE_MAPPING,
+        ),
     )
 
     assertEquals(
         listOf(
             "PROFILE_PREFERENCE_NOT_SENT section=CORE reason=INVALID_PROFILE_ID",
+            "PROFILE_PREFERENCE_NOT_SENT section=CORE reason=INVALID_PROFILE_PREFERENCE_DIAGNOSTIC",
+            "PROFILE_PREFERENCE_NOT_SENT section=CORE reason=PROFILE_METADATA_NOT_SENT",
             "PROFILE_PREFERENCE_DUPLICATE_RESULT section=CORE",
             "PROFILE_PREFERENCE_INVALID_CANONICAL reason=INVALID_PROFILE_PREFERENCE_DIAGNOSTIC",
             "PROFILE_PREFERENCE_CHUNK_FAILED status=503",
+            "PROFILE_PREFERENCE_LOCAL_FAILURE stage=RESPONSE_MAPPING",
         ),
         lines,
     )
@@ -7060,18 +7411,102 @@ fun `profile preference diagnostics never expose raw identities sections or mess
         assertFalse('\u0000' in line)
     }
 }
+
+@Test
+fun `local preference isolation sanitizes every stage and rethrows cancellation`() = runTest {
+    val sentinel = "SECRET_LOCAL_FAILURE_SENTINEL"
+    ProfilePreferenceLocalFailureStage.entries.forEach { stage ->
+        val emitted = mutableListOf<String>()
+        val result = isolateProfilePreferenceFailure(
+            stage = stage,
+            onFailure = emitted::add,
+        ) {
+            throw IllegalStateException(sentinel)
+        }
+
+        assertNull(result)
+        assertEquals(
+            listOf("PROFILE_PREFERENCE_LOCAL_FAILURE stage=${stage.name}"),
+            emitted,
+        )
+        assertTrue(emitted.none { sentinel in it })
+    }
+
+    val emitted = mutableListOf<String>()
+    assertFailsWith<CancellationException> {
+        isolateProfilePreferenceFailure(
+            stage = ProfilePreferenceLocalFailureStage.SNAPSHOT,
+            onFailure = emitted::add,
+        ) {
+            throw CancellationException(sentinel)
+        }
+    }
+    assertTrue(emitted.isEmpty())
+}
 ```
 
-Import `assertFalse` for the sentinel diagnostic test. The test passes attacker-controlled text through every diagnostic helper, including the later pull helper, without relying on a logging backend.
+Import `CancellationException`, `assertFailsWith`, and `assertFalse`. These tests pass attacker-controlled text through every diagnostic and failure-isolation boundary, including the later pull helper, without relying on a logging backend. Cancellation is control flow, not a recoverable preference-local failure, and must escape unchanged.
 
 Task 4's SQLDelight sync repository tests separately mutate the row after snapshot and prove that both acceptance and conflict outcomes advance the server revision without overwriting the newer payload or clearing dirty state.
+
+Also add this explicit policy test to `SqlDelightProfilePreferenceSyncRepositoryTest.kt`. It documents, rather than changes, the approved matching-generation server-wins rule. The first generation is assumed committed remotely while its response is lost; because the later edit is itself the generation sent by the stale-base retry, the returned conflict canonical wins that sent snapshot:
+
+```kotlin
+@Test
+fun `lost acknowledgement then later edit retains approved matching generation server wins policy`() =
+    runTest {
+        createProfile("lost-ack-edit")
+        foundationRepository.insertDefaults("lost-ack-edit")
+        foundationRepository.updateCore(
+            "lost-ack-edit",
+            CoreProfilePreferences(bodyWeightKg = 80f),
+            now = 20,
+        )
+        val committedButUnacknowledged = repository.snapshotDirtySections().valid.single {
+            it.key.localProfileId == "lost-ack-edit" &&
+                it.key.section == ProfilePreferenceSectionName.CORE
+        }
+
+        // Simulate the server committing generation 1 at revision 1 and the HTTP response
+        // being lost: do not apply an outcome locally before the user edits again.
+        foundationRepository.updateCore(
+            "lost-ack-edit",
+            CoreProfilePreferences(bodyWeightKg = 90f),
+            now = 30,
+        )
+        val retry = repository.snapshotDirtySections().valid.single {
+            it.key == committedButUnacknowledged.key
+        }
+        assertTrue(retry.localGeneration > committedButUnacknowledged.localGeneration)
+        assertEquals(0L, retry.baseRevision)
+
+        repository.applyPushOutcomes(
+            listOf(
+                ProfilePreferencePushOutcome(
+                    key = retry.key,
+                    sentLocalGeneration = retry.localGeneration,
+                    serverRevision = 1,
+                    canonical = coreCanonical(revision = 1, bodyWeightKg = 80.0),
+                    rejectionReason = "REVISION_CONFLICT",
+                ),
+            ),
+        )
+
+        val current = foundationRepository.get("lost-ack-edit").core
+        assertEquals(80f, current.value.bodyWeightKg)
+        assertEquals(1L, current.metadata.serverRevision)
+        assertFalse(current.metadata.dirty)
+    }
+```
+
+Do not silently convert conflicts to local-dirty rebases in Task 7. Preserving the later `90f` edit would require a product/spec change—either retaining and replaying the failed generation-1 wire mutation/ledger before generation 2, or redefining the matching-generation conflict policy.
 
 - [ ] **Step 4: Run the tests and verify missing orchestration failures**
 
 Run:
 
 ```powershell
-.\gradlew.bat :shared:testAndroidHostTest --tests "*SyncManagerProfilePreferencesTest*" -Pskip.supabase.check=true
+.\gradlew.bat :shared:testAndroidHostTest --tests "*SyncManagerProfilePreferencesTest*" --tests "*SqlDelightProfilePreferenceSyncRepositoryTest*" -Pskip.supabase.check=true
 ```
 
 Expected: FAIL because `SyncManager` has no readiness function or preference push loop.
@@ -7083,6 +7518,14 @@ Add to the `SyncManager` constructor:
 ```kotlin
 private val profilePreferenceSyncRepository: ProfilePreferenceSyncRepository,
 private val isProfilePreferenceMigrationReady: () -> Boolean,
+```
+
+Add these explicit imports to `SyncModule.kt`; the file currently imports selected sync types rather than the package wildcard:
+
+```kotlin
+import com.devil.phoenixproject.data.sync.ProfilePreferenceSyncCodec
+import com.devil.phoenixproject.data.sync.ProfilePreferenceSyncRepository
+import com.devil.phoenixproject.data.sync.SqlDelightProfilePreferenceSyncRepository
 ```
 
 Bind the focused codec/repository and capture the migration manager before constructing `SyncManager` in `SyncModule`:
@@ -7113,7 +7556,7 @@ single {
 }
 ```
 
-Update every existing `SyncManager` test constructor to pass a `FakeProfilePreferenceSyncRepository` and `{ true }`; only the explicit readiness test passes `{ false }`.
+Update every existing `SyncManager` test constructor to pass a `FakeProfilePreferenceSyncRepository` and `{ true }`; the focused readiness test passes a mutable lambda whose value changes from false to true. Keep `Function0::class` in `KoinModuleVerifyTest.extraTypes`, then include `KoinModuleVerifyTest` in Step 9 so the new internal codec/repository bindings and captured `MigrationManager` dependency are verified in the assembled app graph.
 
 - [ ] **Step 6: Rate-limit every logical push API call**
 
@@ -7127,7 +7570,7 @@ private suspend fun pushPayloadWithRateLimit(
         return Result.failure(
             PortalApiException(
                 "Client rate limit exceeded for push (${SyncConfig.PUSH_RATE_LIMIT_PER_MIN}/min). " +
-                    "Remaining profile preferences stay dirty for the next sync.",
+                    "Try again shortly.",
                 statusCode = 429,
             ),
         )
@@ -7136,11 +7579,11 @@ private suspend fun pushPayloadWithRateLimit(
 }
 ```
 
-One limiter token is consumed for every ordinary batch or preference chunk passed to `pushPortalPayload`. `PortalApiClient` may internally repeat the same physical HTTP push once after a 401 and token refresh; that transparent auth-recovery attempt is the explicit exception and does not consume a second `SyncManager` token. `FakePortalApiClient.pushCallCount` and its result queues therefore count logical API calls, while Task 6's captured-engine test alone counts physical HTTP attempts. The refresh endpoint is authentication traffic, not a sync push. The existing session-batch failure contract remains unchanged. A rate limit reached during preference-only chunks stops preference sending, leaves unsent sections dirty, and retains the successful ordinary push.
+One limiter token is consumed for every ordinary batch or preference chunk passed to `pushPortalPayload`. `PortalApiClient` may internally repeat the same physical HTTP push once after a 401 and token refresh; that transparent auth-recovery attempt is the explicit exception and does not consume a second `SyncManager` token. `FakePortalApiClient.pushCallCount` and its result queues therefore count logical API calls, while Task 6's captured-engine test alone counts physical HTTP attempts. The refresh endpoint is authentication traffic, not a sync push. The shared 429 text stays generic because this helper also owns ordinary session batches. The existing session-batch failure contract remains unchanged. A rate limit reached during preference-only chunks stops preference sending, leaves unsent sections dirty, and retains the successful ordinary push.
 
 - [ ] **Step 7: Implement the preference-only push loop**
 
-Add these module-internal pure diagnostic helpers in `SyncManager.kt`; production logging in Tasks 7 and 8 must call them rather than interpolating raw objects or throwable messages:
+Import `kotlin.coroutines.cancellation.CancellationException`, then add these module-internal pure diagnostic and failure-isolation helpers in `SyncManager.kt`; production logging in Tasks 7 and 8 must call them rather than interpolating raw objects or throwable messages:
 
 ```kotlin
 private val PROFILE_PREFERENCE_REASON_NAMES =
@@ -7150,9 +7593,22 @@ private fun safeProfilePreferenceReason(reason: String): String =
     reason.takeIf { it in PROFILE_PREFERENCE_REASON_NAMES }
         ?: "INVALID_PROFILE_PREFERENCE_DIAGNOSTIC"
 
+internal enum class ProfilePreferenceLocalFailureStage {
+    SNAPSHOT,
+    MUTATION_MAPPING,
+    CHUNK_PLANNING,
+    RESPONSE_MAPPING,
+    OUTCOME_APPLY,
+}
+
 internal fun profilePreferenceIssueLogLine(issue: ProfilePreferenceSyncIssue): String =
     "PROFILE_PREFERENCE_NOT_SENT section=${issue.key.section.name} " +
         "reason=${safeProfilePreferenceReason(issue.reason)}"
+
+internal fun profilePreferenceMetadataDeferredLogLine(
+    key: ProfilePreferenceSectionKey,
+): String = "PROFILE_PREFERENCE_NOT_SENT section=${key.section.name} " +
+    "reason=PROFILE_METADATA_NOT_SENT"
 
 internal fun profilePreferenceDuplicateResultLogLine(
     key: ProfilePreferenceSectionKey,
@@ -7167,22 +7623,59 @@ internal fun profilePreferenceChunkFailureLogLine(error: Throwable?): String {
     val status = (error as? PortalApiException)?.statusCode?.toString() ?: "UNKNOWN"
     return "PROFILE_PREFERENCE_CHUNK_FAILED status=$status"
 }
+
+internal fun profilePreferenceLocalFailureLogLine(
+    stage: ProfilePreferenceLocalFailureStage,
+): String = "PROFILE_PREFERENCE_LOCAL_FAILURE stage=${stage.name}"
+
+internal suspend fun <T> isolateProfilePreferenceFailure(
+    stage: ProfilePreferenceLocalFailureStage,
+    onFailure: (String) -> Unit,
+    block: suspend () -> T,
+): T? = try {
+    block()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    onFailure(profilePreferenceLocalFailureLogLine(stage))
+    null
+}
 ```
 
-These helpers intentionally omit `localProfileId`, the raw remote `section`, `ProfilePreferenceSectionKey.toString()`, local generation, exception class/message, and all values. After all ordinary batches succeed and after `allProfiles` has been sent, call the preference loop with only `deviceId`, `platform`, and `lastSync`:
+These helpers intentionally omit `localProfileId`, the raw remote `section`, `ProfilePreferenceSectionKey.toString()`, local generation, exception class/message, and all values. The isolation boundary never passes the exception to its logger and never catches cancellation. After all ordinary batches succeed and after the exact `profileDtos` list has been sent as `allProfiles`, call the preference loop with that same metadata ID set. A profile created while ordinary requests are in flight is therefore deferred until a later sync sends its parent:
 
 ```kotlin
 private suspend fun pushDirtyProfilePreferences(
     deviceId: String,
     platform: String,
     lastSync: Long,
+    sentMetadataProfileIds: Set<String>,
 ) {
     if (!isProfilePreferenceMigrationReady()) return
-    val snapshot = profilePreferenceSyncRepository.snapshotDirtySections()
+    val safeFailureLogger: (String) -> Unit = { line ->
+        Logger.w("SyncManager") { line }
+    }
+    val snapshot = isolateProfilePreferenceFailure(
+        ProfilePreferenceLocalFailureStage.SNAPSHOT,
+        safeFailureLogger,
+    ) {
+        profilePreferenceSyncRepository.snapshotDirtySections()
+    } ?: return
     snapshot.unsyncable.forEach { issue ->
         Logger.w("SyncManager") { profilePreferenceIssueLogLine(issue) }
     }
-    val prepared = snapshot.valid.map(PortalSyncAdapter::toPortalProfilePreferenceMutation)
+    val (eligible, deferred) = snapshot.valid.partition {
+        it.key.localProfileId in sentMetadataProfileIds
+    }
+    deferred.forEach { section ->
+        Logger.i("SyncManager") { profilePreferenceMetadataDeferredLogLine(section.key) }
+    }
+    val prepared = isolateProfilePreferenceFailure(
+        ProfilePreferenceLocalFailureStage.MUTATION_MAPPING,
+        safeFailureLogger,
+    ) {
+        eligible.map(PortalSyncAdapter::toPortalProfilePreferenceMutation)
+    } ?: return
     if (prepared.isEmpty()) return
 
     val base = PortalSyncPayload(
@@ -7190,7 +7683,12 @@ private suspend fun pushDirtyProfilePreferences(
         platform = platform,
         lastSync = lastSync,
     )
-    val plan = planProfilePreferencePushChunks(base, prepared)
+    val plan = isolateProfilePreferenceFailure(
+        ProfilePreferenceLocalFailureStage.CHUNK_PLANNING,
+        safeFailureLogger,
+    ) {
+        planProfilePreferencePushChunks(base, prepared)
+    } ?: return
     plan.unsyncable.forEach { issue ->
         Logger.w("SyncManager") { profilePreferenceIssueLogLine(issue) }
     }
@@ -7208,22 +7706,36 @@ private suspend fun pushDirtyProfilePreferences(
             Logger.i("SyncManager") { "Backend did not acknowledge profile preference support" }
             return
         }
-        val outcomes = buildProfilePreferencePushOutcomes(response, chunk.ledger)
+        val outcomes = isolateProfilePreferenceFailure(
+            ProfilePreferenceLocalFailureStage.RESPONSE_MAPPING,
+            safeFailureLogger,
+        ) {
+            buildProfilePreferencePushOutcomes(response, chunk.ledger)
+        } ?: return
         if (outcomes.isNotEmpty()) {
-            profilePreferenceSyncRepository.applyPushOutcomes(outcomes)
+            isolateProfilePreferenceFailure(
+                ProfilePreferenceLocalFailureStage.OUTCOME_APPLY,
+                safeFailureLogger,
+            ) {
+                profilePreferenceSyncRepository.applyPushOutcomes(outcomes)
+            } ?: return
         }
     }
 }
 ```
 
+Every non-cancellation failure in snapshot, mutation mapping, chunk planning, response mapping, or outcome application stops only the preference loop. The already-successful ordinary response remains `lastResponse`, so existing external-activity, personal-record, and session acknowledgement handling continues. A response-mapping or apply failure is treated as a lost preference acknowledgement: no later chunk is attempted, the current local generations remain dirty, and a later retry converges through the ordinary base-revision conflict contract.
+
 Implement module-internal `buildProfilePreferencePushOutcomes` so the focused tests can call the pure response mapper directly. It:
 
 - accepts only canonical/rejection keys present in the chunk ledger;
+- increments the known-ledger-key response count before validating a canonical or rejection, so a malformed duplicate cannot hide behind validation and allow its valid twin to apply;
 - requires exactly one total response entry per ledger key across both response arrays; canonical-plus-rejection, two canonicals, or two rejections for one key are invariant violations and produce no outcome for only that key;
 - maps canonical DTOs through `PortalPullAdapter.toCanonicalProfilePreferenceSection`;
-- rejects a rejection for only that key when its optional canonical has a different key or when `canonical.serverRevision != rejection.serverRevision`;
+- allowlists the seven Edge reasons, but creates a state-changing rejection outcome only for `REVISION_CONFLICT` with a mandatory valid canonical whose key and revision match the outer rejection;
+- treats validation, unsupported, unknown-profile, size, and duplicate rejections as non-acknowledgements that leave the section dirty even if a drifting backend unexpectedly attaches a canonical;
 - attaches `sentLocalGeneration` from the ledger;
-- leaves a sent key dirty when neither a valid canonical nor a rejection exists;
+- leaves a sent key dirty when its entry is missing, unknown, malformed, or non-state-changing;
 - never maps local safety/consent fields.
 
 Use one candidate list and group before applying anything:
@@ -7232,8 +7744,18 @@ Use one candidate list and group before applying anything:
 private data class PreferenceOutcomeCandidate(
     val key: ProfilePreferenceSectionKey,
     val serverRevision: Long,
-    val canonical: CanonicalProfilePreferenceSection?,
+    val canonical: CanonicalProfilePreferenceSection,
     val rejectionReason: String?,
+)
+
+private val PROFILE_PREFERENCE_REJECTION_REASONS = setOf(
+    "REVISION_CONFLICT",
+    "VALIDATION_FAILED",
+    "UNSUPPORTED_SECTION",
+    "UNSUPPORTED_DOCUMENT_VERSION",
+    "UNKNOWN_PROFILE",
+    "SECTION_TOO_LARGE",
+    "DUPLICATE_SECTION",
 )
 
 private fun responseKey(localProfileId: String, section: String): ProfilePreferenceSectionKey? {
@@ -7265,16 +7787,18 @@ internal fun buildProfilePreferencePushOutcomes(
     response.profilePreferenceRejections.forEach { rejection ->
         val key = responseKey(rejection.localProfileId, rejection.section) ?: return@forEach
         if (key !in ledger) return@forEach
+        // Count before reason/canonical validation. A malformed second known-key entry must
+        // invalidate only that key rather than let a valid first entry apply.
         responseCounts[key] = responseCounts.getOrElse(key) { 0 } + 1
-        val canonical = rejection.canonicalSection?.let(
-            PortalPullAdapter::toCanonicalProfilePreferenceSection,
-        )
-        if (canonical is ProfilePreferenceCanonicalDecodeResult.Invalid) return@forEach
-        val decodedCanonical = (canonical as? ProfilePreferenceCanonicalDecodeResult.Valid)?.section
-        if (decodedCanonical != null && (
-                decodedCanonical.key != key ||
-                    decodedCanonical.serverRevision != rejection.serverRevision
-            )
+        if (rejection.reason !in PROFILE_PREFERENCE_REJECTION_REASONS) return@forEach
+        if (rejection.reason != "REVISION_CONFLICT") return@forEach
+        val canonicalDto = rejection.canonicalSection ?: return@forEach
+        val canonical = PortalPullAdapter.toCanonicalProfilePreferenceSection(canonicalDto)
+        val decodedCanonical = (canonical as? ProfilePreferenceCanonicalDecodeResult.Valid)
+            ?.section
+            ?: return@forEach
+        if (decodedCanonical.key != key ||
+            decodedCanonical.serverRevision != rejection.serverRevision
         ) return@forEach
         candidates += PreferenceOutcomeCandidate(
             key = key,
@@ -7303,14 +7827,16 @@ internal fun buildProfilePreferencePushOutcomes(
 Call it after the ordinary batch loop and before external-activity/PR acknowledgement stamping:
 
 ```kotlin
+val sentMetadataProfileIds = profileDtos.mapTo(linkedSetOf()) { it.id }
 pushDirtyProfilePreferences(
     deviceId = deviceId,
     platform = platform,
     lastSync = lastSync,
+    sentMetadataProfileIds = sentMetadataProfileIds,
 )
 ```
 
-Do not pass the active profile id or name. Preserve and return the ordinary `lastResponse` so existing entity rejection handling remains intact.
+`sentMetadataProfileIds` must be derived from the exact immutable `profileDtos` list already placed in the successful ordinary metadata payload, not from a fresh `allProfiles.value` read. Do not pass the active profile id or name. Preserve and return the ordinary `lastResponse` so existing entity rejection handling remains intact.
 
 - [ ] **Step 8: Extend batching tests for metadata ordering and logical rate accounting**
 
@@ -7320,6 +7846,7 @@ Add to `PortalPushLimitsTest`:
 @Test
 fun preferenceChunksFollowTheFinalMetadataBatch() = runTest {
     authenticate()
+    fakeUserProfileRepo.setActiveProfileForTest("profile-a")
     fakeSyncRepo.workoutSessionsToReturn = buildSessions(73)
     fakeProfilePreferenceSyncRepo.dirtySnapshot = ProfilePreferenceDirtySnapshot(
         valid = listOf(coreSectionForSync()),
@@ -7339,11 +7866,18 @@ fun preferenceChunksFollowTheFinalMetadataBatch() = runTest {
     val metadataIndex = fakeApi.pushPayloads.indexOfLast { it.allProfiles != null }
     assertTrue(metadataIndex >= 0)
     assertTrue(preferenceIndex > metadataIndex)
+    assertTrue("profile-a" in fakeApi.pushPayloads[metadataIndex].allProfiles.orEmpty().map { it.id })
 }
 
 @Test
 fun everyLogicalPushCallConsumesTheSharedRateLimit() = runTest {
     authenticate()
+    repeat(20) { index ->
+        fakeUserProfileRepo.setActiveProfileForTest("profile-$index")
+    }
+    fakeUserProfileRepo.setActiveProfileForTest("profile-a")
+    val ordinary = buildSessions(1).single()
+    fakeSyncRepo.workoutSessionsToReturn = listOf(ordinary)
     fakeProfilePreferenceSyncRepo.dirtySnapshot = ProfilePreferenceDirtySnapshot(
         valid = List(20) { index ->
             ProfilePreferenceSectionSyncDto(
@@ -7378,6 +7912,7 @@ fun everyLogicalPushCallConsumesTheSharedRateLimit() = runTest {
         fakeApi.pushPayloads.count { it.profilePreferenceSections != null },
     )
     assertTrue(fakeProfilePreferenceSyncRepo.appliedPushOutcomes.isEmpty())
+    assertEquals(listOf(ordinary.id), fakeSyncRepo.updateSessionTimestampCalls)
 }
 ```
 
@@ -7412,7 +7947,7 @@ private fun coreCanonicalForSync() = PortalProfilePreferenceSectionCanonicalDto(
 Run:
 
 ```powershell
-.\gradlew.bat :shared:testAndroidHostTest --tests "*SyncManagerProfilePreferencesTest*" --tests "*PortalPushLimitsTest*" --tests "*SyncManagerTest*" --tests "*PortalTokenRefreshTest*" --tests "*PortalPullPaginationTest*" -Pskip.supabase.check=true
+.\gradlew.bat :shared:testAndroidHostTest --tests "*SyncManagerProfilePreferencesTest*" --tests "*PortalPushLimitsTest*" --tests "*SyncManagerTest*" --tests "*PortalTokenRefreshTest*" --tests "*PortalPullPaginationTest*" --tests "*SqlDelightProfilePreferenceSyncRepositoryTest*" --tests "*KoinModuleVerifyTest*" -Pskip.supabase.check=true
 ```
 
 Expected: PASS.
@@ -7420,7 +7955,7 @@ Expected: PASS.
 - [ ] **Step 10: Commit metadata-first preference push**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/SyncManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeProfilePreferenceSyncRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerProfilePreferencesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPushLimitsTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalTokenRefreshTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullPaginationTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/SyncManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeProfilePreferenceSyncRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerProfilePreferencesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPushLimitsTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalTokenRefreshTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullPaginationTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt
 git commit -m "feat(sync): push revisioned profile preference sections"
 ```
 
@@ -7460,7 +7995,7 @@ fun `pull applies known preference section before existing entities`() = runTest
         ),
     )
 
-    assertTrue(harness.manager(migrationReady = true).sync().isSuccess)
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
 
     assertEquals(
         3,
@@ -7481,7 +8016,7 @@ fun `pull ignores preference for profile absent on device`() = runTest {
         ),
     )
 
-    assertTrue(harness.manager(migrationReady = true).sync().isSuccess)
+    assertTrue(harness.manager(migrationReady = { true }).sync().isSuccess)
 
     assertTrue(harness.preferenceSyncRepository.appliedPulledSections.flatten().isEmpty())
     assertTrue(harness.profileRepository.allProfiles.value.none { it.id == "remote-only-profile" })
@@ -7496,7 +8031,7 @@ fun `localProfiles metadata still does not create mobile profiles`() = runTest {
         ),
     )
 
-    harness.manager(migrationReady = true).sync()
+    harness.manager(migrationReady = { true }).sync()
 
     assertTrue(harness.profileRepository.allProfiles.value.none { it.id == "remote-only-profile" })
 }
