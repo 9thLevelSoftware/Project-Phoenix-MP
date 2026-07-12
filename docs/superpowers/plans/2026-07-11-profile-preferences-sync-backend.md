@@ -5396,6 +5396,8 @@ fun `pull adapter rejects wrapper identity timestamp and section with category o
             ProfilePreferenceSyncIssueReason.INVALID_PROFILE_ID,
         coreCanonicalWire(serverUpdatedAt = "+10000-01-01T00:00:00.000Z") to
             ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_TIMESTAMP,
+        coreCanonicalWire(serverUpdatedAt = "+002026-07-11T12:00:00.000Z") to
+            ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_TIMESTAMP,
         coreCanonicalWire().copy(section = sentinel) to
             ProfilePreferenceSyncIssueReason.UNSUPPORTED_SECTION,
     )
@@ -5807,7 +5809,7 @@ internal fun encodePortalSyncPayload(payload: PortalSyncPayload): EncodedPortalS
 
 Implement `scanProfilePreferenceElementSpans(raw)` as a small index scanner over the complete encoded root object. Decode every valid JSON escape in top-level property names before comparing them, require at most one decoded `profilePreferenceSections` key, recursively skip JSON values while tracking object/array nesting, and scan strings by honoring every backslash escape so quotes, commas, and brackets inside strings never change structure. A nested property with the same name is a decoy, not the top-level field. For the preference array, pin each element's start after leading JSON whitespace and its exclusive end immediately after the value but before separator whitespace/comma/closing bracket. Require matching delimiters, no trailing non-whitespace, and an array span count equal to the typed list.
 
-All scanner failures are `IllegalArgumentException`s with one of these fixed messages and no raw substring, property value, or exception message appended: `INVALID_JSON_ROOT`, `INVALID_JSON_STRUCTURE`, `INVALID_PROFILE_PREFERENCE_ARRAY`, `DUPLICATE_PROFILE_PREFERENCE_SECTIONS`, or `TRAILING_JSON_DATA`. Measure only `raw.substring(start, endExclusive).encodeToByteArray()`; neither this helper nor its callers may reconstruct an element with `JSON.stringify`, `toString`, or a second serialization. The shared decimal/exponent/escape/multibyte goldens and the escaped-key/nested-decoy tests are the executable scanner oracle.
+All scanner failures are `IllegalArgumentException`s with one of these fixed messages and no raw substring, property value, or exception message appended: `INVALID_JSON_ROOT`, `INVALID_JSON_STRUCTURE`, `INVALID_PROFILE_PREFERENCE_ARRAY`, `DUPLICATE_PROFILE_PREFERENCE_SECTIONS`, or `TRAILING_JSON_DATA`. Include a direct `{"profilePreferenceSections":{}}` regression for `INVALID_PROFILE_PREFERENCE_ARRAY`. Measure only `raw.substring(start, endExclusive).encodeToByteArray()`; neither this helper nor its callers may reconstruct an element with `JSON.stringify`, `toString`, or a second serialization. The shared decimal/exponent/escape/multibyte goldens and the escaped-key/nested-decoy tests are the executable scanner oracle.
 
 - [ ] **Step 5: Implement the push and pull adapters**
 
@@ -5854,9 +5856,13 @@ fun toPortalProfilePreferenceMutation(
 )
 ```
 
-Add this pull mapper to `PortalPullAdapter`. Parse the wrapper identity and timestamp first, construct one candidate, and then call Task 4's stronger `decodeCanonical` boundary so document, payload, and exact JSON revision checks cannot drift. The repository repeats the same decode before SQL mutation as defense in depth:
+Add this pull mapper to `PortalPullAdapter`. Parse the wrapper identity and timestamp first, construct one candidate, and then call Task 4's stronger `decodeCanonical` boundary so document, payload, and exact JSON revision checks cannot drift. `Instant.parse` alone is too permissive: Kotlin 2.4 accepts an expanded `+002026` year and normalizes it to 2026, while the Edge contract requires exactly four unsigned year digits. Gate the complete Edge RFC3339 grammar before parsing. The repository repeats the same decode before SQL mutation as defense in depth:
 
 ```kotlin
+private val PROFILE_PREFERENCE_RFC3339_INSTANT = Regex(
+    """^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$""",
+)
+
 fun toCanonicalProfilePreferenceSection(
     dto: PortalProfilePreferenceSectionCanonicalDto,
 ): ProfilePreferenceCanonicalDecodeResult {
@@ -5874,6 +5880,9 @@ fun toCanonicalProfilePreferenceSection(
     }
     val section = ProfilePreferenceSectionName.entries.firstOrNull { it.name == dto.section }
         ?: return invalid(ProfilePreferenceSyncIssueReason.UNSUPPORTED_SECTION)
+    if (!PROFILE_PREFERENCE_RFC3339_INSTANT.matches(dto.serverUpdatedAt)) {
+        return invalid(ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_TIMESTAMP)
+    }
     val updatedAt = runCatching {
         kotlin.time.Instant.parse(dto.serverUpdatedAt).toEpochMilliseconds()
     }.getOrNull()
