@@ -84,19 +84,23 @@ internal class SqlDelightProfilePreferenceSyncRepository(
         var applied = 0
         var unknown = 0
         var invalid = 0
-        sections.groupBy { it.key.localProfileId }.forEach { (profileId, canonicals) ->
+        val validColumns = sections.mapNotNull { canonical ->
+            when (val decoded = codec.decodeCanonical(canonical)) {
+                is ProfilePreferenceCanonicalColumnsResult.Invalid -> {
+                    invalid++
+                    null
+                }
+                is ProfilePreferenceCanonicalColumnsResult.Valid -> decoded.columns
+            }
+        }
+        validColumns.groupBy { it.key.localProfileId }.forEach { (profileId, columnsForProfile) ->
             database.transaction {
                 if (queries.selectProfilePreferenceSyncRow(profileId).executeAsOneOrNull() == null) {
-                    unknown += canonicals.size
+                    unknown += columnsForProfile.size
                     return@transaction
                 }
-                canonicals.forEach { canonical ->
-                    when (val decoded = codec.decodeCanonical(canonical)) {
-                        is ProfilePreferenceCanonicalColumnsResult.Invalid -> invalid++
-                        is ProfilePreferenceCanonicalColumnsResult.Valid -> {
-                            if (applyPulledWhenClean(decoded.columns)) applied++
-                        }
-                    }
+                columnsForProfile.forEach { columns ->
+                    if (applyPulledWhenClean(columns)) applied++
                 }
             }
         }

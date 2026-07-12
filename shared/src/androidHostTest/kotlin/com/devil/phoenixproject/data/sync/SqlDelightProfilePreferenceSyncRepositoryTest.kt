@@ -396,12 +396,30 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
         })
     }
 
-    private fun forceDirtyCoreUpdatedAt(profileId: String, updatedAt: Long) {
+    private fun forceDirtySectionUpdatedAt(
+        profileId: String,
+        section: ProfilePreferenceSectionName,
+        updatedAt: Long,
+    ) {
+        val updatedAtColumn = when (section) {
+            ProfilePreferenceSectionName.CORE -> "core_updated_at"
+            ProfilePreferenceSectionName.RACK -> "rack_updated_at"
+            ProfilePreferenceSectionName.WORKOUT -> "workout_updated_at"
+            ProfilePreferenceSectionName.LED -> "led_updated_at"
+            ProfilePreferenceSectionName.VBT -> "vbt_updated_at"
+        }
+        val dirtyColumn = when (section) {
+            ProfilePreferenceSectionName.CORE -> "core_dirty"
+            ProfilePreferenceSectionName.RACK -> "rack_dirty"
+            ProfilePreferenceSectionName.WORKOUT -> "workout_dirty"
+            ProfilePreferenceSectionName.LED -> "led_dirty"
+            ProfilePreferenceSectionName.VBT -> "vbt_dirty"
+        }
         driver.execute(
             identifier = null,
             sql = """
                 UPDATE UserProfilePreferences
-                   SET core_updated_at = ?, core_dirty = 1
+                   SET $updatedAtColumn = ?, $dirtyColumn = 1
                  WHERE profile_id = ?
             """.trimIndent(),
             parameters = 2,
@@ -412,41 +430,46 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
     }
 
     @Test
-    fun `client modified timestamp bounds are syncable and adjacent values dead letter only core`() = runTest {
-        mapOf(
-            "timestamp-min" to MIN_RFC3339_EPOCH_MILLIS,
-            "timestamp-max" to MAX_RFC3339_EPOCH_MILLIS,
-            "timestamp-under" to MIN_RFC3339_EPOCH_MILLIS - 1,
-            "timestamp-over" to MAX_RFC3339_EPOCH_MILLIS + 1,
-        ).forEach { (profileId, updatedAt) ->
-            createProfile(profileId)
-            foundationRepository.insertDefaults(profileId)
-            forceDirtyCoreUpdatedAt(profileId, updatedAt)
+    fun `client modified timestamp bounds and adjacent dead letters cover every section`() = runTest {
+        data class TimestampCase(val suffix: String, val value: Long, val valid: Boolean)
+
+        val cases = listOf(
+            TimestampCase("min", MIN_RFC3339_EPOCH_MILLIS, true),
+            TimestampCase("max", MAX_RFC3339_EPOCH_MILLIS, true),
+            TimestampCase("under", MIN_RFC3339_EPOCH_MILLIS - 1, false),
+            TimestampCase("over", MAX_RFC3339_EPOCH_MILLIS + 1, false),
+        )
+        ProfilePreferenceSectionName.entries.forEach { section ->
+            cases.forEach { case ->
+                val profileId = "timestamp-${section.name.lowercase()}-${case.suffix}"
+                createProfile(profileId)
+                foundationRepository.insertDefaults(profileId)
+                forceDirtySectionUpdatedAt(profileId, section, case.value)
+            }
         }
 
         val snapshot = repository.snapshotDirtySections()
-        mapOf(
-            "timestamp-min" to MIN_RFC3339_EPOCH_MILLIS,
-            "timestamp-max" to MAX_RFC3339_EPOCH_MILLIS,
-        ).forEach { (profileId, expected) ->
-            assertEquals(
-                expected,
-                snapshot.valid.single {
-                    it.key == ProfilePreferenceSectionKey(profileId, ProfilePreferenceSectionName.CORE)
-                }.clientModifiedAtEpochMs,
-            )
-        }
-        listOf("timestamp-under", "timestamp-over").forEach { profileId ->
-            val key = ProfilePreferenceSectionKey(profileId, ProfilePreferenceSectionName.CORE)
-            assertTrue(snapshot.valid.none { it.key == key })
-            assertEquals(
-                ProfilePreferenceSyncIssueReason.INVALID_CLIENT_MODIFIED_AT.name,
-                snapshot.unsyncable.single { it.key == key }.reason,
-            )
-            assertTrue(snapshot.valid.any {
-                it.key == ProfilePreferenceSectionKey(profileId, ProfilePreferenceSectionName.RACK)
-            })
-            assertTrue(foundationRepository.get(profileId).core.metadata.dirty)
+        ProfilePreferenceSectionName.entries.forEach { section ->
+            cases.forEach { case ->
+                val profileId = "timestamp-${section.name.lowercase()}-${case.suffix}"
+                val key = ProfilePreferenceSectionKey(profileId, section)
+                if (case.valid) {
+                    assertEquals(
+                        case.value,
+                        snapshot.valid.single { it.key == key }.clientModifiedAtEpochMs,
+                    )
+                    assertTrue(snapshot.unsyncable.none { it.key == key })
+                } else {
+                    assertTrue(snapshot.valid.none { it.key == key })
+                    assertEquals(
+                        ProfilePreferenceSyncIssueReason.INVALID_CLIENT_MODIFIED_AT.name,
+                        snapshot.unsyncable.single { it.key == key }.reason,
+                    )
+                    assertTrue(snapshot.valid.any {
+                        it.key.localProfileId == profileId && it.key.section != section
+                    })
+                }
+            }
         }
     }
 
@@ -596,6 +619,28 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
         assertFalse(current.metadata.dirty)
         assertEquals(1, report.ignoredUnknownProfile)
         assertProfileDoesNotExist("remote-only")
+    }
+
+    @Test
+    fun `invalid unknown pull IDs are rejected before lookup while valid sibling applies`() = runTest {
+        val knownProfileId = "known-profile"
+        createProfile(knownProfileId)
+        foundationRepository.insertDefaults(knownProfileId)
+        acknowledgeAllDirty(knownProfileId, revision = 2, variant = 1)
+
+        val report = repository.applyPulledSections(
+            listOf(
+                coreCanonical(3, 91.0, profileId = ""),
+                coreCanonical(3, 92.0, profileId = "SECRET_SENTINEL\u0000"),
+                coreCanonical(3, 93.0, profileId = "bad\uD800"),
+                coreCanonical(3, 83.0, profileId = knownProfileId),
+            ),
+        )
+
+        assertEquals(3, report.invalid)
+        assertEquals(0, report.ignoredUnknownProfile)
+        assertEquals(1, report.applied)
+        assertEquals(83f, foundationRepository.get(knownProfileId).core.value.bodyWeightKg)
     }
 
     @Test
