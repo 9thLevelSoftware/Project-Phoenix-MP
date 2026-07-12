@@ -1,13 +1,24 @@
 package com.devil.phoenixproject.data.migration
 
+import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.devil.phoenixproject.StartupSurface
+import com.devil.phoenixproject.startupSurface
+import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
+import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
+import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
+import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
+import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -20,7 +31,60 @@ class MigrationManagerTest {
     @Before
     fun setup() {
         database = createTestDatabase()
-        migrationManager = MigrationManager(database)
+        migrationManager = createMigrationManager(database)
+    }
+
+    private fun createMigrationManager(
+        database: VitruvianDatabase,
+        driver: SqlDriver? = null,
+    ): MigrationManager {
+        val settings = MapSettings()
+        val preferences = SqlDelightProfilePreferencesRepository(database)
+        val safety = SettingsProfileLocalSafetyStore(settings)
+        val gamification = SqlDelightGamificationRepository(database)
+        val profiles = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = preferences,
+            profileLocalSafetyStore = safety,
+            gamificationRepository = gamification,
+        )
+        return MigrationManager(
+            database = database,
+            userProfileRepository = profiles,
+            gamificationRepository = gamification,
+            settings = settings,
+            profilePreferencesRepository = preferences,
+            profileLocalSafetyStore = safety,
+            legacyProfilePreferencesReader = SettingsLegacyProfilePreferencesReader(
+                SettingsPreferencesManager(settings),
+                settings,
+            ),
+            driver = driver,
+        )
+    }
+
+    @Test
+    fun `startup surface never exposes main before required migration is ready`() {
+        assertEquals(
+            StartupSurface.EULA,
+            startupSurface(false, true, RequiredMigrationState.Ready),
+        )
+        assertNotEquals(
+            StartupSurface.MAIN,
+            startupSurface(true, true, RequiredMigrationState.Applying),
+        )
+        assertEquals(
+            StartupSurface.MIGRATION_RETRY,
+            startupSurface(true, true, RequiredMigrationState.Failed("retry")),
+        )
+        assertNotEquals(
+            StartupSurface.MAIN,
+            startupSurface(true, false, RequiredMigrationState.Ready),
+        )
+        assertEquals(
+            StartupSurface.MAIN,
+            startupSurface(true, true, RequiredMigrationState.Ready),
+        )
     }
 
     // -- cleanupFabricatedRoutineSessionIds tests --
@@ -356,7 +420,7 @@ class MigrationManagerTest {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         VitruvianDatabase.Schema.create(driver)
         val localDatabase = VitruvianDatabase(driver)
-        val localMigrationManager = MigrationManager(localDatabase, driver = driver)
+        val localMigrationManager = createMigrationManager(localDatabase, driver)
         val queries = localDatabase.vitruvianDatabaseQueries
         val stableUuid = "12345678-1234-4abc-8def-1234567890ab"
 

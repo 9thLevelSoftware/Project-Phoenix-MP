@@ -225,10 +225,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_SUMMARY_COUNTDOWN_SECONDS = "summary_countdown_seconds"
         private const val KEY_AUTOSTART_COUNTDOWN_SECONDS = "autostart_countdown_seconds"
         private const val KEY_REP_COUNT_TIMING = "rep_count_timing"
-        private const val KEY_JUST_LIFT_DEFAULTS = "just_lift_defaults"
-        private const val KEY_PREFIX_EXERCISE = "exercise_defaults_"
-        private const val KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT = "echo_hard_default_migrated_just_lift"
-        private const val KEY_ECHO_HARD_DEFAULT_MIGRATION_EXERCISE_PREFIX = "echo_hard_default_migrated_exercise_"
         private const val KEY_GAMIFICATION_ENABLED = "gamification_enabled"
         private const val KEY_WEIGHT_INCREMENT = "weight_increment"
         private const val KEY_AUTO_START_ROUTINE = "auto_start_routine"
@@ -407,7 +403,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? {
-        val key = "$KEY_PREFIX_EXERCISE$exerciseId"
+        val key = "${LegacyProfilePreferenceKeys.EXERCISE_PREFIX}$exerciseId"
 
         // Try new key format first
         var jsonString = settings.getStringOrNull(key)
@@ -416,7 +412,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         if (jsonString == null) {
             val legacyCableConfigs = listOf("DOUBLE", "SINGLE", "EITHER")
             for (cableConfig in legacyCableConfigs) {
-                val legacyKey = "${KEY_PREFIX_EXERCISE}${exerciseId}_$cableConfig"
+                val legacyKey = "${LegacyProfilePreferenceKeys.EXERCISE_PREFIX}${exerciseId}_$cableConfig"
                 jsonString = settings.getStringOrNull(legacyKey)
                 if (jsonString != null) {
                     // Found with legacy key - migrate to new format
@@ -442,20 +438,20 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
     override suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
         val normalizedDefaults = defaults.withNormalizedNonEchoEchoLevel()
-        val key = "$KEY_PREFIX_EXERCISE${defaults.exerciseId}"
+        val key = "${LegacyProfilePreferenceKeys.EXERCISE_PREFIX}${defaults.exerciseId}"
         settings.putString(key, json.encodeToString(normalizedDefaults))
         settings.putBoolean(getEchoHardDefaultMigrationKey(defaults.exerciseId), true)
     }
 
     override suspend fun clearAllSingleExerciseDefaults() {
         // Get all keys and remove those starting with exercise prefix
-        settings.keys.filter { it.startsWith(KEY_PREFIX_EXERCISE) }.forEach { key ->
+        settings.keys.filter { it.startsWith(LegacyProfilePreferenceKeys.EXERCISE_PREFIX) }.forEach { key ->
             settings.remove(key)
         }
     }
 
     override suspend fun getJustLiftDefaults(): JustLiftDefaults {
-        val jsonString = settings.getStringOrNull(KEY_JUST_LIFT_DEFAULTS) ?: return JustLiftDefaults()
+        val jsonString = settings.getStringOrNull(LegacyProfilePreferenceKeys.JUST_LIFT) ?: return JustLiftDefaults()
         return try {
             migrateSavedEchoHardDefault(json.decodeFromString<JustLiftDefaults>(jsonString))
         } catch (_: Exception) {
@@ -465,22 +461,22 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
     override suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         val normalizedDefaults = defaults.withNormalizedNonEchoEchoLevel()
-        settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(normalizedDefaults))
-        settings.putBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, true)
+        settings.putString(LegacyProfilePreferenceKeys.JUST_LIFT, json.encodeToString(normalizedDefaults))
+        settings.putBoolean(LegacyProfilePreferenceKeys.ECHO_HARD_MIGRATION_JUST_LIFT, true)
     }
 
     override suspend fun clearJustLiftDefaults() {
-        settings.remove(KEY_JUST_LIFT_DEFAULTS)
+        settings.remove(LegacyProfilePreferenceKeys.JUST_LIFT)
     }
 
     private fun migrateSavedEchoHardDefault(defaults: JustLiftDefaults): JustLiftDefaults {
-        if (settings.getBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, false)) return defaults
+        if (settings.getBoolean(LegacyProfilePreferenceKeys.ECHO_HARD_MIGRATION_JUST_LIFT, false)) return defaults
 
-        settings.putBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, true)
+        settings.putBoolean(LegacyProfilePreferenceKeys.ECHO_HARD_MIGRATION_JUST_LIFT, true)
         if (defaults.echoLevelValue != EchoLevel.HARD.levelValue) return defaults
 
         val migrated = defaults.copy(echoLevelValue = EchoLevel.HARDER.levelValue)
-        settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(migrated))
+        settings.putString(LegacyProfilePreferenceKeys.JUST_LIFT, json.encodeToString(migrated))
         return migrated
     }
 
@@ -501,7 +497,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     private fun getEchoHardDefaultMigrationKey(exerciseId: String): String =
-        "$KEY_ECHO_HARD_DEFAULT_MIGRATION_EXERCISE_PREFIX$exerciseId"
+        "${LegacyProfilePreferenceKeys.ECHO_HARD_MIGRATION_EXERCISE_PREFIX}$exerciseId"
 
     private fun SingleExerciseDefaults.withNormalizedNonEchoEchoLevel(): SingleExerciseDefaults =
         if (workoutModeId != ProgramMode.Echo.modeValue && echoLevelValue == EchoLevel.HARD.levelValue) {

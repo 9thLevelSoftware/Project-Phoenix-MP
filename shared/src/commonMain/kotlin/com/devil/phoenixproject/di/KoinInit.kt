@@ -40,14 +40,13 @@ internal fun doInitKoinInternal() {
  * This mirrors Android's VitruvianApp.onCreate() migration call.
  */
 fun runMigrations() {
-    Logger.i { "iOS: Running migrations..." }
+    Logger.i { "iOS: Starting required migration gate..." }
     try {
         val koin = KoinPlatform.getKoin()
         val migrationManager = koin.get<MigrationManager>()
         migrationManager.checkAndRunMigrations()
-        Logger.i { "iOS: Migrations completed" }
+        Logger.i { "iOS: Required migration gate started" }
     } catch (e: Exception) {
-        // Log error but don't crash - migrations are best effort
-        Logger.e(e) { "Failed to run migrations on iOS" }
+        Logger.e(e) { "Failed to start required migrations on iOS" }
     }
 }

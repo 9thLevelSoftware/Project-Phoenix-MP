@@ -55,7 +55,7 @@ class VitruvianApp :
             )
         }
 
-        // Run migrations after Koin is initialized
+        // Start the required profile preference migration gate after Koin is initialized.
         migrationManager.checkAndRunMigrations()
 
         // H11: Register ActivityHolder via lifecycle callbacks instead of manual

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject
 
 import androidx.compose.runtime.Composable
+import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
@@ -16,6 +17,7 @@ fun AndroidAppHost() {
     val eulaViewModel: EulaViewModel = koinInject()
     val exerciseRepository: ExerciseRepository = koinInject()
     val syncTriggerManager: SyncTriggerManager = koinInject()
+    val migrationManager: MigrationManager = koinInject()
 
     AppContent(
         mainViewModel = mainViewModel,
@@ -23,5 +25,6 @@ fun AndroidAppHost() {
         eulaViewModel = eulaViewModel,
         exerciseRepository = exerciseRepository,
         syncTriggerManager = syncTriggerManager,
+        migrationManager = migrationManager,
     )
 }

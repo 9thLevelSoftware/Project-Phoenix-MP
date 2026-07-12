@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.data.preferences.LegacyProfilePreferenceKeys
 import com.devil.phoenixproject.domain.model.ActiveRackSelection
 import com.devil.phoenixproject.domain.model.RackItem
 import com.russhwolf.settings.Settings
@@ -85,6 +86,6 @@ class SettingsEquipmentRackRepository(
     }
 
     companion object {
-        const val KEY_RACK_ITEMS = "equipment_rack_items_v1"
+        const val KEY_RACK_ITEMS = LegacyProfilePreferenceKeys.EQUIPMENT_RACK
     }
 }

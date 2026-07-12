@@ -6,7 +6,11 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.ReconciliationStatus
 import com.devil.phoenixproject.data.local.SchemaIndexOperation
 import com.devil.phoenixproject.data.local.applyIndexCreate
+import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
+import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
+import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
 import com.devil.phoenixproject.data.repository.GamificationRepository
+import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -16,9 +20,11 @@ import com.devil.phoenixproject.database.RoutineExercise
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.russhwolf.settings.Settings
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -27,9 +33,17 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+sealed interface RequiredMigrationState {
+    data object NotStarted : RequiredMigrationState
+    data object Applying : RequiredMigrationState
+    data object Ready : RequiredMigrationState
+    data class Failed(val message: String) : RequiredMigrationState
+}
 
 /**
  * Manages data migrations on app startup.
@@ -38,10 +52,13 @@ import kotlinx.coroutines.sync.withLock
  */
 class MigrationManager(
     private val database: VitruvianDatabase,
-    private val userProfileRepository: UserProfileRepository? = null,
-    private val gamificationRepository: GamificationRepository? = null,
+    private val userProfileRepository: UserProfileRepository,
+    private val gamificationRepository: GamificationRepository,
+    private val settings: Settings,
+    private val profilePreferencesRepository: ProfilePreferencesRepository,
+    private val profileLocalSafetyStore: ProfileLocalSafetyStore,
+    private val legacyProfilePreferencesReader: LegacyProfilePreferencesReader,
     private val driver: SqlDriver? = null,
-    private val settings: Settings? = null,
 ) {
     private val log = Logger.withTag("MigrationManager")
 
@@ -54,11 +71,20 @@ class MigrationManager(
          */
         private const val CURRENT_REPAIR_VERSION = 1
         private const val KEY_REPAIR_VERSION = "migration_repair_version"
+        private const val KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE =
+            "profile_preferences_legacy_migration_complete_v1"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val queries get() = database.vitruvianDatabaseQueries
     private val migrationMutex = Mutex()
+    private val requiredMigrationMutex = Mutex()
+
+    private val _requiredMigrationState = MutableStateFlow<RequiredMigrationState>(
+        RequiredMigrationState.NotStarted,
+    )
+    val requiredMigrationState: StateFlow<RequiredMigrationState> =
+        _requiredMigrationState.asStateFlow()
 
     private val _profileScopeRepairState = MutableStateFlow<ProfileScopeRepairState>(ProfileScopeRepairState.Idle)
     val profileScopeRepairState: StateFlow<ProfileScopeRepairState> = _profileScopeRepairState.asStateFlow()
@@ -136,11 +162,80 @@ class MigrationManager(
      */
     fun checkAndRunMigrations() {
         scope.launch {
-            runMigrationsNow()
+            runRequiredMigrations()
+            if (requiredMigrationState.value == RequiredMigrationState.Ready) {
+                runNonCriticalRepairsNow()
+            }
         }
     }
 
     suspend fun runMigrationsNow() {
+        runRequiredMigrations()
+        if (requiredMigrationState.value == RequiredMigrationState.Ready) {
+            runNonCriticalRepairsNow()
+        }
+    }
+
+    suspend fun runRequiredMigrations() = requiredMigrationMutex.withLock {
+        if (_requiredMigrationState.value == RequiredMigrationState.Ready) return@withLock
+        _requiredMigrationState.value = RequiredMigrationState.Applying
+        try {
+            migrateProfilePreferences()
+            _requiredMigrationState.value = RequiredMigrationState.Ready
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            log.e(error) { "Required profile preference migration failed" }
+            _requiredMigrationState.value = RequiredMigrationState.Failed(
+                error.message ?: "Profile preference migration failed",
+            )
+        }
+    }
+
+    suspend fun retryRequiredMigrations() {
+        runRequiredMigrations()
+        if (requiredMigrationState.value == RequiredMigrationState.Ready) {
+            runNonCriticalRepairsNow()
+        }
+    }
+
+    suspend fun awaitRequiredMigrations() {
+        requiredMigrationState.first { it is RequiredMigrationState.Ready }
+    }
+
+    private suspend fun migrateProfilePreferences() {
+        userProfileRepository.ensureDefaultProfile()
+        profilePreferencesRepository.seedMissingProfiles()
+        userProfileRepository.recoverPendingProfileTransitionForStartup()
+        val existingProfiles = userProfileRepository.allProfiles.value
+        val snapshot = legacyProfilePreferencesReader.readNormalized()
+        val migrationTime = currentTimeMillis()
+        existingProfiles.forEach { profile ->
+            queries.applyLegacyProfilePreferences(
+                profile_id = profile.id,
+                body_weight_kg = snapshot.core.bodyWeightKg.toDouble(),
+                weight_unit = snapshot.core.weightUnit.name,
+                weight_increment = snapshot.core.weightIncrement.toDouble(),
+                equipment_rack_json = ProfilePreferencesCodec.encodeRack(snapshot.rack),
+                workout_preferences_json = ProfilePreferencesCodec.encodeWorkout(snapshot.workout),
+                led_color_scheme_id = snapshot.led.colorScheme.toLong(),
+                led_preferences_json = ProfilePreferencesCodec.encodeLed(snapshot.led),
+                vbt_enabled = 1L,
+                vbt_preferences_json = ProfilePreferencesCodec.encodeVbt(
+                    snapshot.vbt.copy(enabled = true),
+                ),
+                migrated_at = migrationTime,
+            )
+        }
+        if (!settings.getBoolean(KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE, false)) {
+            profileLocalSafetyStore.copyLegacyToProfiles(existingProfiles.map { it.id }, snapshot.localSafety)
+            settings.putBoolean(KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE, true)
+        }
+        userProfileRepository.retryPendingLocalCleanup()
+        userProfileRepository.reconcileActiveProfileContext()
+    }
+
+    private suspend fun runNonCriticalRepairsNow() {
         migrationMutex.withLock {
             _profileScopeRepairState.value = ProfileScopeRepairState.Applying("Running startup data repair")
             pendingProfileScopeRepair = null
@@ -215,7 +310,7 @@ class MigrationManager(
      * (e.g. test environments) the repairs always run — matching the previous behaviour.
      */
     private suspend fun runOneTimeRepairs() {
-        val storedVersion = settings?.getIntOrNull(KEY_REPAIR_VERSION) ?: 0
+        val storedVersion = settings.getIntOrNull(KEY_REPAIR_VERSION) ?: 0
         if (storedVersion >= CURRENT_REPAIR_VERSION) {
             log.d { "Skipping one-time data repairs — already at repair version $storedVersion" }
             return
@@ -229,7 +324,7 @@ class MigrationManager(
 
         // Persist the completed version so this suite does not re-run next startup.
         runCatching {
-            settings?.putInt(KEY_REPAIR_VERSION, CURRENT_REPAIR_VERSION)
+            settings.putInt(KEY_REPAIR_VERSION, CURRENT_REPAIR_VERSION)
         }.onFailure { e ->
             log.w(e) { "Failed to persist repair version; repairs will re-run on next startup" }
         }
@@ -321,29 +416,23 @@ class MigrationManager(
     }
 
     private suspend fun recomputeDerivedGamification(profileId: String) {
-        val repo = gamificationRepository ?: return
-        repo.updateStats(profileId)
-        val rpgInput = repo.getRpgInput(profileId)
-        repo.saveRpgProfile(RpgAttributeEngine.computeProfile(rpgInput), profileId)
+        gamificationRepository.updateStats(profileId)
+        val rpgInput = gamificationRepository.getRpgInput(profileId)
+        gamificationRepository.saveRpgProfile(RpgAttributeEngine.computeProfile(rpgInput), profileId)
     }
 
     private suspend fun refreshProfilesIfAvailable() {
-        userProfileRepository?.refreshProfiles()
+        userProfileRepository.refreshProfiles()
     }
 
     private suspend fun setActiveProfileInternal(profileId: String) {
-        val repo = userProfileRepository
-        if (repo != null) {
-            repo.setActiveProfile(profileId)
-            repo.refreshProfiles()
-        } else {
-            queries.setActiveProfile(profileId)
-        }
+        userProfileRepository.setActiveProfile(profileId)
+        userProfileRepository.refreshProfiles()
     }
 
     private suspend fun resolveActiveProfile(): UserProfile? {
-        userProfileRepository?.refreshProfiles()
-        userProfileRepository?.activeProfile?.value?.let { return it }
+        userProfileRepository.refreshProfiles()
+        userProfileRepository.activeProfile.value?.let { return it }
 
         val active = queries.getActiveProfile().executeAsOneOrNull() ?: return null
         return UserProfile(
