@@ -111,11 +111,11 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModelProfileScopeTest.kt` — explicit assessment profile propagation.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/AssessmentProfileOwnershipTest.kt` — immutable route ownership, Ready-gated callsites, and A→Switching→B invalidation.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentResourceContractTest.kt` — localized assessment-save failure copy across selectable locales.
-- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt` — five-item order and tap/long-press source wiring guard.
-- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt` — Settings pruning and obsolete-selector source guard.
-- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt` — required Profile keys across selectable locale files.
-- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt` — picker, chart, compact-history, and partial-error source guard.
-- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt` — palette wrapping and Default-delete policy.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt` — five-item order, tap/long-press wiring, and navigation/recovery resource consumption.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt` — Settings pruning, retained-video resources, and obsolete-selector source guard.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt` — exact 56-key inventory, reused-copy presence, placeholder/XML parity, selectable locales, and cross-target source-reader paths.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt` — picker/chart/history behavior plus complete Profile insight/preference resource consumption.
+- `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt` — palette wrapping, Default-delete policy, and switcher/delete-copy resource consumption.
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt` — controllable assessment saves and latest-read failures for resolver/ViewModel tests.
 
 ### Modify
@@ -1525,7 +1525,7 @@ if ($LASTEXITCODE -eq 0) {
     $unsafeStartingLoad
     throw 'Assessment still reads the unscoped global exercise 1RM'
 }
-$profilelessRoutes = rg -n 'StrengthAssessmentPicker\.route|StrengthAssessment\.createRoute\(\s*exerciseId' shared/src --glob '*.kt'
+$profilelessRoutes = rg -n --pcre2 '\bnavigate\s*\(\s*(?:route\s*=\s*)?NavigationRoutes\.StrengthAssessment(?:Picker)?\.route\s*[,)]' shared/src/commonMain/kotlin shared/src/androidMain/kotlin shared/src/iosMain/kotlin --glob '*.kt'
 if ($LASTEXITCODE -eq 0) {
     $profilelessRoutes
     throw 'A profile-less assessment navigation call remains'
@@ -2411,6 +2411,8 @@ class ExerciseDetailOneRepMaxLoadTest {
         assertContains(source, "loadExerciseDetailOneRepMax(")
         assertContains(source, "estimatedOneRepMaxPerCableOrNull()")
         assertContains(source, "catch (cancellation: CancellationException)")
+        assertContains(source, "catch (_: Exception)")
+        assertFalse(source.contains("catch (_: Throwable)"))
         assertContains(source, "VolumeChartCard(")
         assertContains(source, "items(exerciseSessions")
         assertFalse(source.contains("viewModel.activeProfileId"))
@@ -2469,7 +2471,7 @@ internal suspend fun loadExerciseDetailOneRepMax(
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
-    } catch (_: Throwable) {
+    } catch (_: Exception) {
         if (gate.isCurrent(token)) {
             publish(ExerciseDetailOneRepMaxState.Failed)
         }
@@ -2679,7 +2681,31 @@ git commit -m "feat: resolve profile scoped exercise one rep max"
 
 **Interfaces:**
 - Consumes: existing shared resource keys for actions, profile colors, Exercise Picker, Equipment Rack, voice stop, and adult-mode controls.
-- Produces: stable generated `Res.string.profile_*`, `nav_profile`, and `cd_profile*` keys used by Tasks 4–9.
+- Produces: 56 stable generated Profile/navigation/insight/error keys, each assigned to an exact Task 4–9 consumer contract.
+
+The original draft listed 59 new keys. The audit intentionally removes three duplicate concepts and reuses existing resources in all five selectable locales:
+
+| Profile concept | Reused resource | Exact downstream rendering |
+|---|---|---|
+| Weight unit | `settings_weight_unit` | Measurements control label in `ProfilePreferenceComponents.kt` |
+| Equipment Rack | `equipment_rack_title` + `equipment_rack_manage` | Rack row headline + action in `ProfilePreferenceComponents.kt` |
+| LED color scheme | `cd_led_scheme` | LED selector label in `ProfilePreferenceComponents.kt`; Task 3 also completes its German, Spanish, and French translations. |
+
+Keep `profile_one_rep_max_source_assessment` even though its English value matches `strength_assessment_cta_title`: the latter exists only in the default bundle, so reusing it would leave the four other selectable locales without translated source copy.
+
+Do not add `profile_weight_unit`, `profile_manage_equipment_rack`, or `profile_led_color_scheme`. `values-it` exists for system-locale coverage but is not selectable; missing Task 3 keys there use the default English fallback. `SettingsTab.languageOptions` exposes exactly `en`, `nl`, `de`, `es`, and `fr`, so this contract modifies and verifies those five selectable locales only. If Italian becomes selectable later, that change must extend this contract in the same commit.
+
+The retained new-key ownership is exact:
+
+| Consumer task/file | Required new keys |
+|---|---|
+| Task 4: `ProfileSwitcherSheet.kt`, `ProfileDialogs.kt` | `profiles_title`, `profile_delete_reassign_message` |
+| Task 5: `ProfileViewModel.kt` | None; ViewModels emit typed state/events and never own localized copy. |
+| Task 6: `ProfileScreen.kt`, `ProfileExerciseInsights.kt` | `switch_profile`, `profile_exercise_insights`, `profile_choose_exercise`, `profile_no_exercise_history`, `profile_current_one_rep_max`, `profile_one_rep_max_source_velocity`, `profile_one_rep_max_source_assessment`, `profile_one_rep_max_source_session`, `profile_one_rep_max_source_none`, `profile_pr_highlights`, `profile_pr_max_weight`, `profile_pr_estimated_one_rep_max`, `profile_pr_max_volume`, `profile_recent_history`, `profile_view_full_history`, `profile_switching`, `profile_missing_exercise`, `profile_insights_load_failed`, `profile_update_failed` |
+| Task 7: `EnhancedMainScreen.kt`, `NavGraph.kt`, `ProfileDialogs.kt` | `nav_profile`, `cd_profile`, `cd_open_profile_switcher`, `profile_switch_failed`, `profile_create_failed`, `profile_recovery_title`, `profile_recovery_message`, `profile_recovery_retry_failed` |
+| Task 8: `ProfilePreferenceComponents.kt`, `ProfileScreen.kt` | `profile_preferences_title`, `profile_measurements`, `profile_workout_behavior`, `profile_led`, `profile_vbt`, `profile_safety`, `profile_vbt_enabled`, `profile_weight_increment`, `profile_body_weight`, `profile_set_summary`, `profile_autostart_countdown`, `profile_auto_start_routine`, `profile_audio_rep_counter`, `profile_countdown_beeps`, `profile_rep_completion_sound`, `profile_motion_start`, `profile_gamification`, `profile_default_scaling_basis`, `profile_routine_starting_weights`, `profile_stop_at_top`, `profile_stall_detection`, `profile_velocity_loss_threshold`, `profile_auto_end_velocity_loss`, `profile_vbt_history_note` |
+| Task 9: `SettingsTab.kt` | `settings_video_behavior`, `settings_show_exercise_videos`, `settings_show_exercise_videos_description` |
+| Task 10: legacy selector removal | None; it deletes old consumers and introduces no copy. |
 
 - [ ] **Step 1: Write the failing locale resource contract test**
 
@@ -2688,19 +2714,26 @@ package com.devil.phoenixproject.presentation.screen
 
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ProfileResourceContractTest {
-    private val files = listOf(
-        "src/commonMain/composeResources/values/strings.xml",
-        "src/commonMain/composeResources/values-nl/strings.xml",
-        "src/commonMain/composeResources/values-de/strings.xml",
-        "src/commonMain/composeResources/values-es/strings.xml",
-        "src/commonMain/composeResources/values-fr/strings.xml",
+    private val selectableLocales = linkedMapOf(
+        "en" to "values",
+        "nl" to "values-nl",
+        "de" to "values-de",
+        "es" to "values-es",
+        "fr" to "values-fr",
     )
 
-    private val keys = listOf(
+    private val files = selectableLocales.mapValues { (_, directory) ->
+        "src/commonMain/composeResources/$directory/strings.xml"
+    }
+
+    private val newKeys = listOf(
         "nav_profile",
         "cd_profile",
         "cd_open_profile_switcher",
@@ -2740,10 +2773,8 @@ class ProfileResourceContractTest {
         "settings_video_behavior",
         "settings_show_exercise_videos",
         "settings_show_exercise_videos_description",
-        "profile_weight_unit",
         "profile_weight_increment",
         "profile_body_weight",
-        "profile_manage_equipment_rack",
         "profile_set_summary",
         "profile_autostart_countdown",
         "profile_auto_start_routine",
@@ -2756,21 +2787,120 @@ class ProfileResourceContractTest {
         "profile_routine_starting_weights",
         "profile_stop_at_top",
         "profile_stall_detection",
-        "profile_led_color_scheme",
         "profile_velocity_loss_threshold",
         "profile_auto_end_velocity_loss",
         "profile_vbt_history_note",
     )
 
+    private val reusedKeys = listOf(
+        "settings_weight_unit",
+        "equipment_rack_title",
+        "equipment_rack_manage",
+        "cd_led_scheme",
+    )
+
+    private val expectedLedSchemeLabels = mapOf(
+        "en" to "LED color scheme",
+        "nl" to "LED-kleurenschema",
+        "de" to "LED-Farbschema",
+        "es" to "Esquema de color LED",
+        "fr" to "Palette de couleurs LED",
+    )
+
+    private val expectedPlaceholders = mapOf(
+        "profile_delete_reassign_message" to listOf("%1${'$'}s"),
+    )
+
+    private val placeholderPattern = Regex("""%\d+\${'$'}[A-Za-z]""")
+    private val invalidAmpersandPattern =
+        Regex("""&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9A-Fa-f]+;)""")
+
     @Test
-    fun selectableLocalesContainProfileContract() {
-        files.forEach { path ->
+    fun contractInventoryIsUniqueAndTracksExactlyFiveSelectableLocales() {
+        assertEquals(56, newKeys.size)
+        assertEquals(newKeys.size, newKeys.toSet().size)
+        assertTrue(newKeys.intersect(reusedKeys.toSet()).isEmpty())
+
+        val settings = assertNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt",
+            ),
+        )
+        selectableLocales.keys.forEach { languageCode ->
+            assertContains(settings, "\"$languageCode\" to stringResource")
+        }
+        assertFalse(settings.contains("\"it\" to stringResource"))
+    }
+
+    @Test
+    fun selectableLocalesContainOneWellFormedDeclarationPerContractKey() {
+        files.forEach { (languageCode, path) ->
             val source = assertNotNull(readProjectFile(path), "Missing $path")
-            keys.forEach { key ->
-                assertTrue(source.contains("name=\"$key\""), "$path is missing $key")
+
+            val names = Regex("""<string\s+name="([^"]+)"""")
+                .findAll(source)
+                .map { it.groupValues[1] }
+                .toList()
+            val duplicateNames = names.groupingBy { it }
+                .eachCount()
+                .filterValues { it > 1 }
+            assertTrue(duplicateNames.isEmpty(), "$path duplicates $duplicateNames")
+            assertFalse(
+                invalidAmpersandPattern.containsMatchIn(source),
+                "$path contains an unescaped XML ampersand",
+            )
+
+            (newKeys + reusedKeys).forEach { key ->
+                val declarationCount = Regex("""<string\s+name="$key"(?:\s|>)""")
+                    .findAll(source)
+                    .count()
+                assertEquals(1, declarationCount, "$path declaration count for $key")
+            }
+            assertEquals(
+                expectedLedSchemeLabels.getValue(languageCode),
+                resourceValue(source, "cd_led_scheme", path),
+                "$path translated LED scheme label",
+            )
+
+            newKeys.forEach { key ->
+                val value = resourceValue(source, key, path)
+                val placeholders = placeholderPattern.findAll(value)
+                    .map { it.value }
+                    .toList()
+                assertEquals(
+                    expectedPlaceholders[key].orEmpty(),
+                    placeholders,
+                    "$path placeholder contract for $key",
+                )
             }
         }
     }
+
+    @Test
+    fun sourceReaderActualsSupportSharedRelativeContractPaths() {
+        val androidReader = assertNotNull(
+            readProjectFile(
+                "src/androidHostTest/kotlin/com/devil/phoenixproject/testutil/SourceFileReader.android.kt",
+            ),
+        )
+        val iosReader = assertNotNull(
+            readProjectFile(
+                "src/iosTest/kotlin/com/devil/phoenixproject/testutil/SourceFileReader.ios.kt",
+            ),
+        )
+
+        assertContains(androidReader, """File(dir, "shared/${'$'}relativePath")""")
+        assertContains(iosReader, """candidates.add("${'$'}dir/shared/${'$'}relativePath")""")
+    }
+
+    private fun resourceValue(source: String, key: String, path: String): String =
+        assertNotNull(
+            Regex(
+                """<string\s+name="$key"[^>]*>(.*?)</string>""",
+                RegexOption.DOT_MATCHES_ALL,
+            ).find(source)?.groupValues?.get(1),
+            "$path is missing the value for $key",
+        )
 }
 ```
 
@@ -2822,14 +2952,12 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="profile_recovery_title">Profile recovery required</string>
 <string name="profile_recovery_message">Phoenix could not confirm which profile is active. Retry before continuing.</string>
 <string name="profile_recovery_retry_failed">Profile recovery is still unavailable</string>
-<string name="profile_delete_reassign_message">Delete "%1$s"? Its workouts, routines, records, badges, assessments, and progression data will move to Default. This cannot be undone.</string>
+<string name="profile_delete_reassign_message">Delete &quot;%1$s&quot;? Its workouts, routines, records, badges, assessments, and progression data will move to Default. This cannot be undone.</string>
 <string name="settings_video_behavior">Video Behavior</string>
 <string name="settings_show_exercise_videos">Show Exercise Videos</string>
 <string name="settings_show_exercise_videos_description">Display exercise demonstrations; turn this off on slower devices</string>
-<string name="profile_weight_unit">Weight unit</string>
 <string name="profile_weight_increment">Weight increment</string>
 <string name="profile_body_weight">Body weight</string>
-<string name="profile_manage_equipment_rack">Manage equipment rack</string>
 <string name="profile_set_summary">Set summary duration</string>
 <string name="profile_autostart_countdown">Autostart countdown</string>
 <string name="profile_auto_start_routine">Auto-start routine</string>
@@ -2842,7 +2970,6 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="profile_routine_starting_weights">Routine starting weights</string>
 <string name="profile_stop_at_top">Stop at top</string>
 <string name="profile_stall_detection">Stall detection</string>
-<string name="profile_led_color_scheme">LED color scheme</string>
 <string name="profile_velocity_loss_threshold">Velocity-loss threshold</string>
 <string name="profile_auto_end_velocity_loss">Auto-end on velocity loss</string>
 <string name="profile_vbt_history_note">Turning VBT off affects live workouts only; saved estimates and assessments remain available.</string>
@@ -2886,14 +3013,12 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="profile_recovery_title">Profielherstel vereist</string>
 <string name="profile_recovery_message">Phoenix kan niet bevestigen welk profiel actief is. Probeer opnieuw voordat u doorgaat.</string>
 <string name="profile_recovery_retry_failed">Profielherstel is nog niet beschikbaar</string>
-<string name="profile_delete_reassign_message">"%1$s" verwijderen? Trainingen, routines, records, badges, metingen en voortgang worden naar Default verplaatst. Dit kan niet ongedaan worden gemaakt.</string>
+<string name="profile_delete_reassign_message">&quot;%1$s&quot; verwijderen? Trainingen, routines, records, badges, metingen en voortgang worden naar Default verplaatst. Dit kan niet ongedaan worden gemaakt.</string>
 <string name="settings_video_behavior">Videogedrag</string>
 <string name="settings_show_exercise_videos">Oefeningsvideo's tonen</string>
 <string name="settings_show_exercise_videos_description">Toon oefendemonstraties; schakel dit uit op tragere apparaten</string>
-<string name="profile_weight_unit">Gewichtseenheid</string>
 <string name="profile_weight_increment">Gewichtsstap</string>
 <string name="profile_body_weight">Lichaamsgewicht</string>
-<string name="profile_manage_equipment_rack">Materiaalrek beheren</string>
 <string name="profile_set_summary">Duur setoverzicht</string>
 <string name="profile_autostart_countdown">Aftellen voor automatisch starten</string>
 <string name="profile_auto_start_routine">Routine automatisch starten</string>
@@ -2906,13 +3031,18 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="profile_routine_starting_weights">Startgewichten van routines</string>
 <string name="profile_stop_at_top">Stoppen bovenaan</string>
 <string name="profile_stall_detection">Stildetectie</string>
-<string name="profile_led_color_scheme">LED-kleurenschema</string>
 <string name="profile_velocity_loss_threshold">Drempel voor snelheidsverlies</string>
 <string name="profile_auto_end_velocity_loss">Automatisch stoppen bij snelheidsverlies</string>
 <string name="profile_vbt_history_note">VBT uitschakelen beïnvloedt alleen live trainingen; opgeslagen schattingen en metingen blijven beschikbaar.</string>
 ```
 
 - [ ] **Step 5: Add the complete German resource block**
+
+In `values-de/strings.xml`, replace the existing fallback-English `cd_led_scheme` declaration in place with the following line, then append the new block. Do not add a second declaration:
+
+```xml
+<string name="cd_led_scheme">LED-Farbschema</string>
+```
 
 ```xml
 <string name="nav_profile">Profil</string>
@@ -2954,10 +3084,8 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="settings_video_behavior">Videoverhalten</string>
 <string name="settings_show_exercise_videos">Übungsvideos anzeigen</string>
 <string name="settings_show_exercise_videos_description">Übungsdemonstrationen anzeigen; auf langsameren Geräten deaktivieren</string>
-<string name="profile_weight_unit">Gewichtseinheit</string>
 <string name="profile_weight_increment">Gewichtsschritt</string>
 <string name="profile_body_weight">Körpergewicht</string>
-<string name="profile_manage_equipment_rack">Geräteablage verwalten</string>
 <string name="profile_set_summary">Dauer der Satzzusammenfassung</string>
 <string name="profile_autostart_countdown">Autostart-Countdown</string>
 <string name="profile_auto_start_routine">Routine automatisch starten</string>
@@ -2970,13 +3098,18 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="profile_routine_starting_weights">Startgewichte für Routinen</string>
 <string name="profile_stop_at_top">Oben stoppen</string>
 <string name="profile_stall_detection">Stillstandserkennung</string>
-<string name="profile_led_color_scheme">LED-Farbschema</string>
 <string name="profile_velocity_loss_threshold">Schwelle für Geschwindigkeitsverlust</string>
 <string name="profile_auto_end_velocity_loss">Bei Geschwindigkeitsverlust automatisch beenden</string>
 <string name="profile_vbt_history_note">Das Ausschalten von VBT betrifft nur Live-Trainings; gespeicherte Schätzungen und Tests bleiben verfügbar.</string>
 ```
 
 - [ ] **Step 6: Add the complete Spanish resource block**
+
+In `values-es/strings.xml`, replace the existing fallback-English `cd_led_scheme` declaration in place with the following line, then append the new block. Do not add a second declaration:
+
+```xml
+<string name="cd_led_scheme">Esquema de color LED</string>
+```
 
 ```xml
 <string name="nav_profile">Perfil</string>
@@ -3014,14 +3147,12 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="profile_recovery_title">Se requiere recuperar el perfil</string>
 <string name="profile_recovery_message">Phoenix no pudo confirmar qué perfil está activo. Vuelve a intentarlo antes de continuar.</string>
 <string name="profile_recovery_retry_failed">La recuperación del perfil sigue sin estar disponible</string>
-<string name="profile_delete_reassign_message">¿Eliminar "%1$s"? Sus entrenamientos, rutinas, récords, insignias, evaluaciones y datos de progreso pasarán a Default. Esta acción no se puede deshacer.</string>
+<string name="profile_delete_reassign_message">¿Eliminar &quot;%1$s&quot;? Sus entrenamientos, rutinas, récords, insignias, evaluaciones y datos de progreso pasarán a Default. Esta acción no se puede deshacer.</string>
 <string name="settings_video_behavior">Comportamiento del vídeo</string>
 <string name="settings_show_exercise_videos">Mostrar vídeos de ejercicios</string>
 <string name="settings_show_exercise_videos_description">Mostrar demostraciones; desactívalo en dispositivos más lentos</string>
-<string name="profile_weight_unit">Unidad de peso</string>
 <string name="profile_weight_increment">Incremento de peso</string>
 <string name="profile_body_weight">Peso corporal</string>
-<string name="profile_manage_equipment_rack">Gestionar accesorios</string>
 <string name="profile_set_summary">Duración del resumen de serie</string>
 <string name="profile_autostart_countdown">Cuenta atrás de inicio automático</string>
 <string name="profile_auto_start_routine">Iniciar rutina automáticamente</string>
@@ -3034,13 +3165,18 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="profile_routine_starting_weights">Pesos iniciales de las rutinas</string>
 <string name="profile_stop_at_top">Detener arriba</string>
 <string name="profile_stall_detection">Detección de bloqueo</string>
-<string name="profile_led_color_scheme">Esquema de color LED</string>
 <string name="profile_velocity_loss_threshold">Umbral de pérdida de velocidad</string>
 <string name="profile_auto_end_velocity_loss">Finalizar al perder velocidad</string>
 <string name="profile_vbt_history_note">Desactivar VBT solo afecta a los entrenamientos en vivo; las estimaciones y evaluaciones guardadas siguen disponibles.</string>
 ```
 
 - [ ] **Step 7: Add the complete French resource block**
+
+In `values-fr/strings.xml`, replace the existing fallback-English `cd_led_scheme` declaration in place with the following line, then append the new block. Do not add a second declaration:
+
+```xml
+<string name="cd_led_scheme">Palette de couleurs LED</string>
+```
 
 ```xml
 <string name="nav_profile">Profil</string>
@@ -3082,10 +3218,8 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="settings_video_behavior">Comportement vidéo</string>
 <string name="settings_show_exercise_videos">Afficher les vidéos d'exercice</string>
 <string name="settings_show_exercise_videos_description">Afficher les démonstrations ; désactivez-les sur les appareils plus lents</string>
-<string name="profile_weight_unit">Unité de poids</string>
 <string name="profile_weight_increment">Incrément de poids</string>
 <string name="profile_body_weight">Poids corporel</string>
-<string name="profile_manage_equipment_rack">Gérer les accessoires</string>
 <string name="profile_set_summary">Durée du résumé de série</string>
 <string name="profile_autostart_countdown">Compte à rebours automatique</string>
 <string name="profile_auto_start_routine">Démarrer la routine automatiquement</string>
@@ -3098,7 +3232,6 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 <string name="profile_routine_starting_weights">Poids de départ des routines</string>
 <string name="profile_stop_at_top">Arrêt en haut</string>
 <string name="profile_stall_detection">Détection de blocage</string>
-<string name="profile_led_color_scheme">Palette de couleurs LED</string>
 <string name="profile_velocity_loss_threshold">Seuil de perte de vélocité</string>
 <string name="profile_auto_end_velocity_loss">Arrêt automatique sur perte de vélocité</string>
 <string name="profile_vbt_history_note">Désactiver le VBT ne concerne que les entraînements en direct ; les estimations et évaluations enregistrées restent disponibles.</string>
@@ -3109,15 +3242,39 @@ Expected: FAIL because `nav_profile` and the remaining new resource keys are abs
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateResourceAccessorsForCommonMain :shared:testAndroidHostTest --tests "*ProfileResourceContractTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateResourceAccessorsForCommonMain :shared:testAndroidHostTest --tests "*ProfileResourceContractTest*" :shared:compileAndroidMain :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --console=plain
 ```
 
-Expected: BUILD SUCCESSFUL; Compose resource generation and the locale contract pass.
+Expected: BUILD SUCCESSFUL. Compose resource generation parses all five edited XML files and emits the common accessors; the Android-host contract executes all three tests, including shared-relative path discovery; Android main and iOS Arm64 main compile those accessors; iOS Arm64 test compilation verifies the common contract against `SourceFileReader.ios.kt`. This repository has no runnable iOS simulator test task, so do not claim an iOS runtime test from `compileTestKotlinIosArm64`.
 
 - [ ] **Step 9: Commit the resource contract**
 
 ```powershell
-git add shared/src/commonMain/composeResources/values/strings.xml shared/src/commonMain/composeResources/values-nl/strings.xml shared/src/commonMain/composeResources/values-de/strings.xml shared/src/commonMain/composeResources/values-es/strings.xml shared/src/commonMain/composeResources/values-fr/strings.xml shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt
+$expected = @(
+    'shared/src/commonMain/composeResources/values/strings.xml'
+    'shared/src/commonMain/composeResources/values-nl/strings.xml'
+    'shared/src/commonMain/composeResources/values-de/strings.xml'
+    'shared/src/commonMain/composeResources/values-es/strings.xml'
+    'shared/src/commonMain/composeResources/values-fr/strings.xml'
+    'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileResourceContractTest.kt'
+) | Sort-Object
+$actual = @(git diff --name-only | Sort-Object)
+$scopeDiff = Compare-Object -ReferenceObject $expected -DifferenceObject $actual
+if ($scopeDiff) {
+    $scopeDiff | Format-Table -AutoSize
+    throw 'Task 3 worktree scope differs from the six-file resource contract'
+}
+git diff --check -- $expected
+if ($LASTEXITCODE -ne 0) { throw 'Task 3 diff check failed' }
+git add -- $expected
+$staged = @(git diff --cached --name-only | Sort-Object)
+$stagedDiff = Compare-Object -ReferenceObject $expected -DifferenceObject $staged
+if ($stagedDiff) {
+    $stagedDiff | Format-Table -AutoSize
+    throw 'Task 3 staged scope differs from the six-file resource contract'
+}
+git diff --cached --check
+if ($LASTEXITCODE -ne 0) { throw 'Task 3 cached diff check failed' }
 git commit -m "feat: add localized profile screen copy"
 ```
 
@@ -3144,9 +3301,12 @@ git commit -m "feat: add localized profile screen copy"
 package com.devil.phoenixproject.presentation.components
 
 import com.devil.phoenixproject.data.repository.UserProfile
+import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ProfileIdentityPolicyTest {
@@ -3161,6 +3321,25 @@ class ProfileIdentityPolicyTest {
     fun `only non-default profiles may be deleted`() {
         assertFalse(canDeleteProfile(profile("default")))
         assertTrue(canDeleteProfile(profile("athlete-a")))
+    }
+
+    @Test
+    fun `switcher and delete dialog consume their complete resource inventory`() {
+        val switcher = assertNotNull(readProjectFile(
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt",
+        ))
+        val dialogs = assertNotNull(readProjectFile(
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt",
+        ))
+
+        assertContains(switcher, "Res.string.profiles_title")
+        val deleteCopyOffset = dialogs.indexOf("Res.string.profile_delete_reassign_message")
+        assertTrue(deleteCopyOffset >= 0)
+        val deleteCopyCall = dialogs.substring(
+            deleteCopyOffset,
+            minOf(dialogs.length, deleteCopyOffset + 240),
+        )
+        assertContains(deleteCopyCall, "profile.name")
     }
 
     private fun profile(id: String) = UserProfile(
@@ -3278,7 +3457,18 @@ fun ProfileDeleteDialog(
 )
 ```
 
-Each dialog owns only transient text/color selection. Trim the name, disable confirmation for blank names or while submitting, and disable dismiss while submitting. `ProfileDeleteDialog` must `require(canDeleteProfile(profile))` and render `profile_delete_reassign_message`; it must not optimistically close. Render the eight color choices with the existing `color_*` names and `cd_select_profile_color` semantics. The `Profile*Dialog` names intentionally avoid colliding with the repository-coupled legacy dialogs until Task 10 deletes them.
+Each dialog owns only transient text/color selection. Trim the name, disable confirmation for blank names or while submitting, and disable dismiss while submitting. `ProfileDeleteDialog` must `require(canDeleteProfile(profile))`, must not optimistically close, and must bind the one `%1$s` placeholder rather than rendering an unformatted token:
+
+```kotlin
+Text(
+    text = stringResource(
+        Res.string.profile_delete_reassign_message,
+        profile.name,
+    ),
+)
+```
+
+Render the eight color choices with the existing `color_*` names and `cd_select_profile_color` semantics. The `Profile*Dialog` names intentionally avoid colliding with the repository-coupled legacy dialogs until Task 10 deletes them.
 
 - [ ] **Step 6: Build the shared switch/create-only sheet**
 
@@ -3612,21 +3802,70 @@ Add `updateProfileFailure` and `deleteProfileFailure` test controls to `FakeUser
 Create the source contract test:
 
 ```kotlin
+package com.devil.phoenixproject.presentation.screen
+
+import com.devil.phoenixproject.testutil.readProjectFile
+import kotlin.test.Test
+import kotlin.test.assertContains
+import kotlin.test.assertTrue
+
 class ProfileScreenContractTest {
     @Test
     fun profileInsightsUseExistingPickerAndCompactHistory() {
-        val screen = requireNotNull(readProjectFile(
+        val screen = source(
             "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt",
-        ))
-        val insights = requireNotNull(readProjectFile(
+        )
+        val insights = source(
             "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileExerciseInsights.kt",
-        ))
+        )
 
         assertTrue(screen.contains("ExercisePickerDialog("))
         assertTrue(screen.contains("enableCustomExercises = false"))
         assertTrue(insights.contains("VolumeHistoryChart("))
         assertTrue(insights.contains("ProfileLoadable.Failed"))
         assertTrue(insights.contains("take(5)"))
+    }
+
+    @Test
+    fun profileIdentityAndInsightsConsumeTheirCompleteResourceInventory() {
+        val screen = source(
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt",
+        )
+        val insights = source(
+            "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileExerciseInsights.kt",
+        )
+
+        assertUsesResources(
+            screen,
+            listOf("switch_profile", "profile_switching", "profile_update_failed"),
+        )
+        assertUsesResources(
+            insights,
+            listOf(
+                "profile_exercise_insights",
+                "profile_choose_exercise",
+                "profile_no_exercise_history",
+                "profile_current_one_rep_max",
+                "profile_one_rep_max_source_velocity",
+                "profile_one_rep_max_source_assessment",
+                "profile_one_rep_max_source_session",
+                "profile_one_rep_max_source_none",
+                "profile_pr_highlights",
+                "profile_pr_max_weight",
+                "profile_pr_estimated_one_rep_max",
+                "profile_pr_max_volume",
+                "profile_recent_history",
+                "profile_view_full_history",
+                "profile_missing_exercise",
+                "profile_insights_load_failed",
+            ),
+        )
+    }
+
+    private fun source(path: String): String = requireNotNull(readProjectFile(path), path)
+
+    private fun assertUsesResources(source: String, keys: List<String>) {
+        keys.forEach { key -> assertContains(source, "Res.string.$key", key) }
     }
 }
 ```
@@ -3841,6 +4080,13 @@ git commit -m "feat: build profile identity and exercise insights"
 - [ ] **Step 1: Write the failing navigation source contract**
 
 ```kotlin
+package com.devil.phoenixproject.presentation.navigation
+
+import com.devil.phoenixproject.testutil.readProjectFile
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
 class ProfileNavigationContractTest {
     private val routes = requireNotNull(readProjectFile(
         "src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutes.kt",
@@ -3850,6 +4096,9 @@ class ProfileNavigationContractTest {
     ))
     private val graph = requireNotNull(readProjectFile(
         "src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt",
+    ))
+    private val dialogs = requireNotNull(readProjectFile(
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt",
     ))
 
     @Test
@@ -3885,6 +4134,29 @@ class ProfileNavigationContractTest {
         assertTrue(main.contains("catch (error: ProfileContextRecoveryException)"))
         assertTrue(main.contains("ProfileRecoveryDialog("))
         assertTrue(main.contains("profileRepository.reconcileActiveProfileContext()"))
+    }
+
+    @Test
+    fun navigationAndRecoveryConsumeTheirCompleteResourceInventory() {
+        assertUsesResources(graph, listOf("nav_profile"))
+        assertUsesResources(
+            main,
+            listOf(
+                "cd_profile",
+                "cd_open_profile_switcher",
+                "profile_switch_failed",
+                "profile_create_failed",
+                "profile_recovery_retry_failed",
+            ),
+        )
+        assertUsesResources(
+            dialogs,
+            listOf("profile_recovery_title", "profile_recovery_message"),
+        )
+    }
+
+    private fun assertUsesResources(source: String, keys: List<String>) {
+        keys.forEach { key -> assertTrue(source.contains("Res.string.$key"), key) }
     }
 }
 ```
@@ -4177,6 +4449,7 @@ git commit -m "feat: add profile tab and long press switcher"
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt:256-446`
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt`
 
 **Interfaces:**
 - Consumes: captured `ActiveProfileContext.Ready`, the data-foundation facade's `(profileId, typedValue)` mutations, profile-aware Equipment Rack route, existing safety/adult presentation, and MainViewModel only for transient device sound/disco actions.
@@ -4221,15 +4494,72 @@ Add tests proving:
 - Adult confirmation sends LOCAL_SAFETY and VBT with one captured profile ID even if a switch is requested between repository calls.
 - External body-weight attribution observes the Ready profile ID and clears during `Switching`.
 
+Add `import kotlin.test.assertFalse`, then insert this exact method inside `ProfileScreenContractTest`, immediately before its `private fun source(...)` helper. It binds all 24 Task 8 keys and proves the three removed duplicate concepts stay mapped to existing translations:
+
+```kotlin
+@Test
+fun profilePreferencesConsumeTheirCompleteResourceInventoryAndReuseExistingCopy() {
+    val screen = source(
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt",
+    )
+    val preferences = source(
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt",
+    )
+    val combined = screen + preferences
+
+    assertUsesResources(
+        combined,
+        listOf(
+            "profile_preferences_title",
+            "profile_measurements",
+            "profile_workout_behavior",
+            "profile_led",
+            "profile_vbt",
+            "profile_safety",
+            "profile_vbt_enabled",
+            "profile_weight_increment",
+            "profile_body_weight",
+            "profile_set_summary",
+            "profile_autostart_countdown",
+            "profile_auto_start_routine",
+            "profile_audio_rep_counter",
+            "profile_countdown_beeps",
+            "profile_rep_completion_sound",
+            "profile_motion_start",
+            "profile_gamification",
+            "profile_default_scaling_basis",
+            "profile_routine_starting_weights",
+            "profile_stop_at_top",
+            "profile_stall_detection",
+            "profile_velocity_loss_threshold",
+            "profile_auto_end_velocity_loss",
+            "profile_vbt_history_note",
+        ),
+    )
+    assertUsesResources(
+        preferences,
+        listOf(
+            "settings_weight_unit",
+            "equipment_rack_title",
+            "equipment_rack_manage",
+            "cd_led_scheme",
+        ),
+    )
+    assertFalse(combined.contains("Res.string.profile_weight_unit"))
+    assertFalse(combined.contains("Res.string.profile_manage_equipment_rack"))
+    assertFalse(combined.contains("Res.string.profile_led_color_scheme"))
+}
+```
+
 - [ ] **Step 2: Run the mutation tests and confirm the red state**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileViewModelTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileViewModelTest*" --tests "*ProfileScreenContractTest*" --console=plain
 ```
 
-Expected: FAIL because the section mutations, busy-state keys, and measurement attribution are absent.
+Expected: FAIL because the section mutations, busy-state keys, measurement attribution, preference component, and exact resource usages are absent.
 
 - [ ] **Step 3: Implement captured-ID, whole-section mutations in ProfileViewModel**
 
@@ -4382,7 +4712,7 @@ Render six compact cards. Every control copies its full current typed section be
 | Safety | voice stop | `workout.copy(voiceStopEnabled = checked)` |
 | Safety | safe word/calibrated state | one complete `localSafety.copy(...)` write; changing the phrase sets `safeWordCalibrated = false` |
 
-Disable only the card whose section key is busy. Use the localized keys from Task 3 and the existing safety/adult strings; do not carry hardcoded labels from Settings. Always show `profile_vbt_history_note`, including when VBT is disabled.
+Disable only the card whose section key is busy. Use the localized keys from Task 3 and the existing safety/adult strings; do not carry hardcoded labels from Settings. Label Weight Unit with `settings_weight_unit`. Render the Equipment Rack row with `equipment_rack_title` as its headline and `equipment_rack_manage` as its action. Label the LED selector with the now-fully-translated `cd_led_scheme`; do not introduce Profile-prefixed duplicates. Always show `profile_vbt_history_note`, including when VBT is disabled.
 
 When `workout.voiceStopEnabled` is true but the local phrase is blank or `safeWordCalibrated` is false, show `settings_calibrate_first` plus the calibration action and label the feature as requiring local setup. Do not switch the synced intent back off; the data-foundation runtime computes effective voice stop as false until setup succeeds.
 
@@ -4435,7 +4765,7 @@ Place a compact Achievements row on Profile immediately before the Preferences h
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileViewModelTest*" --tests "*SafeWord*" --tests "*VerbalEncouragementPreferenceCascadeTest*" :shared:compileKotlinIosArm64 :androidApp:assembleDebug --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileViewModelTest*" --tests "*ProfileScreenContractTest*" --tests "*SafeWord*" --tests "*VerbalEncouragementPreferenceCascadeTest*" :shared:compileKotlinIosArm64 :androidApp:assembleDebug --console=plain
 ```
 
 Expected: BUILD SUCCESSFUL; every persisted control writes a whole typed section with the captured profile ID, safety behavior remains covered, and transient device actions still compile.
@@ -4443,7 +4773,7 @@ Expected: BUILD SUCCESSFUL; every persisted control writes a whole typed section
 - [ ] **Step 9: Commit Profile preferences**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSafetyDialogs.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSafetyDialogs.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt
 git commit -m "feat: move typed preferences to profile"
 ```
 
@@ -4463,6 +4793,13 @@ git commit -m "feat: move typed preferences to profile"
 - [ ] **Step 1: Write the failing Settings/Profile separation contract**
 
 ```kotlin
+package com.devil.phoenixproject.presentation.screen
+
+import com.devil.phoenixproject.testutil.readProjectFile
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
 class ProfileSettingsSeparationContractTest {
     private val settings = requireNotNull(readProjectFile(
         "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt",
@@ -4508,6 +4845,15 @@ class ProfileSettingsSeparationContractTest {
         assertFalse(destination.contains("setColorScheme"))
         assertFalse(destination.contains("setVelocityLossThreshold"))
         assertFalse(destination.contains("setSafeWord"))
+    }
+
+    @Test
+    fun retainedVideoCardConsumesItsCompleteResourceInventory() {
+        listOf(
+            "settings_video_behavior",
+            "settings_show_exercise_videos",
+            "settings_show_exercise_videos_description",
+        ).forEach { key -> assertTrue(settings.contains("Res.string.$key"), key) }
     }
 }
 ```
