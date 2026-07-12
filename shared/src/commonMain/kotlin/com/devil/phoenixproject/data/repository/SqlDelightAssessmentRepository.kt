@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.NonCancellable
@@ -27,6 +28,7 @@ class SqlDelightAssessmentRepository(
     db: VitruvianDatabase,
     private val workoutRepository: WorkoutRepository,
     private val exerciseRepository: ExerciseRepository,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AssessmentRepository {
 
     private val queries = db.vitruvianDatabaseQueries
@@ -68,7 +70,7 @@ class SqlDelightAssessmentRepository(
     ): Long {
         require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
         return assessmentWriteMutex.withLock {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 queries.insertAssessmentResult(
                     exerciseId = exerciseId,
                     estimatedOneRepMaxKg = estimatedOneRepMaxKg.toDouble(),
@@ -89,9 +91,9 @@ class SqlDelightAssessmentRepository(
         mapper = ::mapToEntity,
     )
         .asFlow()
-        .mapToList(Dispatchers.IO)
+        .mapToList(ioDispatcher)
 
-    override suspend fun getLatestAssessment(exerciseId: String, profileId: String): AssessmentResultEntity? = withContext(Dispatchers.IO) {
+    override suspend fun getLatestAssessment(exerciseId: String, profileId: String): AssessmentResultEntity? = withContext(ioDispatcher) {
         queries.selectLatestAssessment(
             exerciseId,
             profileId = profileId,
@@ -100,7 +102,7 @@ class SqlDelightAssessmentRepository(
     }
 
     override suspend fun deleteAssessment(id: Long) {
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             queries.deleteAssessmentResult(id)
         }
     }
@@ -118,7 +120,7 @@ class SqlDelightAssessmentRepository(
     ): String {
         require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
         return assessmentWriteMutex.withLock {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 val finalOneRepMaxTotalKg = userOverrideKg ?: estimatedOneRepMaxKg
                 val attemptedOneRepMaxPerCableKg = finalOneRepMaxTotalKg / 2f
                 val sessionId = generateUUID()
@@ -165,10 +167,6 @@ class SqlDelightAssessmentRepository(
                     }
                 } catch (failure: Throwable) {
                     withContext(NonCancellable) {
-                        insertedResultId?.let { id ->
-                            runCatching { queries.deleteAssessmentResult(id) }
-                        }
-                        runCatching { workoutRepository.deleteSession(sessionId) }
                         if (exerciseWriteAttempted) {
                             runCatching {
                                 queries.restoreOneRepMaxIfCurrent(
@@ -180,6 +178,10 @@ class SqlDelightAssessmentRepository(
                                 )
                             }
                         }
+                        insertedResultId?.let { id ->
+                            runCatching { queries.deleteAssessmentResult(id) }
+                        }
+                        runCatching { workoutRepository.deleteSession(sessionId) }
                     }
                     if (failure is CancellationException) throw failure
                     Logger.w(failure) {

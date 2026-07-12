@@ -72,6 +72,19 @@ class AssessmentProfileOwnershipTest {
         assertFalse(detail.contains("NavigationRoutes.StrengthAssessment"))
     }
 
+    @Test
+    fun `analytics disables assessment entry until a Ready profile id exists`() {
+        val analytics = assertNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AnalyticsScreen.kt",
+            ),
+        )
+
+        assertContains(analytics, "assessmentEnabled: Boolean")
+        assertContains(analytics, "enabled = assessmentEnabled")
+        assertContains(analytics, "assessmentEnabled = assessmentProfileId != null")
+    }
+
     private fun ready(profileId: String): ActiveProfileContext.Ready {
         val repository = FakeUserProfileRepository()
         repository.setActiveProfileForTest(profileId)

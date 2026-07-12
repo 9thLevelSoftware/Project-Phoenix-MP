@@ -10,13 +10,15 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Before
 import org.junit.Test
 
@@ -240,9 +242,60 @@ class SqlDelightAssessmentRepositoryTest {
     }
 
     @Test
+    fun `restore precedes suspendable cleanup so a same-value newer write survives`() = runTest {
+        exerciseRepository.updateOneRepMax("bench-press", 40f)
+        val deleteSessionReached = CompletableDeferred<Unit>()
+        val releaseDeleteSession = CompletableDeferred<Unit>()
+        val pausingWorkoutRepository = object : WorkoutRepository by workoutRepository {
+            override suspend fun deleteSession(sessionId: String) {
+                deleteSessionReached.complete(Unit)
+                releaseDeleteSession.await()
+                workoutRepository.deleteSession(sessionId)
+            }
+        }
+        val failingExerciseRepository = object : ExerciseRepository by exerciseRepository {
+            override suspend fun updateOneRepMax(
+                exerciseId: String,
+                oneRepMaxKg: Float?,
+            ) {
+                exerciseRepository.updateOneRepMax(exerciseId, oneRepMaxKg)
+                throw IllegalStateException("post-write failure")
+            }
+        }
+        val failingRepository = SqlDelightAssessmentRepository(
+            database,
+            pausingWorkoutRepository,
+            failingExerciseRepository,
+        )
+        val save = async {
+            runCatching {
+                failingRepository.saveSessionForTest(
+                    estimatedOneRepMaxKg = 100f,
+                    profileId = "athlete-a",
+                )
+            }
+        }
+
+        deleteSessionReached.await()
+        exerciseRepository.updateOneRepMax("bench-press", 50f)
+        releaseDeleteSession.complete(Unit)
+        val failure = save.await().exceptionOrNull()
+
+        assertEquals(IllegalStateException::class, failure?.let { it::class })
+        assertEquals("post-write failure", failure?.message)
+        assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
+        assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
+        assertEquals(
+            50f,
+            exerciseRepository.getExerciseById("bench-press")?.oneRepMaxKg,
+        )
+    }
+
+    @Test
     fun `concurrent failing and successful saves are serialized and keep the successful row`() =
         runTest {
             exerciseRepository.updateOneRepMax("bench-press", 40f)
+            val ioDispatcher = StandardTestDispatcher(testScheduler)
             val updateCount = AtomicInteger(0)
             val firstUpdateReached = CompletableDeferred<Unit>()
             val releaseFirstFailure = CompletableDeferred<Unit>()
@@ -267,6 +320,7 @@ class SqlDelightAssessmentRepositoryTest {
                 database,
                 workoutRepository,
                 serializingExerciseRepository,
+                ioDispatcher,
             )
             val first = async {
                 runCatching {
@@ -276,6 +330,7 @@ class SqlDelightAssessmentRepositoryTest {
                     )
                 }
             }
+            runCurrent()
             firstUpdateReached.await()
             val second = async {
                 serializingRepository.saveSessionForTest(
@@ -283,16 +338,12 @@ class SqlDelightAssessmentRepositoryTest {
                     profileId = "athlete-a",
                 )
             }
+            runCurrent()
 
-            val secondEnteredWhileFirstWasBlocked = withContext(Dispatchers.Default) {
-                withTimeoutOrNull(500L) {
-                    secondUpdateReached.await()
-                    true
-                } ?: false
-            }
-            assertFalse(secondEnteredWhileFirstWasBlocked)
+            assertFalse(secondUpdateReached.isCompleted)
 
             releaseFirstFailure.complete(Unit)
+            runCurrent()
             val firstFailure = first.await().exceptionOrNull()
             assertEquals(IllegalStateException::class, firstFailure?.let { it::class })
             assertEquals("first save fails", firstFailure?.message)
@@ -313,9 +364,10 @@ class SqlDelightAssessmentRepositoryTest {
 
     @Test
     fun `raw save cannot interleave with compensating session insert identity`() = runTest {
+        val ioDispatcher = StandardTestDispatcher(testScheduler)
         val firstUpdateReached = CompletableDeferred<Unit>()
         val releaseFirstFailure = CompletableDeferred<Unit>()
-        val failingRepository = repositoryWithExerciseUpdate {
+        val failingRepository = repositoryWithExerciseUpdate(ioDispatcher) {
             firstUpdateReached.complete(Unit)
             releaseFirstFailure.await()
             throw IllegalStateException("session save fails")
@@ -325,6 +377,7 @@ class SqlDelightAssessmentRepositoryTest {
                 failingRepository.saveSessionForTest(profileId = "athlete-a")
             }
         }
+        runCurrent()
         firstUpdateReached.await()
         val rawSave = async {
             failingRepository.saveAssessment(
@@ -336,16 +389,12 @@ class SqlDelightAssessmentRepositoryTest {
                 profileId = "athlete-a",
             )
         }
+        runCurrent()
 
-        val rawCompletedWhileSessionWasBlocked = withContext(Dispatchers.Default) {
-            withTimeoutOrNull(500L) {
-                rawSave.await()
-                true
-            } ?: false
-        }
-        assertFalse(rawCompletedWhileSessionWasBlocked)
+        assertFalse(rawSave.isCompleted)
 
         releaseFirstFailure.complete(Unit)
+        runCurrent()
         val sessionFailure = failingSession.await().exceptionOrNull()
         assertEquals(IllegalStateException::class, sessionFailure?.let { it::class })
         assertEquals("session save fails", sessionFailure?.message)
@@ -354,6 +403,36 @@ class SqlDelightAssessmentRepositoryTest {
         assertEquals(listOf(rawId), remaining.map { it.id })
         assertEquals(135f, remaining.single().estimatedOneRepMaxKg)
         assertNull(remaining.single().assessmentSessionId)
+    }
+
+    @Test
+    fun `sixteen concurrent raw saves return IDs for their own exercise rows`() = runTest {
+        val calls = (0 until 16).map { index ->
+            val exerciseId = "raw-exercise-$index"
+            insertExercise(id = exerciseId, name = "Raw Exercise $index")
+            Triple(exerciseId, "athlete-a", 100f + index)
+        }
+
+        val saves = calls.map { (exerciseId, profileId, estimateKg) ->
+            async(Dispatchers.Default) {
+                val returnedId = repository.saveAssessment(
+                    exerciseId = exerciseId,
+                    estimatedOneRepMaxKg = estimateKg,
+                    loadVelocityDataJson = "[]",
+                    sessionId = null,
+                    userOverrideKg = null,
+                    profileId = profileId,
+                )
+                Triple(exerciseId, estimateKg, returnedId)
+            }
+        }.awaitAll()
+
+        assertEquals(16, saves.map { it.third }.distinct().size)
+        saves.forEach { (exerciseId, estimateKg, returnedId) ->
+            val row = repository.getLatestAssessment(exerciseId, "athlete-a")
+            assertEquals(returnedId, row?.id, exerciseId)
+            assertEquals(estimateKg, row?.estimatedOneRepMaxKg, exerciseId)
+        }
     }
 
     @Test
@@ -388,6 +467,7 @@ class SqlDelightAssessmentRepositoryTest {
         }
 
     private fun repositoryWithExerciseUpdate(
+        ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         afterDelegateUpdate: suspend () -> Unit,
     ): SqlDelightAssessmentRepository {
         val failingExerciseRepository = object : ExerciseRepository by exerciseRepository {
@@ -403,6 +483,7 @@ class SqlDelightAssessmentRepositoryTest {
             database,
             workoutRepository,
             failingExerciseRepository,
+            ioDispatcher,
         )
     }
 

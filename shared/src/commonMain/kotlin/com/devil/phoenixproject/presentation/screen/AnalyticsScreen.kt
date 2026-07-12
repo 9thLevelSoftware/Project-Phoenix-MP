@@ -53,6 +53,7 @@ fun ProgressTab(
     exerciseRepository: ExerciseRepository,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
+    assessmentEnabled: Boolean,
     onNavigateToStrengthAssessment: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -98,6 +99,7 @@ fun ProgressTab(
         item {
             ExpressiveCard(
                 onClick = onNavigateToStrengthAssessment,
+                enabled = assessmentEnabled,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
@@ -479,6 +481,7 @@ fun AnalyticsScreen(
                         exerciseRepository = viewModel.exerciseRepository,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
+                        assessmentEnabled = assessmentProfileId != null,
                         onNavigateToStrengthAssessment = {
                             assessmentProfileId?.let(onNavigateToStrengthAssessment)
                         },
