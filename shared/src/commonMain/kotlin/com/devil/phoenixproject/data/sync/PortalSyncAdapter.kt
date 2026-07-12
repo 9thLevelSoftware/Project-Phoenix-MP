@@ -35,6 +35,23 @@ import kotlinx.serialization.json.Json
  */
 object PortalSyncAdapter {
 
+    fun toPortalProfilePreferenceMutation(
+        section: ProfilePreferenceSectionSyncDto,
+    ): PreparedProfilePreferenceMutation = PreparedProfilePreferenceMutation(
+        wire = PortalProfilePreferenceSectionMutationDto(
+            localProfileId = section.key.localProfileId,
+            section = section.key.section.name,
+            documentVersion = section.documentVersion,
+            baseRevision = section.baseRevision,
+            clientModifiedAt = kotlin.time.Instant
+                .fromEpochMilliseconds(section.clientModifiedAtEpochMs)
+                .toString(),
+            payload = section.payload,
+        ),
+        key = section.key,
+        sentLocalGeneration = section.localGeneration,
+    )
+
     // ─── Session Mapping ────────────────────────────────────────────
 
     /**
