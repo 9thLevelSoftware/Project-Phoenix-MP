@@ -5146,16 +5146,541 @@ git commit -m "feat: build profile identity and exercise insights"
 ### Task 7: Add the Fifth Root Tab and Shared Long-Press Profile Switcher
 
 **Files:**
+- Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt`
+- Create: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModelTest.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutes.kt:9-113`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt:39-55,239-446`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt:145-155,228-240,384-549,552-600,871-934`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutes.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/PresentationModule.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt`
+- Delete: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSidePanel.kt`
+- Delete: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt`
+- Delete: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EditProfileDialog.kt`
+- Delete: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/DeleteProfileDialog.kt`
 
 **Interfaces:**
-- Consumes: Tasks 3, 4, and 6's localized recovery copy/sheet/dialog/screen, `UserProfileRepository.createAndActivateProfile`, `UserProfileRepository.reconcileActiveProfileContext`, `ActiveProfileContext.Switching`, and `ProfileContextRecoveryException`.
-- Produces: `NavigationRoutes.Profile`, canonical five-item order, normal tab navigation, an accessible haptic long press, the one root-owned switcher used by both entry points, and a non-dismissible recovery path for the exceptional case where repository rollback itself failed.
+- Consumes: Tasks 3 and 4's localized recovery copy and callback-only modal surfaces; Task 6's exact `ProfileScreen(..., onProfileRecoveryRequired: (ProfileContextRecoveryException) -> Unit, ...)` handoff; `UserProfileRepository.setActiveProfile`, `createAndActivateProfile`, and `reconcileActiveProfileContext`; and the full `ActiveProfileContext` sealed state, including `Switching(null)`.
+- Produces: `NavigationRoutes.Profile`; the single canonical Analytics/Workout/Insights/Profile/Settings root order; a root-scoped `ProfileSwitcherViewModel`; pointer and semantic long press with haptic feedback; inline modal errors; one blocking recovery owner; and removal of every Home/Just Lift legacy profile selector and repository-coupled identity dialog.
+- Concurrency invariant: switch, create, and recovery-retry operations acquire a synchronous token before launching, only the owning token may publish a terminal state, and Task 6 recovery invalidates any stale root operation before showing recovery.
+- Modal invariant: `switchingInFlight` is explicit and never inferred from a nullable target ID; `Switching(null)` disables rows, add, gestures, back, scrim, and dismissal. Errors render inside their owning modal and never queue behind it in a root snackbar.
+- Ownership invariant: `ProfileSwitcherViewModel` is the only switch/create/reconcile caller in presentation code after this task. `ProfileScreen` and the Profile tab long press only dispatch callbacks to that root owner.
+
+#### Hardened Task 7 execution contract (authoritative)
+
+This block supersedes every older Task 7 snippet below where the two disagree. Execute this block
+in order. Do not start production edits until the complete fake-supported red suite reaches the
+compiler/test runner.
+
+- [ ] **Step A: Add deterministic fake seams and the complete failing test suites**
+
+Extend `FakeUserProfileRepository` without changing the production interface. Task 6 owns its
+separately named update/delete controls; add these switch/create/reconcile controls exactly:
+
+```kotlin
+data class CreateAndActivateRequest(val name: String, val colorIndex: Int)
+
+val setActiveProfileRequests = mutableListOf<String>()
+val createAndActivateRequests = mutableListOf<CreateAndActivateRequest>()
+var reconcileActiveProfileContextRequests: Int = 0
+
+var setActiveProfileFailure: Throwable? = null
+var createAndActivateProfileFailure: Throwable? = null
+var reconcileActiveProfileContextFailure: Throwable? = null
+
+var beforeSetActiveProfile: (suspend (String) -> Unit)? = null
+var beforeCreateAndActivateProfile: (suspend (String, Int) -> Unit)? = null
+var beforeReconcileActiveProfileContext: (suspend () -> Unit)? = null
+
+fun resetRootProfileOperationControls() {
+    setActiveProfileRequests.clear()
+    createAndActivateRequests.clear()
+    reconcileActiveProfileContextRequests = 0
+    setActiveProfileFailure = null
+    createAndActivateProfileFailure = null
+    reconcileActiveProfileContextFailure = null
+    beforeSetActiveProfile = null
+    beforeCreateAndActivateProfile = null
+    beforeReconcileActiveProfileContext = null
+}
+```
+
+Each fake method records its request, invokes its suspend hook, checks its failure seam, and only
+then enters the existing mutex-backed success path. Failure therefore occurs before mutation.
+Hooks allow a test to suspend cooperatively or swallow cancellation deliberately; `reset` clears
+every control.
+
+Create `ProfileSwitcherViewModelTest.kt` with `TestCoroutineRule`, fresh fakes per test, and exactly
+these seventeen tests:
+
+1. `sheet opens during Switching null but cannot dismiss or start an operation`;
+2. `successful switch calls the repository once and closes the sheet`;
+3. `ordinary switch failure keeps the sheet open with only switch error`;
+4. `switch recovery failure closes ordinary overlays and opens blocking recovery`;
+5. `switch cancellation clears only its token and emits no error`;
+6. `two same-frame switch requests launch only the first`;
+7. `noncooperative stale switch completion cannot close a newer recovery state`;
+8. `add opens from the sheet and dismiss returns to that sheet`;
+9. `successful create and activate calls once and closes both overlays`;
+10. `ordinary create failure keeps both overlays with only create error`;
+11. `create recovery failure closes both overlays and opens blocking recovery`;
+12. `two same-frame create confirmations launch only the first`;
+13. `Task 6 recovery handoff cancels ownership and opens the same recovery state`;
+14. `successful recovery retry clears the blocking modal`;
+15. `failed recovery retry keeps the modal with only retry error`;
+16. `two same-frame recovery retries launch only the first`; and
+17. `recovery cancellation clears its token but keeps recovery blocking without an error`.
+
+Use `CompletableDeferred` gates in tests 6, 7, 12, and 16. The stale test must swallow
+`CancellationException` inside the fake hook, return, and prove the old token cannot publish.
+Construct recovery failures as
+`ProfileContextRecoveryException(IllegalStateException("recovery"))`. Assert exact request
+histories, token kind/target, overlay booleans, and the single matching error enum after every
+transition.
+
+Create `ProfileNavigationContractTest.kt` with exactly eight source-contract cases:
+
+1. one `NavigationRoutes.Profile` and the exact five-value `BottomNavItem` order;
+2. exactly five bottom-bar cells in canonical order with 8dp padding, 4dp spacing, equal weights,
+   and 48dp minimum targets;
+3. a selectable-group parent and merged `Role.Tab`, selected, click, labeled long-click, and all
+   five stable navigation tags;
+4. Profile pointer/semantic long press performs `HapticFeedbackType.LongPress`, opens only the
+   switcher, and does not invoke normal navigation;
+5. normal Profile tap uses Home `popUpTo { saveState = true }`, `launchSingleTop`, and
+   `restoreState`, while bottom-bar visibility and selection include Profile;
+6. `NavGraph` registers `ProfileScreen`, passes both root callbacks, and uses localized
+   `nav_profile` for the destination and shell title paths;
+7. explicit `switchingInFlight`, inline switch/create/retry errors, and the non-dismissible
+   recovery dialog are present; and
+8. Enhanced Main and Just Lift contain no legacy selector/add-dialog state and all four legacy
+   source files are absent.
+
+The tag contract must reject `Modifier.weight(1f).testTag(...)` as the only tag placement when the
+item later calls `clearAndSetSemantics`; it must require the tag to be appended after the clear in
+the item implementation. It must also assert `TestTags.SCREEN_PROFILE` is consumed but not declared
+by Task 7, because Task 6 owns that constant.
+
+- [ ] **Step B: Run the new suites and record a genuine red state**
+
+Run:
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest `
+    --tests "*ProfileSwitcherViewModelTest*" `
+    --tests "*ProfileNavigationContractTest*" `
+    --console=plain
+```
+
+Expected: FAIL at `compileAndroidHostTest` because `ProfileSwitcherViewModel` and its typed state do
+not exist, plus navigation/source assertions remain red. At this point only the two new test files
+and `FakeUserProfileRepository.kt` may differ from the Task 6 commit. A Java/tooling failure is not
+valid RED evidence.
+
+- [ ] **Step C: Implement the root-scoped tokenized coordinator**
+
+Create `ProfileSwitcherViewModel.kt` with this stable public state boundary:
+
+```kotlin
+enum class RootProfileOperationKind { SWITCH, CREATE, RECOVERY }
+
+data class RootProfileOperation(
+    val token: Long,
+    val kind: RootProfileOperationKind,
+    val targetProfileId: String? = null,
+)
+
+enum class ProfileOverlayError {
+    SWITCH_FAILED,
+    CREATE_FAILED,
+    RECOVERY_RETRY_FAILED,
+}
+
+data class ProfileSwitcherUiState(
+    val showSwitcher: Boolean = false,
+    val showAddDialog: Boolean = false,
+    val recoveryRequired: Boolean = false,
+    val operation: RootProfileOperation? = null,
+    val error: ProfileOverlayError? = null,
+)
+
+class ProfileSwitcherViewModel(
+    private val profiles: UserProfileRepository,
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(ProfileSwitcherUiState())
+    val uiState: StateFlow<ProfileSwitcherUiState> = _uiState.asStateFlow()
+
+    private var nextToken = 0L
+    private var operationJob: Job? = null
+
+    fun openSwitcher()
+    fun dismissSwitcher()
+    fun openAddDialog()
+    fun dismissAddDialog()
+    fun switchProfile(profileId: String)
+    fun createAndActivateProfile(name: String, colorIndex: Int)
+    fun requireRecovery(error: ProfileContextRecoveryException)
+    fun retryRecovery()
+}
+```
+
+All public methods are called on the UI thread. `beginOperation(kind, target)` checks
+`uiState.value.operation == null` and `!recoveryRequired`, allocates `++nextToken`, and writes the
+operation into `_uiState` before returning or launching. Switch additionally requires a nonblank
+target and repository `ActiveProfileContext.Ready`; it ignores the current Ready ID. Create requires
+the add dialog, a nonblank trimmed name, and Ready. Retry requires `recoveryRequired`.
+
+Use one ownership helper for every terminal transition:
+
+```kotlin
+private inline fun finishOwned(
+    token: Long,
+    transform: (ProfileSwitcherUiState) -> ProfileSwitcherUiState,
+) {
+    _uiState.update { state ->
+        if (state.operation?.token == token) transform(state) else state
+    }
+}
+
+private fun enterRecovery(error: ProfileContextRecoveryException) {
+    Logger.e(error) { "PROFILE_CONTEXT: root recovery required" }
+    operationJob?.cancel()
+    _uiState.value = ProfileSwitcherUiState(recoveryRequired = true)
+}
+```
+
+For switch/create: rethrow `CancellationException`; route
+`ProfileContextRecoveryException` only to `enterRecovery`; route an ordinary `Exception` only to
+the matching inline error; and close overlays only on success. Clear the owning operation in every
+terminal state. For retry, any ordinary/recovery exception maps to `RECOVERY_RETRY_FAILED` while
+`recoveryRequired` stays true. Cancellation clears only the owned operation and retains recovery.
+`requireRecovery` is Task 6's handoff and must enter the same state synchronously, invalidating any
+old token before its coroutine can return.
+
+Register exactly one route-root factory in `PresentationModule.kt`:
+
+```kotlin
+factory { ProfileSwitcherViewModel(profiles = get()) }
+```
+
+`EnhancedMainScreen` obtains it with a default `koinViewModel()` parameter. The Android root
+`ViewModelStoreOwner` preserves the blocking recovery/overlay state through configuration
+recreation; process-death recovery remains backed by the repository's durable transition journal.
+
+- [ ] **Step D: Make the Task 4 modals explicitly blocking and error-owning**
+
+Change the sheet boundary to distinguish an unknown target from no operation:
+
+```kotlin
+@Composable
+fun ProfileSwitcherSheet(
+    profiles: List<UserProfile>,
+    activeProfileId: String?,
+    switchingInFlight: Boolean,
+    switchingTargetProfileId: String?,
+    errorMessage: String?,
+    onSelectProfile: (UserProfile) -> Unit,
+    onAddProfile: () -> Unit,
+    onDismiss: () -> Unit,
+)
+
+internal fun canDismissProfileSwitcher(switchingInFlight: Boolean): Boolean =
+    !switchingInFlight
+```
+
+Use `rememberUpdatedState(switchingInFlight)` in both `confirmValueChange` and
+`onDismissRequest`; set `sheetGesturesEnabled = !switchingInFlight`; disable every row and Add
+action while true. The optional target controls only which row shows the progress indicator. Render
+`errorMessage` below the title with error color and
+`Modifier.semantics { liveRegion = LiveRegionMode.Polite }`.
+
+Extend `ProfileAddDialog` with `errorMessage: String?` and render it inside the dialog using the
+same polite live-region semantics. Keep Task 4's submission guards and callback-only behavior.
+Add:
+
+```kotlin
+@Composable
+fun ProfileRecoveryDialog(
+    isRetrying: Boolean,
+    errorMessage: String?,
+    onRetry: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(stringResource(Res.string.profile_recovery_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(Res.string.profile_recovery_message))
+                errorMessage?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics {
+                            liveRegion = LiveRegionMode.Polite
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onRetry, enabled = !isRetrying) {
+                Text(stringResource(Res.string.action_retry))
+            }
+        },
+    )
+}
+```
+
+Do not add a dismiss button or action tags to confirmation buttons. Update the existing seven-case
+`ProfileIdentityPolicyTest` in place for the Boolean dismissal API, inline live regions, callback
+boundary, and the absence of duplicate action tags; the suite remains exactly seven tests.
+
+- [ ] **Step E: Add the route, exact five-tab semantics, and localized title plumbing**
+
+Add `NavigationRoutes.Profile("profile")`. Replace the unused labeled enum with the single
+canonical root order:
+
+```kotlin
+enum class BottomNavItem(val route: String) {
+    ANALYTICS(NavigationRoutes.Analytics.route),
+    WORKOUT(NavigationRoutes.Home.route),
+    INSIGHTS(NavigationRoutes.SmartInsights.route),
+    PROFILE(NavigationRoutes.Profile.route),
+    SETTINGS(NavigationRoutes.Settings.route),
+}
+```
+
+Iterate `BottomNavItem.entries` in `PhoenixBottomNavigationBar`; map icon, localized description,
+selected state, callback, and test tag with exhaustive `when` expressions. This prevents a second
+manual order from drifting. The Row uses
+`Modifier.fillMaxWidth().height(barHeight).padding(horizontal = 8.dp).selectableGroup()` and
+`Arrangement.spacedBy(4.dp)`.
+
+Use this item boundary; `testTag` is appended after `clearAndSetSemantics` so it survives the
+semantic replacement:
+
+```kotlin
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PhoenixBottomNavigationItem(
+    icon: ImageVector,
+    contentDescription: String,
+    selected: Boolean,
+    testTag: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    longClickLabel: String? = null,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(MaterialTheme.shapes.large)
+            .combinedClickable(
+                role = Role.Tab,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+            .clearAndSetSemantics {
+                this.contentDescription = contentDescription
+                role = Role.Tab
+                this.selected = selected
+                this.onClick(label = contentDescription) { onClick(); true }
+                if (onLongClick != null && longClickLabel != null) {
+                    this.onLongClick(label = longClickLabel) { onLongClick(); true }
+                }
+            }
+            .testTag(testTag),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(26.dp))
+    }
+}
+```
+
+Map all existing `NAV_ANALYTICS`, `NAV_WORKOUTS`, `NAV_INSIGHTS`, and `NAV_SETTINGS` tags and add
+only `NAV_PROFILE`; Task 6 already adds `SCREEN_PROFILE`. The Profile long-click callback performs
+`LocalHapticFeedback.current.performHapticFeedback(HapticFeedbackType.LongPress)` and then
+`profileSwitcherViewModel.openSwitcher()`. Its ordinary click only navigates.
+
+Include Profile in `shouldShowBottomBar`. Its ordinary click uses exactly:
+
+```kotlin
+navController.navigate(NavigationRoutes.Profile.route) {
+    popUpTo(NavigationRoutes.Home.route) { saveState = true }
+    launchSingleTop = true
+    restoreState = true
+}
+```
+
+Compute `val profileTitle = stringResource(Res.string.nav_profile)` in Enhanced Main, add a required
+`profileTitle: String` parameter to `getScreenTitle`, return it for the Profile route, and let
+`getCompactScreenTitle` return that already-localized title. Do not hardcode English.
+
+- [ ] **Step F: Register ProfileScreen and wire the single recovery owner**
+
+Add both required callbacks to `NavGraph` before its default `modifier` parameter:
+
+```kotlin
+onOpenProfileSwitcher: () -> Unit,
+onProfileRecoveryRequired: (ProfileContextRecoveryException) -> Unit,
+```
+
+Register Profile immediately after Smart Insights with tab fade transitions. Capture localized
+`nav_profile`, update the shell title in `LaunchedEffect(profileTitle)`, collect video preferences,
+and call Task 6's exact route API:
+
+```kotlin
+ProfileScreen(
+    onOpenProfileSwitcher = onOpenProfileSwitcher,
+    onNavigateToExerciseDetail = { exerciseId ->
+        navController.navigate(NavigationRoutes.ExerciseDetail.createRoute(exerciseId))
+    },
+    onProfileRecoveryRequired = onProfileRecoveryRequired,
+    enableVideoPlayback = userPreferences.enableVideoPlayback,
+    themeMode = themeMode,
+)
+```
+
+In Enhanced Main collect `activeProfileContext` in addition to `allProfiles`; remove the separate
+`activeProfile` collection. Derive:
+
+```kotlin
+val readyProfileId =
+    (activeProfileContext as? ActiveProfileContext.Ready)?.profile?.id
+val repositorySwitching = activeProfileContext is ActiveProfileContext.Switching
+val repositorySwitchTarget =
+    (activeProfileContext as? ActiveProfileContext.Switching)?.targetProfileId
+val localSwitchTarget = switcherState.operation
+    ?.takeIf { it.kind == RootProfileOperationKind.SWITCH }
+    ?.targetProfileId
+val localOperationInFlight = switcherState.operation != null
+val switchingInFlight = repositorySwitching || localOperationInFlight
+val switchingTargetProfileId = repositorySwitchTarget ?: localSwitchTarget
+```
+
+Render the sheet, Add dialog, and recovery dialog after the root Scaffold. Their callbacks call only
+the ViewModel methods. Map `ProfileOverlayError` to `profile_switch_failed`,
+`profile_create_failed`, or `profile_recovery_retry_failed` only in its owning modal. There is no
+root snackbar for these modal-bound errors.
+
+Pass these callbacks into `NavGraph`:
+
+```kotlin
+onOpenProfileSwitcher = switcherViewModel::openSwitcher,
+onProfileRecoveryRequired = switcherViewModel::requireRecovery,
+```
+
+The recovery dialog renders whenever `switcherState.recoveryRequired`; it remains present through
+retry failure and clears only after successful reconciliation. Because `requireRecovery` resets
+ordinary overlays and errors synchronously, a Task 6 identity recovery event can never fall through
+to ProfileScreen's ordinary update snackbar or a root switch/create error.
+
+- [ ] **Step G: Remove every legacy selector in the same atomic task**
+
+Delete the Home-only `ProfileSidePanel` block and old Add dialog from Enhanced Main. Delete the
+four legacy files listed in this task. Simplify `ProfileListItem` to a sheet-only API by removing
+`onLongClick`, `combinedClickable`, and the legacy semantics branch; retain its `selectable`
+radio/selected semantics and switching indicator.
+
+In `JustLiftScreen`, remove only `allProfiles`, `activeProfile`, `showAddProfileDialog`,
+`rememberCoroutineScope`, `ProfileSidePanel`, old `AddProfileDialog`, and their imports. Retain
+`UserProfileRepository`, `activeProfileContext`, and `readyProfileId`: Just Lift still needs the
+Ready profile ID to bind workout configuration and must not fall back across profiles.
+
+Before deletion, run:
+
+```powershell
+rg -n "\b(ProfileSidePanel|ProfileSpeedDial|EditProfileDialog|DeleteProfileDialog)\b" `
+    shared/src/commonMain/kotlin
+```
+
+Expected before deletion: definitions plus the two known selector call sites only. After deletion,
+the same command must exit 1. Also verify `ProfileColors`, `PROFILE_COLOR_COUNT`, `ProfileAvatar`,
+and `Profile(Add|Edit|Delete)Dialog` resolve only to Task 4's extracted identity files and current
+callers.
+
+- [ ] **Step H: Run the forced full gate and assert every suite actually executed**
+
+Run:
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' `
+    :shared:testAndroidHostTest `
+    --tests "*ProfileSwitcherViewModelTest*" `
+    --tests "*ProfileNavigationContractTest*" `
+    --tests "*ProfileIdentityPolicyTest*" `
+    --tests "*ProfileScreenContractTest*" `
+    --tests "*ProfileViewModelTest*" `
+    --tests "*KoinModuleVerifyTest*" `
+    :shared:compileAndroidMain `
+    :shared:compileKotlinIosArm64 `
+    :shared:compileTestKotlinIosArm64 `
+    :androidApp:assembleDebug `
+    --rerun-tasks `
+    --console=plain
+```
+
+Expected: BUILD SUCCESSFUL. Assert XML counts and zero failures/errors/skips: exactly 17
+`ProfileSwitcherViewModelTest`, 8 `ProfileNavigationContractTest`, 7
+`ProfileIdentityPolicyTest`, 6 hardened `ProfileScreenContractTest`, 25 hardened
+`ProfileViewModelTest`, and 1 `KoinModuleVerifyTest` test (64 total). The iOS test compiler is
+mandatory because the fake and both common source-contract suites changed.
+
+Run static intent checks: no legacy selector symbols/files; exactly one Profile route, one
+`ProfileSwitcherViewModel` factory, and five enum values; no `catch (Throwable)` in the new
+ViewModel; every `CancellationException` catch precedes ordinary `Exception`; explicit
+`switchingInFlight` reaches every sheet gate; no root `SnackbarHostState` is used for modal errors;
+and the Task 6 recovery callback appears from ProfileScreen through NavGraph to the root owner.
+
+- [ ] **Step I: Audit exact scope and commit the atomic navigation replacement**
+
+Use this exact expected path set, including deletions:
+
+```powershell
+$expected = @(
+    'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModelTest.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/PresentationModule.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/DeleteProfileDialog.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EditProfileDialog.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSidePanel.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutes.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt'
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt'
+    'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityPolicyTest.kt'
+    'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt'
+    'shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt'
+) | Sort-Object
+$actual = @(git status --porcelain=v1 | ForEach-Object { $_.Substring(3) } | Sort-Object)
+$scopeDiff = Compare-Object -ReferenceObject $expected -DifferenceObject $actual
+if ($scopeDiff) { $scopeDiff | Format-Table -AutoSize; throw 'Task 7 scope mismatch' }
+git diff --check -- $expected
+if ($LASTEXITCODE -ne 0) { throw 'Task 7 diff check failed' }
+git add -A -- $expected
+$staged = @(git diff --cached --name-only | Sort-Object)
+$stagedDiff = Compare-Object -ReferenceObject $expected -DifferenceObject $staged
+if ($stagedDiff) { $stagedDiff | Format-Table -AutoSize; throw 'Task 7 staged scope mismatch' }
+git diff --cached --check
+if ($LASTEXITCODE -ne 0) { throw 'Task 7 cached diff check failed' }
+git commit -m "feat: add profile tab and sole root switcher"
+```
+
+After commit, require a clean worktree and verify `git show --format= --name-only HEAD` matches the
+same eighteen paths exactly.
 
 - [ ] **Step 1: Write the failing navigation source contract**
 
@@ -6056,21 +6581,127 @@ git commit -m "refactor: keep settings global only"
 
 ---
 
-### Task 10: Remove the Legacy Home and Just Lift Profile Selectors
+### Task 10: Verify Sole Profile-Switcher Ownership and Prune Dead References
 
 **Files:**
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt:145-155,436-483`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt:169-174,806-822`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt`
-- Delete: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSidePanel.kt`
-- Delete: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSpeedDial.kt`
-- Delete: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/EditProfileDialog.kt`
-- Delete: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/DeleteProfileDialog.kt`
 
 **Interfaces:**
-- Consumes: the root-owned switcher from Task 7 and extracted identity/dialog symbols from Task 4.
-- Produces: no edge-swipe, speed-dial, or workout-route profile selector; Profile switching is available only from root-tab UI.
+- Consumes: Task 7's already-deleted legacy selectors and sole root-owned switch/create/recovery coordinator, plus Task 9's global/profile settings separation contract.
+- Produces: a final regression guard that later preference pruning did not restore a repository-coupled selector or dead compatibility branch. No production behavior changes are expected in this task.
+
+#### Hardened Task 10 verification contract (authoritative)
+
+This block supersedes the older removal draft below. Task 7 now performs the atomic removal; Task
+10 verifies that Tasks 8–9 did not reintroduce it and commits only the final regression test.
+
+- [ ] **Step A: Add the final sole-owner regression case**
+
+Add `assertNull` if not already imported and append this fifth case to
+`ProfileSettingsSeparationContractTest`:
+
+```kotlin
+@Test
+fun legacyProfileSelectorsRemainAbsentAfterPreferenceMigration() {
+    val mainPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt"
+    val justLiftPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt"
+    val listItemPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileListItem.kt"
+    val switcherPath =
+        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileSwitcherViewModel.kt"
+    val main = requireNotNull(readProjectFile(mainPath), mainPath)
+    val justLift = requireNotNull(readProjectFile(justLiftPath), justLiftPath)
+    val listItem = requireNotNull(readProjectFile(listItemPath), listItemPath)
+    val switcher = requireNotNull(readProjectFile(switcherPath), switcherPath)
+
+    assertFalse(main.contains("ProfileSidePanel("))
+    assertFalse(main.contains("AddProfileDialog("))
+    assertFalse(justLift.contains("ProfileSidePanel("))
+    assertFalse(justLift.contains("AddProfileDialog("))
+    assertFalse(justLift.contains("showAddProfileDialog"))
+    assertFalse(listItem.contains("onLongClick"))
+    assertFalse(listItem.contains("combinedClickable"))
+    assertTrue(switcher.contains("profiles.setActiveProfile("))
+    assertTrue(switcher.contains("profiles.createAndActivateProfile("))
+    assertTrue(switcher.contains("profiles.reconcileActiveProfileContext("))
+
+    listOf(
+        "ProfileSidePanel.kt",
+        "ProfileSpeedDial.kt",
+        "EditProfileDialog.kt",
+        "DeleteProfileDialog.kt",
+    ).forEach { fileName ->
+        assertNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/$fileName",
+            ),
+            fileName,
+        )
+    }
+}
+```
+
+- [ ] **Step B: Prove there is no second presentation-layer repository caller**
+
+Run:
+
+```powershell
+$legacy = rg -n "\b(ProfileSidePanel|ProfileSpeedDial|EditProfileDialog|DeleteProfileDialog)\b" `
+    shared/src/commonMain/kotlin
+if ($LASTEXITCODE -eq 0) { $legacy; throw 'Legacy profile selector reference remains' }
+
+$owners = @(rg -l `
+    "setActiveProfile\(|createAndActivateProfile\(|reconcileActiveProfileContext\(" `
+    shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation `
+    -g '*.kt')
+if ($owners.Count -ne 1 -or
+    $owners[0] -notlike '*ProfileSwitcherViewModel.kt') {
+    $owners
+    throw 'Profile switch/create/recovery has more than one presentation owner'
+}
+```
+
+Expected: both checks pass. Do not make opportunistic production edits here. A legacy match means
+Task 7 is incomplete and must be corrected at its owning commit before continuing.
+
+- [ ] **Step C: Run the verification-only cross-target gate**
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' `
+    :shared:testAndroidHostTest `
+    --tests "*ProfileSettingsSeparationContractTest*" `
+    --tests "*ProfileNavigationContractTest*" `
+    --tests "*ProfileSwitcherViewModelTest*" `
+    :shared:compileKotlinIosArm64 `
+    :shared:compileTestKotlinIosArm64 `
+    :androidApp:assembleDebug `
+    --rerun-tasks `
+    --console=plain
+```
+
+Expected: BUILD SUCCESSFUL; exactly 5 separation, 8 navigation, and 17 coordinator tests execute
+(30 total), with zero failures/errors/skips, and both iOS main/test plus the Android app compile.
+
+- [ ] **Step D: Commit the regression guard with exact one-file scope**
+
+```powershell
+$expected = @(
+    'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileSettingsSeparationContractTest.kt'
+)
+$actual = @(git status --porcelain=v1 | ForEach-Object { $_.Substring(3) })
+if (Compare-Object $expected $actual) { throw 'Task 10 must remain test-only' }
+git diff --check -- $expected
+if ($LASTEXITCODE -ne 0) { throw 'Task 10 diff check failed' }
+git add -- $expected
+if (Compare-Object $expected @(git diff --cached --name-only)) {
+    throw 'Task 10 staged scope mismatch'
+}
+git diff --cached --check
+if ($LASTEXITCODE -ne 0) { throw 'Task 10 cached diff check failed' }
+git commit -m "test: guard sole profile switcher ownership"
+```
 
 - [ ] **Step 1: Extend the source contract with failing legacy-removal assertions**
 
