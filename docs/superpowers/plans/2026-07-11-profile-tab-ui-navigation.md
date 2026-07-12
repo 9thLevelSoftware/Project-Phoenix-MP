@@ -6044,343 +6044,644 @@ git commit -m "feat: add profile tab and long press switcher"
 
 ---
 
-### Task 8: Move Typed Profile Preferences and Safety Controls onto ProfileScreen
+### Task 8: Move Typed Profile Preferences and Safety Controls onto ProfileScreen — Authoritative Contract
+
+> **Authoritative precedence:** This block replaces every earlier Task 8 draft. Execute only this contract. Task 9 removes the remaining Settings cards; it must not repeat the shared-dialog extraction completed here.
 
 **Files:**
-- Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt`
-- Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSafetyDialogs.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt`
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt:256-446`
-- Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt`
-- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt`
-- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt`
+- Create: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferencePolicy.kt
+- Create: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt
+- Create: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSafetyDialogs.kt
+- Move: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AdultModePresentation.kt to shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/AdultModePresentation.kt
+- Modify: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt
+- Modify: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt
+- Modify: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt
+- Modify: shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt
+- Modify: shared/src/commonMain/composeResources/values/strings.xml
+- Modify: shared/src/commonMain/composeResources/values-de/strings.xml
+- Modify: shared/src/commonMain/composeResources/values-es/strings.xml
+- Modify: shared/src/commonMain/composeResources/values-fr/strings.xml
+- Modify: shared/src/commonMain/composeResources/values-nl/strings.xml
+- Modify: shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt
+- Modify: shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeExternalIntegrationRepositories.kt
+- Modify: shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt
+- Modify: shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt
+- Create: shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferencePolicyTest.kt
+- Move: shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/AdultModePresentationTest.kt to shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/AdultModePresentationTest.kt
+- Verify unchanged: shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/VbtEnabledRuntimeTest.kt
+- Verify unchanged: shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/voice/SafeWordDetectionManagerTest.kt
+- Verify unchanged: shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/VerbalEncouragementPreferenceCascadeTest.kt
+- Verify unchanged: shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/ProfilePreferencesCodecTest.kt
+- Verify unchanged: shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeExternalIntegrationRepositoriesTest.kt
 
 **Interfaces:**
-- Consumes: captured `ActiveProfileContext.Ready`, the data-foundation facade's `(profileId, typedValue)` mutations, profile-aware Equipment Rack route, existing safety/adult presentation, and MainViewModel only for transient device sound/disco actions.
-- Produces: measurements, workout, rack, LED, VBT, verbal/adult, voice-stop, and safety UI that updates only the captured active profile and never serializes JSON.
+- Consumes: Task 6's exact ProfileUiState, token-bearing ProfileIdentityMutation, scoped identity/recovery events, selectionFailure, single Channel-backed event collector, and exact ProfileScreen recovery API; Task 7's root Profile route and onOpenProfileSwitcher; UserProfileRepository whole-section writes and stale-active rejection; profile-aware Equipment Rack navigation; MainViewModel transient connection/disco APIs only.
+- Produces: token/profile/section-owned preference writes; authoritative same-profile refresh before controls re-enable; generation-guarded body-weight attribution; compact localized cards; shared safety dialogs; and scoped post-commit adult/unlock outcomes.
+- Preserves exactly: ProfileUiState.selectionFailure, ProfileUiState.identityMutation, ProfileUiState.identityMutationInFlight, every Task 6 identity/recovery event, ProfileScreen.onOpenProfileSwitcher, ProfileScreen.onNavigateToExerciseDetail, and ProfileScreen.onProfileRecoveryRequired.
+- Does not change: typed schemas, repository signatures, ProfilePreferencesValidator, SettingsManager, runtime safety policy, or sync DTOs. Future non-negative LED indices remain codec-compatible and are normalized for display only.
 
-- [ ] **Step 1: Write failing typed-mutation and stale-context tests**
+**Exact count contract:**
+- ProfileViewModelTest begins at 25 Task 6 tests; add 20, final total 45.
+- ProfileScreenContractTest begins at 6 Task 6 tests; add 8, final total 14.
+- ProfilePreferencePolicyTest is new with 4 tests.
+- Mandatory unchanged runtime set: VbtEnabledRuntimeTest 7, SafeWordDetectionManagerTest 2, VerbalEncouragementPreferenceCascadeTest 11, AdultModePresentationTest 3.
+- Task 8 adds exactly 32 tests. The counted focused suite is 86 tests: 45 + 14 + 4 + 7 + 2 + 11 + 3. Codec and fake regressions run in addition.
 
-Make the profile fake record `(profileId, value)` for each of its six typed update methods and expose a per-method failure control. Add tests like:
+- [ ] **Step 1: Enforce the clean Task 6/7 baseline**
 
-```kotlin
-@Test
-fun `typed updates carry the Ready profile id and complete section`() = runTest {
-    profiles.seedReadyProfileForTest("a", "A")
-    profiles.emitReadyForTest("a")
-    val viewModel = createViewModel()
-    advanceUntilIdle()
-    val ready = viewModel.uiState.value.context as ActiveProfileContext.Ready
+Run only after Tasks 6 and 7 are committed in a clean isolated worktree:
 
-    viewModel.updateCore(ready.preferences.core.value.copy(bodyWeightKg = 82f))
-    viewModel.updateRack(ready.preferences.rack.value.copy(items = listOf(rackItem("vest"))))
-    viewModel.updateWorkout(ready.preferences.workout.value.copy(autoStartRoutine = true))
-    viewModel.updateLed(ready.preferences.led.value.copy(colorScheme = 3))
-    viewModel.updateVbt(ready.preferences.vbt.value.copy(enabled = false))
-    viewModel.updateLocalSafety(ready.localSafety.copy(safeWord = "PHOENIX"))
-    advanceUntilIdle()
+~~~powershell
+if (git status --porcelain) { throw "Task 8 requires a clean worktree" }
+$vm = (Select-String -Path shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt -Pattern '^\s*@Test').Count
+$screen = (Select-String -Path shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt -Pattern '^\s*@Test').Count
+if ($vm -ne 25 -or $screen -ne 6) { throw "Expected Task 6 counts 25/6, found $vm/$screen" }
+rg -n "selectionFailure|identityMutation: ProfileIdentityMutation\?|ProfileRecoveryRequired|onProfileRecoveryRequired|onOpenProfileSwitcher" shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt
+~~~
 
-    assertEquals("a", profiles.lastCoreUpdate?.first)
-    assertEquals(82f, profiles.lastCoreUpdate?.second?.bodyWeightKg)
-    assertEquals("a", profiles.lastRackUpdate?.first)
-    assertEquals("a", profiles.lastWorkoutUpdate?.first)
-    assertEquals("a", profiles.lastLedUpdate?.first)
-    assertEquals("a", profiles.lastVbtUpdate?.first)
-    assertEquals("a", profiles.lastLocalSafetyUpdate?.first)
+Expected: clean status, counts 25/6, and every preserved symbol present. Stop and reconcile earlier tasks on any mismatch.
+
+- [ ] **Step 2: Add deterministic fake seams and all failing tests**
+
+In FakeUserProfileRepository add:
+
+~~~kotlin
+sealed interface PreferenceUpdateRequest {
+    val profileId: String
+
+    data class Core(
+        override val profileId: String,
+        val value: CoreProfilePreferences,
+    ) : PreferenceUpdateRequest
+
+    data class Rack(
+        override val profileId: String,
+        val value: RackPreferences,
+    ) : PreferenceUpdateRequest
+
+    data class Workout(
+        override val profileId: String,
+        val value: WorkoutPreferences,
+    ) : PreferenceUpdateRequest
+
+    data class Led(
+        override val profileId: String,
+        val value: LedPreferences,
+    ) : PreferenceUpdateRequest
+
+    data class Vbt(
+        override val profileId: String,
+        val value: VbtPreferences,
+    ) : PreferenceUpdateRequest
+
+    data class LocalSafety(
+        override val profileId: String,
+        val value: ProfileLocalSafetyPreferences,
+    ) : PreferenceUpdateRequest
 }
-```
 
-Add tests proving:
+val preferenceUpdateRequests = mutableListOf<PreferenceUpdateRequest>()
+var beforePreferenceUpdate: (suspend (PreferenceUpdateRequest) -> Unit)? = null
+var updateCoreFailure: Throwable? = null
+var updateRackFailure: Throwable? = null
+var updateWorkoutFailure: Throwable? = null
+var updateLedFailure: Throwable? = null
+var updateVbtFailure: Throwable? = null
+var updateLocalSafetyFailure: Throwable? = null
+~~~
 
-- If the context switches to B after `updateCore` captures A, the fake receives A; its stale-active rejection causes `PreferenceUpdateFailed`, and B is unchanged.
-- Two rapid updates to the same section do not overlap; the second control is disabled/ignored until the observed Ready section returns.
-- Sections can update independently, and a Core failure does not mark VBT busy or mutate the UI optimistically.
-- Adult confirmation sends LOCAL_SAFETY and VBT with one captured profile ID even if a switch is requested between repository calls.
-- External body-weight attribution observes the Ready profile ID and clears during `Switching`.
+Each fake update appends its typed request, invokes beforePreferenceUpdate, throws its section failure if present, then runs the existing validated mutation. This order supports deterministic same-frame blocking, switching between adult writes, partial failure, and cancellation.
 
-Add `import kotlin.test.assertFalse`, then insert this exact method inside `ProfileScreenContractTest`, immediately before its `private fun source(...)` helper. It binds all 24 Task 8 keys and proves the three removed duplicate concepts stay mapped to existing translations:
+In FakeExternalMeasurementRepository add:
 
-```kotlin
-@Test
-fun profilePreferencesConsumeTheirCompleteResourceInventoryAndReuseExistingCopy() {
-    val screen = source(
-        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt",
-    )
-    val preferences = source(
-        "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt",
-    )
-    val combined = screen + preferences
-
-    assertUsesResources(
-        combined,
-        listOf(
-            "profile_preferences_title",
-            "profile_measurements",
-            "profile_workout_behavior",
-            "profile_led",
-            "profile_vbt",
-            "profile_safety",
-            "profile_vbt_enabled",
-            "profile_weight_increment",
-            "profile_body_weight",
-            "profile_set_summary",
-            "profile_autostart_countdown",
-            "profile_auto_start_routine",
-            "profile_audio_rep_counter",
-            "profile_countdown_beeps",
-            "profile_rep_completion_sound",
-            "profile_motion_start",
-            "profile_gamification",
-            "profile_default_scaling_basis",
-            "profile_routine_starting_weights",
-            "profile_stop_at_top",
-            "profile_stall_detection",
-            "profile_velocity_loss_threshold",
-            "profile_auto_end_velocity_loss",
-            "profile_vbt_history_note",
-        ),
-    )
-    assertUsesResources(
-        preferences,
-        listOf(
-            "settings_weight_unit",
-            "equipment_rack_title",
-            "equipment_rack_manage",
-            "cd_led_scheme",
-        ),
-    )
-    assertFalse(combined.contains("Res.string.profile_weight_unit"))
-    assertFalse(combined.contains("Res.string.profile_manage_equipment_rack"))
-    assertFalse(combined.contains("Res.string.profile_led_color_scheme"))
-}
-```
-
-- [ ] **Step 2: Run the mutation tests and confirm the red state**
-
-Run:
-
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileViewModelTest*" --tests "*ProfileScreenContractTest*" --console=plain
-```
-
-Expected: FAIL because the section mutations, busy-state keys, measurement attribution, preference component, and exact resource usages are absent.
-
-- [ ] **Step 3: Implement captured-ID, whole-section mutations in ProfileViewModel**
-
-Add:
-
-```kotlin
-enum class ProfileMutationKey { CORE, RACK, WORKOUT, LED, VBT, LOCAL_SAFETY }
-
-data class ProfileUiState(
-    val context: ActiveProfileContext? = null,
-    val selectedExercise: Exercise? = null,
-    val missingExerciseId: String? = null,
-    val currentOneRepMax: ProfileLoadable<CurrentOneRepMax> = ProfileLoadable.Empty,
-    val prHighlights: ProfileLoadable<ProfilePrHighlights> = ProfileLoadable.Empty,
-    val recentSessions: ProfileLoadable<List<WorkoutSession>> = ProfileLoadable.Empty,
-    val identityMutationInFlight: Boolean = false,
-    val preferenceMutations: Set<ProfileMutationKey> = emptySet(),
-    val importedBodyWeightMeasuredAt: Long? = null,
+~~~kotlin
+data class MeasurementObservationRequest(
+    val profileId: String,
+    val measurementType: String,
 )
-```
 
-Use one helper that marks a section synchronously before launching, captures Ready once, and always supplies its ID:
+val observationRequests = mutableListOf<MeasurementObservationRequest>()
+var observeByTypeOverride:
+    ((String, String) -> Flow<List<ExternalBodyMeasurement>>)? = null
 
-```kotlin
-private fun updatePreference(
-    section: ProfileMutationKey,
-    update: suspend (ActiveProfileContext.Ready) -> Unit,
-) {
-    val ready = uiState.value.context as? ActiveProfileContext.Ready ?: return
-    if (section in uiState.value.preferenceMutations) return
-    _uiState.update { it.copy(preferenceMutations = it.preferenceMutations + section) }
-    viewModelScope.launch {
-        try {
-            update(ready)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            _events.send(ProfileUiEvent.PreferenceUpdateFailed)
-        } finally {
-            _uiState.update { it.copy(preferenceMutations = it.preferenceMutations - section) }
-        }
-    }
-}
-
-fun updateCore(value: CoreProfilePreferences) = updatePreference(ProfileMutationKey.CORE) {
-    profiles.updateCore(it.profile.id, value)
-}
-fun updateRack(value: RackPreferences) = updatePreference(ProfileMutationKey.RACK) {
-    profiles.updateRack(it.profile.id, value)
-}
-fun updateWorkout(value: WorkoutPreferences) = updatePreference(ProfileMutationKey.WORKOUT) {
-    profiles.updateWorkout(it.profile.id, value)
-}
-fun updateLed(value: LedPreferences) = updatePreference(ProfileMutationKey.LED) {
-    profiles.updateLed(it.profile.id, value)
-}
-fun updateVbt(value: VbtPreferences) = updatePreference(ProfileMutationKey.VBT) {
-    profiles.updateVbt(it.profile.id, value)
-}
-fun updateLocalSafety(value: ProfileLocalSafetyPreferences) =
-    updatePreference(ProfileMutationKey.LOCAL_SAFETY) {
-        profiles.updateLocalSafety(it.profile.id, value)
-    }
-```
-
-Do not copy a later `uiState.value.context` inside the coroutine. Repository stale-ID rejection is a user-visible save failure, not a retry against the newly active profile.
-
-- [ ] **Step 4: Move body-weight integration attribution into the Profile state boundary**
-
-For each Ready context, cancel the prior measurement collector and observe:
-
-```kotlin
-externalMeasurements.observeMeasurementsByType(
-    profileId = ready.profile.id,
-    measurementType = HealthBodyWeightSyncManager.MEASUREMENT_TYPE_WEIGHT,
-).collect { measurements ->
-    val bodyWeightKg = ready.preferences.core.value.bodyWeightKg
-    val importedAt = measurements
-        .asSequence()
-        .filter { it.unit == HealthBodyWeightSyncManager.UNIT_KG }
-        .filter { it.provider == IntegrationProvider.APPLE_HEALTH || it.provider == IntegrationProvider.GOOGLE_HEALTH }
-        .filter { abs(it.value.toFloat() - bodyWeightKg) < 0.05f }
-        .maxOfOrNull { it.measuredAt }
-    publishIfCurrent(ready.profile.id) { it.copy(importedBodyWeightMeasuredAt = importedAt) }
-}
-```
-
-Implement the publication guard as:
-
-```kotlin
-private inline fun publishIfCurrent(
+override fun observeMeasurementsByType(
     profileId: String,
-    transform: (ProfileUiState) -> ProfileUiState,
-) {
-    val currentId = (uiState.value.context as? ActiveProfileContext.Ready)?.profile?.id
-    if (currentId == profileId) _uiState.update(transform)
+    measurementType: String,
+): Flow<List<ExternalBodyMeasurement>> {
+    observationRequests += MeasurementObservationRequest(profileId, measurementType)
+    return observeByTypeOverride?.invoke(profileId, measurementType)
+        ?: measurementsFlow.map { rows ->
+            rows.filter {
+                it.profileId == profileId && it.measurementType == measurementType
+            }
+        }
 }
-```
+~~~
 
-Cancel and clear it on `Switching`. This replaces `SettingsTab`'s direct repository injection and default-profile fallback.
+Add exactly these 20 ProfileViewModelTest cases:
 
-- [ ] **Step 5: Create focused typed preference cards**
+1. all six typed updates capture Ready ID and refresh authoritative sections before release;
+2. same-section update rejects synchronously while another section proceeds;
+3. preference and identity claims reject cross-domain overlap both directions;
+4. ordinary failure is token/profile/section scoped;
+5. stale A completion cannot clear a later owner or publish an unowned outcome;
+6. same-profile Ready preserves preference owner and exercise insights;
+7. Switching preserves ownership while clearing visible preference data;
+8. measurement attribution restarts on same-profile Core generation/body-weight change;
+9. measurement attribution clears during Switching;
+10. non-cooperative old measurement cannot overwrite a new generation/profile;
+11. adult enable owns LOCAL_SAFETY and VBT and commits safety first;
+12. adult first-write failure commits neither section;
+13. adult second-write failure retains confirmed safety and leaves vulgar false;
+14. switch between adult writes never mutates B;
+15. adult cancellation emits no terminal outcome and clears only its owner;
+16. adult operation overlaps neither safety nor VBT writes;
+17. adult partial-commit retry writes only VBT;
+18. disco unlock succeeds only after authoritative matching commit;
+19. dominatrix failure/switch produces no stale success;
+20. decline writes prompted/unconfirmed and explicit enable remains retryable.
 
-Use this public boundary in `ProfilePreferenceComponents.kt`:
+Case 1 exercises every repository update. Case 5 uses a non-cooperative hook and compares tokens. Case 8 changes only Core and requires the old timestamp to clear without a new measurement emission. Case 13 asserts committedSections equals LOCAL_SAFETY.
 
-```kotlin
+Add exactly these 8 ProfileScreenContractTest cases:
+
+1. complete preference resource inventory occurs once in all five locale files and visible copy is not hardcoded;
+2. ProfileScreen retains one event collector and filters by current profile plus tracked token;
+3. Profile route passes only transient MainViewModel actions and both navigation callbacks;
+4. adult/unlock dialogs react only to matching post-commit outcomes;
+5. Achievements precedes Preferences and is unconditional;
+6. continuous sliders draft locally and commit only on onValueChangeFinished;
+7. LED options use stable localized indices and radio semantics;
+8. Settings delegates extracted dialogs and retains microphone disposal.
+
+The route test isolates only the NavigationRoutes.Profile destination. Reject MainViewModel.unlockDiscoMode and every persisted preference setter there. Assert EquipmentRack, Badges, exercise-detail, recovery, and switcher callbacks.
+
+Create ProfilePreferencePolicyTest with exactly four cases: newest matching imported weight; rejection of unset/wrong profile/provider/unit/type/tolerance; indices 0 through 7 remain stable; negative/future LED values display index 0 without storage writes.
+
+Move AdultModePresentationTest with its production file, changing package/imports only; retain its three tests.
+
+- [ ] **Step 3: Run the strict RED gate**
+
+~~~powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.viewmodel.ProfileViewModelTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileScreenContractTest" --tests "com.devil.phoenixproject.presentation.components.ProfilePreferencePolicyTest" --rerun-tasks --console=plain
+~~~
+
+Expected: FAIL for missing mutation types/events, policy, components, resources, and route wiring. A pass means tests are not binding the contract.
+
+- [ ] **Step 4: Extend Task 6 state with token/profile/section ownership**
+
+Add beside the existing identity types:
+
+~~~kotlin
+enum class ProfilePreferenceSection {
+    CORE, RACK, WORKOUT, LED, VBT, LOCAL_SAFETY,
+}
+
+enum class ProfilePreferenceMutationKind {
+    UPDATE, ADULT_ENABLE, ADULT_DECLINE, DISCO_UNLOCK, DOMINATRIX_UNLOCK,
+}
+
+data class ProfilePreferenceMutation(
+    val token: Long,
+    val profileId: String,
+    val sections: Set<ProfilePreferenceSection>,
+    val kind: ProfilePreferenceMutationKind,
+)
+~~~
+
+Do not replace ProfileUiState. Add only:
+
+~~~kotlin
+val preferenceMutations:
+    Map<ProfilePreferenceSection, ProfilePreferenceMutation> = emptyMap(),
+val importedBodyWeightMeasuredAt: Long? = null,
+~~~
+
+and:
+
+~~~kotlin
+val busyPreferenceSections: Set<ProfilePreferenceSection>
+    get() = preferenceMutations.keys
+~~~
+
+Keep selectionFailure and identityMutation unchanged. Preserve preferenceMutations beside identityMutation in Switching and different-Ready reconstruction. Same-profile Ready remains copy(context = context), preserving selection, insights, and both mutation domains.
+
+Replace only the placeholder PreferenceUpdateFailed object; retain all Task 6 events:
+
+~~~kotlin
+data class PreferenceMutationSucceeded(
+    val profileId: String,
+    val token: Long,
+    val kind: ProfilePreferenceMutationKind,
+    val sections: Set<ProfilePreferenceSection>,
+) : ProfileUiEvent
+
+data class PreferenceUpdateFailed(
+    val profileId: String,
+    val token: Long,
+    val kind: ProfilePreferenceMutationKind,
+    val sections: Set<ProfilePreferenceSection>,
+    val committedSections: Set<ProfilePreferenceSection>,
+) : ProfileUiEvent
+~~~
+
+Claim synchronously before launch:
+
+~~~kotlin
+private fun claimPreferenceMutation(
+    sections: Set<ProfilePreferenceSection>,
+    kind: ProfilePreferenceMutationKind,
+): ProfilePreferenceMutation? {
+    require(sections.isNotEmpty())
+    val profileId = currentMutationProfileId() ?: return null
+    val mutation = ProfilePreferenceMutation(
+        token = ++nextPreferenceToken,
+        profileId = profileId,
+        sections = sections,
+        kind = kind,
+    )
+    while (true) {
+        val state = _uiState.value
+        val ready = state.context as? ActiveProfileContext.Ready ?: return null
+        if (
+            state.identityMutation != null ||
+            sections.any(state.preferenceMutations::containsKey) ||
+            ready.profile.id != profileId ||
+            currentMutationProfileId() != profileId
+        ) return null
+
+        val claimed = state.copy(
+            preferenceMutations = state.preferenceMutations +
+                sections.associateWith { mutation },
+        )
+        if (_uiState.compareAndSet(state, claimed)) return mutation
+    }
+}
+~~~
+
+Clear only matching token records:
+
+~~~kotlin
+private fun clearPreferenceMutation(token: Long): Boolean {
+    var owned = false
+    _uiState.update { state ->
+        val retained = state.preferenceMutations.filterValues {
+            if (it.token == token) {
+                owned = true
+                false
+            } else {
+                true
+            }
+        }
+        if (owned) state.copy(preferenceMutations = retained) else state
+    }
+    return owned
+}
+~~~
+
+Use CoroutineStart.LAZY. Each job follows this exact order:
+
+1. claim every required section with compareAndSet;
+2. call repositories with mutation.profileId;
+3. after each successful call add its section to committedSections;
+4. read profiles.activeProfileContext.value and require Ready for the same ID;
+5. apply that authoritative Ready before the next write and before releasing ownership;
+6. rethrow CancellationException without an event;
+7. map ordinary exceptions to the scoped failure;
+8. in finally clear only the owning token, then send its terminal event only if it still owned the record;
+9. return the token from accepted public calls, null from rejected calls.
+
+Every accepted mutation produces exactly one terminal event after owner-only clearing. Ordinary UPDATE success emits PreferenceMutationSucceeded too, so ProfileScreen can discard its tracked token without showing UI; it must not leave completed tokens resident in screen state.
+
+Rename currentIdentityProfileId to currentMutationProfileId and use it for both domains. Add state.preferenceMutations.isNotEmpty() to Task 6's identity claim; preference claims already reject identityMutation. This closes same-frame identity/delete versus preference races.
+
+Expose exact public APIs:
+
+~~~kotlin
+fun updateCore(value: CoreProfilePreferences): Long?
+fun updateRack(value: RackPreferences): Long?
+fun updateWorkout(value: WorkoutPreferences): Long?
+fun updateLed(value: LedPreferences): Long?
+fun updateVbt(value: VbtPreferences): Long?
+fun updateLocalSafety(value: ProfileLocalSafetyPreferences): Long?
+fun confirmAdultsOnlyAndEnableVulgar(): Long?
+fun declineAdultsOnly(): Long?
+fun unlockDiscoMode(): Long?
+fun unlockDominatrixMode(): Long?
+~~~
+
+Equipment Rack UI navigates rather than calling updateRack, but the complete typed facade remains tested.
+
+- [ ] **Step 5: Implement adult ordering, partial failure, and post-commit effects**
+
+confirmAdultsOnlyAndEnableVulgar takes no UI snapshots.
+
+- If consent is false, claim LOCAL_SAFETY plus VBT under one ADULT_ENABLE token.
+- Write adultsOnlyConfirmed = true and adultsOnlyPrompted = true first.
+- Refresh authoritative Ready, derive VBT from it, then set vulgarModeEnabled = true.
+- First-write failure: committedSections empty; do not attempt VBT.
+- Second-write failure/stale switch: keep confirmed/prompted safety, leave vulgar false, report committedSections = LOCAL_SAFETY, never roll consent back.
+- If consent is already true and vulgar is false, retry by claiming/writing only VBT.
+- declineAdultsOnly owns LOCAL_SAFETY only and writes confirmed false, prompted true.
+- adultsOnlyPrompted prevents automatic prompting only. There is no automatic dialog effect; explicit locked/enable actions may reopen it.
+
+Disco and Dominatrix unlocks derive the latest authoritative section in ProfileViewModel. Dominatrix accepts only when verbal and vulgar intent are enabled, local consent is confirmed, and it is locked. Seven-tap counters reset when profile ID or eligibility changes.
+
+Sounds and unlock dialogs occur only after matching DISCO_UNLOCK or DOMINATRIX_UNLOCK success events. Click handlers never fire effects before persistence. General failures use the Profile snackbar; adult modal failures remain inline.
+
+- [ ] **Step 6: Add measurement generation and pure display policies**
+
+In ProfilePreferencePolicy.kt add:
+
+~~~kotlin
+internal data class ProfileMeasurementKey(
+    val profileId: String,
+    val coreLocalGeneration: Long,
+    val bodyWeightKg: Float,
+)
+
+internal fun normalizedLedSchemeIndex(
+    storedIndex: Int,
+    schemeCount: Int,
+): Int = storedIndex.takeIf { it in 0 until schemeCount } ?: 0
+
+internal fun latestImportedBodyWeightMeasuredAt(
+    profileId: String,
+    bodyWeightKg: Float,
+    measurements: List<ExternalBodyMeasurement>,
+): Long? {
+    if (!bodyWeightKg.isFinite() || bodyWeightKg <= 0f) return null
+    return measurements.asSequence()
+        .filter { it.profileId == profileId }
+        .filter { it.measurementType == HealthBodyWeightSyncManager.MEASUREMENT_TYPE_WEIGHT }
+        .filter { it.unit == HealthBodyWeightSyncManager.UNIT_KG }
+        .filter {
+            it.provider == IntegrationProvider.APPLE_HEALTH ||
+                it.provider == IntegrationProvider.GOOGLE_HEALTH
+        }
+        .filter { kotlin.math.abs(it.value - bodyWeightKg.toDouble()) < 0.05 }
+        .maxOfOrNull(ExternalBodyMeasurement::measuredAt)
+}
+~~~
+
+ProfileViewModel owns measurementJob, currentMeasurementKey, currentMeasurementToken, and nextMeasurementToken. The key is profile ID, Core metadata.localGeneration, and bodyWeightKg.
+
+On every Ready, restart only when the key changes: increment token, cancel the old job, synchronously clear importedBodyWeightMeasuredAt, then observe the matching profile/type. Publication requires the current token/key, repository Ready ID, UI Ready ID, Core generation, and weight all still match. A profile-ID-only guard is forbidden.
+
+Switching increments the token before cancellation and clears key/timestamp while preserving mutation ownership. Thus same-profile body-weight changes invalidate immediately, and non-cooperative old flows cannot overwrite.
+
+Do not tighten the LED validator: codec tests intentionally preserve future non-negative values. Normalize only the displayed selection with normalizedLedSchemeIndex(stored, ColorSchemes.ALL.size); never auto-write index 0.
+
+- [ ] **Step 7: Build compact typed cards and final-value slider commits**
+
+Expose:
+
+~~~kotlin
 @Composable
 fun ProfilePreferenceSections(
+    profileId: String,
     preferences: UserProfilePreferences,
     localSafety: ProfileLocalSafetyPreferences,
     importedBodyWeightMeasuredAt: Long?,
-    busySections: Set<ProfileMutationKey>,
+    busySections: Set<ProfilePreferenceSection>,
     isConnected: Boolean,
     discoModeActive: Boolean,
-    onCoreChange: (CoreProfilePreferences) -> Unit,
-    onWorkoutChange: (WorkoutPreferences) -> Unit,
-    onLedChange: (LedPreferences) -> Unit,
-    onVbtChange: (VbtPreferences) -> Unit,
-    onLocalSafetyChange: (ProfileLocalSafetyPreferences) -> Unit,
-    onConfirmAdultsOnlyAndEnableVulgar: (ProfileLocalSafetyPreferences, VbtPreferences) -> Unit,
+    onCoreChange: (CoreProfilePreferences) -> Long?,
+    onWorkoutChange: (WorkoutPreferences) -> Long?,
+    onLedChange: (LedPreferences) -> Long?,
+    onVbtChange: (VbtPreferences) -> Long?,
+    onLocalSafetyChange: (ProfileLocalSafetyPreferences) -> Long?,
+    onRequestAdultsOnlyConfirmation: () -> Unit,
+    onUnlockDiscoMode: () -> Long?,
+    onUnlockDominatrixMode: () -> Long?,
     onManageEquipmentRack: () -> Unit,
     onDiscoModeToggle: (Boolean) -> Unit,
-    onPlayDiscoUnlockSound: () -> Unit,
-    onPlayDominatrixUnlockSound: () -> Unit,
     modifier: Modifier = Modifier,
 )
-```
+~~~
 
-Render six compact cards. Every control copies its full current typed section before invoking its callback. Use the following exact mapping:
+Render cards in fixed order: Measurements, Equipment Rack, Workout Behavior, LED, VBT, Safety.
 
-| Card | Control | Typed write |
-|---|---|---|
-| Measurements | kg/lb selector | `core.copy(weightUnit = value)` |
-| Measurements | weight increment selector (`-1f` means automatic) | `core.copy(weightIncrement = value)` |
-| Measurements | validated numeric body weight | display/parse in `core.weightUnit`, convert LB input with `UnitConverter.lbToKg`, validate stored kg as `0f` or `20f..300f`, then `core.copy(bodyWeightKg = kg)` |
-| Equipment Rack | enabled/total item summary and Manage Equipment Rack row | navigate only; the profile-aware rack repository performs `rack.copy(items = ...)` |
-| Workout | set-summary `-1,0,5..30`, autostart `2..10`, default rest `0 or 5..300` | copy the scalar; for rest use `workout.copy(justLiftDefaults = workout.justLiftDefaults.copy(restSeconds = value))` |
-| Workout | auto-start routine, motion start, stop-at-top, stall detection, beeps, spoken reps, countdown beep, rep sound, gamification, weight suggestions | `workout.copy(autoStartRoutine = value)`, `.copy(motionStartEnabled = value)`, `.copy(stopAtTop = value)`, `.copy(stallDetectionEnabled = value)`, `.copy(beepsEnabled = value)`, `.copy(audioRepCountEnabled = value)`, `.copy(countdownBeepsEnabled = value)`, `.copy(repSoundEnabled = value)`, `.copy(gamificationEnabled = value)`, or `.copy(weightSuggestionsEnabled = value)` |
-| Workout | rep timing | `workout.copy(repCountTiming = value)` |
-| Workout | scaling basis and new-routine percentage toggle/50–120 slider | `workout.copy(defaultRoutineExerciseUsePercentOfPR = value)` and `workout.copy(defaultRoutineExerciseWeightPercentOfPR = value)`; scaling basis writes `vbt.copy(defaultScalingBasis = value)` because that field lives in `VbtPreferences` |
-| LED | `ColorSchemes.ALL` selector | `led.copy(colorScheme = index)` |
-| LED | seven rapid header taps within 2 seconds | `led.copy(discoModeUnlocked = true)`, then transient unlock sound |
-| LED | Disco switch, visible only when unlocked and enabled only when connected | transient `onDiscoModeToggle`; do not persist active state |
-| VBT | master enable | `vbt.copy(enabled = checked)` |
-| VBT | velocity loss 10–50 and auto-end | `vbt.copy(velocityLossThresholdPercent = value)` or `vbt.copy(autoEndOnVelocityLoss = value)`; auto-end is enabled only when workout stall detection is on |
-| VBT | verbal encouragement | when off, also set `vulgarModeEnabled = false` and `dominatrixModeActive = false` in the same copy |
-| VBT | vulgar mode/tier | gate first enable through local 18+ prompt; when off, also set `dominatrixModeActive = false` |
-| VBT | seven rapid header taps within 2 seconds | only count when verbal and vulgar are enabled; set `dominatrixModeUnlocked = true` and play transient sound |
-| VBT | Dominatrix active | visible only when unlocked and confirmed; `vbt.copy(dominatrixModeActive = checked)` |
-| Safety | voice stop | `workout.copy(voiceStopEnabled = checked)` |
-| Safety | safe word/calibrated state | one complete `localSafety.copy(...)` write; changing the phrase sets `safeWordCalibrated = false` |
+| Card | Exact typed behavior |
+|---|---|
+| Measurements | Weight unit; increment with -1f as Automatic; body weight entered in selected unit, LB converted with UnitConverter.lbToKg, stored only as 0f or 20f..300f kg. Blank does not silently clamp: Clear explicitly writes 0f; invalid input shows profile_body_weight_invalid. Dialog draft is keyed by profile ID, unit, and authoritative value. |
+| Equipment Rack | Enabled/total summary plus navigation only; the rack screen owns RackPreferences writes. |
+| Workout | summary -1/0/5..30, autostart 2..10, default rest 0 or 5..300, rep timing, auto-start routine, motion start, stop-at-top, stall detection, master beeps, spoken reps, countdown beeps, rep sound, gamification, weight suggestions, percent-of-PR toggle/50..120, voice stop. |
+| VBT-owned default | defaultScalingBasis writes VbtPreferences, not WorkoutPreferences. |
+| LED | Stable indices 0 blue, 1 green, 2 teal, 3 yellow, 4 pink, 5 red, 6 purple, 7 none; unlock is persisted, active Disco state is transient and connection-gated. |
+| VBT | Master enabled, threshold 10..50, auto-end, verbal, vulgar intent/tier, Dominatrix unlock/active. |
+| Safety | Phrase/calibration is one local-only write; changing phrase clears calibrated. Voice-stop intent remains synced WorkoutPreferences. |
 
-Disable only the card whose section key is busy. Use the localized keys from Task 3 and the existing safety/adult strings; do not carry hardcoded labels from Settings. Label Weight Unit with `settings_weight_unit`. Render the Equipment Rack row with `equipment_rack_title` as its headline and `equipment_rack_manage` as its action. Label the LED selector with the now-fully-translated `cd_led_scheme`; do not introduce Profile-prefixed duplicates. Always show `profile_vbt_history_note`, including when VBT is disabled.
+Only percent-of-PR and velocity threshold are continuous Sliders. Each uses rememberSaveable(profileId, authoritativeValue); onValueChange changes draft only; onValueChangeFinished sends exactly one final whole-section write; busy disables it; authoritative Ready resynchronizes it. Never write from Slider.onValueChange. Toggles/dropdowns rely on synchronous claims.
 
-When `workout.voiceStopEnabled` is true but the local phrase is blank or `safeWordCalibrated` is false, show `settings_calibrate_first` plus the calibration action and label the feature as requiring local setup. Do not switch the synced intent back off; the data-foundation runtime computes effective voice stop as false until setup succeeds.
+Effective gating never rewrites stored intent:
 
-When synced vulgar or Dominatrix intent is true but `localSafety.adultsOnlyConfirmed` is false, render the existing adult-gate presentation and keep those effective controls locked. Do not rewrite the synced VBT section merely because this device lacks local consent.
+- VBT master off disables live subordinate controls while retaining/displaying values; insights remain visible.
+- Auto-end additionally requires stall detection and visibly states that dependency.
+- Turning verbal off clears vulgar and Dominatrix active in the same VBT copy.
+- Turning vulgar off clears Dominatrix active in the same copy.
+- Stored vulgar/Dominatrix intent without local consent remains visible but locked with an explicit Adults Only action.
+- Explicit vulgar enable without consent opens confirmation regardless of adultsOnlyPrompted; no LaunchedEffect auto-prompt.
+- Voice-stop may remain true while phrase is blank/uncalibrated; show settings_calibrate_first and calibration action.
+- Achievements is outside this component and remains visible when gamification is off.
 
-When `vbt.enabled` is false, disable the live threshold/auto-end/feedback controls visually but retain and display their stored values. The master callback changes only `enabled`; re-enabling immediately restores the prior subordinate configuration, and insights/assessment entry points stay visible.
+All targets are at least 48.dp. LED uses selectableGroup and selectable with Role.RadioButton, selected semantics, and localized cd_select_led_scheme. Never display or branch on ColorScheme.name/scheme.name; index 7 means off.
 
-- [ ] **Step 6: Extract the safety and adult dialogs without changing behavior**
+- [ ] **Step 8: Extract shared dialogs without duplicating or breaking Settings**
 
-Move `SafeWordCalibrationDialog`, `AdultModeDialogCard`, the adult action helpers, `DominatrixUnlockDialog`, `AdultsOnlyConfirmDialog`, and `DiscoModeUnlockDialog` from `SettingsTab.kt` into `ProfileSafetyDialogs.kt`. Preserve microphone lifecycle cleanup and the existing `AdultModePresentation` rules. Expose callback-only signatures:
+Move AdultModePresentation and its test to presentation.components. Move SafeWordCalibrationDialog, AdultModeDialogCard, AdultModeActions/private visuals, DominatrixUnlockDialog, AdultsOnlyConfirmDialog, and DiscoModeUnlockDialog from SettingsTab into ProfileSafetyDialogs. Remove the original private definitions immediately; Settings imports/calls the shared versions until Task 9 removes its cards.
 
-```kotlin
+At the temporary Settings call site pass isSubmitting = false and errorMessage = null while preserving its existing confirm, decline, and dismiss callbacks. This is the only compatibility adapter; there must be one implementation of each dialog.
+
+Expose exact signatures:
+
+~~~kotlin
 @Composable
-fun SafeWordCalibrationDialog(safeWord: String, onCalibrated: () -> Unit, onDismiss: () -> Unit)
+fun SafeWordCalibrationDialog(
+    safeWord: String,
+    onCalibrated: () -> Unit,
+    onDismiss: () -> Unit,
+)
 
 @Composable
-fun AdultsOnlyConfirmDialog(onConfirm: () -> Unit, onDecline: () -> Unit)
+fun AdultsOnlyConfirmDialog(
+    isSubmitting: Boolean,
+    errorMessage: String?,
+    onConfirm: () -> Unit,
+    onDecline: () -> Unit,
+    onDismiss: () -> Unit,
+)
 
 @Composable
 fun DominatrixUnlockDialog(onDismiss: () -> Unit)
 
 @Composable
 fun DiscoModeUnlockDialog(onDismiss: () -> Unit)
-```
+~~~
 
-Add `ProfileViewModel.confirmAdultsOnlyAndEnableVulgar(localSafety, vbt)` and map it to `onConfirmAdultsOnlyAndEnableVulgar`. It captures one Ready/profile ID, marks both LOCAL_SAFETY and VBT busy, then calls `updateLocalSafety(capturedId, localSafety.copy(adultsOnlyConfirmed = true, adultsOnlyPrompted = true))` followed by `updateVbt(capturedId, vbt.copy(vulgarModeEnabled = true))` in the same coroutine. Both calls use the same captured ID; if a switch interleaves, the later call is rejected instead of writing B. On decline, invoke the ordinary one-section write with `localSafety.copy(adultsOnlyConfirmed = false, adultsOnlyPrompted = true)`; never re-show the one-shot prompt for that profile.
+AdultsOnlyConfirmDialog disables confirm, decline, scrim/back dismiss while submitting and renders errorMessage inline. Close only on matching adult success. Preserve onDismiss when idle.
 
-- [ ] **Step 7: Wire preferences into ProfileScreen and only transient device actions through NavGraph**
+SafeWordCalibrationDialog retains DisposableEffect(safeWord), startListening, stopListening in onDispose, listener clearing, three detections, mic error, and open-settings action. Do not copy the implementation.
 
-Append `ProfilePreferenceSections` below the insight item when context is Ready. Map all typed callbacks to `ProfileViewModel`. Capture `profile_update_failed` before collecting events and show it once on `PreferenceUpdateFailed`.
+- [ ] **Step 9: Complete localization and LED accessibility inventory**
 
-Expand only the Profile route callback surface with:
+Add these 22 keys exactly once to values, values-de, values-es, values-fr, and values-nl, with idiomatic translations rather than English copies:
 
-```kotlin
+| Key | English source |
+|---|---|
+| profile_automatic | Automatic |
+| profile_default_rest | Default rest |
+| profile_master_beeps | Workout beeps |
+| profile_rep_count_timing | Rep count timing |
+| profile_body_weight_unset | Not set |
+| profile_body_weight_invalid | Enter a body weight from 20 to 300 kg |
+| profile_body_weight_imported | Matches an imported health measurement |
+| profile_led_scheme_blue | Blue |
+| profile_led_scheme_green | Green |
+| profile_led_scheme_teal | Teal |
+| profile_led_scheme_yellow | Yellow |
+| profile_led_scheme_pink | Pink |
+| profile_led_scheme_red | Red |
+| profile_led_scheme_purple | Purple |
+| profile_led_scheme_none | None |
+| cd_select_led_scheme | Select LED scheme: %1$s |
+| profile_disco_mode | Disco Mode |
+| profile_disco_requires_connection | Connect to your trainer to use Disco Mode |
+| profile_disco_unlocked_title | Disco Mode unlocked |
+| profile_disco_unlocked_body | Turn on Disco Mode in LED preferences to make your trainer party. |
+| profile_disco_unlocked_action | Let's party |
+| profile_adult_enable_partial_failure | Age confirmation was saved, but Vulgar Mode could not be enabled. Try again. |
+
+Reuse existing settings_weight_unit, settings_weight_suggestions_title, safety/calibration, verbal/vulgar/Dominatrix/adult, Equipment Rack, cd_led_scheme, action_clear, and Task 3 profile keys. Master beeps and countdown beeps must have distinct labels. Default rest and rep timing must be labeled. Replace every hardcoded Disco dialog string.
+
+Map LED labels by the stable index list, never by ColorScheme.name. Contract tests parse all five XML files, require the identical 22-key set once per file, and reject old Disco literals plus scheme.name.
+
+- [ ] **Step 10: Extend the exact ProfileScreen API and preserve one event collector**
+
+Extend, do not replace, Task 6/7's signature:
+
+~~~kotlin
+@Composable
+fun ProfileScreen(
+    onOpenProfileSwitcher: () -> Unit,
+    onNavigateToExerciseDetail: (String) -> Unit,
+    onNavigateToEquipmentRack: () -> Unit,
+    onNavigateToBadges: () -> Unit,
+    onProfileRecoveryRequired: (ProfileContextRecoveryException) -> Unit,
+    isConnected: Boolean,
+    discoModeActive: Boolean,
+    onDiscoModeToggle: (Boolean) -> Unit,
+    onPlayDiscoUnlockSound: () -> Unit,
+    onPlayDominatrixUnlockSound: () -> Unit,
+    enableVideoPlayback: Boolean,
+    themeMode: ThemeMode,
+    modifier: Modifier = Modifier,
+    viewModel: ProfileViewModel = koinViewModel(),
+    exerciseRepository: ExerciseRepository = koinInject(),
+)
+~~~
+
+Keep the existing single LaunchedEffect collector; a second collector is forbidden because Channel.receiveAsFlow would load-balance events.
+
+Track every accepted token by Ready profile ID. Reset pending tokens, adult target/error, tap counters, and unlock dialogs when profile changes. Act only when event.profileId is current and event.token remains tracked.
+
+- Preserve Task 6 identity/recovery branches.
+- Generic UPDATE failure shows profile_update_failed once.
+- Adult failure remains inline; committed LOCAL_SAFETY uses profile_adult_enable_partial_failure.
+- Adult success closes its dialog.
+- Disco/Dominatrix success plays sound and opens celebration only after matching token/profile commit.
+- Failed/cancelled/untracked/stale outcomes have no effect.
+
+Adult isSubmitting reflects its tracked token; onDismiss is ignored while submitting.
+
+Ready list order is exactly: profile-header, exercise-insights, achievements, preferences-heading, profile-preferences. Achievements uses existing copy/TestTags.ACTION_BADGES, navigates only, and is unconditional.
+
+Wrap every ViewModel call to track its returned token. ProfileScreen never holds optimistic typed sections.
+
+- [ ] **Step 11: Wire navigation and transient MainViewModel actions only**
+
+Inside only NavigationRoutes.Profile:
+
+~~~kotlin
+onNavigateToEquipmentRack = {
+    navController.navigate(NavigationRoutes.EquipmentRack.route)
+},
+onNavigateToBadges = {
+    navController.navigate(NavigationRoutes.Badges.route)
+},
 isConnected = connectionState is ConnectionState.Connected,
 discoModeActive = discoModeActive,
-onNavigateToEquipmentRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
-onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) },
 onDiscoModeToggle = viewModel::toggleDiscoMode,
 onPlayDiscoUnlockSound = viewModel::emitDiscoSound,
 onPlayDominatrixUnlockSound = viewModel::emitDominatrixUnlockSound,
-```
+~~~
 
-Place a compact Achievements row on Profile immediately before the Preferences heading, using the existing localized Achievements/badge resources and `TestTags.ACTION_BADGES`. It is navigation-only, remains visible even when gamification is disabled, and replaces the conditional Settings entry removed in Task 9.
+Preserve Task 6 exercise/recovery and Task 7 switcher callbacks. Collect connection/disco flows once.
 
-`MainViewModel` must not receive body weight, rack, workout, LED selection/unlock, VBT, verbal, voice-stop, safe-word, or adult-consent writes from this route. Only transient hardware activity and sounds cross this boundary.
+The Profile destination must not call MainViewModel.unlockDiscoMode or any persisted body-weight, rack, workout, LED, VBT, verbal, voice-stop, safe-word, or consent setter. Only toggleDiscoMode, emitDiscoSound, and emitDominatrixUnlockSound cross to MainViewModel.
 
-- [ ] **Step 8: Run typed preference, safety, and target compilation checks**
+- [ ] **Step 12: Run exact count, focused, runtime-safety, Android, and iOS gates**
+
+Enforce counts:
+
+~~~powershell
+$counts = @{'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt'=45;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt'=14;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferencePolicyTest.kt'=4;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/VbtEnabledRuntimeTest.kt'=7;'shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/voice/SafeWordDetectionManagerTest.kt'=2;'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/VerbalEncouragementPreferenceCascadeTest.kt'=11;'shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/AdultModePresentationTest.kt'=3}
+foreach($entry in $counts.GetEnumerator()){ $actual=(Select-String -Path $entry.Key -Pattern '^\s*@Test').Count; if($actual -ne $entry.Value){ throw "$($entry.Key): expected $($entry.Value), found $actual" } }
+~~~
+
+Run the counted 86 plus codec/fake regressions:
+
+~~~powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.viewmodel.ProfileViewModelTest" --tests "com.devil.phoenixproject.presentation.screen.ProfileScreenContractTest" --tests "com.devil.phoenixproject.presentation.components.ProfilePreferencePolicyTest" --tests "com.devil.phoenixproject.presentation.manager.VbtEnabledRuntimeTest" --tests "com.devil.phoenixproject.domain.voice.SafeWordDetectionManagerTest" --tests "com.devil.phoenixproject.data.preferences.VerbalEncouragementPreferenceCascadeTest" --tests "com.devil.phoenixproject.presentation.components.AdultModePresentationTest" --tests "com.devil.phoenixproject.data.preferences.ProfilePreferencesCodecTest" --tests "com.devil.phoenixproject.testutil.FakeExternalIntegrationRepositoriesTest" --rerun-tasks --console=plain
+~~~
+
+Expected: BUILD SUCCESSFUL. These unchanged runtime tests prove master-off VBT gating, calibrated local safe-word gating, consent-aware verbal routing, and adult presentation.
+
+Run targets separately:
+
+~~~powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileAndroidMain --rerun-tasks --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --rerun-tasks --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :androidApp:assembleDebug --rerun-tasks --console=plain
+~~~
+
+Expected: all BUILD SUCCESSFUL. Do not omit iOS test compilation.
 
 Run:
 
-```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileViewModelTest*" --tests "*ProfileScreenContractTest*" --tests "*SafeWord*" --tests "*VerbalEncouragementPreferenceCascadeTest*" :shared:compileKotlinIosArm64 :androidApp:assembleDebug --console=plain
-```
+~~~powershell
+$forbidden = rg -n 'DISCO MODE UNLOCKED|Time to get funky|Toggle Disco Mode|Let.s Party|scheme\.name|ColorScheme\.name' shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSafetyDialogs.kt
+if($LASTEXITCODE -eq 0){ throw "Hardcoded or unstable LED copy remains: $forbidden" }
+if($LASTEXITCODE -gt 1){ throw "rg failed" }
+~~~
 
-Expected: BUILD SUCCESSFUL; every persisted control writes a whole typed section with the captured profile ID, safety behavior remains covered, and transient device actions still compile.
+Expected: no matches.
 
-- [ ] **Step 9: Commit Profile preferences**
+- [ ] **Step 13: Enforce exact implementation scope and commit**
 
-```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSafetyDialogs.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt
+Exact 21-path allowlist, counting both sides of two moves:
+
+~~~powershell
+$allowed=@('shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferencePolicy.kt','shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferenceComponents.kt','shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSafetyDialogs.kt','shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AdultModePresentation.kt','shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/AdultModePresentation.kt','shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModel.kt','shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreen.kt','shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt','shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt','shared/src/commonMain/composeResources/values/strings.xml','shared/src/commonMain/composeResources/values-de/strings.xml','shared/src/commonMain/composeResources/values-es/strings.xml','shared/src/commonMain/composeResources/values-fr/strings.xml','shared/src/commonMain/composeResources/values-nl/strings.xml','shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt','shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeExternalIntegrationRepositories.kt','shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/ProfileViewModelTest.kt','shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ProfileScreenContractTest.kt','shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/ProfilePreferencePolicyTest.kt','shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/AdultModePresentationTest.kt','shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/components/AdultModePresentationTest.kt')
+$changed=@(git diff --no-renames --name-only)+@(git ls-files --others --exclude-standard)
+$unexpected=@($changed|Where-Object{$_ -notin $allowed}); if($unexpected){ throw "Unexpected paths: $($unexpected -join ', ')" }
+git diff --check
+git add -A -- $allowed
+$staged=@(git diff --cached --no-renames --name-only); $missing=@($allowed|Where-Object{$_ -notin $staged}); $extra=@($staged|Where-Object{$_ -notin $allowed}); if($missing -or $extra){ throw "Staged scope mismatch missing=[$($missing -join ', ')] extra=[$($extra -join ', ')]" }
+git diff --cached --check
 git commit -m "feat: move typed preferences to profile"
-```
+~~~
+
+Expected: exact 21-path implementation commit. The five files marked Verify unchanged remain byte-for-byte unchanged; the moved AdultModePresentationTest changes only path/package.
+
+Post-commit:
+
+~~~powershell
+$committed=@(git show --no-renames --name-only --format= HEAD|Where-Object{$_}); $missing=@($allowed|Where-Object{$_ -notin $committed}); $extra=@($committed|Where-Object{$_ -notin $allowed}); if($missing -or $extra){ throw "Committed scope mismatch" }
+if(git status --porcelain){ throw "Task 8 left a dirty worktree" }
+~~~
+
+Expected: exact scope and clean worktree.
 
 ---
 
