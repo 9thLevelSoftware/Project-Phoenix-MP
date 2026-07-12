@@ -14,6 +14,54 @@ class BackendHandoffContractTest {
         "Supabase handoff SQL must be tracked in the mobile repository",
     )
 
+    private fun edgeContract(): String = assertNotNull(
+        readProjectFile("docs/backend-handoff/profile-preferences-edge-functions.md"),
+        "Edge Function handoff must be tracked in the mobile repository",
+    )
+
+    private fun byteGoldenArtifact(): String = assertNotNull(
+        readProjectFile("docs/backend-handoff/profile-preference-byte-goldens.json"),
+        "Shared profile preference byte goldens must be tracked in the mobile repository",
+    )
+
+    private val exactByteGoldenArtifact = """
+        {
+          "version": 1,
+          "paddingMarker": "__ASCII_PADDING__",
+          "sectionMarker": "__SECTION_JSON__",
+          "sectionRawTemplate": "{\"localProfileId\":\"profile-a\",\"section\":\"RACK\",\"documentVersion\":1,\"baseRevision\":0,\"clientModifiedAt\":\"2026-07-11T12:00:00Z\",\"payload\":{\"version\":1,\"items\":[{\"id\":\"rack-a\",\"name\":\"π界🙂\\\"\\\\__ASCII_PADDING__\",\"category\":\"OTHER\",\"weightKg\":20.0,\"behavior\":\"DISPLAY_ONLY\",\"enabled\":true,\"sortOrder\":0,\"createdAt\":-1e3,\"updatedAt\":0}]}}",
+          "requestRawTemplate": "{\"deviceId\":\"golden-device\",\"platform\":\"android\",\"lastSync\":0,\"profileId\":\"profile-a\",\"profileName\":\"π界🙂\\\"\\\\__ASCII_PADDING__\",\"profilePreferenceSections\":[__SECTION_JSON__]}",
+          "sectionTargetBytes": [262143, 262144, 262145],
+          "requestTargetBytes": [524287, 524288, 524289]
+        }
+    """.trimIndent()
+
+    private fun normalizedTrackedText(value: String): String =
+        value.replace("\r\n", "\n").removeSuffix("\n")
+
+    private fun executableTypeScript(): String = Regex(
+        pattern = """(?s)```typescript\s+(.*?)```""",
+    ).findAll(edgeContract())
+        .joinToString("\n") { match -> match.groupValues[1] }
+        .replace(Regex("""(?s)/[*].*?[*]/"""), " ")
+        .lineSequence()
+        .map { line -> line.substringBefore("//") }
+        .joinToString("\n")
+
+    private fun portalTestManifest(): Set<String> {
+        val matches = Regex("""(?s)```portal-test-manifest\s+(.*?)```""")
+            .findAll(edgeContract())
+            .toList()
+        assertEquals(1, matches.size, "Expected exactly one portal test manifest")
+        val lines = matches.single().groupValues[1]
+            .lineSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toList()
+        assertEquals(lines.size, lines.toSet().size, "Portal test manifest entries must be unique")
+        return lines.toSet()
+    }
+
     private fun normalizedSql(): String = normalizedSql(sql())
 
     private fun normalizedSql(value: String): String {
@@ -258,7 +306,7 @@ class BackendHandoffContractTest {
         return entries.filter { entry -> entry.isNotEmpty() }
     }
 
-    private fun exactSecurityStatements(): List<String> = listOf(
+    private fun exactTask1SecurityStatements(): List<String> = listOf(
         "alter table public.local_profile_preferences enable row level security",
         "create policy local_profile_preferences_owner_select " +
             "on public.local_profile_preferences for select to authenticated " +
@@ -278,6 +326,17 @@ class BackendHandoffContractTest {
         "revoke all on table public.local_profile_preferences from authenticated",
         "grant select, insert, update, delete on table " +
             "public.local_profile_preferences to service_role",
+    )
+
+    private fun exactFunctionAclStatements(): List<String> = listOf(
+        "revoke all on function public.local_profile_preference_section_canonical(" +
+            "public.local_profile_preferences, text) from public, anon, authenticated",
+        "revoke all on function public.mutate_local_profile_preference_section(" +
+            "uuid, text, text, integer, bigint, jsonb) from public, anon, authenticated",
+        "grant execute on function public.local_profile_preference_section_canonical(" +
+            "public.local_profile_preferences, text) to service_role",
+        "grant execute on function public.mutate_local_profile_preference_section(" +
+            "uuid, text, text, integer, bigint, jsonb) to service_role",
     )
 
     private fun exactPreflightStatement(): String {
@@ -318,29 +377,283 @@ class BackendHandoffContractTest {
         )
     }
 
-    private fun assertExecutableEnvelope(statements: List<String>) {
-        assertEquals(13, statements.size, "The handoff must have one exact atomic statement chain")
-        assertEquals("begin", statements.first(), "BEGIN must be the first executable statement")
-        assertExactPreflight(statements[1])
+    /*
+     * These complete SQL literals are independent test oracles. Keep them separate from sql().
+     * Any executable addition inside either dollar-quoted function body must fail this contract.
+     */
+    private val EXACT_CANONICAL_FUNCTION_SQL = """
+        CREATE FUNCTION public.local_profile_preference_section_canonical(
+            p_row public.local_profile_preferences,
+            p_section text
+        ) RETURNS jsonb
+        LANGUAGE sql
+        STABLE
+        SECURITY INVOKER
+        SET search_path = ''
+        AS ${'$'}canonical${'$'}
+            SELECT jsonb_build_object(
+                'localProfileId', p_row.local_profile_id,
+                'section', p_section,
+                'documentVersion', CASE p_section
+                    WHEN 'CORE' THEN 1
+                    WHEN 'RACK' THEN (p_row.equipment_rack ->> 'version')::integer
+                    WHEN 'WORKOUT' THEN (p_row.workout_preferences ->> 'version')::integer
+                    WHEN 'LED' THEN (p_row.led_preferences ->> 'version')::integer
+                    WHEN 'VBT' THEN (p_row.vbt_preferences ->> 'version')::integer
+                END,
+                'serverRevision', CASE p_section
+                    WHEN 'CORE' THEN p_row.core_revision
+                    WHEN 'RACK' THEN p_row.rack_revision
+                    WHEN 'WORKOUT' THEN p_row.workout_revision
+                    WHEN 'LED' THEN p_row.led_revision
+                    WHEN 'VBT' THEN p_row.vbt_revision
+                END,
+                'serverUpdatedAt', to_char(
+                    (CASE p_section
+                        WHEN 'CORE' THEN p_row.core_updated_at
+                        WHEN 'RACK' THEN p_row.rack_updated_at
+                        WHEN 'WORKOUT' THEN p_row.workout_updated_at
+                        WHEN 'LED' THEN p_row.led_updated_at
+                        WHEN 'VBT' THEN p_row.vbt_updated_at
+                    END) AT TIME ZONE 'UTC',
+                    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                ),
+                'payload', CASE p_section
+                    WHEN 'CORE' THEN jsonb_build_object(
+                        'bodyWeightKg', p_row.body_weight_kg,
+                        'weightUnit', p_row.weight_unit,
+                        'weightIncrement', p_row.weight_increment
+                    )
+                    WHEN 'RACK' THEN p_row.equipment_rack
+                    WHEN 'WORKOUT' THEN p_row.workout_preferences
+                    WHEN 'LED' THEN jsonb_build_object(
+                        'ledColorSchemeId', p_row.led_color_scheme_id,
+                        'preferences', p_row.led_preferences
+                    )
+                    WHEN 'VBT' THEN jsonb_build_object(
+                        'vbtEnabled', p_row.vbt_enabled,
+                        'preferences', p_row.vbt_preferences
+                    )
+                END
+            );
+        ${'$'}canonical${'$'}
+    """.trimIndent()
 
-        val targetCreate = Regex(
-            """^create\s+table\s+public[.]local_profile_preferences\s*[(]""",
+    private val EXACT_MUTATION_FUNCTION_SQL = """
+        CREATE FUNCTION public.mutate_local_profile_preference_section(
+            p_user_id uuid,
+            p_local_profile_id text,
+            p_section text,
+            p_document_version integer,
+            p_base_revision bigint,
+            p_payload jsonb
+        ) RETURNS TABLE (
+            accepted boolean,
+            rejection_reason text,
+            server_revision bigint,
+            canonical_section jsonb
         )
-        assertTrue(
-            targetCreate.containsMatchIn(statements[2]),
-            "The target CREATE TABLE must immediately follow the preflight",
-        )
-        assertEquals(
-            1,
-            statements.count { statement -> targetCreate.containsMatchIn(statement) },
-            "Exactly one executable target CREATE TABLE is allowed",
-        )
-        assertEquals(
-            exactSecurityStatements(),
-            statements.subList(fromIndex = 3, toIndex = 12),
-            "Only the exact ordered RLS, policy, revoke, and service-role grant chain is allowed",
-        )
-        assertEquals("commit", statements.last(), "COMMIT must be the final executable statement")
+        LANGUAGE plpgsql
+        SECURITY INVOKER
+        SET search_path = ''
+        AS ${'$'}mutation${'$'}
+        DECLARE
+            current_row public.local_profile_preferences%ROWTYPE;
+            current_revision bigint;
+        BEGIN
+            IF p_section IS NULL OR p_section NOT IN ('CORE', 'RACK', 'WORKOUT', 'LED', 'VBT') THEN
+                RETURN QUERY SELECT false, 'UNSUPPORTED_SECTION', 0::bigint, NULL::jsonb;
+                RETURN;
+            END IF;
+            IF p_document_version IS NULL OR p_document_version <> 1 THEN
+                RETURN QUERY SELECT false, 'UNSUPPORTED_DOCUMENT_VERSION', 0::bigint, NULL::jsonb;
+                RETURN;
+            END IF;
+            IF p_base_revision IS NULL OR p_base_revision < 0
+               OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
+                RETURN QUERY SELECT false, 'VALIDATION_FAILED', 0::bigint, NULL::jsonb;
+                RETURN;
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM public.local_profiles
+                 WHERE user_id = p_user_id AND id = p_local_profile_id
+            ) THEN
+                RETURN QUERY SELECT false, 'UNKNOWN_PROFILE', 0::bigint, NULL::jsonb;
+                RETURN;
+            END IF;
+
+            CASE p_section
+                WHEN 'CORE' THEN
+                    UPDATE public.local_profile_preferences
+                       SET body_weight_kg = (p_payload ->> 'bodyWeightKg')::double precision,
+                           weight_unit = p_payload ->> 'weightUnit',
+                           weight_increment = (p_payload ->> 'weightIncrement')::double precision,
+                           core_revision = core_revision + 1,
+                           core_updated_at = clock_timestamp()
+                     WHERE user_id = p_user_id
+                       AND local_profile_id = p_local_profile_id
+                       AND core_revision = p_base_revision
+                    RETURNING * INTO current_row;
+                WHEN 'RACK' THEN
+                    UPDATE public.local_profile_preferences
+                       SET equipment_rack = p_payload,
+                           rack_revision = rack_revision + 1,
+                           rack_updated_at = clock_timestamp()
+                     WHERE user_id = p_user_id
+                       AND local_profile_id = p_local_profile_id
+                       AND rack_revision = p_base_revision
+                    RETURNING * INTO current_row;
+                WHEN 'WORKOUT' THEN
+                    UPDATE public.local_profile_preferences
+                       SET workout_preferences = p_payload,
+                           workout_revision = workout_revision + 1,
+                           workout_updated_at = clock_timestamp()
+                     WHERE user_id = p_user_id
+                       AND local_profile_id = p_local_profile_id
+                       AND workout_revision = p_base_revision
+                    RETURNING * INTO current_row;
+                WHEN 'LED' THEN
+                    UPDATE public.local_profile_preferences
+                       SET led_color_scheme_id = (p_payload ->> 'ledColorSchemeId')::integer,
+                           led_preferences = p_payload -> 'preferences',
+                           led_revision = led_revision + 1,
+                           led_updated_at = clock_timestamp()
+                     WHERE user_id = p_user_id
+                       AND local_profile_id = p_local_profile_id
+                       AND led_revision = p_base_revision
+                    RETURNING * INTO current_row;
+                WHEN 'VBT' THEN
+                    UPDATE public.local_profile_preferences
+                       SET vbt_enabled = (p_payload ->> 'vbtEnabled')::boolean,
+                           vbt_preferences = p_payload -> 'preferences',
+                           vbt_revision = vbt_revision + 1,
+                           vbt_updated_at = clock_timestamp()
+                     WHERE user_id = p_user_id
+                       AND local_profile_id = p_local_profile_id
+                       AND vbt_revision = p_base_revision
+                    RETURNING * INTO current_row;
+            END CASE;
+
+            IF FOUND THEN
+                canonical_section := public.local_profile_preference_section_canonical(current_row, p_section);
+                server_revision := (canonical_section ->> 'serverRevision')::bigint;
+                RETURN QUERY SELECT true, NULL::text, server_revision, canonical_section;
+                RETURN;
+            END IF;
+
+            IF p_base_revision = 0 THEN
+                INSERT INTO public.local_profile_preferences (
+                    user_id, local_profile_id,
+                    body_weight_kg, weight_unit, weight_increment, core_revision,
+                    equipment_rack, rack_revision,
+                    workout_preferences, workout_revision,
+                    led_color_scheme_id, led_preferences, led_revision,
+                    vbt_enabled, vbt_preferences, vbt_revision
+                ) VALUES (
+                    p_user_id,
+                    p_local_profile_id,
+                    CASE WHEN p_section = 'CORE' THEN (p_payload ->> 'bodyWeightKg')::double precision ELSE 0 END,
+                    CASE WHEN p_section = 'CORE' THEN p_payload ->> 'weightUnit' ELSE 'LB' END,
+                    CASE WHEN p_section = 'CORE' THEN (p_payload ->> 'weightIncrement')::double precision ELSE -1 END,
+                    CASE WHEN p_section = 'CORE' THEN 1 ELSE 0 END,
+                    CASE WHEN p_section = 'RACK' THEN p_payload ELSE '{"version":1,"items":[]}'::jsonb END,
+                    CASE WHEN p_section = 'RACK' THEN 1 ELSE 0 END,
+                    CASE WHEN p_section = 'WORKOUT' THEN p_payload ELSE '{"version":1}'::jsonb END,
+                    CASE WHEN p_section = 'WORKOUT' THEN 1 ELSE 0 END,
+                    CASE WHEN p_section = 'LED' THEN (p_payload ->> 'ledColorSchemeId')::integer ELSE 0 END,
+                    CASE WHEN p_section = 'LED' THEN p_payload -> 'preferences' ELSE '{"version":1,"discoModeUnlocked":false}'::jsonb END,
+                    CASE WHEN p_section = 'LED' THEN 1 ELSE 0 END,
+                    CASE WHEN p_section = 'VBT' THEN (p_payload ->> 'vbtEnabled')::boolean ELSE true END,
+                    CASE WHEN p_section = 'VBT' THEN p_payload -> 'preferences' ELSE '{"version":1,"velocityLossThresholdPercent":20,"autoEndOnVelocityLoss":false,"defaultScalingBasis":"MAX_WEIGHT_PR","verbalEncouragementEnabled":false,"vulgarModeEnabled":false,"vulgarTier":"STRONG","dominatrixModeUnlocked":false,"dominatrixModeActive":false}'::jsonb END,
+                    CASE WHEN p_section = 'VBT' THEN 1 ELSE 0 END
+                )
+                ON CONFLICT (user_id, local_profile_id) DO NOTHING
+                RETURNING * INTO current_row;
+
+                IF FOUND THEN
+                    canonical_section := public.local_profile_preference_section_canonical(current_row, p_section);
+                    server_revision := (canonical_section ->> 'serverRevision')::bigint;
+                    RETURN QUERY SELECT true, NULL::text, server_revision, canonical_section;
+                    RETURN;
+                END IF;
+
+                CASE p_section
+                    WHEN 'CORE' THEN
+                        UPDATE public.local_profile_preferences
+                           SET body_weight_kg = (p_payload ->> 'bodyWeightKg')::double precision,
+                               weight_unit = p_payload ->> 'weightUnit',
+                               weight_increment = (p_payload ->> 'weightIncrement')::double precision,
+                               core_revision = 1,
+                               core_updated_at = clock_timestamp()
+                         WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND core_revision = 0
+                        RETURNING * INTO current_row;
+                    WHEN 'RACK' THEN
+                        UPDATE public.local_profile_preferences
+                           SET equipment_rack = p_payload, rack_revision = 1, rack_updated_at = clock_timestamp()
+                         WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND rack_revision = 0
+                        RETURNING * INTO current_row;
+                    WHEN 'WORKOUT' THEN
+                        UPDATE public.local_profile_preferences
+                           SET workout_preferences = p_payload, workout_revision = 1, workout_updated_at = clock_timestamp()
+                         WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND workout_revision = 0
+                        RETURNING * INTO current_row;
+                    WHEN 'LED' THEN
+                        UPDATE public.local_profile_preferences
+                           SET led_color_scheme_id = (p_payload ->> 'ledColorSchemeId')::integer,
+                               led_preferences = p_payload -> 'preferences',
+                               led_revision = 1,
+                               led_updated_at = clock_timestamp()
+                         WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND led_revision = 0
+                        RETURNING * INTO current_row;
+                    WHEN 'VBT' THEN
+                        UPDATE public.local_profile_preferences
+                           SET vbt_enabled = (p_payload ->> 'vbtEnabled')::boolean,
+                               vbt_preferences = p_payload -> 'preferences',
+                               vbt_revision = 1,
+                               vbt_updated_at = clock_timestamp()
+                         WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id AND vbt_revision = 0
+                        RETURNING * INTO current_row;
+                END CASE;
+
+                IF FOUND THEN
+                    canonical_section := public.local_profile_preference_section_canonical(current_row, p_section);
+                    server_revision := (canonical_section ->> 'serverRevision')::bigint;
+                    RETURN QUERY SELECT true, NULL::text, server_revision, canonical_section;
+                    RETURN;
+                END IF;
+            END IF;
+
+            SELECT * INTO current_row
+              FROM public.local_profile_preferences
+             WHERE user_id = p_user_id AND local_profile_id = p_local_profile_id;
+
+            IF NOT FOUND THEN
+                RETURN QUERY SELECT false, 'REVISION_CONFLICT', 0::bigint, NULL::jsonb;
+                RETURN;
+            END IF;
+
+            canonical_section := public.local_profile_preference_section_canonical(current_row, p_section);
+            current_revision := (canonical_section ->> 'serverRevision')::bigint;
+            RETURN QUERY SELECT false, 'REVISION_CONFLICT', current_revision, canonical_section;
+        END
+        ${'$'}mutation${'$'}
+    """.trimIndent()
+
+    private val exactCanonicalFunctionStatement =
+        normalizeStatement(EXACT_CANONICAL_FUNCTION_SQL)
+    private val exactMutationFunctionStatement =
+        normalizeStatement(EXACT_MUTATION_FUNCTION_SQL)
+
+    private fun assertFinalExecutableEnvelope(statements: List<String>) {
+        assertEquals(19, statements.size, "Expected the exact final atomic statement chain")
+        assertEquals("begin", statements[0])
+        assertEquals(exactPreflightStatement(), statements[1])
+        assertTrue(statements[2].startsWith("create table public.local_profile_preferences("))
+        assertEquals(exactCanonicalFunctionStatement, statements[3])
+        assertEquals(exactMutationFunctionStatement, statements[4])
+        assertEquals(exactFunctionAclStatements(), statements.subList(5, 9))
+        assertEquals(exactTask1SecurityStatements(), statements.subList(9, 18))
+        assertEquals("commit", statements[18])
     }
 
     private fun assertExactPreflight(preflight: String) {
@@ -424,6 +737,163 @@ class BackendHandoffContractTest {
         assertTrue(statements[1].startsWith("DO $guard"))
         assertTrue(statements[2].startsWith("SELECT "))
         assertEquals("COMMIT", statements.last())
+    }
+
+    @Test
+    fun `sql handoff has the exact functions ACLs and 19 statement envelope`() {
+        val statements = normalizedTopLevelStatements(sql())
+        assertFinalExecutableEnvelope(statements)
+        assertEquals(2, statements.count { it.startsWith("create function ") })
+        assertEquals(
+            exactFunctionAclStatements(),
+            statements.filter { " on function " in it },
+        )
+        val tableAcls = statements.filter {
+            (" on table public.local_profile_preferences " in it) &&
+                (it.startsWith("revoke ") || it.startsWith("grant "))
+        }
+        assertEquals(exactTask1SecurityStatements().takeLast(4), tableAcls)
+    }
+
+    @Test
+    fun `exact function bodies reject executable additions`() {
+        val valid = sql()
+        val mutations = mapOf(
+            "canonical DELETE" to valid.replace(
+                "    SELECT jsonb_build_object(",
+                "    DELETE FROM public.local_profile_preferences;\n" +
+                    "    SELECT jsonb_build_object(",
+            ),
+            "mutation PERFORM" to valid.replace(
+                "BEGIN\n    IF p_section IS NULL",
+                "BEGIN\n    PERFORM now();\n    IF p_section IS NULL",
+            ),
+            "mutation dblink_exec" to valid.replace(
+                "BEGIN\n    IF p_section IS NULL",
+                "BEGIN\n    PERFORM dblink_exec('remote', " +
+                    "'DELETE FROM public.local_profiles');\n" +
+                    "    IF p_section IS NULL",
+            ),
+            "mutation role change" to valid.replace(
+                "BEGIN\n    IF p_section IS NULL",
+                "BEGIN\n    SET LOCAL ROLE authenticated;\n    IF p_section IS NULL",
+            ),
+            "mutation transaction control" to valid.replace(
+                "BEGIN\n    IF p_section IS NULL",
+                "BEGIN\n    COMMIT;\n    IF p_section IS NULL",
+            ),
+        )
+        mutations.forEach { (name, mutation) ->
+            assertFailsWith<AssertionError>("Must reject $name") {
+                assertFinalExecutableEnvelope(normalizedTopLevelStatements(mutation))
+            }
+        }
+    }
+
+    @Test
+    fun `edge executable contract authenticates validates fully then performs scoped admin calls`() {
+        val code = executableTypeScript()
+        listOf(
+            "auth.getUser(userJwt)",
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "parsePreferenceEnvelope",
+            "validateCorePayload",
+            "validateRackPayload",
+            "validateWorkoutPayload",
+            "validateLedPayload",
+            "validateVbtPayload",
+            "LOCAL_ONLY_KEYS",
+            "MAX_PROFILE_PREFERENCE_SECTION_BYTES = 262_144",
+            "MAX_PROFILE_PREFERENCE_REQUEST_BYTES = 524_288",
+            "scanTopLevelJsonObject",
+            "preferenceElementSpans",
+            "rawPreferenceElementBytes",
+            "rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES",
+            "duplicateIdentities",
+            "validatedMutations",
+            "admin.rpc(\"mutate_local_profile_preference_section\"",
+            "p_user_id: verifiedUserId",
+            ".eq(\"user_id\", verifiedUserId)",
+            ".eq(\"local_profile_id\", requestedProfileId)",
+            "throw new PreferenceInfrastructureError",
+            "new Date(value).toISOString()",
+        ).forEach { fragment -> assertTrue(fragment in code, fragment) }
+
+        fun quotedInitializer(pattern: String): List<String> {
+            val body = assertNotNull(
+                Regex(pattern).find(code),
+                "Missing exact TypeScript allowlist: $pattern",
+            ).groupValues[1]
+            return Regex("\"([^\"]+)\"")
+                .findAll(body)
+                .map { match -> match.groupValues[1] }
+                .toList()
+        }
+        assertEquals(
+            listOf(
+                "deviceId", "platform", "lastSync", "sessions", "telemetry", "routines",
+                "deletedRoutineIds", "cycles", "deletedCycleIds", "rpgAttributes", "badges",
+                "gamificationStats", "phaseStatistics", "exerciseSignatures", "assessments",
+                "customExercises", "profileId", "profileName", "allProfiles",
+                "externalActivities", "personalRecords", "profilePreferenceSections",
+            ),
+            quotedInitializer(
+                """(?s)const PUSH_BODY_KEYS = new Set\(\[(.+?)\]\);""",
+            ),
+        )
+        assertEquals(
+            listOf(
+                "localProfileId", "section", "documentVersion", "baseRevision",
+                "clientModifiedAt", "payload",
+            ),
+            quotedInitializer("""(?s)const MUTATION_KEYS = \[(.+?)\] as const;"""),
+        )
+        assertEquals(
+            listOf(
+                "safeword", "safewordcalibrated", "adultsonlyconfirmed",
+                "adultsonlyprompted", "localgeneration", "dirty", "legacymigrationversion",
+            ),
+            quotedInitializer(
+                """(?s)const LOCAL_ONLY_KEYS = new Set\(\[(.+?)\]\);""",
+            ),
+        )
+
+        assertTrue("rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES" in code)
+        assertFalse(Regex("""\buserId\s*[?:]?\s*:\s*string""").containsMatchIn(code))
+        assertFalse(
+            Regex("""console[.](?:log|info|warn|error)[(][^)]*SERVICE_ROLE""")
+                .containsMatchIn(code),
+        )
+    }
+
+    @Test
+    fun `shared byte golden artifact is the exact cross-language oracle`() {
+        assertEquals(
+            exactByteGoldenArtifact,
+            normalizedTrackedText(byteGoldenArtifact()),
+        )
+    }
+
+    @Test
+    fun `edge handoff names executable portal tests rather than prose-only assurances`() {
+        assertEquals(
+            setOf(
+                "database:exact-function-acls-and-no-client-dml",
+                "database:temporary-grant-owner-rls-and-cross-owner-user-id-protection",
+                "database:base-revision-accept-and-stale-canonical-conflict",
+                "edge:auth-and-cross-user-profile-rejection",
+                "edge:strict-five-section-validation-and-local-only-rejection",
+                "edge:section-262143-262144-262145-byte-boundaries",
+                "edge:envelope-524287-524288-524289-byte-boundaries",
+                "edge:unexpected-rpc-error-is-sanitized-5xx",
+                "edge:same-section-concurrent-first-write",
+                "edge:different-section-concurrent-first-write",
+                "edge:lost-ack-retry-canonical-convergence",
+                "edge:mutation-and-first-page-pull-canonical-equality",
+                "edge:later-pull-pages-omit-preferences-and-keep-sync-time",
+            ),
+            portalTestManifest(),
+        )
     }
 
     @Test
@@ -517,7 +987,7 @@ class BackendHandoffContractTest {
     fun sqlHandoffDeclaresTheExactProfilePreferenceSchema() {
         val source = sql()
         val statements = normalizedTopLevelStatements(source)
-        assertExecutableEnvelope(statements)
+        assertFinalExecutableEnvelope(statements)
         val sql = normalizedSql(source)
         val entries = tableEntries(sql)
         val columns = entries.filterNot { entry -> entry.startsWith("constraint ") }
@@ -685,7 +1155,7 @@ class BackendHandoffContractTest {
 
     private fun assertSecuredSurface(value: String) {
         val statements = normalizedTopLevelStatements(value)
-        assertExecutableEnvelope(statements)
+        assertFinalExecutableEnvelope(statements)
         val sql = statements.joinToString(separator = "; ", postfix = ";")
         assertTrue(
             statements.contains(
@@ -753,9 +1223,11 @@ class BackendHandoffContractTest {
             "grant select, insert, update, delete on table " +
                 "public.local_profile_preferences to service_role"
         assertEquals(
-            listOf(expectedTableGrant),
+            exactFunctionAclStatements().filter { statement ->
+                statement.startsWith("grant ")
+            } + expectedTableGrant,
             grantStatements,
-            "Only the exact service-role table grant is allowed",
+            "Only the exact service-role function and table grants are allowed",
         )
 
         val tableGrants = grantStatements.mapNotNull { statement ->
