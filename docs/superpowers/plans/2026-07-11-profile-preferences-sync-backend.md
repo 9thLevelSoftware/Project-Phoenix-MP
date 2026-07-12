@@ -94,7 +94,8 @@ This plan adds a focused internal `ProfilePreferenceSyncRepository` and `SqlDeli
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalPullAdapter.kt` — canonical wire section validation and mapping.
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncPlanner.kt` — deterministic 256 KiB/512 KiB chunk planning and generation ledgers.
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalApiClient.kt` — shared JSON and transport-level preference size enforcement.
-- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/SyncManager.kt` — readiness gating, metadata-first push, preference acknowledgements, per-request rate limiting, and preference-first pull merge.
+- Modify: `gradle/libs.versions.toml` and `shared/build.gradle.kts` — add the version-aligned Ktor MockEngine dependency to `commonTest` only.
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/SyncManager.kt` — readiness gating, metadata-first push, preference acknowledgements, per-logical-call rate limiting, and preference-first pull merge.
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt` — inject the required-migration readiness function.
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePortalApiClient.kt` — payload history, queued push responses, and pull profile capture.
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeProfilePreferenceSyncRepository.kt` — dirty snapshots and captured push/pull application results.
@@ -108,6 +109,8 @@ This plan adds a focused internal `ProfilePreferenceSyncRepository` and `SqlDeli
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncPlannerTest.kt`.
 - Create: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt`.
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalApiClientProfilePreferenceLimitsTest.kt`.
+- Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePortalApiClientTest.kt`.
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/ErrorClassificationTest.kt`.
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/SyncManagerProfilePreferencesTest.kt`.
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPushLimitsTest.kt`.
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalPullPaginationTest.kt`.
@@ -5147,7 +5150,7 @@ internal class SqlDelightProfilePreferenceSyncRepository(
 }
 ```
 
-A null push canonical is an intentional no-op and does not increment `invalid`; its section remains dirty. Every pull canonical is decoded before grouping or any database lookup, so an invalid profile id is never bound to SQL or misclassified as unknown. A present canonical is defense-in-depth validated at the repository boundary even though Task 6's response mapper performs the same identity checks. Key mismatch, canonical/outcome revision mismatch, unsafe canonical id/timestamp/revision/RACK integer, malformed payload, or wire-safety failure increments `invalid` and performs no SQL mutation. Never log or throw with the invalid content.
+A null push canonical is an intentional no-op and does not increment `invalid`; its section remains dirty. Every pull canonical is decoded before grouping or any database lookup, so an invalid profile id is never bound to SQL or misclassified as unknown. A present canonical is defense-in-depth validated at the repository boundary even though Task 5's pull adapter performs the same wrapper checks before Task 8 dispatches it. Key mismatch, canonical/outcome revision mismatch, unsafe canonical id/timestamp/revision/RACK integer, malformed payload, or wire-safety failure increments `invalid` and performs no SQL mutation. Never log or throw with the invalid content.
 
 Add this codec result and method; `currentState` uses the same row-owned LED/VBT wrapper methods as `encodeDirtyRow`:
 
@@ -5252,7 +5255,7 @@ Implement the three dispatch helpers as exhaustive `when (columns.value)` calls,
 - LED persists `colorScheme.toLong()` separately and `ProfilePreferencesCodec.encodeLed`, which omits the row-owned color scheme.
 - VBT persists `enabled` as `1L`/`0L` separately and `ProfilePreferencesCodec.encodeVbt`, which omits the row-owned enabled flag.
 
-Each branch calls the exact section query from Step 4. Immediately after each update, call `queries.selectChangedRowCount().executeAsOne()` and return whether it is greater than zero; add `selectChangedRowCount: SELECT changes();` beside the query matrix. No SELECT or second mutation may occur between the guarded UPDATE and this scalar read. A push outcome without a canonical is a no-op and remains dirty. Task 6 rejects duplicate response keys, while this repository independently rejects canonical/outcome identity mismatches.
+Each branch calls the exact section query from Step 4. Immediately after each update, call `queries.selectChangedRowCount().executeAsOne()` and return whether it is greater than zero; add `selectChangedRowCount: SELECT changes();` beside the query matrix. No SELECT or second mutation may occur between the guarded UPDATE and this scalar read. A push outcome without a canonical is a no-op and remains dirty. Task 7 rejects duplicate response-key cardinality, while this repository independently rejects canonical/outcome identity mismatches.
 
 - [ ] **Step 7: Run repository and foundation regression tests**
 
@@ -6038,18 +6041,39 @@ git commit -m "feat(sync): map and chunk profile preference sections"
 
 ---
 
-### Task 6: Enforce Transport Limits and Capture Multi-Request Tests
+### Task 6: Enforce Exact Transport Bytes and Capture Logical Multi-Request Tests
 
 **Files:**
+- Modify: `gradle/libs.versions.toml`
+- Modify: `shared/build.gradle.kts`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalApiClient.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePortalApiClient.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalApiClientProfilePreferenceLimitsTest.kt`
+- Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePortalApiClientTest.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/ErrorClassificationTest.kt`
 
 **Interfaces:**
 - Consumes: Task 5's `PortalWireJson`, `encodePortalSyncPayload`, exact `rawBytes`, spans, and size constants.
-- Produces: transport defense in depth that sizes and sends the same never-mutated UTF-8 byte array, plus a fake capable of metadata-first/chunk/legacy-response tests.
+- Produces: transport defense in depth that encodes once per logical `pushPortalPayload` call, measures and sends that same never-mutated UTF-8 byte array on both the initial HTTP attempt and its optional 401 refresh retry, plus logical-call fakes for metadata-first/chunk/legacy-response orchestration.
+- Boundary definition: Task 5 planning and Task 6 transport independently call the same deterministic encoder and therefore require byte-sequence equality, not the same `ByteArray` instance across layers. Task 6 remeasures immediately before transport so the bytes actually written are the bytes checked.
 
-- [ ] **Step 1: Write failing transport limit tests**
+- [ ] **Step 1: Add the version-aligned MockEngine test dependency**
+
+Add beside the existing Ktor aliases in `gradle/libs.versions.toml`:
+
+```toml
+ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
+```
+
+Add to `commonTest.dependencies` in `shared/build.gradle.kts`:
+
+```kotlin
+implementation(libs.ktor.client.mock)
+```
+
+This is test-only infrastructure. Production continues to select the platform engine through the existing no-engine constructor path.
+
+- [ ] **Step 2: Write failing captured-engine and transport-limit tests**
 
 Create `PortalApiClientProfilePreferenceLimitsTest.kt`:
 
@@ -6058,80 +6082,317 @@ package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.testutil.readProjectFile
 import com.russhwolf.settings.MapSettings
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.request.HttpRequestData
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
+import io.ktor.http.headersOf
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-class PortalApiClientProfilePreferenceLimitsTest {
-    private val client = PortalApiClient(
-        SupabaseConfig("https://fake.supabase.co", "anon"),
-        PortalTokenStorage(MapSettings()),
-    )
+private const val LEGACY_PUSH_RESPONSE =
+    """{"syncTime":"2026-07-11T12:00:00Z"}"""
+private val JSON_RESPONSE_HEADERS = headersOf(
+    HttpHeaders.ContentType,
+    ContentType.Application.Json.toString(),
+)
 
-    @Test
-    fun `transport rejects oversized preference section before authentication`() = runTest {
-        val payload = PortalSyncPayload(
-            deviceId = "device",
-            lastSync = 0,
-            profilePreferenceSections = listOf(
-                PortalProfilePreferenceSectionMutationDto(
-                    localProfileId = "profile-a",
-                    section = "RACK",
-                    documentVersion = 1,
-                    baseRevision = 0,
-                    clientModifiedAt = "2026-07-11T12:00:00Z",
-                    payload = buildJsonObject { put("padding", "x".repeat(262_145)) },
-                ),
+class PortalApiClientProfilePreferenceLimitsTest {
+    private fun authenticatedStorage(
+        accessToken: String = "old-token",
+        refreshToken: String = "refresh-token",
+    ) = PortalTokenStorage(MapSettings()).apply {
+        saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = accessToken,
+                tokenType = "bearer",
+                expiresIn = 3600,
+                expiresAt = 4_102_444_800L,
+                refreshToken = refreshToken,
+                user = GoTrueUser(id = "user-a", email = "user@example.com"),
             ),
         )
-
-        val error = client.pushPortalPayload(payload).exceptionOrNull()
-
-        assertIs<PortalApiException>(error)
-        assertEquals(413, error.statusCode)
-        assertEquals("SECTION_TOO_LARGE: cap=262144", error.message)
     }
 
-    @Test
-    fun `transport rejects oversized preference request before authentication`() = runTest {
-        fun mutation(index: Int) = PortalProfilePreferenceSectionMutationDto(
+    private fun client(engine: MockEngine, storage: PortalTokenStorage = authenticatedStorage()) =
+        PortalApiClient(
+            SupabaseConfig("https://fake.supabase.co", "anon"),
+            storage,
+            httpClientEngine = engine,
+        )
+
+    private fun mutation(index: Int = 0, padding: Int = 0) =
+        PortalProfilePreferenceSectionMutationDto(
             localProfileId = "profile-$index",
             section = "RACK",
             documentVersion = 1,
             baseRevision = 0,
             clientModifiedAt = "2026-07-11T12:00:00Z",
-            payload = buildJsonObject { put("padding", "x".repeat(174_700)) },
-        )
-        val payload = PortalSyncPayload(
-            deviceId = "device",
-            lastSync = 0,
-            profilePreferenceSections = List(3, ::mutation),
-        )
-        val encoded = encodePortalSyncPayload(payload)
-        assertTrue(
-            encoded.preferenceElementSpans.all { span ->
-                encoded.preferenceElementByteCount(span) <= MAX_PROFILE_PREFERENCE_SECTION_BYTES
-            },
-        )
-        assertTrue(
-            encoded.rawBytes.size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES,
+            payload = buildJsonObject { put("padding", "x".repeat(padding)) },
         )
 
-        val error = client.pushPortalPayload(payload).exceptionOrNull()
+    private fun preferencePayload(
+        mutations: List<PortalProfilePreferenceSectionMutationDto>,
+    ) = PortalSyncPayload(
+        deviceId = "device",
+        platform = "android",
+        lastSync = 0,
+        profilePreferenceSections = mutations,
+    )
+
+    private fun payloadWithSectionBytes(targetBytes: Int): PortalSyncPayload {
+        val seed = preferencePayload(listOf(mutation()))
+        val encodedSeed = encodePortalSyncPayload(seed)
+        val fixedBytes = encodedSeed.preferenceElementByteCount(
+            encodedSeed.preferenceElementSpans.single(),
+        )
+        val payload = preferencePayload(
+            listOf(mutation(padding = targetBytes - fixedBytes)),
+        )
+        val encoded = encodePortalSyncPayload(payload)
+        check(
+            encoded.preferenceElementByteCount(encoded.preferenceElementSpans.single()) ==
+                targetBytes,
+        )
+        return payload
+    }
+
+    private fun preferencePayloadWithRequestBytes(targetBytes: Int): PortalSyncPayload {
+        val seeds = List(3) { mutation(index = it) }
+        val fixedBytes = encodePortalSyncPayload(preferencePayload(seeds)).rawBytes.size
+        val paddingBytes = targetBytes - fixedBytes
+        require(paddingBytes >= 0)
+        val payload = preferencePayload(
+            seeds.mapIndexed { index, _ ->
+                val padding = paddingBytes / seeds.size +
+                    if (index < paddingBytes % seeds.size) 1 else 0
+                mutation(index = index, padding = padding)
+            },
+        )
+        check(encodePortalSyncPayload(payload).rawBytes.size == targetBytes)
+        return payload
+    }
+
+    private fun payloadWithRequestBytes(
+        targetBytes: Int,
+        sections: List<PortalProfilePreferenceSectionMutationDto>?,
+    ): PortalSyncPayload {
+        val seed = PortalSyncPayload(
+            deviceId = "",
+            lastSync = 0,
+            profilePreferenceSections = sections,
+        )
+        val paddingBytes = targetBytes - encodePortalSyncPayload(seed).rawBytes.size
+        require(paddingBytes >= 0)
+        val payload = seed.copy(deviceId = "x".repeat(paddingBytes))
+        check(encodePortalSyncPayload(payload).rawBytes.size == targetBytes)
+        return payload
+    }
+
+    private fun requestBodyBytes(request: HttpRequestData): ByteArray =
+        assertIs<OutgoingContent.ByteArrayContent>(request.body).bytes()
+
+    private fun effectiveContentTypes(request: HttpRequestData): List<ContentType> =
+        request.headers.getAll(HttpHeaders.ContentType).orEmpty().map(ContentType::parse) +
+            listOfNotNull(request.body.contentType)
+
+    @Test
+    fun `transport writes the exact counted preference bytes with one JSON content type`() =
+        runTest {
+            val requests = mutableListOf<HttpRequestData>()
+            val engine = MockEngine { request ->
+                requests += request
+                respond(LEGACY_PUSH_RESPONSE, HttpStatusCode.OK, JSON_RESPONSE_HEADERS)
+            }
+            val payload = preferencePayload(listOf(mutation(padding = 64)))
+            val expectedBytes = encodePortalSyncPayload(payload).rawBytes
+
+            val result = client(engine).pushPortalPayload(payload)
+
+            assertTrue(result.isSuccess)
+            val request = requests.single()
+            assertContentEquals(expectedBytes, requestBodyBytes(request))
+            val contentTypes = effectiveContentTypes(request)
+            assertEquals(1, contentTypes.size)
+            assertTrue(contentTypes.single().match(ContentType.Application.Json))
+            assertEquals("Bearer old-token", request.headers[HttpHeaders.Authorization])
+            assertEquals("anon", request.headers["apikey"])
+        }
+
+    @Test
+    fun `shared ContentNegotiation decodes an ordinary legacy push response`() = runTest {
+        val engine = MockEngine {
+            respond(LEGACY_PUSH_RESPONSE, HttpStatusCode.OK, JSON_RESPONSE_HEADERS)
+        }
+
+        val response = client(engine)
+            .pushPortalPayload(PortalSyncPayload(deviceId = "device", lastSync = 0))
+            .getOrThrow()
+
+        assertNull(response.profilePreferencesAccepted)
+        assertTrue(response.canonicalProfilePreferenceSections.isEmpty())
+        assertTrue(response.profilePreferenceRejections.isEmpty())
+    }
+
+    @Test
+    fun `401 refresh retry writes byte-identical push bodies`() = runTest {
+        val pushRequests = mutableListOf<HttpRequestData>()
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.endsWith("/functions/v1/mobile-sync-push") -> {
+                    pushRequests += request
+                    if (pushRequests.size == 1) {
+                        respond(
+                            """{"error":"expired"}""",
+                            HttpStatusCode.Unauthorized,
+                            JSON_RESPONSE_HEADERS,
+                        )
+                    } else {
+                        respond(LEGACY_PUSH_RESPONSE, HttpStatusCode.OK, JSON_RESPONSE_HEADERS)
+                    }
+                }
+                request.url.encodedPath.endsWith("/auth/v1/token") -> respond(
+                    """
+                    {
+                      "access_token":"new-token",
+                      "token_type":"bearer",
+                      "expires_in":3600,
+                      "expires_at":4102444800,
+                      "refresh_token":"new-refresh",
+                      "user":{"id":"user-a","email":"user@example.com"}
+                    }
+                    """.trimIndent(),
+                    HttpStatusCode.OK,
+                    JSON_RESPONSE_HEADERS,
+                )
+                else -> error("Unexpected MockEngine path")
+            }
+        }
+        val payload = preferencePayload(listOf(mutation(padding = 128)))
+        val expectedBytes = encodePortalSyncPayload(payload).rawBytes
+
+        assertTrue(client(engine).pushPortalPayload(payload).isSuccess)
+
+        assertEquals(2, pushRequests.size)
+        pushRequests.forEach { request ->
+            assertContentEquals(expectedBytes, requestBodyBytes(request))
+        }
+        assertEquals(
+            listOf("Bearer old-token", "Bearer new-token"),
+            pushRequests.map { it.headers[HttpHeaders.Authorization] },
+        )
+    }
+
+    @Test
+    fun `section cap accepts 262144 and rejects 262145 before HTTP`() = runTest {
+        var httpCalls = 0
+        val engine = MockEngine {
+            httpCalls++
+            respond(LEGACY_PUSH_RESPONSE, HttpStatusCode.OK, JSON_RESPONSE_HEADERS)
+        }
+        val client = client(engine)
+
+        assertTrue(
+            client.pushPortalPayload(
+                payloadWithSectionBytes(MAX_PROFILE_PREFERENCE_SECTION_BYTES),
+            ).isSuccess,
+        )
+        val error = client.pushPortalPayload(
+            payloadWithSectionBytes(MAX_PROFILE_PREFERENCE_SECTION_BYTES + 1),
+        ).exceptionOrNull()
+
+        assertIs<PortalApiException>(error)
+        assertEquals(413, error.statusCode)
+        assertEquals("SECTION_TOO_LARGE: cap=262144", error.message)
+        assertEquals(1, httpCalls)
+    }
+
+    @Test
+    fun `request cap accepts 524288 and rejects 524289 before HTTP`() = runTest {
+        var httpCalls = 0
+        val engine = MockEngine {
+            httpCalls++
+            respond(LEGACY_PUSH_RESPONSE, HttpStatusCode.OK, JSON_RESPONSE_HEADERS)
+        }
+        val client = client(engine)
+        val exact = preferencePayloadWithRequestBytes(MAX_PROFILE_PREFERENCE_REQUEST_BYTES)
+        val overflow = preferencePayloadWithRequestBytes(
+            MAX_PROFILE_PREFERENCE_REQUEST_BYTES + 1,
+        )
+        assertTrue(
+            encodePortalSyncPayload(exact).preferenceElementSpans.all { span ->
+                encodePortalSyncPayload(exact).preferenceElementByteCount(span) <=
+                    MAX_PROFILE_PREFERENCE_SECTION_BYTES
+            },
+        )
+
+        assertTrue(client.pushPortalPayload(exact).isSuccess)
+        val error = client.pushPortalPayload(overflow).exceptionOrNull()
 
         assertIs<PortalApiException>(error)
         assertEquals(413, error.statusCode)
         assertEquals("REQUEST_TOO_LARGE: cap=524288", error.message)
+        assertEquals(1, httpCalls)
     }
 
     @Test
-    fun `transport sends exact shared bytes used for both limits`() {
+    fun `empty preference list uses 512 KiB while null preserves legacy ordinary cap`() =
+        runTest {
+            var httpCalls = 0
+            val engine = MockEngine {
+                httpCalls++
+                respond(LEGACY_PUSH_RESPONSE, HttpStatusCode.OK, JSON_RESPONSE_HEADERS)
+            }
+            val client = client(engine)
+            val target = MAX_PROFILE_PREFERENCE_REQUEST_BYTES + 1
+            val ordinary = payloadWithRequestBytes(target, sections = null)
+            val presentEmpty = payloadWithRequestBytes(target, sections = emptyList())
+
+            assertTrue(client.pushPortalPayload(ordinary).isSuccess)
+            val error = client.pushPortalPayload(presentEmpty).exceptionOrNull()
+
+            assertIs<PortalApiException>(error)
+            assertEquals(413, error.statusCode)
+            assertEquals("REQUEST_TOO_LARGE: cap=524288", error.message)
+            assertEquals(1, httpCalls)
+        }
+
+    @Test
+    fun `legacy 9500000 byte cap is inclusive and overflow is 413`() = runTest {
+        var httpCalls = 0
+        val engine = MockEngine {
+            httpCalls++
+            respond(LEGACY_PUSH_RESPONSE, HttpStatusCode.OK, JSON_RESPONSE_HEADERS)
+        }
+        val client = client(engine)
+        val exact = payloadWithRequestBytes(SyncConfig.MAX_PAYLOAD_BYTES.toInt(), null)
+        val overflow = payloadWithRequestBytes(
+            SyncConfig.MAX_PAYLOAD_BYTES.toInt() + 1,
+            null,
+        )
+
+        assertTrue(client.pushPortalPayload(exact).isSuccess)
+        val error = client.pushPortalPayload(overflow).exceptionOrNull()
+
+        assertIs<PortalApiException>(error)
+        assertEquals(413, error.statusCode)
+        assertEquals(1, httpCalls)
+    }
+
+    @Test
+    fun `transport source encodes once per logical push and sends only raw bytes`() {
         val source = assertNotNull(
             readProjectFile(
                 "src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalApiClient.kt",
@@ -6139,7 +6400,10 @@ class PortalApiClientProfilePreferenceLimitsTest {
         )
 
         assertTrue("json(PortalWireJson)" in source)
-        assertTrue("val encoded = encodePortalSyncPayload(payload)" in source)
+        assertEquals(
+            1,
+            Regex("""encodePortalSyncPayload[(]payload[)]""").findAll(source).count(),
+        )
         assertTrue("setBody(encoded.rawBytes)" in source)
         assertFalse(Regex("""setBody[(]encoded[.]raw[)]""").containsMatchIn(source))
         assertFalse(Regex("""private\s+val\s+json\s*=\s*Json""").containsMatchIn(source))
@@ -6147,25 +6411,149 @@ class PortalApiClientProfilePreferenceLimitsTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails against the existing overall-only guard**
+The tests intentionally observe Ktor's final `HttpRequestData` rather than trusting source fragments alone. The expected bytes are independently produced by Task 5's deterministic encoder; the production call still creates its own `EncodedPortalSyncPayload` once and reuses that one array across its initial and retry lambdas.
+
+Add to `ErrorClassificationTest.kt`:
+
+```kotlin
+@Test
+fun status413IsPermanentAndNotRetryable() {
+    val result = classifyByStatusCode(413, "Payload too large")
+
+    assertEquals(SyncErrorCategory.PERMANENT, result.category)
+    assertFalse(result.isRetryable)
+    assertEquals(413, result.statusCode)
+}
+```
+
+- [ ] **Step 3: Write failing logical fake queue and history tests**
+
+Create `FakePortalApiClientTest.kt`:
+
+```kotlin
+package com.devil.phoenixproject.testutil
+
+import com.devil.phoenixproject.data.sync.KnownEntityIds
+import com.devil.phoenixproject.data.sync.PortalSyncPayload
+import com.devil.phoenixproject.data.sync.PortalSyncPullResponse
+import com.devil.phoenixproject.data.sync.PortalSyncPushResponse
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+
+class FakePortalApiClientTest {
+    private fun pushResponse(time: String) =
+        Result.success(PortalSyncPushResponse(syncTime = time))
+
+    @Test
+    fun `configured push queue preserves exact history and fails when exhausted`() = runTest {
+        val fake = FakePortalApiClient()
+        val first = PortalSyncPayload(deviceId = "first", lastSync = 0)
+        val second = PortalSyncPayload(deviceId = "second", lastSync = 0)
+        fake.pushResultsQueue = mutableListOf(
+            pushResponse("2026-07-11T12:00:00Z"),
+            pushResponse("2026-07-11T12:00:01Z"),
+        )
+
+        assertTrue(fake.pushPortalPayload(first).isSuccess)
+        assertTrue(fake.pushPortalPayload(second).isSuccess)
+
+        assertEquals(listOf(first, second), fake.pushPayloads)
+        assertEquals(second, fake.lastPushPayload)
+        assertEquals(2, fake.pushCallCount)
+        assertTrue(fake.pushResultsQueue.orEmpty().isEmpty())
+        assertFailsWith<IllegalStateException> {
+            fake.pushPortalPayload(PortalSyncPayload(deviceId = "unexpected", lastSync = 0))
+        }
+    }
+
+    @Test
+    fun `configured pull queue preserves profile history and fails when exhausted`() = runTest {
+        val fake = FakePortalApiClient()
+        fake.pullResultsQueue = mutableListOf(
+            Result.success(PortalSyncPullResponse(syncTime = 1)),
+            Result.success(PortalSyncPullResponse(syncTime = 2)),
+        )
+
+        listOf("profile-a", "profile-b").forEach { profileId ->
+            assertTrue(
+                fake.pullPortalPayload(
+                    knownEntityIds = KnownEntityIds(),
+                    deviceId = "device",
+                    profileId = profileId,
+                    cursor = null,
+                    pageSize = 100,
+                ).isSuccess,
+            )
+        }
+
+        assertEquals(listOf("profile-a", "profile-b"), fake.pullCallProfileIds)
+        assertEquals("profile-b", fake.lastPullProfileId)
+        assertEquals(2, fake.pullCallCount)
+        assertTrue(fake.pullResultsQueue.orEmpty().isEmpty())
+        assertFailsWith<IllegalStateException> {
+            fake.pullPortalPayload(
+                KnownEntityIds(),
+                "device",
+                "unexpected",
+                null,
+                100,
+            )
+        }
+    }
+}
+```
+
+A null queue means “always use the default result.” A non-null queue means “these are the complete expected logical calls”; exhaustion is a test failure, never an implicit fallback. Captures occur before dequeue so an unexpected attempted call remains inspectable.
+
+- [ ] **Step 4: Run the tests and verify the red state**
 
 Run:
 
 ```powershell
-.\gradlew.bat :shared:testAndroidHostTest --tests "com.devil.phoenixproject.data.sync.PortalApiClientProfilePreferenceLimitsTest" -Pskip.supabase.check=true
+.\gradlew.bat :shared:testAndroidHostTest --tests "com.devil.phoenixproject.data.sync.PortalApiClientProfilePreferenceLimitsTest" --tests "com.devil.phoenixproject.testutil.FakePortalApiClientTest" --tests "com.devil.phoenixproject.data.sync.ErrorClassificationTest" -Pskip.supabase.check=true
 ```
 
-Expected: FAIL because the call reaches authentication or does not return a 413 section error.
+Expected: FAIL because `PortalApiClient` has no injectable engine, still serializes a `String`, has only the legacy overall guard, classifies 413 as transient, and the fake lacks strict queues/history.
 
-- [ ] **Step 3: Reuse `PortalWireJson` and add preference-specific guards**
+- [ ] **Step 5: Reuse `PortalWireJson` through an injectable, production-identical client configuration**
 
-Remove the `kotlinx.serialization.json.Json` import and `PortalApiClient`'s private `Json` construction. Configure response decoding with the same shared instance:
+Remove the `kotlinx.serialization.json.Json` import and `PortalApiClient`'s private `Json` construction. Add `HttpClientConfig` and `HttpClientEngine` imports, move the existing timeout/default-request configuration into one shared builder, and use it for both the platform-default production engine and an injected test engine:
 
 ```kotlin
-install(ContentNegotiation) {
-    json(PortalWireJson)
+private fun HttpClientConfig<*>.configurePortalHttpClient() {
+    install(ContentNegotiation) {
+        json(PortalWireJson)
+    }
+    install(HttpTimeout) {
+        requestTimeoutMillis = 60_000
+        connectTimeoutMillis = 10_000
+        socketTimeoutMillis = 60_000
+    }
+    defaultRequest {
+        contentType(ContentType.Application.Json)
+    }
 }
+
+private fun createPortalHttpClient(engine: HttpClientEngine?): HttpClient =
+    if (engine == null) {
+        HttpClient { configurePortalHttpClient() }
+    } else {
+        HttpClient(engine) { configurePortalHttpClient() }
+    }
+
+open class PortalApiClient(
+    private val supabaseConfig: SupabaseConfig,
+    private val tokenStorage: PortalTokenStorage,
+    httpClientEngine: HttpClientEngine? = null,
+) {
+    private val refreshMutex = Mutex()
+    private val httpClient = createPortalHttpClient(httpClientEngine)
 ```
+
+These are the class's opening fields; retain every existing auth/sync method below them and remove the old `refreshMutex`/private-`Json`/`HttpClient` declarations. The defaulted engine parameter preserves every production/Koin/fake call site. Tests inject `MockEngine` while exercising the exact same ContentNegotiation, timeout, and default-header configuration as production.
 
 Inside `pushPortalPayload`, call `encodePortalSyncPayload` exactly once and use its `rawBytes` for every limit and for the request body. Before the existing overall byte check, add:
 
@@ -6193,20 +6581,48 @@ if (payload.profilePreferenceSections != null) {
 }
 ```
 
-Retain the existing `MAX_PAYLOAD_BYTES` check against `encoded.rawBytes` after this block. Replace every remaining `serialized` reference in this method and send the exact already-counted bytes:
+Retain the existing `MAX_PAYLOAD_BYTES` check against `encoded.rawBytes` after this block, but make its deterministic local overflow a 413 as well:
+
+```kotlin
+if (encoded.rawBytes.size > SyncConfig.MAX_PAYLOAD_BYTES) {
+    return Result.failure(
+        PortalApiException(
+            "Push payload is ${encoded.rawBytes.size} bytes; " +
+                "cap is ${SyncConfig.MAX_PAYLOAD_BYTES} bytes. Caller must split.",
+            statusCode = 413,
+        ),
+    )
+}
+```
+
+Replace every remaining `serialized` reference in this method and send the exact already-counted bytes:
 
 ```kotlin
 httpClient.post("${supabaseConfig.url}/functions/v1/mobile-sync-push") {
     bearerAuth(token)
     header("apikey", supabaseConfig.anonKey)
-    header("Content-Type", "application/json")
+    contentType(ContentType.Application.Json)
     setBody(encoded.rawBytes)
 }
 ```
 
-Do not mutate `encoded.rawBytes`, call `encodeToByteArray` again, or use the encoded `String` as the body: the same byte array is measured by the per-section/full-request/overall guards and written to HTTP. A non-null preference field, including an empty array, always applies 512 KiB to the complete raw `PortalSyncPayload`; without that field only the existing 9,500,000-byte overall cap applies. Preference-specific errors are fixed categories plus the public cap only; they never include profile identity, section values, or measured user-data sizes.
+`authenticatedRequest` may invoke this HTTP lambda twice around one 401 refresh, but `encoded` is created outside the lambda. Both attempts therefore receive the same array without another serializer call. Do not mutate `encoded.rawBytes`, call `encodeToByteArray` again, or use the encoded `String` as the body: the same byte array is measured by the per-section/full-request/overall guards and written to HTTP. A non-null preference field, including an empty array, always applies 512 KiB to the complete raw `PortalSyncPayload`; without that field only the inclusive 9,500,000-byte overall cap applies. Preference-specific errors are fixed categories plus the public cap only; they never include profile identity, section values, or measured user-data sizes.
 
-- [ ] **Step 4: Extend the fake for multi-request orchestration**
+Finally, add 413 to the permanent client-error branch in `classifyByStatusCode`:
+
+```kotlin
+400, 404, 413 -> ClassifiedSyncError(
+    category = SyncErrorCategory.PERMANENT,
+    message = message,
+    statusCode = statusCode,
+    isRetryable = false,
+    cause = cause,
+)
+```
+
+This classification applies when a local or remote 413 escapes to the sync trigger; byte-identical retries cannot repair a deterministic cap violation.
+
+- [ ] **Step 6: Extend the fake for strict logical multi-request orchestration**
 
 Add these captures to `FakePortalApiClient`:
 
@@ -6214,6 +6630,12 @@ Add these captures to `FakePortalApiClient`:
 val pushPayloads: MutableList<PortalSyncPayload> = mutableListOf()
 var pushResultsQueue: MutableList<Result<PortalSyncPushResponse>>? = null
 var lastPullProfileId: String? = null
+val pullCallProfileIds: MutableList<String?> = mutableListOf()
+
+private fun <T> MutableList<Result<T>>.removeExpectedResult(): Result<T> {
+    check(isNotEmpty()) { "FAKE_PORTAL_RESULT_QUEUE_EXHAUSTED" }
+    return removeAt(0)
+}
 ```
 
 Update the overrides:
@@ -6223,7 +6645,7 @@ override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<Porta
     pushCallCount++
     lastPushPayload = payload
     pushPayloads += payload
-    return pushResultsQueue?.removeFirstOrNull() ?: pushResult
+    return pushResultsQueue?.removeExpectedResult() ?: pushResult
 }
 
 override suspend fun pullPortalPayload(
@@ -6237,28 +6659,31 @@ override suspend fun pullPortalPayload(
     lastPullKnownEntityIds = knownEntityIds
     lastPullDeviceId = deviceId
     lastPullProfileId = profileId
+    pullCallProfileIds += profileId
     lastPullCursor = cursor
     lastPullPageSize = pageSize
     pullCallCursors += cursor
     pullCallTimestampsMs += pullTimestampSourceMs()
-    return pullResultsQueue?.removeFirstOrNull() ?: pullResult
+    return pullResultsQueue?.removeExpectedResult() ?: pullResult
 }
 ```
 
-- [ ] **Step 5: Run the transport and existing token tests**
+Do not model `PortalApiClient`'s internal 401 HTTP retry as a second fake call: this fake operates at the logical API boundary. The captured-engine tests own physical-attempt behavior.
+
+- [ ] **Step 7: Run the transport, fake, planner, token, and ordinary-push regressions**
 
 Run:
 
 ```powershell
-.\gradlew.bat :shared:testAndroidHostTest --tests "*PortalApiClientProfilePreferenceLimitsTest*" --tests "*PortalTokenRefreshTest*" -Pskip.supabase.check=true
+.\gradlew.bat :shared:testAndroidHostTest --tests "*PortalApiClientProfilePreferenceLimitsTest*" --tests "*FakePortalApiClientTest*" --tests "*ErrorClassificationTest*" --tests "*PortalTokenRefreshTest*" --tests "*ProfilePreferenceSyncPlannerTest*" --tests "*ProfilePreferenceSyncDtosTest*" --tests "*PortalPushLimitsTest*" --tests "*PortalPullPaginationTest*" --tests "*SyncManagerTest*" -Pskip.supabase.check=true
 ```
 
-Expected: PASS.
+Expected: PASS, including exact outgoing bytes/headers, ordinary response decoding, byte-identical 401 retry, all inclusive caps, null-versus-empty preference behavior, permanent 413 classification, strict fake queues, and unchanged ordinary batching.
 
-- [ ] **Step 6: Commit transport guards and test captures**
+- [ ] **Step 8: Commit transport guards and test captures**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalApiClient.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePortalApiClient.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalApiClientProfilePreferenceLimitsTest.kt
+git add gradle/libs.versions.toml shared/build.gradle.kts shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalApiClient.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePortalApiClient.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/PortalApiClientProfilePreferenceLimitsTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakePortalApiClientTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/ErrorClassificationTest.kt
 git commit -m "feat(sync): enforce profile preference payload limits"
 ```
 
@@ -6688,7 +7113,7 @@ single {
 
 Update every existing `SyncManager` test constructor to pass a `FakeProfilePreferenceSyncRepository` and `{ true }`; only the explicit readiness test passes `{ false }`.
 
-- [ ] **Step 6: Rate-limit every physical push request**
+- [ ] **Step 6: Rate-limit every logical push API call**
 
 Replace the single acquisition at the top of `pushLocalChanges` with this helper and route every ordinary and preference call through it:
 
@@ -6709,7 +7134,7 @@ private suspend fun pushPayloadWithRateLimit(
 }
 ```
 
-The existing session-batch failure contract remains unchanged. A rate limit reached during preference-only chunks stops preference sending, leaves unsent sections dirty, and retains the successful ordinary push.
+One limiter token is consumed for every ordinary batch or preference chunk passed to `pushPortalPayload`. `PortalApiClient` may internally repeat the same physical HTTP push once after a 401 and token refresh; that transparent auth-recovery attempt is the explicit exception and does not consume a second `SyncManager` token. `FakePortalApiClient.pushCallCount` and its result queues therefore count logical API calls, while Task 6's captured-engine test alone counts physical HTTP attempts. The refresh endpoint is authentication traffic, not a sync push. The existing session-batch failure contract remains unchanged. A rate limit reached during preference-only chunks stops preference sending, leaves unsent sections dirty, and retains the successful ordinary push.
 
 - [ ] **Step 7: Implement the preference-only push loop**
 
@@ -6885,7 +7310,7 @@ pushDirtyProfilePreferences(
 
 Do not pass the active profile id or name. Preserve and return the ordinary `lastResponse` so existing entity rejection handling remains intact.
 
-- [ ] **Step 8: Extend batching tests for metadata ordering and physical rate accounting**
+- [ ] **Step 8: Extend batching tests for metadata ordering and logical rate accounting**
 
 Add to `PortalPushLimitsTest`:
 
@@ -6915,7 +7340,7 @@ fun preferenceChunksFollowTheFinalMetadataBatch() = runTest {
 }
 
 @Test
-fun everyPhysicalPushConsumesTheSharedRateLimit() = runTest {
+fun everyLogicalPushCallConsumesTheSharedRateLimit() = runTest {
     authenticate()
     fakeProfilePreferenceSyncRepo.dirtySnapshot = ProfilePreferenceDirtySnapshot(
         valid = List(20) { index ->
