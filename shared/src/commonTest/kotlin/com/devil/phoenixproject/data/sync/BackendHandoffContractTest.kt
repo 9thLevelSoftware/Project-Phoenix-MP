@@ -46,7 +46,7 @@ class BackendHandoffContractTest {
 
     // Task 2 RED only. Replace this RHS after reviewing the complete amended handoff.
     private val EXPECTED_EDGE_HANDOFF_SHA256 =
-        "6b624d45038dfbc63a6d3a80be7ece5d09bc4cb292bc1df5353ab8f10f61a666"
+        "b13ab9f244720b31e2a5f70fc817a1aa87b79ee62f624828616122475c0faab4"
 
     private fun normalizedEdgeHandoff(value: String): String =
         value.replace("\r\n", "\n").replace('\r', '\n')
@@ -831,6 +831,8 @@ class BackendHandoffContractTest {
             "requirePostgresTextTree",
             "requireInt32",
             "requireFloat32",
+            "!predicate(value)",
+            "!predicate(narrowed)",
             "requireSafeJsonLong",
             "requireRfc3339Instant",
             "INT32_MIN = -2_147_483_648",
@@ -850,6 +852,20 @@ class BackendHandoffContractTest {
             "throw new PreferenceInfrastructureError",
             "normalized.toISOString()",
         ).forEach { fragment -> assertTrue(fragment in code, fragment) }
+
+        val float32Block = assertNotNull(
+            Regex(
+                """(?s)const requireFloat32 = [(](.*?)\n};\s*const requireInt32 = [(]""",
+            ).find(code),
+            "Missing bounded requireFloat32 implementation",
+        ).groupValues[1]
+        val originalPredicate = float32Block.indexOf("!predicate(value)")
+        val narrowedPredicate = float32Block.indexOf("!predicate(narrowed)")
+        assertTrue(originalPredicate >= 0, "Float32 must validate the original wire value")
+        assertTrue(
+            narrowedPredicate > originalPredicate,
+            "Float32 must validate the narrowed value after the original value",
+        )
 
         fun quotedInitializer(pattern: String): List<String> {
             val body = assertNotNull(
@@ -891,6 +907,7 @@ class BackendHandoffContractTest {
         )
 
         assertTrue("rawBodyBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES" in code)
+        assertFalse("requirePostgresTextTree(rawMutation" in code)
         assertFalse(Regex("""\buserId\s*[?:]?\s*:\s*string""").containsMatchIn(code))
         assertFalse(
             Regex("""console[.](?:log|info|warn|error)[(][^)]*SERVICE_ROLE""")
