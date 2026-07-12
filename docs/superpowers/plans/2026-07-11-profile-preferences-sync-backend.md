@@ -4591,6 +4591,8 @@ fun `semantic numeric equality does not become equal revision divergence`() = ru
 }
 ```
 
+Also table-drive the local `*_updated_at` boundary test across CORE/RACK/WORKOUT/LED/VBT so every section accessor proves both inclusive RFC3339 bounds and both adjacent dead letters. At the repository boundary, place blank, U+0000, and lone-surrogate unknown canonical profile ids beside one valid known-profile canonical. Assert every malformed id increments `invalid`, none increments `ignoredUnknownProfile`, no malformed id is bound into a database lookup, and the valid sibling still applies. Extend the codec boundary cases to cover canonical profile-id validation, both adjacent canonical timestamp bounds as `INVALID_CANONICAL_TIMESTAMP`, and RACK `createdAt`/`updatedAt` exact-integer overflow as `UNREPRESENTABLE_JSON_INTEGER`; none may mutate persistence or expose sentinel content.
+
 - [ ] **Step 3: Run the repository tests and verify the red state**
 
 Run:
@@ -4836,6 +4838,7 @@ internal enum class ProfilePreferenceSyncIssueReason {
     UNSUPPORTED_DOCUMENT_VERSION,
     INVALID_CANONICAL_PAYLOAD,
     INVALID_CANONICAL_REVISION,
+    INVALID_CANONICAL_TIMESTAMP,
 }
 
 internal sealed interface DecodedProfilePreferenceValue {
@@ -4886,7 +4889,7 @@ Before constructing a `ProfilePreferenceSectionSyncDto`, apply these checks in o
 
 The issue retains the current profile/section generation and stays out of `valid`, so serialization, chunking, and RPC retry cannot see it. Valid `Long` values use `JsonPrimitive(Long)` and remain JSON numbers. Never retain an exception message, raw JSON, invalid string, numeric value, or payload fragment in a reason.
 
-`canonicalPayloadIssue` first requires document version 1, then the reusable wire-safety guard, then direct typed decoding/validation. It returns only a `ProfilePreferenceSyncIssueReason`; `runCatching` may contain decoder exceptions locally, but their messages are discarded. `decodeCanonical` additionally requires `serverRevision` in `0..MAX_EXACT_JSON_INTEGER`, returns `ProfilePreferenceCanonicalColumnsResult.Invalid(INVALID_CANONICAL_REVISION)` otherwise, and returns `Valid` with the exact key/revision/timestamp, typed value, and `normalizedPayload(value)` only after all checks pass.
+`canonicalPayloadIssue` first requires document version 1, then the reusable wire-safety guard, then direct typed decoding/validation. It returns only a `ProfilePreferenceSyncIssueReason`; `runCatching` may contain decoder exceptions locally, but their messages are discarded. A decoded RACK canonical also requires every `createdAt`/`updatedAt` in the exact JSON-integer interval. `decodeCanonical` requires a nonblank PostgreSQL-compatible `localProfileId`, `serverUpdatedAtEpochMs` in the inclusive four-digit-year range, and `serverRevision` in `0..MAX_EXACT_JSON_INTEGER`, returning the corresponding fixed `INVALID_PROFILE_ID`, `INVALID_CANONICAL_TIMESTAMP`, `INVALID_CANONICAL_REVISION`, or `UNREPRESENTABLE_JSON_INTEGER` category otherwise. It returns `Valid` with the exact key/revision/timestamp, typed value, and `normalizedPayload(value)` only after all checks pass.
 
 Use this exact typed decoding boundary; kotlinx.serialization document defaults remain compatible, while wrapper fields and JSON types are mandatory:
 
@@ -4992,6 +4995,20 @@ private fun canonicalPayloadIssue(
 fun decodeCanonical(
     canonical: CanonicalProfilePreferenceSection,
 ): ProfilePreferenceCanonicalColumnsResult {
+    if (canonical.key.localProfileId.isBlank() ||
+        !isPostgresCompatibleText(canonical.key.localProfileId)
+    ) {
+        return ProfilePreferenceCanonicalColumnsResult.Invalid(
+            ProfilePreferenceSyncIssueReason.INVALID_PROFILE_ID,
+        )
+    }
+    if (canonical.serverUpdatedAtEpochMs !in
+        MIN_RFC3339_EPOCH_MILLIS..MAX_RFC3339_EPOCH_MILLIS
+    ) {
+        return ProfilePreferenceCanonicalColumnsResult.Invalid(
+            ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_TIMESTAMP,
+        )
+    }
     if (canonical.serverRevision !in 0..MAX_EXACT_JSON_INTEGER) {
         return ProfilePreferenceCanonicalColumnsResult.Invalid(
             ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_REVISION,
@@ -5101,19 +5118,23 @@ internal class SqlDelightProfilePreferenceSyncRepository(
         var applied = 0
         var unknown = 0
         var invalid = 0
-        sections.groupBy { it.key.localProfileId }.forEach { (profileId, canonicals) ->
+        val validColumns = sections.mapNotNull { canonical ->
+            when (val decoded = codec.decodeCanonical(canonical)) {
+                is ProfilePreferenceCanonicalColumnsResult.Invalid -> {
+                    invalid++
+                    null
+                }
+                is ProfilePreferenceCanonicalColumnsResult.Valid -> decoded.columns
+            }
+        }
+        validColumns.groupBy { it.key.localProfileId }.forEach { (profileId, columnsForProfile) ->
             database.transaction {
                 if (queries.selectProfilePreferenceSyncRow(profileId).executeAsOneOrNull() == null) {
-                    unknown += canonicals.size
+                    unknown += columnsForProfile.size
                     return@transaction
                 }
-                canonicals.forEach { canonical ->
-                    when (val decoded = codec.decodeCanonical(canonical)) {
-                        is ProfilePreferenceCanonicalColumnsResult.Invalid -> invalid++
-                        is ProfilePreferenceCanonicalColumnsResult.Valid -> {
-                            if (applyPulledWhenClean(decoded.columns)) applied++
-                        }
-                    }
+                columnsForProfile.forEach { columns ->
+                    if (applyPulledWhenClean(columns)) applied++
                 }
             }
         }
@@ -5126,7 +5147,7 @@ internal class SqlDelightProfilePreferenceSyncRepository(
 }
 ```
 
-A null canonical is an intentional no-op and does not increment `invalid`; its section remains dirty. A present canonical is defense-in-depth validated at the repository boundary even though Task 6's response mapper performs the same identity checks. Key mismatch, canonical/outcome revision mismatch, unsafe canonical revision, malformed payload, or wire-safety failure increments `invalid` and performs no SQL mutation. Never log or throw with the invalid content.
+A null push canonical is an intentional no-op and does not increment `invalid`; its section remains dirty. Every pull canonical is decoded before grouping or any database lookup, so an invalid profile id is never bound to SQL or misclassified as unknown. A present canonical is defense-in-depth validated at the repository boundary even though Task 6's response mapper performs the same identity checks. Key mismatch, canonical/outcome revision mismatch, unsafe canonical id/timestamp/revision/RACK integer, malformed payload, or wire-safety failure increments `invalid` and performs no SQL mutation. Never log or throw with the invalid content.
 
 Add this codec result and method; `currentState` uses the same row-owned LED/VBT wrapper methods as `encodeDirtyRow`:
 
