@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 
 class ProfileIdentityPolicyTest {
     @Test
-    fun `suggested colors wrap the shared palette`() {
+    fun `palette selection wraps and invalid stored indexes normalize`() {
         assertEquals(PROFILE_COLOR_COUNT, ProfileColors.size)
         assertEquals(0, suggestedProfileColorIndex(-1))
         assertEquals(0, suggestedProfileColorIndex(0))
@@ -38,7 +38,7 @@ class ProfileIdentityPolicyTest {
     }
 
     @Test
-    fun `only non-default profiles may be deleted`() {
+    fun `only the active non-default profile may be deleted`() {
         assertFalse(canDeleteProfile(profile("default", isActive = true)))
         assertFalse(canDeleteProfile(profile("athlete-a", isActive = false)))
         assertTrue(canDeleteProfile(profile("athlete-a", isActive = true)))
@@ -51,7 +51,7 @@ class ProfileIdentityPolicyTest {
     }
 
     @Test
-    fun `identity dialogs are callback only and bind complete delete copy`() {
+    fun `identity dialogs are callback only guarded and responsive`() {
         val dialogs = assertNotNull(
             readProjectFile(
                 "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileDialogs.kt",
@@ -60,11 +60,20 @@ class ProfileIdentityPolicyTest {
 
         assertFalse(dialogs.contains("UserProfileRepository"))
         assertFalse(dialogs.contains("CoroutineScope"))
+        assertFalse(dialogs.contains("DestructiveConfirmDialog("))
+        assertFalse(dialogs.contains("testTag(TestTags.ACTION_"))
         assertContains(dialogs, "fun ProfileAddDialog(")
         assertContains(dialogs, "fun ProfileEditDialog(")
         assertContains(dialogs, "fun ProfileDeleteDialog(")
         assertContains(dialogs, "require(canDeleteProfile(profile))")
+        assertContains(dialogs, "AlertDialog(")
+        assertContains(dialogs, "name.trim()")
+        assertContains(dialogs, "normalizedProfileColorIndex(selectedColorIndex)")
+        assertContains(dialogs, "ProfileColors.indices.chunked(4)")
         assertContains(dialogs, ".size(48.dp)")
+        assertContains(dialogs, ".selectable(")
+        assertContains(dialogs, "Role.RadioButton")
+        assertContains(dialogs, ".selectableGroup()")
         assertContains(dialogs, "enabled = !isSubmitting")
         assertContains(dialogs, "if (!isSubmitting)")
 
@@ -78,7 +87,7 @@ class ProfileIdentityPolicyTest {
     }
 
     @Test
-    fun `switcher is switch and create only`() {
+    fun `switcher is switch create only and cannot hide while switching`() {
         val switcher = assertNotNull(
             readProjectFile(
                 "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileSwitcherSheet.kt",
@@ -91,12 +100,16 @@ class ProfileIdentityPolicyTest {
         assertFalse(switcher.contains("onEditProfile"))
         assertFalse(switcher.contains("onDeleteProfile"))
         assertFalse(switcher.contains("combinedClickable"))
+        assertContains(switcher, "rememberUpdatedState")
         assertContains(switcher, "confirmValueChange")
-        assertContains(switcher, "sheetGesturesEnabled")
+        assertContains(switcher, "targetValue != SheetValue.Hidden")
+        assertContains(switcher, "sheetGesturesEnabled = canDismiss")
+        assertContains(switcher, "if (canDismissProfileSwitcher(")
+        assertContains(switcher, ".selectableGroup()")
     }
 
     @Test
-    fun `identity surfaces declare accessible selection and downstream test tags`() {
+    fun `identity surfaces declare accessible semantics and all downstream tags`() {
         val identity = assertNotNull(
             readProjectFile(
                 "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileIdentityComponents.kt",
@@ -115,8 +128,15 @@ class ProfileIdentityPolicyTest {
 
         assertContains(identity, "minimumInteractiveComponentSize")
         assertContains(identity, "Role.Button")
+        assertContains(identity, "contentDescription = accessibleName")
+        assertContains(identity, "clearAndSetSemantics")
         assertContains(row, "heightIn(min = 56.dp)")
+        assertContains(row, "Modifier.selectable(")
+        assertContains(row, "Role.RadioButton")
         assertContains(row, "selected = isActive")
+        assertContains(row, "enabled && !switching")
+        assertContains(row, "maxLines = 1")
+        assertContains(row, "TextOverflow.Ellipsis")
         listOf(
             "PROFILE_SWITCHER_SHEET",
             "ACTION_ADD_PROFILE",

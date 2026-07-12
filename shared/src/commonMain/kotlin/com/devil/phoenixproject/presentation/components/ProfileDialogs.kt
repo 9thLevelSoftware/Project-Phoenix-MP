@@ -27,13 +27,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.UserProfile
-import com.devil.phoenixproject.presentation.util.TestTags
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_add
@@ -74,7 +72,6 @@ fun ProfileAddDialog(
         selectedColorIndex = selectedColorIndex,
         isSubmitting = isSubmitting,
         confirmLabel = stringResource(Res.string.action_add),
-        confirmTestTag = TestTags.ACTION_ADD_PROFILE,
         onNameChange = { name = it },
         onColorSelected = { selectedColorIndex = it },
         onConfirm = {
@@ -102,7 +99,6 @@ fun ProfileEditDialog(
         selectedColorIndex = selectedColorIndex,
         isSubmitting = isSubmitting,
         confirmLabel = stringResource(Res.string.action_save),
-        confirmTestTag = TestTags.ACTION_EDIT_PROFILE,
         onNameChange = { name = it },
         onColorSelected = { selectedColorIndex = it },
         onConfirm = {
@@ -140,7 +136,6 @@ fun ProfileDeleteDialog(
             TextButton(
                 onClick = onConfirm,
                 enabled = !isSubmitting,
-                modifier = Modifier.testTag(TestTags.ACTION_DELETE_PROFILE),
             ) {
                 Text(stringResource(Res.string.action_delete))
             }
@@ -163,7 +158,6 @@ private fun ProfileIdentityDialog(
     selectedColorIndex: Int,
     isSubmitting: Boolean,
     confirmLabel: String,
-    confirmTestTag: String,
     onNameChange: (String) -> Unit,
     onColorSelected: (Int) -> Unit,
     onConfirm: () -> Unit,
@@ -201,7 +195,6 @@ private fun ProfileIdentityDialog(
             TextButton(
                 onClick = onConfirm,
                 enabled = trimmedName.isNotEmpty() && !isSubmitting,
-                modifier = Modifier.testTag(confirmTestTag),
             ) {
                 Text(confirmLabel)
             }

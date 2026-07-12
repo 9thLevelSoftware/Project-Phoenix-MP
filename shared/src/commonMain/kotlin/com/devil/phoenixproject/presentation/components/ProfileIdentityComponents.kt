@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -80,7 +81,8 @@ fun ProfileAvatar(
         Surface(
             modifier = Modifier
                 .size(size)
-                .shadow(if (isActive) 8.dp else 0.dp, CircleShape),
+                .shadow(if (isActive) 8.dp else 0.dp, CircleShape)
+                .clearAndSetSemantics { },
             shape = CircleShape,
             color = background,
         ) {

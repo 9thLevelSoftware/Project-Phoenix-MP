@@ -1,9 +1,9 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.UserProfile
 import org.jetbrains.compose.resources.stringResource
@@ -40,13 +41,15 @@ fun ProfileListItem(
     modifier: Modifier = Modifier,
 ) {
     val interactionModifier = if (onLongClick == null) {
-        Modifier.clickable(
-            enabled = enabled && !isActive,
+        Modifier.selectable(
+            selected = isActive,
+            enabled = enabled && !switching && !isActive,
+            role = Role.RadioButton,
             onClick = onClick,
         )
     } else {
         Modifier.combinedClickable(
-            enabled = enabled,
+            enabled = enabled && !switching,
             onClick = onClick,
             onLongClick = onLongClick,
         )
@@ -86,6 +89,8 @@ fun ProfileListItem(
                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
 
             // Active indicator
