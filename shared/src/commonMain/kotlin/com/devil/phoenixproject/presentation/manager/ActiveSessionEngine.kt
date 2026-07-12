@@ -49,6 +49,7 @@ import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightAdjustmentInput
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -83,6 +84,18 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+
+internal fun UserPreferences.verbalEncouragementEventOrNull(): HapticEvent.VERBAL_ENCOURAGEMENT? {
+    if (!beepsEnabled || !verbalEncouragementEnabled) return null
+    val effectiveVulgar = vulgarModeEnabled && adultsOnlyConfirmed
+    val effectiveDominatrix = effectiveVulgar &&
+        dominatrixModeUnlocked && dominatrixModeActive
+    return HapticEvent.VERBAL_ENCOURAGEMENT(
+        vulgarTier = vulgarTier,
+        dominatrixMode = effectiveDominatrix,
+        vulgarMode = effectiveVulgar,
+    )
+}
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -1298,14 +1311,17 @@ class ActiveSessionEngine(
                 Logger.e(e) { "Biomechanics processing failed for rep $repNumber" }
             }
 
-            // Issue #313: Check velocity threshold for alert and auto-end (working reps only)
-            if (coordinator._repCount.value.isWarmupComplete) {
-                checkVelocityThreshold()
-            }
+            // Issue #313: Check velocity threshold for alert and auto-end.
+            // The evaluator owns the working-rep guard so production and tests exercise
+            // the exact same decision seam.
+            evaluateLatestVbtResult()
         }
     }
 
-    private suspend fun checkVelocityThreshold() {
+    internal suspend fun evaluateLatestVbtResult() {
+        if (!coordinator._repCount.value.isWarmupComplete) return
+        val runtime = coordinator.vbtRuntimeSettings.value
+        if (!runtime.enabled) return
         val latestResult = coordinator.biomechanicsEngine.latestRepResult.value ?: return
         val velocity = latestResult.velocity
 
@@ -1317,24 +1333,19 @@ class ActiveSessionEngine(
                 coordinator._hapticEvents.emit(HapticEvent.VELOCITY_THRESHOLD_REACHED)
                 Logger.i { "VBT: Velocity loss threshold reached (${velocity.velocityLossPercent?.roundToInt()}%). Alert emitted." }
 
-                // Issue #611: Verbal encouragement (gated on master + global audio toggle + vulgar)
+                // Issue #611: Verbal encouragement (gated on its master + global audio toggle).
                 // Emitted alongside VELOCITY_THRESHOLD_REACHED so both events share one-shot
-                // semantics per set. The vulgar-on gate here is the master "encouragement fires"
-                // gate; the tier + dominatrix fields carry the routing info to the audio router.
-                val prefs = settingsManager.userPreferences.value
-                if (prefs.beepsEnabled && prefs.verbalEncouragementEnabled) {
-                    coordinator._hapticEvents.emit(
-                        HapticEvent.VERBAL_ENCOURAGEMENT(
-                            vulgarTier = prefs.vulgarTier,
-                            dominatrixMode = prefs.dominatrixModeActive,
-                            vulgarMode = prefs.vulgarModeEnabled,
-                        ),
-                    )
-                    Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${prefs.vulgarTier}, dominatrix=${prefs.dominatrixModeActive}, vulgar=${prefs.vulgarModeEnabled})" }
+                // semantics per set. Local adult confirmation neutralizes vulgar/dominatrix
+                // routing without rewriting the active profile's persisted intent.
+                val verbalEvent = settingsManager.userPreferences.value
+                    .verbalEncouragementEventOrNull()
+                if (verbalEvent != null) {
+                    coordinator._hapticEvents.emit(verbalEvent)
+                    Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${verbalEvent.vulgarTier}, dominatrix=${verbalEvent.dominatrixMode}, vulgar=${verbalEvent.vulgarMode})" }
                 }
             }
 
-            if (consecutiveThresholdReps >= 2 && coordinator.autoEndOnVelocityLoss) {
+            if (consecutiveThresholdReps >= 2 && runtime.autoEndOnVelocityLoss) {
                 Logger.i { "VBT: Auto-ending set — $consecutiveThresholdReps consecutive reps above threshold" }
                 handleSetCompletion()
             }

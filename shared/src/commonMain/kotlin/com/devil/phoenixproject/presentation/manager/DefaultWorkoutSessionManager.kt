@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 // ===== Data classes that move with DefaultWorkoutSessionManager =====
@@ -197,6 +198,7 @@ class DefaultWorkoutSessionManager(
         val prefs = settingsManager.userPreferences.value
         WorkoutCoordinator(
             _hapticEvents = _hapticEvents,
+            vbtEnabled = prefs.vbtEnabled,
             velocityLossThresholdPercent = prefs.velocityLossThresholdPercent.toFloat(),
             autoEndOnVelocityLoss = prefs.autoEndOnVelocityLoss,
         )
@@ -307,12 +309,24 @@ class DefaultWorkoutSessionManager(
 
         scope.launch {
             try {
-                settingsManager.userPreferences.collect { prefs ->
-                    coordinator.updateVbtSettings(
-                        velocityLossThresholdPercent = prefs.velocityLossThresholdPercent.toFloat(),
-                        autoEndOnVelocityLoss = prefs.autoEndOnVelocityLoss,
-                    )
-                }
+                settingsManager.userPreferences
+                    .map { prefs ->
+                        VbtRuntimeSettings(
+                            enabled = prefs.vbtEnabled,
+                            velocityLossThresholdPercent = prefs.velocityLossThresholdPercent.toFloat(),
+                            autoEndOnVelocityLoss = prefs.autoEndOnVelocityLoss,
+                        )
+                    }
+                    .distinctUntilChanged()
+                    .collect { runtime ->
+                        coordinator.updateVbtSettings(
+                            vbtEnabled = runtime.enabled,
+                            thresholdPercent = runtime.velocityLossThresholdPercent,
+                            autoEnd = runtime.autoEndOnVelocityLoss,
+                        )
+                    }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Logger.e(e) { "Error in VBT settings collector" }
             }

@@ -93,6 +93,7 @@ data class WorkoutUiState(
     // Issue #190: Exercise timer pause state for timed exercise controls
     val isExerciseTimerPaused: Boolean = false,
     // Issue #313: VBT velocity loss threshold for HUD visualization
+    val vbtEnabled: Boolean = true,
     val velocityLossThresholdPercent: Int = 20,
     // Issue #266/#410: Configurable weight step from user preferences (kg)
     val weightStepKg: Float = 0.25f,

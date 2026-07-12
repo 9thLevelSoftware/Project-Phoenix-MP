@@ -87,6 +87,7 @@ fun WorkoutHud(
     onPauseExerciseTimer: () -> Unit = {},
     onResumeExerciseTimer: () -> Unit = {},
     onResetExerciseTimer: () -> Unit = {},
+    vbtEnabled: Boolean = true,
     velocityLossThresholdPercent: Int = 20,
     rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
     currentWarmupSetIndex: Int = -1, // Issue #646: -1 = no warm-up phase
@@ -198,6 +199,7 @@ fun WorkoutHud(
                         formatWeight = formatWeight,
                         isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                         latestBiomechanicsResult = latestBiomechanicsResult,
+                        vbtEnabled = vbtEnabled,
                         velocityLossThresholdPercent = velocityLossThresholdPercent,
                     )
                 }
@@ -838,6 +840,7 @@ private fun StatsPage(
     formatWeight: (Float, WeightUnit) -> String,
     isCurrentExerciseBodyweight: Boolean = false,
     latestBiomechanicsResult: BiomechanicsRepResult? = null,
+    vbtEnabled: Boolean = true,
     velocityLossThresholdPercent: Int = 20,
 ) {
     if (isCurrentExerciseBodyweight) {
@@ -905,7 +908,11 @@ private fun StatsPage(
         if (latestBiomechanicsResult != null) {
             val mcv = latestBiomechanicsResult.velocity.meanConcentricVelocityMmS
             val zone = latestBiomechanicsResult.velocity.zone
-            val zColor = velocityZoneColor(zone)
+            val zColor = if (vbtEnabled) {
+                velocityZoneColor(zone)
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            }
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -933,11 +940,13 @@ private fun StatsPage(
                             value = "${formatMcv(mcv)} m/s",
                             color = zColor,
                         )
-                        StatColumn(
-                            label = "Zone",
-                            value = velocityZoneLabel(zone),
-                            color = zColor,
-                        )
+                        if (vbtEnabled) {
+                            StatColumn(
+                                label = "Zone",
+                                value = velocityZoneLabel(zone),
+                                color = zColor,
+                            )
+                        }
                         StatColumn(
                             label = "Peak",
                             value = "${formatMcv(latestBiomechanicsResult.velocity.peakVelocityMmS)} m/s",
@@ -947,7 +956,7 @@ private fun StatsPage(
 
                     // Velocity loss (only shown after rep 2)
                     val vloss = latestBiomechanicsResult.velocity.velocityLossPercent
-                    if (vloss != null) {
+                    if (vbtEnabled && vloss != null) {
                         VelocityLossIndicator(
                             currentLossPercent = vloss,
                             thresholdPercent = velocityLossThresholdPercent,
