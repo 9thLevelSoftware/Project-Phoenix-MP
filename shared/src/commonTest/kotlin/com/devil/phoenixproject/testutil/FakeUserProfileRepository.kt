@@ -46,6 +46,8 @@ class FakeUserProfileRepository : UserProfileRepository {
         val colorIndex: Int,
     )
 
+    data class CreateAndActivateRequest(val name: String, val colorIndex: Int)
+
     val updateProfileRequests = mutableListOf<UpdateProfileRequest>()
     val deleteActiveProfileRequests = mutableListOf<String>()
     var updateProfileFailure: Throwable? = null
@@ -53,6 +55,30 @@ class FakeUserProfileRepository : UserProfileRepository {
     var deleteActiveProfileResultOverride: Boolean? = null
     var beforeUpdateProfileMutation: (suspend (UpdateProfileRequest) -> Unit)? = null
     var beforeDeleteActiveProfileMutation: (suspend (String) -> Unit)? = null
+
+    val setActiveProfileRequests = mutableListOf<String>()
+    val createAndActivateRequests = mutableListOf<CreateAndActivateRequest>()
+    var reconcileActiveProfileContextRequests: Int = 0
+
+    var setActiveProfileFailure: Throwable? = null
+    var createAndActivateProfileFailure: Throwable? = null
+    var reconcileActiveProfileContextFailure: Throwable? = null
+
+    var beforeSetActiveProfile: (suspend (String) -> Unit)? = null
+    var beforeCreateAndActivateProfile: (suspend (String, Int) -> Unit)? = null
+    var beforeReconcileActiveProfileContext: (suspend () -> Unit)? = null
+
+    fun resetRootProfileOperationControls() {
+        setActiveProfileRequests.clear()
+        createAndActivateRequests.clear()
+        reconcileActiveProfileContextRequests = 0
+        setActiveProfileFailure = null
+        createAndActivateProfileFailure = null
+        reconcileActiveProfileContextFailure = null
+        beforeSetActiveProfile = null
+        beforeCreateAndActivateProfile = null
+        beforeReconcileActiveProfileContext = null
+    }
 
     private val _activeProfile = MutableStateFlow<UserProfile?>(null)
     override val activeProfile: StateFlow<UserProfile?> = _activeProfile.asStateFlow()
@@ -123,19 +149,25 @@ class FakeUserProfileRepository : UserProfileRepository {
     override suspend fun createAndActivateProfile(
         name: String,
         colorIndex: Int,
-    ): UserProfile = mutex.withLock {
-        val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
-            ?: throw ProfileContextUnavailableException()
-        val trimmedName = name.trim()
-        require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
-        val profileId = generateUUID()
-        _activeProfileContext.value = ActiveProfileContext.Switching(profileId)
-        pendingTransition = PendingTransition(previous.profile.id, profileId)
-        val profile = createProfileLocked(trimmedName, colorIndex, profileId)
-        setActiveIdentityLocked(profile.id)
-        publishReady(profile.id)
-        pendingTransition = null
-        requireNotNull(activeProfile.value)
+    ): UserProfile {
+        val request = CreateAndActivateRequest(name, colorIndex)
+        createAndActivateRequests += request
+        beforeCreateAndActivateProfile?.invoke(name, colorIndex)
+        createAndActivateProfileFailure?.let { throw it }
+        return mutex.withLock {
+            val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
+                ?: throw ProfileContextUnavailableException()
+            val trimmedName = name.trim()
+            require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
+            val profileId = generateUUID()
+            _activeProfileContext.value = ActiveProfileContext.Switching(profileId)
+            pendingTransition = PendingTransition(previous.profile.id, profileId)
+            val profile = createProfileLocked(trimmedName, colorIndex, profileId)
+            setActiveIdentityLocked(profile.id)
+            publishReady(profile.id)
+            pendingTransition = null
+            requireNotNull(activeProfile.value)
+        }
     }
 
     override suspend fun updateProfile(id: String, name: String, colorIndex: Int) {
@@ -222,6 +254,9 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     override suspend fun setActiveProfile(id: String) {
+        setActiveProfileRequests += id
+        beforeSetActiveProfile?.invoke(id)
+        setActiveProfileFailure?.let { throw it }
         mutex.withLock {
             require(profiles.containsKey(id)) { "Unknown profile: $id" }
             val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
@@ -380,6 +415,9 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     override suspend fun reconcileActiveProfileContext() {
+        reconcileActiveProfileContextRequests += 1
+        beforeReconcileActiveProfileContext?.invoke()
+        reconcileActiveProfileContextFailure?.let { throw it }
         mutex.withLock {
             _activeProfileContext.value = ActiveProfileContext.Switching(
                 pendingTransition?.priorProfileId,

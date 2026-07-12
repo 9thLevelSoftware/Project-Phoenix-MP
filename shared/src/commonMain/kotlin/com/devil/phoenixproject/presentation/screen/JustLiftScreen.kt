@@ -63,7 +63,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -102,9 +101,7 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.eccentricLoadLabel
 import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.model.toWorkoutMode
-import com.devil.phoenixproject.presentation.components.AddProfileDialog
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
-import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -167,15 +164,11 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     var stallDetectionEnabled by rememberSaveable { mutableStateOf(true) }
     var restSeconds by rememberSaveable { mutableStateOf(60) } // Rest timer between sets (0 = off)
     var defaultsProfileId by remember { mutableStateOf<String?>(null) }
-    // Profile management
-    val scope = rememberCoroutineScope()
+    // Profile-scoped workout defaults
     val profileRepository: UserProfileRepository = koinInject()
-    val profiles by profileRepository.allProfiles.collectAsState()
-    val activeProfile by profileRepository.activeProfile.collectAsState()
     val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
     val readyProfileId = (activeProfileContext as? ActiveProfileContext.Ready)?.profile?.id
     val defaultsLoaded = readyProfileId != null && defaultsProfileId == readyProfileId
-    var showAddProfileDialog by remember { mutableStateOf(false) }
 
     // Reload profile-scoped defaults only when the atomic context is Ready.
     LaunchedEffect(readyProfileId) {
@@ -808,23 +801,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             )
         }
 
-        // Profile side panel
-        ProfileSidePanel(
-            profiles = profiles,
-            activeProfile = activeProfile,
-            profileRepository = profileRepository,
-            scope = scope,
-            onAddProfile = { showAddProfileDialog = true },
-        )
-        // Add Profile Dialog
-        if (showAddProfileDialog) {
-            AddProfileDialog(
-                profiles = profiles,
-                profileRepository = profileRepository,
-                scope = scope,
-                onDismiss = { showAddProfileDialog = false },
-            )
-        }
     }
 }
 

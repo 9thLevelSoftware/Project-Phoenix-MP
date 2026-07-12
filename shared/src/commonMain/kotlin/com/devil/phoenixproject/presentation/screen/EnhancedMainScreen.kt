@@ -6,8 +6,10 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,7 +54,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,10 +62,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
@@ -70,16 +77,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutState
-import com.devil.phoenixproject.presentation.components.AddProfileDialog
 import com.devil.phoenixproject.presentation.components.ConnectionLostDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
-import com.devil.phoenixproject.presentation.components.ProfileSidePanel
+import com.devil.phoenixproject.presentation.components.ProfileAddDialog
+import com.devil.phoenixproject.presentation.components.ProfileRecoveryDialog
+import com.devil.phoenixproject.presentation.components.ProfileSwitcherSheet
+import com.devil.phoenixproject.presentation.navigation.BottomNavItem
 import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.theme.phoenixBottomNavigationContainerColor
@@ -91,17 +101,27 @@ import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.viewmodel.ProfileOverlayError
+import com.devil.phoenixproject.presentation.viewmodel.ProfileSwitcherViewModel
+import com.devil.phoenixproject.presentation.viewmodel.RootProfileOperationKind
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.setKeepScreenOn
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.cd_analytics
 import vitruvianprojectphoenix.shared.generated.resources.cd_back
+import vitruvianprojectphoenix.shared.generated.resources.cd_open_profile_switcher
+import vitruvianprojectphoenix.shared.generated.resources.cd_profile
 import vitruvianprojectphoenix.shared.generated.resources.cd_settings
 import vitruvianprojectphoenix.shared.generated.resources.cd_workouts
 import vitruvianprojectphoenix.shared.generated.resources.insights_title
+import vitruvianprojectphoenix.shared.generated.resources.nav_profile
+import vitruvianprojectphoenix.shared.generated.resources.profile_create_failed
+import vitruvianprojectphoenix.shared.generated.resources.profile_recovery_retry_failed
+import vitruvianprojectphoenix.shared.generated.resources.profile_switch_failed
 
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.
@@ -120,6 +140,7 @@ fun EnhancedMainScreen(
     dynamicColorAvailable: Boolean,
     dynamicColorEnabled: Boolean,
     onDynamicColorEnabledChange: (Boolean) -> Unit,
+    profileSwitcherViewModel: ProfileSwitcherViewModel = koinViewModel(),
     navController: NavHostController = rememberNavController(),
 ) {
     val workoutState by viewModel.workoutState.collectAsState()
@@ -142,12 +163,23 @@ fun EnhancedMainScreen(
     val currentExerciseIndex by viewModel.currentExerciseIndex.collectAsState()
     val selectedExerciseName = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)?.exercise?.name ?: ""
 
-    // Profile management
-    val scope = rememberCoroutineScope()
+    // Root-owned profile switching and recovery
     val profileRepository: UserProfileRepository = koinInject()
     val profiles by profileRepository.allProfiles.collectAsState()
-    val activeProfile by profileRepository.activeProfile.collectAsState()
-    var showAddProfileDialog by remember { mutableStateOf(false) }
+    val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
+    val switcherState by profileSwitcherViewModel.uiState.collectAsState()
+    val readyProfileId =
+        (activeProfileContext as? ActiveProfileContext.Ready)?.profile?.id
+    val repositorySwitching = activeProfileContext is ActiveProfileContext.Switching
+    val repositorySwitchTarget =
+        (activeProfileContext as? ActiveProfileContext.Switching)?.targetProfileId
+    val localSwitchTarget = switcherState.operation
+        ?.takeIf { it.kind == RootProfileOperationKind.SWITCH }
+        ?.targetProfileId
+    val localOperationInFlight = switcherState.operation != null
+    val switchingInFlight = repositorySwitching || localOperationInFlight
+    val switchingTargetProfileId = repositorySwitchTarget ?: localSwitchTarget
+    val hapticFeedback = LocalHapticFeedback.current
 
     // Ensure default profile exists
     LaunchedEffect(Unit) {
@@ -208,6 +240,13 @@ fun EnhancedMainScreen(
         }
     }
 
+    val profileTitle = stringResource(Res.string.nav_profile)
+    val profileContentDescription = stringResource(Res.string.cd_profile)
+    val openProfileSwitcherDescription = stringResource(Res.string.cd_open_profile_switcher)
+    val switchFailedMessage = stringResource(Res.string.profile_switch_failed)
+    val createFailedMessage = stringResource(Res.string.profile_create_failed)
+    val recoveryRetryFailedMessage = stringResource(Res.string.profile_recovery_retry_failed)
+
     // Helper function to determine if current route is a "Workouts" route
     val isWorkoutsRoute = remember(currentRoute) {
         currentRoute == NavigationRoutes.Home.route ||
@@ -232,6 +271,7 @@ fun EnhancedMainScreen(
             currentRoute == NavigationRoutes.TrainingCycles.route ||
             currentRoute == NavigationRoutes.Analytics.route ||
             currentRoute == NavigationRoutes.SmartInsights.route ||
+            currentRoute == NavigationRoutes.Profile.route ||
             currentRoute == NavigationRoutes.Settings.route
     }
 
@@ -255,6 +295,7 @@ fun EnhancedMainScreen(
             } else {
                 getScreenTitle(
                     route = currentRoute,
+                    profileTitle = profileTitle,
                     routineName = currentRoutineName,
                     exerciseName = selectedExerciseName,
                     cycleName = editingCycleName,
@@ -390,6 +431,8 @@ fun EnhancedMainScreen(
                             analyticsContentDescription = stringResource(Res.string.cd_analytics),
                             workoutsContentDescription = stringResource(Res.string.cd_workouts),
                             insightsContentDescription = stringResource(Res.string.insights_title),
+                            profileContentDescription = profileContentDescription,
+                            openProfileSwitcherDescription = openProfileSwitcherDescription,
                             settingsContentDescription = stringResource(Res.string.cd_settings),
                             onAnalyticsClick = {
                                 if (currentRoute != NavigationRoutes.Analytics.route) {
@@ -416,6 +459,19 @@ fun EnhancedMainScreen(
                                         restoreState = true
                                     }
                                 }
+                            },
+                            onProfileClick = {
+                                if (currentRoute != NavigationRoutes.Profile.route) {
+                                    navController.navigate(NavigationRoutes.Profile.route) {
+                                        popUpTo(NavigationRoutes.Home.route) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            },
+                            onProfileLongClick = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                profileSwitcherViewModel.openSwitcher()
                             },
                             onSettingsClick = {
                                 if (currentRoute != NavigationRoutes.Settings.route) {
@@ -444,19 +500,10 @@ fun EnhancedMainScreen(
                         dynamicColorAvailable = dynamicColorAvailable,
                         dynamicColorEnabled = dynamicColorEnabled,
                         onDynamicColorEnabledChange = onDynamicColorEnabledChange,
+                        onOpenProfileSwitcher = profileSwitcherViewModel::openSwitcher,
+                        onProfileRecoveryRequired = profileSwitcherViewModel::requireRecovery,
                         modifier = Modifier.padding(padding),
                     )
-
-                    // Profile side panel (only on Home screen)
-                    if (currentRoute == NavigationRoutes.Home.route) {
-                        ProfileSidePanel(
-                            profiles = profiles,
-                            activeProfile = activeProfile,
-                            profileRepository = profileRepository,
-                            scope = scope,
-                            onAddProfile = { showAddProfileDialog = true },
-                        )
-                    }
                 }
             }
 
@@ -472,13 +519,42 @@ fun EnhancedMainScreen(
                 )
             }
 
-            // Add Profile Dialog
-            if (showAddProfileDialog) {
-                AddProfileDialog(
+            if (switcherState.showSwitcher) {
+                ProfileSwitcherSheet(
                     profiles = profiles,
-                    profileRepository = profileRepository,
-                    scope = scope,
-                    onDismiss = { showAddProfileDialog = false },
+                    activeProfileId = readyProfileId,
+                    switchingInFlight = switchingInFlight,
+                    switchingTargetProfileId = switchingTargetProfileId,
+                    errorMessage = switchFailedMessage.takeIf {
+                        switcherState.error == ProfileOverlayError.SWITCH_FAILED
+                    },
+                    onSelectProfile = { profile ->
+                        profileSwitcherViewModel.switchProfile(profile.id)
+                    },
+                    onAddProfile = profileSwitcherViewModel::openAddDialog,
+                    onDismiss = profileSwitcherViewModel::dismissSwitcher,
+                )
+            }
+
+            if (switcherState.showAddDialog) {
+                ProfileAddDialog(
+                    existingProfileCount = profiles.size,
+                    isSubmitting = switchingInFlight,
+                    errorMessage = createFailedMessage.takeIf {
+                        switcherState.error == ProfileOverlayError.CREATE_FAILED
+                    },
+                    onConfirm = profileSwitcherViewModel::createAndActivateProfile,
+                    onDismiss = profileSwitcherViewModel::dismissAddDialog,
+                )
+            }
+
+            if (switcherState.recoveryRequired) {
+                ProfileRecoveryDialog(
+                    isRetrying = switcherState.operation?.kind == RootProfileOperationKind.RECOVERY,
+                    errorMessage = recoveryRetryFailedMessage.takeIf {
+                        switcherState.error == ProfileOverlayError.RECOVERY_RETRY_FAILED
+                    },
+                    onRetry = profileSwitcherViewModel::retryRecovery,
                 )
             }
         } // CompositionLocalProvider
@@ -493,10 +569,14 @@ private fun PhoenixBottomNavigationBar(
     analyticsContentDescription: String,
     workoutsContentDescription: String,
     insightsContentDescription: String,
+    profileContentDescription: String,
+    openProfileSwitcherDescription: String,
     settingsContentDescription: String,
     onAnalyticsClick: () -> Unit,
     onWorkoutsClick: () -> Unit,
     onInsightsClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    onProfileLongClick: () -> Unit,
     onSettingsClick: () -> Unit,
 ) {
     val containerColor = phoenixBottomNavigationContainerColor(MaterialTheme.colorScheme)
@@ -512,49 +592,83 @@ private fun PhoenixBottomNavigationBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(barHeight)
-                .padding(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 8.dp)
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PhoenixBottomNavigationItem(
-                icon = Icons.Default.BarChart,
-                contentDescription = analyticsContentDescription,
-                selected = currentRoute == NavigationRoutes.Analytics.route,
-                onClick = onAnalyticsClick,
-                modifier = Modifier.weight(1f),
-            )
-            PhoenixBottomNavigationItem(
-                icon = Icons.Default.Home,
-                contentDescription = workoutsContentDescription,
-                selected = isWorkoutsRoute,
-                onClick = onWorkoutsClick,
-                modifier = Modifier.weight(1f),
-            )
-            PhoenixBottomNavigationItem(
-                icon = Icons.Default.AutoAwesome,
-                contentDescription = insightsContentDescription,
-                selected = currentRoute == NavigationRoutes.SmartInsights.route,
-                onClick = onInsightsClick,
-                modifier = Modifier.weight(1f),
-            )
-            PhoenixBottomNavigationItem(
-                icon = Icons.Default.Settings,
-                contentDescription = settingsContentDescription,
-                selected = currentRoute == NavigationRoutes.Settings.route,
-                onClick = onSettingsClick,
-                modifier = Modifier.weight(1f),
-            )
+            BottomNavItem.entries.forEach { item ->
+                val icon = when (item) {
+                    BottomNavItem.ANALYTICS -> Icons.Default.BarChart
+                    BottomNavItem.WORKOUT -> Icons.Default.Home
+                    BottomNavItem.INSIGHTS -> Icons.Default.AutoAwesome
+                    BottomNavItem.PROFILE -> Icons.Default.Person
+                    BottomNavItem.SETTINGS -> Icons.Default.Settings
+                }
+                val contentDescription = when (item) {
+                    BottomNavItem.ANALYTICS -> analyticsContentDescription
+                    BottomNavItem.WORKOUT -> workoutsContentDescription
+                    BottomNavItem.INSIGHTS -> insightsContentDescription
+                    BottomNavItem.PROFILE -> profileContentDescription
+                    BottomNavItem.SETTINGS -> settingsContentDescription
+                }
+                val selected = when (item) {
+                    BottomNavItem.ANALYTICS -> currentRoute == NavigationRoutes.Analytics.route
+                    BottomNavItem.WORKOUT -> isWorkoutsRoute
+                    BottomNavItem.INSIGHTS -> currentRoute == NavigationRoutes.SmartInsights.route
+                    BottomNavItem.PROFILE -> currentRoute == NavigationRoutes.Profile.route
+                    BottomNavItem.SETTINGS -> currentRoute == NavigationRoutes.Settings.route
+                }
+                val testTag = when (item) {
+                    BottomNavItem.ANALYTICS -> com.devil.phoenixproject.presentation.util.TestTags.NAV_ANALYTICS
+                    BottomNavItem.WORKOUT -> com.devil.phoenixproject.presentation.util.TestTags.NAV_WORKOUTS
+                    BottomNavItem.INSIGHTS -> com.devil.phoenixproject.presentation.util.TestTags.NAV_INSIGHTS
+                    BottomNavItem.PROFILE -> com.devil.phoenixproject.presentation.util.TestTags.NAV_PROFILE
+                    BottomNavItem.SETTINGS -> com.devil.phoenixproject.presentation.util.TestTags.NAV_SETTINGS
+                }
+                val onClick = when (item) {
+                    BottomNavItem.ANALYTICS -> onAnalyticsClick
+                    BottomNavItem.WORKOUT -> onWorkoutsClick
+                    BottomNavItem.INSIGHTS -> onInsightsClick
+                    BottomNavItem.PROFILE -> onProfileClick
+                    BottomNavItem.SETTINGS -> onSettingsClick
+                }
+                val itemLongClick = when (item) {
+                    BottomNavItem.PROFILE -> onProfileLongClick
+                    BottomNavItem.ANALYTICS,
+                    BottomNavItem.WORKOUT,
+                    BottomNavItem.INSIGHTS,
+                    BottomNavItem.SETTINGS,
+                    -> null
+                }
+                PhoenixBottomNavigationItem(
+                    icon = icon,
+                    contentDescription = contentDescription,
+                    selected = selected,
+                    testTag = testTag,
+                    onClick = onClick,
+                    modifier = Modifier.weight(1f),
+                    onLongClick = itemLongClick,
+                    longClickLabel = openProfileSwitcherDescription.takeIf {
+                        item == BottomNavItem.PROFILE
+                    },
+                )
+            }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PhoenixBottomNavigationItem(
     icon: ImageVector,
     contentDescription: String,
     selected: Boolean,
+    testTag: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    longClickLabel: String? = null,
 ) {
     val selectedContainerColor = if (selected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
@@ -568,34 +682,40 @@ private fun PhoenixBottomNavigationItem(
     }
 
     Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .height(48.dp)
-                .widthIn(min = 64.dp, max = 112.dp)
-                .clip(MaterialTheme.shapes.large)
-                .background(selectedContainerColor)
-                .clickable(role = Role.Tab, onClick = onClick)
-                .clearAndSetSemantics {
-                    this.contentDescription = contentDescription
-                    role = Role.Tab
-                    this.selected = selected
-                    this.onClick(label = contentDescription) {
-                        onClick()
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(MaterialTheme.shapes.large)
+            .background(selectedContainerColor)
+            .combinedClickable(
+                role = Role.Tab,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+            .clearAndSetSemantics {
+                this.contentDescription = contentDescription
+                role = Role.Tab
+                this.selected = selected
+                this.onClick(label = contentDescription) {
+                    onClick()
+                    true
+                }
+                if (onLongClick != null && longClickLabel != null) {
+                    this.onLongClick(label = longClickLabel) {
+                        onLongClick()
                         true
                     }
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(26.dp),
-                tint = iconColor,
-            )
-        }
+                }
+            }
+            .testTag(testTag),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(26.dp),
+            tint = iconColor,
+        )
     }
 }
 
@@ -868,7 +988,13 @@ private fun isSingleExerciseRoute(route: String): Boolean = route == NavigationR
 internal fun shouldKeepScreenOnForRoute(route: String, isInWorkoutSession: Boolean): Boolean =
     isInWorkoutSession || route == NavigationRoutes.JustLift.route
 
-private fun getScreenTitle(route: String, routineName: String = "", exerciseName: String = "", cycleName: String = ""): String = when {
+private fun getScreenTitle(
+    route: String,
+    profileTitle: String,
+    routineName: String = "",
+    exerciseName: String = "",
+    cycleName: String = "",
+): String = when {
     // Main tabs (static titles)
     route == NavigationRoutes.Home.route -> "Choose Your Workout"
 
@@ -879,6 +1005,8 @@ private fun getScreenTitle(route: String, routineName: String = "", exerciseName
     route == NavigationRoutes.Analytics.route -> "Analytics"
 
     route == NavigationRoutes.SmartInsights.route -> "Smart Insights"
+
+    route == NavigationRoutes.Profile.route -> profileTitle
 
     route == NavigationRoutes.Settings.route -> "Settings"
 
@@ -925,6 +1053,7 @@ private fun getCompactScreenTitle(route: String, title: String): String = when {
     route == NavigationRoutes.DailyRoutines.route -> "Routines"
     route == NavigationRoutes.TrainingCycles.route -> "Cycles"
     route == NavigationRoutes.SmartInsights.route -> "Insights"
+    route == NavigationRoutes.Profile.route -> title
     route == NavigationRoutes.EquipmentRack.route -> "Rack"
     isSingleExerciseRoute(route) -> "Exercise"
     route.startsWith("cycle_editor") -> "Cycle"

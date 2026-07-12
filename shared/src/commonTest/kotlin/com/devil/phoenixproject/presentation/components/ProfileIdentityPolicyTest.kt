@@ -46,8 +46,8 @@ class ProfileIdentityPolicyTest {
 
     @Test
     fun `switcher may dismiss only while no switch is in flight`() {
-        assertTrue(canDismissProfileSwitcher(null))
-        assertFalse(canDismissProfileSwitcher("athlete-a"))
+        assertTrue(canDismissProfileSwitcher(switchingInFlight = false))
+        assertFalse(canDismissProfileSwitcher(switchingInFlight = true))
     }
 
     @Test
@@ -65,6 +65,7 @@ class ProfileIdentityPolicyTest {
         assertContains(dialogs, "fun ProfileAddDialog(")
         assertContains(dialogs, "fun ProfileEditDialog(")
         assertContains(dialogs, "fun ProfileDeleteDialog(")
+        assertContains(dialogs, "fun ProfileRecoveryDialog(")
         assertContains(dialogs, "require(canDeleteProfile(profile))")
         assertContains(dialogs, "AlertDialog(")
         assertContains(dialogs, "name.trim()")
@@ -76,6 +77,9 @@ class ProfileIdentityPolicyTest {
         assertContains(dialogs, ".selectableGroup()")
         assertContains(dialogs, "enabled = !isSubmitting")
         assertContains(dialogs, "if (!isSubmitting)")
+        assertContains(dialogs, "errorMessage: String?")
+        assertContains(dialogs, "LiveRegionMode.Polite")
+        assertContains(dialogs, "onDismissRequest = {}")
 
         val deleteCopyOffset = dialogs.indexOf("Res.string.profile_delete_reassign_message")
         assertTrue(deleteCopyOffset >= 0)
@@ -101,11 +105,20 @@ class ProfileIdentityPolicyTest {
         assertFalse(switcher.contains("onDeleteProfile"))
         assertFalse(switcher.contains("combinedClickable"))
         assertContains(switcher, "rememberUpdatedState")
+        assertContains(switcher, "switchingInFlight: Boolean")
+        assertContains(switcher, "errorMessage: String?")
         assertContains(switcher, "confirmValueChange")
         assertContains(switcher, "targetValue != SheetValue.Hidden")
-        assertContains(switcher, "sheetGesturesEnabled = canDismiss")
+        assertContains(switcher, "sheetGesturesEnabled = !switchingInFlight")
         assertContains(switcher, "if (canDismissProfileSwitcher(")
+        assertContains(switcher, "LiveRegionMode.Polite")
         assertContains(switcher, ".selectableGroup()")
+        val main = assertNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
+            ),
+        )
+        assertContains(main, "isSubmitting = switchingInFlight")
     }
 
     @Test
@@ -132,6 +145,8 @@ class ProfileIdentityPolicyTest {
         assertContains(identity, "clearAndSetSemantics")
         assertContains(row, "heightIn(min = 56.dp)")
         assertContains(row, "Modifier.selectable(")
+        assertFalse(row.contains("combinedClickable"))
+        assertFalse(row.contains("onLongClick"))
         assertContains(row, "Role.RadioButton")
         assertContains(row, "selected = isActive")
         assertContains(row, "enabled && !switching")

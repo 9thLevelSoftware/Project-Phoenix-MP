@@ -1,7 +1,5 @@
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
@@ -25,41 +23,30 @@ import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
- * Individual profile row for the shared switcher and legacy side panel.
+ * Individual profile row for the shared switcher.
  * Shows avatar, name, and active indicator.
- * Supports tap to select and long-press for context menu.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ProfileListItem(
     profile: UserProfile,
     isActive: Boolean,
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null,
     enabled: Boolean = true,
     switching: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val interactionModifier = if (onLongClick == null) {
-        Modifier.selectable(
-            selected = isActive,
-            enabled = enabled && !switching && !isActive,
-            role = Role.RadioButton,
-            onClick = onClick,
-        )
-    } else {
-        Modifier.combinedClickable(
-            enabled = enabled && !switching,
-            onClick = onClick,
-            onLongClick = onLongClick,
-        )
-    }
-
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .then(interactionModifier)
+            .then(
+                Modifier.selectable(
+                    selected = isActive,
+                    enabled = enabled && !switching && !isActive,
+                    role = Role.RadioButton,
+                    onClick = onClick,
+                ),
+            )
             .semantics {
                 selected = isActive
                 role = Role.RadioButton

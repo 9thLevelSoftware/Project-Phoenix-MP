@@ -22,7 +22,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.presentation.util.TestTags
@@ -31,35 +34,36 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.add_profile
 import vitruvianprojectphoenix.shared.generated.resources.profiles_title
 
-internal fun canDismissProfileSwitcher(switchingTargetProfileId: String?): Boolean =
-    switchingTargetProfileId == null
+internal fun canDismissProfileSwitcher(switchingInFlight: Boolean): Boolean =
+    !switchingInFlight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileSwitcherSheet(
     profiles: List<UserProfile>,
     activeProfileId: String?,
+    switchingInFlight: Boolean,
     switchingTargetProfileId: String?,
+    errorMessage: String?,
     onSelectProfile: (UserProfile) -> Unit,
     onAddProfile: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val currentSwitchingTargetProfileId by rememberUpdatedState(switchingTargetProfileId)
-    val canDismiss = canDismissProfileSwitcher(switchingTargetProfileId)
+    val currentSwitchingInFlight by rememberUpdatedState(switchingInFlight)
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
         confirmValueChange = { targetValue ->
             targetValue != SheetValue.Hidden ||
-                canDismissProfileSwitcher(currentSwitchingTargetProfileId)
+                canDismissProfileSwitcher(currentSwitchingInFlight)
         },
     )
 
     ModalBottomSheet(
         onDismissRequest = {
-            if (canDismissProfileSwitcher(currentSwitchingTargetProfileId)) onDismiss()
+            if (canDismissProfileSwitcher(currentSwitchingInFlight)) onDismiss()
         },
         sheetState = sheetState,
-        sheetGesturesEnabled = canDismiss,
+        sheetGesturesEnabled = !switchingInFlight,
         modifier = Modifier.testTag(TestTags.PROFILE_SWITCHER_SHEET),
     ) {
         Text(
@@ -67,6 +71,15 @@ fun ProfileSwitcherSheet(
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
+        errorMessage?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .padding(horizontal = 24.dp, vertical = 4.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -80,7 +93,7 @@ fun ProfileSwitcherSheet(
                 ProfileListItem(
                     profile = profile,
                     isActive = profile.id == activeProfileId,
-                    enabled = switchingTargetProfileId == null,
+                    enabled = !switchingInFlight,
                     switching = profile.id == switchingTargetProfileId,
                     onClick = { onSelectProfile(profile) },
                 )
@@ -97,7 +110,7 @@ fun ProfileSwitcherSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(
-                            enabled = switchingTargetProfileId == null,
+                            enabled = !switchingInFlight,
                             role = Role.Button,
                             onClick = onAddProfile,
                         )

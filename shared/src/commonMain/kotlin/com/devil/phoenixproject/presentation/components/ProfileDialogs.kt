@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -28,7 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.UserProfile
@@ -38,6 +41,7 @@ import vitruvianprojectphoenix.shared.generated.resources.action_add
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
 import vitruvianprojectphoenix.shared.generated.resources.action_delete
 import vitruvianprojectphoenix.shared.generated.resources.action_save
+import vitruvianprojectphoenix.shared.generated.resources.action_retry
 import vitruvianprojectphoenix.shared.generated.resources.add_profile
 import vitruvianprojectphoenix.shared.generated.resources.cd_select_profile_color
 import vitruvianprojectphoenix.shared.generated.resources.choose_color
@@ -53,11 +57,14 @@ import vitruvianprojectphoenix.shared.generated.resources.delete_profile
 import vitruvianprojectphoenix.shared.generated.resources.edit_profile
 import vitruvianprojectphoenix.shared.generated.resources.label_name
 import vitruvianprojectphoenix.shared.generated.resources.profile_delete_reassign_message
+import vitruvianprojectphoenix.shared.generated.resources.profile_recovery_message
+import vitruvianprojectphoenix.shared.generated.resources.profile_recovery_title
 
 @Composable
 fun ProfileAddDialog(
     existingProfileCount: Int,
     isSubmitting: Boolean,
+    errorMessage: String?,
     onConfirm: (name: String, colorIndex: Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -71,6 +78,7 @@ fun ProfileAddDialog(
         name = name,
         selectedColorIndex = selectedColorIndex,
         isSubmitting = isSubmitting,
+        errorMessage = errorMessage,
         confirmLabel = stringResource(Res.string.action_add),
         onNameChange = { name = it },
         onColorSelected = { selectedColorIndex = it },
@@ -98,6 +106,7 @@ fun ProfileEditDialog(
         name = name,
         selectedColorIndex = selectedColorIndex,
         isSubmitting = isSubmitting,
+        errorMessage = null,
         confirmLabel = stringResource(Res.string.action_save),
         onNameChange = { name = it },
         onColorSelected = { selectedColorIndex = it },
@@ -152,11 +161,43 @@ fun ProfileDeleteDialog(
 }
 
 @Composable
+fun ProfileRecoveryDialog(
+    isRetrying: Boolean,
+    errorMessage: String?,
+    onRetry: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(stringResource(Res.string.profile_recovery_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(Res.string.profile_recovery_message))
+                errorMessage?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics {
+                            liveRegion = LiveRegionMode.Polite
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onRetry, enabled = !isRetrying) {
+                Text(stringResource(Res.string.action_retry))
+            }
+        },
+    )
+}
+
+@Composable
 private fun ProfileIdentityDialog(
     title: String,
     name: String,
     selectedColorIndex: Int,
     isSubmitting: Boolean,
+    errorMessage: String?,
     confirmLabel: String,
     onNameChange: (String) -> Unit,
     onColorSelected: (Int) -> Unit,
@@ -179,6 +220,15 @@ private fun ProfileIdentityDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics {
+                            liveRegion = LiveRegionMode.Polite
+                        },
+                    )
+                }
                 Text(
                     text = stringResource(Res.string.choose_color),
                     style = MaterialTheme.typography.labelMedium,

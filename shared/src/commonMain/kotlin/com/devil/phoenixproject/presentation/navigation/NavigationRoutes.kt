@@ -42,6 +42,7 @@ sealed class NavigationRoutes(val route: String) {
 
     // Smart Insights - training suggestions and readiness
     object SmartInsights : NavigationRoutes("smart_insights")
+    object Profile : NavigationRoutes("profile")
 
     // Cloud Sync routes
     object LinkAccount : NavigationRoutes("link_account")
@@ -113,11 +114,12 @@ fun NavController.safePopOrNavigate(dest: String) {
 }
 
 /**
- * Bottom navigation items.
- * Only 3 items are shown in the bottom navigation bar.
+ * Canonical root navigation order.
  */
-enum class BottomNavItem(val route: String, val label: String) {
-    WORKOUT("home", "Workout"),
-    ANALYTICS("analytics", "Analytics"),
-    SETTINGS("settings", "Settings"),
+enum class BottomNavItem(val route: String) {
+    ANALYTICS(NavigationRoutes.Analytics.route),
+    WORKOUT(NavigationRoutes.Home.route),
+    INSIGHTS(NavigationRoutes.SmartInsights.route),
+    PROFILE(NavigationRoutes.Profile.route),
+    SETTINGS(NavigationRoutes.Settings.route),
 }

@@ -27,6 +27,7 @@ import androidx.navigation.navArgument
 import androidx.savedstate.read
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
@@ -42,6 +43,7 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.insights_title
+import vitruvianprojectphoenix.shared.generated.resources.nav_profile
 
 internal sealed interface AssessmentProfileDestinationState {
     data class Bound(val profileId: String) : AssessmentProfileDestinationState
@@ -126,6 +128,8 @@ fun NavGraph(
     dynamicColorAvailable: Boolean,
     dynamicColorEnabled: Boolean,
     onDynamicColorEnabledChange: (Boolean) -> Unit,
+    onOpenProfileSwitcher: () -> Unit,
+    onProfileRecoveryRequired: (ProfileContextRecoveryException) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     SharedTransitionLayout {
@@ -345,6 +349,31 @@ fun NavGraph(
                     viewModel.updateTopBarTitle(insightsTitle)
                 }
                 SmartInsightsTab()
+            }
+
+            composable(
+                route = NavigationRoutes.Profile.route,
+                enterTransition = { NavTransitions.tabFadeEnter() },
+                exitTransition = { NavTransitions.tabFadeExit() },
+                popEnterTransition = { NavTransitions.tabFadeEnter() },
+                popExitTransition = { NavTransitions.tabFadeExit() },
+            ) {
+                val profileTitle = stringResource(Res.string.nav_profile)
+                val userPreferences by viewModel.userPreferences.collectAsState()
+                LaunchedEffect(profileTitle) {
+                    viewModel.updateTopBarTitle(profileTitle)
+                }
+                ProfileScreen(
+                    onOpenProfileSwitcher = onOpenProfileSwitcher,
+                    onNavigateToExerciseDetail = { exerciseId ->
+                        navController.navigate(
+                            NavigationRoutes.ExerciseDetail.createRoute(exerciseId),
+                        )
+                    },
+                    onProfileRecoveryRequired = onProfileRecoveryRequired,
+                    enableVideoPlayback = userPreferences.enableVideoPlayback,
+                    themeMode = themeMode,
+                )
             }
 
             // Exercise Detail screen - drill-down for individual exercise
