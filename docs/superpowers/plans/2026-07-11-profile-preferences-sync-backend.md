@@ -3375,6 +3375,7 @@ class ProfilePreferenceSyncDtosTest {
     fun `recursive normalized local-only names cannot enter mutation or canonical DTOs`() {
         listOf(
             "safeWord",
+            "safeWord\u0130",
             "SAFE_WORD",
             "safe-word-calibrated",
             "adults_only_confirmed",
@@ -3538,7 +3539,7 @@ sealed interface ProfilePreferenceCanonicalDecodeResult {
 
 - [ ] **Step 4: Add the wire DTOs and additive fields**
 
-Add a recursive value-only guard and the three `@Serializable` DTOs to `PortalSyncDtos.kt`. The guard normalizes punctuation/case exactly like the Edge validator and rejects local metadata or consent/safety fields at any payload depth. `Long` fields deliberately use the default kotlinx.serialization JSON-number representation; they are not quoted strings. Task 4 prevents values outside JavaScript's exact-integer range from reaching these DTOs.
+Add a recursive value-only guard and the three `@Serializable` DTOs to `PortalSyncDtos.kt`. The guard normalizes punctuation/case exactly like the Edge validator and rejects local metadata or consent/safety fields at any payload depth. Filter to ASCII alphanumerics before lowercasing, matching JavaScript's `/[^a-z0-9]/gi`; reversing those operations diverges for Unicode case expansion such as `\u0130`. `Long` fields deliberately use the default kotlinx.serialization JSON-number representation; they are not quoted strings. Task 4 prevents values outside JavaScript's exact-integer range from reaching these DTOs.
 
 ```kotlin
 private val LOCAL_ONLY_PROFILE_PREFERENCE_KEYS = setOf(
@@ -3552,7 +3553,9 @@ private val LOCAL_ONLY_PROFILE_PREFERENCE_KEYS = setOf(
 )
 
 private fun normalizedProfilePreferenceWireKey(key: String): String =
-    key.lowercase().filter { it in 'a'..'z' || it in '0'..'9' }
+    key
+        .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
+        .lowercase()
 
 private fun requireValueOnlyProfilePreferencePayload(value: kotlinx.serialization.json.JsonElement) {
     when (value) {
