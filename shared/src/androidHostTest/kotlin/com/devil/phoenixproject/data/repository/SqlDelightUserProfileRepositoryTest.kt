@@ -305,13 +305,14 @@ class SqlDelightUserProfileRepositoryTest {
     }
 
     @Test
-    fun failedCreateCompensationRetriesFromJournalWithoutLeavingRows() = runTest {
+    fun failedCreateIdentityDeleteRollsBackEarlierCompensationAndRetries() = runTest {
         val fixture = createFaultingFixture()
         fixture.preferenceStore.seedMissingProfiles()
         fixture.repository.reconcileActiveProfileContext()
         val profileIdsBefore = fixture.repository.allProfiles.value.map { it.id }.toSet()
+        val activeIdBefore = fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id
         fixture.preferenceStore.failNextGet = true
-        fixture.transitionFaults.failNextPreferenceDelete = true
+        fixture.transitionFaults.failNextProfileDelete = true
 
         assertFailsWith<ProfileContextRecoveryException> {
             fixture.repository.createAndActivateProfile("Failed create", 2)
@@ -320,6 +321,18 @@ class SqlDelightUserProfileRepositoryTest {
             .selectPendingProfileContextRecovery()
             .executeAsOne()
         val failedId = assertNotNull(pending.created_profile_id)
+        assertEquals(
+            failedId,
+            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+        )
+        assertNotNull(
+            fixture.database.vitruvianDatabaseQueries.getProfileById(failedId)
+                .executeAsOneOrNull(),
+        )
+        assertNotNull(
+            fixture.database.vitruvianDatabaseQueries.selectProfilePreferences(failedId)
+                .executeAsOneOrNull(),
+        )
 
         fixture.repository.reconcileActiveProfileContext()
 
@@ -333,6 +346,10 @@ class SqlDelightUserProfileRepositoryTest {
                 .executeAsOneOrNull(),
         )
         assertEquals(profileIdsBefore, fixture.repository.allProfiles.value.map { it.id }.toSet())
+        assertEquals(
+            activeIdBefore,
+            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+        )
     }
 
     @Test
@@ -363,6 +380,52 @@ class SqlDelightUserProfileRepositoryTest {
             "default",
             assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id,
         )
+    }
+
+    @Test
+    fun failedJournalClearRestoresSwitchingUntilRetryPublishesReadyAndDrainsJournal() = runTest {
+        val fixture = createFaultingFixture()
+        fixture.preferenceStore.seedMissingProfiles()
+        fixture.repository.reconcileActiveProfileContext()
+        val target = fixture.repository.createProfile("Target", 2)
+        fixture.database.transaction {
+            fixture.database.vitruvianDatabaseQueries.enqueueProfileContextRecovery(
+                "default",
+                null,
+                100,
+            )
+            fixture.database.vitruvianDatabaseQueries.setActiveProfile(target.id)
+        }
+        fixture.transitionFaults.failNextJournalClear = true
+
+        assertFailsWith<ProfileContextRecoveryException> {
+            fixture.repository.reconcileActiveProfileContext()
+        }
+
+        assertEquals(
+            "default",
+            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+        )
+        assertNotNull(
+            fixture.database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery()
+                .executeAsOneOrNull(),
+        )
+        val switching = assertIs<ActiveProfileContext.Switching>(
+            fixture.repository.activeProfileContext.value,
+        )
+        assertEquals("default", switching.targetProfileId)
+
+        fixture.repository.reconcileActiveProfileContext()
+
+        assertNull(
+            fixture.database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery()
+                .executeAsOneOrNull(),
+        )
+        val ready = assertIs<ActiveProfileContext.Ready>(
+            fixture.repository.activeProfileContext.value,
+        )
+        assertEquals("default", ready.profile.id)
+        assertEquals("default", ready.preferences.profileId)
     }
 
     @Test
@@ -715,7 +778,8 @@ class SqlDelightUserProfileRepositoryTest {
 
     private data class TransitionFaults(
         var failSetActiveAfterMatches: Int? = null,
-        var failNextPreferenceDelete: Boolean = false,
+        var failNextProfileDelete: Boolean = false,
+        var failNextJournalClear: Boolean = false,
     )
 
     private class FaultInjectingSqlDriver(
@@ -737,8 +801,12 @@ class SqlDelightUserProfileRepositoryTest {
                     faults.failSetActiveAfterMatches = remaining - 1
                 }
             }
-            if (identifier == DELETE_PROFILE_PREFERENCES_IDENTIFIER && faults.failNextPreferenceDelete) {
-                faults.failNextPreferenceDelete = false
+            if (identifier == DELETE_PROFILE_IDENTIFIER && faults.failNextProfileDelete) {
+                faults.failNextProfileDelete = false
+                throw InjectedTransitionFailure()
+            }
+            if (identifier == CLEAR_RECOVERY_JOURNAL_IDENTIFIER && faults.failNextJournalClear) {
+                faults.failNextJournalClear = false
                 throw InjectedTransitionFailure()
             }
             return delegate.execute(identifier, sql, parameters, binders)
@@ -746,7 +814,8 @@ class SqlDelightUserProfileRepositoryTest {
 
         private companion object {
             const val SET_ACTIVE_PROFILE_IDENTIFIER = 373_348_112
-            const val DELETE_PROFILE_PREFERENCES_IDENTIFIER = 1_067_301_929
+            const val DELETE_PROFILE_IDENTIFIER = 787_673_935
+            const val CLEAR_RECOVERY_JOURNAL_IDENTIFIER = 1_230_173_044
         }
     }
 

@@ -482,7 +482,14 @@ class SqlDelightUserProfileRepository(
         } else {
             _activeProfileContext.value = ActiveProfileContext.Switching(actualActiveId)
         }
-        if (pending != null) queries.clearPendingProfileContextRecovery()
+        if (pending != null) {
+            try {
+                queries.clearPendingProfileContextRecovery()
+            } catch (failure: Throwable) {
+                _activeProfileContext.value = ActiveProfileContext.Switching(actualActiveId)
+                throw failure
+            }
+        }
     }
 
     private suspend fun publishReadyContext(profileId: String) {
