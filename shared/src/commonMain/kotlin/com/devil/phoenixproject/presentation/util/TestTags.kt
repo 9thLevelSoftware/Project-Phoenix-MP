@@ -24,6 +24,9 @@ object TestTags {
     const val ACTION_START_SET = "action-start-set"
     const val ACTION_STOP_ROUTINE_OVERVIEW = "action-stop-routine-overview"
     const val ACTION_STOP_WORKOUT = "action-stop-workout"
+    const val ACTION_ADD_PROFILE = "action-add-profile"
+    const val ACTION_EDIT_PROFILE = "action-edit-profile"
+    const val ACTION_DELETE_PROFILE = "action-delete-profile"
 
     const val SCREEN_HOME = "screen-home"
     const val SCREEN_ANALYTICS = "screen-analytics"
@@ -51,4 +54,6 @@ object TestTags {
     const val DIALOG_EXIT_ROUTINE = "dialog-exit-routine"
     const val DIALOG_STOP_CURRENT_SET = "dialog-stop-current-set"
     const val DIALOG_EXIT_WORKOUT = "dialog-exit-workout"
+
+    const val PROFILE_SWITCHER_SHEET = "profile-switcher-sheet"
 }

@@ -3,7 +3,6 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -13,7 +12,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,21 +23,6 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
-
-// Profile color palette
-val ProfileColors = listOf(
-    Color(0xFF3B82F6), // Blue
-    Color(0xFF10B981), // Green
-    Color(0xFFF59E0B), // Amber
-    Color(0xFFEF4444), // Red
-    Color(0xFF8B5CF6), // Purple
-    Color(0xFFEC4899), // Pink
-    Color(0xFF06B6D4), // Cyan
-    Color(0xFFF97316), // Orange
-)
-
-// Constant for profile color count to avoid magic numbers
-const val PROFILE_COLOR_COUNT = 8
 
 @Composable
 fun ProfileSpeedDial(
@@ -165,24 +148,6 @@ fun ProfileSpeedDial(
                 )
             }
         }
-    }
-}
-
-@Composable
-fun ProfileAvatar(profile: UserProfile, isActive: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val color = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors[0] }
-
-    SmallFloatingActionButton(
-        onClick = onClick,
-        modifier = modifier.shadow(if (isActive) 8.dp else 4.dp, CircleShape),
-        containerColor = color,
-        contentColor = Color.White,
-    ) {
-        Text(
-            text = profile.name.take(1).uppercase(),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
     }
 }
 

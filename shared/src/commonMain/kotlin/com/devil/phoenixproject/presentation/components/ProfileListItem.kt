@@ -1,9 +1,9 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
@@ -11,6 +11,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.UserProfile
@@ -19,22 +24,43 @@ import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
- * Individual profile row for the side panel.
+ * Individual profile row for the shared switcher and legacy side panel.
  * Shows avatar, name, and active indicator.
  * Supports tap to select and long-press for context menu.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ProfileListItem(profile: UserProfile, isActive: Boolean, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier) {
-    val profileColor = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors[0] }
+fun ProfileListItem(
+    profile: UserProfile,
+    isActive: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    enabled: Boolean = true,
+    switching: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val interactionModifier = if (onLongClick == null) {
+        Modifier.clickable(
+            enabled = enabled && !isActive,
+            onClick = onClick,
+        )
+    } else {
+        Modifier.combinedClickable(
+            enabled = enabled,
+            onClick = onClick,
+            onLongClick = onLongClick,
+        )
+    }
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick,
-            ),
+            .heightIn(min = 56.dp)
+            .then(interactionModifier)
+            .semantics {
+                selected = isActive
+                role = Role.RadioButton
+            },
         color = if (isActive) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
         } else {
@@ -48,21 +74,10 @@ fun ProfileListItem(profile: UserProfile, isActive: Boolean, onClick: () -> Unit
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Avatar
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = CircleShape,
-                color = profileColor,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = profile.name.take(1).uppercase(),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    )
-                }
-            }
+            ProfileAvatar(
+                profile = profile,
+                isActive = isActive,
+            )
 
             // Name
             Text(
@@ -74,7 +89,15 @@ fun ProfileListItem(profile: UserProfile, isActive: Boolean, onClick: () -> Unit
             )
 
             // Active indicator
-            if (isActive) {
+            if (switching) {
+                val switchingDescription = stringResource(Res.string.profile_switching)
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .semantics { contentDescription = switchingDescription },
+                    strokeWidth = 2.dp,
+                )
+            } else if (isActive) {
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = stringResource(Res.string.cd_active),
