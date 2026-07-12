@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,15 +48,21 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
+import com.devil.phoenixproject.presentation.components.AdultsOnlyConfirmDialog
+import com.devil.phoenixproject.presentation.components.DiscoModeUnlockDialog
+import com.devil.phoenixproject.presentation.components.DominatrixUnlockDialog
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.ProfileAvatar
 import com.devil.phoenixproject.presentation.components.ProfileDeleteDialog
 import com.devil.phoenixproject.presentation.components.ProfileEditDialog
 import com.devil.phoenixproject.presentation.components.ProfileExerciseInsights
+import com.devil.phoenixproject.presentation.components.ProfilePreferenceSections
 import com.devil.phoenixproject.presentation.components.canDeleteProfile
 import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.viewmodel.ProfileIdentityMutationKind
+import com.devil.phoenixproject.presentation.viewmodel.ProfilePreferenceMutationKind
+import com.devil.phoenixproject.presentation.viewmodel.ProfilePreferenceSection
 import com.devil.phoenixproject.presentation.viewmodel.ProfileUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.ProfileViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -67,6 +75,15 @@ internal data class ProfileIdentityOverlayOwnership(
     val editTargetProfileId: String? = null,
     val deleteTargetProfileId: String? = null,
     val pendingIdentityProfileId: String? = null,
+)
+
+private val ProfilePreferenceTokenMapSaver = Saver<Map<Long, String>, List<String>>(
+    save = { tokens ->
+        tokens.entries.flatMap { (token, profileId) -> listOf(token.toString(), profileId) }
+    },
+    restore = { saved ->
+        saved.chunked(2).associate { (token, profileId) -> token.toLong() to profileId }
+    },
 )
 
 internal fun retainProfileIdentityOverlayOwnership(
@@ -111,7 +128,14 @@ internal fun applyProfileIdentityFailure(
 fun ProfileScreen(
     onOpenProfileSwitcher: () -> Unit,
     onNavigateToExerciseDetail: (String) -> Unit,
+    onNavigateToEquipmentRack: () -> Unit,
+    onNavigateToBadges: () -> Unit,
     onProfileRecoveryRequired: (ProfileContextRecoveryException) -> Unit,
+    isConnected: Boolean,
+    discoModeActive: Boolean,
+    onDiscoModeToggle: (Boolean) -> Unit,
+    onPlayDiscoUnlockSound: () -> Unit,
+    onPlayDominatrixUnlockSound: () -> Unit,
     enableVideoPlayback: Boolean,
     themeMode: ThemeMode,
     modifier: Modifier = Modifier,
@@ -125,9 +149,31 @@ fun ProfileScreen(
     var editTargetProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteTargetProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingIdentityProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+    var trackedPreferenceTokens by rememberSaveable(
+        stateSaver = ProfilePreferenceTokenMapSaver,
+    ) { mutableStateOf(emptyMap()) }
+    var lastReadyProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showAdultsOnlyDialog by rememberSaveable { mutableStateOf(false) }
+    var adultTargetProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+    var adultPreferenceToken by rememberSaveable { mutableStateOf<Long?>(null) }
+    var adultPreferenceError by rememberSaveable { mutableStateOf<String?>(null) }
+    var showDiscoUnlockDialog by rememberSaveable { mutableStateOf(false) }
+    var showDominatrixUnlockDialog by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val currentOnProfileRecoveryRequired by rememberUpdatedState(onProfileRecoveryRequired)
+    val onPlayDiscoUnlockSound by rememberUpdatedState(onPlayDiscoUnlockSound)
+    val onPlayDominatrixUnlockSound by rememberUpdatedState(
+        onPlayDominatrixUnlockSound,
+    )
     val updateFailedMessage = stringResource(Res.string.profile_update_failed)
+    val adultPartialFailureMessage =
+        stringResource(Res.string.profile_adult_enable_partial_failure)
+
+    fun trackPreferenceToken(token: Long?): Long? {
+        val profileId = readyProfileId ?: return null
+        if (token != null) trackedPreferenceTokens = trackedPreferenceTokens + (token to profileId)
+        return token
+    }
 
     LaunchedEffect(readyProfileId) {
         if (pickerProfileId != readyProfileId) pickerProfileId = null
@@ -142,9 +188,29 @@ fun ProfileScreen(
         editTargetProfileId = retained.editTargetProfileId
         deleteTargetProfileId = retained.deleteTargetProfileId
         pendingIdentityProfileId = retained.pendingIdentityProfileId
+        if (
+            readyProfileId != null &&
+            lastReadyProfileId != null &&
+            lastReadyProfileId != readyProfileId
+        ) {
+            trackedPreferenceTokens = emptyMap()
+            showAdultsOnlyDialog = false
+            adultTargetProfileId = null
+            adultPreferenceToken = null
+            adultPreferenceError = null
+            showDiscoUnlockDialog = false
+            showDominatrixUnlockDialog = false
+        }
+        if (readyProfileId != null) lastReadyProfileId = readyProfileId
     }
 
-    LaunchedEffect(viewModel, snackbarHostState, updateFailedMessage) {
+    LaunchedEffect(
+        viewModel,
+        readyProfileId,
+        snackbarHostState,
+        updateFailedMessage,
+        adultPartialFailureMessage,
+    ) {
         viewModel.events.collect { event ->
             when (event) {
                 is ProfileUiEvent.IdentityUpdated -> {
@@ -178,8 +244,64 @@ fun ProfileScreen(
                         currentOnProfileRecoveryRequired(event.cause)
                     }
                 }
-                ProfileUiEvent.PreferenceUpdateFailed -> {
-                    snackbarHostState.showSnackbar(updateFailedMessage)
+                is ProfileUiEvent.PreferenceMutationSucceeded -> {
+                    if (trackedPreferenceTokens.containsKey(event.token)) {
+                        val ownedProfileId = trackedPreferenceTokens[event.token]
+                        trackedPreferenceTokens = trackedPreferenceTokens - event.token
+                        if (adultPreferenceToken == event.token) adultPreferenceToken = null
+                        if (
+                            event.profileId == readyProfileId &&
+                            ownedProfileId == event.profileId
+                        ) {
+                            when (event.kind) {
+                                ProfilePreferenceMutationKind.UPDATE -> Unit
+                                ProfilePreferenceMutationKind.ADULT_ENABLE,
+                                ProfilePreferenceMutationKind.ADULT_DECLINE
+                                -> {
+                                    showAdultsOnlyDialog = false
+                                    adultTargetProfileId = null
+                                    adultPreferenceError = null
+                                }
+                                ProfilePreferenceMutationKind.DISCO_UNLOCK -> {
+                                    onPlayDiscoUnlockSound()
+                                    showDiscoUnlockDialog = true
+                                }
+                                ProfilePreferenceMutationKind.DOMINATRIX_UNLOCK -> {
+                                    onPlayDominatrixUnlockSound()
+                                    showDominatrixUnlockDialog = true
+                                }
+                            }
+                        }
+                    }
+                }
+                is ProfileUiEvent.PreferenceUpdateFailed -> {
+                    if (trackedPreferenceTokens.containsKey(event.token)) {
+                        val ownedProfileId = trackedPreferenceTokens[event.token]
+                        trackedPreferenceTokens = trackedPreferenceTokens - event.token
+                        if (adultPreferenceToken == event.token) adultPreferenceToken = null
+                        if (
+                            event.profileId == readyProfileId &&
+                            ownedProfileId == event.profileId
+                        ) {
+                            when (event.kind) {
+                                ProfilePreferenceMutationKind.ADULT_ENABLE,
+                                ProfilePreferenceMutationKind.ADULT_DECLINE
+                                -> {
+                                    adultPreferenceError = if (
+                                        ProfilePreferenceSection.LOCAL_SAFETY in event.committedSections
+                                    ) {
+                                        adultPartialFailureMessage
+                                    } else {
+                                        updateFailedMessage
+                                    }
+                                }
+                                ProfilePreferenceMutationKind.UPDATE,
+                                ProfilePreferenceMutationKind.DISCO_UNLOCK,
+                                ProfilePreferenceMutationKind.DOMINATRIX_UNLOCK
+                                -> snackbarHostState.showSnackbar(updateFailedMessage)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -235,6 +357,69 @@ fun ProfileScreen(
                         onViewFullHistory = onNavigateToExerciseDetail,
                     )
                 }
+                item(key = "achievements") {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag(TestTags.ACTION_BADGES),
+                        onClick = onNavigateToBadges,
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.EmojiEvents,
+                                contentDescription = stringResource(Res.string.cd_achievements),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                stringResource(Res.string.cd_achievements),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+                item(key = "preferences-heading") {
+                    Text(
+                        stringResource(Res.string.profile_preferences_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                item(key = "profile-preferences") {
+                    ProfilePreferenceSections(
+                        profileId = ready.profile.id,
+                        preferences = ready.preferences,
+                        localSafety = ready.localSafety,
+                        importedBodyWeightMeasuredAt = state.importedBodyWeightMeasuredAt,
+                        busySections = state.busyPreferenceSections,
+                        isConnected = isConnected,
+                        discoModeActive = discoModeActive,
+                        onCoreChange = { trackPreferenceToken(viewModel.updateCore(it)) },
+                        onWorkoutChange = { trackPreferenceToken(viewModel.updateWorkout(it)) },
+                        onLedChange = { trackPreferenceToken(viewModel.updateLed(it)) },
+                        onVbtChange = { trackPreferenceToken(viewModel.updateVbt(it)) },
+                        onLocalSafetyChange = {
+                            trackPreferenceToken(viewModel.updateLocalSafety(it))
+                        },
+                        onRequestAdultsOnlyConfirmation = {
+                            adultTargetProfileId = ready.profile.id
+                            adultPreferenceError = null
+                            showAdultsOnlyDialog = true
+                        },
+                        onUnlockDiscoMode = {
+                            trackPreferenceToken(viewModel.unlockDiscoMode())
+                        },
+                        onUnlockDominatrixMode = {
+                            trackPreferenceToken(viewModel.unlockDominatrixMode())
+                        },
+                        onManageEquipmentRack = onNavigateToEquipmentRack,
+                        onDiscoModeToggle = onDiscoModeToggle,
+                    )
+                }
             }
         }
     }
@@ -281,6 +466,36 @@ fun ProfileScreen(
         themeMode = themeMode,
         enableCustomExercises = false,
     )
+
+    if (showAdultsOnlyDialog && adultTargetProfileId == ready?.profile?.id) {
+        AdultsOnlyConfirmDialog(
+            isSubmitting = adultPreferenceToken?.let(trackedPreferenceTokens::containsKey) == true,
+            errorMessage = adultPreferenceError,
+            onConfirm = {
+                adultPreferenceError = null
+                adultPreferenceToken = trackPreferenceToken(
+                    viewModel.confirmAdultsOnlyAndEnableVulgar(),
+                )
+            },
+            onDecline = {
+                adultPreferenceError = null
+                adultPreferenceToken = trackPreferenceToken(viewModel.declineAdultsOnly())
+            },
+            onDismiss = {
+                showAdultsOnlyDialog = false
+                adultTargetProfileId = null
+                adultPreferenceError = null
+            },
+        )
+    }
+
+    if (showDiscoUnlockDialog) {
+        DiscoModeUnlockDialog(onDismiss = { showDiscoUnlockDialog = false })
+    }
+
+    if (showDominatrixUnlockDialog) {
+        DominatrixUnlockDialog(onDismiss = { showDominatrixUnlockDialog = false })
+    }
 }
 
 @Composable

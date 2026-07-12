@@ -771,4 +771,26 @@
     <string name="color_cyan">Cyan</string>
     <string name="color_orange">Orange</string>
     <string name="cd_select_profile_color">Sélectionner %1$s comme couleur du profil</string>
+    <string name="profile_automatic">Automatique</string>
+    <string name="profile_default_rest">Repos par défaut</string>
+    <string name="profile_master_beeps">Bips d\'entraînement</string>
+    <string name="profile_rep_count_timing">Moment du comptage des répétitions</string>
+    <string name="profile_body_weight_unset">Non défini</string>
+    <string name="profile_body_weight_invalid">Saisissez un poids corporel compris entre 20 et 300 kg</string>
+    <string name="profile_body_weight_imported">Correspond à une mesure de santé importée</string>
+    <string name="profile_led_scheme_blue">Bleu</string>
+    <string name="profile_led_scheme_green">Vert</string>
+    <string name="profile_led_scheme_teal">Turquoise</string>
+    <string name="profile_led_scheme_yellow">Jaune</string>
+    <string name="profile_led_scheme_pink">Rose</string>
+    <string name="profile_led_scheme_red">Rouge</string>
+    <string name="profile_led_scheme_purple">Violet</string>
+    <string name="profile_led_scheme_none">Aucun</string>
+    <string name="cd_select_led_scheme">Sélectionner le thème LED : %1$s</string>
+    <string name="profile_disco_mode">Mode disco</string>
+    <string name="profile_disco_requires_connection">Connectez votre machine pour utiliser le mode disco</string>
+    <string name="profile_disco_unlocked_title">Mode disco déverrouillé</string>
+    <string name="profile_disco_unlocked_body">Activez le mode disco dans les préférences LED pour faire danser votre machine.</string>
+    <string name="profile_disco_unlocked_action">C\'est parti !</string>
+    <string name="profile_adult_enable_partial_failure">La confirmation de l\'âge a été enregistrée, mais le mode vulgaire n\'a pas pu être activé. Réessayez.</string>
 </resources>

@@ -771,4 +771,26 @@
     <string name="color_cyan">Cyan</string>
     <string name="color_orange">Orange</string>
     <string name="cd_select_profile_color">Profilfarbe %1$s auswählen</string>
+    <string name="profile_automatic">Automatisch</string>
+    <string name="profile_default_rest">Standardpause</string>
+    <string name="profile_master_beeps">Trainingstöne</string>
+    <string name="profile_rep_count_timing">Zeitpunkt der Wiederholungszählung</string>
+    <string name="profile_body_weight_unset">Nicht festgelegt</string>
+    <string name="profile_body_weight_invalid">Gib ein Körpergewicht zwischen 20 und 300 kg ein</string>
+    <string name="profile_body_weight_imported">Entspricht einer importierten Gesundheitsmessung</string>
+    <string name="profile_led_scheme_blue">Blau</string>
+    <string name="profile_led_scheme_green">Grün</string>
+    <string name="profile_led_scheme_teal">Türkis</string>
+    <string name="profile_led_scheme_yellow">Gelb</string>
+    <string name="profile_led_scheme_pink">Rosa</string>
+    <string name="profile_led_scheme_red">Rot</string>
+    <string name="profile_led_scheme_purple">Lila</string>
+    <string name="profile_led_scheme_none">Keine</string>
+    <string name="cd_select_led_scheme">LED-Schema auswählen: %1$s</string>
+    <string name="profile_disco_mode">Disco-Modus</string>
+    <string name="profile_disco_requires_connection">Verbinde deinen Trainer, um den Disco-Modus zu verwenden</string>
+    <string name="profile_disco_unlocked_title">Disco-Modus freigeschaltet</string>
+    <string name="profile_disco_unlocked_body">Aktiviere den Disco-Modus in den LED-Einstellungen, damit dein Trainer Party macht.</string>
+    <string name="profile_disco_unlocked_action">Party starten</string>
+    <string name="profile_adult_enable_partial_failure">Die Altersbestätigung wurde gespeichert, aber der vulgäre Modus konnte nicht aktiviert werden. Versuche es erneut.</string>
 </resources>

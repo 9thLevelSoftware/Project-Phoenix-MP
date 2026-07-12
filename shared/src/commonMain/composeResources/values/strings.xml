@@ -905,4 +905,26 @@
     <string name="profile_velocity_loss_threshold">Velocity-loss threshold</string>
     <string name="profile_auto_end_velocity_loss">Auto-end on velocity loss</string>
     <string name="profile_vbt_history_note">Turning VBT off affects live workouts only; saved estimates and assessments remain available.</string>
+    <string name="profile_automatic">Automatic</string>
+    <string name="profile_default_rest">Default rest</string>
+    <string name="profile_master_beeps">Workout beeps</string>
+    <string name="profile_rep_count_timing">Rep count timing</string>
+    <string name="profile_body_weight_unset">Not set</string>
+    <string name="profile_body_weight_invalid">Enter a body weight from 20 to 300 kg</string>
+    <string name="profile_body_weight_imported">Matches an imported health measurement</string>
+    <string name="profile_led_scheme_blue">Blue</string>
+    <string name="profile_led_scheme_green">Green</string>
+    <string name="profile_led_scheme_teal">Teal</string>
+    <string name="profile_led_scheme_yellow">Yellow</string>
+    <string name="profile_led_scheme_pink">Pink</string>
+    <string name="profile_led_scheme_red">Red</string>
+    <string name="profile_led_scheme_purple">Purple</string>
+    <string name="profile_led_scheme_none">None</string>
+    <string name="cd_select_led_scheme">Select LED scheme: %1$s</string>
+    <string name="profile_disco_mode">Disco Mode</string>
+    <string name="profile_disco_requires_connection">Connect to your trainer to use Disco Mode</string>
+    <string name="profile_disco_unlocked_title">Disco Mode unlocked</string>
+    <string name="profile_disco_unlocked_body">Turn on Disco Mode in LED preferences to make your trainer party.</string>
+    <string name="profile_disco_unlocked_action">Let\'s party</string>
+    <string name="profile_adult_enable_partial_failure">Age confirmation was saved, but Vulgar Mode could not be enabled. Try again.</string>
 </resources>

@@ -771,4 +771,26 @@
     <string name="color_cyan">Cian</string>
     <string name="color_orange">Naranja</string>
     <string name="cd_select_profile_color">Seleccionar %1$s como color del perfil</string>
+    <string name="profile_automatic">Automático</string>
+    <string name="profile_default_rest">Descanso predeterminado</string>
+    <string name="profile_master_beeps">Pitidos del entrenamiento</string>
+    <string name="profile_rep_count_timing">Momento del recuento de repeticiones</string>
+    <string name="profile_body_weight_unset">Sin configurar</string>
+    <string name="profile_body_weight_invalid">Introduce un peso corporal de 20 a 300 kg</string>
+    <string name="profile_body_weight_imported">Coincide con una medición de salud importada</string>
+    <string name="profile_led_scheme_blue">Azul</string>
+    <string name="profile_led_scheme_green">Verde</string>
+    <string name="profile_led_scheme_teal">Verde azulado</string>
+    <string name="profile_led_scheme_yellow">Amarillo</string>
+    <string name="profile_led_scheme_pink">Rosa</string>
+    <string name="profile_led_scheme_red">Rojo</string>
+    <string name="profile_led_scheme_purple">Morado</string>
+    <string name="profile_led_scheme_none">Ninguno</string>
+    <string name="cd_select_led_scheme">Seleccionar esquema LED: %1$s</string>
+    <string name="profile_disco_mode">Modo disco</string>
+    <string name="profile_disco_requires_connection">Conecta tu entrenador para usar el modo disco</string>
+    <string name="profile_disco_unlocked_title">Modo disco desbloqueado</string>
+    <string name="profile_disco_unlocked_body">Activa el modo disco en las preferencias LED para que tu entrenador se una a la fiesta.</string>
+    <string name="profile_disco_unlocked_action">¡A bailar!</string>
+    <string name="profile_adult_enable_partial_failure">La confirmación de edad se guardó, pero no se pudo activar el modo vulgar. Inténtalo de nuevo.</string>
 </resources>

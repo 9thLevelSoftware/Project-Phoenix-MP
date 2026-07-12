@@ -48,13 +48,55 @@ class FakeUserProfileRepository : UserProfileRepository {
 
     data class CreateAndActivateRequest(val name: String, val colorIndex: Int)
 
+    sealed interface PreferenceUpdateRequest {
+        val profileId: String
+
+        data class Core(
+            override val profileId: String,
+            val value: CoreProfilePreferences,
+        ) : PreferenceUpdateRequest
+
+        data class Rack(
+            override val profileId: String,
+            val value: RackPreferences,
+        ) : PreferenceUpdateRequest
+
+        data class Workout(
+            override val profileId: String,
+            val value: WorkoutPreferences,
+        ) : PreferenceUpdateRequest
+
+        data class Led(
+            override val profileId: String,
+            val value: LedPreferences,
+        ) : PreferenceUpdateRequest
+
+        data class Vbt(
+            override val profileId: String,
+            val value: VbtPreferences,
+        ) : PreferenceUpdateRequest
+
+        data class LocalSafety(
+            override val profileId: String,
+            val value: ProfileLocalSafetyPreferences,
+        ) : PreferenceUpdateRequest
+    }
+
     val updateProfileRequests = mutableListOf<UpdateProfileRequest>()
     val deleteActiveProfileRequests = mutableListOf<String>()
+    val preferenceUpdateRequests = mutableListOf<PreferenceUpdateRequest>()
     var updateProfileFailure: Throwable? = null
     var deleteProfileFailure: Throwable? = null
     var deleteActiveProfileResultOverride: Boolean? = null
     var beforeUpdateProfileMutation: (suspend (UpdateProfileRequest) -> Unit)? = null
     var beforeDeleteActiveProfileMutation: (suspend (String) -> Unit)? = null
+    var beforePreferenceUpdate: (suspend (PreferenceUpdateRequest) -> Unit)? = null
+    var updateCoreFailure: Throwable? = null
+    var updateRackFailure: Throwable? = null
+    var updateWorkoutFailure: Throwable? = null
+    var updateLedFailure: Throwable? = null
+    var updateVbtFailure: Throwable? = null
+    var updateLocalSafetyFailure: Throwable? = null
 
     val setActiveProfileRequests = mutableListOf<String>()
     val createAndActivateRequests = mutableListOf<CreateAndActivateRequest>()
@@ -294,6 +336,10 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     override suspend fun updateCore(profileId: String, value: CoreProfilePreferences) {
+        val request = PreferenceUpdateRequest.Core(profileId, value)
+        preferenceUpdateRequests += request
+        beforePreferenceUpdate?.invoke(request)
+        updateCoreFailure?.let { throw it }
         require(ProfilePreferencesValidator.core(value).isEmpty())
         mutateActiveProfile(profileId) { current, now ->
             current.copy(
@@ -324,6 +370,10 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     override suspend fun updateRack(profileId: String, value: RackPreferences) {
+        val request = PreferenceUpdateRequest.Rack(profileId, value)
+        preferenceUpdateRequests += request
+        beforePreferenceUpdate?.invoke(request)
+        updateRackFailure?.let { throw it }
         require(ProfilePreferencesValidator.rack(value).isEmpty())
         mutateActiveProfile(profileId) { current, now ->
             current.copy(
@@ -338,6 +388,10 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     override suspend fun updateWorkout(profileId: String, value: WorkoutPreferences) {
+        val request = PreferenceUpdateRequest.Workout(profileId, value)
+        preferenceUpdateRequests += request
+        beforePreferenceUpdate?.invoke(request)
+        updateWorkoutFailure?.let { throw it }
         require(ProfilePreferencesValidator.workout(value).isEmpty())
         mutateActiveProfile(profileId) { current, now ->
             current.copy(
@@ -352,6 +406,10 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     override suspend fun updateLed(profileId: String, value: LedPreferences) {
+        val request = PreferenceUpdateRequest.Led(profileId, value)
+        preferenceUpdateRequests += request
+        beforePreferenceUpdate?.invoke(request)
+        updateLedFailure?.let { throw it }
         require(ProfilePreferencesValidator.led(value).isEmpty())
         mutateActiveProfile(profileId) { current, now ->
             current.copy(
@@ -366,6 +424,10 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     override suspend fun updateVbt(profileId: String, value: VbtPreferences) {
+        val request = PreferenceUpdateRequest.Vbt(profileId, value)
+        preferenceUpdateRequests += request
+        beforePreferenceUpdate?.invoke(request)
+        updateVbtFailure?.let { throw it }
         require(ProfilePreferencesValidator.vbt(value).isEmpty())
         mutateActiveProfile(profileId) { current, now ->
             current.copy(
@@ -383,6 +445,10 @@ class FakeUserProfileRepository : UserProfileRepository {
         profileId: String,
         value: ProfileLocalSafetyPreferences,
     ) {
+        val request = PreferenceUpdateRequest.LocalSafety(profileId, value)
+        preferenceUpdateRequests += request
+        beforePreferenceUpdate?.invoke(request)
+        updateLocalSafetyFailure?.let { throw it }
         mutex.withLock {
             requireActiveProfileId(profileId)
             localSafety[profileId] = value

@@ -750,4 +750,26 @@
     <string name="color_cyan">Cyaan</string>
     <string name="color_orange">Oranje</string>
     <string name="cd_select_profile_color">Selecteer %1$s als profielkleur</string>
+    <string name="profile_automatic">Automatisch</string>
+    <string name="profile_default_rest">Standaardrusttijd</string>
+    <string name="profile_master_beeps">Trainingspiepjes</string>
+    <string name="profile_rep_count_timing">Moment van herhalingstelling</string>
+    <string name="profile_body_weight_unset">Niet ingesteld</string>
+    <string name="profile_body_weight_invalid">Voer een lichaamsgewicht van 20 tot 300 kg in</string>
+    <string name="profile_body_weight_imported">Komt overeen met een geïmporteerde gezondheidsmeting</string>
+    <string name="profile_led_scheme_blue">Blauw</string>
+    <string name="profile_led_scheme_green">Groen</string>
+    <string name="profile_led_scheme_teal">Blauwgroen</string>
+    <string name="profile_led_scheme_yellow">Geel</string>
+    <string name="profile_led_scheme_pink">Roze</string>
+    <string name="profile_led_scheme_red">Rood</string>
+    <string name="profile_led_scheme_purple">Paars</string>
+    <string name="profile_led_scheme_none">Geen</string>
+    <string name="cd_select_led_scheme">Selecteer LED-schema: %1$s</string>
+    <string name="profile_disco_mode">Discomodus</string>
+    <string name="profile_disco_requires_connection">Verbind je trainer om de discomodus te gebruiken</string>
+    <string name="profile_disco_unlocked_title">Discomodus ontgrendeld</string>
+    <string name="profile_disco_unlocked_body">Schakel de discomodus in bij de LED-voorkeuren en laat je trainer feesten.</string>
+    <string name="profile_disco_unlocked_action">Tijd voor een feestje</string>
+    <string name="profile_adult_enable_partial_failure">De leeftijdsbevestiging is opgeslagen, maar de vulgaire modus kon niet worden ingeschakeld. Probeer het opnieuw.</string>
 </resources>

@@ -1,4 +1,4 @@
-package com.devil.phoenixproject.presentation.screen
+package com.devil.phoenixproject.presentation.components
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

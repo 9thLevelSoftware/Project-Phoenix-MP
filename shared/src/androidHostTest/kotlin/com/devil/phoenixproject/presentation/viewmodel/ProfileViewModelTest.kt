@@ -1,11 +1,20 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
+import androidx.lifecycle.viewModelScope
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
+import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
+import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
+import com.devil.phoenixproject.domain.model.RackPreferences
+import com.devil.phoenixproject.domain.model.VbtPreferences
+import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.usecase.CurrentOneRepMaxSource
 import com.devil.phoenixproject.domain.usecase.ResolveCurrentOneRepMaxUseCase
@@ -26,19 +35,30 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ProfileViewModelTest {
     @get:Rule
     val coroutineRule = TestCoroutineRule()
@@ -842,6 +862,930 @@ class ProfileViewModelTest {
         assertEquals("a", event.profileId)
         assertSame(recovery, event.cause)
         assertNull(viewModel.uiState.value.identityMutation)
+    }
+
+    @Test
+    fun `all six typed updates capture Ready ID and refresh authoritative sections before release`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val core = CoreProfilePreferences(bodyWeightKg = 80f)
+        val rack = RackPreferences()
+        val workout = WorkoutPreferences(stopAtTop = true)
+        val led = LedPreferences(colorScheme = 3)
+        val vbt = VbtPreferences(velocityLossThresholdPercent = 30)
+        val safety = ProfileLocalSafetyPreferences(safeWord = "phoenix")
+        val viewModel = createViewModel()
+        val snapshots = mutableListOf<PreferenceSuccessSnapshot>()
+        var acceptedCallReturned = true
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.collect { event ->
+                if (event is ProfileUiEvent.PreferenceMutationSucceeded) {
+                    assertTrue(
+                        acceptedCallReturned,
+                        "success arrived before ProfileScreen could track the returned token",
+                    )
+                    snapshots += PreferenceSuccessSnapshot(
+                        event = event,
+                        uiState = viewModel.uiState.value,
+                        repositoryReady = assertIs<ActiveProfileContext.Ready>(
+                            profiles.activeProfileContext.value,
+                        ),
+                    )
+                }
+            }
+        }
+        advanceUntilIdle()
+
+        suspend fun accept(call: () -> Long?): Long {
+            acceptedCallReturned = false
+            return withContext(Dispatchers.Main) {
+                val token = call()
+                acceptedCallReturned = true
+                assertNotNull(token)
+            }
+        }
+
+        accept { viewModel.updateCore(core) }
+        advanceUntilIdle()
+        accept { viewModel.updateRack(rack) }
+        advanceUntilIdle()
+        accept { viewModel.updateWorkout(workout) }
+        advanceUntilIdle()
+        accept { viewModel.updateLed(led) }
+        advanceUntilIdle()
+        accept { viewModel.updateVbt(vbt) }
+        advanceUntilIdle()
+        accept { viewModel.updateLocalSafety(safety) }
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(
+                FakeUserProfileRepository.PreferenceUpdateRequest.Core("a", core),
+                FakeUserProfileRepository.PreferenceUpdateRequest.Rack("a", rack),
+                FakeUserProfileRepository.PreferenceUpdateRequest.Workout("a", workout),
+                FakeUserProfileRepository.PreferenceUpdateRequest.Led("a", led),
+                FakeUserProfileRepository.PreferenceUpdateRequest.Vbt("a", vbt),
+                FakeUserProfileRepository.PreferenceUpdateRequest.LocalSafety("a", safety),
+            ),
+            profiles.preferenceUpdateRequests,
+        )
+        assertEquals(
+            listOf(
+                ProfilePreferenceSection.CORE,
+                ProfilePreferenceSection.RACK,
+                ProfilePreferenceSection.WORKOUT,
+                ProfilePreferenceSection.LED,
+                ProfilePreferenceSection.VBT,
+                ProfilePreferenceSection.LOCAL_SAFETY,
+            ),
+            snapshots.map { it.event.sections.single() },
+        )
+        snapshots.forEach { snapshot ->
+            val event = snapshot.event
+            val uiReady = assertIs<ActiveProfileContext.Ready>(snapshot.uiState.context)
+            val repositoryReady = snapshot.repositoryReady
+            val section = event.sections.single()
+            assertEquals("a", event.profileId)
+            assertEquals(ProfilePreferenceMutationKind.UPDATE, event.kind)
+            assertEquals("a", uiReady.profile.id)
+            assertEquals("a", repositoryReady.profile.id)
+            assertFalse(section in snapshot.uiState.busyPreferenceSections)
+            when (section) {
+                ProfilePreferenceSection.CORE -> {
+                    assertEquals(core, uiReady.preferences.core.value)
+                    assertEquals(repositoryReady.preferences.core, uiReady.preferences.core)
+                    assertTrue(uiReady.preferences.core.metadata.localGeneration > 0L)
+                }
+                ProfilePreferenceSection.RACK -> {
+                    assertEquals(rack, uiReady.preferences.rack.value)
+                    assertEquals(repositoryReady.preferences.rack, uiReady.preferences.rack)
+                    assertTrue(uiReady.preferences.rack.metadata.localGeneration > 0L)
+                }
+                ProfilePreferenceSection.WORKOUT -> {
+                    assertEquals(workout, uiReady.preferences.workout.value)
+                    assertEquals(repositoryReady.preferences.workout, uiReady.preferences.workout)
+                    assertTrue(uiReady.preferences.workout.metadata.localGeneration > 0L)
+                }
+                ProfilePreferenceSection.LED -> {
+                    assertEquals(led, uiReady.preferences.led.value)
+                    assertEquals(repositoryReady.preferences.led, uiReady.preferences.led)
+                    assertTrue(uiReady.preferences.led.metadata.localGeneration > 0L)
+                }
+                ProfilePreferenceSection.VBT -> {
+                    assertEquals(vbt, uiReady.preferences.vbt.value)
+                    assertEquals(repositoryReady.preferences.vbt, uiReady.preferences.vbt)
+                    assertTrue(uiReady.preferences.vbt.metadata.localGeneration > 0L)
+                }
+                ProfilePreferenceSection.LOCAL_SAFETY -> {
+                    assertEquals(safety, uiReady.localSafety)
+                    assertEquals(repositoryReady.localSafety, uiReady.localSafety)
+                }
+            }
+        }
+        val ready = assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+        assertEquals(core, ready.preferences.core.value)
+        assertEquals(rack, ready.preferences.rack.value)
+        assertEquals(workout, ready.preferences.workout.value)
+        assertEquals(led, ready.preferences.led.value)
+        assertEquals(vbt, ready.preferences.vbt.value)
+        assertEquals(safety, ready.localSafety)
+    }
+
+    @Test
+    fun `same section rejects synchronously while another section proceeds`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        val coreGate = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { request ->
+            if (request is FakeUserProfileRepository.PreferenceUpdateRequest.Core) coreGate.await()
+        }
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val first = assertNotNull(viewModel.updateCore(CoreProfilePreferences(bodyWeightKg = 80f)))
+        assertNull(viewModel.updateCore(CoreProfilePreferences(bodyWeightKg = 81f)))
+        val led = assertNotNull(viewModel.updateLed(LedPreferences(colorScheme = 2)))
+
+        assertTrue(first != led)
+        assertEquals(
+            setOf(ProfilePreferenceSection.CORE, ProfilePreferenceSection.LED),
+            viewModel.uiState.value.busyPreferenceSections,
+        )
+        coreGate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, profiles.preferenceUpdateRequests.count {
+            it is FakeUserProfileRepository.PreferenceUpdateRequest.Core
+        })
+        assertEquals(1, profiles.preferenceUpdateRequests.count {
+            it is FakeUserProfileRepository.PreferenceUpdateRequest.Led
+        })
+    }
+
+    @Test
+    fun `preference and identity claims reject cross domain overlap both directions`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        val preferenceGate = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { request ->
+            if (request is FakeUserProfileRepository.PreferenceUpdateRequest.Core) preferenceGate.await()
+        }
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.updateCore(CoreProfilePreferences(bodyWeightKg = 80f)))
+        viewModel.updateIdentity("Blocked by preference", 1)
+        assertTrue(profiles.updateProfileRequests.isEmpty())
+
+        preferenceGate.complete(Unit)
+        advanceUntilIdle()
+        val identityGate = CompletableDeferred<Unit>()
+        profiles.beforeUpdateProfileMutation = { identityGate.await() }
+        viewModel.updateIdentity("Identity owner", 2)
+        assertNotNull(viewModel.uiState.value.identityMutation)
+        assertNull(viewModel.updateLed(LedPreferences(colorScheme = 4)))
+        runCurrent()
+        assertTrue(profiles.preferenceUpdateRequests.none {
+            it is FakeUserProfileRepository.PreferenceUpdateRequest.Led
+        })
+
+        identityGate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `ordinary preference failure is token profile and section scoped`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateWorkoutFailure = IllegalStateException("workout")
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        var acceptedCallReturned = true
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.collect { event ->
+                if (event is ProfileUiEvent.PreferenceUpdateFailed) {
+                    assertTrue(
+                        acceptedCallReturned,
+                        "failure arrived before ProfileScreen could track the returned token",
+                    )
+                }
+                events += event
+            }
+        }
+        advanceUntilIdle()
+
+        acceptedCallReturned = false
+        val acceptedToken = withContext(Dispatchers.Main) {
+            val token = viewModel.updateWorkout(WorkoutPreferences(stopAtTop = true))
+            acceptedCallReturned = true
+            token
+        }
+        val token = assertNotNull(acceptedToken)
+        advanceUntilIdle()
+
+        val failure = assertIs<ProfileUiEvent.PreferenceUpdateFailed>(events.single())
+        assertEquals("a", failure.profileId)
+        assertEquals(token, failure.token)
+        assertEquals(ProfilePreferenceMutationKind.UPDATE, failure.kind)
+        assertEquals(setOf(ProfilePreferenceSection.WORKOUT), failure.sections)
+        assertTrue(failure.committedSections.isEmpty())
+        assertTrue(viewModel.uiState.value.busyPreferenceSections.isEmpty())
+        assertFalse(
+            assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+                .preferences.workout.value.stopAtTop,
+        )
+    }
+
+    @Test
+    fun `stale A completion cannot clear a later owner or publish an unowned outcome`() = runTest {
+        profiles.seedReadyProfileForTest("b")
+        profiles.seedReadyProfileForTest("a")
+        val oldStarted = CompletableDeferred<Unit>()
+        val oldRelease = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { request ->
+            if (request.profileId == "a") {
+                oldStarted.complete(Unit)
+                withContext(NonCancellable) { oldRelease.await() }
+            }
+        }
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        val oldToken = assertNotNull(viewModel.updateCore(CoreProfilePreferences(bodyWeightKg = 80f)))
+        runCurrent()
+        oldStarted.await()
+        profiles.emitSwitchingForTest("b")
+        runCurrent()
+        profiles.emitReadyForTest("b")
+        runCurrent()
+        oldRelease.complete(Unit)
+        advanceUntilIdle()
+
+        val laterGate = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { request ->
+            if (request.profileId == "b") laterGate.await()
+        }
+        val laterToken = assertNotNull(
+            viewModel.updateCore(CoreProfilePreferences(bodyWeightKg = 90f)),
+        )
+        assertTrue(laterToken > oldToken)
+        val eventCountBeforeStaleClear = events.size
+        val clearMethod = ProfileViewModel::class.java
+            .getDeclaredMethod("clearPreferenceMutation", java.lang.Long.TYPE)
+            .apply { isAccessible = true }
+        assertFalse(clearMethod.invoke(viewModel, oldToken) as Boolean)
+        assertEquals(
+            laterToken,
+            viewModel.uiState.value.preferenceMutations
+                .getValue(ProfilePreferenceSection.CORE)
+                .token,
+        )
+        runCurrent()
+        assertEquals(eventCountBeforeStaleClear, events.size)
+
+        laterGate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(events.none {
+            it is ProfileUiEvent.PreferenceMutationSucceeded &&
+                it.profileId == "a" &&
+                it.token == oldToken
+        })
+    }
+
+    @Test
+    fun `same profile Ready preserves preference owner and exercise insights`() = runTest {
+        val bench = exercise("bench")
+        exercises.addExercise(bench)
+        profiles.seedReadyProfileForTest("a")
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.selectExercise(bench)
+        advanceUntilIdle()
+        val recentCalls = workouts.recentCompletedRequests.size
+        val prCalls = personalRecords.getAllForExerciseRequests.size
+        val gate = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { gate.await() }
+
+        val token = assertNotNull(viewModel.updateCore(CoreProfilePreferences(bodyWeightKg = 80f)))
+        runCurrent()
+        profiles.emitReadyForTest("a")
+        runCurrent()
+
+        assertEquals(
+            token,
+            viewModel.uiState.value.preferenceMutations
+                .getValue(ProfilePreferenceSection.CORE)
+                .token,
+        )
+        assertEquals("bench", viewModel.uiState.value.selectedExercise?.id)
+        assertEquals(recentCalls, workouts.recentCompletedRequests.size)
+        assertEquals(prCalls, personalRecords.getAllForExerciseRequests.size)
+        assertIs<ProfileLoadable.Ready<*>>(viewModel.uiState.value.prHighlights)
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `Switching preserves ownership while clearing visible preference data`() = runTest {
+        val bench = exercise("bench")
+        exercises.addExercise(bench)
+        profiles.seedReadyProfileForTest("a")
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.selectExercise(bench)
+        advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { gate.await() }
+
+        val token = assertNotNull(viewModel.updateCore(CoreProfilePreferences(bodyWeightKg = 80f)))
+        runCurrent()
+        profiles.emitSwitchingForTest("b")
+        runCurrent()
+
+        val switching = viewModel.uiState.value
+        assertIs<ActiveProfileContext.Switching>(switching.context)
+        assertEquals(
+            token,
+            switching.preferenceMutations.getValue(ProfilePreferenceSection.CORE).token,
+        )
+        assertNull(switching.importedBodyWeightMeasuredAt)
+        assertNull(switching.selectedExercise)
+        assertIs<ProfileLoadable.Empty>(switching.currentOneRepMax)
+        assertIs<ProfileLoadable.Empty>(switching.prHighlights)
+        assertIs<ProfileLoadable.Empty>(switching.recentSessions)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `measurement attribution restarts separately for Core generation and body weight changes`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateCore("a", CoreProfilePreferences(bodyWeightKg = 80f))
+        val generationRelease = CompletableDeferred<Unit>()
+        val bodyWeightRelease = CompletableDeferred<Unit>()
+        val weight80 = measurement("a-80", "a", 80.0, 100L)
+        val weight81 = measurement("a-81", "a", 81.0, 200L)
+        var observationCount = 0
+        externalMeasurements.observeByTypeOverride = { profileId, _ ->
+            check(profileId == "a")
+            when (++observationCount) {
+                1 -> flowOf(listOf(weight80))
+                2 -> flow {
+                    generationRelease.await()
+                    emit(listOf(weight80))
+                }
+                3 -> flow {
+                    bodyWeightRelease.await()
+                    emit(listOf(weight81))
+                }
+                else -> flowOf(emptyList())
+            }
+        }
+        profiles.preferenceUpdateRequests.clear()
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(100L, viewModel.uiState.value.importedBodyWeightMeasuredAt)
+        assertEquals(1, externalMeasurements.observationRequests.size)
+
+        profiles.updateCore("a", CoreProfilePreferences(bodyWeightKg = 80f))
+        runCurrent()
+
+        val generationOnlyReady = assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+        assertEquals(80f, generationOnlyReady.preferences.core.value.bodyWeightKg)
+        assertNull(viewModel.uiState.value.importedBodyWeightMeasuredAt)
+        assertEquals(2, externalMeasurements.observationRequests.size)
+
+        generationRelease.complete(Unit)
+        runCurrent()
+        assertEquals(100L, viewModel.uiState.value.importedBodyWeightMeasuredAt)
+
+        profiles.updateCore("a", CoreProfilePreferences(bodyWeightKg = 81f))
+        runCurrent()
+
+        assertNull(viewModel.uiState.value.importedBodyWeightMeasuredAt)
+        assertEquals(3, externalMeasurements.observationRequests.size)
+
+        bodyWeightRelease.complete(Unit)
+        runCurrent()
+        assertEquals(200L, viewModel.uiState.value.importedBodyWeightMeasuredAt)
+        assertEquals(
+            listOf(ProfilePreferenceSection.CORE, ProfilePreferenceSection.CORE),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
+    }
+
+    @Test
+    fun `measurement attribution clears during Switching`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateCore("a", CoreProfilePreferences(bodyWeightKg = 80f))
+        externalMeasurements.upsertMeasurements(
+            listOf(measurement("a-80", "a", 80.0, 100L)),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertEquals(100L, viewModel.uiState.value.importedBodyWeightMeasuredAt)
+
+        profiles.emitSwitchingForTest("b")
+        runCurrent()
+
+        assertNull(viewModel.uiState.value.importedBodyWeightMeasuredAt)
+        assertIs<ActiveProfileContext.Switching>(viewModel.uiState.value.context)
+    }
+
+    @Test
+    fun `non cooperative old measurement cannot overwrite a new generation or profile`() = runTest {
+        profiles.seedReadyProfileForTest("b")
+        profiles.updateCore("b", CoreProfilePreferences(bodyWeightKg = 90f))
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateCore("a", CoreProfilePreferences(bodyWeightKg = 80f))
+        val oldRelease = CompletableDeferred<Unit>()
+        val old = measurement("a-old", "a", 80.0, 100L)
+        val currentGeneration = measurement("a-current", "a", 81.0, 200L)
+        val currentProfile = measurement("b-current", "b", 90.0, 300L)
+        var aObservationCount = 0
+        externalMeasurements.observeByTypeOverride = { profileId, _ ->
+            when (profileId) {
+                "a" -> if (++aObservationCount == 1) {
+                    nonCooperativeMeasurementFlow(oldRelease, old)
+                } else {
+                    flowOf(listOf(currentGeneration))
+                }
+                "b" -> flowOf(listOf(currentProfile))
+                else -> flowOf(emptyList())
+            }
+        }
+        val viewModel = createViewModel()
+        runCurrent()
+
+        profiles.updateCore("a", CoreProfilePreferences(bodyWeightKg = 81f))
+        runCurrent()
+
+        assertEquals(2, externalMeasurements.observationRequests.count { it.profileId == "a" })
+        assertEquals(200L, viewModel.uiState.value.importedBodyWeightMeasuredAt)
+
+        assertEquals("a", assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context).profile.id)
+        assertEquals(
+            81f,
+            assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+                .preferences.core.value.bodyWeightKg,
+        )
+        assertEquals(200L, viewModel.uiState.value.importedBodyWeightMeasuredAt)
+
+        profiles.emitSwitchingForTest("b")
+        runCurrent()
+        profiles.emitReadyForTest("b")
+        runCurrent()
+
+        assertEquals("b", assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context).profile.id)
+        assertEquals(300L, viewModel.uiState.value.importedBodyWeightMeasuredAt)
+
+        oldRelease.complete(Unit)
+        runCurrent()
+
+        assertEquals("b", assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context).profile.id)
+        assertEquals(300L, viewModel.uiState.value.importedBodyWeightMeasuredAt)
+    }
+
+    @Test
+    fun `adult enable owns local safety and VBT and commits safety first`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        val token = assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
+        assertEquals(
+            setOf(ProfilePreferenceSection.LOCAL_SAFETY, ProfilePreferenceSection.VBT),
+            viewModel.uiState.value.busyPreferenceSections,
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(ProfilePreferenceSection.LOCAL_SAFETY, ProfilePreferenceSection.VBT),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
+        val safetyRequest = assertIs<FakeUserProfileRepository.PreferenceUpdateRequest.LocalSafety>(
+            profiles.preferenceUpdateRequests[0],
+        )
+        assertTrue(safetyRequest.value.adultsOnlyConfirmed)
+        assertTrue(safetyRequest.value.adultsOnlyPrompted)
+        val vbtRequest = assertIs<FakeUserProfileRepository.PreferenceUpdateRequest.Vbt>(
+            profiles.preferenceUpdateRequests[1],
+        )
+        assertTrue(vbtRequest.value.vulgarModeEnabled)
+        val success = assertIs<ProfileUiEvent.PreferenceMutationSucceeded>(events.single())
+        assertEquals(token, success.token)
+        assertEquals("a", success.profileId)
+        assertEquals(ProfilePreferenceMutationKind.ADULT_ENABLE, success.kind)
+        assertEquals(
+            setOf(ProfilePreferenceSection.LOCAL_SAFETY, ProfilePreferenceSection.VBT),
+            success.sections,
+        )
+    }
+
+    @Test
+    fun `adult first write failure commits neither section`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateLocalSafetyFailure = IllegalStateException("safety")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        val token = assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(ProfilePreferenceSection.LOCAL_SAFETY),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
+        val failure = assertIs<ProfileUiEvent.PreferenceUpdateFailed>(events.single())
+        assertEquals(token, failure.token)
+        assertEquals(ProfilePreferenceMutationKind.ADULT_ENABLE, failure.kind)
+        assertTrue(failure.committedSections.isEmpty())
+        val ready = assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+        assertFalse(ready.localSafety.adultsOnlyConfirmed)
+        assertFalse(ready.preferences.vbt.value.vulgarModeEnabled)
+    }
+
+    @Test
+    fun `adult second write failure retains confirmed safety and leaves vulgar false`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateVbtFailure = IllegalStateException("vbt")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        val token = assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(ProfilePreferenceSection.LOCAL_SAFETY, ProfilePreferenceSection.VBT),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
+        val failure = assertIs<ProfileUiEvent.PreferenceUpdateFailed>(events.single())
+        assertEquals(token, failure.token)
+        assertEquals(
+            setOf(ProfilePreferenceSection.LOCAL_SAFETY),
+            failure.committedSections,
+        )
+        val ready = assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+        assertTrue(ready.localSafety.adultsOnlyConfirmed)
+        assertTrue(ready.localSafety.adultsOnlyPrompted)
+        assertFalse(ready.preferences.vbt.value.vulgarModeEnabled)
+    }
+
+    @Test
+    fun `switch between adult writes never mutates B`() = runTest {
+        profiles.seedReadyProfileForTest("b")
+        profiles.seedReadyProfileForTest("a")
+        profiles.beforePreferenceUpdate = { request ->
+            if (request is FakeUserProfileRepository.PreferenceUpdateRequest.Vbt) {
+                profiles.emitSwitchingForTest("b")
+                profiles.emitReadyForTest("b")
+            }
+        }
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        val token = assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
+        advanceUntilIdle()
+
+        assertTrue(profiles.preferenceUpdateRequests.all { it.profileId == "a" })
+        val bReady = assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value)
+        assertEquals("b", bReady.profile.id)
+        assertFalse(bReady.localSafety.adultsOnlyConfirmed)
+        assertFalse(bReady.preferences.vbt.value.vulgarModeEnabled)
+        assertTrue(events.none {
+            it is ProfileUiEvent.PreferenceMutationSucceeded && it.token == token
+        })
+
+        profiles.emitReadyForTest("a")
+        val aReady = assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value)
+        assertTrue(aReady.localSafety.adultsOnlyConfirmed)
+        assertFalse(aReady.preferences.vbt.value.vulgarModeEnabled)
+    }
+
+    @Test
+    fun `adult cancellation emits no terminal outcome and clears only its owner`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateLocalSafetyFailure = CancellationException("cancel adult")
+        val ledGate = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { request ->
+            if (request is FakeUserProfileRepository.PreferenceUpdateRequest.Led) ledGate.await()
+        }
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        val ledToken = assertNotNull(viewModel.updateLed(LedPreferences(colorScheme = 2)))
+        val adultToken = assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
+        runCurrent()
+
+        assertEquals(
+            ledToken,
+            viewModel.uiState.value.preferenceMutations
+                .getValue(ProfilePreferenceSection.LED)
+                .token,
+        )
+        assertFalse(viewModel.uiState.value.preferenceMutations.values.any { it.token == adultToken })
+        assertTrue(events.isEmpty())
+
+        ledGate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(events.none { event ->
+            (event as? ProfileUiEvent.PreferenceMutationSucceeded)?.token == adultToken ||
+                (event as? ProfileUiEvent.PreferenceUpdateFailed)?.token == adultToken
+        })
+
+        val initialYieldToken = assertNotNull(
+            viewModel.updateCore(CoreProfilePreferences(bodyWeightKg = 80f)),
+        )
+        launch(coroutineRule.dispatcher) {
+            viewModel.viewModelScope.cancel()
+        }
+        runCurrent()
+
+        assertFalse(
+            viewModel.uiState.value.preferenceMutations.values.any { it.token == initialYieldToken },
+        )
+        assertTrue(events.none { event ->
+            (event as? ProfileUiEvent.PreferenceMutationSucceeded)?.token == initialYieldToken ||
+                (event as? ProfileUiEvent.PreferenceUpdateFailed)?.token == initialYieldToken
+        })
+    }
+
+    @Test
+    fun `adult operation overlaps neither local safety nor VBT writes`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        val gate = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { request ->
+            if (request is FakeUserProfileRepository.PreferenceUpdateRequest.LocalSafety) gate.await()
+        }
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
+        assertNull(
+            viewModel.updateLocalSafety(
+                ProfileLocalSafetyPreferences(safeWord = "blocked"),
+            ),
+        )
+        assertNull(viewModel.updateVbt(VbtPreferences(velocityLossThresholdPercent = 25)))
+        assertNotNull(viewModel.updateLed(LedPreferences(colorScheme = 3)))
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, profiles.preferenceUpdateRequests.count {
+            it is FakeUserProfileRepository.PreferenceUpdateRequest.LocalSafety
+        })
+        assertEquals(1, profiles.preferenceUpdateRequests.count {
+            it is FakeUserProfileRepository.PreferenceUpdateRequest.Vbt
+        })
+    }
+
+    @Test
+    fun `adult partial commit retry writes only VBT`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateVbtFailure = IllegalStateException("first vbt")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
+        advanceUntilIdle()
+        assertTrue(
+            assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+                .localSafety.adultsOnlyConfirmed,
+        )
+
+        profiles.preferenceUpdateRequests.clear()
+        profiles.updateVbtFailure = null
+        events.clear()
+        val retryToken = assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(ProfilePreferenceSection.VBT),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
+        val success = assertIs<ProfileUiEvent.PreferenceMutationSucceeded>(events.single())
+        assertEquals(retryToken, success.token)
+        assertEquals(ProfilePreferenceMutationKind.ADULT_ENABLE, success.kind)
+        assertEquals(setOf(ProfilePreferenceSection.VBT), success.sections)
+        assertTrue(
+            assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+                .preferences.vbt.value.vulgarModeEnabled,
+        )
+    }
+
+    @Test
+    fun `disco unlock succeeds only after authoritative matching commit`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        val gate = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { request ->
+            if (request is FakeUserProfileRepository.PreferenceUpdateRequest.Led) gate.await()
+        }
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        val unlockedAtEvent = mutableListOf<Boolean>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.collect { event ->
+                events += event
+                if (event is ProfileUiEvent.PreferenceMutationSucceeded) {
+                    unlockedAtEvent += assertIs<ActiveProfileContext.Ready>(
+                        viewModel.uiState.value.context,
+                    ).preferences.led.value.discoModeUnlocked
+                }
+            }
+        }
+        advanceUntilIdle()
+
+        val token = assertNotNull(viewModel.unlockDiscoMode())
+        runCurrent()
+        assertTrue(events.isEmpty())
+        assertFalse(
+            assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+                .preferences.led.value.discoModeUnlocked,
+        )
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf(true), unlockedAtEvent)
+        val success = assertIs<ProfileUiEvent.PreferenceMutationSucceeded>(events.single())
+        assertEquals(token, success.token)
+        assertEquals("a", success.profileId)
+        assertEquals(ProfilePreferenceMutationKind.DISCO_UNLOCK, success.kind)
+        assertEquals(setOf(ProfilePreferenceSection.LED), success.sections)
+        assertTrue(viewModel.uiState.value.busyPreferenceSections.isEmpty())
+    }
+
+    @Test
+    fun `dominatrix failure and switch produce no stale success`() = runTest {
+        profiles.seedReadyProfileForTest("b")
+        profiles.seedReadyProfileForTest("a")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        assertNull(viewModel.unlockDominatrixMode())
+        runCurrent()
+        assertTrue(profiles.preferenceUpdateRequests.isEmpty())
+        assertTrue(events.isEmpty())
+
+        profiles.updateLocalSafety(
+            "a",
+            ProfileLocalSafetyPreferences(
+                adultsOnlyConfirmed = true,
+                adultsOnlyPrompted = true,
+            ),
+        )
+        profiles.updateVbt(
+            "a",
+            VbtPreferences(
+                verbalEncouragementEnabled = true,
+                vulgarModeEnabled = true,
+            ),
+        )
+        advanceUntilIdle()
+        profiles.preferenceUpdateRequests.clear()
+        profiles.updateVbtFailure = IllegalStateException("dominatrix write")
+
+        val failureToken = assertNotNull(viewModel.unlockDominatrixMode())
+        advanceUntilIdle()
+
+        val ordinaryFailure = assertIs<ProfileUiEvent.PreferenceUpdateFailed>(events.single())
+        assertEquals(failureToken, ordinaryFailure.token)
+        assertEquals("a", ordinaryFailure.profileId)
+        assertEquals(ProfilePreferenceMutationKind.DOMINATRIX_UNLOCK, ordinaryFailure.kind)
+        assertEquals(setOf(ProfilePreferenceSection.VBT), ordinaryFailure.sections)
+        assertTrue(ordinaryFailure.committedSections.isEmpty())
+        assertFalse(
+            assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+                .preferences.vbt.value.dominatrixModeUnlocked,
+        )
+
+        profiles.updateVbtFailure = null
+        profiles.preferenceUpdateRequests.clear()
+        events.clear()
+        profiles.beforePreferenceUpdate = { request ->
+            if (request is FakeUserProfileRepository.PreferenceUpdateRequest.Vbt) {
+                profiles.emitSwitchingForTest("b")
+                profiles.emitReadyForTest("b")
+            }
+        }
+
+        val staleToken = assertNotNull(viewModel.unlockDominatrixMode())
+        advanceUntilIdle()
+
+        assertTrue(events.none {
+            it is ProfileUiEvent.PreferenceMutationSucceeded && it.token == staleToken
+        })
+        val ready = assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value)
+        assertEquals("b", ready.profile.id)
+        assertFalse(ready.preferences.vbt.value.dominatrixModeUnlocked)
+        assertEquals(
+            listOf(ProfilePreferenceSection.VBT),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
+    }
+
+    @Test
+    fun `decline writes prompted unconfirmed and explicit enable remains retryable`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.declineAdultsOnly())
+        advanceUntilIdle()
+        val declined = assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+        assertTrue(declined.localSafety.adultsOnlyPrompted)
+        assertFalse(declined.localSafety.adultsOnlyConfirmed)
+        assertFalse(declined.preferences.vbt.value.vulgarModeEnabled)
+
+        profiles.preferenceUpdateRequests.clear()
+        val retryToken = assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
+        advanceUntilIdle()
+
+        assertTrue(retryToken > 0)
+        assertEquals(
+            listOf(ProfilePreferenceSection.LOCAL_SAFETY, ProfilePreferenceSection.VBT),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
+        val enabled = assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+        assertTrue(enabled.localSafety.adultsOnlyPrompted)
+        assertTrue(enabled.localSafety.adultsOnlyConfirmed)
+        assertTrue(enabled.preferences.vbt.value.vulgarModeEnabled)
+    }
+
+    private data class PreferenceSuccessSnapshot(
+        val event: ProfileUiEvent.PreferenceMutationSucceeded,
+        val uiState: ProfileUiState,
+        val repositoryReady: ActiveProfileContext.Ready,
+    )
+
+    private fun requestSection(
+        request: FakeUserProfileRepository.PreferenceUpdateRequest,
+    ): ProfilePreferenceSection = when (request) {
+        is FakeUserProfileRepository.PreferenceUpdateRequest.Core -> ProfilePreferenceSection.CORE
+        is FakeUserProfileRepository.PreferenceUpdateRequest.Rack -> ProfilePreferenceSection.RACK
+        is FakeUserProfileRepository.PreferenceUpdateRequest.Workout -> ProfilePreferenceSection.WORKOUT
+        is FakeUserProfileRepository.PreferenceUpdateRequest.Led -> ProfilePreferenceSection.LED
+        is FakeUserProfileRepository.PreferenceUpdateRequest.Vbt -> ProfilePreferenceSection.VBT
+        is FakeUserProfileRepository.PreferenceUpdateRequest.LocalSafety ->
+            ProfilePreferenceSection.LOCAL_SAFETY
+    }
+
+    private fun measurement(
+        externalId: String,
+        profileId: String,
+        value: Double,
+        measuredAt: Long,
+    ) = ExternalBodyMeasurement(
+        externalId = externalId,
+        provider = IntegrationProvider.APPLE_HEALTH,
+        measurementType = "weight",
+        value = value,
+        unit = "kg",
+        measuredAt = measuredAt,
+        profileId = profileId,
+    )
+
+    private fun nonCooperativeMeasurementFlow(
+        release: CompletableDeferred<Unit>,
+        measurement: ExternalBodyMeasurement,
+    ): Flow<List<ExternalBodyMeasurement>> = object : Flow<List<ExternalBodyMeasurement>> {
+        override suspend fun collect(collector: FlowCollector<List<ExternalBodyMeasurement>>) {
+            withContext(NonCancellable) {
+                release.await()
+                collector.emit(listOf(measurement))
+            }
+        }
     }
 
     private fun createViewModel() = ProfileViewModel(

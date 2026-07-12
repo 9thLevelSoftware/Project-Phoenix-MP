@@ -31,6 +31,7 @@ import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.screen.*
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
@@ -360,6 +361,8 @@ fun NavGraph(
             ) {
                 val profileTitle = stringResource(Res.string.nav_profile)
                 val userPreferences by viewModel.userPreferences.collectAsState()
+                val connectionState by viewModel.connectionState.collectAsState()
+                val discoModeActive by viewModel.discoModeActive.collectAsState()
                 LaunchedEffect(profileTitle) {
                     viewModel.updateTopBarTitle(profileTitle)
                 }
@@ -370,7 +373,18 @@ fun NavGraph(
                             NavigationRoutes.ExerciseDetail.createRoute(exerciseId),
                         )
                     },
+                    onNavigateToEquipmentRack = {
+                        navController.navigate(NavigationRoutes.EquipmentRack.route)
+                    },
+                    onNavigateToBadges = {
+                        navController.navigate(NavigationRoutes.Badges.route)
+                    },
                     onProfileRecoveryRequired = onProfileRecoveryRequired,
+                    isConnected = connectionState is ConnectionState.Connected,
+                    discoModeActive = discoModeActive,
+                    onDiscoModeToggle = viewModel::toggleDiscoMode,
+                    onPlayDiscoUnlockSound = viewModel::emitDiscoSound,
+                    onPlayDominatrixUnlockSound = viewModel::emitDominatrixUnlockSound,
                     enableVideoPlayback = userPreferences.enableVideoPlayback,
                     themeMode = themeMode,
                 )

@@ -1,4 +1,4 @@
-package com.devil.phoenixproject.presentation.screen
+package com.devil.phoenixproject.presentation.components
 
 /**
  * Presentation policy for the adult-mode dialogs. This stays Compose-free so the
