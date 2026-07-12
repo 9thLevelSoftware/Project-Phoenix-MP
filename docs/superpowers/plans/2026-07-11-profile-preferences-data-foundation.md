@@ -2234,71 +2234,97 @@ git commit -m "refactor: route training settings through active profile"
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/WorkoutCoordinator.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/DefaultWorkoutSessionManager.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutUiState.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ActiveWorkoutScreen.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt`
+- Inspect only: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/BiomechanicsHistoryCard.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/DWSMTestHarness.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/WorkoutCoordinatorEventTest.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngineIntegrationTest.kt`
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/VerbalEncouragementGateTest.kt`
 
 **Interfaces:**
-- Consumes: `SettingsManager.userPreferences.value.vbtEnabled` and subordinate active-profile VBT values.
-- Produces: `WorkoutCoordinator.updateVbtSettings(vbtEnabled, thresholdPercent, autoEnd)` and an observable runtime VBT-enabled state for the UI plan.
+- Consumes: the complete VBT portion of `SettingsManager.userPreferences` for the active `Ready` profile.
+- Produces: one immutable `VbtRuntimeSettings(enabled, velocityLossThresholdPercent, autoEndOnVelocityLoss)` snapshot in `WorkoutCoordinator`, updated as a unit and read once per completed rep.
+- Produces: `WorkoutUiState.vbtEnabled`, threaded through the complete active-workout Compose call chain.
+- Does not add a Koin binding or gate raw biomechanics capture, summaries, repository persistence, PR/progression inputs, or history.
 
-- [ ] **Step 1: Write failing disabled/re-enabled behavior tests**
+- [ ] **Step 1: Characterize and expose the real engine seam without changing behavior**
 
-```kotlin
-@Test
-fun disabledVbtKeepsMetricsButSuppressesLiveEnforcementAndFeedback() = runTest {
-    engine.applyProfileVbt(
-        VbtPreferences(
-            enabled = false,
-            velocityLossThresholdPercent = 20,
-            autoEndOnVelocityLoss = true,
-            verbalEncouragementEnabled = true,
-        ),
-    )
-    engine.processWorkingRep(velocity = 1.0f)
-    engine.processWorkingRep(velocity = 0.70f)
+The existing runtime path is `ActiveSessionEngine.processBiomechanicsForRep()` ->
+`BiomechanicsEngine.processRep()` -> `checkVelocityThreshold()`. Do not invent
+`applyProfileVbt`, `processWorkingRep`, `WorkoutEvent`, or a test-local decision tracker.
 
-    assertEquals(listOf(1.0f, 0.70f), engine.recordedRepVelocities)
-    assertFalse(engine.sessionEnded)
-    assertTrue(engine.events.none { it is WorkoutEvent.VelocityLossThresholdReached })
-    assertTrue(fakeAudio.feedbackRequests.isEmpty())
-}
+First run the existing VBT tests. Then make only a behavior-neutral extraction:
 
-@Test
-fun reEnablingRestoresUnchangedSubordinateConfiguration() = runTest {
-    val configured = VbtPreferences(enabled = false, velocityLossThresholdPercent = 25, autoEndOnVelocityLoss = true)
-    engine.applyProfileVbt(configured)
-    engine.applyProfileVbt(configured.copy(enabled = true))
+- keep `processBiomechanicsForRep()` as the unconditional capture path;
+- expose the existing threshold decision as an `internal suspend` production method such as
+  `evaluateLatestVbtResult()` so common tests can drive the real `BiomechanicsEngine` and real
+  `HapticEvent` stream;
+- have the production rep path call that same method after `BiomechanicsEngine.processRep()`; and
+- keep the warm-up guard in the production decision path.
 
-    assertEquals(25f, coordinator.configuredVelocityLossThresholdPercent)
-    assertTrue(coordinator.autoEndOnVelocityLoss)
-    assertTrue(coordinator.vbtEnabled)
-}
-```
+Run the existing VBT tests again and require the same baseline behavior before adding the master toggle.
 
-- [ ] **Step 2: Run the focused VBT tests and verify disabled behavior fails**
+- [ ] **Step 2: Write failing production-backed disabled/re-enabled tests**
+
+Use `DWSMTestHarness`, its one `Ready` fake profile, the real coordinator
+`BiomechanicsEngine`, real `WorkoutState`, real `HapticEvent` collection, and
+`fakeBiomechanicsRepo`. Helpers may construct uniform `WorkoutMetric` samples, but must not
+reimplement the VBT decision state machine.
+
+Cover all of the following:
+
+1. With `vbtEnabled=false`, threshold and auto-end still configured, processing baseline and
+   threshold-crossing reps leaves `latestRepResult` and `getSetSummary().repResults` populated,
+   emits neither `VELOCITY_THRESHOLD_REACHED` nor `VERBAL_ENCOURAGEMENT`, and does not auto-end
+   the active set.
+2. Completing that disabled-VBT set still writes its rep results to
+   `FakeBiomechanicsRepository.savedBiomechanics`.
+3. Re-enabling changes only the master: the configured threshold remains unchanged in
+   `BiomechanicsEngine.currentVelocityLossThresholdPercent`, auto-end remains configured, and
+   subsequent threshold reps restore the existing alert/auto-end behavior.
+4. A `Ready` profile switch applies the new profile's enabled/threshold/auto-end triple as one
+   `VbtRuntimeSettings` value; no mixed A/B snapshot is observable.
+5. With persisted vulgar and dominatrix intent both true but active-profile local adult
+   confirmation false, a real runtime threshold emits a `VERBAL_ENCOURAGEMENT` with
+   `vulgarMode=false` and `dominatrixMode=false`. The VBT document must still retain both intent
+   flags unchanged.
+
+Replace or refactor the test-local mirror in `VerbalEncouragementGateTest` so policy assertions
+call production policy code. Keep at least one `ActiveSessionEngine` assertion proving that the
+policy is used by the runtime event path.
+
+- [ ] **Step 3: Run the focused VBT tests and verify the master-toggle assertions fail**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*VbtEnabledRuntimeTest*" --tests "*WorkoutCoordinatorEventTest*" --tests "*ActiveSessionEngineIntegrationTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*Vbt*" --tests "*VerbalEncouragementGateTest*" --tests "*WorkoutCoordinatorEventTest*" --tests "*ActiveSessionEngineIntegrationTest*" --console=plain
 ```
 
 Expected: FAIL because the coordinator has no master toggle and still emits live velocity-loss events.
 
-- [ ] **Step 3: Add the coordinator master without mutating subordinate values**
+- [ ] **Step 4: Add one coherent coordinator runtime snapshot**
 
 ```kotlin
+internal data class VbtRuntimeSettings(
+    val enabled: Boolean = true,
+    val velocityLossThresholdPercent: Float = 20f,
+    val autoEndOnVelocityLoss: Boolean = false,
+)
+
 class WorkoutCoordinator(
     vbtEnabled: Boolean = true,
     velocityLossThresholdPercent: Float = 20f,
     autoEndOnVelocityLoss: Boolean = false,
 ) {
-    private val _vbtEnabled = MutableStateFlow(vbtEnabled)
-    internal val vbtEnabled: Boolean get() = _vbtEnabled.value
-    internal var configuredVelocityLossThresholdPercent: Float = velocityLossThresholdPercent
-        private set
-    private val _autoEndOnVelocityLoss = MutableStateFlow(autoEndOnVelocityLoss)
-    internal val autoEndOnVelocityLoss: Boolean get() = _autoEndOnVelocityLoss.value
+    private val _vbtRuntimeSettings = MutableStateFlow(
+        VbtRuntimeSettings(vbtEnabled, velocityLossThresholdPercent, autoEndOnVelocityLoss),
+    )
+    internal val vbtRuntimeSettings: StateFlow<VbtRuntimeSettings> =
+        _vbtRuntimeSettings.asStateFlow()
 
     val biomechanicsEngine = BiomechanicsEngine(velocityLossThresholdPercent)
 
@@ -2308,25 +2334,29 @@ class WorkoutCoordinator(
         autoEnd: Boolean,
     ) {
         require(thresholdPercent in 10f..50f)
-        _vbtEnabled.value = vbtEnabled
-        configuredVelocityLossThresholdPercent = thresholdPercent
         biomechanicsEngine.updateVelocityLossThresholdPercent(thresholdPercent)
-        _autoEndOnVelocityLoss.value = autoEnd
+        _vbtRuntimeSettings.value = VbtRuntimeSettings(vbtEnabled, thresholdPercent, autoEnd)
     }
 }
 ```
 
-At the existing velocity-loss decision point, return no live event when `vbtEnabled` is false. Do not clear baselines, stored rep velocities, assessment repositories, or history values.
+Do not create separate enabled/threshold/auto-end `StateFlow`s and do not add a shadow
+`configuredVelocityLossThresholdPercent`; the `BiomechanicsEngine` already exposes its current
+threshold for internal verification. Existing convenience getters may derive from the one snapshot,
+but every live decision must capture `vbtRuntimeSettings.value` once.
 
-- [ ] **Step 4: Gate engine evaluation, auto-end, indicators, and failure speech**
+In `DefaultWorkoutSessionManager`, build the constructor snapshot and every update from
+`settingsManager.userPreferences`, including `vbtEnabled`. Map all three values together and use
+`distinctUntilChanged()` before calling `updateVbtSettings`. Task 5 already owns the SettingsManager
+source; do not read `PreferencesManager` or add DI.
+
+- [ ] **Step 5: Gate only live evaluation, auto-end, and feedback**
 
 ```kotlin
-if (coordinator._repCount.value.isWarmupComplete && coordinator.vbtEnabled) {
-    checkVelocityThreshold()
-}
-
-private suspend fun checkVelocityThreshold() {
-    if (!coordinator.vbtEnabled) return
+internal suspend fun evaluateLatestVbtResult() {
+    if (!coordinator._repCount.value.isWarmupComplete) return
+    val runtime = coordinator.vbtRuntimeSettings.value
+    if (!runtime.enabled) return
     val latestResult = coordinator.biomechanicsEngine.latestRepResult.value ?: return
     val velocity = latestResult.velocity
     if (velocity.shouldStopSet) {
@@ -2348,7 +2378,7 @@ private suspend fun checkVelocityThreshold() {
                 )
             }
         }
-        if (consecutiveThresholdReps >= 2 && coordinator.autoEndOnVelocityLoss) {
+        if (consecutiveThresholdReps >= 2 && runtime.autoEndOnVelocityLoss) {
             handleSetCompletion()
         }
     } else {
@@ -2357,11 +2387,21 @@ private suspend fun checkVelocityThreshold() {
 }
 ```
 
-Continue calling the biomechanics/history recorder before `evaluateLiveVbt`. Feed `vbtEnabled`, threshold, and auto-end together from the active SettingsManager collector so a profile switch updates one coherent runtime snapshot. Expose `vbtEnabled` in the existing workout UI state for the next step.
+`processBiomechanicsForRep()` must still call `BiomechanicsEngine.processRep()` while disabled and
+must call the evaluator only after capture. Do not clear baselines or rep results when toggling. Do
+not gate set-summary creation, `BiomechanicsRepository.saveRepBiomechanics`, raw MCV/peak flows,
+PR/progression consumers, or historical views. The master suppresses only live interpretation,
+threshold feedback, verbal routing, and auto-end.
 
-- [ ] **Step 5: Thread VBT state through the active workout UI**
+- [ ] **Step 6: Thread VBT state through the complete active-workout UI**
 
-Thread the master through active workout UI and hide only live VBT interpretation:
+Add `val vbtEnabled: Boolean = true` to `WorkoutUiState`. In `ActiveWorkoutScreen`, include
+`userPreferences.vbtEnabled` both in the `remember(...)` key list and in the constructed
+`WorkoutUiState`; omitting the key leaves stale UI state after a profile switch.
+
+Thread `state.vbtEnabled` through both `WorkoutTab` overloads, then `WorkoutHud`, then private
+`StatsPage`. Give inner composable parameters a default of `true` so previews remain source
+compatible. Hide only live VBT interpretation:
 
 ```kotlin
 // WorkoutUiState
@@ -2374,7 +2414,7 @@ vbtEnabled = userPreferences.vbtEnabled,
 vbtEnabled = state.vbtEnabled,
 ```
 
-Add `vbtEnabled: Boolean = true` to the inner `WorkoutTab`, `WorkoutHud`, and `StatsPage` signatures. Keep raw MCV/peak values visible, but remove zone color/label and velocity-loss threshold/reps-left feedback while disabled:
+Keep raw MCV/peak values visible, but remove zone color/label and velocity-loss threshold/reps-left feedback while disabled:
 
 ```kotlin
 val zColor = if (vbtEnabled) {
@@ -2408,22 +2448,38 @@ if (vbtEnabled && vloss != null) {
 }
 ```
 
-Add a source-contract assertion to `VbtEnabledRuntimeTest` that `WorkoutHud.kt` contains `if (vbtEnabled && vloss != null)` and that `BiomechanicsHistoryCard.kt` contains no `vbtEnabled` gate. This keeps historical velocity data visible.
+Keep the MCV and Peak columns visible with neutral color while disabled. Hide the Zone column,
+`VelocityLossIndicator`, and estimated reps-left only. Do not conditionally remove the whole
+biomechanics card or `latestBiomechanicsResult` from state.
 
-- [ ] **Step 6: Pass VBT regression tests**
+Use `com.devil.phoenixproject.testutil.readProjectFile` for source-contract assertions covering:
+
+- `ActiveWorkoutScreen` remember key and `WorkoutUiState` assignment;
+- outer and inner `WorkoutTab` forwarding;
+- `WorkoutHud` -> `StatsPage` forwarding;
+- the guarded Zone, velocity-loss, and reps-left branches;
+- raw MCV and Peak remaining outside the master gate; and
+- `src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/BiomechanicsHistoryCard.kt`
+  containing no `vbtEnabled` gate.
+
+- [ ] **Step 7: Pass runtime, UI-contract, and native regression tests**
 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*VbtEnabledRuntimeTest*" --tests "*WorkoutCoordinatorEventTest*" --tests "*ActiveSessionEngineIntegrationTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*Vbt*" --tests "*VerbalEncouragementGateTest*" --tests "*WorkoutCoordinatorEventTest*" --tests "*ActiveSessionEngineIntegrationTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 --console=plain
 ```
 
-Expected: PASS for disabled suppression, preserved metrics, unchanged subordinate values, and restored behavior after re-enable.
+Expected: PASS for disabled suppression, real metrics/history persistence, coherent profile updates,
+unchanged subordinate configuration, restored behavior after re-enable, locally neutralized adult
+feedback, complete Compose threading, and iOS compilation. Run `git diff --check`. No Koin graph
+change is expected in this task.
 
-- [ ] **Step 7: Commit runtime VBT gating**
+- [ ] **Step 8: Commit runtime VBT gating**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/WorkoutCoordinator.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/DefaultWorkoutSessionManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutUiState.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ActiveWorkoutScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/VbtEnabledRuntimeTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/WorkoutCoordinatorEventTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngineIntegrationTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/WorkoutCoordinator.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/DefaultWorkoutSessionManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutUiState.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ActiveWorkoutScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/DWSMTestHarness.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/VbtEnabledRuntimeTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/VerbalEncouragementGateTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/WorkoutCoordinatorEventTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngineIntegrationTest.kt
 git commit -m "feat: gate live VBT by active profile"
 ```
 
