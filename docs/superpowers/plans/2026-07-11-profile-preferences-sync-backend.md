@@ -8578,9 +8578,31 @@ git commit -m "feat(sync): merge canonical profile preferences on pull"
 
 **Interfaces:**
 - Consumes: complete backend handoff, schema 43 foundation, and mobile sync implementation.
-- Produces: a green, reviewable sync/backend slice ready to integrate with consumer and UI plans.
+- Produces: a green, counted, privacy-audited Android/iOS sync/backend slice ready to integrate with consumer and UI plans.
 
-- [ ] **Step 1: Run formatting checks**
+**Execution boundary:** Task 9 is mobile-repository verification only. Every Gradle command keeps `-Pskip.supabase.check=true`. Do not invoke Supabase CLI, a Supabase MCP/project integration, Dashboard actions, remote SQL, `db push`, migration repair, or Edge Function deployment. The external portal checklist after Task 9 is handoff documentation for a separately authorized portal-repository owner; it is not part of this task.
+
+- [ ] **Step 1: Require a clean tree and pin the committed verification range**
+
+The sync/backend implementation begins immediately after data-foundation commit `6ddf9031`. Verify that immutable baseline and require a clean worktree so committed Tasks 1–8 are not confused with verification-only repairs:
+
+```powershell
+$syncBase = '6ddf9031'
+git rev-parse --verify "$syncBase^{commit}" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Missing reviewed sync baseline $syncBase" }
+$status = @(git status --porcelain)
+if ($status.Count -ne 0) {
+    $status | ForEach-Object { Write-Host $_ }
+    throw 'Task 9 requires a clean worktree; finish or isolate Task 8 first'
+}
+$rangeFiles = @(git diff --name-only "$syncBase..HEAD")
+if ($rangeFiles.Count -eq 0) { throw 'The committed Tasks 1-8 verification range is empty' }
+"Task 9 range: $syncBase..HEAD ($($rangeFiles.Count) tracked paths)"
+```
+
+Expected: the baseline resolves, `git status --porcelain` emits nothing, and the range contains the committed backend handoff and mobile sync files. Do not replace the reviewed baseline with a moving branch name.
+
+- [ ] **Step 2: Run formatting checks without broad mutation**
 
 Run:
 
@@ -8588,39 +8610,79 @@ Run:
 .\gradlew.bat spotlessCheck -Pskip.supabase.check=true
 ```
 
-Expected: BUILD SUCCESSFUL. If formatting fails, run `spotlessApply`, inspect the changed files, and rerun `spotlessCheck`.
+Expected: BUILD SUCCESSFUL. Task 9 is check-only: do not run broad `spotlessApply`. If formatting fails, return the named file to its Task 1–8 owner for a path-scoped formatting commit, restore a clean tree, and rerun this step.
 
-- [ ] **Step 2: Regenerate SQLDelight and verify the schema-43 dependency**
+- [ ] **Step 3: Regenerate SQLDelight and verify the exact schema-43 dependency**
 
 Run:
 
 ```powershell
 .\gradlew.bat :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest -Pskip.supabase.check=true
+if ($LASTEXITCODE -ne 0) { throw 'SQLDelight/schema verification failed' }
+$sharedBuild = Get-Content -Raw 'shared/build.gradle.kts'
+if ($sharedBuild -notmatch 'version\s*=\s*43') { throw 'SQLDelight schema version is not 43' }
+if (-not (Test-Path 'shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm')) {
+    throw 'Required schema-42-to-43 migration 42.sqm is missing'
+}
 ```
 
-Expected: BUILD SUCCESSFUL with generated schema version 43, `42.sqm` included, and no manifest gaps.
+Expected: BUILD SUCCESSFUL, `Schema manifest validated: 389 columns across 46 tables, all covered.`, SQLDelight schema version 43, and tracked migration `42.sqm`. If a later reviewed schema change intentionally changes the manifest counts, update this expectation in the same schema-owning change rather than accepting silent drift.
 
-- [ ] **Step 3: Run the complete focused sync suite**
+- [ ] **Step 4: Run the exact focused sync, transport, privacy, and invariant suite**
 
 Run:
 
 ```powershell
-.\gradlew.bat :shared:testAndroidHostTest --tests "*BackendHandoffContractTest*" --tests "*ProfilePreferenceSync*" --tests "*PortalSyncAdapterProfilePreferencesTest*" --tests "*PortalPullAdapterProfilePreferencesTest*" --tests "*PortalApiClientProfilePreferenceLimitsTest*" --tests "*SyncManagerProfilePreferencesTest*" --tests "*PortalPushLimitsTest*" --tests "*PortalPullPaginationTest*" --tests "*PortalTokenRefreshTest*" --tests "*SyncManagerTest*" -Pskip.supabase.check=true
+.\gradlew.bat :shared:testAndroidHostTest `
+    --tests "com.devil.phoenixproject.data.sync.BackendHandoffContractTest" `
+    --tests "com.devil.phoenixproject.data.sync.ProfilePreferenceSyncDtosTest" `
+    --tests "com.devil.phoenixproject.data.sync.ProfilePreferenceSyncPlannerTest" `
+    --tests "com.devil.phoenixproject.data.sync.PortalSyncAdapterProfilePreferencesTest" `
+    --tests "com.devil.phoenixproject.data.sync.PortalPullAdapterProfilePreferencesTest" `
+    --tests "com.devil.phoenixproject.data.sync.PortalApiClientProfilePreferenceLimitsTest" `
+    --tests "com.devil.phoenixproject.testutil.FakePortalApiClientTest" `
+    --tests "com.devil.phoenixproject.data.sync.ErrorClassificationTest" `
+    --tests "com.devil.phoenixproject.data.sync.ClientRateLimiterTest" `
+    --tests "com.devil.phoenixproject.data.sync.SyncManagerProfilePreferencesTest" `
+    --tests "com.devil.phoenixproject.data.sync.PortalPushLimitsTest" `
+    --tests "com.devil.phoenixproject.data.sync.PortalPullPaginationTest" `
+    --tests "com.devil.phoenixproject.data.sync.PortalTokenRefreshTest" `
+    --tests "com.devil.phoenixproject.data.sync.SyncManagerTest" `
+    --tests "com.devil.phoenixproject.data.sync.SyncInvariantCheckerTest" `
+    -Pskip.supabase.check=true --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Focused profile-preference sync suite failed' }
+$focusedResults = @(Get-ChildItem 'shared/build/test-results/testAndroidHostTest' -Filter 'TEST-*.xml')
+if ($focusedResults.Count -eq 0) { throw 'Focused suite produced no JUnit XML results' }
+$focusedSuites = $focusedResults | ForEach-Object { [xml](Get-Content -Raw $_.FullName) }
+$focusedTests = ($focusedSuites | ForEach-Object { [int]$_.testsuite.tests } | Measure-Object -Sum).Sum
+$focusedFailures = ($focusedSuites | ForEach-Object {
+    [int]$_.testsuite.failures + [int]$_.testsuite.errors
+} | Measure-Object -Sum).Sum
+$focusedSkipped = ($focusedSuites | ForEach-Object { [int]$_.testsuite.skipped } | Measure-Object -Sum).Sum
+if ($focusedFailures -ne 0 -or $focusedSkipped -ne 0) {
+    throw "Focused results are not clean: failures/errors=$focusedFailures skipped=$focusedSkipped"
+}
+"Focused profile-preference verification: $focusedTests tests, 0 failures/errors, 0 skipped"
 ```
 
-Expected: PASS with no skipped profile-preference tests.
+Expected: every exact class filter resolves, the command exits 0, and the dynamic JUnit summary reports a positive test count with zero failures, errors, or skipped tests. Do not hard-code a test count that becomes stale when Task 8 adds cases.
 
-- [ ] **Step 4: Run repository race and migration-gate tests**
+- [ ] **Step 5: Run repository race and migration-gate tests**
 
 Run:
 
 ```powershell
-.\gradlew.bat :shared:testAndroidHostTest --tests "*SqlDelightProfilePreferenceSyncRepositoryTest*" --tests "*SqlDelightProfilePreferencesRepositoryTest*" --tests "*ProfilePreferencesMigrationTest*" --tests "*MigrationManagerTest*" -Pskip.supabase.check=true
+.\gradlew.bat :shared:testAndroidHostTest `
+    --tests "com.devil.phoenixproject.data.sync.SqlDelightProfilePreferenceSyncRepositoryTest" `
+    --tests "com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepositoryTest" `
+    --tests "com.devil.phoenixproject.data.migration.ProfilePreferencesMigrationTest" `
+    --tests "com.devil.phoenixproject.data.migration.MigrationManagerTest" `
+    -Pskip.supabase.check=true --console=plain
 ```
 
 Expected: PASS, including accepted/conflict acknowledgement races against a newer local generation.
 
-- [ ] **Step 5: Run Koin graph verification**
+- [ ] **Step 6: Run Koin graph verification**
 
 Run:
 
@@ -8630,54 +8692,172 @@ Run:
 
 Expected: PASS. If it fails on the new constructor boundary, bind the real `MigrationManager`, `ProfilePreferenceSyncCodec`, and `SqlDelightProfilePreferenceSyncRepository` in the verification graph rather than adding nullable production dependencies.
 
-- [ ] **Step 6: Run all shared Android-host tests**
+- [ ] **Step 7: Run all shared Android-host tests and report dynamic totals**
 
 Run:
 
 ```powershell
-.\gradlew.bat :shared:testAndroidHostTest --continue -Pskip.supabase.check=true
+.\gradlew.bat :shared:testAndroidHostTest --continue -Pskip.supabase.check=true --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Full shared Android-host suite failed' }
+$allResults = @(Get-ChildItem 'shared/build/test-results/testAndroidHostTest' -Filter 'TEST-*.xml')
+if ($allResults.Count -eq 0) { throw 'Full shared suite produced no JUnit XML results' }
+$allSuites = $allResults | ForEach-Object { [xml](Get-Content -Raw $_.FullName) }
+$allTests = ($allSuites | ForEach-Object { [int]$_.testsuite.tests } | Measure-Object -Sum).Sum
+$allFailures = ($allSuites | ForEach-Object {
+    [int]$_.testsuite.failures + [int]$_.testsuite.errors
+} | Measure-Object -Sum).Sum
+$allSkipped = ($allSuites | ForEach-Object { [int]$_.testsuite.skipped } | Measure-Object -Sum).Sum
+if ($allFailures -ne 0) { throw "Full shared results contain $allFailures failures/errors" }
+"Full shared Android-host verification: $allTests tests, 0 failures/errors, $allSkipped skipped"
 ```
 
-Expected: BUILD SUCCESSFUL.
+Expected: BUILD SUCCESSFUL and a positive dynamically computed test count with zero failures/errors. Report skipped tests rather than hiding them; any skipped profile-preference suite is blocking even if unrelated platform-conditional skips are accepted.
 
-- [ ] **Step 7: Assemble the Android debug app**
+- [ ] **Step 8: Compile iOS main and test targets**
 
-Run:
+Use the same cross-host compile tasks as CI:
 
 ```powershell
-.\gradlew.bat :androidApp:assembleDebug -Pskip.supabase.check=true
+.\gradlew.bat :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 -Pskip.supabase.check=true --console=plain
 ```
 
-Expected: BUILD SUCCESSFUL.
+Expected: BUILD SUCCESSFUL with no missing iOS actual, serializer, SQLDelight query, or constructor dependency. This is compile verification only; it does not sign, link, install, or deploy an iOS app.
 
-- [ ] **Step 8: Inspect the final diff for privacy and wire regressions**
+- [ ] **Step 9: Run Android unit/lint checks and assemble the debug app**
 
 Run:
 
 ```powershell
+.\gradlew.bat :androidApp:testDebugUnitTest :androidApp:lintDebug :androidApp:assembleDebug --continue -Pskip.supabase.check=true --console=plain
+```
+
+Expected: BUILD SUCCESSFUL with Android unit tests and lint green and a debug APK under `androidApp/build/outputs/apk/debug/`.
+
+- [ ] **Step 10: Inspect committed and worktree diffs for scope, privacy, and wire regressions**
+
+Run:
+
+```powershell
+$syncBase = '6ddf9031'
+git diff --check "$syncBase..HEAD"
+if ($LASTEXITCODE -ne 0) { throw 'Committed Tasks 1-8 diff has whitespace errors' }
 git diff --check
-git diff -- docs/backend-handoff shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt
-rg -n "safeWord|safeWordCalibrated|adultsOnlyConfirmed|adultsOnlyPrompted" shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync docs/backend-handoff
+if ($LASTEXITCODE -ne 0) { throw 'Verification worktree diff has whitespace errors' }
+
+$rangeFiles = @(git diff --name-only "$syncBase..HEAD")
+$unexpected = @($rangeFiles | Where-Object {
+    $_ -notmatch '^docs/backend-handoff/' -and
+    $_ -ne 'docs/superpowers/plans/2026-07-11-profile-preferences-sync-backend.md' -and
+    $_ -ne 'gradle/libs.versions.toml' -and
+    $_ -ne 'shared/build.gradle.kts' -and
+    $_ -notmatch '^shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/' -and
+    $_ -ne 'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt' -and
+    $_ -ne 'shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq' -and
+    $_ -notmatch '^shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/' -and
+    $_ -notmatch '^shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/(FakePortalApiClient(Test)?|FakeProfilePreferenceSyncRepository|FakeSyncRepository)\.kt$' -and
+    $_ -notmatch '^shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/' -and
+    $_ -ne 'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt'
+})
+if ($unexpected.Count -ne 0) {
+    $unexpected | ForEach-Object { Write-Host $_ }
+    throw 'Committed sync range contains paths outside the reviewed Task 1-9 scope'
+}
+
+git diff --stat "$syncBase..HEAD"
+git diff "$syncBase..HEAD" -- `
+    docs/backend-handoff `
+    gradle/libs.versions.toml `
+    shared/build.gradle.kts `
+    shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync `
+    shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt `
+    shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq `
+    shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync `
+    shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil `
+    shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync `
+    shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt
+git diff
+
+$forbiddenLocalOnly = '(?i)safeword|safewordcalibrated|adultsonlyconfirmed|adultsonlyprompted'
+$privacyTargets = @(
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync',
+    'docs/backend-handoff/profile-preferences-supabase.sql',
+    'docs/backend-handoff/profile-preference-byte-goldens.json',
+    'docs/backend-handoff/profile-preferences-edge-functions.md'
+)
+$privacyFiles = foreach ($target in $privacyTargets) {
+    if (Test-Path $target -PathType Container) {
+        Get-ChildItem $target -Recurse -File
+    } else {
+        Get-Item $target
+    }
+}
+$privacyHits = @($privacyFiles | Select-String -Pattern $forbiddenLocalOnly)
+$approvedDenylistFiles = @{
+    (Resolve-Path 'shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncDtos.kt').Path = 4
+    (Resolve-Path 'docs/backend-handoff/profile-preferences-edge-functions.md').Path = 4
+}
+$exactNormalizedDenylistLiteral = '^\s*"(safeword|safewordcalibrated|adultsonlyconfirmed|adultsonlyprompted)",\s*$'
+$unexpectedPrivacyHits = @($privacyHits | Where-Object {
+    -not $approvedDenylistFiles.ContainsKey($_.Path) -or
+        $_.Line -notmatch $exactNormalizedDenylistLiteral
+})
+foreach ($entry in $approvedDenylistFiles.GetEnumerator()) {
+    $count = @($privacyHits | Where-Object { $_.Path -eq $entry.Key }).Count
+    if ($count -ne $entry.Value) {
+        throw "Expected $($entry.Value) normalized denylist literals in $($entry.Key), found $count"
+    }
+}
+if ($unexpectedPrivacyHits.Count -ne 0) {
+    $unexpectedPrivacyHits | ForEach-Object { Write-Host "$($_.Path):$($_.LineNumber)" }
+    throw 'Local-only safety/consent name escaped the two approved rejection denylists'
+}
+$mobileSecretHits = @(Get-ChildItem 'shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync' -File |
+    Select-String -Pattern 'SUPABASE_SERVICE_ROLE_KEY|serviceRoleKey')
+if ($mobileSecretHits.Count -ne 0) { throw 'A service-role secret identifier entered mobile sync code' }
 ```
 
-Expected: `git diff --check` emits nothing. The final `rg` command emits no sync DTO/payload/SQL occurrence; prose in the Edge handoff may name these fields only in an explicit prohibition section.
+Expected: both whitespace checks emit nothing; every committed path is in the allowlist; the full `6ddf9031..HEAD` feature diff—not merely the clean worktree—is reviewed. The four local-only safety/consent names appear only as eight exact lowercase string literals in the approved mobile and Edge rejection denylists—never as DTO fields or payload values—and service-role secret identifiers produce zero mobile-code hits. Confirm manually in that diff that `localGeneration` is never serialized, preference-only bodies contain no active profile metadata or ordinary entities, diagnostics contain fixed categories/counts only, and no service-role value enters mobile code.
 
-- [ ] **Step 9: Commit final verification-only adjustments**
+- [ ] **Step 11: Confirm local-only handoff scope**
 
-If formatting or DI verification changed tracked files, commit only those verified adjustments:
+Task 9 must finish without creating or changing any portal checkout, migration, advisor disposition, remote branch, database object, or Edge Function. Verify the mobile feature range itself contains no portal-repository target:
 
 ```powershell
-git add shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt
-git commit -m "test(sync): verify profile preference integration"
+$syncBase = '6ddf9031'
+$portalTargets = @(git diff --name-only "$syncBase..HEAD" | Where-Object { $_ -match '^supabase/' })
+if ($portalTargets.Count -ne 0) {
+    $portalTargets | ForEach-Object { Write-Host $_ }
+    throw 'Mobile Task 9 must not contain portal-repository Supabase changes'
+}
 ```
 
-If Step 5 required no file changes, do not create an empty commit.
+Expected: no output. Do not run any command from the external portal acceptance checklist below.
+
+- [ ] **Step 12: Commit only a verified Koin-test adjustment, if one was required**
+
+If and only if Step 6 proved that `KoinModuleVerifyTest.kt` needed a verification-only change, require it to be the sole dirty path before committing:
+
+```powershell
+$allowed = 'shared/src/androidHostTest/kotlin/com/devil/phoenixproject/di/KoinModuleVerifyTest.kt'
+$dirty = @(git status --porcelain | ForEach-Object { $_.Substring(3).Replace('\', '/') })
+if ($dirty.Count -eq 0) {
+    Write-Host 'No Task 9 verification adjustment to commit'
+} elseif ($dirty.Count -eq 1 -and $dirty[0] -eq $allowed) {
+    git add -- $allowed
+    git commit -m "test(sync): verify profile preference integration"
+} else {
+    $dirty | ForEach-Object { Write-Host $_ }
+    throw 'Task 9 will not commit formatting or implementation changes owned by Tasks 1-8'
+}
+```
+
+If Step 6 required no file changes, do not create an empty commit. After any Koin-test commit, rerun Steps 2, 6, and 10.
 
 ---
 
-## Portal Handoff Acceptance Checklist
+## External Portal Handoff Acceptance Checklist (Separate Authorization; Not Task 9)
 
-The portal implementer must record all of these results before the mobile release is enabled:
+This checklist is a backend handoff for a portal owner working in the portal repository after separate explicit authorization. It does not authorize the mobile implementation agent to install or invoke Supabase tooling, access a Supabase project, execute SQL, use Dashboard/MCP actions, create a remote migration, deploy functions, or change external state. Task 9 ends before this checklist. A future portal implementer must record all of these results before the mobile release is enabled:
 
 - [ ] The real portal migration was created with `supabase migration new profile_preferences` and the reviewed mobile SQL was copied without weakening grants, constraints, RLS, or RPC execution privileges.
 - [ ] `supabase start` precedes `supabase db reset`, `supabase migration list`, `supabase test db`, function tests, lint, and advisors in a disposable/local environment.
