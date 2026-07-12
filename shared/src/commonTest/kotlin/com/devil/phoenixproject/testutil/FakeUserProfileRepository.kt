@@ -57,6 +57,26 @@ class FakeUserProfileRepository : UserProfileRepository {
             error("Unknown profile preferences: $profileId")
         }
 
+    fun seedReadyProfileForTest(
+        profileId: String,
+        name: String = profileId,
+        colorIndex: Int = 0,
+    ): UserProfile {
+        seedProfileWithDefaultPreferences(profileId, name, colorIndex)
+        emitReadyForTest(profileId)
+        return profiles.getValue(profileId)
+    }
+
+    fun emitSwitchingForTest(targetProfileId: String?) {
+        _activeProfileContext.value = ActiveProfileContext.Switching(targetProfileId)
+    }
+
+    fun emitReadyForTest(profileId: String) {
+        require(profiles.containsKey(profileId)) { "Unknown profile: $profileId" }
+        setActiveIdentityLocked(profileId)
+        publishReady(profileId)
+    }
+
     fun setActiveProfileForTest(
         id: String = DEFAULT_PROFILE_ID,
         subscriptionStatus: SubscriptionStatus = SubscriptionStatus.FREE,
@@ -373,11 +393,23 @@ class FakeUserProfileRepository : UserProfileRepository {
         name: String,
         colorIndex: Int,
         id: String = generateUUID(),
+    ): UserProfile = seedProfileWithDefaultPreferences(
+        profileId = id,
+        name = name,
+        colorIndex = colorIndex,
+    )
+
+    private fun seedProfileWithDefaultPreferences(
+        profileId: String,
+        name: String,
+        colorIndex: Int,
     ): UserProfile {
+        require(profileId.isNotBlank()) { "Profile ID must not be blank" }
         val trimmedName = name.trim()
         require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
+        require(!profiles.containsKey(profileId)) { "Profile already exists: $profileId" }
         val profile = UserProfile(
-            id = id,
+            id = profileId,
             name = trimmedName,
             colorIndex = colorIndex,
             createdAt = currentTimeMillis(),
@@ -385,6 +417,7 @@ class FakeUserProfileRepository : UserProfileRepository {
         )
         profiles[profile.id] = profile
         ensurePreferenceFlow(profile.id)
+        localSafety.getOrPut(profile.id) { ProfileLocalSafetyPreferences() }
         updateIdentityFlows()
         return profile
     }
