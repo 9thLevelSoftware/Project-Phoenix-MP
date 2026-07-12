@@ -15,6 +15,8 @@ import com.devil.phoenixproject.data.integration.SqlDelightExternalRoutineReposi
 import com.devil.phoenixproject.data.integration.SqlDelightIntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.local.DatabaseFactory
 import com.devil.phoenixproject.data.local.ExerciseImporter
+import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
+import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.*
 import org.koin.dsl.module
 
@@ -33,7 +35,16 @@ val dataModule = module {
     single<WorkoutRepository> { SqlDelightWorkoutRepository(get(), get()) }
     single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get()) }
     single<GamificationRepository> { SqlDelightGamificationRepository(get()) }
-    single<UserProfileRepository> { SqlDelightUserProfileRepository(get()) }
+    single<ProfilePreferencesRepository> { SqlDelightProfilePreferencesRepository(get()) }
+    single<ProfileLocalSafetyStore> { SettingsProfileLocalSafetyStore(get()) }
+    single<UserProfileRepository> {
+        SqlDelightUserProfileRepository(
+            database = get(),
+            profilePreferencesRepository = get(),
+            profileLocalSafetyStore = get(),
+            gamificationRepository = get(),
+        )
+    }
 
     // Rep Metrics Repository
     single<RepMetricRepository> { SqlDelightRepMetricRepository(get()) }
