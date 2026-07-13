@@ -20,6 +20,7 @@
 - Seed writes use repository APIs except for fixture-owned cleanup where no delete API exists. Never reset through `UserProfileRepository.deleteProfile`, because deletion merges data into Default.
 - Seed exactly five completed sessions per QA profile for one deterministic catalog exercise, two stored PR types that render all three insight highlights, one assessment, one passing velocity 1RM, and per-rep VBT metrics.
 - Profile A and B have visibly distinct complete core, rack, workout, LED, VBT, and local-safety preferences. Profile B has VBT disabled while historical assessment and velocity data remain present.
+- The exact five-item bottom-bar order is Analytics, Insights, Home, Profile, Settings. Home uses the existing `NavigationRoutes.Home` destination, a Home icon, localized Home semantics, and the stable `NAV_HOME` test tag; no Workouts bottom item remains.
 - APKs, emulator images, AVD directories, snapshots, databases, logs, and hashes containing absolute machine paths are stored outside Git under `.phoenix-review/profile-readiness/`.
 - Any new production-visible Kotlin behavior follows strict red-green-refactor TDD. Documentation/configuration artifacts have contract tests before their final contents are added.
 - Task 11 remains verification-only. All fixture and harness work is completed and reviewed before rerunning it.
@@ -180,6 +181,41 @@ Expected: zero failures/errors/skips. Commit `test: add deterministic profile QA
 
 ---
 
+### Task 3A: Put Home in the Center Bottom-Bar Position
+
+**Files:**
+- Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/ProfileNavigationContractTest.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutes.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt`
+- Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/util/TestTags.kt`
+- Modify: all five `shared/src/commonMain/composeResources/values*/strings.xml` files
+
+**Interfaces:**
+- Consumes: the existing `NavigationRoutes.Home` and `NavigationRoutes.SmartInsights` destinations and five equal-width root cells.
+- Produces: exact `ANALYTICS, INSIGHTS, HOME, PROFILE, SETTINGS` enum/render order, localized Home semantics, `Icons.Default.Home`, and `TestTags.NAV_HOME`.
+
+- [ ] **Step 1: Change the navigation contract first**
+
+Require exact enum order `ANALYTICS, INSIGHTS, HOME, PROFILE, SETTINGS`; `HOME(NavigationRoutes.Home.route)`; no `BottomNavItem.WORKOUT`; Home icon/semantic/click/selection branches; `NAV_HOME` present once and `NAV_WORKOUTS` absent; Profile remains fourth with click and long-click behavior unchanged.
+
+- [ ] **Step 2: Run RED**
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "com.devil.phoenixproject.presentation.navigation.ProfileNavigationContractTest" --rerun-tasks --console=plain
+```
+
+Expected: the order/tag assertions fail against the old Analytics/Workout/Insights order.
+
+- [ ] **Step 3: Implement the exact order and Home semantics**
+
+Rename the root enum/callback/selection/content-description/test-tag symbols from Workout to Home, move Insights to the second enum entry, and use localized `cd_home` values: English `Home`, German `Startseite`, Spanish `Inicio`, Dutch `Startpagina`, French `Accueil`. Retain the underlying Home route and all workout-flow routes.
+
+- [ ] **Step 4: Run GREEN and regressions**
+
+Run the Step 2 command plus the exact Task 10 34-test ownership suite and Android/iOS main/test compilation. Expected: zero failures/errors/skips. Commit `fix: center Home in bottom navigation`.
+
+---
+
 ### Task 4: Execute Offline Upgrade and Populated Profile Acceptance
 
 **Files:**
@@ -196,7 +232,7 @@ Restore `phoenix-schema42-v1` with `-force-snapshot-load -no-snapshot-save`, kee
 
 - [ ] **Step 2: Seed and verify the complete Profile matrix**
 
-Install/launch the current debug APK on a fresh disposable AVD, disable networking, broadcast the seed action, and wait for `PROFILE_QA_SEED_OK`. Through UI-tree-derived coordinates verify A/B preference swaps including racks and local safety, five-session history, all three PR highlights, velocity 1RM precedence, selection isolation, B's disabled VBT with historical assessment/velocity insight still visible, rename/delete guard, global-only Settings, Profile-only Equipment Rack/Achievements, and absence of legacy selectors.
+Install/launch the current debug APK on a fresh disposable AVD, disable networking, broadcast the seed action, and wait for `PROFILE_QA_SEED_OK`. First verify the exact Analytics → Insights → Home → Profile → Settings icon-only bottom order and localized Home semantics. Through UI-tree-derived coordinates verify A/B preference swaps including racks and local safety, five-session history, all three PR highlights, velocity 1RM precedence, selection isolation, B's disabled VBT with historical assessment/velocity insight still visible, rename/delete guard, global-only Settings, Profile-only Equipment Rack/Achievements, and absence of legacy selectors.
 
 - [ ] **Step 3: Exercise accessibility and haptic evidence**
 

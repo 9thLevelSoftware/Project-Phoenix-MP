@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Complete `docs/superpowers/plans/2026-07-11-profile-preferences-data-foundation.md` first. This plan consumes its exact profile types and persistence behavior; it must not recreate a second preference store.
-- The approved bottom-bar order is Analytics, Workout, Insights, Profile, Settings.
+- The approved bottom-bar order is Analytics, Insights, Home, Profile, Settings.
 - The bar remains icon-only. Profile uses `Icons.Default.Person`.
 - At 320dp width, every one of the five equal-width cells must retain a clickable area at least 48dp high and 48dp wide; outer horizontal padding is at most 8dp and the old inner `widthIn(min = 64.dp)` is removed.
 - A normal Profile-item tap navigates with the existing root-tab save/restore behavior. A long press performs long-press haptic feedback and opens the switcher without navigating.
@@ -5167,7 +5167,7 @@ git commit -m "feat: build profile identity and exercise insights"
 
 **Interfaces:**
 - Consumes: Tasks 3 and 4's localized recovery copy and callback-only modal surfaces; Task 6's exact `ProfileScreen(..., onProfileRecoveryRequired: (ProfileContextRecoveryException) -> Unit, ...)` handoff; `UserProfileRepository.setActiveProfile`, `createAndActivateProfile`, and `reconcileActiveProfileContext`; and the full `ActiveProfileContext` sealed state, including `Switching(null)`.
-- Produces: `NavigationRoutes.Profile`; the single canonical Analytics/Workout/Insights/Profile/Settings root order; a root-scoped `ProfileSwitcherViewModel`; pointer and semantic long press with haptic feedback; inline modal errors; one blocking recovery owner; and removal of every Home/Just Lift legacy profile selector and repository-coupled identity dialog.
+- Produces: `NavigationRoutes.Profile`; the single canonical Analytics/Insights/Home/Profile/Settings root order; a root-scoped `ProfileSwitcherViewModel`; pointer and semantic long press with haptic feedback; inline modal errors; one blocking recovery owner; and removal of every Home/Just Lift legacy profile selector and repository-coupled identity dialog.
 - Concurrency invariant: switch, create, and recovery-retry operations acquire a synchronous token before launching, only the owning token may publish a terminal state, and Task 6 recovery invalidates any stale root operation before showing recovery.
 - Modal invariant: `switchingInFlight` is explicit and never inferred from a nullable target ID; `Switching(null)` disables rows, add, gestures, back, scrim, and dismissal. Errors render inside their owning modal and never queue behind it in a root snackbar.
 - Ownership invariant: `ProfileSwitcherViewModel` is the only switch/create/reconcile caller in presentation code after this task. `ProfileScreen` and the Profile tab long press only dispatch callbacks to that root owner.
@@ -7856,7 +7856,7 @@ Use the Step 7 debug APK, a disposable Android emulator, and local data only. Re
 
 The manual matrix is:
 
-1. Fresh install at 320dp width: exactly five icon-only root tabs render without clipping in Analytics → Workout → Insights → Profile → Settings order.
+1. Fresh install at 320dp width: exactly five icon-only root tabs render without clipping in Analytics → Insights → Home → Profile → Settings order.
 2. Profile tap navigates and restores saved tab state. Profile long press produces haptic feedback, opens the sole root sheet, and does not navigate. With TalkBack enabled, Profile exposes separate labeled click and long-click actions.
 3. Create local profiles A and B. Creation activates only after success. Give A and B distinct body weight/unit/increment, rack, workout timers/audio/auto-start/scaling, LED, VBT, verbal, and local safety values. A → B swaps all values; B → A restores A exactly.
 4. Select different exercises for A and B. A → B → A restores each selection without flashing stale metrics. Verify current 1RM precedence, three PR highlights, five-session history, and the empty state with deterministic local workout data.
