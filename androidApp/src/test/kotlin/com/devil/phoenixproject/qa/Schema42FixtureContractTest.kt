@@ -10,24 +10,31 @@ import org.junit.Test
 class Schema42FixtureContractTest {
     @Test
     fun fixtureGuideWaitsForRequiredProfileMigrationBeforeInspection() {
-        val guide = File(findRepoRoot(), "docs/qa/profile-schema42-fixture.md").readText()
+        val guide = File(findRepoRoot(), "docs/qa/profile-schema42-fixture.md")
+            .readText()
+            .replace("\r\n", "\n")
+        val readinessBlock = listOf(
+            "\$migrationDeadline = [DateTime]::UtcNow.AddSeconds(60)",
+            "\$migrationReady = \$false",
+            "do {",
+            "    \$migrationLine = & \$adb shell run-as \$package grep -F profile_preferences_legacy_migration_complete_v1 shared_prefs/vitruvian_preferences.xml 2>\$null",
+            "    \$migrationReady = \$LASTEXITCODE -eq 0 -and \$migrationLine -match 'value=\"true\"'",
+            "    if (-not \$migrationReady) { Start-Sleep -Seconds 1 }",
+            "} while (-not \$migrationReady -and [DateTime]::UtcNow -lt \$migrationDeadline)",
+            "if (-not \$migrationReady) { throw 'Timed out after 60 seconds waiting for required profile preference migration' }",
+        ).joinToString("\n")
 
-        val migrationPoll = guide.indexOf("profile_preferences_legacy_migration_complete_v1")
-        val forceStop = guide.lastIndexOf("shell am force-stop \$package")
-        val sqlInspection = guide.lastIndexOf("sqlite3 databases/vitruvian.db")
-
-        assertTrue("Guide must poll the authoritative required-migration marker", migrationPoll >= 0)
+        val readinessStart = guide.indexOf(readinessBlock)
         assertTrue(
-            "Guide must use a bounded 60-second migration deadline",
-            guide.contains("[DateTime]::UtcNow.AddSeconds(60)"),
+            "Guide must contain the complete bounded migration-readiness polling block",
+            readinessStart >= 0,
         )
-        assertTrue(
-            "Guide must fail explicitly when required migration misses its deadline",
-            guide.contains("if (-not \$migrationReady) { throw"),
-        )
+        val readinessEnd = readinessStart + readinessBlock.length
+        val forceStop = guide.indexOf("& \$adb shell am force-stop \$package", startIndex = readinessEnd)
+        val sqlInspection = guide.indexOf("sqlite3 databases/vitruvian.db", startIndex = forceStop)
         assertTrue(
             "Guide must wait for migration before force-stop and SQL inspection",
-            migrationPoll < forceStop && forceStop < sqlInspection,
+            readinessEnd <= forceStop && forceStop < sqlInspection,
         )
     }
 
