@@ -7704,7 +7704,16 @@ foreach ($path in $handoffFiles) {
     if ($LASTEXITCODE -ne 0) { throw "Missing tracked backend handoff artifact $path" }
 }
 $handoffTest = Get-Content -Raw 'shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/BackendHandoffContractTest.kt'
-if ($handoffTest -match 'e3b0c44298fc1c149afbf4c8996fb924') {
+$pinnedDigestMatch = [regex]::Match(
+    $handoffTest,
+    'EXPECTED_EDGE_HANDOFF_SHA256\s*=\s*"(?<digest>[0-9a-f]{64})"'
+)
+if (-not $pinnedDigestMatch.Success) {
+    throw 'Backend handoff test does not pin one exact SHA-256 digest'
+}
+$pinnedDigest = $pinnedDigestMatch.Groups['digest'].Value
+$emptyDigest = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+if ($pinnedDigest -eq $emptyDigest) {
     throw 'Backend handoff still uses the empty-string digest sentinel'
 }
 
