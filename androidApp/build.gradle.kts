@@ -332,4 +332,7 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.koin.test)
     testImplementation(libs.koin.test.junit4)
+    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.multiplatform.settings)
+    testImplementation(libs.multiplatform.settings.test)
 }
