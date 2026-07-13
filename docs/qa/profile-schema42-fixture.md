@@ -111,6 +111,14 @@ Install the current debug APK with `-r` so Android retains the schema-42 databas
 $upgradeApk = (Resolve-Path '..\profile-readiness\androidApp\build\outputs\apk\debug\androidApp-debug.apk')
 & $adb install -r $upgradeApk
 & $adb shell monkey -p $package -c android.intent.category.LAUNCHER 1
+$migrationDeadline = [DateTime]::UtcNow.AddSeconds(60)
+$migrationReady = $false
+do {
+    $migrationLine = & $adb shell run-as $package grep -F profile_preferences_legacy_migration_complete_v1 shared_prefs/vitruvian_preferences.xml 2>$null
+    $migrationReady = $LASTEXITCODE -eq 0 -and $migrationLine -match 'value="true"'
+    if (-not $migrationReady) { Start-Sleep -Seconds 1 }
+} while (-not $migrationReady -and [DateTime]::UtcNow -lt $migrationDeadline)
+if (-not $migrationReady) { throw 'Timed out after 60 seconds waiting for required profile preference migration' }
 & $adb shell am force-stop $package
 & $adb shell run-as $package sqlite3 databases/vitruvian.db 'PRAGMA user_version;'
 & $adb shell run-as $package sqlite3 databases/vitruvian.db 'SELECT profile_id, legacy_migration_version, body_weight_kg, weight_unit, weight_increment, led_color_scheme_id, equipment_rack_json, workout_preferences_json, vbt_preferences_json FROM UserProfilePreferences ORDER BY profile_id;'

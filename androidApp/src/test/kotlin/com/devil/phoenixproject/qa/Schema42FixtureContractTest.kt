@@ -9,6 +9,29 @@ import org.junit.Test
 
 class Schema42FixtureContractTest {
     @Test
+    fun fixtureGuideWaitsForRequiredProfileMigrationBeforeInspection() {
+        val guide = File(findRepoRoot(), "docs/qa/profile-schema42-fixture.md").readText()
+
+        val migrationPoll = guide.indexOf("profile_preferences_legacy_migration_complete_v1")
+        val forceStop = guide.lastIndexOf("shell am force-stop \$package")
+        val sqlInspection = guide.lastIndexOf("sqlite3 databases/vitruvian.db")
+
+        assertTrue("Guide must poll the authoritative required-migration marker", migrationPoll >= 0)
+        assertTrue(
+            "Guide must use a bounded 60-second migration deadline",
+            guide.contains("[DateTime]::UtcNow.AddSeconds(60)"),
+        )
+        assertTrue(
+            "Guide must fail explicitly when required migration misses its deadline",
+            guide.contains("if (-not \$migrationReady) { throw"),
+        )
+        assertTrue(
+            "Guide must wait for migration before force-stop and SQL inspection",
+            migrationPoll < forceStop && forceStop < sqlInspection,
+        )
+    }
+
+    @Test
     fun schema42FixturePinsTheLegacyUpgradeContract() {
         val repoRoot = findRepoRoot()
         val fixtureFile = File(
