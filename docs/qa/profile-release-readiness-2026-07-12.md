@@ -1,147 +1,156 @@
-# Profile release-readiness evidence — 2026-07-12
+# Profile release-readiness evidence — corrected 2026-07-13
 
 ## Verdict
 
 - Execution status: **DONE_WITH_CONCERNS**.
-- Offline Profile acceptance: **READY** — all 8 required manual rows passed on local API-36 emulators.
-- Schema 42 → 43 replay: **PASS**.
+- Release verdict: **NOT READY**.
+- Exact-head build: **PASS** at `8103281babd6484a3c6aa1471c672dbfeff7a842`.
+- Offline schema 42 → 43 named-snapshot replay: **PASS**.
+- Manual matrix: seven rows pass; row 2 is **NOT VERIFIED** because this run did not obtain distinguishable TalkBack focus on the resumed Profile destination.
 - Reviewed no-trainer runtime substitution: **PASS**, 20 tests, 0 failures, 0 errors, 0 skipped.
-- Concern: `spotlessCheck` reproduces one pre-existing Kotlin line-ending violation in `androidApp/build.gradle.kts`; it is not reported as passing and was not changed in this evidence-only task.
-- Availability limits: no physical Android device and no compatible trainer were present. Audible TalkBack output, felt tactile feedback, and live trainer telemetry are therefore recorded as **UNAVAILABLE**, not inferred from the emulator.
+- Repository formatting gate: **FAILED** on the pre-existing mixed line endings in `androidApp/build.gradle.kts` lines 333–338. It is not reported as passing and was not changed.
 
-The manual release boundary is ready on the reviewed fixture. The overall execution status retains concerns because the repository-wide Spotless baseline is red and hardware-only observations were unavailable.
+The prior report overstated the TalkBack result and therefore the release verdict. The Profile destination still exposes its accessibility label and long-click semantics, and the earlier emulator run captured the expected haptic request, but neither substitutes for the specifically requested resumed TalkBack-focus proof. A physical Android device and compatible trainer were also unavailable, so audible speech, felt haptics, and live trainer telemetry remain unavailable rather than inferred.
 
 ## Scope and provenance
 
 - Working branch: `codex/profile-readiness-fixtures`.
-- Acceptance HEAD: `a9028cade2cbfbeacf405a746e40c4f6e44bdb22` (`fix: center Home in bottom navigation`).
-- Schema-42 fixture source: `ac84d9bb8e156002833ad526bf324a8f12710da0`.
-- Materialized fixture commit: `0c9bf3e4e87133a825c8b82aaaa333a3464d53b8` (`test: materialize schema 42 fixture`).
+- Acceptance/code HEAD: `8103281babd6484a3c6aa1471c672dbfeff7a842` (`fix: use localized Insights navigation semantics`).
+- Earlier matrix HEAD used for regression-unaffected rows 4–7: `a9028cade2cbfbeacf405a746e40c4f6e44bdb22`.
+- The app-code delta from `a9028ca` to `8103281b` is limited to localized Insights bottom-navigation semantics plus its contract test; rows 4–7 do not exercise that delta. Rows 1, 3, and 8, plus the bounded accessibility attempt, were rerun with the exact `8103281b` APK.
 - Package: `com.devil.phoenixproject.debug`, version code `5`, version name `0.9.5-DEBUG`.
-- Both APKs used signer SHA-256 `2e32fe247c669eb21d3dad50ee9c223180b7f370bd333d3fb95177d4e247e30c`.
-- Local evidence root: `C:\Users\dasbl\AndroidStudioProjects\Project-Phoenix-MP\.phoenix-review\profile-readiness\task4-final`.
+- Exact-head evidence root: `C:\Users\dasbl\AndroidStudioProjects\Project-Phoenix-MP\.phoenix-review\task4\final-transcripts`.
+- Earlier regression-unaffected matrix root: `C:\Users\dasbl\AndroidStudioProjects\Project-Phoenix-MP\.phoenix-review\profile-readiness\task4-final\matrix`.
 
-All emulator work was local and offline. Airplane mode was enabled, Wi-Fi disabled, and mobile data disabled before installing or launching the APKs. The QA seed remained inside the debug-only boundary.
+All emulator validation was local and offline. Airplane mode was enabled and Wi-Fi was disabled before install/launch. The upgrade replay also had mobile data disabled before install. On the fresh matrix, airplane mode already prevented connectivity during install; all mobile-data keys were explicitly set to `0` and the active network was `none` before first launch.
 
 No Supabase CLI/MCP/Dashboard/remote action was performed.
 
-## Fixture and evidence hashes
+## Exact-head APK build
 
-| Artifact | SHA-256 |
-| --- | --- |
-| Schema-42 APK | `00bc1365c1c038d93a8872410881ea749c1317a23fa3917420d8646f36727eac` |
-| Current debug APK built at the acceptance HEAD | `194e677f96cd0ebefdca92acaedd5f0938dc6aa475c73c3d352aa388b64fa1ca` |
-| Tracked/device legacy preferences XML | `a985f45159b1d383992210ce0464e7f06a7de598ba20a2633f6ce0f3cedc2cf3` |
-| Schema-42 database before upgrade | `1fe5af46d8b87e0c9eed56e1ad568f7a18f3659d388fcdf0be389d9d309dffc3` |
-| Seeded matrix database | `5b3bde4844e77ed05c37ec0dcaef2d9ccc75b6d884506ec4ea0826d9aeef1221` |
-| Seeded matrix preferences XML | `c434d425c0a694d02dcdb15c59d763193a459c916a45682f6c54c7707c5c1c9e` |
-| Seed marker log | `3924e9d0338941a37bc500270bf59bda8ce733eba317c14c7dbb58eceb3d4f18` |
-| Post-delete database | `b75e005a876778e7e69bf691864c1f56c8e18dccb7cbba75ecb8686254d759cf` |
-| TalkBack Profile action node | `50885addc2b54eb2456b76440ec6469e9da37be844d7a8d32f1ebcd6151b10fa` |
-| Vibrator service capture | `a4e901d56aaf3104170540c03ebd87af33fbcd50ad383ac2743302ab87d41f34` |
-
-The final immutable `phoenix-schema42-v1` snapshot payload hashes were:
-
-- `hardware.ini`: `d2f55bbb9fc06476293c2460b9e743bd40ba0fd70e7bc13ec9a3155c10f03938`
-- `ram.bin`: `eabce3b62cacaa5feff842e6e26484759db4a4ec1f41c31998cf952b4b2aeda9`
-- `screenshot.png`: `8a9f899b79141dcbc9a39a2e66ba2d8710a3aae5ac46db3242d0d2084a6fc480`
-- `snapshot.pb`: `53c714141ddad2efcae4884cec0d1a02e87ec498b5693ff86f8063f6e10228a9`
-- `textures.bin`: `9da9d94e2e86016384b8b9647e4af8f70fa25381ccc4c9366c8be5ffc8777b5b`
-
-These hashes were unchanged after both disposable clones were removed.
-
-## Build and emulator inventory
-
-The exact current APK was built with:
+The definitive build command was:
 
 ```powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :androidApp:assembleDebug --rerun-tasks --console=plain
 ```
 
-Result: `BUILD SUCCESSFUL` in 4m 07s; 74 tasks executed.
+It ran at exact HEAD `8103281b`, exited `0`, and reported `BUILD SUCCESSFUL in 2m 14s` with 74 tasks executed. The resulting APK is `androidApp-debug-8103281b.apk`, length `40,998,548` bytes, SHA-256:
 
-Both disposable AVDs used the Google Pixel 6 profile, Android API 36, Google Play x86_64 image, and Android Emulator 36.3.10. The upgrade clone used 1080 × 2400 pixels at 420 dpi. The wiped matrix clone used 1080 × 2400 pixels with density overridden to 540 dpi, yielding exactly `1080 × 160 / 540 = 320dp` width.
-
-Upgrade AVD network state before install/launch: airplane `1`, Wi-Fi disabled, mobile data `0`. Matrix AVD network state before install/launch: airplane `1`, Wi-Fi disabled, mobile data `0`, and the package path was absent.
-
-## Schema 42 → 43 upgrade replay
-
-A disposable clone of the immutable schema-42 AVD was cold-booted with snapshot writes disabled. Before upgrade it had `PRAGMA user_version=42`, one existing profile, and no `UserProfilePreferences` table. Its stopped database and XML matched the immutable fixture hashes above.
-
-The current APK was installed without uninstalling or clearing data:
-
-```powershell
-adb -s emulator-5560 install -r C:\Users\dasbl\AndroidStudioProjects\Project-Phoenix-MP\.phoenix-review\profile-readiness\task4-final\upgrade\current-debug-a9028ca.apk
+```text
+d150cc8deeefee313cbecbaa847f60d5187360943b1a33266d0a2eb8b2f9a072
 ```
 
-`adb install -r` returned success, preserved `firstInstallTime`, and left the database/XML hashes unchanged before first launch. The first bounded poll observed:
+Complete command metadata, standard output, standard error, exit capture, APK badging, and hashes are in `build.metadata.txt`, `build.stdout.txt`, `build.stderr.txt`, `build.exit.txt`, `build.apk-badging.txt`, and `build.sha256.txt`. Two earlier wrapper attempts failed before Gradle because the wrapper lacked `JAVA_HOME` and then `ANDROID_HOME`; their complete captures remain as `build-attempt1-harness.*` and `build-attempt2-env.*`. They are not presented as build attempts that compiled source.
 
-```xml
-<boolean name="profile_preferences_legacy_migration_complete_v1" value="true" />
+Key hashes from `build.sha256.txt`:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Exact APK | `d150cc8deeefee313cbecbaa847f60d5187360943b1a33266d0a2eb8b2f9a072` |
+| Build stdout | `4aa48b85448e7607e8487d8f699389f7de75f51c7a12e6faeb80e6c3d5974f79` |
+| Build stderr | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| Build exit capture | `271e34725eb16539a3eae5218bdde30854e4e91faa5e83662370fcb04ddc2813` |
+
+## Actual named-snapshot replay and upgrade
+
+The immutable source AVD was never launched or mutated. The first disposable clone copied the original `phoenix-schema42-v1` snapshot byte-for-byte and attempted:
+
+```text
+-snapshot phoenix-schema42-v1 -force-snapshot-load -no-snapshot-save
 ```
 
-Stopped inspection after launch showed:
+The emulator rejected that copied snapshot with `different AVD configuration`, deleted only the disposable clone's copied tag, and exited. The failed attempt, exact command, output, bounded ADB checks, cleanup, and unchanged source hashes are preserved under `snapshot-attempt1/`.
+
+The fallback used a second disposable clone. It cold-booted with snapshot loading and saving disabled, stayed offline, and reproduced the immutable stopped app data exactly:
+
+| Artifact | Immutable and pre-save SHA-256 |
+| --- | --- |
+| Schema-42 database | `1fe5af46d8b87e0c9eed56e1ad568f7a18f3659d388fcdf0be389d9d309dffc3` |
+| Legacy preferences XML | `a985f45159b1d383992210ce0464e7f06a7de598ba20a2633f6ce0f3cedc2cf3` |
+
+The fallback then saved the exact tag with `adb -s emulator-5560 emu avd snapshot save phoenix-schema42-v1`, shut down, and relaunched with:
+
+```text
+-snapshot phoenix-schema42-v1 -force-snapshot-load -no-snapshot-save
+```
+
+The emulator reported `Successfully loaded snapshot 'phoenix-schema42-v1' using 3887 ms`; ADB was online and `boot_completed=1` on the first poll. The database and XML still matched the immutable hashes before install. The saved snapshot's state payload files remained unchanged across replay; the emulator rewrote only `snapshot.pb` metadata during load, recorded explicitly in `named-snapshot-replay/snapshot-replay-integrity.txt`.
+
+The exact-head APK was installed with `adb install -r`. Install output was `Success`, `firstInstallTime` remained `2026-07-12 20:18:39`, and the database/XML remained byte-identical before first launch. The first migration-gate poll observed the completion flag. Stopped inspection then showed:
 
 ```text
 user_version=43
 profile_count=1
 preference_count=1
-default|1|1|82.5|KG|2.5|fixture-vest|1|1|0|2|fixture-vest|3|1|1|35|ESTIMATED_1RM|1
 ```
 
-This is exactly one normalized preferences row for the one existing profile, with `schema_version=1`, `legacy_migration_version=1`, the legacy core/rack/workout/LED/VBT values, the single-exercise rack reference, and migrated VBT forced enabled. The UI reached a Ready Home context with the workout chooser.
+The one existing Default profile had one `schema_version=1`, `legacy_migration_version=1` row containing the legacy 82.5 kg core values, Fixture Vest rack, workout document, LED scheme, and enabled VBT document. Evidence is in `named-snapshot-replay/install-r.*`, `postinstall-prelaunch-hashes.txt`, `migration-gate-result.txt`, `postmigration-before-new-profile-query.txt`, and the captured stopped DB/XML files.
 
-After a second app launch, the entire preferences row remained equal and the normalized projection hash remained `3b33672d6ac7606bc34a840ee9cd352a49ff33efff099b5d65f2a19b59dc04a1`. The completion flag remained true. Different whole-database hashes reflect unrelated onboarding state; the complete migrated row and normalized projection were unchanged.
+Migration idempotence is also retained in the earlier regression-unaffected upgrade evidence under `C:\Users\dasbl\AndroidStudioProjects\Project-Phoenix-MP\.phoenix-review\profile-readiness\task4-final\upgrade`: `normalized-first.txt` and `normalized-second.txt` have the same normalized projection SHA-256, `3b33672d6ac7606bc34a840ee9cd352a49ff33efff099b5d65f2a19b59dc04a1`, and the complete `UserProfilePreferences` row compares equal between `postmigration-first.db` and `postmigration-second.db`. The only intervening app-code change was the Insights content description; it did not touch migration or persistence.
 
-Evidence: `upgrade/preupgrade-inspection.txt`, `upgrade/adb-install-r.txt`, `upgrade/completion-flag-first.txt`, `upgrade/normalized-first.txt`, `upgrade/normalized-second.txt`, `upgrade/postmigration-first.db`, `upgrade/postmigration-second.db`, and `upgrade/ready-home.xml`.
+### New product-default profile before any seed
 
-## Populated Profile fixture
+After the upgraded app reached a Ready Home context, the run opened the Profile switcher and created `freshdefaults` through the app UI. Repository-backed stopped inspection found one new active profile, ID `18dfe175-1169-48a8-97c9-44c8835dd55c`, with all product defaults and no inherited fixture values:
 
-On the separate wiped 320dp AVD, the debug seed action was invoked only after onboarding and a pre-seed navigation capture:
+| Section | New-profile persisted value |
+| --- | --- |
+| Schema/migration | `schema_version=1`, `legacy_migration_version=1` |
+| Core | `0.0`, `LB`, increment `-1.0` |
+| Equipment rack | `{"version":1,"items":[]}` |
+| Workout | `{"version":1}` |
+| LED | scheme `0`, `{"version":1}` |
+| VBT | enabled `1`, `{"version":1}` |
+| Per-section metadata | updated/generation/server revision `0`; dirty `1` |
+| Local safety | safe word, calibrated, adult-confirmed, and adult-prompted keys all absent |
+
+The query also proves absence of Fixture Vest, the legacy single-exercise document, and legacy VBT content. The UI remained Ready with `freshdefaults` active. Evidence is `new-profile-defaults/ui-new-profile-ready.xml`, `ui-new-profile-profile-top.xml`, `ui-defaults-sweep-*.xml`, `new-profile-defaults-query.txt`, and `after-create.db`; the query's final assertion is `all_product_defaults_pass=True`.
+
+## Fresh exact-head 320dp seeded matrix
+
+The exact APK was installed on a wiped Pixel 6 API-36 clone at 1080 × 2400 with density override 540, exactly 320dp wide. Before first launch, airplane mode was `1`, Wi-Fi was disabled, `mobile_data`, `mobile_data1`, and `mobile_data2` were `0`, and the active network was `none`.
+
+Before and after the seed, the exact icon-only bottom order was:
+
+```text
+Analytics → Insights → Home → Profile → Settings
+```
+
+The debug-only broadcast produced `ProfileQaSeed: PROFILE_QA_SEED_OK` on the first poll. Evidence is `matrix-8103281b/preseed-home.xml`, `postseed-home.xml`, `seed-broadcast.*`, `seed-poll.txt`, and `seed-result.txt`.
 
 ```powershell
 adb -s emulator-5562 shell am broadcast -a com.devil.phoenixproject.QA_SEED_PROFILE -p com.devil.phoenixproject.debug
 ```
 
-The post-clear logcat contained the exact success marker `ProfileQaSeed: PROFILE_QA_SEED_OK`.
+The run switched A → B and opened B's rack management surface. It displayed `QA Assistance B`, `Assistance - Counterweight`, `16.53 lb`, `Enabled`. It then switched B → A, opened A's rack, and displayed `QA Weighted Vest A`, `Weighted vest - Added resistance`, `10 kg`, `Enabled`.
 
-Database inspection found exactly five completed sessions for each QA profile at fixed timestamps `1700100000000` through `1700500000000`, loads 30–50 kg/cable, and 38 rep metrics per profile. Each profile had MAX_WEIGHT 50 × 3 and MAX_VOLUME 40 × 12 records, producing the three visible highlights. Each had one assessment and a newer passing velocity estimate of 77 kg/cable, MVT 0.30 m/s, R² 0.97, three distinct loads, and fixed `computedAt=4102444800000`.
+The complete post-B A sweep restored all inspected A values: 82.5 kg body weight, kg unit, 2.5 kg increment, 15s/7s/45s timing, top rep timing, audio/countdown/auto-start/motion/scaling choices, Green LED scheme, enabled VBT with 20%/Estimated 1RM, verbal/vulgar/dominatrix state, and local safety `Phoenix Alpha`, calibrated, adults-only confirmed. The stopped database and preferences XML independently preserve the full A/B documents and safety keys.
 
-The complete visible preference contrast was exercised:
-
-- Profile A: 82.5 kg, 2.5 increment, added-resistance weighted vest, 15s/7s/45s timers, top timing, Green LED, VBT enabled with 20% loss and Estimated 1RM scaling, and calibrated/adult-confirmed `Phoenix Alpha` safety state.
-- Profile B: stored 165 kg displayed in pounds, 5 increment, counterweight rack, 5s/3s/90s timers, bottom timing, Pink LED/disco, VBT disabled with retained 35%/Max Volume history preferences, and uncalibrated/adult-disabled `Phoenix Bravo` safety state.
-
-A → B changed every inspected section; B → A restored A, including rack, LED, VBT, and local safety values.
+Evidence: `matrix-8103281b/profile-b-rack-route.xml`, `restored-a-rack-route.xml`, `restored-a-sweep-1.xml` through `restored-a-sweep-10.xml`, `restored-a-sweep-combined.txt`, `seeded-final-db-query.txt`, `seeded-final-preferences.xml`, and `seeded-final-vitruvian.db`.
 
 ## Manual acceptance matrix
 
 | # | Result | Evidence and observation |
 | --- | --- | --- |
-| 1 | **PASS** | Fresh 320dp launch rendered exactly five icon-only roots in the order Analytics → Smart Insights → Home → Profile → Settings with no clipping. Home was selected, had localized `Home` semantics, and displayed `Choose Your Workout` plus workout entry buttons. Evidence: `matrix/preseed-home.xml`. |
-| 2 | **PASS** | Profile tap navigated; returning and switching restored state. Long press kept Profile navigation state and opened the sole Profiles root sheet. For app UID 10217, vibrator service recorded TOUCH `performHapticFeedback` with `Prebaked=HEAVY_CLICK`, including a completed 42ms event. With TalkBack enabled and touch exploration active, the Profile node exposed label `Profile`, `clickable=true`, and `long-clickable=true`. Evidence: `matrix/profile-switcher.xml`, `matrix/vibrator-after-2.txt`, `matrix/talkback-profile-actions-node.xml`, and `matrix/talkback-swipe-focus.png`. |
-| 3 | **PASS** | Deterministic A/B profiles carried distinct core, rack, workout, audio/auto-start/scaling, LED, VBT/verbal, and local-safety values. A → B swapped all inspected values; B → A restored A. Evidence: `matrix/profile-a-prefs*.xml`, `matrix/profile-b-*.xml`, `matrix/profile-a-restored-led.xml`, `matrix/safety-xml.txt`, and `matrix/seeded.db`. |
-| 4 | **PASS** | A was changed to `Bench Press (Bar)` and showed the deterministic empty/no-estimate state; B retained seeded `Bench Press (Bench)` and its full velocity/highlight/history state; returning to A restored Bar without B metrics. Seeded profiles showed velocity 77 kg precedence, all three PR highlights, and five history rows. Evidence: `matrix/profile-a-selection-top2.xml`, `matrix/profile-b-selection-top.xml`, `matrix/profile-a-selection-restored.xml`, `matrix/profile-a-history.xml`, `matrix/profile-b-history.xml`, `matrix/history-counts.txt`, and `matrix/insights-db.txt`. |
-| 5 | **PASS** | Active A was renamed to `QA A Renamed`. Default exposed no Delete action. Active B showed a named destructive confirmation stating workouts, routines, records, badges, assessments, and progression would move to Default. After confirmation B was absent, A remained, and B's 5 sessions/2 PRs/1 assessment/1 velocity estimate were assigned to Default. Evidence: `matrix/profile-renamed.xml`, `matrix/default-profile-top.xml`, `matrix/delete-dialog-b.xml`, `matrix/switcher-after-delete.xml`, and `matrix/postdelete-reassignment.txt`. |
-| 6 | **PASS** | Equipment Rack and Achievements opened from Profile, and the Profile ready-list ordering was preserved. Equipment Rack showed A's enabled 10 kg added-resistance weighted vest. Settings contained only the ordered global groups Like My Work?, Cloud Sync, Appearance, Language, Video Behavior, Data Management, Developer Tools, App Info; it contained no Profile rack, Achievements, or profile selector. Evidence: `matrix/equipment-rack-route.xml`, `matrix/achievements-route.xml`, `matrix/profile-a-top.xml`, `matrix/profile-a-mid.xml`, and `matrix/settings-*.xml`. |
-| 7 | **PASS** | Home edge gestures and Just Lift exposed no profile selector. B's VBT control was off while historical velocity/assessment values and five-session history remained visible. Live enable/disable behavior used the reviewed no-trainer runtime substitution below. Evidence: `matrix/home-edge-gestures.xml`, `matrix/just-lift.xml`, `matrix/profile-b-vbt.xml`, `matrix/profile-b-top.xml`, and `matrix/profile-b-history.xml`. |
-| 8 | **PASS** | The immutable schema-42 clone was upgraded offline with `adb install -r`; the awaited gate completed, one existing profile received one normalized preferences row, VBT was forced enabled, the Ready context rendered, and the complete row was unchanged on a second launch. A separately wiped pre-seed launch also confirmed the product-default Home baseline. Evidence: the upgrade files listed above and `matrix/preseed-home.xml`. |
+| 1 | **PASS** | Exact-head fresh 320dp captures render exactly Analytics → Insights → Home → Profile → Settings, with Home selected and no clipping. Evidence: `matrix-8103281b/preseed-home.xml` and `postseed-home.xml`. |
+| 2 | **NOT VERIFIED** | Tap, return, switcher behavior, the `Profile` label, focusability, and long-click semantics remain exposed; the earlier emulator captured the expected `HEAVY_CLICK` haptic request. In the exact-head attempt, TalkBack was enabled with touch exploration and visibly focused Single Exercise, but injected traversal did not yield a distinguishable Profile focus state. An injected direct touch navigated to Profile instead of proving focus. Evidence: `matrix-8103281b/talkback-home-traversal/focus-00.png` through `focus-18.png`, `talkback-profile-focus-node.txt`, and earlier `talkback-profile-actions-node.xml` / `vibrator-after-2.txt`. The requested resumed TalkBack-focus assertion is therefore not claimed. |
+| 3 | **PASS** | Exact-head A → B showed B's counterweight rack; B → A showed A's weighted vest and restored the complete A core, rack, workout, LED, VBT/verbal, and local-safety state. Evidence: the fresh rack routes, ten-file A sweep, final DB query, and preferences XML listed above. |
+| 4 | **PASS** | Regression-unaffected matrix evidence shows A selecting `Bench Press (Bar)` with an empty/no-estimate state, B retaining `Bench Press (Bench)` with its own 77-per-cable velocity result, three highlights, and five history rows, then A restoring Bar without B metrics. Correct evidence: `a-restored-bench2.xml`, `profile-b-selection-isolation.xml`, `profile-a-selection-restored.xml`, `profile-a-history.xml`, `profile-b-history.xml`, `history-counts.txt`, and `insights-db.txt`. |
+| 5 | **PASS** | Regression-unaffected evidence covers rename, Default's absent Delete action, guarded destructive confirmation, deletion, and reassignment of B's sessions/PRs/assessment/velocity estimate to Default. Evidence: `profile-renamed.xml`, `default-profile-top.xml`, `delete-dialog-b.xml`, `switcher-after-delete.xml`, and `postdelete-reassignment.txt`. |
+| 6 | **PASS** | Profile exposes management entries for Equipment Rack and Achievements, while Settings omits both and retains its global groups. Set Ready's existing workout-scoped rack selection/management access is intentionally preserved; this row does not claim Profile is the only rack route. Evidence: `equipment-rack-route.xml`, `achievements-route.xml`, `profile-a-top.xml`, `profile-a-mid.xml`, and `settings-*.xml`. |
+| 7 | **PASS** | Home edge gestures and Just Lift expose no profile selector. B's VBT is off while historical assessment, velocity, and five-session information remain visible. Live no-trainer behavior is covered by the 20-test runtime suite below. Evidence: `home-edge-gestures.xml`, `just-lift.xml`, `profile-b-vbt.xml`, `profile-b-top.xml`, and `profile-b-history.xml`. |
+| 8 | **PASS** | The actual named tag was force-replayed offline, the exact APK upgraded via `install -r`, the migration gate completed with one normalized row, Ready rendered, and a UI-created second profile persisted every product default without inherited legacy/safety values. Evidence: `snapshot-attempt1/`, `named-snapshot-replay/`, and `new-profile-defaults/`. |
 
-No `Switch Profile`/`Profiles` content selector appeared in Home or Just Lift; the Profiles sheet remained the sole root selector opened by Profile long press.
+No `Switch Profile` or `Profiles` content selector appeared in Home or Just Lift. The Profiles root sheet remains opened from Profile long press. This does not change row 2's TalkBack-focus limitation.
 
-## Accessibility and hardware bounds
+## Runtime substitution and hardware bounds
 
-The installed TalkBack service was `com.google.android.marvin.talkback/com.google.android.marvin.talkback.TalkBackService`. While enabled, accessibility state reported touch exploration and service double-tap handling. A swipe-navigation screenshot captured a visible TalkBack focus rectangle. Automated ADB gestures did not yield a stable screenshot of TalkBack's action menu itself, so the required separate click/long-click exposure is grounded in the live accessibility node (`clickable=true`, `long-clickable=true`) rather than a claimed menu screenshot.
-
-No physical Android device was connected. Audible spoken-label confirmation and felt tactile feedback are **UNAVAILABLE**. The emulator vibrator-service event proves the app requested the expected haptic effect, not that a person physically felt it.
-
-No compatible Vitruvian trainer was connected. Live trainer telemetry is **UNAVAILABLE**. The reviewed runtime substitution was:
+No compatible Vitruvian trainer was present. The exact-head no-trainer substitution command was:
 
 ```powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*VerbalEncouragementPreferenceCascadeTest" --tests "*SafeWordDetectionManagerTest" --tests "*AdultModePresentationTest" --tests "*VbtEnabledRuntimeTest" --rerun-tasks --console=plain
 ```
 
-Exact XML totals:
+It exited `0` and reported `BUILD SUCCESSFUL in 1m 57s`. Exact copied XML totals are:
 
 | Suite | Tests | Failures | Errors | Skipped |
 | --- | ---: | ---: | ---: | ---: |
@@ -151,18 +160,43 @@ Exact XML totals:
 | `VbtEnabledRuntimeTest` | 4 | 0 | 0 | 0 |
 | **Total** | **20** | **0** | **0** | **0** |
 
-Gradle result: `BUILD SUCCESSFUL` in 2m 50s; 27 tasks executed.
+Full streams, exit capture, metadata, XML copies, totals, and hashes are under `runtime-20-tests/`. `runtime.stdout.txt` SHA-256 is `4c368d5e77fc53fec479c3bf2f5ae1354124dd915bc614421f495f6525d615c2`; `runtime.stderr.txt` is empty with SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 
-## Formatting, cleanliness, and cleanup
+No physical Android device was connected. Audible spoken-label confirmation and felt tactile feedback are **UNAVAILABLE**. The emulator vibrator-service evidence proves an app haptic request, not a felt result. Live trainer telemetry is likewise **UNAVAILABLE**.
 
-The non-mutating formatting gate was run as required:
+## Spotless result
+
+The required non-mutating command was:
 
 ```powershell
 .\gradlew.bat '-Pskip.supabase.check=true' spotlessCheck --console=plain
 ```
 
-Actual result: **FAILED** in 1m 16s. The sole reproduced violation was `androidApp/build.gradle.kts` lines 330–335, where the existing final dependency/closing lines have the wrong line ending. `spotlessCheck` did not change HEAD or worktree state. No formatting apply command was run and this evidence task did not alter the baseline file.
+It ran at exact HEAD, exited `1`, and reported `BUILD FAILED in 15s`. The sole reported file was `androidApp/build.gradle.kts`; the hunk identifies the existing LF endings in source lines **333–338**:
 
-Both disposable AVD clones were shut down and removed after resolved-path checks. Final `adb devices -l` was empty, and `emulator -list-avds` listed only the immutable `phoenix-schema42-api36` source. The immutable source payload hashes still matched. The external `.phoenix-review` evidence was retained.
+```text
+333:     testImplementation(libs.koin.test)
+334:     testImplementation(libs.koin.test.junit4)
+335:     testImplementation(libs.ktor.client.mock)
+336:     testImplementation(libs.multiplatform.settings)
+337:     testImplementation(libs.multiplatform.settings.test)
+338: }
+```
 
-Before this report was added, `git status --short` was empty at the acceptance HEAD. Final report staging and commit are limited to this Markdown file; `git diff --check` and the clean post-commit status are recorded in the task handoff.
+Full stdout, stderr, exit, metadata, the numbered source excerpt, and hashes are under `spotless/`. `spotless.stderr.txt` SHA-256 is `6dcbcad769728ef4b7e875d94c2e672bfa9346f25d956bd8de237fc35c04347e`; the exit capture SHA-256 is `f1b2f662800122bed0ff255693df89c4487fbdcf453d3524a42d4ec20c3d9c04`. No `spotlessApply` command was run and source state remained clean.
+
+## Cleanup and immutability
+
+All disposable AVDs were shut down and removed only after absolute-path checks kept deletion inside `C:\Users\dasbl\.android\avd`. Final ADB inventory was empty. The immutable source snapshot hashes before and after all replay/matrix work are identical:
+
+| Source payload | SHA-256 |
+| --- | --- |
+| `hardware.ini` | `d2f55bbb9fc06476293c2460b9e743bd40ba0fd70e7bc13ec9a3155c10f03938` |
+| `ram.bin` | `eabce3b62cacaa5feff842e6e26484759db4a4ec1f41c31998cf952b4b2aeda9` |
+| `screenshot.png` | `8a9f899b79141dcbc9a39a2e66ba2d8710a3aae5ac46db3242d0d2084a6fc480` |
+| `snapshot.pb` | `53c714141ddad2efcae4884cec0d1a02e87ec498b5693ff86f8063f6e10228a9` |
+| `textures.bin` | `9da9d94e2e86016384b8b9647e4af8f70fa25381ccc4c9366c8be5ffc8777b5b` |
+
+Evidence: `immutable-source-before.sha256.txt`, `immutable-source-after.sha256.txt`, `immutable-source-compare.txt`, the two replay cleanup files, and `matrix-8103281b/clone-delete-audit.txt`.
+
+Before this report correction, `git status --short` was empty at documentation-only branch HEAD `edc564737cc549b01470e425eb99323d9c90c69a`. The exact-head runtime and Spotless commands temporarily detached the already-isolated worktree at `8103281b`, left source state clean, and restored the branch. The correction commit is limited to this tracked Markdown report; external transcripts and the rewritten `.superpowers/sdd/task-4-report.md` remain ignored evidence.
