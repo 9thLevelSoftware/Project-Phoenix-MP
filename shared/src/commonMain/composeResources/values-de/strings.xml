@@ -348,6 +348,7 @@
 
     <string name="nav_analytics">Analyse</string>
     <string name="nav_workouts">Trainings</string>
+    <string name="nav_insights">Einblicke</string>
     <string name="nav_settings">Einstellungen</string>
 
     <string name="workout_count_label">Trainings</string>

@@ -67,15 +67,23 @@ class ProfileNavigationContractTest {
         assertContains(main, "homeContentDescription = stringResource(Res.string.cd_home)")
         assertContains(main, "onHomeClick = {")
 
+        val bottomBar = bracedBlockFrom(main, "bottomBar =")
+        assertContains(
+            bottomBar,
+            "insightsContentDescription = stringResource(Res.string.nav_insights)",
+        )
+        assertFalse(bottomBar.contains("Res.string.insights_title"))
+
         mapOf(
-            "values" to "Home",
-            "values-de" to "Startseite",
-            "values-es" to "Inicio",
-            "values-nl" to "Startpagina",
-            "values-fr" to "Accueil",
-        ).forEach { (directory, label) ->
+            "values" to ("Home" to "Insights"),
+            "values-de" to ("Startseite" to "Einblicke"),
+            "values-es" to ("Inicio" to "Perspectivas"),
+            "values-nl" to ("Startpagina" to "Inzichten"),
+            "values-fr" to ("Accueil" to "Analyses"),
+        ).forEach { (directory, labels) ->
             val strings = source("src/commonMain/composeResources/$directory/strings.xml")
-            assertContains(strings, "<string name=\"cd_home\">$label</string>")
+            assertContains(strings, "<string name=\"cd_home\">${labels.first}</string>")
+            assertContains(strings, "<string name=\"nav_insights\">${labels.second}</string>")
         }
     }
 

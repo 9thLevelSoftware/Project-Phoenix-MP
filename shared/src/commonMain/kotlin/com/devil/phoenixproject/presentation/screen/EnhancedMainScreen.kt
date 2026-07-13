@@ -117,7 +117,7 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_home
 import vitruvianprojectphoenix.shared.generated.resources.cd_open_profile_switcher
 import vitruvianprojectphoenix.shared.generated.resources.cd_profile
 import vitruvianprojectphoenix.shared.generated.resources.cd_settings
-import vitruvianprojectphoenix.shared.generated.resources.insights_title
+import vitruvianprojectphoenix.shared.generated.resources.nav_insights
 import vitruvianprojectphoenix.shared.generated.resources.nav_profile
 import vitruvianprojectphoenix.shared.generated.resources.profile_create_failed
 import vitruvianprojectphoenix.shared.generated.resources.profile_recovery_retry_failed
@@ -430,7 +430,7 @@ fun EnhancedMainScreen(
                             isCompactHeight = useCompactTopBar,
                             analyticsContentDescription = stringResource(Res.string.cd_analytics),
                             homeContentDescription = stringResource(Res.string.cd_home),
-                            insightsContentDescription = stringResource(Res.string.insights_title),
+                            insightsContentDescription = stringResource(Res.string.nav_insights),
                             profileContentDescription = profileContentDescription,
                             openProfileSwitcherDescription = openProfileSwitcherDescription,
                             settingsContentDescription = stringResource(Res.string.cd_settings),
