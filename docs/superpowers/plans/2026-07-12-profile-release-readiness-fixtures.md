@@ -232,7 +232,7 @@ Restore `phoenix-schema42-v1` with `-force-snapshot-load -no-snapshot-save`, kee
 
 - [ ] **Step 2: Seed and verify the complete Profile matrix**
 
-Install/launch the current debug APK on a fresh disposable AVD, disable networking, broadcast the seed action, and wait for `PROFILE_QA_SEED_OK`. First verify the exact Analytics → Insights → Home → Profile → Settings icon-only bottom order and localized Home semantics. Through UI-tree-derived coordinates verify A/B preference swaps including racks and local safety, five-session history, all three PR highlights, velocity 1RM precedence, selection isolation, B's disabled VBT with historical assessment/velocity insight still visible, rename/delete guard, global-only Settings, Profile-only Equipment Rack/Achievements, and absence of legacy selectors.
+Install/launch the current debug APK on a fresh disposable AVD, disable networking, broadcast the seed action, and wait for `PROFILE_QA_SEED_OK`. First verify the exact Analytics → Insights → Home → Profile → Settings icon-only bottom order and localized Home semantics. Through UI-tree-derived coordinates verify A/B preference swaps including racks and local safety, five-session history, all three PR highlights, velocity 1RM precedence, selection isolation, B's disabled VBT with historical assessment/velocity insight still visible, rename/delete guard, global-only Settings, Profile management entries for Equipment Rack/Achievements, preserved workout-scoped Set Ready rack access, and absence of legacy selectors.
 
 - [ ] **Step 3: Exercise accessibility and haptic evidence**
 
