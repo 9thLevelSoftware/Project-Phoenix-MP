@@ -506,6 +506,9 @@ countVelocityOneRepMaxByExercise:
 SELECT COUNT(*) FROM VelocityOneRepMaxEstimate
 WHERE exerciseId = :exerciseId AND profile_id = :profileId AND deletedAt IS NULL;
 
+deleteVelocityOneRepMaxById:
+DELETE FROM VelocityOneRepMaxEstimate WHERE id = ?;
+
 -- ==================== PERSONAL MVT TABLE ====================
 -- Personalized Minimum Velocity Threshold per exercise/profile (issue #517).
 -- Stored alongside the exercise; used by VelocityOneRepMaxEstimator to override
