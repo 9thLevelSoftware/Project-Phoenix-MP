@@ -8,8 +8,8 @@ object TestTags {
     const val APP_NAV_HOST = "app-nav-host"
 
     const val NAV_ANALYTICS = "nav-analytics"
-    const val NAV_WORKOUTS = "nav-workouts"
     const val NAV_INSIGHTS = "nav-insights"
+    const val NAV_HOME = "nav-home"
     const val NAV_PROFILE = "nav-profile"
     const val NAV_SETTINGS = "nav-settings"
 

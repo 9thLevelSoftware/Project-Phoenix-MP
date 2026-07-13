@@ -113,10 +113,10 @@ import org.koin.compose.viewmodel.koinViewModel
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.cd_analytics
 import vitruvianprojectphoenix.shared.generated.resources.cd_back
+import vitruvianprojectphoenix.shared.generated.resources.cd_home
 import vitruvianprojectphoenix.shared.generated.resources.cd_open_profile_switcher
 import vitruvianprojectphoenix.shared.generated.resources.cd_profile
 import vitruvianprojectphoenix.shared.generated.resources.cd_settings
-import vitruvianprojectphoenix.shared.generated.resources.cd_workouts
 import vitruvianprojectphoenix.shared.generated.resources.insights_title
 import vitruvianprojectphoenix.shared.generated.resources.nav_profile
 import vitruvianprojectphoenix.shared.generated.resources.profile_create_failed
@@ -247,8 +247,8 @@ fun EnhancedMainScreen(
     val createFailedMessage = stringResource(Res.string.profile_create_failed)
     val recoveryRetryFailedMessage = stringResource(Res.string.profile_recovery_retry_failed)
 
-    // Helper function to determine if current route is a "Workouts" route
-    val isWorkoutsRoute = remember(currentRoute) {
+    // Helper function to determine if the Home tab owns the current workout-flow route
+    val isHomeRoute = remember(currentRoute) {
         currentRoute == NavigationRoutes.Home.route ||
             currentRoute == NavigationRoutes.JustLift.route ||
             isSingleExerciseRoute(currentRoute) ||
@@ -426,10 +426,10 @@ fun EnhancedMainScreen(
                     if (shouldShowBottomBar) {
                         PhoenixBottomNavigationBar(
                             currentRoute = currentRoute,
-                            isWorkoutsRoute = isWorkoutsRoute,
+                            isHomeRoute = isHomeRoute,
                             isCompactHeight = useCompactTopBar,
                             analyticsContentDescription = stringResource(Res.string.cd_analytics),
-                            workoutsContentDescription = stringResource(Res.string.cd_workouts),
+                            homeContentDescription = stringResource(Res.string.cd_home),
                             insightsContentDescription = stringResource(Res.string.insights_title),
                             profileContentDescription = profileContentDescription,
                             openProfileSwitcherDescription = openProfileSwitcherDescription,
@@ -443,7 +443,7 @@ fun EnhancedMainScreen(
                                     }
                                 }
                             },
-                            onWorkoutsClick = {
+                            onHomeClick = {
                                 if (currentRoute != NavigationRoutes.Home.route) {
                                     navController.navigate(NavigationRoutes.Home.route) {
                                         popUpTo(NavigationRoutes.Home.route) { inclusive = true }
@@ -564,16 +564,16 @@ fun EnhancedMainScreen(
 @Composable
 private fun PhoenixBottomNavigationBar(
     currentRoute: String,
-    isWorkoutsRoute: Boolean,
+    isHomeRoute: Boolean,
     isCompactHeight: Boolean,
     analyticsContentDescription: String,
-    workoutsContentDescription: String,
+    homeContentDescription: String,
     insightsContentDescription: String,
     profileContentDescription: String,
     openProfileSwitcherDescription: String,
     settingsContentDescription: String,
     onAnalyticsClick: () -> Unit,
-    onWorkoutsClick: () -> Unit,
+    onHomeClick: () -> Unit,
     onInsightsClick: () -> Unit,
     onProfileClick: () -> Unit,
     onProfileLongClick: () -> Unit,
@@ -600,44 +600,44 @@ private fun PhoenixBottomNavigationBar(
             BottomNavItem.entries.forEach { item ->
                 val icon = when (item) {
                     BottomNavItem.ANALYTICS -> Icons.Default.BarChart
-                    BottomNavItem.WORKOUT -> Icons.Default.Home
                     BottomNavItem.INSIGHTS -> Icons.Default.AutoAwesome
+                    BottomNavItem.HOME -> Icons.Default.Home
                     BottomNavItem.PROFILE -> Icons.Default.Person
                     BottomNavItem.SETTINGS -> Icons.Default.Settings
                 }
                 val contentDescription = when (item) {
                     BottomNavItem.ANALYTICS -> analyticsContentDescription
-                    BottomNavItem.WORKOUT -> workoutsContentDescription
                     BottomNavItem.INSIGHTS -> insightsContentDescription
+                    BottomNavItem.HOME -> homeContentDescription
                     BottomNavItem.PROFILE -> profileContentDescription
                     BottomNavItem.SETTINGS -> settingsContentDescription
                 }
                 val selected = when (item) {
                     BottomNavItem.ANALYTICS -> currentRoute == NavigationRoutes.Analytics.route
-                    BottomNavItem.WORKOUT -> isWorkoutsRoute
                     BottomNavItem.INSIGHTS -> currentRoute == NavigationRoutes.SmartInsights.route
+                    BottomNavItem.HOME -> isHomeRoute
                     BottomNavItem.PROFILE -> currentRoute == NavigationRoutes.Profile.route
                     BottomNavItem.SETTINGS -> currentRoute == NavigationRoutes.Settings.route
                 }
                 val testTag = when (item) {
                     BottomNavItem.ANALYTICS -> com.devil.phoenixproject.presentation.util.TestTags.NAV_ANALYTICS
-                    BottomNavItem.WORKOUT -> com.devil.phoenixproject.presentation.util.TestTags.NAV_WORKOUTS
                     BottomNavItem.INSIGHTS -> com.devil.phoenixproject.presentation.util.TestTags.NAV_INSIGHTS
+                    BottomNavItem.HOME -> com.devil.phoenixproject.presentation.util.TestTags.NAV_HOME
                     BottomNavItem.PROFILE -> com.devil.phoenixproject.presentation.util.TestTags.NAV_PROFILE
                     BottomNavItem.SETTINGS -> com.devil.phoenixproject.presentation.util.TestTags.NAV_SETTINGS
                 }
                 val onClick = when (item) {
                     BottomNavItem.ANALYTICS -> onAnalyticsClick
-                    BottomNavItem.WORKOUT -> onWorkoutsClick
                     BottomNavItem.INSIGHTS -> onInsightsClick
+                    BottomNavItem.HOME -> onHomeClick
                     BottomNavItem.PROFILE -> onProfileClick
                     BottomNavItem.SETTINGS -> onSettingsClick
                 }
                 val itemLongClick = when (item) {
                     BottomNavItem.PROFILE -> onProfileLongClick
                     BottomNavItem.ANALYTICS,
-                    BottomNavItem.WORKOUT,
                     BottomNavItem.INSIGHTS,
+                    BottomNavItem.HOME,
                     BottomNavItem.SETTINGS,
                     -> null
                 }

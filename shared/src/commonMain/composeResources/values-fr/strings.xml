@@ -589,7 +589,7 @@
     <string name="cd_below_pr">Below PR</string>
     <string name="cd_delete_workout">Delete workout</string>
     <string name="cd_toggle_theme_cycle">Changer de thème (actuel : %1$s, suivant : %2$s)</string>
-    <string name="cd_workouts">Workouts</string>
+    <string name="cd_home">Accueil</string>
     <string name="cd_disconnect">D\u00e9connecter</string>
 
     <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->

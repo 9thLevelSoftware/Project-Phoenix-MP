@@ -568,7 +568,7 @@
     <string name="cd_below_pr">Onder PR</string>
     <string name="cd_delete_workout">Training verwijderen</string>
     <string name="cd_toggle_theme_cycle">Thema wisselen (huidig: %1$s, volgend: %2$s)</string>
-    <string name="cd_workouts">Trainingen</string>
+    <string name="cd_home">Startpagina</string>
     <string name="cd_disconnect">Verbinding verbreken</string>
 
     <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->

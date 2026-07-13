@@ -679,7 +679,7 @@
     <string name="cd_below_pr">Below PR</string>
     <string name="cd_delete_workout">Delete workout</string>
     <string name="cd_toggle_theme_cycle">Toggle theme (current: %1$s, next: %2$s)</string>
-    <string name="cd_workouts">Workouts</string>
+    <string name="cd_home">Home</string>
     <string name="cd_disconnect">Disconnect</string>
     <string name="single_exercise_unavailable">Exercise is no longer available</string>
 

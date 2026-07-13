@@ -118,8 +118,8 @@ fun NavController.safePopOrNavigate(dest: String) {
  */
 enum class BottomNavItem(val route: String) {
     ANALYTICS(NavigationRoutes.Analytics.route),
-    WORKOUT(NavigationRoutes.Home.route),
     INSIGHTS(NavigationRoutes.SmartInsights.route),
+    HOME(NavigationRoutes.Home.route),
     PROFILE(NavigationRoutes.Profile.route),
     SETTINGS(NavigationRoutes.Settings.route),
 }

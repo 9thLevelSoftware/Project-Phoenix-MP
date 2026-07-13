@@ -35,7 +35,7 @@ class ProfileNavigationContractTest {
     )
 
     @Test
-    fun `one Profile route and the exact five-value BottomNavItem order`() {
+    fun `one Profile route and the exact centered Home BottomNavItem contract`() {
         assertEquals(
             1,
             Regex("""object\s+Profile\s*:\s*NavigationRoutes\("profile"\)""")
@@ -43,15 +43,40 @@ class ProfileNavigationContractTest {
                 .count(),
         )
         val enumBody = bracedBlockFrom(routes, "enum class BottomNavItem")
-        val entries = Regex(
-            """(?m)^\s*(ANALYTICS|WORKOUT|INSIGHTS|PROFILE|SETTINGS)\s*\(""",
-        ).findAll(enumBody).map { it.groupValues[1] }.toList()
+        val entries = Regex("""(?m)^\s*([A-Z_]+)\s*\(""")
+            .findAll(enumBody)
+            .map { it.groupValues[1] }
+            .toList()
 
         assertEquals(
-            listOf("ANALYTICS", "WORKOUT", "INSIGHTS", "PROFILE", "SETTINGS"),
+            listOf("ANALYTICS", "INSIGHTS", "HOME", "PROFILE", "SETTINGS"),
             entries,
         )
         assertEquals(5, entries.size)
+        assertContains(enumBody, "HOME(NavigationRoutes.Home.route)")
+        assertFalse(enumBody.contains("WORKOUT"))
+        assertFalse(main.contains("BottomNavItem.WORKOUT"))
+
+        listOf(
+            "BottomNavItem.HOME -> Icons.Default.Home",
+            "BottomNavItem.HOME -> homeContentDescription",
+            "BottomNavItem.HOME -> isHomeRoute",
+            "BottomNavItem.HOME -> com.devil.phoenixproject.presentation.util.TestTags.NAV_HOME",
+            "BottomNavItem.HOME -> onHomeClick",
+        ).forEach { branch -> assertContains(main, branch) }
+        assertContains(main, "homeContentDescription = stringResource(Res.string.cd_home)")
+        assertContains(main, "onHomeClick = {")
+
+        mapOf(
+            "values" to "Home",
+            "values-de" to "Startseite",
+            "values-es" to "Inicio",
+            "values-nl" to "Startpagina",
+            "values-fr" to "Accueil",
+        ).forEach { (directory, label) ->
+            val strings = source("src/commonMain/composeResources/$directory/strings.xml")
+            assertContains(strings, "<string name=\"cd_home\">$label</string>")
+        }
     }
 
     @Test
@@ -86,14 +111,16 @@ class ProfileNavigationContractTest {
         )
         listOf(
             "NAV_ANALYTICS",
-            "NAV_WORKOUTS",
             "NAV_INSIGHTS",
+            "NAV_HOME",
             "NAV_PROFILE",
             "NAV_SETTINGS",
         ).forEach { tag ->
             assertEquals(1, Regex("""const val $tag\b""").findAll(tags).count(), tag)
             assertContains(main, "TestTags.$tag")
         }
+        assertFalse(tags.contains("NAV_WORKOUTS"))
+        assertFalse(main.contains("NAV_WORKOUTS"))
     }
 
     @Test
