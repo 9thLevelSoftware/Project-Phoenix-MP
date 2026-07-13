@@ -8,7 +8,7 @@
 - Offline schema 42 → 43 named-snapshot replay: **PASS**.
 - Manual matrix: seven rows pass; row 2 is **NOT VERIFIED** because this run did not obtain distinguishable TalkBack focus on the resumed Profile destination.
 - Reviewed no-trainer runtime substitution: **PASS**, 20 tests, 0 failures, 0 errors, 0 skipped.
-- Repository formatting gate: **FAILED** on the pre-existing mixed line endings in `androidApp/build.gradle.kts` lines 333–338. It is not reported as passing and was not changed.
+- Branch-introduced Gradle formatting violation: **FIXED** by follow-up commit `31a4e761febe5faa5a8af04542d7cbca53091219`; `spotlessKotlinGradleCheck` passes. The repository-wide `spotlessCheck` is still **FAILED** at `spotlessKotlinCheck` on 191 Kotlin files and is not reported as passing.
 
 The prior report overstated the TalkBack result and therefore the release verdict. The Profile destination still exposes its accessibility label and long-click semantics, and the earlier emulator run captured the expected haptic request, but neither substitutes for the specifically requested resumed TalkBack-focus proof. A physical Android device and compatible trainer were also unavailable, so audible speech, felt haptics, and live trainer telemetry remain unavailable rather than inferred.
 
@@ -16,6 +16,7 @@ The prior report overstated the TalkBack result and therefore the release verdic
 
 - Working branch: `codex/profile-readiness-fixtures`.
 - Acceptance/code HEAD: `8103281babd6484a3c6aa1471c672dbfeff7a842` (`fix: use localized Insights navigation semantics`).
+- Post-review automation HEAD: `31a4e761febe5faa5a8af04542d7cbca53091219` (`test: enforce profile QA release boundary`). Its production-source delta is documentation-only KDoc; the remaining changes add a shared seven-marker inventory, a hermetic unit contract, a release-output verifier, and Gradle-line-ending normalization.
 - Earlier matrix HEAD used for regression-unaffected rows 4–7: `a9028cade2cbfbeacf405a746e40c4f6e44bdb22`.
 - The app-code delta from `a9028ca` to `8103281b` is limited to localized Insights bottom-navigation semantics plus its contract test; rows 4–7 do not exercise that delta. Rows 1, 3, and 8, plus the bounded accessibility attempt, were rerun with the exact `8103281b` APK.
 - Package: `com.devil.phoenixproject.debug`, version code `5`, version name `0.9.5-DEBUG`.
@@ -164,7 +165,17 @@ Full streams, exit capture, metadata, XML copies, totals, and hashes are under `
 
 No physical Android device was connected. Audible spoken-label confirmation and felt tactile feedback are **UNAVAILABLE**. The emulator vibrator-service evidence proves an app haptic request, not a felt result. Live trainer telemetry is likewise **UNAVAILABLE**.
 
-## Spotless result
+## Post-review automated release boundary
+
+Commit `31a4e761` adds `verifyQaReleaseBoundary`, an explicit Gradle verification task that depends on `assembleRelease`, fails when the release APK or merged manifests are absent, and consumes the same tracked seven-marker inventory as the hermetic unit contract. The fresh command was:
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' '-Pversion.code=999999' :androidApp:verifyQaReleaseBoundary --rerun-tasks --console=plain
+```
+
+It rebuilt the release app and passed after scanning seven forbidden markers across three release manifests and 705 entries in one release APK. The unsigned APK was 17,055,838 bytes, SHA-256 `c757472f734daf6c9188553106cd5f7c63cec0a21a5559cc5fd97e2443e0519a`, with verified `versionCode=999999`. The final Android debug unit suite passed 49 tests across eight XML files, and `ProfileNavigationContractTest` passed 8 tests; both had zero failures, errors, or skips.
+
+## Spotless result and provenance correction
 
 The required non-mutating command was:
 
@@ -172,7 +183,7 @@ The required non-mutating command was:
 .\gradlew.bat '-Pskip.supabase.check=true' spotlessCheck --console=plain
 ```
 
-It ran at exact HEAD, exited `1`, and reported `BUILD FAILED in 15s`. The sole reported file was `androidApp/build.gradle.kts`; the hunk identifies the existing LF endings in source lines **333–338**:
+It ran at exact acceptance HEAD, exited `1`, and reported `BUILD FAILED in 15s`. The first failing task was `spotlessKotlinGradleCheck`; its sole reported file was `androidApp/build.gradle.kts`, with LF endings in source lines **333–338**:
 
 ```text
 333:     testImplementation(libs.koin.test)
@@ -183,7 +194,15 @@ It ran at exact HEAD, exited `1`, and reported `BUILD FAILED in 15s`. The sole r
 338: }
 ```
 
-Full stdout, stderr, exit, metadata, the numbered source excerpt, and hashes are under `spotless/`. `spotless.stderr.txt` SHA-256 is `6dcbcad769728ef4b7e875d94c2e672bfa9346f25d956bd8de237fc35c04347e`; the exit capture SHA-256 is `f1b2f662800122bed0ff255693df89c4487fbdcf453d3524a42d4ec20c3d9c04`. No `spotlessApply` command was run and source state remained clean.
+Full Task 4 stdout, stderr, exit, metadata, the numbered source excerpt, and hashes are under `spotless/`. `spotless.stderr.txt` SHA-256 is `6dcbcad769728ef4b7e875d94c2e672bfa9346f25d956bd8de237fc35c04347e`; the exit capture SHA-256 is `f1b2f662800122bed0ff255693df89c4487fbdcf453d3524a42d4ec20c3d9c04`. No `spotlessApply` command ran during Task 4, and that run left source state clean.
+
+The earlier wording called this violation pre-existing. That was inaccurate: the readiness range added three test dependencies with LF endings to a CRLF working-tree tail, producing the mixed six-line hunk. Follow-up commit `31a4e761` normalized `androidApp/build.gradle.kts`; the fresh command below passes:
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :spotlessKotlinGradleCheck --rerun-tasks --console=plain
+```
+
+The full follow-up `spotlessCheck --rerun-tasks` now proceeds beyond the corrected Gradle task and exposes a broader repository baseline: `spotlessKotlinCheck` reports violations in 191 Kotlin files. It remains a real failed gate and is not relabeled as passing. A diagnostic `spotlessApply` briefly materialized the mechanical rewrite; all unrelated formatter-only edits were reverted before commit rather than mixing a 191-file style migration into this feature branch.
 
 ## Cleanup and immutability
 
