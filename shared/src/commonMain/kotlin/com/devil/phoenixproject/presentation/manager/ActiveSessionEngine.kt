@@ -1363,18 +1363,6 @@ class ActiveSessionEngine(
                 if (verbalEvent != null) {
                     coordinator._hapticEvents.emit(verbalEvent)
                     Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${verbalEvent.vulgarTier}, dominatrix=${verbalEvent.dominatrixMode}, vulgar=${verbalEvent.vulgarMode})" }
-                // semantics per set. The vulgar-on gate here is the master "encouragement fires"
-                // gate; the tier + dominatrix fields carry the routing info to the audio router.
-                val prefs = settingsManager.userPreferences.value
-                if (prefs.beepsEnabled && prefs.verbalEncouragementEnabled) {
-                    coordinator._hapticEvents.emit(
-                        HapticEvent.VERBAL_ENCOURAGEMENT(
-                            vulgarTier = prefs.vulgarTier,
-                            dominatrixMode = prefs.dominatrixModeActive,
-                            vulgarMode = prefs.vulgarModeEnabled,
-                        ),
-                    )
-                    Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${prefs.vulgarTier}, dominatrix=${prefs.dominatrixModeActive}, vulgar=${prefs.vulgarModeEnabled})" }
 
                     // Issue #649: when the user has VBT auto-end OFF, the verbal cue is
                     // the only velocity signal — don't let AMRAP position / velocity-stall
@@ -1391,7 +1379,7 @@ class ActiveSessionEngine(
                     // Narrow the window for this fix by re-checking the active state
                     // before writing; if the workout has already left Active (manual
                     // stop / reset / next set started), drop the arm silently.
-                    if (!coordinator.autoEndOnVelocityLoss &&
+                    if (!runtime.autoEndOnVelocityLoss &&
                         coordinator._workoutState.value is WorkoutState.Active
                     ) {
                         deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
