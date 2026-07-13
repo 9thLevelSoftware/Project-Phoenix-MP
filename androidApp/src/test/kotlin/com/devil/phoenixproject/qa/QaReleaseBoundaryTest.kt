@@ -1,16 +1,28 @@
 package com.devil.phoenixproject.qa
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class QaReleaseBoundaryTest {
-    private val forbiddenReleaseMarkers = listOf(
+    private val expectedForbiddenReleaseMarkers = listOf(
         "ProfileQa",
+        "QaBlockingPortalApiClient",
         "QA_SEED_PROFILE",
         "[QA] Profile",
-        "QaBlockingPortalApiClient",
+        "QA fixture is local-only",
+        "profile_qa_fixture_gate",
+        "com.devil.phoenixproject.qa",
     )
+
+    @Test
+    fun `shared forbidden marker inventory covers the complete QA invariant`() {
+        val markerFile = forbiddenMarkerFile()
+        assertTrue("Missing shared QA release marker inventory: $markerFile", markerFile.isFile)
+
+        assertEquals(expectedForbiddenReleaseMarkers, forbiddenReleaseMarkers())
+    }
 
     @Test
     fun `profile QA runtime files live in the debug source set`() {
@@ -38,9 +50,11 @@ class QaReleaseBoundaryTest {
             .filter { file ->
                 val normalizedPath = file.relativeTo(repoRoot).invariantSeparatorsPath
                 !isAllowedQaPath(normalizedPath) &&
-                    (forbiddenReleaseMarkers.any(file.readText()::contains) ||
-                        file.name.contains("ProfileQa") ||
-                        file.name.contains("QaBlockingPortalApiClient"))
+                    (
+                        forbiddenReleaseMarkers().any(file.readText()::contains) ||
+                            file.name.contains("ProfileQa") ||
+                            file.name.contains("QaBlockingPortalApiClient")
+                        )
             }
             .map { it.relativeTo(repoRoot).invariantSeparatorsPath }
             .toList()
@@ -52,27 +66,13 @@ class QaReleaseBoundaryTest {
     }
 
     @Test
-    fun `release source and merged manifest inputs contain no QA markers`() {
+    fun `release source inputs contain no QA markers`() {
         val repoRoot = findRepoRoot()
-        val releaseInputs = buildList {
-            add(File(repoRoot, "androidApp/src/main"))
-            add(File(repoRoot, "androidApp/src/release"))
-
-            listOf(
-                File(repoRoot, "androidApp/build/intermediates/merged_manifest"),
-                File(repoRoot, "androidApp/build/intermediates/merged_manifests"),
-            ).filter(File::exists).forEach { mergedRoot ->
-                addAll(
-                    mergedRoot.walkTopDown()
-                        .filter { file ->
-                            file.isFile &&
-                                file.name == "AndroidManifest.xml" &&
-                                file.invariantSeparatorsPath.contains("release", ignoreCase = true)
-                        }
-                        .toList(),
-                )
-            }
-        }.filter(File::exists)
+        val forbiddenReleaseMarkers = forbiddenReleaseMarkers()
+        val releaseInputs = listOf(
+            File(repoRoot, "androidApp/src/main"),
+            File(repoRoot, "androidApp/src/release"),
+        ).filter(File::exists)
 
         val leaks = releaseInputs.flatMap { input ->
             val files = if (input.isDirectory) input.walkTopDown().filter(File::isFile) else sequenceOf(input)
@@ -93,12 +93,18 @@ class QaReleaseBoundaryTest {
         )
     }
 
-    private fun isAllowedQaPath(path: String): Boolean =
-        path.contains("/src/debug/") ||
-            path.contains("/src/test/") ||
-            path.contains("/src/testDebug/") ||
-            path.contains("/src/androidTest/") ||
-            path.contains("/docs/")
+    private fun isAllowedQaPath(path: String): Boolean = path.contains("/src/debug/") ||
+        path.contains("/src/test/") ||
+        path.contains("/src/testDebug/") ||
+        path.contains("/src/androidTest/") ||
+        path.contains("/docs/")
+
+    private fun forbiddenMarkerFile(): File = File(findRepoRoot(), "androidApp/config/qa-release-forbidden-markers.txt")
+
+    private fun forbiddenReleaseMarkers(): List<String> = forbiddenMarkerFile()
+        .readLines()
+        .map(String::trim)
+        .filter(String::isNotEmpty)
 
     private fun findRepoRoot(): File {
         val workingDirectory = requireNotNull(System.getProperty("user.dir")) {

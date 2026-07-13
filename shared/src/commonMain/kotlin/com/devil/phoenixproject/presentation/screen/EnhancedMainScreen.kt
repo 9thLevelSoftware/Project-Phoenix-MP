@@ -127,7 +127,8 @@ import vitruvianprojectphoenix.shared.generated.resources.profile_switch_failed
  * Enhanced main screen with dynamic top bar and bottom navigation.
  * Provides consistent scaffolding across all screens with:
  * - Dynamic TopAppBar (title, back button, actions, connection status, theme toggle)
- * - Compact bottom navigation (Analytics, Workouts, Insights, Settings)
+ * - Compact bottom navigation (Analytics, Insights, Home, Profile, Settings)
+ * - Home opens the existing Workouts destination
  * - Conditional visibility based on current route
  */
 @OptIn(ExperimentalMaterial3Api::class)

@@ -98,6 +98,131 @@ abstract class VerifyReleaseCueResourcesTask : DefaultTask() {
     }
 }
 
+abstract class VerifyQaReleaseBoundaryTask : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val forbiddenMarkersFile: RegularFileProperty
+
+    @get:Internal
+    abstract val releaseApkDir: DirectoryProperty
+
+    @get:Internal
+    abstract val releaseIntermediatesDir: DirectoryProperty
+
+    @get:Internal
+    abstract val projectRootDir: DirectoryProperty
+
+    @TaskAction
+    fun verifyReleaseBoundary() {
+        fun ByteArray.containsSequence(sequence: ByteArray): Boolean {
+            if (sequence.isEmpty()) return true
+            if (sequence.size > size) return false
+
+            for (startIndex in 0..size - sequence.size) {
+                var matches = true
+                for (offset in sequence.indices) {
+                    if (this[startIndex + offset] != sequence[offset]) {
+                        matches = false
+                        break
+                    }
+                }
+                if (matches) return true
+            }
+            return false
+        }
+
+        val projectRoot = projectRootDir.get().asFile
+        val markerFile = forbiddenMarkersFile.get().asFile
+        val forbiddenMarkers = markerFile.readLines()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+
+        if (forbiddenMarkers.isEmpty()) {
+            throw GradleException("QA release marker inventory is empty: ${markerFile.relativeTo(projectRoot)}")
+        }
+        if (forbiddenMarkers.distinct().size != forbiddenMarkers.size) {
+            throw GradleException("QA release marker inventory contains duplicates: ${markerFile.relativeTo(projectRoot)}")
+        }
+
+        val markerBytes = forbiddenMarkers.associateWith { it.toByteArray(Charsets.UTF_8) }
+        val releaseArtifacts = releaseApkDir.get().asFile
+            .takeIf(File::isDirectory)
+            ?.walkTopDown()
+            ?.filter { it.isFile && it.extension.equals("apk", ignoreCase = true) }
+            ?.sortedBy { it.invariantSeparatorsPath }
+            ?.toList()
+            .orEmpty()
+
+        if (releaseArtifacts.isEmpty()) {
+            throw GradleException("No Android release APK artifacts found. Run :androidApp:assembleRelease first.")
+        }
+
+        val releaseIntermediates = releaseIntermediatesDir.get().asFile
+        val releaseManifests = listOf(
+            "merged_manifest",
+            "merged_manifests",
+            "packaged_manifests",
+        ).flatMap { relativeRoot ->
+            File(releaseIntermediates, relativeRoot)
+                .takeIf(File::isDirectory)
+                ?.walkTopDown()
+                ?.filter { file ->
+                    file.isFile &&
+                        file.name == "AndroidManifest.xml" &&
+                        file.relativeTo(releaseIntermediates).invariantSeparatorsPath
+                            .contains("/release/", ignoreCase = true)
+                }
+                ?.toList()
+                .orEmpty()
+        }.distinct().sortedBy { it.invariantSeparatorsPath }
+
+        if (releaseManifests.isEmpty()) {
+            throw GradleException(
+                "No merged or packaged Android release manifests found after :androidApp:assembleRelease.",
+            )
+        }
+
+        val leaks = mutableListOf<String>()
+        releaseManifests.forEach { manifest ->
+            val content = manifest.readBytes()
+            markerBytes.forEach { (marker, bytes) ->
+                if (content.containsSequence(bytes)) {
+                    leaks += "${manifest.relativeTo(projectRoot).invariantSeparatorsPath}: $marker"
+                }
+            }
+        }
+
+        var scannedEntries = 0
+        releaseArtifacts.forEach { artifact ->
+            ZipFile(artifact).use { zip ->
+                zip.entries().asSequence()
+                    .filterNot { it.isDirectory }
+                    .forEach { entry ->
+                        scannedEntries += 1
+                        val content = zip.getInputStream(entry).use { it.readBytes() }
+                        markerBytes.forEach { (marker, bytes) ->
+                            if (content.containsSequence(bytes)) {
+                                leaks +=
+                                    "${artifact.relativeTo(projectRoot).invariantSeparatorsPath}!/${entry.name}: $marker"
+                            }
+                        }
+                    }
+            }
+        }
+
+        if (leaks.isNotEmpty()) {
+            throw GradleException(
+                "Android release outputs contain debug-only QA markers:\n${leaks.joinToString("\n") { "  - $it" }}",
+            )
+        }
+
+        println(
+            "Verified ${forbiddenMarkers.size} QA markers absent from ${releaseManifests.size} release manifests " +
+                "and $scannedEntries entries across ${releaseArtifacts.size} release APK(s).",
+        )
+    }
+}
+
 abstract class VerifySupabaseRuntimeConfigTask : DefaultTask() {
     @get:Input
     abstract val configuredSupabaseUrl: Property<String>
@@ -282,6 +407,18 @@ tasks.register<VerifyReleaseCueResourcesTask>("verifyReleaseCueResources") {
     rawCueDir.set(rootProject.layout.projectDirectory.dir("shared/src/androidMain/res/raw"))
     releaseApkDir.set(layout.buildDirectory.dir("outputs/apk/release"))
     releaseBundleDir.set(layout.buildDirectory.dir("outputs/bundle/release"))
+    projectRootDir.set(rootProject.layout.projectDirectory)
+}
+
+tasks.register<VerifyQaReleaseBoundaryTask>("verifyQaReleaseBoundary") {
+    group = "verification"
+    description = "Assembles and rejects Android release outputs containing debug-only Profile QA markers."
+
+    dependsOn("assembleRelease")
+
+    forbiddenMarkersFile.set(layout.projectDirectory.file("config/qa-release-forbidden-markers.txt"))
+    releaseApkDir.set(layout.buildDirectory.dir("outputs/apk/release"))
+    releaseIntermediatesDir.set(layout.buildDirectory.dir("intermediates"))
     projectRootDir.set(rootProject.layout.projectDirectory)
 }
 

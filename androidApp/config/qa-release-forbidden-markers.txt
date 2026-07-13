@@ -1,0 +1,7 @@
+ProfileQa
+QaBlockingPortalApiClient
+QA_SEED_PROFILE
+[QA] Profile
+QA fixture is local-only
+profile_qa_fixture_gate
+com.devil.phoenixproject.qa
