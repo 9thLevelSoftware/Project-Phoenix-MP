@@ -1,0 +1,46 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="weight_unit">KG</string>
+    <float name="body_weight_kg" value="82.5" />
+    <float name="weight_increment" value="2.5" />
+
+    <string name="equipment_rack_items_v1">[{&quot;id&quot;:&quot;fixture-vest&quot;,&quot;name&quot;:&quot;Fixture Vest&quot;,&quot;category&quot;:&quot;WEIGHTED_VEST&quot;,&quot;weightKg&quot;:10.0,&quot;behavior&quot;:&quot;ADDED_RESISTANCE&quot;,&quot;enabled&quot;:true,&quot;sortOrder&quot;:7,&quot;createdAt&quot;:1700000000000,&quot;updatedAt&quot;:1700000001000}]</string>
+
+    <boolean name="stop_at_top" value="true" />
+    <boolean name="beeps_enabled" value="false" />
+    <boolean name="stall_detection_enabled" value="true" />
+    <boolean name="audio_rep_count_enabled" value="true" />
+    <string name="rep_count_timing">BOTTOM</string>
+    <int name="summary_countdown_seconds" value="15" />
+    <int name="autostart_countdown_seconds" value="7" />
+    <boolean name="gamification_enabled" value="false" />
+    <boolean name="auto_start_routine" value="true" />
+    <boolean name="countdown_beeps_enabled" value="false" />
+    <boolean name="rep_sound_enabled" value="false" />
+    <boolean name="motion_start_enabled" value="true" />
+    <boolean name="weight_suggestions_enabled" value="false" />
+    <boolean name="default_routine_exercise_use_percent_of_pr" value="true" />
+    <int name="default_routine_exercise_weight_percent_of_pr" value="75" />
+    <boolean name="voice_stop_enabled" value="true" />
+    <string name="just_lift_defaults">{&quot;workoutModeId&quot;:2,&quot;weightPerCableKg&quot;:24.0,&quot;weightChangePerRep&quot;:1.0,&quot;eccentricLoadPercentage&quot;:110,&quot;echoLevelValue&quot;:2,&quot;stallDetectionEnabled&quot;:false,&quot;repCountTimingName&quot;:&quot;BOTTOM&quot;,&quot;restSeconds&quot;:90}</string>
+    <boolean name="echo_hard_default_migrated_just_lift" value="true" />
+    <string name="exercise_defaults_fixture-press">{&quot;exerciseId&quot;:&quot;fixture-press&quot;,&quot;setReps&quot;:[8,8,6],&quot;weightPerCableKg&quot;:30.0,&quot;setWeightsPerCableKg&quot;:[30.0,32.5,35.0],&quot;progressionKg&quot;:2.5,&quot;setRestSeconds&quot;:[60,75,90],&quot;workoutModeId&quot;:0,&quot;eccentricLoadPercentage&quot;:100,&quot;echoLevelValue&quot;:2,&quot;duration&quot;:0,&quot;isAMRAP&quot;:false,&quot;perSetRestTime&quot;:true,&quot;defaultRackItemIds&quot;:[&quot;fixture-vest&quot;]}</string>
+    <boolean name="echo_hard_default_migrated_exercise_fixture-press" value="true" />
+
+    <int name="color_scheme" value="3" />
+    <boolean name="disco_mode_unlocked" value="true" />
+
+    <int name="velocity_loss_threshold_percent" value="35" />
+    <boolean name="auto_end_on_velocity_loss" value="true" />
+    <string name="default_scaling_basis">ESTIMATED_1RM</string>
+    <boolean name="verbal_encouragement_enabled" value="true" />
+    <boolean name="vulgar_mode_enabled" value="true" />
+    <string name="vulgar_tier">MIX</string>
+    <boolean name="dominatrix_mode_unlocked" value="true" />
+    <boolean name="dominatrix_mode_active" value="true" />
+
+    <string name="safe_word">phoenix-fixture</string>
+    <boolean name="safe_word_calibrated" value="true" />
+    <boolean name="adults_only_confirmed" value="true" />
+    <boolean name="adults_only_prompted" value="true" />
+</map>
