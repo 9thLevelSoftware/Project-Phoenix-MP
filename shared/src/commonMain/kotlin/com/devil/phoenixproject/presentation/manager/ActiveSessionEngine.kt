@@ -260,6 +260,19 @@ class ActiveSessionEngine(
     private var velocityThresholdAlertEmitted = false
     private var consecutiveThresholdReps = 0
 
+    // Issue #649: defer position/stall auto-stop until the cue + short
+    // transition window elapses, or a completed working rep clears it. The
+    // deadline (@Volatile Long) is the single source of truth — 0L means no
+    // defer. checkVelocityThreshold() arms it on Dispatchers.Default;
+    // checkAutoStop() reads it on the metrics thread. @Volatile is required so
+    // the metrics thread never sees a stale old deadline across a thread switch.
+    // Resets: resetAutoStopState() (skip/restart/stop), per-set reset sites,
+    // and the next completed working rep all zero it.
+    // ponytail: one Long + one const ceiling; a tunable window is the only thing
+    // we'd add if users reported legitimate pauses being ended by this.
+    @kotlin.concurrent.Volatile
+    private var deferAutoStopDeadlineMs = 0L
+
     // ===== Init Block: Workout-Related Collectors (moved from DWSM) =====
 
     init {
@@ -972,6 +985,9 @@ class ActiveSessionEngine(
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
         coordinator._autoStopState.value = AutoStopUiState()
+        // Issue #649: zero the deadline so a new set never inherits a stale
+        // verbal-cue defer (skip / restart / startWorkout paths included).
+        deferAutoStopDeadlineMs = 0L
     }
 
     /**
@@ -1097,6 +1113,11 @@ class ActiveSessionEngine(
         // Score the rep if rep count actually incremented
         val repCountAfter = repCounter.getRepCount().totalReps
         if (repCountAfter > repCountBefore) {
+            // Issue #649: a completed working rep proves the user is back in
+            // motion; let normal AMRAP / stall auto-stop resume by zeroing the
+            // deadline (the source-of-truth field).
+            deferAutoStopDeadlineMs = 0L
+
             // Capture rep boundary timestamp BEFORE scoring so scoreCurrentRep()
             // and processBiomechanicsForRep() both see the correct metric window.
             val now = KmpUtils.currentTimeMillis()
@@ -1342,6 +1363,41 @@ class ActiveSessionEngine(
                 if (verbalEvent != null) {
                     coordinator._hapticEvents.emit(verbalEvent)
                     Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${verbalEvent.vulgarTier}, dominatrix=${verbalEvent.dominatrixMode}, vulgar=${verbalEvent.vulgarMode})" }
+                // semantics per set. The vulgar-on gate here is the master "encouragement fires"
+                // gate; the tier + dominatrix fields carry the routing info to the audio router.
+                val prefs = settingsManager.userPreferences.value
+                if (prefs.beepsEnabled && prefs.verbalEncouragementEnabled) {
+                    coordinator._hapticEvents.emit(
+                        HapticEvent.VERBAL_ENCOURAGEMENT(
+                            vulgarTier = prefs.vulgarTier,
+                            dominatrixMode = prefs.dominatrixModeActive,
+                            vulgarMode = prefs.vulgarModeEnabled,
+                        ),
+                    )
+                    Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${prefs.vulgarTier}, dominatrix=${prefs.dominatrixModeActive}, vulgar=${prefs.vulgarModeEnabled})" }
+
+                    // Issue #649: when the user has VBT auto-end OFF, the verbal cue is
+                    // the only velocity signal — don't let AMRAP position / velocity-stall
+                    // timers end the set while the cue is still audible. Defer both timers
+                    // until the deadline (cue + short transition window) elapses
+                    // or a completed working rep clears it. The deadline field
+                    // alone is the source of truth — no derived flag to keep in
+                    // sync.
+                    //
+                    // Issue #649 (Codex P2, race-window): checkVelocityThreshold runs
+                    // on Dispatchers.Default; a stale callback resumed after a set
+                    // transition could publish a fresh deadline into the next set.
+                    // Same race characteristic as velocityThresholdAlertEmitted above.
+                    // Narrow the window for this fix by re-checking the active state
+                    // before writing; if the workout has already left Active (manual
+                    // stop / reset / next set started), drop the arm silently.
+                    if (!coordinator.autoEndOnVelocityLoss &&
+                        coordinator._workoutState.value is WorkoutState.Active
+                    ) {
+                        deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
+                        resetStallTimer()
+                        resetAutoStopTimer()
+                    }
                 }
             }
 
@@ -1417,6 +1473,23 @@ class ActiveSessionEngine(
             resetAutoStopTimer()
             resetStallTimer()
             return
+        }
+
+        // Issue #649: while a verbal VBT cue is still in flight and the user has VBT
+        // auto-end OFF, neither AMRAP position nor velocity-stall may end the set.
+        // The deadline field is the only source of truth — 0L means no defer.
+        // Any reset path (next completed working rep, resetAutoStopState, per-set
+        // boundary, deadline expiry) zeros it; this predicate then falls through.
+        // Reset the live countdowns defensively each metric.
+        val deferDeadline = deferAutoStopDeadlineMs
+        if (deferDeadline != 0L) {
+            if (currentTimeMillis() >= deferDeadline) {
+                deferAutoStopDeadlineMs = 0L
+            } else {
+                resetStallTimer()
+                resetAutoStopTimer()
+                return
+            }
         }
 
         val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
@@ -2023,6 +2096,7 @@ class ActiveSessionEngine(
         coordinator.biomechanicsEngine.reset()
         velocityThresholdAlertEmitted = false
         consecutiveThresholdReps = 0
+        deferAutoStopDeadlineMs = 0L
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
@@ -2445,6 +2519,7 @@ class ActiveSessionEngine(
         coordinator.biomechanicsEngine.reset()
         velocityThresholdAlertEmitted = false
         consecutiveThresholdReps = 0
+        deferAutoStopDeadlineMs = 0L
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
         coordinator._loadBaselineA.value = 0f
@@ -3988,6 +4063,7 @@ class ActiveSessionEngine(
             coordinator.biomechanicsEngine.reset()
             velocityThresholdAlertEmitted = false
             consecutiveThresholdReps = 0
+            deferAutoStopDeadlineMs = 0L
             coordinator.repBoundaryTimestamps.value = emptyList()
 
             val completedReps = coordinator._repCount.value.workingReps
@@ -5025,5 +5101,9 @@ class ActiveSessionEngine(
 
     private companion object {
         const val TEMPLATE_531_ID = "template_531"
+        // Issue #649: verbal cues are typically <30s; this ceiling covers the cue
+        // plus a short post-cue transition window. Exceeding it releases the defer
+        // so a racked mid-set handle can end the set normally.
+        const val VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS = 30_000L
     }
 }
