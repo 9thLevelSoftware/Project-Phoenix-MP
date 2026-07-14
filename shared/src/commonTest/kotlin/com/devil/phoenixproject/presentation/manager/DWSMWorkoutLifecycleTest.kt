@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import app.cash.turbine.test
+import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeCategory
@@ -1200,6 +1201,422 @@ class DWSMWorkoutLifecycleTest {
         assertIs<WorkoutState.SetSummary>(
             harness.dwsm.coordinator.workoutState.value,
             "Issue #256: Velocity stall should auto-stop even with a pending rep",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `F1 - Echo mode deload event does not arm stall timer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.Echo,
+                echoLevel = EchoLevel.HARDER,
+                reps = 10,
+                warmupReps = 0,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 10)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 10)
+        advanceUntilIdle()
+        assertTrue(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
+
+        // In Echo mode DELOAD_OCCURRED fires routinely as the athlete fatigues
+        // (Echo levels are defined by the firmware's deload window) — it must not
+        // arm the auto-stop stall countdown.
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.stallStartTime,
+            "Echo-mode DELOAD_OCCURRED is routine firmware behavior and must not arm the stall timer",
+        )
+        assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `F1 - Echo mode velocity stall still arms mid-rep`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.Echo,
+                echoLevel = EchoLevel.HARDER,
+                reps = 10,
+                warmupReps = 0,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 10)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 10)
+        advanceUntilIdle()
+
+        // Genuinely stalled mid-rep: handles extended, no movement.
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(
+                positionA = 120f,
+                positionB = 120f,
+                velocityA = 0.0,
+                velocityB = 0.0,
+                loadA = 10f,
+                loadB = 10f,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertNotNull(
+            harness.dwsm.coordinator.stallStartTime,
+            "Echo mode must keep the velocity-based stall protection (only the deload arm is suppressed)",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 652 - completed Echo rep cancels an armed stall timer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 10)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 10)
+        advanceUntilIdle()
+
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+        assertNotNull(harness.dwsm.coordinator.stallStartTime)
+
+        harness.fakeBleRepo.emitRepNotification(
+            RepNotification(
+                topCounter = 5,
+                completeCounter = 5,
+                repsRomCount = 3,
+                repsRomTotal = 3,
+                repsSetCount = 2,
+                repsSetTotal = 10,
+                rangeTop = 800f,
+                rangeBottom = 0f,
+                rawData = ByteArray(24),
+                timestamp = 5L,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(2, harness.dwsm.coordinator.repCount.value.workingReps)
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.stallStartTime,
+            "A completed working rep proves motion resumed and must cancel the stale stall countdown",
+        )
+        assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `F3 - startWorkout for next set clears rep boundary timestamps and biomech state`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        // Seed biomech/VBT state deterministically (processRep is synchronous),
+        // simulating a completed warm-up set on the Phase 35C fast path.
+        val repMetric = WorkoutMetric(
+            positionA = 100f,
+            positionB = 100f,
+            velocityA = 500.0,
+            velocityB = 500.0,
+            loadA = 10f,
+            loadB = 10f,
+        )
+        harness.dwsm.coordinator.repBoundaryTimestamps.value = listOf(currentTimeMillis())
+        harness.dwsm.coordinator.biomechanicsEngine.processRep(
+            repNumber = 1,
+            concentricMetrics = listOf(repMetric),
+            allRepMetrics = listOf(repMetric),
+            timestamp = currentTimeMillis(),
+        )
+        assertNotNull(harness.dwsm.coordinator.biomechanicsEngine.latestRepResult.value)
+
+        // The Phase 35C variable warm-up fast path advances via startWorkout(skipCountdown = true)
+        // without running handleSetCompletion's biomech/VBT reset block.
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.biomechanicsEngine.latestRepResult.value,
+            "A new set must not inherit the previous set's biomechanics state (VBT baseline leak)",
+        )
+        assertTrue(
+            harness.dwsm.coordinator.repBoundaryTimestamps.value.isEmpty(),
+            "Rep boundary timestamps must reset at set start",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `F4 - racked handles reset a velocity-armed stall countdown in standard set`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+
+        // Velocity-arm the stall countdown mid-rep (handles extended, no movement)
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(positionA = 120f, positionB = 120f, velocityA = 0.0, velocityB = 0.0, loadA = 10f, loadB = 10f),
+        )
+        advanceUntilIdle()
+        assertNotNull(harness.dwsm.coordinator.stallStartTime)
+        assertFalse(harness.dwsm.coordinator.stallArmedByDeload)
+
+        // Rack the handles and let the (backdated) countdown "expire" — a racked
+        // pause between reps must cancel the velocity-armed countdown, not end the set.
+        harness.dwsm.coordinator.stallStartTime = currentTimeMillis() - 6_000L
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(positionA = 0f, positionB = 0f, velocityA = 0.0, velocityB = 0.0, loadA = 0f, loadB = 0f),
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.stallStartTime,
+            "Racked handles must cancel a velocity-armed stall countdown (resting between reps is not a stall)",
+        )
+        assertFalse(harness.dwsm.coordinator.autoStopTriggered)
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `F4 - deload-armed stall survives racked handles and auto-stops`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+
+        // Genuine cable release: firmware deload arms the countdown; the cables
+        // retract to ~0mm afterwards, which must NOT cancel it.
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+        assertNotNull(harness.dwsm.coordinator.stallStartTime)
+        assertTrue(harness.dwsm.coordinator.stallArmedByDeload)
+
+        harness.dwsm.coordinator.stallStartTime = currentTimeMillis() - 6_000L
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(positionA = 0f, positionB = 0f, velocityA = 0.0, velocityB = 0.0, loadA = 0f, loadB = 0f),
+        )
+        advanceUntilIdle()
+
+        assertIs<WorkoutState.SetSummary>(
+            harness.dwsm.coordinator.workoutState.value,
+            "A deload-armed stall countdown must fire even with the cables retracted (genuine release)",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `F4 - velocity stall does not arm at rest despite established range`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+
+        // Handles fully at rest between reps. Before the F4 fix, the
+        // hasMeaningfulRange latch made this arm the 5s countdown.
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(positionA = 0f, positionB = 0f, velocityA = 0.0, velocityB = 0.0, loadA = 0f, loadB = 0f),
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.stallStartTime,
+            "Handles at rest must not arm the velocity stall countdown in a standard set",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `F4 - deload event upgrades a velocity-armed stall so racking does not cancel it`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+
+        // Velocity-arm first (stalled mid-rep) ...
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(positionA = 120f, positionB = 120f, velocityA = 0.0, velocityB = 0.0, loadA = 10f, loadB = 10f),
+        )
+        advanceUntilIdle()
+        assertNotNull(harness.dwsm.coordinator.stallStartTime)
+        assertFalse(harness.dwsm.coordinator.stallArmedByDeload)
+
+        // ... then the machine detects the release: the countdown must be upgraded
+        // so the retracting cables can't cancel it.
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+        assertTrue(harness.dwsm.coordinator.stallArmedByDeload)
+
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(positionA = 0f, positionB = 0f, velocityA = 0.0, velocityB = 0.0, loadA = 0f, loadB = 0f),
+        )
+        advanceUntilIdle()
+
+        assertNotNull(
+            harness.dwsm.coordinator.stallStartTime,
+            "A deload-upgraded countdown must survive the cables retracting to rest",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `F8 - handle release clears verbal cue defer deadline`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+
+        // Verbal-cue defer active: the stall path must not arm.
+        harness.dwsm.coordinator.deferAutoStopDeadlineMs = currentTimeMillis() + 30_000L
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(positionA = 120f, positionB = 120f, velocityA = 0.0, velocityB = 0.0, loadA = 10f, loadB = 10f),
+        )
+        advanceUntilIdle()
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.stallStartTime,
+            "Stall must stay deferred while the verbal-cue window is active",
+        )
+
+        // Releasing the handles proves the set is over — the defer must clear ...
+        harness.fakeBleRepo.setHandleState(HandleState.Released)
+        advanceUntilIdle()
+        assertEquals(
+            0L,
+            harness.dwsm.coordinator.deferAutoStopDeadlineMs,
+            "Handle release must clear the verbal-cue defer deadline",
+        )
+
+        // ... and auto-stop paths resume immediately.
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(positionA = 120f, positionB = 120f, velocityA = 0.0, velocityB = 0.0, loadA = 10f, loadB = 10f),
+        )
+        advanceUntilIdle()
+        assertNotNull(
+            harness.dwsm.coordinator.stallStartTime,
+            "Auto-stop must resume once the defer is cleared by handle release",
         )
         harness.cleanup()
     }

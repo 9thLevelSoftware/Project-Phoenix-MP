@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -1770,16 +1769,11 @@ class RoutineFlowManager(
 
     /**
      * Fully reset auto-stop state for a new workout/set.
-     * Operates directly on coordinator fields.
+     * F7 (stall-detection audit): delegates to the coordinator's single reset —
+     * the previous hand-copied list here could not clear the (then engine-private)
+     * verbal-cue defer deadline.
      */
-    private fun resetAutoStopState() {
-        coordinator.autoStopStartTime = null
-        coordinator.autoStopTriggered = false
-        coordinator.autoStopStopRequested = false
-        coordinator.stallStartTime = null
-        coordinator.isCurrentlyStalled = false
-        coordinator._autoStopState.value = AutoStopUiState()
-    }
+    private fun resetAutoStopState() = coordinator.resetAutoStopState()
 
     /**
      * Clear the active cycle context (e.g., when starting a non-cycle workout).
