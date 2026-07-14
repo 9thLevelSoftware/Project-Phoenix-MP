@@ -1205,6 +1205,58 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `Issue 652 - completed Echo rep cancels an armed stall timer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.Echo,
+                echoLevel = EchoLevel.HARDER,
+                reps = 10,
+                warmupReps = 0,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 10)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 10)
+        advanceUntilIdle()
+
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+        assertNotNull(harness.dwsm.coordinator.stallStartTime)
+
+        harness.fakeBleRepo.emitRepNotification(
+            RepNotification(
+                topCounter = 5,
+                completeCounter = 5,
+                repsRomCount = 3,
+                repsRomTotal = 3,
+                repsSetCount = 2,
+                repsSetTotal = 10,
+                rangeTop = 800f,
+                rangeBottom = 0f,
+                rawData = ByteArray(24),
+                timestamp = 5L,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(2, harness.dwsm.coordinator.repCount.value.workingReps)
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.stallStartTime,
+            "A completed working rep proves motion resumed and must cancel the stale stall countdown",
+        )
+        assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+        harness.cleanup()
+    }
+
+    @Test
     fun `Issue 267 Just Lift warmup to working rep transitions without failed stall state`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")

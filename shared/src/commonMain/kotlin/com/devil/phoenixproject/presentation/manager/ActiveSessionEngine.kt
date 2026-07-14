@@ -1100,6 +1100,12 @@ class ActiveSessionEngine(
             // motion; let normal AMRAP / stall auto-stop resume by zeroing the
             // deadline (the source-of-truth field).
             deferAutoStopDeadlineMs = 0L
+            // Issue #652: the same completed-rep boundary is authoritative for
+            // the shared stall countdown (both DELOAD_OCCURRED and low-velocity
+            // arms write to coordinator.stallStartTime). Without this, a stale
+            // countdown started at a turnaround, brief pause, or firmware de-load
+            // can survive a subsequent valid rep and later auto-complete the set.
+            resetStallTimer()
 
             // Capture rep boundary timestamp BEFORE scoring so scoreCurrentRep()
             // and processBiomechanicsForRep() both see the correct metric window.
