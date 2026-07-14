@@ -243,18 +243,8 @@ class ActiveSessionEngine(
     private var velocityThresholdAlertEmitted = false
     private var consecutiveThresholdReps = 0
 
-    // Issue #649: defer position/stall auto-stop until the cue + short
-    // transition window elapses, or a completed working rep clears it. The
-    // deadline (@Volatile Long) is the single source of truth — 0L means no
-    // defer. checkVelocityThreshold() arms it on Dispatchers.Default;
-    // checkAutoStop() reads it on the metrics thread. @Volatile is required so
-    // the metrics thread never sees a stale old deadline across a thread switch.
-    // Resets: resetAutoStopState() (skip/restart/stop), per-set reset sites,
-    // and the next completed working rep all zero it.
-    // ponytail: one Long + one const ceiling; a tunable window is the only thing
-    // we'd add if users reported legitimate pauses being ended by this.
-    @kotlin.concurrent.Volatile
-    private var deferAutoStopDeadlineMs = 0L
+    // Issue #649 defer deadline: moved to WorkoutCoordinator (F7, stall-detection
+    // audit) so RoutineFlowManager reset paths can clear it too.
 
     // ===== Init Block: Workout-Related Collectors (moved from DWSM) =====
 
@@ -373,6 +363,19 @@ class ActiveSessionEngine(
                         }
                     }
 
+                    // F8 (Issue #649 follow-up, stall-detection audit): releasing the
+                    // handles during the verbal-cue defer window proves the set is over —
+                    // let the auto-stop paths resume immediately instead of waiting out
+                    // the 30s window. Transient blips can't instantly end a set: the
+                    // stall/position countdowns still need their own 2.5-5s to fire.
+                    if (currentState is WorkoutState.Active &&
+                        activityState == HandleState.Released &&
+                        coordinator.deferAutoStopDeadlineMs != 0L
+                    ) {
+                        Logger.d("Handles released during verbal-cue defer window - clearing defer deadline")
+                        coordinator.deferAutoStopDeadlineMs = 0L
+                    }
+
                     // Handle auto-STOP when Active in Just Lift mode and handles released.
                     // Warmup/ROM gate: auto-stop must remain disabled until warmup is complete.
                     if (params.isJustLift && currentState is WorkoutState.Active) {
@@ -406,6 +409,14 @@ class ActiveSessionEngine(
                     val currentState = coordinator._workoutState.value
 
                     if (params.stallDetectionEnabled && currentState is WorkoutState.Active) {
+                        // Echo levels are defined by the firmware's deload window (e.g. HARDER =
+                        // deload after 1.25s below 40 mm/s — Issue #553), so DELOAD_OCCURRED fires
+                        // routinely mid-set as the athlete fatigues. It is NOT a cable-release
+                        // signal in Echo mode and must never arm the auto-stop stall timer.
+                        if (params.isEchoMode) {
+                            Logger.d("DELOAD_OCCURRED ignored - Echo mode (deload windows define Echo levels)")
+                            return@collect
+                        }
                         if (!isWarmupGateOpenForAutoStop()) {
                             Logger.d("DELOAD_OCCURRED ignored - warmup/ROM not established yet")
                             return@collect
@@ -428,7 +439,13 @@ class ActiveSessionEngine(
                         if (coordinator.stallStartTime == null && !inGrace) {
                             coordinator.stallStartTime = currentTimeMillis()
                             coordinator.isCurrentlyStalled = true
+                            coordinator.stallArmedByDeload = true
                             Logger.d("Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
+                        } else if (coordinator.stallStartTime != null && !inGrace) {
+                            // F4: a real deload is the stronger signal — upgrade a
+                            // velocity-armed countdown so the retracting cables
+                            // (position -> 0) don't cancel it via the racked-handles check.
+                            coordinator.stallArmedByDeload = true
                         } else if (inGrace) {
                             Logger.d("DELOAD_OCCURRED ignored - in AMRAP startup grace period")
                         }
@@ -953,6 +970,7 @@ class ActiveSessionEngine(
     private fun resetStallTimer() {
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
+        coordinator.stallArmedByDeload = false
         if (coordinator.autoStopStartTime == null && !coordinator.autoStopTriggered) {
             coordinator._autoStopState.value = AutoStopUiState()
         }
@@ -961,17 +979,7 @@ class ActiveSessionEngine(
     /**
      * Fully reset auto-stop state for a new workout/set.
      */
-    internal fun resetAutoStopState() {
-        coordinator.autoStopStartTime = null
-        coordinator.autoStopTriggered = false
-        coordinator.autoStopStopRequested = false
-        coordinator.stallStartTime = null
-        coordinator.isCurrentlyStalled = false
-        coordinator._autoStopState.value = AutoStopUiState()
-        // Issue #649: zero the deadline so a new set never inherits a stale
-        // verbal-cue defer (skip / restart / startWorkout paths included).
-        deferAutoStopDeadlineMs = 0L
-    }
+    internal fun resetAutoStopState() = coordinator.resetAutoStopState()
 
     /**
      * Issue #204: Returns true if we're in the startup grace period for auto-stop modes.
@@ -1099,7 +1107,13 @@ class ActiveSessionEngine(
             // Issue #649: a completed working rep proves the user is back in
             // motion; let normal AMRAP / stall auto-stop resume by zeroing the
             // deadline (the source-of-truth field).
-            deferAutoStopDeadlineMs = 0L
+            coordinator.deferAutoStopDeadlineMs = 0L
+            // Issue #652: the same completed-rep boundary is authoritative for
+            // the shared stall countdown (both DELOAD_OCCURRED and low-velocity
+            // arms write to coordinator.stallStartTime). Without this, a stale
+            // countdown started at a turnaround, brief pause, or firmware de-load
+            // can survive a subsequent valid rep and later auto-complete the set.
+            resetStallTimer()
 
             // Capture rep boundary timestamp BEFORE scoring so scoreCurrentRep()
             // and processBiomechanicsForRep() both see the correct metric window.
@@ -1367,7 +1381,7 @@ class ActiveSessionEngine(
                     if (!coordinator.autoEndOnVelocityLoss &&
                         coordinator._workoutState.value is WorkoutState.Active
                     ) {
-                        deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
+                        coordinator.deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
                         resetStallTimer()
                         resetAutoStopTimer()
                     }
@@ -1454,10 +1468,10 @@ class ActiveSessionEngine(
         // Any reset path (next completed working rep, resetAutoStopState, per-set
         // boundary, deadline expiry) zeros it; this predicate then falls through.
         // Reset the live countdowns defensively each metric.
-        val deferDeadline = deferAutoStopDeadlineMs
+        val deferDeadline = coordinator.deferAutoStopDeadlineMs
         if (deferDeadline != 0L) {
             if (currentTimeMillis() >= deferDeadline) {
-                deferAutoStopDeadlineMs = 0L
+                coordinator.deferAutoStopDeadlineMs = 0L
             } else {
                 resetStallTimer()
                 resetAutoStopTimer()
@@ -1476,18 +1490,32 @@ class ActiveSessionEngine(
             val isDefinitelyMoving = maxVelocity > WorkoutCoordinator.STALL_VELOCITY_HIGH
 
             val maxPosition = maxOf(metric.positionA, metric.positionB)
-            val isActivelyUsing = maxPosition > WorkoutCoordinator.STALL_MIN_POSITION || hasMeaningfulRange
+            // F4 (stall-detection audit): the handles must be in use RIGHT NOW for a
+            // velocity stall — the old `|| hasMeaningfulRange` latch stayed true for
+            // the rest of the set, so a racked pause between reps armed the countdown
+            // and force-ended standard sets. Racked handles are the position path's
+            // job (AMRAP/Just Lift); a genuine mid-set release is the deload path's job.
+            val isActivelyUsing = maxPosition > WorkoutCoordinator.STALL_MIN_POSITION
 
             val inGrace = isInAmrapStartupGrace(hasMeaningfulRange)
             if (isDefinitelyStalled && isActivelyUsing && coordinator.stallStartTime == null && !inGrace) {
                 coordinator.stallStartTime = currentTimeMillis()
                 coordinator.isCurrentlyStalled = true
+                coordinator.stallArmedByDeload = false
             } else if (isDefinitelyMoving && coordinator.stallStartTime != null) {
                 resetStallTimer()
             }
 
             val startTime = coordinator.stallStartTime
             if (startTime != null) {
+                // F4: re-check per sample — a velocity-armed countdown must not keep
+                // running once the handles return to rest (racked pause). A deload-armed
+                // countdown must survive this (real cable release retracts to ~0mm).
+                if (!coordinator.stallArmedByDeload && maxPosition <= WorkoutCoordinator.STALL_MIN_POSITION) {
+                    resetStallTimer()
+                    return
+                }
+
                 val stallElapsed = (currentTimeMillis() - startTime) / 1000f
 
                 if (stallElapsed >= WorkoutCoordinator.STALL_DURATION_SECONDS && !coordinator.autoStopTriggered) {
@@ -2068,7 +2096,7 @@ class ActiveSessionEngine(
         coordinator.biomechanicsEngine.reset()
         velocityThresholdAlertEmitted = false
         consecutiveThresholdReps = 0
-        deferAutoStopDeadlineMs = 0L
+        coordinator.deferAutoStopDeadlineMs = 0L
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
@@ -2491,7 +2519,6 @@ class ActiveSessionEngine(
         coordinator.biomechanicsEngine.reset()
         velocityThresholdAlertEmitted = false
         consecutiveThresholdReps = 0
-        deferAutoStopDeadlineMs = 0L
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
         coordinator._loadBaselineA.value = 0f
@@ -2516,6 +2543,17 @@ class ActiveSessionEngine(
         // Reset rep quality scorer for fresh set
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
+        // F3 (stall-detection audit): a set start must never inherit the previous
+        // set's biomech/VBT state. The Phase 35C variable warm-up fast path in
+        // handleSetCompletion() returns early — before its biomech/VBT reset block —
+        // so a warm-up set's firstRepMcv (at a fraction of working weight) and the
+        // one-shot VBT alert flags leaked into the first working set. Resetting here
+        // covers every set-start path; the handleSetCompletion resets remain (they
+        // must run before the summary is displayed) and are idempotent with these.
+        coordinator.biomechanicsEngine.reset()
+        velocityThresholdAlertEmitted = false
+        consecutiveThresholdReps = 0
+        coordinator.repBoundaryTimestamps.value = emptyList()
         // Reset quality streak only at actual workout start, not between sets.
         // skipCountdown=true indicates a set-to-set transition within the same workout.
         if (!skipCountdown) {
@@ -4031,7 +4069,7 @@ class ActiveSessionEngine(
             coordinator.biomechanicsEngine.reset()
             velocityThresholdAlertEmitted = false
             consecutiveThresholdReps = 0
-            deferAutoStopDeadlineMs = 0L
+            coordinator.deferAutoStopDeadlineMs = 0L
             coordinator.repBoundaryTimestamps.value = emptyList()
 
             val completedReps = coordinator._repCount.value.workingReps

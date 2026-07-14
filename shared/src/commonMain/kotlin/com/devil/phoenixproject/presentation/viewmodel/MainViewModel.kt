@@ -318,7 +318,6 @@ class MainViewModel constructor(
     fun setWeightUnit(unit: WeightUnit) = settingsManager.setWeightUnit(unit)
     fun setStopAtTop(enabled: Boolean) = settingsManager.setStopAtTop(enabled)
     fun setEnableVideoPlayback(enabled: Boolean) = settingsManager.setEnableVideoPlayback(enabled)
-    fun setStallDetectionEnabled(enabled: Boolean) = settingsManager.setStallDetectionEnabled(enabled)
     fun setAudioRepCountEnabled(enabled: Boolean) = settingsManager.setAudioRepCountEnabled(enabled)
     fun setRepCountTiming(timing: RepCountTiming) = settingsManager.setRepCountTiming(timing)
     fun setSummaryCountdownSeconds(seconds: Int) = settingsManager.setSummaryCountdownSeconds(seconds)
