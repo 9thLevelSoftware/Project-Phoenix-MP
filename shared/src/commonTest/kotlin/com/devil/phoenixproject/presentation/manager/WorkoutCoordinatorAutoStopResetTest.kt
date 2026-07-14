@@ -15,7 +15,7 @@ import kotlin.test.assertFalse
 class WorkoutCoordinatorAutoStopResetTest {
 
     @Test
-    fun `resetAutoStopState clears every auto-stop, stall, and defer field`() {
+    fun `resetAutoStopState clears every auto-stop stall and defer field`() {
         val coordinator = WorkoutCoordinator()
 
         coordinator.autoStopStartTime = 12_345L
