@@ -132,3 +132,22 @@ The one-line fix (reset the shared stall timer on a completed working rep) is **
 4. **F6** — make the global toggle a master gate (`params.stallDetectionEnabled && prefs.stallDetectionEnabled`) or surface per-exercise state in the routine UI.
 5. F4/F5 — revisit arm/cancel semantics for standard sets (product decision; at minimum re-check `isActivelyUsing` during countdown and let rep *events* — not only >10 mm/s samples — cancel).
 6. F7–F9 — hygiene.
+
+---
+
+## 6. Corrections & Resolutions (implementation pass, same branch)
+
+Deeper verification during the implementation phase corrected two findings, and all actionable findings were fixed on this branch. Per-finding status:
+
+| Finding | Status | Resolution |
+|---|---|---|
+| F1 | **FIXED** | `ActiveSessionEngine` deload collector now ignores `DELOAD_OCCURRED` entirely in Echo mode (`params.isEchoMode` gate). Echo sets keep velocity-stall and (Just Lift) release/position protection. |
+| F2 | **WITHDRAWN — incorrect** | `RepCounterFromMachine.getRepCount()` sets `totalReps = workingReps` (line 684, "Exclude warm-up reps from total count"), so `handleRepNotification` never fires the rep-scoring/biomechanics path for firmware warm-up reps. There is **no intra-set warm-up contamination** of `firstRepMcv`; the audit's §2 F2 claim (and the derivative claim that the last warm-up rep can drive the first threshold check) is wrong. The only real contamination vector was the *cross-set* leak described in F3. |
+| F3 | **FIXED** | `startWorkout()` now resets `biomechanicsEngine`, `velocityThresholdAlertEmitted`, `consecutiveThresholdReps`, and `repBoundaryTimestamps` at every set start, covering both Phase 35C early-return branches (which advance via `startWorkout(skipCountdown = true)`). |
+| F4 | **FIXED** | Velocity-armed stall countdowns now require the handles to be in use (`maxPosition > STALL_MIN_POSITION`) both to arm (the `hasMeaningfulRange` latch is removed from `isActivelyUsing`) and to keep counting (re-checked per sample) — a racked pause between reps no longer ends a standard set. A new `WorkoutCoordinator.stallArmedByDeload` flag exempts deload-armed countdowns (genuine cable release retracts to ~0 mm and must still auto-stop); a deload event also *upgrades* an existing velocity-armed countdown. |
+| F5 | **RESOLVED (no dedicated change)** | Covered by the absorbed PR #653 fix (completed working rep cancels the countdown at the rep boundary) plus F4's per-sample position re-check. |
+| F6 | **FIXED (pref removed)** | The global `UserPreferences.stallDetectionEnabled` was consumed by **no** workout path and had no wired UI toggle — it only (incorrectly) gated the "Auto-End on Velocity Loss" row in Settings. Removed entirely (field, persistence key, setters in PreferencesManager/SettingsManager/MainViewModel, SettingsTab param); the auto-end row is now always enabled. Per-exercise (`RoutineExercise.stallDetectionEnabled`) and Just Lift toggles are unchanged and remain the only controls. |
+| F7 | **FIXED** | `deferAutoStopDeadlineMs` moved to `WorkoutCoordinator` (`@Volatile`), and `WorkoutCoordinator.resetAutoStopState()` is the single reset for all auto-stop/stall/defer fields; `ActiveSessionEngine` and `RoutineFlowManager` both delegate to it (the RFM copy previously could not clear the defer deadline). |
+| F8 | **FIXED** | Releasing the handles while a verbal-cue defer window is active now clears the deadline immediately (collector #4), so a genuine set-end auto-stops promptly instead of waiting out the 30s window. |
+| F9 | **WITHDRAWN — incorrect** | The stall/auto-stop fields were already `@Volatile` (`WorkoutCoordinator.kt:392-418`), and `deferAutoStopDeadlineMs` was already `@Volatile` before its move. No change needed. |
+| — | **PR #653 absorbed** | The one-line Issue #652 fix (`resetStallTimer()` on a completed working rep in `handleRepNotification`) and its regression test are included on this branch; PR #653 is superseded. |
