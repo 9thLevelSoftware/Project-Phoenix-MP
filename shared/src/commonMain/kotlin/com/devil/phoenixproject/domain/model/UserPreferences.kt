@@ -13,7 +13,6 @@ data class UserPreferences(
     val enableVideoPlayback: Boolean = true, // true = show videos, false = hide videos to avoid slow loading
     val beepsEnabled: Boolean = true, // true = play audio cues during workouts, false = haptic only
     val colorScheme: Int = 0,
-    val stallDetectionEnabled: Boolean = true, // Stall detection auto-stop toggle
     val discoModeUnlocked: Boolean = false, // Easter egg - unlocked by tapping LED header 7 times
     val audioRepCountEnabled: Boolean = false, // Audio rep count announcements during workout
     val repCountTiming: RepCountTiming = RepCountTiming.TOP, // When to count working reps (TOP=concentric, BOTTOM=eccentric)

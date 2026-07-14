@@ -84,10 +84,6 @@ class SettingsManager(
         scope.launch { preferencesManager.setEnableVideoPlayback(enabled) }
     }
 
-    fun setStallDetectionEnabled(enabled: Boolean) {
-        scope.launch { preferencesManager.setStallDetectionEnabled(enabled) }
-    }
-
     fun setAudioRepCountEnabled(enabled: Boolean) {
         scope.launch { preferencesManager.setAudioRepCountEnabled(enabled) }
     }

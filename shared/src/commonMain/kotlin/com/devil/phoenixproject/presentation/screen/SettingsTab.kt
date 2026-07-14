@@ -387,7 +387,6 @@ fun SettingsTab(
     onVelocityLossThresholdChange: (Int) -> Unit = {},
     autoEndOnVelocityLoss: Boolean = false,
     onAutoEndOnVelocityLossChange: (Boolean) -> Unit = {},
-    stallDetectionEnabled: Boolean = true,
     // Issue #517: System-wide default scaling basis for % of 1RM
     defaultScalingBasis: ScalingBasis = ScalingBasis.MAX_WEIGHT_PR,
     onDefaultScalingBasisChange: (ScalingBasis) -> Unit = {},
@@ -2186,19 +2185,11 @@ fun SettingsTab(
                             "Auto-End on Velocity Loss",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = if (stallDetectionEnabled) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            if (stallDetectionEnabled) {
-                                "Automatically end set when threshold is reached"
-                            } else {
-                                "Enable Stall Detection in Workout Settings to use auto-end"
-                            },
+                            "Automatically end set when threshold is reached",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -2206,7 +2197,6 @@ fun SettingsTab(
                     Switch(
                         checked = autoEndOnVelocityLoss,
                         onCheckedChange = onAutoEndOnVelocityLossChange,
-                        enabled = stallDetectionEnabled,
                     )
                 }
 
