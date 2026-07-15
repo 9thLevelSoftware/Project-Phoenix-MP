@@ -757,8 +757,6 @@
     <string name="profile_motion_start">Démarrer la série par mouvement</string>
     <string name="profile_gamification">Ludification</string>
     <string name="profile_default_scaling_basis">Base de mise à l'échelle du poids</string>
-    <string name="profile_routine_starting_weights">Utiliser un % du record pour les nouveaux exercices</string>
-    <string name="profile_routine_starting_weights_description">Initialise les nouveaux exercices de la routine avec le pourcentage choisi de votre record.</string>
     <string name="profile_stop_at_top">Arrêt en haut</string>
     <string name="profile_stall_detection">Détection de blocage</string>
     <string name="profile_velocity_loss_threshold">Seuil de perte de vélocité</string>

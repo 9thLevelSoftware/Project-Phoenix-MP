@@ -757,8 +757,6 @@
     <string name="profile_motion_start">Satzstart durch Bewegung</string>
     <string name="profile_gamification">Gamification</string>
     <string name="profile_default_scaling_basis">Standardbasis für Gewichtsskalierung</string>
-    <string name="profile_routine_starting_weights">% des PR für neue Routineübungen verwenden</string>
-    <string name="profile_routine_starting_weights_description">Neu hinzugefügte Routineübungen mit dem ausgewählten Prozentsatz deines PR vorbelegen.</string>
     <string name="profile_stop_at_top">Oben stoppen</string>
     <string name="profile_stall_detection">Stillstandserkennung</string>
     <string name="profile_velocity_loss_threshold">Schwelle für Geschwindigkeitsverlust</string>

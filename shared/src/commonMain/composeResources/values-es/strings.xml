@@ -757,8 +757,6 @@
     <string name="profile_motion_start">Iniciar serie con movimiento</string>
     <string name="profile_gamification">Gamificación</string>
     <string name="profile_default_scaling_basis">Base predeterminada de escala de peso</string>
-    <string name="profile_routine_starting_weights">Usar % del RP en ejercicios nuevos de la rutina</string>
-    <string name="profile_routine_starting_weights_description">Asigna a los ejercicios nuevos de la rutina el porcentaje seleccionado de tu RP.</string>
     <string name="profile_stop_at_top">Detener arriba</string>
     <string name="profile_stall_detection">Detección de bloqueo</string>
     <string name="profile_velocity_loss_threshold">Umbral de pérdida de velocidad</string>

@@ -736,8 +736,6 @@
     <string name="profile_motion_start">Set starten door beweging</string>
     <string name="profile_gamification">Gamificatie</string>
     <string name="profile_default_scaling_basis">Standaardbasis voor gewichtschaal</string>
-    <string name="profile_routine_starting_weights">% van PR gebruiken voor nieuwe routine-oefeningen</string>
-    <string name="profile_routine_starting_weights_description">Vul nieuw toegevoegde routine-oefeningen met het gekozen percentage van je PR.</string>
     <string name="profile_stop_at_top">Stoppen bovenaan</string>
     <string name="profile_stall_detection">Stildetectie</string>
     <string name="profile_velocity_loss_threshold">Drempel voor snelheidsverlies</string>

@@ -900,8 +900,6 @@
     <string name="profile_motion_start">Motion-triggered set start</string>
     <string name="profile_gamification">Gamification</string>
     <string name="profile_default_scaling_basis">Default weight scaling basis</string>
-    <string name="profile_routine_starting_weights">Use % of PR for new routine exercises</string>
-    <string name="profile_routine_starting_weights_description">Seed newly added routine exercises from the selected percentage of your PR.</string>
     <string name="profile_stop_at_top">Stop at top</string>
     <string name="profile_stall_detection">Stall detection</string>
     <string name="profile_velocity_loss_threshold">Velocity-loss threshold</string>

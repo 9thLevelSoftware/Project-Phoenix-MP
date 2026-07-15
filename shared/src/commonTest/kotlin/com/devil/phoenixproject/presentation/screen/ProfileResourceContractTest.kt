@@ -72,7 +72,6 @@ class ProfileResourceContractTest {
         "profile_motion_start",
         "profile_gamification",
         "profile_default_scaling_basis",
-        "profile_routine_starting_weights",
         "profile_stop_at_top",
         "profile_stall_detection",
         "profile_velocity_loss_threshold",
@@ -123,7 +122,7 @@ class ProfileResourceContractTest {
 
     @Test
     fun contractInventoryIsUniqueAndTracksExactlyFiveSelectableLocales() {
-        assertEquals(56, newKeys.size)
+        assertEquals(55, newKeys.size)
         assertEquals(newKeys.size, newKeys.toSet().size)
         assertTrue(newKeys.intersect(reusedKeys.toSet()).isEmpty())
 

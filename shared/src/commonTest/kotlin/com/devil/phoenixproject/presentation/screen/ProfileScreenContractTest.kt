@@ -194,9 +194,6 @@ class ProfileScreenContractTest {
     fun preferenceResourceInventoryOccursOnceInEveryLocaleAndVisibleCopyIsNotHardcoded() {
         val english = linkedMapOf(
             "profile_master_beeps" to "Workout beeps",
-            "profile_routine_starting_weights" to "Use % of PR for new routine exercises",
-            "profile_routine_starting_weights_description" to
-                "Seed newly added routine exercises from the selected percentage of your PR.",
             "profile_body_weight_unset" to "Not set",
             "profile_body_weight_invalid" to "Enter a body weight from 20 to 300 kg",
             "profile_body_weight_imported" to "Matches an imported health measurement",
@@ -251,8 +248,6 @@ class ProfileScreenContractTest {
 
         val proseThatMustBeTranslated = listOf(
             "profile_master_beeps",
-            "profile_routine_starting_weights",
-            "profile_routine_starting_weights_description",
             "profile_body_weight_unset",
             "profile_body_weight_invalid",
             "profile_body_weight_imported",
@@ -273,7 +268,7 @@ class ProfileScreenContractTest {
                 )
             }
             assertTrue(
-                english.keys.count { key -> localized.getValue(key) != english.getValue(key) } >= 19,
+                english.keys.count { key -> localized.getValue(key) != english.getValue(key) } >= 17,
                 "$locale contains too many copied English preference strings",
             )
         }
@@ -462,15 +457,9 @@ class ProfileScreenContractTest {
     @Test
     fun continuousSlidersDraftLocallyAndCommitOnlyWhenFinished() {
         val preferences = source(preferenceComponentsPath)
-        assertEquals(2, Regex("\\bSlider\\(").findAll(preferences).count())
-        assertEquals(2, Regex("onValueChangeFinished\\s*=").findAll(preferences).count())
-        assertEquals(2, Regex("onValueChange\\s*=").findAll(preferences).count())
-        assertSliderContract(
-            source = preferences,
-            authoritativeField = "defaultRoutineExerciseWeightPercentOfPR",
-            section = "WORKOUT",
-            finalCallback = "onWorkoutChange",
-        )
+        assertEquals(1, Regex("\\bSlider\\(").findAll(preferences).count())
+        assertEquals(1, Regex("onValueChangeFinished\\s*=").findAll(preferences).count())
+        assertEquals(1, Regex("onValueChange\\s*=").findAll(preferences).count())
         assertSliderContract(
             source = preferences,
             authoritativeField = "velocityLossThresholdPercent",
@@ -485,7 +474,7 @@ class ProfileScreenContractTest {
     }
 
     @Test
-    fun exerciseLevelDefaultsAreAbsentAndRoutinePrSeedingIsExplainedAndConditional() {
+    fun exerciseLevelDefaultsAndRoutinePrSeedingAreAbsentFromProfile() {
         val preferences = source(preferenceComponentsPath)
         val workoutCard = bracedBlock(preferences, "fun WorkoutPreferenceCard(")
         val vbtCard = bracedBlock(preferences, "fun VbtPreferenceCard(")
@@ -499,14 +488,15 @@ class ProfileScreenContractTest {
             "repCountTiming",
             "stopAtTop",
             "stallDetectionEnabled",
+            "profile_routine_starting_weights",
+            "profile_routine_starting_weights_description",
+            "defaultRoutineExerciseUsePercentOfPR",
+            "defaultRoutineExerciseWeightPercentOfPR",
+            "50f..120f",
         ).forEach { removed ->
             assertFalse(workoutCard.contains(removed), "Profile retained $removed")
         }
         assertFalse(vbtCard.contains("stallDetectionEnabled"))
-        assertContains(workoutCard, "Res.string.profile_routine_starting_weights")
-        assertContains(workoutCard, "Res.string.profile_routine_starting_weights_description")
-        assertContains(workoutCard, "if (workout.defaultRoutineExerciseUsePercentOfPR)")
-        assertContains(workoutCard, "50f..120f")
     }
 
     @Test

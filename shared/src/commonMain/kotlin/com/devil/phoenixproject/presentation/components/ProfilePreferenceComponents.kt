@@ -148,7 +148,6 @@ fun ProfilePreferenceSections(
             }
         }
         WorkoutPreferenceCard(
-            profileId = profileId,
             workout = workout,
             busySections = busySections,
             onWorkoutChange = onWorkoutChange,
@@ -333,19 +332,11 @@ private fun MeasurementsPreferenceCard(
 
 @Composable
 private fun WorkoutPreferenceCard(
-    profileId: String,
     workout: WorkoutPreferences,
     busySections: Set<ProfilePreferenceSection>,
     onWorkoutChange: (WorkoutPreferences) -> Long?,
 ) {
     val enabled = ProfilePreferenceSection.WORKOUT !in busySections
-    val authoritativePercentOfPr = workout.defaultRoutineExerciseWeightPercentOfPR.toFloat()
-    var percentOfPrDraft by rememberSaveable(profileId, authoritativePercentOfPr) {
-        mutableFloatStateOf(authoritativePercentOfPr)
-    }
-    LaunchedEffect(profileId, authoritativePercentOfPr) {
-        percentOfPrDraft = authoritativePercentOfPr
-    }
 
     PreferenceCard(title = stringResource(Res.string.profile_workout_behavior)) {
         IntegerChoiceRow(
@@ -414,38 +405,6 @@ private fun WorkoutPreferenceCard(
             enabled = enabled,
             onCheckedChange = { onWorkoutChange(workout.copy(weightSuggestionsEnabled = it)) },
         )
-        PreferenceSwitchRow(
-            label = stringResource(Res.string.profile_routine_starting_weights),
-            supporting = stringResource(
-                Res.string.profile_routine_starting_weights_description,
-            ),
-            checked = workout.defaultRoutineExerciseUsePercentOfPR,
-            enabled = enabled,
-            onCheckedChange = {
-                onWorkoutChange(workout.copy(defaultRoutineExerciseUsePercentOfPR = it))
-            },
-        )
-        if (workout.defaultRoutineExerciseUsePercentOfPR) {
-            Text(
-                text = "${percentOfPrDraft.roundToInt()}%",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Slider(
-                value = percentOfPrDraft,
-                onValueChange = { percentOfPrDraft = ((it / 5f).roundToInt() * 5).toFloat() },
-                onValueChangeFinished = {
-                    onWorkoutChange(
-                        workout.copy(
-                            defaultRoutineExerciseWeightPercentOfPR = percentOfPrDraft.roundToInt(),
-                        ),
-                    )
-                },
-                valueRange = 50f..120f,
-                steps = 13,
-                enabled = ProfilePreferenceSection.WORKOUT !in busySections,
-            )
-        }
         PreferenceSwitchRow(
             label = stringResource(Res.string.settings_voice_stop_enable),
             supporting = if (workout.voiceStopEnabled) {
