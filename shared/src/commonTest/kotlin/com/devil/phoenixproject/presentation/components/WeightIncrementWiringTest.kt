@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.components
 
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.testutil.readProjectFile
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import kotlin.math.abs
@@ -154,5 +155,34 @@ class WeightIncrementWiringTest {
             Constants.DEFAULT_WEIGHT_INCREMENT_LB,
             UserPreferences(weightUnit = WeightUnit.LB, weightIncrement = -1f).effectiveWeightIncrement,
         )
+    }
+
+    @Test
+    fun profileIncrementFeedsRoutineAndSingleExercisePerSetControls() {
+        val routineEditor = requireNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/RoutineEditorScreen.kt",
+            ),
+        )
+        val singleExercise = requireNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SingleExerciseScreen.kt",
+            ),
+        )
+        val exerciseEditor = requireNotNull(
+            readProjectFile(
+                "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseEditBottomSheet.kt",
+            ),
+        )
+
+        listOf(routineEditor, singleExercise).forEach { source ->
+            assertTrue(
+                Regex(
+                    """weightStepOverride\s*=\s*userPreferences\.effectiveWeightIncrementKg""",
+                ).containsMatchIn(source),
+            )
+        }
+        assertTrue(exerciseEditor.contains("if (weightStepOverride > 0f)"))
+        assertTrue(exerciseEditor.contains("kgToDisplay(weightStepOverride, weightUnit)"))
     }
 }

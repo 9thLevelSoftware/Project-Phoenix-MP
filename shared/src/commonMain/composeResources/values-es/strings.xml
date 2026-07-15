@@ -627,7 +627,7 @@
     <string name="settings_dominatrix_mode_title">Modo Dominatrix</string>
     <string name="settings_dominatrix_mode_description">Comandos de voz de Charlotte. Anula el grupo vulgar cuando está activo.</string>
     <string name="settings_dominatrix_unlock_hint">Toca el encabezado 7 veces para desbloquear</string>
-    <string name="settings_dominatrix_unlock_toast">Modo jefe desbloqueado</string>
+    <string name="settings_dominatrix_unlock_toast">Modo Dominatrix desbloqueado</string>
     <string name="settings_adults_only_title">Solo para adultos</string>
     <string name="settings_adults_only_body">El modo vulgar contiene groserías y temas maduros. ¿Tienes 18 años o más?</string>
     <string name="settings_adults_only_confirm">Tengo 18+ y la abuela no me oye</string>
@@ -757,7 +757,8 @@
     <string name="profile_motion_start">Iniciar serie con movimiento</string>
     <string name="profile_gamification">Gamificación</string>
     <string name="profile_default_scaling_basis">Base predeterminada de escala de peso</string>
-    <string name="profile_routine_starting_weights">Pesos iniciales de las rutinas</string>
+    <string name="profile_routine_starting_weights">Usar % del RP en ejercicios nuevos de la rutina</string>
+    <string name="profile_routine_starting_weights_description">Asigna a los ejercicios nuevos de la rutina el porcentaje seleccionado de tu RP.</string>
     <string name="profile_stop_at_top">Detener arriba</string>
     <string name="profile_stall_detection">Detección de bloqueo</string>
     <string name="profile_velocity_loss_threshold">Umbral de pérdida de velocidad</string>
@@ -788,6 +789,7 @@
     <string name="profile_led_scheme_purple">Morado</string>
     <string name="profile_led_scheme_none">Ninguno</string>
     <string name="cd_select_led_scheme">Seleccionar esquema LED: %1$s</string>
+    <string name="profile_led_selected_scheme">Seleccionado: %1$s</string>
     <string name="profile_disco_mode">Modo disco</string>
     <string name="profile_disco_requires_connection">Conecta tu entrenador para usar el modo disco</string>
     <string name="profile_disco_unlocked_title">Modo disco desbloqueado</string>

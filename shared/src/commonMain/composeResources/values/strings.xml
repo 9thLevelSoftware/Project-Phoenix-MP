@@ -718,7 +718,7 @@
     <string name="settings_dominatrix_mode_title">Dominatrix Mode</string>
     <string name="settings_dominatrix_mode_description">Charlotte voice commands. Overrides vulgar pool when on.</string>
     <string name="settings_dominatrix_unlock_hint">Tap header 7× to unlock</string>
-    <string name="settings_dominatrix_unlock_toast">Boss Mode unlocked</string>
+    <string name="settings_dominatrix_unlock_toast">Dominatrix Mode unlocked</string>
     <string name="settings_adults_only_title">Adults Only</string>
     <string name="settings_adults_only_body">Vulgar Mode contains profanity and mature themes. Are you 18 or older?</string>
     <string name="settings_adults_only_confirm">I\'m 18+ and Grandma Can\'t Hear Me</string>
@@ -900,7 +900,8 @@
     <string name="profile_motion_start">Motion-triggered set start</string>
     <string name="profile_gamification">Gamification</string>
     <string name="profile_default_scaling_basis">Default weight scaling basis</string>
-    <string name="profile_routine_starting_weights">Routine starting weights</string>
+    <string name="profile_routine_starting_weights">Use % of PR for new routine exercises</string>
+    <string name="profile_routine_starting_weights_description">Seed newly added routine exercises from the selected percentage of your PR.</string>
     <string name="profile_stop_at_top">Stop at top</string>
     <string name="profile_stall_detection">Stall detection</string>
     <string name="profile_velocity_loss_threshold">Velocity-loss threshold</string>
@@ -922,6 +923,7 @@
     <string name="profile_led_scheme_purple">Purple</string>
     <string name="profile_led_scheme_none">None</string>
     <string name="cd_select_led_scheme">Select LED scheme: %1$s</string>
+    <string name="profile_led_selected_scheme">Selected: %1$s</string>
     <string name="profile_disco_mode">Disco Mode</string>
     <string name="profile_disco_requires_connection">Connect to your trainer to use Disco Mode</string>
     <string name="profile_disco_unlocked_title">Disco Mode unlocked</string>

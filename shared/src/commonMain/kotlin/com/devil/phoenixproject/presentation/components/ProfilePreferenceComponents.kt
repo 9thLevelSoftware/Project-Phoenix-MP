@@ -1,5 +1,8 @@
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,13 +15,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -30,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -47,6 +54,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -57,7 +67,6 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
-import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.domain.model.VbtPreferences
@@ -65,6 +74,8 @@ import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.presentation.viewmodel.ProfilePreferenceSection
+import com.devil.phoenixproject.util.ColorSchemes
+import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
 import kotlin.math.abs
@@ -155,7 +166,6 @@ fun ProfilePreferenceSections(
         VbtPreferenceCard(
             profileId = profileId,
             vbt = vbt,
-            workout = workout,
             localSafety = localSafety,
             busySections = busySections,
             onVbtChange = onVbtChange,
@@ -168,7 +178,6 @@ fun ProfilePreferenceSections(
             voiceStopEnabled = workout.voiceStopEnabled,
                 busySections = busySections,
                 onLocalSafetyChange = onLocalSafetyChange,
-                onRequestAdultsOnlyConfirmation = onRequestAdultsOnlyConfirmation,
             )
         }
     }
@@ -231,21 +240,16 @@ private fun MeasurementsPreferenceCard(
         } else {
             stringResource(Res.string.label_lbs)
         }
-        val incrementOptions = listOf(-1f, 0.5f, 1f, 2.5f, 5f)
+        val incrementOptions = weightIncrementOptionsFor(core.weightUnit)
+        val selectedIncrement = displayedWeightIncrement(core)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             incrementOptions.forEach { increment ->
                 FilterChip(
-                    selected = abs(core.weightIncrement - increment) < 0.001f,
+                    selected = abs(selectedIncrement - increment) < 0.001f,
                     onClick = { onCoreChange(core.copy(weightIncrement = increment)) },
                     enabled = enabled,
                     label = {
-                        Text(
-                            if (increment < 0f) {
-                                stringResource(Res.string.profile_automatic)
-                            } else {
-                                "${UnitConverter.formatDecimal(increment)} $unitLabel"
-                            },
-                        )
+                        Text("${UnitConverter.formatDecimal(increment)} $unitLabel")
                     },
                 )
             }
@@ -362,28 +366,6 @@ private fun WorkoutPreferenceCard(
             valueLabel = { "${it}s" },
             onSelected = { onWorkoutChange(workout.copy(autoStartCountdownSeconds = it)) },
         )
-        IntegerChoiceRow(
-            label = stringResource(Res.string.profile_default_rest),
-            value = workout.justLiftDefaults.restSeconds,
-            options = listOf(0) + (5..300 step 5).toList(),
-            enabled = enabled,
-            valueLabel = { "${it}s" },
-            onSelected = {
-                onWorkoutChange(
-                    workout.copy(justLiftDefaults = workout.justLiftDefaults.copy(restSeconds = it)),
-                )
-            },
-        )
-        ChoiceChips(
-            label = stringResource(Res.string.profile_rep_count_timing),
-            options = listOf(
-                RepCountTiming.TOP to stringResource(Res.string.rep_count_timing_top),
-                RepCountTiming.BOTTOM to stringResource(Res.string.rep_count_timing_bottom),
-            ),
-            selected = workout.repCountTiming,
-            enabled = enabled,
-            onSelected = { onWorkoutChange(workout.copy(repCountTiming = it)) },
-        )
         PreferenceSwitchRow(
             label = stringResource(Res.string.profile_auto_start_routine),
             checked = workout.autoStartRoutine,
@@ -395,18 +377,6 @@ private fun WorkoutPreferenceCard(
             checked = workout.motionStartEnabled,
             enabled = enabled,
             onCheckedChange = { onWorkoutChange(workout.copy(motionStartEnabled = it)) },
-        )
-        PreferenceSwitchRow(
-            label = stringResource(Res.string.profile_stop_at_top),
-            checked = workout.stopAtTop,
-            enabled = enabled,
-            onCheckedChange = { onWorkoutChange(workout.copy(stopAtTop = it)) },
-        )
-        PreferenceSwitchRow(
-            label = stringResource(Res.string.profile_stall_detection),
-            checked = workout.stallDetectionEnabled,
-            enabled = enabled,
-            onCheckedChange = { onWorkoutChange(workout.copy(stallDetectionEnabled = it)) },
         )
         PreferenceSwitchRow(
             label = stringResource(Res.string.profile_master_beeps),
@@ -446,31 +416,36 @@ private fun WorkoutPreferenceCard(
         )
         PreferenceSwitchRow(
             label = stringResource(Res.string.profile_routine_starting_weights),
+            supporting = stringResource(
+                Res.string.profile_routine_starting_weights_description,
+            ),
             checked = workout.defaultRoutineExerciseUsePercentOfPR,
             enabled = enabled,
             onCheckedChange = {
                 onWorkoutChange(workout.copy(defaultRoutineExerciseUsePercentOfPR = it))
             },
         )
-        Text(
-            text = "${percentOfPrDraft.roundToInt()}%",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Slider(
-            value = percentOfPrDraft,
-            onValueChange = { percentOfPrDraft = ((it / 5f).roundToInt() * 5).toFloat() },
-            onValueChangeFinished = {
-                onWorkoutChange(
-                    workout.copy(
-                        defaultRoutineExerciseWeightPercentOfPR = percentOfPrDraft.roundToInt(),
-                    ),
-                )
-            },
-            valueRange = 50f..120f,
-            steps = 13,
-            enabled = ProfilePreferenceSection.WORKOUT !in busySections && workout.defaultRoutineExerciseUsePercentOfPR,
-        )
+        if (workout.defaultRoutineExerciseUsePercentOfPR) {
+            Text(
+                text = "${percentOfPrDraft.roundToInt()}%",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Slider(
+                value = percentOfPrDraft,
+                onValueChange = { percentOfPrDraft = ((it / 5f).roundToInt() * 5).toFloat() },
+                onValueChangeFinished = {
+                    onWorkoutChange(
+                        workout.copy(
+                            defaultRoutineExerciseWeightPercentOfPR = percentOfPrDraft.roundToInt(),
+                        ),
+                    )
+                },
+                valueRange = 50f..120f,
+                steps = 13,
+                enabled = ProfilePreferenceSection.WORKOUT !in busySections,
+            )
+        }
         PreferenceSwitchRow(
             label = stringResource(Res.string.settings_voice_stop_enable),
             supporting = if (workout.voiceStopEnabled) {
@@ -514,6 +489,7 @@ private fun LedPreferenceCard(
         7 to Res.string.profile_led_scheme_none,
     )
     val selectedScheme = normalizedLedSchemeIndex(led.colorScheme, schemes.size)
+    val selectedSchemeName = stringResource(schemes[selectedScheme].second)
 
     PreferenceCard(
         title = stringResource(Res.string.profile_led),
@@ -533,29 +509,65 @@ private fun LedPreferenceCard(
         },
     ) {
         Text(
-            text = stringResource(Res.string.cd_led_scheme),
+            text = stringResource(Res.string.profile_led_selected_scheme, selectedSchemeName),
             style = MaterialTheme.typography.labelLarge,
         )
-        Column(Modifier.fillMaxWidth().selectableGroup()) {
-            schemes.forEach { (index, labelResource) ->
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(schemes, key = { it.first }) { (index, labelResource) ->
                 val label = stringResource(labelResource)
                 val selected = selectedScheme == index
                 val schemeDescription = stringResource(Res.string.cd_select_led_scheme, label)
-                Row(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                val scheme = ColorSchemes.ALL[index]
+                val gradient = Brush.linearGradient(
+                    colors = scheme.colors.map { Color(it.r, it.g, it.b) },
+                )
+                val offCrossColor = MaterialTheme.colorScheme.onSurface
+                Box(
+                    modifier = Modifier.size(48.dp)
                         .semantics { contentDescription = schemeDescription }
                         .selectable(
                             selected = selected,
                             enabled = enabled,
                             role = Role.RadioButton,
                             onClick = { onLedChange(led.copy(colorScheme = index)) },
-                        )
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        ),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    RadioButton(selected = selected, onClick = null, enabled = enabled)
-                    Spacer(Modifier.width(8.dp))
-                    Text(label)
+                    Box(
+                        modifier = Modifier.size(40.dp)
+                            .clip(CircleShape)
+                            .background(gradient)
+                            .border(
+                                width = if (selected) 3.dp else 1.dp,
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.outline
+                                },
+                                shape = CircleShape,
+                            ),
+                    )
+                    if (index == ColorSchemes.ALL.lastIndex) {
+                        Canvas(Modifier.size(28.dp)) {
+                            drawLine(
+                                color = offCrossColor,
+                                start = androidx.compose.ui.geometry.Offset(2f, 2f),
+                                end = androidx.compose.ui.geometry.Offset(size.width - 2f, size.height - 2f),
+                                strokeWidth = 3.dp.toPx(),
+                            )
+                        }
+                    }
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = Color.White,
+                        )
+                    }
                 }
             }
         }
@@ -579,7 +591,6 @@ private fun LedPreferenceCard(
 private fun VbtPreferenceCard(
     profileId: String,
     vbt: VbtPreferences,
-    workout: WorkoutPreferences,
     localSafety: ProfileLocalSafetyPreferences,
     busySections: Set<ProfilePreferenceSection>,
     onVbtChange: (VbtPreferences) -> Long?,
@@ -607,12 +618,30 @@ private fun VbtPreferenceCard(
         vbt.dominatrixModeUnlocked,
     ) { mutableLongStateOf(0L) }
 
-    PreferenceCard(title = stringResource(Res.string.profile_vbt)) {
+    PreferenceCard(
+        title = stringResource(Res.string.profile_vbt),
+        titleModifier = Modifier.clickable(
+            enabled = sectionEnabled && dominatrixUnlockEligible,
+        ) {
+            val now = KmpUtils.currentTimeMillis()
+            if (dominatrixFirstTapAt == 0L || now - dominatrixFirstTapAt > 2000L) {
+                dominatrixFirstTapAt = now
+                dominatrixTapCount = 1
+            } else {
+                dominatrixTapCount += 1
+            }
+            if (dominatrixTapCount >= 7) {
+                onUnlockDominatrixMode()
+                dominatrixTapCount = 0
+                dominatrixFirstTapAt = 0L
+            }
+        },
+    ) {
         PreferenceSwitchRow(
             label = stringResource(Res.string.profile_vbt_enabled),
             checked = vbt.enabled,
             enabled = sectionEnabled,
-            onCheckedChange = { onVbtChange(vbt.copy(enabled = it)) },
+            onCheckedChange = { onVbtChange(vbtAfterEnabledSelection(vbt, it)) },
         )
         Text(
             stringResource(Res.string.profile_vbt_history_note),
@@ -644,13 +673,8 @@ private fun VbtPreferenceCard(
         )
         PreferenceSwitchRow(
             label = stringResource(Res.string.profile_auto_end_velocity_loss),
-            supporting = if (!workout.stallDetectionEnabled) {
-                stringResource(Res.string.profile_stall_detection)
-            } else {
-                null
-            },
             checked = vbt.autoEndOnVelocityLoss,
-            enabled = sectionEnabled && vbt.enabled && workout.stallDetectionEnabled,
+            enabled = sectionEnabled && vbt.enabled,
             onCheckedChange = { onVbtChange(vbt.copy(autoEndOnVelocityLoss = it)) },
         )
         ChoiceChips(
@@ -669,17 +693,7 @@ private fun VbtPreferenceCard(
             checked = vbt.verbalEncouragementEnabled,
             enabled = sectionEnabled && vbt.enabled,
             onCheckedChange = { requested ->
-                onVbtChange(
-                    if (requested) {
-                        vbt.copy(verbalEncouragementEnabled = true)
-                    } else {
-                        vbt.copy(
-                            verbalEncouragementEnabled = false,
-                            vulgarModeEnabled = false,
-                            dominatrixModeActive = false,
-                        )
-                    },
-                )
+                onVbtChange(vbtAfterVerbalEncouragementSelection(vbt, requested))
             },
         )
         PreferenceSwitchRow(
@@ -690,12 +704,12 @@ private fun VbtPreferenceCard(
             onCheckedChange = { requested ->
                 if (requested) {
                     if (localSafety.adultsOnlyConfirmed) {
-                        onVbtChange(vbt.copy(vulgarModeEnabled = true))
+                        onVbtChange(vbtAfterVulgarModeSelection(vbt, true))
                     } else {
                         onRequestAdultsOnlyConfirmation()
                     }
                 } else {
-                    onVbtChange(vbt.copy(vulgarModeEnabled = false, dominatrixModeActive = false))
+                    onVbtChange(vbtAfterVulgarModeSelection(vbt, false))
                 }
             },
         )
@@ -713,31 +727,10 @@ private fun VbtPreferenceCard(
         val dominatrixEnabled = localSafety.adultsOnlyConfirmed && vbt.enabled &&
             vbt.verbalEncouragementEnabled && vbt.vulgarModeEnabled &&
             vbt.dominatrixModeUnlocked
-        Box(
-            modifier = Modifier.fillMaxWidth().clickable(
-                enabled = sectionEnabled && dominatrixUnlockEligible,
-            ) {
-                val now = KmpUtils.currentTimeMillis()
-                if (dominatrixFirstTapAt == 0L || now - dominatrixFirstTapAt > 2000L) {
-                    dominatrixFirstTapAt = now
-                    dominatrixTapCount = 1
-                } else {
-                    dominatrixTapCount += 1
-                }
-                if (dominatrixTapCount >= 7) {
-                    onUnlockDominatrixMode()
-                    dominatrixTapCount = 0
-                    dominatrixFirstTapAt = 0L
-                }
-            },
-        ) {
+        if (vbt.dominatrixModeUnlocked) {
             PreferenceSwitchRow(
                 label = stringResource(Res.string.settings_dominatrix_mode_title),
-                supporting = if (vbt.dominatrixModeUnlocked) {
-                    stringResource(Res.string.settings_dominatrix_mode_description)
-                } else {
-                    stringResource(Res.string.settings_dominatrix_unlock_hint)
-                },
+                supporting = stringResource(Res.string.settings_dominatrix_mode_description),
                 checked = vbt.dominatrixModeActive,
                 enabled = sectionEnabled && dominatrixEnabled,
                 onCheckedChange = { onVbtChange(vbt.copy(dominatrixModeActive = it)) },
@@ -753,7 +746,6 @@ private fun SafetyPreferenceCard(
     voiceStopEnabled: Boolean,
     busySections: Set<ProfilePreferenceSection>,
     onLocalSafetyChange: (ProfileLocalSafetyPreferences) -> Long?,
-    onRequestAdultsOnlyConfirmation: () -> Unit,
 ) {
     val enabled = ProfilePreferenceSection.LOCAL_SAFETY !in busySections
     val authoritativeSafeWord = localSafety.safeWord.orEmpty()
@@ -818,13 +810,6 @@ private fun SafetyPreferenceCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        OutlinedButton(
-            onClick = onRequestAdultsOnlyConfirmation,
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        ) {
-            Text(stringResource(Res.string.settings_adults_only_title))
         }
     }
 
@@ -963,7 +948,51 @@ internal fun coreAfterWeightUnitSelection(
     selectedUnit: WeightUnit,
 ): CoreProfilePreferences {
     if (selectedUnit == core.weightUnit) return core
-    return core.copy(weightUnit = selectedUnit, weightIncrement = -1f)
+    val defaultIncrement = when (selectedUnit) {
+        WeightUnit.KG -> Constants.DEFAULT_WEIGHT_INCREMENT_KG
+        WeightUnit.LB -> Constants.DEFAULT_WEIGHT_INCREMENT_LB
+    }
+    return core.copy(weightUnit = selectedUnit, weightIncrement = defaultIncrement)
+}
+
+internal fun weightIncrementOptionsFor(weightUnit: WeightUnit): List<Float> = when (weightUnit) {
+    WeightUnit.KG -> Constants.WEIGHT_INCREMENT_OPTIONS_KG
+    WeightUnit.LB -> Constants.WEIGHT_INCREMENT_OPTIONS_LB
+}
+
+internal fun displayedWeightIncrement(core: CoreProfilePreferences): Float =
+    core.weightIncrement.takeIf { it >= 0f } ?: when (core.weightUnit) {
+        WeightUnit.KG -> Constants.DEFAULT_WEIGHT_INCREMENT_KG
+        WeightUnit.LB -> Constants.DEFAULT_WEIGHT_INCREMENT_LB
+    }
+
+internal fun vbtAfterEnabledSelection(vbt: VbtPreferences, enabled: Boolean): VbtPreferences =
+    if (enabled) {
+        vbt.copy(enabled = true)
+    } else {
+        vbt.copy(enabled = false, dominatrixModeActive = false)
+    }
+
+internal fun vbtAfterVerbalEncouragementSelection(
+    vbt: VbtPreferences,
+    enabled: Boolean,
+): VbtPreferences = if (enabled) {
+    vbt.copy(verbalEncouragementEnabled = true)
+} else {
+    vbt.copy(
+        verbalEncouragementEnabled = false,
+        vulgarModeEnabled = false,
+        dominatrixModeActive = false,
+    )
+}
+
+internal fun vbtAfterVulgarModeSelection(
+    vbt: VbtPreferences,
+    enabled: Boolean,
+): VbtPreferences = if (enabled) {
+    vbt.copy(vulgarModeEnabled = true)
+} else {
+    vbt.copy(vulgarModeEnabled = false, dominatrixModeActive = false)
 }
 
 internal fun bodyWeightKgForSave(

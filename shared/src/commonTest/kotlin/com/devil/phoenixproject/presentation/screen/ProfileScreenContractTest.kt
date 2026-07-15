@@ -23,6 +23,8 @@ class ProfileScreenContractTest {
         "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SettingsTab.kt"
     private val navGraphPath =
         "src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt"
+    private val defaultStringsPath =
+        "src/commonMain/composeResources/values/strings.xml"
 
     @Test
     fun screenTagAndNonReadyLoaderUseTheRealLoadingIndicatorApi() {
@@ -36,6 +38,14 @@ class ProfileScreenContractTest {
         assertContains(screen, "LoadingIndicator(LoadingIndicatorSize.Large)")
         assertContains(screen, "Res.string.profile_switching")
         assertFalse(screen.contains("message ="))
+    }
+
+    @Test
+    fun profileScaffoldLeavesInsetsToTheOuterAppAndKeepsTwelveDpCardSpacing() {
+        val screen = source(screenPath)
+
+        assertContains(screen, "contentWindowInsets = WindowInsets(0, 0, 0, 0)")
+        assertContains(screen, "padding.calculateTopPadding() + 12.dp")
     }
 
     @Test
@@ -183,10 +193,10 @@ class ProfileScreenContractTest {
     @Test
     fun preferenceResourceInventoryOccursOnceInEveryLocaleAndVisibleCopyIsNotHardcoded() {
         val english = linkedMapOf(
-            "profile_automatic" to "Automatic",
-            "profile_default_rest" to "Default rest",
             "profile_master_beeps" to "Workout beeps",
-            "profile_rep_count_timing" to "Rep count timing",
+            "profile_routine_starting_weights" to "Use % of PR for new routine exercises",
+            "profile_routine_starting_weights_description" to
+                "Seed newly added routine exercises from the selected percentage of your PR.",
             "profile_body_weight_unset" to "Not set",
             "profile_body_weight_invalid" to "Enter a body weight from 20 to 300 kg",
             "profile_body_weight_imported" to "Matches an imported health measurement",
@@ -199,6 +209,7 @@ class ProfileScreenContractTest {
             "profile_led_scheme_purple" to "Purple",
             "profile_led_scheme_none" to "None",
             "cd_select_led_scheme" to "Select LED scheme: %1\$s",
+            "profile_led_selected_scheme" to "Selected: %1\$s",
             "profile_disco_mode" to "Disco Mode",
             "profile_disco_requires_connection" to "Connect to your trainer to use Disco Mode",
             "profile_disco_unlocked_title" to "Disco Mode unlocked",
@@ -239,14 +250,14 @@ class ProfileScreenContractTest {
         }
 
         val proseThatMustBeTranslated = listOf(
-            "profile_automatic",
-            "profile_default_rest",
             "profile_master_beeps",
-            "profile_rep_count_timing",
+            "profile_routine_starting_weights",
+            "profile_routine_starting_weights_description",
             "profile_body_weight_unset",
             "profile_body_weight_invalid",
             "profile_body_weight_imported",
             "cd_select_led_scheme",
+            "profile_led_selected_scheme",
             "profile_disco_requires_connection",
             "profile_disco_unlocked_title",
             "profile_disco_unlocked_body",
@@ -262,7 +273,7 @@ class ProfileScreenContractTest {
                 )
             }
             assertTrue(
-                english.keys.count { key -> localized.getValue(key) != english.getValue(key) } >= 18,
+                english.keys.count { key -> localized.getValue(key) != english.getValue(key) } >= 19,
                 "$locale contains too many copied English preference strings",
             )
         }
@@ -474,8 +485,69 @@ class ProfileScreenContractTest {
     }
 
     @Test
+    fun exerciseLevelDefaultsAreAbsentAndRoutinePrSeedingIsExplainedAndConditional() {
+        val preferences = source(preferenceComponentsPath)
+        val workoutCard = bracedBlock(preferences, "fun WorkoutPreferenceCard(")
+        val vbtCard = bracedBlock(preferences, "fun VbtPreferenceCard(")
+
+        listOf(
+            "profile_default_rest",
+            "profile_rep_count_timing",
+            "profile_stop_at_top",
+            "profile_stall_detection",
+            "defaultRestSeconds",
+            "repCountTiming",
+            "stopAtTop",
+            "stallDetectionEnabled",
+        ).forEach { removed ->
+            assertFalse(workoutCard.contains(removed), "Profile retained $removed")
+        }
+        assertFalse(vbtCard.contains("stallDetectionEnabled"))
+        assertContains(workoutCard, "Res.string.profile_routine_starting_weights")
+        assertContains(workoutCard, "Res.string.profile_routine_starting_weights_description")
+        assertContains(workoutCard, "if (workout.defaultRoutineExerciseUsePercentOfPR)")
+        assertContains(workoutCard, "50f..120f")
+    }
+
+    @Test
+    fun vulgarModeSolelyOwnsAgePromptAndDominatrixUnlockLivesOnTheVbtTitle() {
+        val preferences = source(preferenceComponentsPath)
+        val safetyCard = bracedBlock(preferences, "fun SafetyPreferenceCard(")
+        val vbtCard = bracedBlock(preferences, "fun VbtPreferenceCard(")
+
+        assertFalse(safetyCard.contains("onRequestAdultsOnlyConfirmation"))
+        assertFalse(safetyCard.contains("settings_adults_only_title"))
+        assertEquals(1, Regex("onRequestAdultsOnlyConfirmation\\(\\)").findAll(vbtCard).count())
+        assertContains(vbtCard, "titleModifier = Modifier.clickable(")
+        assertContains(vbtCard, "vbt.enabled &&")
+        assertContains(vbtCard, "onUnlockDominatrixMode()")
+        assertTrue(
+            Regex(
+                """if\s*\(vbt\.dominatrixModeUnlocked\)\s*\{\s*PreferenceSwitchRow\(""",
+            ).containsMatchIn(vbtCard),
+            "Dominatrix row must not exist in the semantics tree before unlock",
+        )
+        assertFalse(vbtCard.contains("settings_dominatrix_unlock_hint"))
+        assertContains(vbtCard, "vbtAfterEnabledSelection")
+        assertContains(vbtCard, "vbtAfterVerbalEncouragementSelection")
+        assertContains(vbtCard, "vbtAfterVulgarModeSelection")
+    }
+
+    @Test
+    fun dominatrixUnlockDialogUsesTheFeatureName() {
+        val strings = source(defaultStringsPath)
+
+        assertContains(
+            strings,
+            "<string name=\"settings_dominatrix_unlock_toast\">" +
+                "Dominatrix Mode unlocked</string>",
+        )
+    }
+
+    @Test
     fun ledOptionsUseStableLocalizedIndicesAndRadioSemantics() {
         val preferences = source(preferenceComponentsPath)
+        val ledCard = bracedBlock(preferences, "fun LedPreferenceCard(")
         val labels = listOf(
             "profile_led_scheme_blue",
             "profile_led_scheme_green",
@@ -496,11 +568,17 @@ class ProfileScreenContractTest {
         }
         listOf(
             "normalizedLedSchemeIndex(",
+            "LazyRow(",
             "selectableGroup",
             "Role.RadioButton",
             "selected =",
+            "Modifier.size(48.dp)",
+            "Brush.linearGradient",
+            "Icons.Default.Check",
+            "drawLine(",
             "contentDescription",
             "Res.string.cd_select_led_scheme",
+            "Res.string.profile_led_selected_scheme",
         )
             .forEach { contract -> assertContains(preferences, contract, message = contract) }
         val ledWrites = Regex("onLedChange\\s*\\(").findAll(preferences).toList()
@@ -517,6 +595,15 @@ class ProfileScreenContractTest {
         )
         assertFalse(preferences.contains("scheme.name"))
         assertFalse(preferences.contains("ColorScheme.name"))
+        assertTrue(
+            Regex(
+                """selectable\s*\([\s\S]{0,220}enabled\s*=\s*enabled""",
+            ).containsMatchIn(ledCard),
+            "busy LED writes must disable each radio swatch",
+        )
+        listOf("2000L", "tapCount >= 7", "onUnlockDiscoMode()").forEach { contract ->
+            assertContains(ledCard, contract, message = contract)
+        }
     }
 
     @Test

@@ -627,7 +627,7 @@
     <string name="settings_dominatrix_mode_title">Dominatrix-Modus</string>
     <string name="settings_dominatrix_mode_description">Charlotte-Sprachbefehle. Überschreibt das vulgäre Pool, wenn aktiv.</string>
     <string name="settings_dominatrix_unlock_hint">Tippe 7× auf den Header zum Entsperren</string>
-    <string name="settings_dominatrix_unlock_toast">Boss-Modus freigeschaltet</string>
+    <string name="settings_dominatrix_unlock_toast">Dominatrix-Modus freigeschaltet</string>
     <string name="settings_adults_only_title">Nur für Erwachsene</string>
     <string name="settings_adults_only_body">Der vulgäre Modus enthält Kraftausdrücke und reife Themen. Bist du 18 oder älter?</string>
     <string name="settings_adults_only_confirm">Ich bin 18+ und Oma hört mich nicht</string>
@@ -757,7 +757,8 @@
     <string name="profile_motion_start">Satzstart durch Bewegung</string>
     <string name="profile_gamification">Gamification</string>
     <string name="profile_default_scaling_basis">Standardbasis für Gewichtsskalierung</string>
-    <string name="profile_routine_starting_weights">Startgewichte für Routinen</string>
+    <string name="profile_routine_starting_weights">% des PR für neue Routineübungen verwenden</string>
+    <string name="profile_routine_starting_weights_description">Neu hinzugefügte Routineübungen mit dem ausgewählten Prozentsatz deines PR vorbelegen.</string>
     <string name="profile_stop_at_top">Oben stoppen</string>
     <string name="profile_stall_detection">Stillstandserkennung</string>
     <string name="profile_velocity_loss_threshold">Schwelle für Geschwindigkeitsverlust</string>
@@ -788,6 +789,7 @@
     <string name="profile_led_scheme_purple">Lila</string>
     <string name="profile_led_scheme_none">Keine</string>
     <string name="cd_select_led_scheme">LED-Schema auswählen: %1$s</string>
+    <string name="profile_led_selected_scheme">Ausgewählt: %1$s</string>
     <string name="profile_disco_mode">Disco-Modus</string>
     <string name="profile_disco_requires_connection">Verbinde deinen Trainer, um den Disco-Modus zu verwenden</string>
     <string name="profile_disco_unlocked_title">Disco-Modus freigeschaltet</string>

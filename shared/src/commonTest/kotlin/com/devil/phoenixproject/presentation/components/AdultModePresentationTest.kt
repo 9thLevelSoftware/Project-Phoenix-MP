@@ -29,28 +29,4 @@ class AdultModePresentationTest {
         assertFalse(presentation.usesBespokePinkAccent)
     }
 
-    @Test
-    fun `dominatrix hint only shows while vulgar mode is enabled and unlock is still hidden`() {
-        assertTrue(
-            AdultModePresentation.shouldShowDominatrixHint(
-                verbalEncouragementEnabled = true,
-                vulgarModeEnabled = true,
-                dominatrixModeUnlocked = false,
-            ),
-        )
-        assertFalse(
-            AdultModePresentation.shouldShowDominatrixHint(
-                verbalEncouragementEnabled = true,
-                vulgarModeEnabled = false,
-                dominatrixModeUnlocked = false,
-            ),
-        )
-        assertFalse(
-            AdultModePresentation.shouldShowDominatrixHint(
-                verbalEncouragementEnabled = true,
-                vulgarModeEnabled = true,
-                dominatrixModeUnlocked = true,
-            ),
-        )
-    }
 }

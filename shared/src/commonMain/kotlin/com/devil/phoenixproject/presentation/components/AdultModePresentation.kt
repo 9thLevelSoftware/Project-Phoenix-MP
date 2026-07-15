@@ -32,11 +32,6 @@ data class AdultModePresentation(
             usesBespokePinkAccent = false,
         )
 
-        fun shouldShowDominatrixHint(
-            verbalEncouragementEnabled: Boolean,
-            vulgarModeEnabled: Boolean,
-            dominatrixModeUnlocked: Boolean,
-        ): Boolean = verbalEncouragementEnabled && vulgarModeEnabled && !dominatrixModeUnlocked
     }
 }
 

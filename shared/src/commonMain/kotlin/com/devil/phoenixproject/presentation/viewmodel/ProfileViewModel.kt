@@ -293,10 +293,24 @@ class ProfileViewModel(
     }
 
     fun declineAdultsOnly(): Long? = startPreferenceMutation(
-        sections = setOf(ProfilePreferenceSection.LOCAL_SAFETY),
+        sections = setOf(
+            ProfilePreferenceSection.VBT,
+            ProfilePreferenceSection.LOCAL_SAFETY,
+        ),
         kind = ProfilePreferenceMutationKind.ADULT_DECLINE,
     ) { mutation, committedSections ->
-        val authoritative = refreshAuthoritativeReady(mutation)
+        var authoritative = refreshAuthoritativeReady(mutation)
+        val failClosed = authoritative.preferences.vbt.value.copy(
+            vulgarModeEnabled = false,
+            dominatrixModeActive = false,
+        )
+        authoritative = commitPreferenceWrite(
+            mutation = mutation,
+            section = ProfilePreferenceSection.VBT,
+            committedSections = committedSections,
+        ) {
+            profiles.updateVbt(mutation.profileId, failClosed)
+        }
         val declined = authoritative.localSafety.copy(
             adultsOnlyConfirmed = false,
             adultsOnlyPrompted = true,
@@ -542,6 +556,7 @@ class ProfileViewModel(
     private fun isDominatrixUnlockEligible(context: ActiveProfileContext.Ready): Boolean {
         val vbt = context.preferences.vbt.value
         return context.localSafety.adultsOnlyConfirmed &&
+            vbt.enabled &&
             vbt.verbalEncouragementEnabled &&
             vbt.vulgarModeEnabled &&
             !vbt.dominatrixModeUnlocked

@@ -1643,6 +1643,62 @@ class ProfileViewModelTest {
     }
 
     @Test
+    fun `dominatrix success emits only after the authoritative unlock commit`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateLocalSafety(
+            "a",
+            ProfileLocalSafetyPreferences(
+                adultsOnlyConfirmed = true,
+                adultsOnlyPrompted = true,
+            ),
+        )
+        profiles.updateVbt(
+            "a",
+            VbtPreferences(
+                enabled = true,
+                verbalEncouragementEnabled = true,
+                vulgarModeEnabled = true,
+            ),
+        )
+        profiles.preferenceUpdateRequests.clear()
+        val gate = CompletableDeferred<Unit>()
+        profiles.beforePreferenceUpdate = { request ->
+            if (request is FakeUserProfileRepository.PreferenceUpdateRequest.Vbt) gate.await()
+        }
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        val unlockedAtEvent = mutableListOf<Boolean>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.collect { event ->
+                events += event
+                if (event is ProfileUiEvent.PreferenceMutationSucceeded) {
+                    unlockedAtEvent += assertIs<ActiveProfileContext.Ready>(
+                        viewModel.uiState.value.context,
+                    ).preferences.vbt.value.dominatrixModeUnlocked
+                }
+            }
+        }
+        advanceUntilIdle()
+
+        val token = assertNotNull(viewModel.unlockDominatrixMode())
+        runCurrent()
+        assertTrue(events.isEmpty())
+        assertFalse(
+            assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+                .preferences.vbt.value.dominatrixModeUnlocked,
+        )
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf(true), unlockedAtEvent)
+        val success = assertIs<ProfileUiEvent.PreferenceMutationSucceeded>(events.single())
+        assertEquals(token, success.token)
+        assertEquals(ProfilePreferenceMutationKind.DOMINATRIX_UNLOCK, success.kind)
+        assertEquals(setOf(ProfilePreferenceSection.VBT), success.sections)
+    }
+
+    @Test
     fun `dominatrix failure and switch produce no stale success`() = runTest {
         profiles.seedReadyProfileForTest("b")
         profiles.seedReadyProfileForTest("a")
@@ -1668,9 +1724,19 @@ class ProfileViewModelTest {
         profiles.updateVbt(
             "a",
             VbtPreferences(
+                enabled = false,
                 verbalEncouragementEnabled = true,
                 vulgarModeEnabled = true,
             ),
+        )
+        advanceUntilIdle()
+        profiles.preferenceUpdateRequests.clear()
+        assertNull(viewModel.unlockDominatrixMode())
+
+        profiles.updateVbt(
+            "a",
+            assertIs<ActiveProfileContext.Ready>(profiles.activeProfileContext.value)
+                .preferences.vbt.value.copy(enabled = true),
         )
         advanceUntilIdle()
         profiles.preferenceUpdateRequests.clear()
@@ -1716,17 +1782,33 @@ class ProfileViewModelTest {
     }
 
     @Test
-    fun `decline writes prompted unconfirmed and explicit enable remains retryable`() = runTest {
+    fun `decline clears adult modes before recording prompted unconfirmed`() = runTest {
         profiles.seedReadyProfileForTest("a")
+        profiles.updateVbt(
+            "a",
+            VbtPreferences(
+                verbalEncouragementEnabled = true,
+                vulgarModeEnabled = true,
+                dominatrixModeUnlocked = true,
+                dominatrixModeActive = true,
+            ),
+        )
+        profiles.preferenceUpdateRequests.clear()
         val viewModel = createViewModel()
         advanceUntilIdle()
 
         assertNotNull(viewModel.declineAdultsOnly())
         advanceUntilIdle()
         val declined = assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+        assertEquals(
+            listOf(ProfilePreferenceSection.VBT, ProfilePreferenceSection.LOCAL_SAFETY),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
         assertTrue(declined.localSafety.adultsOnlyPrompted)
         assertFalse(declined.localSafety.adultsOnlyConfirmed)
         assertFalse(declined.preferences.vbt.value.vulgarModeEnabled)
+        assertFalse(declined.preferences.vbt.value.dominatrixModeActive)
+        assertTrue(declined.preferences.vbt.value.dominatrixModeUnlocked)
 
         profiles.preferenceUpdateRequests.clear()
         val retryToken = assertNotNull(viewModel.confirmAdultsOnlyAndEnableVulgar())
@@ -1741,6 +1823,81 @@ class ProfileViewModelTest {
         assertTrue(enabled.localSafety.adultsOnlyPrompted)
         assertTrue(enabled.localSafety.adultsOnlyConfirmed)
         assertTrue(enabled.preferences.vbt.value.vulgarModeEnabled)
+    }
+
+    @Test
+    fun `decline VBT failure leaves safety untouched and retry remains fail closed`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateVbtFailure = IllegalStateException("vbt")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        val failedToken = assertNotNull(viewModel.declineAdultsOnly())
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(ProfilePreferenceSection.VBT),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
+        val failure = assertIs<ProfileUiEvent.PreferenceUpdateFailed>(events.single())
+        assertEquals(failedToken, failure.token)
+        assertTrue(failure.committedSections.isEmpty())
+        assertFalse(
+            assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+                .localSafety.adultsOnlyPrompted,
+        )
+
+        profiles.preferenceUpdateRequests.clear()
+        profiles.updateVbtFailure = null
+        events.clear()
+        assertNotNull(viewModel.declineAdultsOnly())
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(ProfilePreferenceSection.VBT, ProfilePreferenceSection.LOCAL_SAFETY),
+            profiles.preferenceUpdateRequests.map(::requestSection),
+        )
+        val ready = assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+        assertTrue(ready.localSafety.adultsOnlyPrompted)
+        assertFalse(ready.preferences.vbt.value.vulgarModeEnabled)
+        assertFalse(ready.preferences.vbt.value.dominatrixModeActive)
+    }
+
+    @Test
+    fun `decline safety failure retains the committed fail closed VBT state`() = runTest {
+        profiles.seedReadyProfileForTest("a")
+        profiles.updateVbt(
+            "a",
+            VbtPreferences(
+                verbalEncouragementEnabled = true,
+                vulgarModeEnabled = true,
+                dominatrixModeUnlocked = true,
+                dominatrixModeActive = true,
+            ),
+        )
+        profiles.preferenceUpdateRequests.clear()
+        profiles.updateLocalSafetyFailure = IllegalStateException("safety")
+        val viewModel = createViewModel()
+        val events = mutableListOf<ProfileUiEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.events.toList(events)
+        }
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.declineAdultsOnly())
+        advanceUntilIdle()
+
+        val failure = assertIs<ProfileUiEvent.PreferenceUpdateFailed>(events.single())
+        assertEquals(setOf(ProfilePreferenceSection.VBT), failure.committedSections)
+        val ready = assertIs<ActiveProfileContext.Ready>(viewModel.uiState.value.context)
+        assertFalse(ready.preferences.vbt.value.vulgarModeEnabled)
+        assertFalse(ready.preferences.vbt.value.dominatrixModeActive)
+        assertTrue(ready.preferences.vbt.value.dominatrixModeUnlocked)
+        assertFalse(ready.localSafety.adultsOnlyPrompted)
     }
 
     private data class PreferenceSuccessSnapshot(

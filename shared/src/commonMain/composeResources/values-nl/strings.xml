@@ -606,7 +606,7 @@
     <string name="settings_dominatrix_mode_title">Dominatrix-modus</string>
     <string name="settings_dominatrix_mode_description">Charlotte-stemopdrachten. Overschrijft vulgaire pool indien actief.</string>
     <string name="settings_dominatrix_unlock_hint">Tik 7× op de header om te ontgrendelen</string>
-    <string name="settings_dominatrix_unlock_toast">Baasmodus ontgrendeld</string>
+    <string name="settings_dominatrix_unlock_toast">Dominatrix-modus ontgrendeld</string>
     <string name="settings_adults_only_title">Alleen voor volwassenen</string>
     <string name="settings_adults_only_body">Vulgaire modus bevat krachttermen en volwassen thema\'s. Ben je 18 of ouder?</string>
     <string name="settings_adults_only_confirm">Ik ben 18+ en oma hoort me niet</string>
@@ -736,7 +736,8 @@
     <string name="profile_motion_start">Set starten door beweging</string>
     <string name="profile_gamification">Gamificatie</string>
     <string name="profile_default_scaling_basis">Standaardbasis voor gewichtschaal</string>
-    <string name="profile_routine_starting_weights">Startgewichten van routines</string>
+    <string name="profile_routine_starting_weights">% van PR gebruiken voor nieuwe routine-oefeningen</string>
+    <string name="profile_routine_starting_weights_description">Vul nieuw toegevoegde routine-oefeningen met het gekozen percentage van je PR.</string>
     <string name="profile_stop_at_top">Stoppen bovenaan</string>
     <string name="profile_stall_detection">Stildetectie</string>
     <string name="profile_velocity_loss_threshold">Drempel voor snelheidsverlies</string>
@@ -767,6 +768,7 @@
     <string name="profile_led_scheme_purple">Paars</string>
     <string name="profile_led_scheme_none">Geen</string>
     <string name="cd_select_led_scheme">Selecteer LED-schema: %1$s</string>
+    <string name="profile_led_selected_scheme">Geselecteerd: %1$s</string>
     <string name="profile_disco_mode">Discomodus</string>
     <string name="profile_disco_requires_connection">Verbind je trainer om de discomodus te gebruiken</string>
     <string name="profile_disco_unlocked_title">Discomodus ontgrendeld</string>

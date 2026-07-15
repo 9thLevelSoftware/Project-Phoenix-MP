@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-11
 
+**Profile preferences correction:** 2026-07-15 (PR #651)
+
 **Status:** Approved (design), pending written-spec review
 **Scope:** `Project-Phoenix-MP` mobile implementation plus a Supabase/Edge Function backend handoff. The `phoenix-portal` source is not present in this workspace, so applying backend changes is out of scope for this repository.
 
@@ -329,7 +331,7 @@ Route the current Android `VitruvianApp` and common `KoinInit` migration trigger
 
 Legacy keys remain in place for one release as downgrade protection, but all writes switch immediately to the new stores.
 
-`vbtEnabled` gates live velocity-loss evaluation/auto-end, live VBT threshold/zone feedback, and verbal/vulgar/Dominatrix VBT-failure feedback. It does not gate assessments, historical velocity estimates, PR/history display, or the stored scaling-basis preference. Turning the master off preserves subordinate values so turning it back on restores the prior configuration.
+`vbtEnabled` gates live velocity-loss evaluation/auto-end, live VBT threshold/zone feedback, and verbal/vulgar/Dominatrix VBT-failure feedback. It does not gate assessments, historical velocity estimates, PR/history display, or the stored scaling-basis preference. Turning the master off preserves subordinate configuration except that an active Dominatrix mode is forced off; the permanent unlock flag remains set.
 
 ## Sync model and conflict resolution
 
@@ -535,6 +537,16 @@ Compose grouped cards from extracted reusable controls:
 
 Complex groups may open a dialog or bottom sheet, but the row always shows its current value. Typed repository methods validate values before persistence; JSON encoding stays inside the data layer. Body weight supports 0/unset and the existing 20–300 kg range with unit conversion.
 
+The Profile presentation applies these corrections without changing the database, document versions, or sync wire keys:
+
+- The nested Profile scaffold consumes no system window insets. The outer app scaffold owns them, and the scrolling content keeps 12 dp between the top bar and profile card.
+- Weight Increment is an explicit selector for the step used by routine and single-exercise per-set weight controls. Kilograms offer 0.5, 1, 2.5, and 5 kg; pounds offer 0.1, 0.5, 1, 2.5, and 5 lb. A legacy stored `-1` renders as the unit default without an automatic write. Changing units writes the explicit default of 0.5 kg or 1 lb.
+- Default Rest, Rep Count Timing, Stop at Top, and Stall Detection remain decodable workout/exercise defaults but are not global Profile controls. VBT auto-end no longer depends on the profile-level stall-detection value.
+- `defaultRoutineExerciseUsePercentOfPR` is presented as “Use % of PR for new routine exercises,” with explanatory copy. Its existing 50–120% seeding control exists only while the switch is enabled.
+- LED selection is one horizontally scrolling radio group of eight 48 dp swatches built from the trainer's existing gradients. Off is crossed out; selection has a border, check, and visible localized name. The LED card title retains the seven-tap Disco Mode unlock.
+- There is no standalone Adults Only action. Attempting to enable Vulgar Mode is the only age-confirmation entry point. Confirmation persists prompted/confirmed local safety before enabling Vulgar Mode. An under-18 response first writes Vulgar Mode and active Dominatrix Mode off, then records prompted/unconfirmed safety; partial failures remain retryable and fail closed.
+- Dominatrix Mode is absent from the UI until permanently unlocked. With local adult confirmation, VBT, verbal encouragement, and Vulgar Mode all enabled, seven VBT title-bar taps within two seconds request the unlock. The whip sound and popup are emitted only from the matching successful post-commit event. Disabling VBT, verbal encouragement, or Vulgar Mode deactivates Dominatrix Mode without clearing its unlock flag.
+
 ## Settings pruning
 
 Settings retains only:
@@ -592,7 +604,7 @@ Extract controls before moving them so neither `SettingsTab` nor `ProfileScreen`
 - Switching emits `Switching` then one consistent `Ready` context.
 - Only the edited section's local timestamp, local generation, and dirty flag change; its server revision remains unchanged until acknowledgement.
 - Rack, Just Lift, per-exercise defaults, body weight, LED, and VBT consumers follow the active profile.
-- Disabling VBT stops live velocity-loss evaluation/auto-end and VBT failure feedback, preserves subordinate values, and leaves assessments/history visible; re-enabling restores the prior subordinate configuration.
+- Disabling VBT stops live velocity-loss evaluation/auto-end and VBT failure feedback, deactivates Dominatrix Mode while preserving its unlock and other subordinate configuration, and leaves assessments/history visible.
 - Profile deletion merges overlapping PR/badge keys, removes SQL preferences, and eventually removes profile-prefixed local keys through the cleanup journal.
 - A failed Settings-key cleanup remains queued and succeeds on a later startup.
 - Effective voice/vulgar features remain disabled without local setup/consent.
@@ -632,6 +644,9 @@ Extract controls before moving them so neither `SettingsTab` nor `ProfileScreen`
 - Settings source no longer contains migrated controls.
 - Assessment save/read paths and Insights use the active profile, correct 1RM precedence, correct PRs, and at most five recent sessions.
 - Switching Profile A → B → A restores A's still-valid exercise selection; a profile without a saved selection resolves its own most recent exercise.
+- Profile content begins approximately 12 dp below the top bar, exercise-level rows and the standalone Adults Only action are absent, and the LED choices form one compact horizontal radio group with 48 dp targets.
+- Vulgar Mode alone opens age confirmation; under-18 responses visibly reset it. Dominatrix remains absent before unlock, and the seventh eligible VBT title tap produces the committed unlock popup/sound while six taps or a two-second reset do not.
+- TalkBack traverses the modified switches and LED swatches once each with their role, selected/disabled state, and localized name.
 
 ## Acceptance criteria
 
