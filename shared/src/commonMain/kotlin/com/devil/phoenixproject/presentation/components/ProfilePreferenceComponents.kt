@@ -187,15 +187,24 @@ private fun MeasurementsPreferenceCard(
     var bodyWeightDraft by rememberSaveable(profileId, core.weightUnit, authoritativeBodyWeight) {
         mutableStateOf(displayBodyWeight(authoritativeBodyWeight, core.weightUnit))
     }
+    var bodyWeightDraftEdited by rememberSaveable(
+        profileId,
+        core.weightUnit,
+        authoritativeBodyWeight,
+    ) {
+        mutableStateOf(false)
+    }
     LaunchedEffect(profileId, core.weightUnit, authoritativeBodyWeight) {
         bodyWeightDraft = displayBodyWeight(authoritativeBodyWeight, core.weightUnit)
+        bodyWeightDraftEdited = false
     }
-    val parsedDisplayWeight = bodyWeightDraft.toFloatOrNull()
-    val parsedKg = parsedDisplayWeight?.let {
-        if (core.weightUnit == WeightUnit.LB) UnitConverter.lbToKg(it) else it
-    }
-    val bodyWeightInvalid = bodyWeightDraft.isBlank() ||
-        parsedKg == null || !parsedKg.isFinite() || parsedKg !in 20f..300f
+    val bodyWeightKgToSave = bodyWeightKgForSave(
+        authoritativeBodyWeightKg = authoritativeBodyWeight,
+        draft = bodyWeightDraft,
+        weightUnit = core.weightUnit,
+        draftEdited = bodyWeightDraftEdited,
+    )
+    val bodyWeightInvalid = bodyWeightKgToSave == null
 
     PreferenceCard(title = stringResource(Res.string.profile_measurements)) {
         Text(
@@ -209,7 +218,7 @@ private fun MeasurementsPreferenceCard(
             ),
             selected = core.weightUnit,
             enabled = enabled,
-            onSelected = { onCoreChange(core.copy(weightUnit = it)) },
+            onSelected = { onCoreChange(coreAfterWeightUnitSelection(core, it)) },
         )
 
         HorizontalDivider()
@@ -252,6 +261,7 @@ private fun MeasurementsPreferenceCard(
             { candidate ->
                 if (candidate.matches(Regex("^\\d{0,3}(\\.\\d{0,2})?$"))) {
                     bodyWeightDraft = candidate
+                    bodyWeightDraftEdited = true
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -283,8 +293,8 @@ private fun MeasurementsPreferenceCard(
             ),
             keyboardActions = KeyboardActions(
                 onDone = {
-                    if (!bodyWeightInvalid && parsedKg != null) {
-                        onCoreChange(core.copy(bodyWeightKg = parsedKg))
+                    if (bodyWeightKgToSave != null) {
+                        onCoreChange(core.copy(bodyWeightKg = bodyWeightKgToSave))
                     }
                 },
             ),
@@ -296,6 +306,7 @@ private fun MeasurementsPreferenceCard(
             TextButton(
                 onClick = {
                     bodyWeightDraft = ""
+                    bodyWeightDraftEdited = true
                     onCoreChange(core.copy(bodyWeightKg = 0f))
                 },
                 enabled = enabled && authoritativeBodyWeight > 0f,
@@ -304,7 +315,9 @@ private fun MeasurementsPreferenceCard(
             }
             Button(
                 onClick = {
-                    if (parsedKg != null) onCoreChange(core.copy(bodyWeightKg = parsedKg))
+                    if (bodyWeightKgToSave != null) {
+                        onCoreChange(core.copy(bodyWeightKg = bodyWeightKgToSave))
+                    }
                 },
                 enabled = enabled && !bodyWeightInvalid,
             ) {
@@ -943,4 +956,28 @@ private fun displayBodyWeight(bodyWeightKg: Float, unit: WeightUnit): String {
     if (!bodyWeightKg.isFinite() || bodyWeightKg <= 0f) return ""
     val display = if (unit == WeightUnit.LB) UnitConverter.kgToLb(bodyWeightKg) else bodyWeightKg
     return UnitConverter.formatDecimal(display)
+}
+
+internal fun coreAfterWeightUnitSelection(
+    core: CoreProfilePreferences,
+    selectedUnit: WeightUnit,
+): CoreProfilePreferences {
+    if (selectedUnit == core.weightUnit) return core
+    return core.copy(weightUnit = selectedUnit, weightIncrement = -1f)
+}
+
+internal fun bodyWeightKgForSave(
+    authoritativeBodyWeightKg: Float,
+    draft: String,
+    weightUnit: WeightUnit,
+    draftEdited: Boolean,
+): Float? {
+    if (draft.isBlank()) return null
+    val bodyWeightKg = if (draftEdited) {
+        val displayWeight = draft.toFloatOrNull() ?: return null
+        if (weightUnit == WeightUnit.LB) UnitConverter.lbToKg(displayWeight) else displayWeight
+    } else {
+        authoritativeBodyWeightKg
+    }
+    return bodyWeightKg.takeIf { it.isFinite() && it in 20f..300f }
 }

@@ -173,6 +173,7 @@ class FakeExternalMeasurementRepository : ExternalMeasurementRepository {
 
     val measurements = mutableListOf<ExternalBodyMeasurement>()
     val observationRequests = mutableListOf<MeasurementObservationRequest>()
+    var upsertFailure: Throwable? = null
     var observeByTypeOverride:
         ((String, String) -> Flow<List<ExternalBodyMeasurement>>)? = null
     private val measurementsFlow = MutableStateFlow<List<ExternalBodyMeasurement>>(emptyList())
@@ -199,6 +200,7 @@ class FakeExternalMeasurementRepository : ExternalMeasurementRepository {
     }
 
     override suspend fun upsertMeasurements(measurements: List<ExternalBodyMeasurement>) {
+        upsertFailure?.let { throw it }
         for (measurement in measurements) {
             this.measurements.removeAll {
                 it.provider == measurement.provider &&

@@ -1,6 +1,11 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.data.migration.RequiredMigrationState
+import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
+import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -12,6 +17,7 @@ import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
+import com.devil.phoenixproject.testutil.createTestDatabase
 import com.russhwolf.settings.MapSettings
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
@@ -212,6 +218,41 @@ class SyncManagerProfilePreferencesTest {
         assertEquals(8L, outcome.sentLocalGeneration)
         assertEquals(4L, outcome.serverRevision)
         assertNull(outcome.rejectionReason)
+    }
+
+    @Test
+    fun `pushed canonical core is republished to the active profile context`() = runTest {
+        val harness = SqlPreferenceHarness()
+        harness.initialize()
+        val ready = assertIs<ActiveProfileContext.Ready>(
+            harness.profileRepository.activeProfileContext.value,
+        )
+        harness.profileRepository.updateCore(
+            ready.profile.id,
+            ready.preferences.core.value.copy(bodyWeightKg = 72f),
+        )
+        harness.api.pushResultsQueue = mutableListOf(
+            successResponse(),
+            successResponse(
+                profilePreferencesAccepted = true,
+                canonicalProfilePreferenceSections = listOf(
+                    coreCanonical(
+                        revision = 1,
+                        profileId = ready.profile.id,
+                        bodyWeightKg = 80.0,
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(harness.manager().sync().isSuccess)
+
+        assertEquals(
+            80f,
+            assertIs<ActiveProfileContext.Ready>(
+                harness.profileRepository.activeProfileContext.value,
+            ).preferences.core.value.bodyWeightKg,
+        )
     }
 
     @Test
@@ -660,6 +701,65 @@ class SyncManagerProfilePreferencesTest {
     }
 
     @Test
+    fun `pulled canonical core is republished to the active profile context`() = runTest {
+        val harness = SqlPreferenceHarness()
+        harness.initialize()
+        harness.establishCleanCore(bodyWeightKg = 72.0, revision = 1)
+        harness.api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_200_000L,
+                profilePreferenceSections = listOf(
+                    coreCanonical(
+                        revision = 2,
+                        profileId = harness.activeProfileId,
+                        bodyWeightKg = 84.0,
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(harness.manager().retryPull().isSuccess)
+
+        assertEquals(
+            84f,
+            assertIs<ActiveProfileContext.Ready>(
+                harness.profileRepository.activeProfileContext.value,
+            ).preferences.core.value.bodyWeightKg,
+        )
+    }
+
+    @Test
+    fun `pull with no applied preference section does not republish active context`() = runTest {
+        val harness = SqlPreferenceHarness()
+        harness.initialize()
+        harness.establishCleanCore(bodyWeightKg = 72.0, revision = 5)
+        harness.profileLocalSafetyStore.write(
+            harness.activeProfileId,
+            ProfileLocalSafetyPreferences(safeWord = "not-yet-published"),
+        )
+        harness.api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_783_771_200_000L,
+                profilePreferenceSections = listOf(
+                    coreCanonical(
+                        revision = 4,
+                        profileId = harness.activeProfileId,
+                        bodyWeightKg = 84.0,
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(harness.manager().retryPull().isSuccess)
+
+        val activeContext = assertIs<ActiveProfileContext.Ready>(
+            harness.profileRepository.activeProfileContext.value,
+        )
+        assertEquals(72f, activeContext.preferences.core.value.bodyWeightKg)
+        assertNull(activeContext.localSafety.safeWord)
+    }
+
+    @Test
     fun `pull reports unknown preference without creating a profile or preference row`() = runTest {
         harness.api.pullResult = Result.success(
             PortalSyncPullResponse(
@@ -884,6 +984,81 @@ class SyncManagerProfilePreferencesTest {
         )
     }
 
+    private class SqlPreferenceHarness {
+        private val database = createTestDatabase()
+        private val profilePreferencesRepository =
+            SqlDelightProfilePreferencesRepository(database)
+        private val gamificationRepository = FakeGamificationRepository()
+        val profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings())
+        val profileRepository = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = profilePreferencesRepository,
+            profileLocalSafetyStore = profileLocalSafetyStore,
+            gamificationRepository = gamificationRepository,
+        )
+        private val preferenceSyncRepository = SqlDelightProfilePreferenceSyncRepository(
+            database = database,
+            codec = ProfilePreferenceSyncCodec(),
+        )
+        val tokenStorage = PortalTokenStorage(MapSettings())
+        val api = FakePortalApiClient()
+        private val syncRepository = FakeSyncRepository()
+        private val repMetricRepository = FakeRepMetricRepository()
+        private val externalActivityRepository = FakeExternalActivityRepository()
+        private val velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository()
+        val activeProfileId: String
+            get() = requireNotNull(profileRepository.activeProfile.value?.id)
+
+        suspend fun initialize() {
+            profilePreferencesRepository.seedMissingProfiles()
+            profileRepository.reconcileActiveProfileContext()
+            tokenStorage.saveAuth(
+                PortalAuthResponse(
+                    token = "token",
+                    user = PortalUser("user", "u@example.com", null, false),
+                ),
+            )
+        }
+
+        suspend fun establishCleanCore(bodyWeightKg: Double, revision: Long) {
+            val canonical = planProfilePreferencePullSections(
+                listOf(
+                    coreCanonical(
+                        revision = revision,
+                        profileId = activeProfileId,
+                        bodyWeightKg = bodyWeightKg,
+                    ),
+                ),
+            ).valid.single()
+            val report = preferenceSyncRepository.applyPushOutcomes(
+                listOf(
+                    ProfilePreferencePushOutcome(
+                        key = canonical.key,
+                        sentLocalGeneration = 0,
+                        serverRevision = revision,
+                        canonical = canonical,
+                        rejectionReason = null,
+                    ),
+                ),
+            )
+            assertEquals(1, report.applied)
+            profileRepository.refreshProfiles()
+        }
+
+        fun manager() = SyncManager(
+            apiClient = api,
+            tokenStorage = tokenStorage,
+            syncRepository = syncRepository,
+            gamificationRepository = gamificationRepository,
+            repMetricRepository = repMetricRepository,
+            userProfileRepository = profileRepository,
+            profilePreferenceSyncRepository = preferenceSyncRepository,
+            externalActivityRepository = externalActivityRepository,
+            velocityOneRepMaxRepository = velocityOneRepMaxRepository,
+            isProfilePreferenceMigrationReady = { true },
+        )
+    }
+
     companion object {
         private fun coreSection(generation: Long) = ProfilePreferenceSectionSyncDto(
             key = ProfilePreferenceSectionKey("profile-a", ProfilePreferenceSectionName.CORE),
@@ -907,13 +1082,21 @@ class SyncManagerProfilePreferencesTest {
             payload = ProfilePreferenceSyncCodec().workoutPayload(WorkoutPreferences()),
         )
 
-        private fun coreCanonical(revision: Long) = PortalProfilePreferenceSectionCanonicalDto(
-            localProfileId = "profile-a",
+        private fun coreCanonical(
+            revision: Long,
+            profileId: String = "profile-a",
+            bodyWeightKg: Double = 80.0,
+        ) = PortalProfilePreferenceSectionCanonicalDto(
+            localProfileId = profileId,
             section = "CORE",
             documentVersion = 1,
             serverRevision = revision,
             serverUpdatedAt = "2026-07-11T12:00:00Z",
-            payload = coreSection(generation = 1).payload,
+            payload = buildJsonObject {
+                put("bodyWeightKg", bodyWeightKg)
+                put("weightUnit", "KG")
+                put("weightIncrement", 0.5)
+            },
         )
 
         private fun workoutCanonical(revision: Long) = PortalProfilePreferenceSectionCanonicalDto(

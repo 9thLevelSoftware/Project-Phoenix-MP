@@ -13,6 +13,7 @@ import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -128,6 +129,31 @@ class HealthBodyWeightSyncManagerTest {
         assertEquals("kg", measurement.unit)
         assertEquals("profile-1", measurement.profileId)
         assertNotNull(harness.activities.statusUpdates.last().lastSyncAt)
+    }
+
+    @Test
+    fun measurementPersistenceFailureLeavesActiveBodyWeightUntouched() = runTest {
+        val harness = Harness()
+        harness.connectHealth()
+        val ready = assertIs<ActiveProfileContext.Ready>(harness.profiles.activeProfileContext.value)
+        harness.profiles.updateCore(
+            ready.profile.id,
+            ready.preferences.core.value.copy(bodyWeightKg = 72f),
+        )
+        harness.reader.readResult = Result.success(sample(weightKg = 81.5f))
+        harness.measurements.upsertFailure = IllegalStateException("measurement upsert sentinel")
+
+        val failure = assertFailsWith<IllegalStateException> {
+            harness.manager.syncLatestFromConnectedPlatform()
+        }
+
+        assertEquals("measurement upsert sentinel", failure.message)
+        assertEquals(
+            72f,
+            assertIs<ActiveProfileContext.Ready>(harness.profiles.activeProfileContext.value)
+                .preferences.core.value.bodyWeightKg,
+        )
+        assertEquals(emptyList(), harness.measurements.measurements)
     }
 
     @Test

@@ -1390,7 +1390,11 @@ class SyncManager(
                     ProfilePreferenceLocalFailureStage.OUTCOME_APPLY,
                     safeFailureLogger,
                 ) {
-                    profilePreferenceSyncRepository.applyPushOutcomes(outcomes)
+                    val report = profilePreferenceSyncRepository.applyPushOutcomes(outcomes)
+                    if (report.applied > 0) {
+                        userProfileRepository.refreshProfiles()
+                    }
+                    report
                 } ?: return
             }
         }
@@ -1687,7 +1691,11 @@ class SyncManager(
             ProfilePreferenceLocalFailureStage.PULL_APPLY,
             safeFailureLogger,
         ) {
-            profilePreferenceSyncRepository.applyPulledSections(plan.valid)
+            val applyReport = profilePreferenceSyncRepository.applyPulledSections(plan.valid)
+            if (applyReport.applied > 0) {
+                userProfileRepository.refreshProfiles()
+            }
+            applyReport
         } ?: return
         if (report.ignoredUnknownProfile > 0) {
             Logger.i("SyncManager") {

@@ -183,7 +183,6 @@ class DWSMTestHarness(val testScope: TestScope) {
             ready.preferences.workout.value.copy(
                 stopAtTop = value.stopAtTop,
                 beepsEnabled = value.beepsEnabled,
-                stallDetectionEnabled = value.stallDetectionEnabled,
                 audioRepCountEnabled = value.audioRepCountEnabled,
                 repCountTiming = value.repCountTiming,
                 summaryCountdownSeconds = value.summaryCountdownSeconds,

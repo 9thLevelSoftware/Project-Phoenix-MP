@@ -127,8 +127,21 @@ class HealthBodyWeightSyncManager(
             profileId = profileId,
             syncedAt = now,
         )
+        when (val current = userProfileRepository.activeProfileContext.value) {
+            is ActiveProfileContext.Ready -> if (current.profile.id != profileId) {
+                val error = StaleProfileContextException(profileId, current.profile.id)
+                bodyWeightSyncLog.w(error) { "Body-weight sync stopped after active profile changed" }
+                return HealthBodyWeightSyncResult.Failed(error)
+            }
+            is ActiveProfileContext.Switching -> {
+                val error = ProfileContextUnavailableException()
+                bodyWeightSyncLog.w(error) { "Body-weight sync stopped while active profile was switching" }
+                return HealthBodyWeightSyncResult.Failed(error)
+            }
+        }
+        externalMeasurementRepository.upsertMeasurements(listOf(measurement))
         try {
-            userProfileRepository.mutateCore(ready.profile.id) { latest ->
+            userProfileRepository.mutateCore(profileId) { latest ->
                 latest.copy(bodyWeightKg = sample.weightKg)
             }
         } catch (error: StaleProfileContextException) {
@@ -138,7 +151,6 @@ class HealthBodyWeightSyncManager(
             bodyWeightSyncLog.w(error) { "Body-weight sync stopped while active profile was switching" }
             return HealthBodyWeightSyncResult.Failed(error)
         }
-        externalMeasurementRepository.upsertMeasurements(listOf(measurement))
         updateConnectedStatus(
             provider = provider,
             profileId = profileId,
