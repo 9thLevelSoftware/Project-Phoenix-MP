@@ -29,6 +29,7 @@ internal object LegacyProfilePreferenceKeys {
     const val EQUIPMENT_RACK = "equipment_rack_items_v1"
     const val JUST_LIFT = "just_lift_defaults"
     const val EXERCISE_PREFIX = "exercise_defaults_"
+    const val STALL_DETECTION = "stall_detection_enabled"
     const val ECHO_HARD_MIGRATION_JUST_LIFT = "echo_hard_default_migrated_just_lift"
     const val ECHO_HARD_MIGRATION_EXERCISE_PREFIX = "echo_hard_default_migrated_exercise_"
 }
@@ -87,7 +88,10 @@ class SettingsLegacyProfilePreferencesReader(
             workout = WorkoutPreferences(
                 stopAtTop = legacy.stopAtTop,
                 beepsEnabled = legacy.beepsEnabled,
-                stallDetectionEnabled = legacy.stallDetectionEnabled,
+                stallDetectionEnabled = settings.getBoolean(
+                    LegacyProfilePreferenceKeys.STALL_DETECTION,
+                    true,
+                ),
                 audioRepCountEnabled = legacy.audioRepCountEnabled,
                 repCountTiming = readEnum("rep_count_timing", RepCountTiming.TOP),
                 summaryCountdownSeconds = normalizeInt(

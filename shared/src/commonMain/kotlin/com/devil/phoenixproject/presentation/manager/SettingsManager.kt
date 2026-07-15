@@ -62,7 +62,6 @@ class SettingsManager(
             bodyWeightKg = core.bodyWeightKg,
             stopAtTop = workout.stopAtTop,
             beepsEnabled = workout.beepsEnabled,
-            stallDetectionEnabled = workout.stallDetectionEnabled,
             audioRepCountEnabled = workout.audioRepCountEnabled,
             repCountTiming = workout.repCountTiming,
             summaryCountdownSeconds = workout.summaryCountdownSeconds,

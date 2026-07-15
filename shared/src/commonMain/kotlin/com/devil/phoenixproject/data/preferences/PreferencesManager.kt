@@ -142,7 +142,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_VIDEO_PLAYBACK = "video_playback"
         private const val KEY_BEEPS_ENABLED = "beeps_enabled"
         private const val KEY_COLOR_SCHEME = "color_scheme"
-        private const val KEY_STALL_DETECTION = "stall_detection_enabled"
         private const val KEY_DISCO_MODE_UNLOCKED = "disco_mode_unlocked"
         private const val KEY_AUDIO_REP_COUNT = "audio_rep_count_enabled"
         private const val LEGACY_KEY_HUD_PRESET = "hud_preset"
@@ -203,7 +202,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             enableVideoPlayback = settings.getBoolean(KEY_VIDEO_PLAYBACK, true),
             beepsEnabled = settings.getBoolean(KEY_BEEPS_ENABLED, true),
             colorScheme = settings.getInt(KEY_COLOR_SCHEME, 0),
-            stallDetectionEnabled = settings.getBoolean(KEY_STALL_DETECTION, true),
             discoModeUnlocked = settings.getBoolean(KEY_DISCO_MODE_UNLOCKED, false),
             audioRepCountEnabled = settings.getBoolean(KEY_AUDIO_REP_COUNT, false),
             repCountTiming = settings.getStringOrNull(KEY_REP_COUNT_TIMING)?.let {
@@ -292,11 +290,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         settings.putInt(KEY_COLOR_SCHEME, scheme)
         updateAndEmit { copy(colorScheme = scheme) }
     }
-    internal suspend fun setStallDetectionEnabled(enabled: Boolean) {
-        settings.putBoolean(KEY_STALL_DETECTION, enabled)
-        updateAndEmit { copy(stallDetectionEnabled = enabled) }
-    }
-
     internal suspend fun setDiscoModeUnlocked(unlocked: Boolean) {
         settings.putBoolean(KEY_DISCO_MODE_UNLOCKED, unlocked)
         updateAndEmit { copy(discoModeUnlocked = unlocked) }

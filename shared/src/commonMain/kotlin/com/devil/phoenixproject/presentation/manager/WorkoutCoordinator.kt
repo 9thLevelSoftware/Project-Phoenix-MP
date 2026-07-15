@@ -424,6 +424,44 @@ class WorkoutCoordinator(
     @Volatile
     internal var isCurrentlyStalled = false
 
+    // F4 (stall-detection audit): true when the stall countdown was armed by a
+    // firmware DELOAD_OCCURRED (genuine cable release — must survive handles
+    // returning to rest); false when armed by the velocity hysteresis (racked
+    // handles must cancel it).
+    @Volatile
+    internal var stallArmedByDeload = false
+
+    // Issue #649: defer position/stall auto-stop until the verbal-cue + short
+    // transition window elapses, or a completed working rep clears it. The
+    // deadline (@Volatile Long) is the single source of truth — 0L means no
+    // defer. checkVelocityThreshold() arms it on Dispatchers.Default;
+    // checkAutoStop() reads it on the metrics thread. @Volatile is required so
+    // the metrics thread never sees a stale old deadline across a thread switch.
+    // F7 (stall-detection audit): lives on the coordinator so BOTH managers'
+    // reset paths (ActiveSessionEngine and RoutineFlowManager) clear it via
+    // resetAutoStopState() below.
+    @Volatile
+    internal var deferAutoStopDeadlineMs = 0L
+
+    /**
+     * Fully reset auto-stop / stall / defer state for a new workout or set.
+     *
+     * F7 (stall-detection audit): single source of truth — previously
+     * ActiveSessionEngine and RoutineFlowManager each maintained a hand-copied
+     * reset list, and the RFM copy could not clear the (then engine-private)
+     * defer deadline.
+     */
+    internal fun resetAutoStopState() {
+        autoStopStartTime = null
+        autoStopTriggered = false
+        autoStopStopRequested = false
+        stallStartTime = null
+        isCurrentlyStalled = false
+        stallArmedByDeload = false
+        deferAutoStopDeadlineMs = 0L
+        _autoStopState.value = AutoStopUiState()
+    }
+
     // ===== Exercise Timer Control State (Issue #190: Pause/Resume/Reset for timed exercises) =====
 
     internal val _isExerciseTimerPaused = MutableStateFlow(false)

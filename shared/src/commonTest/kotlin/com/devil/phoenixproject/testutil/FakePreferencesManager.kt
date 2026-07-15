@@ -57,10 +57,6 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(colorScheme = scheme)
     }
 
-    suspend fun setStallDetectionEnabled(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(stallDetectionEnabled = enabled)
-    }
-
     suspend fun setDiscoModeUnlocked(unlocked: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(discoModeUnlocked = unlocked)
     }

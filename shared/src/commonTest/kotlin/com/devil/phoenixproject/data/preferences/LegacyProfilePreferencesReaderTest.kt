@@ -8,6 +8,21 @@ import kotlin.test.assertTrue
 
 class LegacyProfilePreferencesReaderTest {
     @Test
+    fun legacyStallDetectionKeyStillMigratesAfterGlobalPreferenceRemoval() {
+        val settings = MapSettings().apply {
+            putBoolean("stall_detection_enabled", false)
+        }
+        val reader = SettingsLegacyProfilePreferencesReader(
+            SettingsPreferencesManager(settings),
+            settings,
+        )
+
+        val snapshot = reader.readNormalized()
+
+        assertEquals(false, snapshot.workout.stallDetectionEnabled)
+    }
+
+    @Test
     fun corruptLegacyFieldsNormalizeWithoutFailingMigration() {
         val settings = MapSettings().apply {
             putString("weight_unit", "STONE")

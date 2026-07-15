@@ -952,7 +952,9 @@ class DefaultWorkoutSessionManager(
                         repCounter.resetCountsOnly()
                         activeSessionEngine.resetAutoStopState()
 
-                        // Navigate to SetReady screen
+                        // Issue #656: clear workoutState so the ActiveWorkoutScreen nav gate
+                        // unmounts SetSummary and routes to SetReady.
+                        coordinator._workoutState.value = WorkoutState.Idle
                         enterSetReady(nextExIdx, nextSetIdx)
                         return@launch
                     }
