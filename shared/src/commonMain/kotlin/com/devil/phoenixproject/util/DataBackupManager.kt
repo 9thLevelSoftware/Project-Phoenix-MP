@@ -488,6 +488,7 @@ abstract class BaseDataBackupManager(
                     preImportActiveProfileId,
                     representedProfileIds,
                 )
+                val availableProfileIds = existingUserProfileIds + representedProfileIds
 
                 // Import workout sessions
                 val importedSessionIds = mutableSetOf<String>()
@@ -559,7 +560,11 @@ abstract class BaseDataBackupManager(
                                 dominantSide = session.dominantSide,
                                 strengthProfile = session.strengthProfile,
                                 formScore = session.formScore,
-                                profile_id = session.profileId ?: activeProfileId,
+                                profile_id = resolveImportedProfileId(
+                                    requestedProfileId = session.profileId,
+                                    activeProfileId = activeProfileId,
+                                    availableProfileIds = availableProfileIds,
+                                ),
                             )
                         }
                         if (inserted != null) {
@@ -568,12 +573,16 @@ abstract class BaseDataBackupManager(
                         }
                     } else {
                         // Adopt orphaned records into the active profile (fixes #324).
-                        // Only adopt when the backup row has no explicit profile (legacy)
-                        // or already targets the active profile. If the backup explicitly
-                        // says the row belongs to a different profile, leave it alone to
-                        // avoid cross-contaminating multi-profile restores.
-                        val backupProfileId = session.profileId
-                        if (backupProfileId == null || backupProfileId == activeProfileId) {
+                        // Preserve an explicit owner only when that profile exists locally
+                        // or is represented by an identity in this backup. Session/routine
+                        // exports omit identities, so deleted/source-only owners fall back
+                        // to the active profile instead of leaving invisible history behind.
+                        val resolvedProfileId = resolveImportedProfileId(
+                            requestedProfileId = session.profileId,
+                            activeProfileId = activeProfileId,
+                            availableProfileIds = availableProfileIds,
+                        )
+                        if (resolvedProfileId == activeProfileId) {
                             queries.adoptSessionProfile(profileId = activeProfileId, id = session.id)
                             sessionsAdopted++
                         }
@@ -1277,6 +1286,8 @@ abstract class BaseDataBackupManager(
                                                     importedSessionIds.add(session.id)
                                                     if (session.profileId == null) {
                                                         legacySessionIdsForAdoption += session.id
+                                                    } else {
+                                                        explicitSessionAdoptions += session.id to session.profileId
                                                     }
                                                 }
                                             } else {
@@ -1949,6 +1960,7 @@ abstract class BaseDataBackupManager(
                     preImportActiveProfileId,
                     representedProfileIds,
                 )
+                val availableProfileIds = queries.selectAllUserProfileIds().executeAsList().toSet()
                 legacySessionIdsForAdoption.forEach { sessionId ->
                     queries.adoptSessionProfile(normalizedActiveProfileId, sessionId)
                 }
@@ -1956,7 +1968,13 @@ abstract class BaseDataBackupManager(
                     queries.adoptRoutineProfile(normalizedActiveProfileId, routineId)
                 }
                 explicitSessionAdoptions.forEach { (sessionId, backupProfileId) ->
-                    if (backupProfileId == normalizedActiveProfileId) {
+                    if (
+                        resolveImportedProfileId(
+                            requestedProfileId = backupProfileId,
+                            activeProfileId = normalizedActiveProfileId,
+                            availableProfileIds = availableProfileIds,
+                        ) == normalizedActiveProfileId
+                    ) {
                         queries.adoptSessionProfile(normalizedActiveProfileId, sessionId)
                         sessionsAdopted++
                     }
@@ -2042,6 +2060,7 @@ abstract class BaseDataBackupManager(
                                     preImportActiveProfileId,
                                     representedProfileIds,
                                 )
+                                val availableProfileIds = queries.selectAllUserProfileIds().executeAsList().toSet()
                                 legacySessionIdsForAdoption.forEach { sessionId ->
                                     queries.adoptSessionProfile(normalizedActiveProfileId, sessionId)
                                 }
@@ -2049,7 +2068,13 @@ abstract class BaseDataBackupManager(
                                     queries.adoptRoutineProfile(normalizedActiveProfileId, routineId)
                                 }
                                 explicitSessionAdoptions.forEach { (sessionId, backupProfileId) ->
-                                    if (backupProfileId == normalizedActiveProfileId) {
+                                    if (
+                                        resolveImportedProfileId(
+                                            requestedProfileId = backupProfileId,
+                                            activeProfileId = normalizedActiveProfileId,
+                                            availableProfileIds = availableProfileIds,
+                                        ) == normalizedActiveProfileId
+                                    ) {
                                         queries.adoptSessionProfile(normalizedActiveProfileId, sessionId)
                                     }
                                 }
@@ -2676,6 +2701,12 @@ abstract class BaseDataBackupManager(
         queries.setActiveProfile(activeProfileId)
         return activeProfileId
     }
+
+    private fun resolveImportedProfileId(
+        requestedProfileId: String?,
+        activeProfileId: String,
+        availableProfileIds: Set<String>,
+    ): String = requestedProfileId?.takeIf { it in availableProfileIds } ?: activeProfileId
 
     private inline fun <reified T> decodeBackupSection(
         profileId: String,

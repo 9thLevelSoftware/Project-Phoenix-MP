@@ -1371,7 +1371,7 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
-    fun `buffered legacy rows use first represented fallback when captured active and default are absent`() = runTest {
+    fun `buffered legacy and absent explicit owners use represented fallback when active is absent`() = runTest {
         val fixture = profileFixture()
         val represented = "first-represented"
         fun session(id: String, profileId: String?) = WorkoutSessionBackup(
@@ -1430,7 +1430,7 @@ class DataBackupManagerRoutineNameTest {
                 .profile_id,
         )
         assertEquals(
-            "original-owner",
+            represented,
             fixture.database.vitruvianDatabaseQueries
                 .selectSessionById(explicitDefault.id)
                 .executeAsOne()
@@ -1446,6 +1446,40 @@ class DataBackupManagerRoutineNameTest {
         assertEquals(
             represented,
             fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+        )
+    }
+
+    @Test
+    fun `buffered session import adopts explicit owner when its profile is absent`() = runTest {
+        val activeProfileId = database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id
+        val session = WorkoutSessionBackup(
+            id = "buffered-missing-profile-session",
+            timestamp = 1L,
+            mode = "Old School",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            profileId = "deleted-source-profile",
+        )
+        val payload = BackupData(
+            version = 5,
+            exportedAt = "2026-07-15T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(workoutSessions = listOf(session)),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(payload))
+
+        assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
+        assertEquals(
+            activeProfileId,
+            database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
         )
     }
 

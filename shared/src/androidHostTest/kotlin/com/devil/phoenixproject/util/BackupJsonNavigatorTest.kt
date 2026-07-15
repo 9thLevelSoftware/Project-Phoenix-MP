@@ -762,7 +762,7 @@ class StreamingImportRoundTripTest {
     }
 
     @Test
-    fun `streaming explicit profile adoption waits for normalized target instead of provisional default`() = runTest {
+    fun `streaming absent explicit owner adopts normalized target instead of provisional default`() = runTest {
         val fixture = preferenceFixture()
         val session = WorkoutSessionBackup(
             id = "stream-explicit-adoption",
@@ -809,7 +809,7 @@ class StreamingImportRoundTripTest {
 
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
-            "original-owner",
+            "first-represented",
             fixture.database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
         )
         assertEquals(
@@ -822,6 +822,43 @@ class StreamingImportRoundTripTest {
         assertEquals(
             "first-represented",
             fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+        )
+    }
+
+    @Test
+    fun `streaming session import adopts explicit owner when its profile is absent`() = runTest {
+        val fixture = preferenceFixture()
+        val activeProfileId = fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id
+        val session = WorkoutSessionBackup(
+            id = "stream-missing-profile-session",
+            timestamp = 1L,
+            mode = "Old School",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            profileId = "deleted-source-profile",
+        )
+        val payload = buildJsonObject {
+            put("data", buildJsonObject {
+                put("workoutSessions", testJson.encodeToJsonElement(listOf(session)))
+            })
+            put("version", 5)
+            put("exportedAt", "2026-07-15T00:00:00Z")
+            put("appVersion", "test")
+        }.toString()
+
+        val result = fixture.manager.importFromStringStreaming(payload)
+
+        assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
+        assertEquals(
+            activeProfileId,
+            fixture.database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
         )
     }
 

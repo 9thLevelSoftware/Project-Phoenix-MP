@@ -27,6 +27,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult
+import com.devil.phoenixproject.util.encodeRackItemsJson
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -504,12 +505,8 @@ class ProfileQaSeeder(
     }
 
     private fun rackSnapshotJson(profileKey: String, isProfileA: Boolean): String {
-        val id = rackItemId(profileKey)
-        return if (isProfileA) {
-            "[{\"id\":\"$id\",\"name\":\"QA Weighted Vest A\",\"category\":\"WEIGHTED_VEST\",\"weightKg\":10.0,\"behavior\":\"ADDED_RESISTANCE\",\"enabled\":true,\"sortOrder\":1,\"createdAt\":1700000001000,\"updatedAt\":1700000001100}]"
-        } else {
-            "[{\"id\":\"$id\",\"name\":\"QA Assistance B\",\"category\":\"ASSISTANCE\",\"weightKg\":7.5,\"behavior\":\"COUNTERWEIGHT\",\"enabled\":true,\"sortOrder\":2,\"createdAt\":1700000002000,\"updatedAt\":1700000002100}]"
-        }
+        val rackItem = rackPreferences(profileKey, isProfileA).items.single()
+        return encodeRackItemsJson(listOf(rackItem))
     }
 
     private fun sessionIds(profileKey: String) = (1..SESSION_TIMESTAMPS.size).map {

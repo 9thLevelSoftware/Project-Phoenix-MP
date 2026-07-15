@@ -2,6 +2,7 @@ package com.devil.phoenixproject.qa
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -39,6 +40,17 @@ class QaReleaseBoundaryTest {
             "Missing required debug-only QA files:\n${missing.joinToString("\n")}",
             missing.isEmpty(),
         )
+    }
+
+    @Test
+    fun `profile QA rack snapshots use typed serialization instead of JSON literals`() {
+        val source = File(
+            findRepoRoot(),
+            "androidApp/src/debug/kotlin/com/devil/phoenixproject/qa/ProfileQaSeeder.kt",
+        ).readText()
+
+        assertTrue(source.contains("encodeRackItemsJson(listOf(rackItem))"))
+        assertFalse(source.contains("[{\\\"id\\\":"))
     }
 
     @Test
