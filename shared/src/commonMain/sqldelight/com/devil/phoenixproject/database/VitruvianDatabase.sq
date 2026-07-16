@@ -506,6 +506,9 @@ countVelocityOneRepMaxByExercise:
 SELECT COUNT(*) FROM VelocityOneRepMaxEstimate
 WHERE exerciseId = :exerciseId AND profile_id = :profileId AND deletedAt IS NULL;
 
+deleteVelocityOneRepMaxById:
+DELETE FROM VelocityOneRepMaxEstimate WHERE id = ?;
+
 -- ==================== PERSONAL MVT TABLE ====================
 -- Personalized Minimum Velocity Threshold per exercise/profile (issue #517).
 -- Stored alongside the exercise; used by VelocityOneRepMaxEstimator to override
@@ -527,6 +530,23 @@ SELECT * FROM ExerciseMvt WHERE exerciseId = :exerciseId AND profile_id = :profi
 upsertExerciseMvt:
 INSERT OR REPLACE INTO ExerciseMvt (exerciseId, profile_id, personalMvtMs, sampleCount, updatedAt)
 VALUES (:exerciseId, :profileId, :personalMvtMs, :sampleCount, :updatedAt);
+
+selectAllExerciseMvtByProfile:
+SELECT * FROM ExerciseMvt WHERE profile_id = :profileId ORDER BY exerciseId;
+
+deleteExerciseMvt:
+DELETE FROM ExerciseMvt WHERE exerciseId = :exerciseId AND profile_id = :profileId;
+
+updateExerciseMvtForProfileMerge:
+UPDATE ExerciseMvt
+SET profile_id = :targetProfileId,
+    personalMvtMs = :personalMvtMs,
+    sampleCount = :sampleCount,
+    updatedAt = :updatedAt
+WHERE exerciseId = :exerciseId AND profile_id = :retainedProfileId;
+
+reassignExerciseMvtProfile:
+UPDATE ExerciseMvt SET profile_id = :targetProfileId WHERE profile_id = :sourceProfileId;
 
 -- Queries
 
@@ -676,6 +696,25 @@ WHERE profile_id = :profileId
 AND deletedAt IS NULL
 AND (workingReps > 0 OR totalReps > 0)
 ORDER BY timestamp DESC;
+
+selectRecentCompletedSessionsForExercise:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+  AND exerciseId = :exerciseId
+  AND deletedAt IS NULL
+  AND (workingReps > 0 OR totalReps > 0)
+ORDER BY timestamp DESC, id DESC
+LIMIT :limit;
+
+selectMostRecentCompletedExerciseId:
+SELECT exerciseId FROM WorkoutSession
+WHERE profile_id = :profileId
+  AND exerciseId IS NOT NULL
+  AND TRIM(exerciseId) != ''
+  AND deletedAt IS NULL
+  AND (workingReps > 0 OR totalReps > 0)
+ORDER BY timestamp DESC, id DESC
+LIMIT 1;
 
 selectSessionById:
 SELECT * FROM WorkoutSession WHERE id = ?;
@@ -1988,6 +2027,12 @@ DELETE FROM ProgressionEvent WHERE id = ?;
 updateOneRepMax:
 UPDATE Exercise SET one_rep_max_kg = ? WHERE id = ?;
 
+restoreOneRepMaxIfCurrent:
+UPDATE Exercise
+SET one_rep_max_kg = :previousOneRepMaxKg
+WHERE id = :exerciseId
+  AND one_rep_max_kg = :attemptedOneRepMaxKg;
+
 getExercisesWithOneRepMax:
 SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
 
@@ -2121,6 +2166,324 @@ CREATE TABLE UserProfile (
     last_auth_at INTEGER
 );
 
+CREATE TABLE UserProfilePreferences (
+    profile_id TEXT PRIMARY KEY NOT NULL,
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    legacy_migration_version INTEGER NOT NULL DEFAULT 0,
+    body_weight_kg REAL NOT NULL DEFAULT 0 CHECK(body_weight_kg = 0 OR body_weight_kg BETWEEN 20 AND 300),
+    weight_unit TEXT NOT NULL DEFAULT 'LB' CHECK(weight_unit IN ('KG', 'LB')),
+    weight_increment REAL NOT NULL DEFAULT -1 CHECK(weight_increment = -1 OR weight_increment > 0),
+    core_updated_at INTEGER NOT NULL DEFAULT 0,
+    core_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(core_local_generation >= 0),
+    core_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(core_server_revision >= 0),
+    core_dirty INTEGER NOT NULL DEFAULT 1 CHECK(core_dirty IN (0, 1)),
+    equipment_rack_json TEXT NOT NULL DEFAULT '{"version":1,"items":[]}',
+    rack_updated_at INTEGER NOT NULL DEFAULT 0,
+    rack_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(rack_local_generation >= 0),
+    rack_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(rack_server_revision >= 0),
+    rack_dirty INTEGER NOT NULL DEFAULT 1 CHECK(rack_dirty IN (0, 1)),
+    workout_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+    workout_updated_at INTEGER NOT NULL DEFAULT 0,
+    workout_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(workout_local_generation >= 0),
+    workout_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(workout_server_revision >= 0),
+    workout_dirty INTEGER NOT NULL DEFAULT 1 CHECK(workout_dirty IN (0, 1)),
+    led_color_scheme_id INTEGER NOT NULL DEFAULT 0 CHECK(led_color_scheme_id >= 0),
+    led_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+    led_updated_at INTEGER NOT NULL DEFAULT 0,
+    led_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(led_local_generation >= 0),
+    led_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(led_server_revision >= 0),
+    led_dirty INTEGER NOT NULL DEFAULT 1 CHECK(led_dirty IN (0, 1)),
+    vbt_enabled INTEGER NOT NULL DEFAULT 1 CHECK(vbt_enabled IN (0, 1)),
+    vbt_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+    vbt_updated_at INTEGER NOT NULL DEFAULT 0,
+    vbt_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(vbt_local_generation >= 0),
+    vbt_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(vbt_server_revision >= 0),
+    vbt_dirty INTEGER NOT NULL DEFAULT 1 CHECK(vbt_dirty IN (0, 1)),
+    FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE
+);
+
+CREATE TABLE PendingProfileLocalCleanup (
+    profile_id TEXT PRIMARY KEY NOT NULL,
+    enqueued_at INTEGER NOT NULL
+);
+
+CREATE TABLE PendingProfileContextRecovery (
+    recovery_key TEXT PRIMARY KEY NOT NULL
+        DEFAULT 'active_profile_transition'
+        CHECK(recovery_key = 'active_profile_transition'),
+    prior_profile_id TEXT NOT NULL,
+    created_profile_id TEXT,
+    enqueued_at INTEGER NOT NULL
+);
+
+selectProfilePreferences:
+SELECT * FROM UserProfilePreferences WHERE profile_id = ?;
+
+selectAllProfilePreferences:
+SELECT * FROM UserProfilePreferences ORDER BY profile_id;
+
+insertDefaultProfilePreferences:
+INSERT OR IGNORE INTO UserProfilePreferences(profile_id, legacy_migration_version)
+VALUES (?, ?);
+
+seedMissingProfilePreferences:
+INSERT OR IGNORE INTO UserProfilePreferences(profile_id)
+SELECT id FROM UserProfile;
+
+updateCoreProfilePreferences:
+UPDATE UserProfilePreferences
+SET body_weight_kg = ?, weight_unit = ?, weight_increment = ?, core_updated_at = ?,
+    core_local_generation = core_local_generation + 1, core_dirty = 1
+WHERE profile_id = ?;
+
+updateRackProfilePreferences:
+UPDATE UserProfilePreferences
+SET equipment_rack_json = ?, rack_updated_at = ?, rack_local_generation = rack_local_generation + 1, rack_dirty = 1
+WHERE profile_id = ?;
+
+updateWorkoutProfilePreferences:
+UPDATE UserProfilePreferences
+SET workout_preferences_json = ?, workout_updated_at = ?, workout_local_generation = workout_local_generation + 1, workout_dirty = 1
+WHERE profile_id = ?;
+
+updateLedProfilePreferences:
+UPDATE UserProfilePreferences
+SET led_color_scheme_id = ?, led_preferences_json = ?, led_updated_at = ?,
+    led_local_generation = led_local_generation + 1, led_dirty = 1
+WHERE profile_id = ?;
+
+updateVbtProfilePreferences:
+UPDATE UserProfilePreferences
+SET vbt_enabled = ?, vbt_preferences_json = ?, vbt_updated_at = ?,
+    vbt_local_generation = vbt_local_generation + 1, vbt_dirty = 1
+WHERE profile_id = ?;
+
+selectDirtyProfilePreferenceRows:
+SELECT *
+FROM UserProfilePreferences
+WHERE core_dirty = 1
+   OR rack_dirty = 1
+   OR workout_dirty = 1
+   OR led_dirty = 1
+   OR vbt_dirty = 1
+ORDER BY profile_id;
+
+selectProfilePreferenceSyncRow:
+SELECT *
+FROM UserProfilePreferences
+WHERE profile_id = :profile_id;
+
+selectChangedRowCount:
+SELECT changes();
+
+applyCoreCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET body_weight_kg = :body_weight_kg,
+    weight_unit = :weight_unit,
+    weight_increment = :weight_increment,
+    core_updated_at = :server_updated_at,
+    core_server_revision = :server_revision,
+    core_dirty = 0
+WHERE profile_id = :profile_id
+  AND core_local_generation = :sent_local_generation
+  AND core_dirty = 1
+  AND core_server_revision <= :server_revision;
+
+advanceCoreRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET core_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND core_local_generation > :sent_local_generation
+  AND core_server_revision < :server_revision;
+
+applyRackCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET equipment_rack_json = :equipment_rack_json,
+    rack_updated_at = :server_updated_at,
+    rack_server_revision = :server_revision,
+    rack_dirty = 0
+WHERE profile_id = :profile_id
+  AND rack_local_generation = :sent_local_generation
+  AND rack_dirty = 1
+  AND rack_server_revision <= :server_revision;
+
+advanceRackRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET rack_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND rack_local_generation > :sent_local_generation
+  AND rack_server_revision < :server_revision;
+
+applyWorkoutCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET workout_preferences_json = :workout_preferences_json,
+    workout_updated_at = :server_updated_at,
+    workout_server_revision = :server_revision,
+    workout_dirty = 0
+WHERE profile_id = :profile_id
+  AND workout_local_generation = :sent_local_generation
+  AND workout_dirty = 1
+  AND workout_server_revision <= :server_revision;
+
+advanceWorkoutRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET workout_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND workout_local_generation > :sent_local_generation
+  AND workout_server_revision < :server_revision;
+
+applyLedCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET led_color_scheme_id = :led_color_scheme_id,
+    led_preferences_json = :led_preferences_json,
+    led_updated_at = :server_updated_at,
+    led_server_revision = :server_revision,
+    led_dirty = 0
+WHERE profile_id = :profile_id
+  AND led_local_generation = :sent_local_generation
+  AND led_dirty = 1
+  AND led_server_revision <= :server_revision;
+
+advanceLedRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET led_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND led_local_generation > :sent_local_generation
+  AND led_server_revision < :server_revision;
+
+applyVbtCanonicalForGeneration:
+UPDATE UserProfilePreferences
+SET vbt_enabled = :vbt_enabled,
+    vbt_preferences_json = :vbt_preferences_json,
+    vbt_updated_at = :server_updated_at,
+    vbt_server_revision = :server_revision,
+    vbt_dirty = 0
+WHERE profile_id = :profile_id
+  AND vbt_local_generation = :sent_local_generation
+  AND vbt_dirty = 1
+  AND vbt_server_revision <= :server_revision;
+
+advanceVbtRevisionForNewerGeneration:
+UPDATE UserProfilePreferences
+SET vbt_server_revision = :server_revision
+WHERE profile_id = :profile_id
+  AND vbt_local_generation > :sent_local_generation
+  AND vbt_server_revision < :server_revision;
+
+applyPulledCoreWhenClean:
+UPDATE UserProfilePreferences
+SET body_weight_kg = :body_weight_kg,
+    weight_unit = :weight_unit,
+    weight_increment = :weight_increment,
+    core_updated_at = :server_updated_at,
+    core_server_revision = :server_revision,
+    core_dirty = 0
+WHERE profile_id = :profile_id
+  AND core_dirty = 0
+  AND core_server_revision <= :server_revision;
+
+applyPulledRackWhenClean:
+UPDATE UserProfilePreferences
+SET equipment_rack_json = :equipment_rack_json,
+    rack_updated_at = :server_updated_at,
+    rack_server_revision = :server_revision,
+    rack_dirty = 0
+WHERE profile_id = :profile_id
+  AND rack_dirty = 0
+  AND rack_server_revision <= :server_revision;
+
+applyPulledWorkoutWhenClean:
+UPDATE UserProfilePreferences
+SET workout_preferences_json = :workout_preferences_json,
+    workout_updated_at = :server_updated_at,
+    workout_server_revision = :server_revision,
+    workout_dirty = 0
+WHERE profile_id = :profile_id
+  AND workout_dirty = 0
+  AND workout_server_revision <= :server_revision;
+
+applyPulledLedWhenClean:
+UPDATE UserProfilePreferences
+SET led_color_scheme_id = :led_color_scheme_id,
+    led_preferences_json = :led_preferences_json,
+    led_updated_at = :server_updated_at,
+    led_server_revision = :server_revision,
+    led_dirty = 0
+WHERE profile_id = :profile_id
+  AND led_dirty = 0
+  AND led_server_revision <= :server_revision;
+
+applyPulledVbtWhenClean:
+UPDATE UserProfilePreferences
+SET vbt_enabled = :vbt_enabled,
+    vbt_preferences_json = :vbt_preferences_json,
+    vbt_updated_at = :server_updated_at,
+    vbt_server_revision = :server_revision,
+    vbt_dirty = 0
+WHERE profile_id = :profile_id
+  AND vbt_dirty = 0
+  AND vbt_server_revision <= :server_revision;
+
+applyLegacyProfilePreferences:
+UPDATE UserProfilePreferences
+SET schema_version = 1,
+    legacy_migration_version = 1,
+    body_weight_kg = :body_weight_kg,
+    weight_unit = :weight_unit,
+    weight_increment = :weight_increment,
+    core_updated_at = :migrated_at,
+    core_local_generation = 1,
+    core_server_revision = 0,
+    core_dirty = 1,
+    equipment_rack_json = :equipment_rack_json,
+    rack_updated_at = :migrated_at,
+    rack_local_generation = 1,
+    rack_server_revision = 0,
+    rack_dirty = 1,
+    workout_preferences_json = :workout_preferences_json,
+    workout_updated_at = :migrated_at,
+    workout_local_generation = 1,
+    workout_server_revision = 0,
+    workout_dirty = 1,
+    led_color_scheme_id = :led_color_scheme_id,
+    led_preferences_json = :led_preferences_json,
+    led_updated_at = :migrated_at,
+    led_local_generation = 1,
+    led_server_revision = 0,
+    led_dirty = 1,
+    vbt_enabled = :vbt_enabled,
+    vbt_preferences_json = :vbt_preferences_json,
+    vbt_updated_at = :migrated_at,
+    vbt_local_generation = 1,
+    vbt_server_revision = 0,
+    vbt_dirty = 1
+WHERE profile_id = :profile_id AND legacy_migration_version = 0;
+
+deleteProfilePreferences:
+DELETE FROM UserProfilePreferences WHERE profile_id = ?;
+
+enqueueProfileLocalCleanup:
+INSERT OR REPLACE INTO PendingProfileLocalCleanup(profile_id, enqueued_at) VALUES (?, ?);
+
+selectPendingProfileLocalCleanup:
+SELECT * FROM PendingProfileLocalCleanup ORDER BY enqueued_at, profile_id;
+
+dequeueProfileLocalCleanup:
+DELETE FROM PendingProfileLocalCleanup WHERE profile_id = ?;
+
+enqueueProfileContextRecovery:
+INSERT OR REPLACE INTO PendingProfileContextRecovery(
+    recovery_key, prior_profile_id, created_profile_id, enqueued_at
+) VALUES ('active_profile_transition', ?, ?, ?);
+
+selectPendingProfileContextRecovery:
+SELECT * FROM PendingProfileContextRecovery
+WHERE recovery_key = 'active_profile_transition';
+
+clearPendingProfileContextRecovery:
+DELETE FROM PendingProfileContextRecovery
+WHERE recovery_key = 'active_profile_transition';
+
 -- Queries for UserProfile
 getActiveProfile:
 SELECT * FROM UserProfile WHERE isActive = 1 LIMIT 1;
@@ -2144,6 +2507,9 @@ UPDATE UserProfile SET isActive = CASE WHEN id = ? THEN 1 ELSE 0 END;
 -- Profile data cascade: reassign all data from one profile to another
 reassignRoutineProfile:
 UPDATE Routine SET profile_id = ? WHERE profile_id = ?;
+
+reassignRoutineGroupProfile:
+UPDATE RoutineGroup SET profile_id = ? WHERE profile_id = ?;
 
 reassignSessionProfile:
 UPDATE WorkoutSession SET profile_id = ? WHERE profile_id = ?;
@@ -2175,8 +2541,51 @@ DELETE FROM RpgAttributes WHERE profile_id = ?;
 reassignAssessmentResultProfile:
 UPDATE AssessmentResult SET profile_id = ? WHERE profile_id = ?;
 
+reassignVelocityOneRepMaxProfile:
+UPDATE VelocityOneRepMaxEstimate SET profile_id = ? WHERE profile_id = ?;
+
 reassignProgressionProfile:
 UPDATE ProgressionEvent SET profile_id = ? WHERE profile_id = ?;
+
+deletePersonalRecordById:
+DELETE FROM PersonalRecord WHERE id = ?;
+
+updatePersonalRecordForProfileMerge:
+UPDATE PersonalRecord
+SET exerciseName = :exerciseName,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    workoutMode = :workoutMode,
+    prType = :prType,
+    volume = :volume,
+    phase = :phase,
+    updatedAt = :updatedAt,
+    serverId = :serverId,
+    deletedAt = :deletedAt,
+    cable_count = :cableCount,
+    uuid = :uuid,
+    profile_id = :targetProfileId
+WHERE id = :targetId;
+
+deleteEarnedBadgeById:
+DELETE FROM EarnedBadge WHERE id = ?;
+
+updateEarnedBadgeForProfileMerge:
+UPDATE EarnedBadge
+SET earnedAt = :earnedAt,
+    celebratedAt = :celebratedAt,
+    updatedAt = :updatedAt,
+    serverId = :serverId,
+    deletedAt = :deletedAt
+WHERE id = :targetId;
+
+deleteIntegrationStatusByProfile:
+DELETE FROM IntegrationStatus WHERE profileId = ?;
+
+deleteIntegrationSyncCursorByProfile:
+DELETE FROM IntegrationSyncCursor WHERE profileId = ?;
 
 deleteProfile:
 DELETE FROM UserProfile WHERE id = ? AND id != 'default';
@@ -2638,6 +3047,19 @@ WHERE externalId = ? AND provider = ? AND profileId = ?;
 deleteExternalActivitiesByProvider:
 DELETE FROM ExternalActivity WHERE provider = ? AND profileId = ?;
 
+deleteConflictingSourceExternalActivities:
+DELETE FROM ExternalActivity
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalActivity target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalActivity.provider
+      AND target.externalId = ExternalActivity.externalId
+  );
+
+reassignExternalActivityProfile:
+UPDATE ExternalActivity SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
+
 -- ExternalRoutine queries
 getExternalRoutines:
 SELECT * FROM ExternalRoutine
@@ -2729,6 +3151,47 @@ WHERE externalRoutineId IN (
 deleteExternalRoutinesByProvider:
 DELETE FROM ExternalRoutine WHERE provider = ? AND profileId = ?;
 
+deleteConflictingSourceExternalRoutineSets:
+DELETE FROM ExternalRoutineSet
+WHERE externalRoutineExerciseId IN (
+  SELECT exercise.id
+  FROM ExternalRoutineExercise exercise
+  JOIN ExternalRoutine source ON source.id = exercise.externalRoutineId
+  WHERE source.profileId = :sourceProfileId
+    AND EXISTS (
+      SELECT 1 FROM ExternalRoutine target
+      WHERE target.profileId = :targetProfileId
+        AND target.provider = source.provider
+        AND target.externalId = source.externalId
+    )
+);
+
+deleteConflictingSourceExternalRoutineExercises:
+DELETE FROM ExternalRoutineExercise
+WHERE externalRoutineId IN (
+  SELECT source.id FROM ExternalRoutine source
+  WHERE source.profileId = :sourceProfileId
+    AND EXISTS (
+      SELECT 1 FROM ExternalRoutine target
+      WHERE target.profileId = :targetProfileId
+        AND target.provider = source.provider
+        AND target.externalId = source.externalId
+    )
+);
+
+deleteConflictingSourceExternalRoutines:
+DELETE FROM ExternalRoutine
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalRoutine target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalRoutine.provider
+      AND target.externalId = ExternalRoutine.externalId
+  );
+
+reassignExternalRoutineProfile:
+UPDATE ExternalRoutine SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
+
 -- ExternalRoutineFolder queries
 getExternalRoutineFolders:
 SELECT * FROM ExternalRoutineFolder
@@ -2747,6 +3210,19 @@ INSERT OR REPLACE INTO ExternalRoutineFolder(
 
 deleteExternalRoutineFoldersByProvider:
 DELETE FROM ExternalRoutineFolder WHERE provider = ? AND profileId = ?;
+
+deleteConflictingSourceExternalRoutineFolders:
+DELETE FROM ExternalRoutineFolder
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalRoutineFolder target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalRoutineFolder.provider
+      AND target.externalId = ExternalRoutineFolder.externalId
+  );
+
+reassignExternalRoutineFolderProfile:
+UPDATE ExternalRoutineFolder SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- ExternalProgram queries
 getExternalPrograms:
@@ -2800,6 +3276,32 @@ WHERE id = ?;
 
 deleteExternalProgramsByProvider:
 DELETE FROM ExternalProgram WHERE provider = ? AND profileId = ?;
+
+deleteConflictingSourceExternalProgramStats:
+DELETE FROM ExternalProgramStats
+WHERE externalProgramId IN (
+  SELECT source.id FROM ExternalProgram source
+  WHERE source.profileId = :sourceProfileId
+    AND EXISTS (
+      SELECT 1 FROM ExternalProgram target
+      WHERE target.profileId = :targetProfileId
+        AND target.provider = source.provider
+        AND target.externalId = source.externalId
+    )
+);
+
+deleteConflictingSourceExternalPrograms:
+DELETE FROM ExternalProgram
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalProgram target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalProgram.provider
+      AND target.externalId = ExternalProgram.externalId
+  );
+
+reassignExternalProgramProfile:
+UPDATE ExternalProgram SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- ExternalProgramStats queries
 getExternalProgramStats:
@@ -2862,6 +3364,19 @@ GROUP BY provider;
 deleteExternalExerciseTemplatesByProvider:
 DELETE FROM ExternalExerciseTemplate WHERE provider = ? AND profileId = ?;
 
+deleteConflictingSourceExternalExerciseTemplates:
+DELETE FROM ExternalExerciseTemplate
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalExerciseTemplate target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalExerciseTemplate.provider
+      AND target.externalId = ExternalExerciseTemplate.externalId
+  );
+
+reassignExternalExerciseTemplateProfile:
+UPDATE ExternalExerciseTemplate SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
+
 -- ExternalExerciseTemplateMapping queries
 getExternalExerciseTemplateMapping:
 SELECT * FROM ExternalExerciseTemplateMapping
@@ -2874,6 +3389,19 @@ INSERT OR REPLACE INTO ExternalExerciseTemplateMapping(
 
 deleteExternalExerciseTemplateMappingsByProvider:
 DELETE FROM ExternalExerciseTemplateMapping WHERE provider = ? AND profileId = ?;
+
+deleteConflictingSourceExternalExerciseTemplateMappings:
+DELETE FROM ExternalExerciseTemplateMapping
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalExerciseTemplateMapping target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalExerciseTemplateMapping.provider
+      AND target.externalTemplateId = ExternalExerciseTemplateMapping.externalTemplateId
+  );
+
+reassignExternalExerciseTemplateMappingProfile:
+UPDATE ExternalExerciseTemplateMapping SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- ExternalBodyMeasurement queries
 getExternalBodyMeasurements:
@@ -2898,6 +3426,19 @@ INSERT OR REPLACE INTO ExternalBodyMeasurement(
 
 deleteExternalBodyMeasurementsByProvider:
 DELETE FROM ExternalBodyMeasurement WHERE provider = ? AND profileId = ?;
+
+deleteConflictingSourceExternalBodyMeasurements:
+DELETE FROM ExternalBodyMeasurement
+WHERE profileId = :sourceProfileId
+  AND EXISTS (
+    SELECT 1 FROM ExternalBodyMeasurement target
+    WHERE target.profileId = :targetProfileId
+      AND target.provider = ExternalBodyMeasurement.provider
+      AND target.externalId = ExternalBodyMeasurement.externalId
+  );
+
+reassignExternalBodyMeasurementProfile:
+UPDATE ExternalBodyMeasurement SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- IntegrationSyncCursor queries
 getIntegrationSyncCursor:

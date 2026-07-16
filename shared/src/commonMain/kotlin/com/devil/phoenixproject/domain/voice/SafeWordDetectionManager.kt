@@ -1,7 +1,8 @@
 package com.devil.phoenixproject.domain.voice
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,7 +25,10 @@ import kotlinx.coroutines.launch
  *
  * Issue #141: Voice-activated emergency stop.
  */
-class SafeWordDetectionManager(private val preferencesManager: PreferencesManager, private val listenerFactory: SafeWordListenerFactory) {
+class SafeWordDetectionManager(
+    private val userProfileRepository: UserProfileRepository,
+    private val listenerFactory: SafeWordListenerFactory,
+) {
     private companion object {
         const val TAG = "SafeWordDetectionManager"
     }
@@ -52,17 +56,21 @@ class SafeWordDetectionManager(private val preferencesManager: PreferencesManage
      * No-op if voice stop is disabled or no safe word is configured.
      */
     fun startForWorkout() {
-        val prefs = preferencesManager.preferencesFlow.value
-        if (!prefs.voiceStopEnabled) {
+        val context = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+        if (context == null) {
+            Logger.w(TAG) { "Profile context is switching, skipping voice stop" }
+            return
+        }
+        if (!context.preferences.workout.value.voiceStopEnabled) {
             Logger.d(TAG) { "Voice stop not enabled, skipping" }
             return
         }
-        val safeWord = prefs.safeWord
+        val safeWord = context.localSafety.safeWord
         if (safeWord.isNullOrBlank()) {
             Logger.w(TAG) { "Voice stop enabled but no safe word configured, skipping" }
             return
         }
-        if (!prefs.safeWordCalibrated) {
+        if (!context.localSafety.safeWordCalibrated) {
             Logger.w(TAG) { "Voice stop enabled but safe word not calibrated, skipping" }
             return
         }

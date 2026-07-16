@@ -13,9 +13,13 @@ import com.devil.phoenixproject.domain.assessment.LoadVelocityPoint
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -56,6 +60,10 @@ sealed class AssessmentStep {
     data class Complete(val finalOneRepMaxKg: Float, val exerciseName: String) : AssessmentStep()
 }
 
+sealed interface AssessmentUiEvent {
+    data object SaveFailed : AssessmentUiEvent
+}
+
 /**
  * ViewModel for the multi-step strength assessment wizard.
  *
@@ -77,6 +85,9 @@ class AssessmentViewModel(
 
     private val _exercises = MutableStateFlow<List<Exercise>>(emptyList())
     val exercises: StateFlow<List<Exercise>> = _exercises.asStateFlow()
+
+    private val _events = MutableSharedFlow<AssessmentUiEvent>(extraBufferCapacity = 1)
+    val events: SharedFlow<AssessmentUiEvent> = _events.asSharedFlow()
 
     private var selectedExercise: Exercise? = null
     private var assessmentStartTimeMs: Long = 0L
@@ -171,29 +182,11 @@ class AssessmentViewModel(
 
     private fun startAssessmentInternal() {
         assessmentStartTimeMs = currentTimeMillis()
-        val exercise = selectedExercise ?: return
-
-        // Calculate initial suggested weight.
-        // exercise.oneRepMaxKg is stored as per-cable in the DB.
-        // The wizard displays and works with TOTAL weight (what the user sees on the machine).
-        // Total weight = per-cable * 2.
-        val existingOneRm = exercise.oneRepMaxKg
-        val startingLoad = if (existingOneRm != null && existingOneRm > 0f) {
-            // Start at ~40% of total 1RM
-            (existingOneRm * 2f) * 0.4f
-        } else {
-            20f // Default starting weight (total)
-        }
-
-        // Use the engine to get a properly snapped suggestion
-        val suggestedWeight = assessmentEngine.suggestNextWeight(
-            currentLoadKg = startingLoad,
-            currentVelocity = 1.2f, // High velocity assumption for first set
-        )
+        if (selectedExercise == null) return
 
         _currentStep.value = AssessmentStep.ProgressiveLoading(
             currentSetNumber = 1,
-            suggestedWeightKg = suggestedWeight,
+            suggestedWeightKg = SAFE_STARTING_LOAD_TOTAL_KG,
             recordedSets = emptyList(),
             latestVelocity = null,
             shouldStop = false,
@@ -265,9 +258,11 @@ class AssessmentViewModel(
     /**
      * Accept the assessment result and save to database.
      *
+     * @param profileId Immutable owner captured by the assessment navigation route
      * @param overrideKg If non-null and > 0, replaces the estimated 1RM
      */
-    fun acceptResult(overrideKg: Float? = null) {
+    fun acceptResult(profileId: String, overrideKg: Float? = null) {
+        require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
         val exercise = selectedExercise ?: return
         val current = _currentStep.value
         if (current !is AssessmentStep.Results) return
@@ -318,6 +313,7 @@ class AssessmentViewModel(
                     totalReps = totalReps,
                     durationMs = durationMs,
                     weightPerCableKg = avgWeight / 2f,
+                    profileId = profileId,
                 )
 
                 _currentStep.value = AssessmentStep.Complete(
@@ -326,12 +322,18 @@ class AssessmentViewModel(
                 )
 
                 Logger.i("Assessment saved: ${exercise.displayName} -> $finalOneRm kg 1RM")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Logger.e("Failed to save assessment: ${e.message}")
-                // Return to results so user can retry
+                Logger.e(e) { "Failed to save assessment" }
                 _currentStep.value = current
+                _events.emit(AssessmentUiEvent.SaveFailed)
             }
         }
+    }
+
+    private companion object {
+        const val SAFE_STARTING_LOAD_TOTAL_KG = 20f
     }
 
     /**

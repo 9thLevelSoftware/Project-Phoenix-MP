@@ -25,18 +25,93 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.savedstate.read
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.screen.*
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
-import com.devil.phoenixproject.util.BackupDestination
+import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.insights_title
+import vitruvianprojectphoenix.shared.generated.resources.nav_profile
+
+internal sealed interface AssessmentProfileDestinationState {
+    data class Bound(val profileId: String) : AssessmentProfileDestinationState
+
+    data object Invalidated : AssessmentProfileDestinationState
+}
+
+internal fun resolveAssessmentProfileDestination(
+    routeProfileId: String,
+    context: ActiveProfileContext,
+): AssessmentProfileDestinationState = if (
+    routeProfileId.isNotBlank() &&
+    context is ActiveProfileContext.Ready &&
+    context.profile.id == routeProfileId
+) {
+    AssessmentProfileDestinationState.Bound(routeProfileId)
+} else {
+    AssessmentProfileDestinationState.Invalidated
+}
+
+@Composable
+private fun AssessmentDestination(
+    routeProfileId: String,
+    exerciseId: String?,
+    themeMode: ThemeMode,
+    metricsFlow: StateFlow<WorkoutMetric?>,
+    onNavigateBack: () -> Unit,
+) {
+    val profileRepository: UserProfileRepository = koinInject()
+    val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
+    val destinationState = resolveAssessmentProfileDestination(
+        routeProfileId = routeProfileId,
+        context = activeProfileContext,
+    )
+    LaunchedEffect(destinationState) {
+        if (destinationState == AssessmentProfileDestinationState.Invalidated) {
+            onNavigateBack()
+        }
+    }
+
+    when (destinationState) {
+        is AssessmentProfileDestinationState.Bound -> {
+            val assessmentViewModel: AssessmentViewModel = koinViewModel()
+            AssessmentWizardScreen(
+                viewModel = assessmentViewModel,
+                profileId = destinationState.profileId,
+                exerciseId = exerciseId,
+                themeMode = themeMode,
+                onNavigateBack = onNavigateBack,
+                metricsFlow = metricsFlow,
+            )
+        }
+
+        AssessmentProfileDestinationState.Invalidated -> Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            LoadingIndicator(LoadingIndicatorSize.Large)
+        }
+    }
+}
+
+@Composable
+private fun readyAssessmentProfileId(): String? {
+    val profileRepository: UserProfileRepository = koinInject()
+    val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
+    return (activeProfileContext as? ActiveProfileContext.Ready)?.profile?.id
+}
 
 /**
  * Main navigation graph for the app.
@@ -53,6 +128,8 @@ fun NavGraph(
     dynamicColorAvailable: Boolean,
     dynamicColorEnabled: Boolean,
     onDynamicColorEnabledChange: (Boolean) -> Unit,
+    onOpenProfileSwitcher: () -> Unit,
+    onProfileRecoveryRequired: (ProfileContextRecoveryException) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     SharedTransitionLayout {
@@ -244,11 +321,15 @@ fun NavGraph(
                 popEnterTransition = { NavTransitions.tabFadeEnter() },
                 popExitTransition = { NavTransitions.tabFadeExit() },
             ) {
+                val assessmentProfileId = readyAssessmentProfileId()
                 AnalyticsScreen(
                     viewModel = viewModel,
                     themeMode = themeMode,
-                    onNavigateToStrengthAssessment = {
-                        navController.navigate(NavigationRoutes.StrengthAssessmentPicker.route)
+                    assessmentProfileId = assessmentProfileId,
+                    onNavigateToStrengthAssessment = { profileId ->
+                        navController.navigate(
+                            NavigationRoutes.StrengthAssessmentPicker.createRoute(profileId),
+                        )
                     },
                 )
             }
@@ -268,6 +349,44 @@ fun NavGraph(
                     viewModel.updateTopBarTitle(insightsTitle)
                 }
                 SmartInsightsTab()
+            }
+
+            composable(
+                route = NavigationRoutes.Profile.route,
+                enterTransition = { NavTransitions.tabFadeEnter() },
+                exitTransition = { NavTransitions.tabFadeExit() },
+                popEnterTransition = { NavTransitions.tabFadeEnter() },
+                popExitTransition = { NavTransitions.tabFadeExit() },
+            ) {
+                val profileTitle = stringResource(Res.string.nav_profile)
+                val userPreferences by viewModel.userPreferences.collectAsState()
+                val connectionState by viewModel.connectionState.collectAsState()
+                val discoModeActive by viewModel.discoModeActive.collectAsState()
+                LaunchedEffect(profileTitle) {
+                    viewModel.updateTopBarTitle(profileTitle)
+                }
+                ProfileScreen(
+                    onOpenProfileSwitcher = onOpenProfileSwitcher,
+                    onNavigateToExerciseDetail = { exerciseId ->
+                        navController.navigate(
+                            NavigationRoutes.ExerciseDetail.createRoute(exerciseId),
+                        )
+                    },
+                    onNavigateToEquipmentRack = {
+                        navController.navigate(NavigationRoutes.EquipmentRack.route)
+                    },
+                    onNavigateToBadges = {
+                        navController.navigate(NavigationRoutes.Badges.route)
+                    },
+                    onProfileRecoveryRequired = onProfileRecoveryRequired,
+                    isConnected = connectionState is ConnectionState.Connected,
+                    discoModeActive = discoModeActive,
+                    onDiscoModeToggle = viewModel::toggleDiscoMode,
+                    onPlayDiscoUnlockSound = viewModel::emitDiscoSound,
+                    onPlayDominatrixUnlockSound = viewModel::emitDominatrixUnlockSound,
+                    enableVideoPlayback = userPreferences.enableVideoPlayback,
+                    themeMode = themeMode,
+                )
             }
 
             // Exercise Detail screen - drill-down for individual exercise
@@ -309,11 +428,18 @@ fun NavGraph(
                     return@composable
                 }
 
+                val assessmentProfileId = readyAssessmentProfileId()
                 ExerciseDetailScreen(
                     exerciseId = exerciseId,
                     navController = navController,
                     viewModel = viewModel,
                     themeMode = themeMode,
+                    assessmentProfileId = assessmentProfileId,
+                    onNavigateToStrengthAssessment = { profileId ->
+                        navController.navigate(
+                            NavigationRoutes.StrengthAssessment.createRoute(profileId, exerciseId),
+                        )
+                    },
                 )
             }
 
@@ -325,122 +451,46 @@ fun NavGraph(
                 popEnterTransition = { NavTransitions.tabFadeEnter() },
                 popExitTransition = { NavTransitions.tabFadeExit() },
             ) {
-                val weightUnit by viewModel.weightUnit.collectAsState()
-                val userPreferences by viewModel.userPreferences.collectAsState()
+                val globalSettings by viewModel.globalSettings.collectAsState()
                 val connectionError by viewModel.connectionError.collectAsState()
-                val connectionState by viewModel.connectionState.collectAsState()
-                val discoModeActive by viewModel.discoModeActive.collectAsState()
                 val backupStats by viewModel.backupStats.collectAsState()
                 // Refresh backup stats when Settings screen is displayed
-                androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshBackupStats() }
+                LaunchedEffect(Unit) { viewModel.refreshBackupStats() }
                 SettingsTab(
-                    weightUnit = weightUnit,
-                    enableVideoPlayback = userPreferences.enableVideoPlayback,
+                    enableVideoPlayback = globalSettings.enableVideoPlayback,
                     themeMode = themeMode,
                     dynamicColorAvailable = dynamicColorAvailable,
                     dynamicColorEnabled = dynamicColorEnabled,
-                    audioRepCountEnabled = userPreferences.audioRepCountEnabled,
-                    countdownBeepsEnabled = userPreferences.countdownBeepsEnabled,
-                    repSoundEnabled = userPreferences.repSoundEnabled,
-                    onCountdownBeepsChange = { viewModel.setCountdownBeepsEnabled(it) },
-                    onRepSoundChange = { viewModel.setRepSoundEnabled(it) },
-                    motionStartEnabled = userPreferences.motionStartEnabled,
-                    onMotionStartChange = { viewModel.setMotionStartEnabled(it) },
-                    autoStartRoutine = userPreferences.autoStartRoutine,
-                    onAutoStartRoutineChange = { viewModel.setAutoStartRoutine(it) },
-                    weightSuggestionsEnabled = userPreferences.weightSuggestionsEnabled,
-                    onWeightSuggestionsEnabledChange = { viewModel.setWeightSuggestionsEnabled(it) },
-                    summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
-                    autoStartCountdownSeconds = userPreferences.autoStartCountdownSeconds,
-                    selectedColorSchemeIndex = userPreferences.colorScheme,
-                    onWeightUnitChange = { viewModel.setWeightUnit(it) },
-                    onEnableVideoPlaybackChange = { viewModel.setEnableVideoPlayback(it) },
+                    onEnableVideoPlaybackChange = viewModel::setEnableVideoPlayback,
                     onThemeModeChange = onThemeModeChange,
                     onDynamicColorEnabledChange = onDynamicColorEnabledChange,
-                    onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
-                    onSummaryCountdownChange = { viewModel.setSummaryCountdownSeconds(it) },
-                    onAutoStartCountdownChange = { viewModel.setAutoStartCountdownSeconds(it) },
-                    onColorSchemeChange = { viewModel.setColorScheme(it) },
-                    onDeleteAllWorkouts = { viewModel.deleteAllWorkouts() },
-                    onNavigateToConnectionLogs = { navController.navigate(NavigationRoutes.ConnectionLogs.route) },
-                    onNavigateToDiagnostics = { navController.navigate(NavigationRoutes.Diagnostics.route) },
-                    onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) },
-                    onNavigateToLinkAccount = { navController.navigate(NavigationRoutes.LinkAccount.route) },
-                    onNavigateToIntegrations = { navController.navigate(NavigationRoutes.Integrations.route) },
-                    onNavigateToEquipmentRack = { navController.navigate(NavigationRoutes.EquipmentRack.route) },
+                    onDeleteAllWorkouts = viewModel::deleteAllWorkouts,
+                    onNavigateToConnectionLogs = {
+                        navController.navigate(NavigationRoutes.ConnectionLogs.route)
+                    },
+                    onNavigateToDiagnostics = {
+                        navController.navigate(NavigationRoutes.Diagnostics.route)
+                    },
+                    onNavigateToLinkAccount = {
+                        navController.navigate(NavigationRoutes.LinkAccount.route)
+                    },
+                    onNavigateToIntegrations = {
+                        navController.navigate(NavigationRoutes.Integrations.route)
+                    },
                     connectionError = connectionError,
-                    onClearConnectionError = { viewModel.clearConnectionError() },
-                    onCancelAutoConnecting = { viewModel.cancelAutoConnecting() },
-                    onSetTitle = { viewModel.updateTopBarTitle(it) },
-                    // Disco mode Easter egg
-                    discoModeUnlocked = userPreferences.discoModeUnlocked,
-                    discoModeActive = discoModeActive,
-                    isConnected = connectionState is com.devil.phoenixproject.domain.model.ConnectionState.Connected,
-                    onDiscoModeUnlocked = { viewModel.unlockDiscoMode() },
-                    onDiscoModeToggle = { viewModel.toggleDiscoMode(it) },
-                    onPlayDiscoSound = { viewModel.emitDiscoSound() },
-                    onTestSounds = { viewModel.testSounds() },
-                    // Gamification toggle
-                    gamificationEnabled = userPreferences.gamificationEnabled,
-                    onGamificationEnabledChange = { viewModel.setGamificationEnabled(it) },
-                    // Issue #333: BLE small-MTU compatibility path
-                    bleCompatibilityMode = userPreferences.bleCompatibilityMode,
-                    onBleCompatibilityModeChange = { viewModel.setBleCompatibilityMode(it) },
-                    // Auto-backup (Phase 36)
-                    autoBackupEnabled = userPreferences.autoBackupEnabled,
-                    onAutoBackupEnabledChange = { viewModel.setAutoBackupEnabled(it) },
+                    onClearConnectionError = viewModel::clearConnectionError,
+                    onSetTitle = viewModel::updateTopBarTitle,
+                    onTestSounds = viewModel::testSounds,
+                    bleCompatibilityMode = globalSettings.bleCompatibilityMode,
+                    onBleCompatibilityModeChange = viewModel::setBleCompatibilityMode,
+                    autoBackupEnabled = globalSettings.autoBackupEnabled,
+                    onAutoBackupEnabledChange = viewModel::setAutoBackupEnabled,
                     backupStats = backupStats,
-                    onOpenBackupFolder = { viewModel.openBackupFolder() },
-                    // Custom backup destination (Phase 42)
-                    backupDestination = userPreferences.backupDestination,
-                    onBackupDestinationChange = { viewModel.setBackupDestination(it) },
-                    // Language preference
-                    selectedLanguage = userPreferences.language,
-                    onLanguageChange = { viewModel.setLanguage(it) },
-                    // Issue #141: Voice emergency stop
-                    voiceStopEnabled = userPreferences.voiceStopEnabled,
-                    onVoiceStopEnabledChange = { viewModel.setVoiceStopEnabled(it) },
-                    safeWord = userPreferences.safeWord,
-                    onSafeWordChange = { viewModel.setSafeWord(it) },
-                    safeWordCalibrated = userPreferences.safeWordCalibrated,
-                    onSafeWordCalibratedChange = { viewModel.setSafeWordCalibrated(it) },
-                    // Issue #266: Configurable weight increment
-                    weightIncrement = userPreferences.weightIncrement,
-                    onWeightIncrementChange = { viewModel.setWeightIncrement(it) },
-                    // Issue #229: Body weight for bodyweight exercise volume
-                    bodyWeightKg = userPreferences.bodyWeightKg,
-                    onBodyWeightKgChange = { viewModel.setBodyWeightKg(it) },
-                    // Issue #313: VBT power loss threshold
-                    velocityLossThresholdPercent = userPreferences.velocityLossThresholdPercent,
-                    onVelocityLossThresholdChange = { viewModel.setVelocityLossThreshold(it) },
-                    autoEndOnVelocityLoss = userPreferences.autoEndOnVelocityLoss,
-                    onAutoEndOnVelocityLossChange = { viewModel.setAutoEndOnVelocityLoss(it) },
-                    // Issue #517: system-wide default scaling basis
-                    defaultScalingBasis = userPreferences.defaultScalingBasis,
-                    onDefaultScalingBasisChange = { viewModel.setDefaultScalingBasis(it) },
-                    // Issue #595: routine-builder defaults for newly added cable exercises
-                    defaultRoutineExerciseUsePercentOfPR = userPreferences.defaultRoutineExerciseUsePercentOfPR,
-                    defaultRoutineExerciseWeightPercentOfPR = userPreferences.defaultRoutineExerciseWeightPercentOfPR,
-                    onDefaultRoutineExerciseUsePercentOfPRChange = { viewModel.setDefaultRoutineExerciseUsePercentOfPR(it) },
-                    onDefaultRoutineExerciseWeightPercentOfPRChange = { viewModel.setDefaultRoutineExerciseWeightPercentOfPR(it) },
-                    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
-                    verbalEncouragementEnabled = userPreferences.verbalEncouragementEnabled,
-                    onVerbalEncouragementEnabledChange = { viewModel.setVerbalEncouragementEnabled(it) },
-                    vulgarModeEnabled = userPreferences.vulgarModeEnabled,
-                    onVulgarModeEnabledChange = { viewModel.setVulgarModeEnabled(it) },
-                    vulgarTier = userPreferences.vulgarTier,
-                    onVulgarTierChange = { viewModel.setVulgarTier(it) },
-                    dominatrixModeUnlocked = userPreferences.dominatrixModeUnlocked,
-                    onDominatrixModeUnlockedChange = { viewModel.setDominatrixModeUnlocked(it) },
-                    dominatrixModeActive = userPreferences.dominatrixModeActive,
-                    onDominatrixModeActiveChange = { viewModel.setDominatrixModeActive(it) },
-                    adultsOnlyConfirmed = userPreferences.adultsOnlyConfirmed,
-                    onAdultsOnlyConfirmedChange = { viewModel.setAdultsOnlyConfirmed(it) },
-                    // Issue #611: one-shot 18+ modal gate. Read reactively from
-                    // UserPreferences so NavGraph recomposes when the flag changes.
-                    adultsOnlyPrompted = userPreferences.adultsOnlyPrompted,
-                    onAdultsOnlyPromptedChange = { viewModel.setAdultsOnlyPrompted(it) },
-                    onPlayDominatrixUnlockSound = { viewModel.emitDominatrixUnlockSound() },
+                    onOpenBackupFolder = viewModel::openBackupFolder,
+                    backupDestination = globalSettings.backupDestination,
+                    onBackupDestinationChange = viewModel::setBackupDestination,
+                    selectedLanguage = globalSettings.language,
+                    onLanguageChange = viewModel::setLanguage,
                 )
             }
 
@@ -684,44 +734,7 @@ fun NavGraph(
             // Strength Assessment Picker - no exercise pre-selected
             composable(
                 route = NavigationRoutes.StrengthAssessmentPicker.route,
-                enterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300),
-                    )
-                },
-                exitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300),
-                    )
-                },
-                popEnterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300),
-                    )
-                },
-                popExitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300),
-                    )
-                },
-            ) {
-                val assessmentViewModel: AssessmentViewModel = koinInject()
-                AssessmentWizardScreen(
-                    viewModel = assessmentViewModel,
-                    themeMode = themeMode,
-                    onNavigateBack = { navController.popBackStack() },
-                    metricsFlow = viewModel.currentMetric,
-                )
-            }
-
-            // Strength Assessment with pre-selected exercise
-            composable(
-                route = NavigationRoutes.StrengthAssessment.route,
-                arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
+                arguments = listOf(navArgument("profileId") { type = NavType.StringType }),
                 enterTransition = {
                     slideIntoContainer(
                         towards = AnimatedContentTransitionScope.SlideDirection.Left,
@@ -747,10 +760,55 @@ fun NavGraph(
                     )
                 },
             ) { backStackEntry ->
-                val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") } ?: ""
-                val assessmentViewModel: AssessmentViewModel = koinInject()
-                AssessmentWizardScreen(
-                    viewModel = assessmentViewModel,
+                val profileId =
+                    backStackEntry.arguments?.read { getStringOrNull("profileId") }.orEmpty()
+                AssessmentDestination(
+                    routeProfileId = profileId,
+                    exerciseId = null,
+                    themeMode = themeMode,
+                    onNavigateBack = { navController.popBackStack() },
+                    metricsFlow = viewModel.currentMetric,
+                )
+            }
+
+            // Strength Assessment with pre-selected exercise
+            composable(
+                route = NavigationRoutes.StrengthAssessment.route,
+                arguments = listOf(
+                    navArgument("profileId") { type = NavType.StringType },
+                    navArgument("exerciseId") { type = NavType.StringType },
+                ),
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) { backStackEntry ->
+                val profileId =
+                    backStackEntry.arguments?.read { getStringOrNull("profileId") }.orEmpty()
+                val exerciseId =
+                    backStackEntry.arguments?.read { getStringOrNull("exerciseId") }.orEmpty()
+                AssessmentDestination(
+                    routeProfileId = profileId,
                     exerciseId = exerciseId,
                     themeMode = themeMode,
                     onNavigateBack = { navController.popBackStack() },

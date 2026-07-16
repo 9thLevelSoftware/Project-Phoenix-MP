@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "paddingMarker": "__ASCII_PADDING__",
+  "sectionMarker": "__SECTION_JSON__",
+  "sectionRawTemplate": "{\"localProfileId\":\"profile-a\",\"section\":\"RACK\",\"documentVersion\":1,\"baseRevision\":0,\"clientModifiedAt\":\"2026-07-11T12:00:00Z\",\"payload\":{\"version\":1,\"items\":[{\"id\":\"rack-a\",\"name\":\"π界🙂\\\"\\\\__ASCII_PADDING__\",\"category\":\"OTHER\",\"weightKg\":20.0,\"behavior\":\"DISPLAY_ONLY\",\"enabled\":true,\"sortOrder\":0,\"createdAt\":-1e3,\"updatedAt\":0}]}}",
+  "requestRawTemplate": "{\"deviceId\":\"golden-device\",\"platform\":\"android\",\"lastSync\":0,\"profileId\":\"profile-a\",\"profileName\":\"π界🙂\\\"\\\\__ASCII_PADDING__\",\"profilePreferenceSections\":[__SECTION_JSON__]}",
+  "sectionTargetBytes": [262143, 262144, 262145],
+  "requestTargetBytes": [524287, 524288, 524289]
+}

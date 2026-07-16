@@ -1,4 +1,4 @@
-package com.devil.phoenixproject.presentation.screen
+package com.devil.phoenixproject.presentation.components
 
 /**
  * Presentation policy for the adult-mode dialogs. This stays Compose-free so the
@@ -32,11 +32,6 @@ data class AdultModePresentation(
             usesBespokePinkAccent = false,
         )
 
-        fun shouldShowDominatrixHint(
-            verbalEncouragementEnabled: Boolean,
-            vulgarModeEnabled: Boolean,
-            dominatrixModeUnlocked: Boolean,
-        ): Boolean = verbalEncouragementEnabled && vulgarModeEnabled && !dominatrixModeUnlocked
     }
 }
 

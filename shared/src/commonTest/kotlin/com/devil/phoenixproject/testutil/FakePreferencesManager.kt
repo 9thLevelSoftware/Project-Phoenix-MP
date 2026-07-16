@@ -37,11 +37,11 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = preferences
     }
 
-    override suspend fun setWeightUnit(unit: WeightUnit) {
+    suspend fun setWeightUnit(unit: WeightUnit) {
         _preferencesFlow.value = _preferencesFlow.value.copy(weightUnit = unit)
     }
 
-    override suspend fun setStopAtTop(enabled: Boolean) {
+    suspend fun setStopAtTop(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(stopAtTop = enabled)
     }
 
@@ -49,79 +49,81 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(enableVideoPlayback = enabled)
     }
 
-    override suspend fun setBeepsEnabled(enabled: Boolean) {
+    suspend fun setBeepsEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(beepsEnabled = enabled)
     }
 
-    override suspend fun setColorScheme(scheme: Int) {
+    suspend fun setColorScheme(scheme: Int) {
         _preferencesFlow.value = _preferencesFlow.value.copy(colorScheme = scheme)
     }
 
-    override suspend fun setDiscoModeUnlocked(unlocked: Boolean) {
+    suspend fun setDiscoModeUnlocked(unlocked: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(discoModeUnlocked = unlocked)
     }
 
-    override suspend fun setAudioRepCountEnabled(enabled: Boolean) {
+    suspend fun setAudioRepCountEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(audioRepCountEnabled = enabled)
     }
 
+    @Deprecated("Legacy migration read only")
     override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? = exerciseDefaults[exerciseId]
 
-    override suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
+    suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
         exerciseDefaults[defaults.exerciseId] = defaults
     }
 
-    override suspend fun clearAllSingleExerciseDefaults() {
+    suspend fun clearAllSingleExerciseDefaults() {
         exerciseDefaults.clear()
     }
 
+    @Deprecated("Legacy migration read only")
     override suspend fun getJustLiftDefaults(): JustLiftDefaults = justLiftDefaults
 
-    override suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
+    suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         justLiftDefaults = defaults
     }
 
-    override suspend fun clearJustLiftDefaults() {
+    suspend fun clearJustLiftDefaults() {
         justLiftDefaults = JustLiftDefaults()
     }
 
-    override suspend fun setSummaryCountdownSeconds(seconds: Int) {
+    suspend fun setSummaryCountdownSeconds(seconds: Int) {
         _preferencesFlow.value = _preferencesFlow.value.copy(summaryCountdownSeconds = seconds)
     }
 
-    override suspend fun setAutoStartCountdownSeconds(seconds: Int) {
+    suspend fun setAutoStartCountdownSeconds(seconds: Int) {
         _preferencesFlow.value = _preferencesFlow.value.copy(autoStartCountdownSeconds = seconds)
     }
 
-    override suspend fun setRepCountTiming(timing: com.devil.phoenixproject.domain.model.RepCountTiming) {
+    suspend fun setRepCountTiming(timing: com.devil.phoenixproject.domain.model.RepCountTiming) {
         _preferencesFlow.value = _preferencesFlow.value.copy(repCountTiming = timing)
     }
 
-    override suspend fun setGamificationEnabled(enabled: Boolean) {
+    suspend fun setGamificationEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(gamificationEnabled = enabled)
     }
 
-    override suspend fun setWeightIncrement(increment: Float) {
+    suspend fun setWeightIncrement(increment: Float) {
         _preferencesFlow.value = _preferencesFlow.value.copy(weightIncrement = increment)
     }
 
-    override suspend fun setAutoStartRoutine(enabled: Boolean) {
+    suspend fun setAutoStartRoutine(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(autoStartRoutine = enabled)
     }
 
-    override suspend fun setBodyWeightKg(weightKg: Float) {
+    suspend fun setBodyWeightKg(weightKg: Float) {
         _preferencesFlow.value = _preferencesFlow.value.copy(bodyWeightKg = weightKg)
     }
 
-    override suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
+    suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(countdownBeepsEnabled = enabled)
     }
 
-    override suspend fun setRepSoundEnabled(enabled: Boolean) {
+    suspend fun setRepSoundEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(repSoundEnabled = enabled)
     }
 
-    override suspend fun setMotionStartEnabled(enabled: Boolean) {
+    suspend fun setMotionStartEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(motionStartEnabled = enabled)
     }
 
@@ -133,15 +135,15 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(language = language)
     }
 
-    override suspend fun setVoiceStopEnabled(enabled: Boolean) {
+    suspend fun setVoiceStopEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(voiceStopEnabled = enabled)
     }
 
-    override suspend fun setSafeWord(word: String?) {
+    suspend fun setSafeWord(word: String?) {
         _preferencesFlow.value = _preferencesFlow.value.copy(safeWord = word)
     }
 
-    override suspend fun setSafeWordCalibrated(calibrated: Boolean) {
+    suspend fun setSafeWordCalibrated(calibrated: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(safeWordCalibrated = calibrated)
     }
 
@@ -149,29 +151,29 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(backupDestination = destination)
     }
 
-    override suspend fun setVelocityLossThreshold(percent: Int) {
+    suspend fun setVelocityLossThreshold(percent: Int) {
         _preferencesFlow.value = _preferencesFlow.value.copy(
             velocityLossThresholdPercent = percent.coerceIn(10, 50),
         )
     }
 
-    override suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
+    suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(autoEndOnVelocityLoss = enabled)
     }
 
-    override suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
+    suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(weightSuggestionsEnabled = enabled)
     }
 
-    override suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
+    suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
         _preferencesFlow.value = _preferencesFlow.value.copy(defaultScalingBasis = basis)
     }
 
-    override suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) {
+    suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(defaultRoutineExerciseUsePercentOfPR = enabled)
     }
 
-    override suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) {
+    suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) {
         _preferencesFlow.value = _preferencesFlow.value.copy(defaultRoutineExerciseWeightPercentOfPR = percent.coerceIn(50, 120))
     }
 
@@ -181,7 +183,7 @@ class FakePreferencesManager : PreferencesManager {
 
     // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
     // Cascade invariants mirror SettingsPreferencesManager.
-    override suspend fun setVerbalEncouragementEnabled(enabled: Boolean) {
+    suspend fun setVerbalEncouragementEnabled(enabled: Boolean) {
         _preferencesFlow.value = if (!enabled) {
             _preferencesFlow.value.copy(
                 verbalEncouragementEnabled = false,
@@ -193,7 +195,7 @@ class FakePreferencesManager : PreferencesManager {
         }
     }
 
-    override suspend fun setVulgarModeEnabled(enabled: Boolean) {
+    suspend fun setVulgarModeEnabled(enabled: Boolean) {
         val current = _preferencesFlow.value
         if (enabled && !current.adultsOnlyConfirmed) return
         _preferencesFlow.value = if (!enabled) {
@@ -203,15 +205,15 @@ class FakePreferencesManager : PreferencesManager {
         }
     }
 
-    override suspend fun setVulgarTier(tier: VulgarTier) {
+    suspend fun setVulgarTier(tier: VulgarTier) {
         _preferencesFlow.value = _preferencesFlow.value.copy(vulgarTier = tier)
     }
 
-    override suspend fun setDominatrixModeUnlocked(unlocked: Boolean) {
+    suspend fun setDominatrixModeUnlocked(unlocked: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(dominatrixModeUnlocked = unlocked)
     }
 
-    override suspend fun setDominatrixModeActive(active: Boolean) {
+    suspend fun setDominatrixModeActive(active: Boolean) {
         val current = _preferencesFlow.value
         if (active && (!current.dominatrixModeUnlocked || !current.vulgarModeEnabled || !current.adultsOnlyConfirmed)) {
             return
@@ -219,7 +221,7 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = current.copy(dominatrixModeActive = active)
     }
 
-    override suspend fun setAdultsOnlyConfirmed(confirmed: Boolean) {
+    suspend fun setAdultsOnlyConfirmed(confirmed: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(adultsOnlyConfirmed = confirmed)
         // Issue #611 (PR-followup #613): confirm implies prompted (one-shot flag
         // becomes irrelevant after confirm; mirror SettingsPreferencesManager).
@@ -234,9 +236,9 @@ class FakePreferencesManager : PreferencesManager {
     // for the 18+ Adults Only modal. Lives outside UserPreferences because the
     // modal-call site is the only consumer (architecture §3 — follow
     // DiscoModeUnlockDialog pattern).
-    override fun isAdultsOnlyPrompted(): Boolean = _adultsOnlyPrompted
+    fun isAdultsOnlyPrompted(): Boolean = _adultsOnlyPrompted
 
-    override fun setAdultsOnlyPrompted(prompted: Boolean) {
+    fun setAdultsOnlyPrompted(prompted: Boolean) {
         _adultsOnlyPrompted = prompted
     }
 }

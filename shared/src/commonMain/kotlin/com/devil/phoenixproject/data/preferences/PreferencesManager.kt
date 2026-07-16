@@ -106,93 +106,18 @@ data class JustLiftDefaults(
 interface PreferencesManager {
     val preferencesFlow: StateFlow<UserPreferences>
 
-    suspend fun setWeightUnit(unit: WeightUnit)
-
-    // Issue #167: setAutoplayEnabled removed - autoplay now derived from summaryCountdownSeconds
-    suspend fun setStopAtTop(enabled: Boolean)
     suspend fun setEnableVideoPlayback(enabled: Boolean)
-    suspend fun setBeepsEnabled(enabled: Boolean)
-    suspend fun setColorScheme(scheme: Int)
-    suspend fun setDiscoModeUnlocked(unlocked: Boolean)
-    suspend fun setAudioRepCountEnabled(enabled: Boolean)
-    suspend fun setRepCountTiming(timing: RepCountTiming)
-    suspend fun setSummaryCountdownSeconds(seconds: Int)
-    suspend fun setAutoStartCountdownSeconds(seconds: Int)
-    suspend fun setGamificationEnabled(enabled: Boolean)
-
-    // Issue #266: Configurable weight increment
-    suspend fun setWeightIncrement(increment: Float)
-
-    // Issue #190: Auto-start routine
-    suspend fun setAutoStartRoutine(enabled: Boolean)
-
-    // Issue #229: Body weight for bodyweight exercise volume
-    suspend fun setBodyWeightKg(weightKg: Float)
-
-    // Issue #100: Per-sound toggles
-    suspend fun setCountdownBeepsEnabled(enabled: Boolean)
-    suspend fun setRepSoundEnabled(enabled: Boolean)
-
-    // Issue #237: Motion-triggered set start
-    suspend fun setMotionStartEnabled(enabled: Boolean)
-
-    // Issue #293: Per-session auto-backup
     suspend fun setAutoBackupEnabled(enabled: Boolean)
-
-    // Issue #293: Custom backup destination
     suspend fun setBackupDestination(destination: BackupDestination)
-
-    // Issue #238: Language/locale preference
     suspend fun setLanguage(language: String)
-
-    // Issue #141: Voice-activated emergency stop
-    suspend fun setVoiceStopEnabled(enabled: Boolean)
-    suspend fun setSafeWord(word: String?)
-    suspend fun setSafeWordCalibrated(calibrated: Boolean)
-
-    // Issue #313: Velocity-Based Training (VBT)
-    suspend fun setVelocityLossThreshold(percent: Int)
-    suspend fun setAutoEndOnVelocityLoss(enabled: Boolean)
-
-    // Issue #424: Suggestion-only next-set weight recommendations
-    suspend fun setWeightSuggestionsEnabled(enabled: Boolean)
-
-    // Issue #517: Default scaling basis for % of 1RM routine weight resolution
-    suspend fun setDefaultScalingBasis(basis: ScalingBasis)
-
-    // Issue #595: Routine-builder defaults for newly added exercises
-    suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean)
-    suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int)
-
-    // Issue #517: Run-once flag for velocity 1RM backfill
     suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean)
-
-    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
-    suspend fun setVerbalEncouragementEnabled(enabled: Boolean)
-    suspend fun setVulgarModeEnabled(enabled: Boolean)
-    suspend fun setVulgarTier(tier: VulgarTier)
-    suspend fun setDominatrixModeUnlocked(unlocked: Boolean)
-    suspend fun setDominatrixModeActive(active: Boolean)
-    suspend fun setAdultsOnlyConfirmed(confirmed: Boolean)
-
-    // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
     suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting)
 
-    // Issue #611 (PR-followup #613): One-shot decline-remember gate for the 18+
-    // Adults Only modal. The modal must not re-prompt on subsequent vulgar-on toggles
-    // once either confirm OR decline has been recorded (architecture §3 — follow
-    // DiscoModeUnlockDialog pattern). Booleans stored in
-    // KEY_ADULTS_ONLY_PROMPTED; not exposed via UserPreferences.
-    fun isAdultsOnlyPrompted(): Boolean
-    fun setAdultsOnlyPrompted(prompted: Boolean)
-
+    @Deprecated("Legacy migration read only")
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
-    suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
-    suspend fun clearAllSingleExerciseDefaults()
 
+    @Deprecated("Legacy migration read only")
     suspend fun getJustLiftDefaults(): JustLiftDefaults
-    suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults)
-    suspend fun clearJustLiftDefaults()
 }
 
 /**
@@ -223,10 +148,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_SUMMARY_COUNTDOWN_SECONDS = "summary_countdown_seconds"
         private const val KEY_AUTOSTART_COUNTDOWN_SECONDS = "autostart_countdown_seconds"
         private const val KEY_REP_COUNT_TIMING = "rep_count_timing"
-        private const val KEY_JUST_LIFT_DEFAULTS = "just_lift_defaults"
-        private const val KEY_PREFIX_EXERCISE = "exercise_defaults_"
-        private const val KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT = "echo_hard_default_migrated_just_lift"
-        private const val KEY_ECHO_HARD_DEFAULT_MIGRATION_EXERCISE_PREFIX = "echo_hard_default_migrated_exercise_"
         private const val KEY_GAMIFICATION_ENABLED = "gamification_enabled"
         private const val KEY_WEIGHT_INCREMENT = "weight_increment"
         private const val KEY_AUTO_START_ROUTINE = "auto_start_routine"
@@ -341,14 +262,16 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         _preferencesFlow.update { it.update() }
     }
 
-    override suspend fun setWeightUnit(unit: WeightUnit) {
+    // Legacy migration-source writers are intentionally internal and absent from
+    // PreferencesManager. They remain only for migration normalization tests.
+    internal suspend fun setWeightUnit(unit: WeightUnit) {
         settings.putString(KEY_WEIGHT_UNIT, unit.name)
         updateAndEmit { copy(weightUnit = unit) }
     }
 
     // Issue #167: setAutoplayEnabled removed - autoplay now derived from summaryCountdownSeconds
 
-    override suspend fun setStopAtTop(enabled: Boolean) {
+    internal suspend fun setStopAtTop(enabled: Boolean) {
         settings.putBoolean(KEY_STOP_AT_TOP, enabled)
         updateAndEmit { copy(stopAtTop = enabled) }
     }
@@ -358,36 +281,36 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(enableVideoPlayback = enabled) }
     }
 
-    override suspend fun setBeepsEnabled(enabled: Boolean) {
+    internal suspend fun setBeepsEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_BEEPS_ENABLED, enabled)
         updateAndEmit { copy(beepsEnabled = enabled) }
     }
 
-    override suspend fun setColorScheme(scheme: Int) {
+    internal suspend fun setColorScheme(scheme: Int) {
         settings.putInt(KEY_COLOR_SCHEME, scheme)
         updateAndEmit { copy(colorScheme = scheme) }
     }
-    override suspend fun setDiscoModeUnlocked(unlocked: Boolean) {
+    internal suspend fun setDiscoModeUnlocked(unlocked: Boolean) {
         settings.putBoolean(KEY_DISCO_MODE_UNLOCKED, unlocked)
         updateAndEmit { copy(discoModeUnlocked = unlocked) }
     }
 
-    override suspend fun setAudioRepCountEnabled(enabled: Boolean) {
+    internal suspend fun setAudioRepCountEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_AUDIO_REP_COUNT, enabled)
         updateAndEmit { copy(audioRepCountEnabled = enabled) }
     }
 
-    override suspend fun setRepCountTiming(timing: RepCountTiming) {
+    internal suspend fun setRepCountTiming(timing: RepCountTiming) {
         settings.putString(KEY_REP_COUNT_TIMING, timing.name)
         updateAndEmit { copy(repCountTiming = timing) }
     }
 
-    override suspend fun setSummaryCountdownSeconds(seconds: Int) {
+    internal suspend fun setSummaryCountdownSeconds(seconds: Int) {
         settings.putInt(KEY_SUMMARY_COUNTDOWN_SECONDS, seconds)
         updateAndEmit { copy(summaryCountdownSeconds = seconds) }
     }
 
-    override suspend fun setAutoStartCountdownSeconds(seconds: Int) {
+    internal suspend fun setAutoStartCountdownSeconds(seconds: Int) {
         settings.putInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, seconds)
         updateAndEmit { copy(autoStartCountdownSeconds = seconds) }
     }
@@ -398,8 +321,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         settings.putBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, shown)
     }
 
+    @Deprecated("Legacy migration read only")
     override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? {
-        val key = "$KEY_PREFIX_EXERCISE$exerciseId"
+        val key = "${LegacyProfilePreferenceKeys.EXERCISE_PREFIX}$exerciseId"
 
         // Try new key format first
         var jsonString = settings.getStringOrNull(key)
@@ -408,7 +332,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         if (jsonString == null) {
             val legacyCableConfigs = listOf("DOUBLE", "SINGLE", "EITHER")
             for (cableConfig in legacyCableConfigs) {
-                val legacyKey = "${KEY_PREFIX_EXERCISE}${exerciseId}_$cableConfig"
+                val legacyKey = "${LegacyProfilePreferenceKeys.EXERCISE_PREFIX}${exerciseId}_$cableConfig"
                 jsonString = settings.getStringOrNull(legacyKey)
                 if (jsonString != null) {
                     // Found with legacy key - migrate to new format
@@ -432,22 +356,23 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         }
     }
 
-    override suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
+    internal suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
         val normalizedDefaults = defaults.withNormalizedNonEchoEchoLevel()
-        val key = "$KEY_PREFIX_EXERCISE${defaults.exerciseId}"
+        val key = "${LegacyProfilePreferenceKeys.EXERCISE_PREFIX}${defaults.exerciseId}"
         settings.putString(key, json.encodeToString(normalizedDefaults))
         settings.putBoolean(getEchoHardDefaultMigrationKey(defaults.exerciseId), true)
     }
 
-    override suspend fun clearAllSingleExerciseDefaults() {
+    internal suspend fun clearAllSingleExerciseDefaults() {
         // Get all keys and remove those starting with exercise prefix
-        settings.keys.filter { it.startsWith(KEY_PREFIX_EXERCISE) }.forEach { key ->
+        settings.keys.filter { it.startsWith(LegacyProfilePreferenceKeys.EXERCISE_PREFIX) }.forEach { key ->
             settings.remove(key)
         }
     }
 
+    @Deprecated("Legacy migration read only")
     override suspend fun getJustLiftDefaults(): JustLiftDefaults {
-        val jsonString = settings.getStringOrNull(KEY_JUST_LIFT_DEFAULTS) ?: return JustLiftDefaults()
+        val jsonString = settings.getStringOrNull(LegacyProfilePreferenceKeys.JUST_LIFT) ?: return JustLiftDefaults()
         return try {
             migrateSavedEchoHardDefault(json.decodeFromString<JustLiftDefaults>(jsonString))
         } catch (_: Exception) {
@@ -455,24 +380,24 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         }
     }
 
-    override suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
+    internal suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         val normalizedDefaults = defaults.withNormalizedNonEchoEchoLevel()
-        settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(normalizedDefaults))
-        settings.putBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, true)
+        settings.putString(LegacyProfilePreferenceKeys.JUST_LIFT, json.encodeToString(normalizedDefaults))
+        settings.putBoolean(LegacyProfilePreferenceKeys.ECHO_HARD_MIGRATION_JUST_LIFT, true)
     }
 
-    override suspend fun clearJustLiftDefaults() {
-        settings.remove(KEY_JUST_LIFT_DEFAULTS)
+    internal suspend fun clearJustLiftDefaults() {
+        settings.remove(LegacyProfilePreferenceKeys.JUST_LIFT)
     }
 
     private fun migrateSavedEchoHardDefault(defaults: JustLiftDefaults): JustLiftDefaults {
-        if (settings.getBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, false)) return defaults
+        if (settings.getBoolean(LegacyProfilePreferenceKeys.ECHO_HARD_MIGRATION_JUST_LIFT, false)) return defaults
 
-        settings.putBoolean(KEY_ECHO_HARD_DEFAULT_MIGRATION_JUST_LIFT, true)
+        settings.putBoolean(LegacyProfilePreferenceKeys.ECHO_HARD_MIGRATION_JUST_LIFT, true)
         if (defaults.echoLevelValue != EchoLevel.HARD.levelValue) return defaults
 
         val migrated = defaults.copy(echoLevelValue = EchoLevel.HARDER.levelValue)
-        settings.putString(KEY_JUST_LIFT_DEFAULTS, json.encodeToString(migrated))
+        settings.putString(LegacyProfilePreferenceKeys.JUST_LIFT, json.encodeToString(migrated))
         return migrated
     }
 
@@ -493,7 +418,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     private fun getEchoHardDefaultMigrationKey(exerciseId: String): String =
-        "$KEY_ECHO_HARD_DEFAULT_MIGRATION_EXERCISE_PREFIX$exerciseId"
+        "${LegacyProfilePreferenceKeys.ECHO_HARD_MIGRATION_EXERCISE_PREFIX}$exerciseId"
 
     private fun SingleExerciseDefaults.withNormalizedNonEchoEchoLevel(): SingleExerciseDefaults =
         if (workoutModeId != ProgramMode.Echo.modeValue && echoLevelValue == EchoLevel.HARD.levelValue) {
@@ -509,37 +434,37 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             this
         }
 
-    override suspend fun setGamificationEnabled(enabled: Boolean) {
+    internal suspend fun setGamificationEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_GAMIFICATION_ENABLED, enabled)
         updateAndEmit { copy(gamificationEnabled = enabled) }
     }
 
-    override suspend fun setWeightIncrement(increment: Float) {
+    internal suspend fun setWeightIncrement(increment: Float) {
         settings.putFloat(KEY_WEIGHT_INCREMENT, increment)
         updateAndEmit { copy(weightIncrement = increment) }
     }
 
-    override suspend fun setAutoStartRoutine(enabled: Boolean) {
+    internal suspend fun setAutoStartRoutine(enabled: Boolean) {
         settings.putBoolean(KEY_AUTO_START_ROUTINE, enabled)
         updateAndEmit { copy(autoStartRoutine = enabled) }
     }
 
-    override suspend fun setBodyWeightKg(weightKg: Float) {
+    internal suspend fun setBodyWeightKg(weightKg: Float) {
         settings.putFloat(KEY_BODY_WEIGHT_KG, weightKg)
         updateAndEmit { copy(bodyWeightKg = weightKg) }
     }
 
-    override suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
+    internal suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_COUNTDOWN_BEEPS_ENABLED, enabled)
         updateAndEmit { copy(countdownBeepsEnabled = enabled) }
     }
 
-    override suspend fun setRepSoundEnabled(enabled: Boolean) {
+    internal suspend fun setRepSoundEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_REP_SOUND_ENABLED, enabled)
         updateAndEmit { copy(repSoundEnabled = enabled) }
     }
 
-    override suspend fun setMotionStartEnabled(enabled: Boolean) {
+    internal suspend fun setMotionStartEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_MOTION_START, enabled)
         updateAndEmit { copy(motionStartEnabled = enabled) }
     }
@@ -559,12 +484,12 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(language = language) }
     }
 
-    override suspend fun setVoiceStopEnabled(enabled: Boolean) {
+    internal suspend fun setVoiceStopEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_VOICE_STOP_ENABLED, enabled)
         updateAndEmit { copy(voiceStopEnabled = enabled) }
     }
 
-    override suspend fun setSafeWord(word: String?) {
+    internal suspend fun setSafeWord(word: String?) {
         if (word != null) {
             settings.putString(KEY_SAFE_WORD, word)
         } else {
@@ -573,38 +498,38 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(safeWord = word) }
     }
 
-    override suspend fun setSafeWordCalibrated(calibrated: Boolean) {
+    internal suspend fun setSafeWordCalibrated(calibrated: Boolean) {
         settings.putBoolean(KEY_SAFE_WORD_CALIBRATED, calibrated)
         updateAndEmit { copy(safeWordCalibrated = calibrated) }
     }
 
-    override suspend fun setVelocityLossThreshold(percent: Int) {
+    internal suspend fun setVelocityLossThreshold(percent: Int) {
         val clamped = percent.coerceIn(10, 50)
         settings.putInt(KEY_VELOCITY_LOSS_THRESHOLD, clamped)
         updateAndEmit { copy(velocityLossThresholdPercent = clamped) }
     }
 
-    override suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
+    internal suspend fun setAutoEndOnVelocityLoss(enabled: Boolean) {
         settings.putBoolean(KEY_AUTO_END_VELOCITY_LOSS, enabled)
         updateAndEmit { copy(autoEndOnVelocityLoss = enabled) }
     }
 
-    override suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
+    internal suspend fun setWeightSuggestionsEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_WEIGHT_SUGGESTIONS_ENABLED, enabled)
         updateAndEmit { copy(weightSuggestionsEnabled = enabled) }
     }
 
-    override suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
+    internal suspend fun setDefaultScalingBasis(basis: ScalingBasis) {
         settings.putString(KEY_DEFAULT_SCALING_BASIS, basis.name)
         updateAndEmit { copy(defaultScalingBasis = basis) }
     }
 
-    override suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) {
+    internal suspend fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) {
         settings.putBoolean(KEY_DEFAULT_ROUTINE_EXERCISE_USE_PERCENT_OF_PR, enabled)
         updateAndEmit { copy(defaultRoutineExerciseUsePercentOfPR = enabled) }
     }
 
-    override suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) {
+    internal suspend fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) {
         val clamped = percent.coerceIn(50, 120)
         settings.putInt(KEY_DEFAULT_ROUTINE_EXERCISE_WEIGHT_PERCENT_OF_PR, clamped)
         updateAndEmit { copy(defaultRoutineExerciseWeightPercentOfPR = clamped) }
@@ -616,7 +541,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
-    override suspend fun setVerbalEncouragementEnabled(enabled: Boolean) {
+    internal suspend fun setVerbalEncouragementEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_VERBAL_ENCOURAGEMENT_ENABLED, enabled)
         // Cascade invariant: master-off forces both vulgar-off AND dominatrix-off.
         if (!enabled) {
@@ -634,7 +559,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         }
     }
 
-    override suspend fun setVulgarModeEnabled(enabled: Boolean) {
+    internal suspend fun setVulgarModeEnabled(enabled: Boolean) {
         // Cascade invariant: prompted gates first vulgar-on activation.
         // UI must invoke the 18+ modal flow BEFORE calling this setter with enabled=true.
         // Checks prompted (not confirmed) so that users who declined can still enable later.
@@ -657,17 +582,17 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         }
     }
 
-    override suspend fun setVulgarTier(tier: VulgarTier) {
+    internal suspend fun setVulgarTier(tier: VulgarTier) {
         settings.putString(KEY_VULGAR_TIER, tier.name)
         updateAndEmit { copy(vulgarTier = tier) }
     }
 
-    override suspend fun setDominatrixModeUnlocked(unlocked: Boolean) {
+    internal suspend fun setDominatrixModeUnlocked(unlocked: Boolean) {
         settings.putBoolean(KEY_DOMINATRIX_MODE_UNLOCKED, unlocked)
         updateAndEmit { copy(dominatrixModeUnlocked = unlocked) }
     }
 
-    override suspend fun setDominatrixModeActive(active: Boolean) {
+    internal suspend fun setDominatrixModeActive(active: Boolean) {
         // Cascade invariant: dominatrix-on requires vulgar-on AND adultsConfirmed AND unlocked.
         if (active) {
             val current = _preferencesFlow.value
@@ -683,7 +608,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(dominatrixModeActive = active) }
     }
 
-    override suspend fun setAdultsOnlyConfirmed(confirmed: Boolean) {
+    internal suspend fun setAdultsOnlyConfirmed(confirmed: Boolean) {
         settings.putBoolean(KEY_ADULTS_ONLY_CONFIRMED, confirmed)
         // Confirmed implies prompted (the one-shot decline-remember flag is irrelevant after confirm).
         settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, true)
@@ -696,7 +621,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(bleCompatibilityMode = setting) }
     }
 
-    override fun isAdultsOnlyPrompted(): Boolean = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false)
+    internal fun isAdultsOnlyPrompted(): Boolean = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false)
 
     /**
      * Issue #611 (PR-followup #613): Persist the one-shot decline-remember flag
@@ -705,7 +630,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
      * [setAdultsOnlyConfirmed] which writes `KEY_ADULTS_ONLY_PROMPTED = true` on
      * the confirm path; this setter covers the decline path.
      */
-    override fun setAdultsOnlyPrompted(prompted: Boolean) {
+    internal fun setAdultsOnlyPrompted(prompted: Boolean) {
         settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, prompted)
         updateAndEmit { copy(adultsOnlyPrompted = prompted) }
     }

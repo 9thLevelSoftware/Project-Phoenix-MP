@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.e2e
 
-import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
+import androidx.lifecycle.viewModelScope
+import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
@@ -23,11 +24,13 @@ import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
-import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -55,6 +58,8 @@ class WorkoutFlowE2ETest {
     private lateinit var repCounter: RepCounterFromMachine
     private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
     private lateinit var robot: WorkoutRobot
+    private lateinit var fakeUserProfileRepository: FakeUserProfileRepository
+    private lateinit var profileEquipmentRackRepository: ProfileEquipmentRackRepository
 
     @Before
     fun setup() {
@@ -69,6 +74,11 @@ class WorkoutFlowE2ETest {
         fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
         resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository, FakeVelocityOneRepMaxRepository())
+        fakeUserProfileRepository = FakeUserProfileRepository().apply { setActiveProfileForTest() }
+        profileEquipmentRackRepository = ProfileEquipmentRackRepository(
+            fakeUserProfileRepository,
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main),
+        )
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
@@ -84,10 +94,10 @@ class WorkoutFlowE2ETest {
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
             recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase(),
-            equipmentRackRepository = SettingsEquipmentRackRepository(MapSettings()),
+            equipmentRackRepository = profileEquipmentRackRepository,
             applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase(),
             dataBackupManager = FakeDataBackupManager(),
-            userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
+            userProfileRepository = fakeUserProfileRepository,
             workoutServiceController = NoOpWorkoutServiceController,
             computeVelocityOneRepMaxUseCase = com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase(
                 workoutPoints = { _, _, _ -> emptyList() },
@@ -121,6 +131,12 @@ class WorkoutFlowE2ETest {
         )
 
         robot = WorkoutRobot(viewModel, fakeBleRepository)
+    }
+
+    @After
+    fun tearDown() {
+        viewModel.viewModelScope.cancel()
+        profileEquipmentRackRepository.close()
     }
 
     // ========== Connection Flow Tests ==========

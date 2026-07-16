@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.sync
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
+import com.devil.phoenixproject.testutil.FakeProfilePreferenceSyncRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
@@ -16,6 +17,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Tests covering the pull-side pagination contract:
@@ -45,6 +48,7 @@ class PortalPullPaginationTest {
     private val fakeUserProfileRepo = FakeUserProfileRepository()
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
     private val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
+    private val fakeProfilePreferenceSyncRepo = FakeProfilePreferenceSyncRepository()
 
     private fun createManager(rateLimiter: ClientRateLimiter = ClientRateLimiter()) = SyncManager(
         apiClient = fakeApi,
@@ -53,9 +57,11 @@ class PortalPullPaginationTest {
         gamificationRepository = fakeGamificationRepo,
         repMetricRepository = fakeRepMetricRepo,
         userProfileRepository = fakeUserProfileRepo,
+        profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
         externalActivityRepository = fakeExternalActivityRepo,
         velocityOneRepMaxRepository = fakeVelocityRepo,
         rateLimiter = rateLimiter,
+        isProfilePreferenceMigrationReady = { true },
     )
 
     private fun authenticate(userId: String = "user-123") {
@@ -117,11 +123,11 @@ class PortalPullPaginationTest {
         assertEquals(3, fakeApi.pullCallCount, "Pull should fire once per page")
         // Across 3 pages, 300 unique sessions should have been merged.
         // Each page triggers mergeAllPullData with that page's slice; we check the final merge
-        // call contains page 3's payload, and the total count of merged sessions via atomic merges.
+        // call contains page 3's payload, and every page reaches the ordinary repository merge.
         assertEquals(
             3,
             fakeSyncRepo.atomicMergeCallCount,
-            "Each page calls mergeAllPullData once (atomic per-page merge)",
+            "Each page calls mergeAllPullData once",
         )
     }
 
@@ -228,7 +234,7 @@ class PortalPullPaginationTest {
         assertTrue(result.isSuccess, "empty response → success, no crash")
         // SyncManager calls mergeAllPullData exactly once with all-empty lists; the fake's
         // counter-based tracking (which only increments per non-empty list) stays at 0, but
-        // the atomicMergeCallCount (invoked unconditionally) is 1.
+        // the ordinary merge call counter (invoked unconditionally) is 1.
         assertEquals(
             1,
             fakeSyncRepo.atomicMergeCallCount,
@@ -559,6 +565,83 @@ class PortalPullPaginationTest {
         assertEquals(fakeUuid(totalSessionIds - SyncConfig.MAX_PARITY_IDS), known.sessionIds.first())
         assertEquals(fakeUuid(totalSessionIds - 1), known.sessionIds.last())
     }
+
+    @Test
+    fun preferenceOnlyPageCountsAsNonEmptyAndContinuesPagination() = runTest {
+        authenticate()
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_783_771_200_000L,
+                    hasMore = true,
+                    nextCursor = "page-2",
+                    profilePreferenceSections = listOf(coreCanonicalForPull(revision = 2)),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_783_771_201_000L,
+                    hasMore = false,
+                ),
+            ),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(2, fakeApi.pullCallCount)
+        assertEquals(listOf(null, "page-2"), fakeApi.pullCallCursors)
+    }
+
+    @Test
+    fun laterPagePreferenceIsIgnoredButStillKeepsPaginationMoving() = runTest {
+        authenticate()
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_783_771_200_000L,
+                    hasMore = true,
+                    nextCursor = "page-2",
+                    routines = listOf(PullRoutineDto(id = "routine-1", name = "Routine 1")),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_783_771_201_000L,
+                    hasMore = true,
+                    nextCursor = "page-3",
+                    profilePreferenceSections = listOf(coreCanonicalForPull(revision = 9)),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_783_771_202_000L,
+                    routines = listOf(PullRoutineDto(id = "routine-3", name = "Routine 3")),
+                ),
+            ),
+        )
+
+        assertTrue(createManager().sync().isSuccess)
+
+        assertEquals(3, fakeApi.pullCallCount)
+        assertEquals(listOf(null, "page-2", "page-3"), fakeApi.pullCallCursors)
+        assertEquals(0, fakeProfilePreferenceSyncRepo.pullApplyCallCount)
+        assertEquals(3, fakeSyncRepo.atomicMergeCallCount)
+    }
+
+    private fun coreCanonicalForPull(revision: Long) =
+        PortalProfilePreferenceSectionCanonicalDto(
+            localProfileId = "profile-a",
+            section = "CORE",
+            documentVersion = 1,
+            serverRevision = revision,
+            serverUpdatedAt = "2026-07-11T12:00:00Z",
+            payload = buildJsonObject {
+                put("bodyWeightKg", 80.0)
+                put("weightUnit", "KG")
+                put("weightIncrement", 0.5)
+            },
+        )
 
     // ==================== pageSize Wiring ====================
 

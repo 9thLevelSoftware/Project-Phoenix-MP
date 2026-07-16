@@ -13,6 +13,8 @@ import com.devil.phoenixproject.presentation.viewmodel.ExternalProgramsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExternalRoutinesViewModel
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
+import com.devil.phoenixproject.presentation.viewmodel.ProfileViewModel
+import com.devil.phoenixproject.presentation.viewmodel.ProfileSwitcherViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import org.koin.dsl.module
@@ -31,6 +33,17 @@ val presentationModule = module {
     factory { ExternalProgramsViewModel(get(), get(), get()) }
     factory { ExternalMeasurementsViewModel(get(), get()) }
     factory { AssessmentViewModel(get(), get(), get()) }
+    factory {
+        ProfileViewModel(
+            profiles = get(),
+            exercises = get(),
+            workouts = get(),
+            personalRecords = get(),
+            resolveCurrentOneRepMax = get(),
+            externalMeasurements = get(),
+        )
+    }
+    factory { ProfileSwitcherViewModel(profiles = get()) }
     // ThemeViewModel as singleton - app-wide theme state that must persist
     single { ThemeViewModel(get()) }
     // EulaViewModel as singleton - tracks EULA acceptance across app lifecycle

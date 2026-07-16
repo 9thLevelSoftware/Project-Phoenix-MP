@@ -6,7 +6,12 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.ReconciliationStatus
 import com.devil.phoenixproject.data.local.SchemaIndexOperation
 import com.devil.phoenixproject.data.local.applyIndexCreate
+import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
+import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
+import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
 import com.devil.phoenixproject.data.repository.GamificationRepository
+import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.ProfileScopedDataMerger
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -15,10 +20,10 @@ import com.devil.phoenixproject.database.Routine
 import com.devil.phoenixproject.database.RoutineExercise
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.database.WorkoutSession
-import com.devil.phoenixproject.domain.model.PRType
-import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.russhwolf.settings.Settings
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -27,9 +32,17 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+sealed interface RequiredMigrationState {
+    data object NotStarted : RequiredMigrationState
+    data object Applying : RequiredMigrationState
+    data object Ready : RequiredMigrationState
+    data class Failed(val message: String) : RequiredMigrationState
+}
 
 /**
  * Manages data migrations on app startup.
@@ -38,11 +51,15 @@ import kotlinx.coroutines.sync.withLock
  */
 class MigrationManager(
     private val database: VitruvianDatabase,
-    private val userProfileRepository: UserProfileRepository? = null,
-    private val gamificationRepository: GamificationRepository? = null,
+    private val userProfileRepository: UserProfileRepository,
+    private val gamificationRepository: GamificationRepository,
+    private val settings: Settings,
+    private val profilePreferencesRepository: ProfilePreferencesRepository,
+    private val profileLocalSafetyStore: ProfileLocalSafetyStore,
+    private val legacyProfilePreferencesReader: LegacyProfilePreferencesReader,
+    private val profileScopedDataMerger: ProfileScopedDataMerger = ProfileScopedDataMerger(database),
     private val driver: SqlDriver? = null,
-    private val settings: Settings? = null,
-) {
+) : RequiredMigrationGate {
     private val log = Logger.withTag("MigrationManager")
 
     companion object {
@@ -52,13 +69,22 @@ class MigrationManager(
          * the stored value is less than [CURRENT_REPAIR_VERSION] the repairs execute and
          * the new version is persisted afterwards.
          */
-        private const val CURRENT_REPAIR_VERSION = 1
+        private const val CURRENT_REPAIR_VERSION = 2
         private const val KEY_REPAIR_VERSION = "migration_repair_version"
+        private const val KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE =
+            "profile_preferences_legacy_migration_complete_v1"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val queries get() = database.vitruvianDatabaseQueries
     private val migrationMutex = Mutex()
+    private val requiredMigrationMutex = Mutex()
+
+    private val _requiredMigrationState = MutableStateFlow<RequiredMigrationState>(
+        RequiredMigrationState.NotStarted,
+    )
+    override val requiredMigrationState: StateFlow<RequiredMigrationState> =
+        _requiredMigrationState.asStateFlow()
 
     private val _profileScopeRepairState = MutableStateFlow<ProfileScopeRepairState>(ProfileScopeRepairState.Idle)
     val profileScopeRepairState: StateFlow<ProfileScopeRepairState> = _profileScopeRepairState.asStateFlow()
@@ -109,38 +135,92 @@ class MigrationManager(
         val toCounts: ProfileScopedCounts,
     )
 
-    private data class CanonicalPersonalRecord(
-        val exerciseId: String,
-        val exerciseName: String,
-        val weight: Double,
-        val reps: Long,
-        val oneRepMax: Double,
-        val achievedAt: Long,
-        val workoutMode: String,
-        val prType: String,
-        val volume: Double,
-        val phase: String,
-        val cable_count: Long? = null,
-        val uuid: String?,
-    )
-
-    private data class CanonicalEarnedBadge(
-        val badgeId: String,
-        val earnedAt: Long,
-        val celebratedAt: Long?,
-    )
-
     /**
      * Check for and run any pending migrations.
      * This should be called once on app startup.
      */
     fun checkAndRunMigrations() {
         scope.launch {
-            runMigrationsNow()
+            runRequiredMigrations()
+            if (requiredMigrationState.value == RequiredMigrationState.Ready) {
+                runNonCriticalRepairsNow()
+            }
         }
     }
 
     suspend fun runMigrationsNow() {
+        runRequiredMigrations()
+        if (requiredMigrationState.value == RequiredMigrationState.Ready) {
+            runNonCriticalRepairsNow()
+        }
+    }
+
+    suspend fun runRequiredMigrations() = requiredMigrationMutex.withLock {
+        if (_requiredMigrationState.value == RequiredMigrationState.Ready) return@withLock
+        _requiredMigrationState.value = RequiredMigrationState.Applying
+        try {
+            migrateProfilePreferences()
+            _requiredMigrationState.value = RequiredMigrationState.Ready
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            log.e(error) { "Required profile preference migration failed" }
+            _requiredMigrationState.value = RequiredMigrationState.Failed(
+                error.message ?: "Profile preference migration failed",
+            )
+        }
+    }
+
+    suspend fun retryRequiredMigrations() {
+        runRequiredMigrations()
+        if (requiredMigrationState.value == RequiredMigrationState.Ready) {
+            runNonCriticalRepairsNow()
+        }
+    }
+
+    override suspend fun awaitRequiredMigrations() {
+        when (val terminal = requiredMigrationState.first {
+            it is RequiredMigrationState.Ready || it is RequiredMigrationState.Failed
+        }) {
+            RequiredMigrationState.Ready -> Unit
+            is RequiredMigrationState.Failed -> throw RequiredMigrationFailedException(terminal.message)
+            else -> error("Required migration gate returned a non-terminal state")
+        }
+    }
+
+    private suspend fun migrateProfilePreferences() {
+        userProfileRepository.ensureDefaultProfile()
+        profilePreferencesRepository.seedMissingProfiles()
+        userProfileRepository.recoverPendingProfileTransitionForStartup()
+        val existingProfiles = userProfileRepository.allProfiles.value
+        val snapshot = legacyProfilePreferencesReader.readNormalized()
+        val migrationTime = currentTimeMillis()
+        existingProfiles.forEach { profile ->
+            queries.applyLegacyProfilePreferences(
+                profile_id = profile.id,
+                body_weight_kg = snapshot.core.bodyWeightKg.toDouble(),
+                weight_unit = snapshot.core.weightUnit.name,
+                weight_increment = snapshot.core.weightIncrement.toDouble(),
+                equipment_rack_json = ProfilePreferencesCodec.encodeRack(snapshot.rack),
+                workout_preferences_json = ProfilePreferencesCodec.encodeWorkout(snapshot.workout),
+                led_color_scheme_id = snapshot.led.colorScheme.toLong(),
+                led_preferences_json = ProfilePreferencesCodec.encodeLed(snapshot.led),
+                vbt_enabled = 1L,
+                vbt_preferences_json = ProfilePreferencesCodec.encodeVbt(
+                    snapshot.vbt.copy(enabled = true),
+                ),
+                migrated_at = migrationTime,
+            )
+        }
+        if (!settings.getBoolean(KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE, false)) {
+            profileLocalSafetyStore.copyLegacyToProfiles(existingProfiles.map { it.id }, snapshot.localSafety)
+            settings.putBoolean(KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE, true)
+        }
+        userProfileRepository.retryPendingLocalCleanup()
+        userProfileRepository.reconcileActiveProfileContext()
+    }
+
+    private suspend fun runNonCriticalRepairsNow() {
         migrationMutex.withLock {
             _profileScopeRepairState.value = ProfileScopeRepairState.Applying("Running startup data repair")
             pendingProfileScopeRepair = null
@@ -215,7 +295,7 @@ class MigrationManager(
      * (e.g. test environments) the repairs always run — matching the previous behaviour.
      */
     private suspend fun runOneTimeRepairs() {
-        val storedVersion = settings?.getIntOrNull(KEY_REPAIR_VERSION) ?: 0
+        val storedVersion = settings.getIntOrNull(KEY_REPAIR_VERSION) ?: 0
         if (storedVersion >= CURRENT_REPAIR_VERSION) {
             log.d { "Skipping one-time data repairs — already at repair version $storedVersion" }
             return
@@ -229,7 +309,7 @@ class MigrationManager(
 
         // Persist the completed version so this suite does not re-run next startup.
         runCatching {
-            settings?.putInt(KEY_REPAIR_VERSION, CURRENT_REPAIR_VERSION)
+            settings.putInt(KEY_REPAIR_VERSION, CURRENT_REPAIR_VERSION)
         }.onFailure { e ->
             log.w(e) { "Failed to persist repair version; repairs will re-run on next startup" }
         }
@@ -301,8 +381,8 @@ class MigrationManager(
             ?: error("Profile-scope repair requires a SqlDriver")
 
         database.transaction {
-            mergePersonalRecords(context.fromProfileId, context.toProfileId, moveDriver)
-            mergeEarnedBadges(context.fromProfileId, context.toProfileId, moveDriver)
+            profileScopedDataMerger.mergePersonalRecords(context.fromProfileId, context.toProfileId)
+            profileScopedDataMerger.mergeEarnedBadges(context.fromProfileId, context.toProfileId)
             moveProfileScopedRows(moveDriver, "WorkoutSession", context.fromProfileId, context.toProfileId)
             moveProfileScopedRows(moveDriver, "Routine", context.fromProfileId, context.toProfileId)
             moveProfileScopedRows(moveDriver, "TrainingCycle", context.fromProfileId, context.toProfileId)
@@ -321,29 +401,23 @@ class MigrationManager(
     }
 
     private suspend fun recomputeDerivedGamification(profileId: String) {
-        val repo = gamificationRepository ?: return
-        repo.updateStats(profileId)
-        val rpgInput = repo.getRpgInput(profileId)
-        repo.saveRpgProfile(RpgAttributeEngine.computeProfile(rpgInput), profileId)
+        gamificationRepository.updateStats(profileId)
+        val rpgInput = gamificationRepository.getRpgInput(profileId)
+        gamificationRepository.saveRpgProfile(RpgAttributeEngine.computeProfile(rpgInput), profileId)
     }
 
     private suspend fun refreshProfilesIfAvailable() {
-        userProfileRepository?.refreshProfiles()
+        userProfileRepository.refreshProfiles()
     }
 
     private suspend fun setActiveProfileInternal(profileId: String) {
-        val repo = userProfileRepository
-        if (repo != null) {
-            repo.setActiveProfile(profileId)
-            repo.refreshProfiles()
-        } else {
-            queries.setActiveProfile(profileId)
-        }
+        userProfileRepository.setActiveProfile(profileId)
+        userProfileRepository.refreshProfiles()
     }
 
     private suspend fun resolveActiveProfile(): UserProfile? {
-        userProfileRepository?.refreshProfiles()
-        userProfileRepository?.activeProfile?.value?.let { return it }
+        userProfileRepository.refreshProfiles()
+        userProfileRepository.activeProfile.value?.let { return it }
 
         val active = queries.getActiveProfile().executeAsOneOrNull() ?: return null
         return UserProfile(
@@ -410,107 +484,6 @@ class MigrationManager(
             parameters = 1,
         ) {
             bindString(0, profileId)
-        }
-    }
-
-    private fun mergePersonalRecords(fromProfileId: String, toProfileId: String, auditDriver: SqlDriver) {
-        val canonicalByKey = linkedMapOf<String, CanonicalPersonalRecord>()
-        val allRecords = queries.selectAllRecords(profileId = fromProfileId).executeAsList() +
-            queries.selectAllRecords(profileId = toProfileId).executeAsList()
-
-        allRecords.forEach { record ->
-            val canonical = CanonicalPersonalRecord(
-                exerciseId = record.exerciseId,
-                exerciseName = record.exerciseName,
-                weight = record.weight,
-                reps = record.reps,
-                oneRepMax = record.oneRepMax,
-                achievedAt = record.achievedAt,
-                workoutMode = normalizeWorkoutModeKey(record.workoutMode),
-                prType = record.prType,
-                volume = record.volume,
-                phase = record.phase,
-                cable_count = record.cable_count,
-                uuid = record.uuid,
-            )
-            val key = "${canonical.exerciseId}|${canonical.workoutMode}|${canonical.prType}|${canonical.phase}"
-            val existing = canonicalByKey[key]
-            canonicalByKey[key] = when {
-                existing == null -> canonical
-
-                shouldReplacePersonalRecord(canonical, existing) -> canonical.copy(
-                    exerciseName = canonical.exerciseName.ifBlank { existing.exerciseName },
-                    uuid = canonical.uuid ?: existing.uuid,
-                )
-
-                else -> existing.copy(
-                    exerciseName = existing.exerciseName.ifBlank { canonical.exerciseName },
-                    uuid = existing.uuid ?: canonical.uuid,
-                )
-            }
-        }
-
-        deleteProfileScopedRows(auditDriver, "PersonalRecord", fromProfileId)
-        deleteProfileScopedRows(auditDriver, "PersonalRecord", toProfileId)
-
-        canonicalByKey.values.forEach { record ->
-            queries.upsertPR(
-                exerciseId = record.exerciseId,
-                exerciseName = record.exerciseName,
-                weight = record.weight,
-                reps = record.reps,
-                oneRepMax = record.oneRepMax,
-                achievedAt = record.achievedAt,
-                workoutMode = record.workoutMode,
-                prType = record.prType,
-                volume = record.volume,
-                phase = record.phase,
-                profile_id = toProfileId,
-                cable_count = record.cable_count,
-                uuid = record.uuid ?: generateUUID(),
-            )
-        }
-    }
-
-    private fun mergeEarnedBadges(fromProfileId: String, toProfileId: String, auditDriver: SqlDriver) {
-        val merged = linkedMapOf<String, CanonicalEarnedBadge>()
-        val allBadges = queries.selectAllEarnedBadges(profileId = fromProfileId).executeAsList() +
-            queries.selectAllEarnedBadges(profileId = toProfileId).executeAsList()
-
-        allBadges.forEach { badge ->
-            val existing = merged[badge.badgeId]
-            val canonical = CanonicalEarnedBadge(
-                badgeId = badge.badgeId,
-                earnedAt = badge.earnedAt,
-                celebratedAt = badge.celebratedAt,
-            )
-            merged[badge.badgeId] = when {
-                existing == null -> canonical
-
-                canonical.earnedAt < existing.earnedAt -> canonical.copy(
-                    celebratedAt = canonical.celebratedAt ?: existing.celebratedAt,
-                )
-
-                else -> existing.copy(
-                    celebratedAt = existing.celebratedAt ?: canonical.celebratedAt,
-                )
-            }
-        }
-
-        deleteProfileScopedRows(auditDriver, "EarnedBadge", fromProfileId)
-        deleteProfileScopedRows(auditDriver, "EarnedBadge", toProfileId)
-
-        merged.values.forEach { badge ->
-            auditDriver.execute(
-                identifier = null,
-                sql = "INSERT INTO EarnedBadge (badgeId, earnedAt, celebratedAt, profile_id) VALUES (?, ?, ?, ?)",
-                parameters = 4,
-            ) {
-                bindString(0, badge.badgeId)
-                bindLong(1, badge.earnedAt)
-                bindLong(2, badge.celebratedAt)
-                bindString(3, toProfileId)
-            }
         }
     }
 
@@ -670,61 +643,21 @@ class MigrationManager(
 
     private fun normalizeLegacyPersonalRecordModes() {
         knownProfileIds().forEach { profileId ->
-            val records = runCatching { queries.selectAllRecords(profileId = profileId).executeAsList() }
-                .getOrElse { error ->
-                    log.e(error) { "Failed to load personal records for mode normalization (profile=$profileId)" }
-                    return@forEach
+            var affectedRows = 0
+            try {
+                database.transaction {
+                    affectedRows = profileScopedDataMerger.normalizePersonalRecordModes(profileId)
                 }
-
-            var updated = 0
-            var merged = 0
-            database.transaction {
-                records.forEach { record ->
-                    val normalizedMode = normalizeWorkoutModeKey(record.workoutMode)
-                    if (normalizedMode == record.workoutMode) return@forEach
-
-                    val recordProfileId = record.profile_id.ifBlank { profileId }
-                    val canonicalRecord = queries.selectPR(
-                        exerciseId = record.exerciseId,
-                        workoutMode = normalizedMode,
-                        prType = record.prType,
-                        phase = record.phase,
-                        profileId = recordProfileId,
-                    ).executeAsOneOrNull()
-
-                    if (canonicalRecord == null || shouldReplacePersonalRecord(record, canonicalRecord)) {
-                        queries.upsertPR(
-                            exerciseId = record.exerciseId,
-                            exerciseName = record.exerciseName,
-                            weight = record.weight,
-                            reps = record.reps,
-                            oneRepMax = record.oneRepMax,
-                            achievedAt = record.achievedAt,
-                            workoutMode = normalizedMode,
-                            prType = record.prType,
-                            volume = record.volume,
-                            phase = record.phase,
-                            profile_id = recordProfileId,
-                            cable_count = record.cable_count,
-                            uuid = canonicalRecord?.uuid ?: record.uuid ?: generateUUID(),
-                        )
-                        updated++
-                    } else {
-                        merged++
-                    }
-
-                    queries.deletePRByKey(
-                        exerciseId = record.exerciseId,
-                        workoutMode = record.workoutMode,
-                        prType = record.prType,
-                        phase = record.phase,
-                        profile_id = recordProfileId,
-                    )
+            } catch (error: Throwable) {
+                log.e(error) {
+                    "Failed to normalize personal record modes for profile=$profileId"
                 }
+                throw error
             }
-
-            if (updated > 0 || merged > 0) {
-                log.i { "Normalized personal record mode keys for profile=$profileId: updated $updated rows, merged $merged legacy duplicates" }
+            if (affectedRows > 0) {
+                log.i {
+                    "Normalized personal record mode keys for profile=$profileId: affected $affectedRows rows"
+                }
             }
         }
     }
@@ -884,14 +817,10 @@ class MigrationManager(
         // row with the same composite key (idx_pr_unique:
         // exerciseId+workoutMode+prType+phase+profile_id; idx_earned_badge_profile:
         // badgeId+profile_id), the update produces a duplicate key and aborts the
-        // whole repair transaction. Reuse the canonical dedup-merge helpers that the
-        // profile-scope move (applyProfileScopeMove) already uses — they collect
-        // both profiles, pick a canonical winner per key, delete both, and reinsert
-        // one row under the target profile.
-        // The dedup-merge helpers need a SqlDriver. When none was injected (the
-        // raw-UPDATE path was historically a no-op in that case), skip rather than
-        // crash — matching the prior behavior but without risking the unique-index
-        // abort the raw UPDATE could cause when a driver IS present.
+        // whole repair transaction. Reuse the shared merger from profile deletion;
+        // it resolves aliases before reassignment while retaining target numeric IDs,
+        // UUIDs, and sync metadata. A SqlDriver remains required for the orphan scan
+        // and derived-aggregate cleanup performed in the same transaction.
         val moveDriver = driver
         if (moveDriver == null) {
             log.w { "Orphaned PR repair skipped: no SqlDriver available for a safe dedup-merge" }
@@ -904,8 +833,8 @@ class MigrationManager(
             for ((orphanProfileId, count) in orphanedCounts) {
                 log.i { "Issue #319: Migrating $count PR records from deleted profile '$orphanProfileId' to '$targetProfileId'" }
 
-                mergePersonalRecords(orphanProfileId, targetProfileId, moveDriver)
-                mergeEarnedBadges(orphanProfileId, targetProfileId, moveDriver)
+                profileScopedDataMerger.mergePersonalRecords(orphanProfileId, targetProfileId)
+                profileScopedDataMerger.mergeEarnedBadges(orphanProfileId, targetProfileId)
 
                 // Derived profile aggregates are recomputed after the move to avoid
                 // carrying duplicate singleton rows across profiles.
@@ -982,44 +911,6 @@ class MigrationManager(
             _orphanedDataRepairState.value = OrphanedDataRepairState.Failed(
                 "Found orphaned records but no active profile to migrate to: $orphanedCounts",
             )
-        }
-    }
-
-    private fun shouldReplacePersonalRecord(
-        candidate: com.devil.phoenixproject.database.PersonalRecord,
-        current: com.devil.phoenixproject.database.PersonalRecord,
-    ): Boolean = when (candidate.prType) {
-        PRType.MAX_VOLUME.name -> when {
-            candidate.volume > current.volume -> true
-            candidate.volume < current.volume -> false
-            else -> candidate.achievedAt > current.achievedAt
-        }
-
-        else -> when {
-            candidate.weight > current.weight -> true
-            candidate.weight < current.weight -> false
-            candidate.oneRepMax > current.oneRepMax -> true
-            candidate.oneRepMax < current.oneRepMax -> false
-            else -> candidate.achievedAt > current.achievedAt
-        }
-    }
-
-    private fun shouldReplacePersonalRecord(
-        candidate: CanonicalPersonalRecord,
-        current: CanonicalPersonalRecord,
-    ): Boolean = when (candidate.prType) {
-        PRType.MAX_VOLUME.name -> when {
-            candidate.volume > current.volume -> true
-            candidate.volume < current.volume -> false
-            else -> candidate.achievedAt > current.achievedAt
-        }
-
-        else -> when {
-            candidate.weight > current.weight -> true
-            candidate.weight < current.weight -> false
-            candidate.oneRepMax > current.oneRepMax -> true
-            candidate.oneRepMax < current.oneRepMax -> false
-            else -> candidate.achievedAt > current.achievedAt
         }
     }
 

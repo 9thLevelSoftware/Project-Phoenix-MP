@@ -1,8 +1,10 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Converts portal pull response DTOs (camelCase) to domain objects and legacy merge DTOs
@@ -18,6 +20,47 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
  * RPG attributes are handled directly via GamificationRepository (no legacy DTO needed).
  */
 object PortalPullAdapter {
+
+    fun toCanonicalProfilePreferenceSection(
+        dto: PortalProfilePreferenceSectionCanonicalDto,
+    ): ProfilePreferenceCanonicalDecodeResult {
+        fun invalid(reason: ProfilePreferenceSyncIssueReason) =
+            ProfilePreferenceCanonicalDecodeResult.Invalid(
+                localProfileId = dto.localProfileId,
+                section = dto.section,
+                reason = reason.name,
+            )
+
+        if (dto.localProfileId.isBlank() ||
+            profilePreferenceWireSafetyViolation(JsonPrimitive(dto.localProfileId)) != null
+        ) {
+            return invalid(ProfilePreferenceSyncIssueReason.INVALID_PROFILE_ID)
+        }
+        val section = ProfilePreferenceSectionName.entries.firstOrNull { it.name == dto.section }
+            ?: return invalid(ProfilePreferenceSyncIssueReason.UNSUPPORTED_SECTION)
+        val updatedAt = ProfilePreferenceSyncCodec.parseStrictRfc3339EpochMilliseconds(
+            dto.serverUpdatedAt,
+        )
+        if (updatedAt == null ||
+            updatedAt !in ProfilePreferenceSyncCodec.MIN_RFC3339_EPOCH_MILLIS..
+                ProfilePreferenceSyncCodec.MAX_RFC3339_EPOCH_MILLIS
+        ) {
+            return invalid(ProfilePreferenceSyncIssueReason.INVALID_CANONICAL_TIMESTAMP)
+        }
+
+        val candidate = CanonicalProfilePreferenceSection(
+            key = ProfilePreferenceSectionKey(dto.localProfileId, section),
+            documentVersion = dto.documentVersion,
+            serverRevision = dto.serverRevision,
+            serverUpdatedAtEpochMs = updatedAt,
+            payload = dto.payload,
+        )
+        return when (val decoded = ProfilePreferenceSyncCodec().decodeCanonical(candidate)) {
+            is ProfilePreferenceCanonicalColumnsResult.Invalid -> invalid(decoded.reason)
+            is ProfilePreferenceCanonicalColumnsResult.Valid ->
+                ProfilePreferenceCanonicalDecodeResult.Valid(candidate)
+        }
+    }
 
     /**
      * Convert a portal workout session (1 workout with N exercises) to N mobile

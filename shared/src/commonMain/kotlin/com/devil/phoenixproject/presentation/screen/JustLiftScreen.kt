@@ -63,7 +63,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -86,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
@@ -101,9 +101,7 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.eccentricLoadLabel
 import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.model.toWorkoutMode
-import com.devil.phoenixproject.presentation.components.AddProfileDialog
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
-import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -165,51 +163,51 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     var repCountTiming by remember { mutableStateOf(RepCountTiming.TOP) }
     var stallDetectionEnabled by rememberSaveable { mutableStateOf(true) }
     var restSeconds by rememberSaveable { mutableStateOf(60) } // Rest timer between sets (0 = off)
-    var defaultsLoaded by rememberSaveable { mutableStateOf(false) }
-    // Profile management
-    val scope = rememberCoroutineScope()
+    var defaultsProfileId by remember { mutableStateOf<String?>(null) }
+    // Profile-scoped workout defaults
     val profileRepository: UserProfileRepository = koinInject()
-    val profiles by profileRepository.allProfiles.collectAsState()
-    val activeProfile by profileRepository.activeProfile.collectAsState()
-    var showAddProfileDialog by remember { mutableStateOf(false) }
+    val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
+    val readyProfileId = (activeProfileContext as? ActiveProfileContext.Ready)?.profile?.id
+    val defaultsLoaded = readyProfileId != null && defaultsProfileId == readyProfileId
 
-    // Load saved Just Lift defaults on screen init
-    LaunchedEffect(Unit) {
-        if (!defaultsLoaded) {
-            val defaults = viewModel.getJustLiftDefaults()
-            // Apply saved defaults
-            weightPerCable = defaults.weightPerCableKg
+    // Reload profile-scoped defaults only when the atomic context is Ready.
+    LaunchedEffect(readyProfileId) {
+        val loadingProfileId = readyProfileId ?: return@LaunchedEffect
+        val loadingContext = activeProfileContext as? ActiveProfileContext.Ready
+            ?: return@LaunchedEffect
+        val defaults = viewModel.getJustLiftDefaults()
+        // Apply saved defaults
+        weightPerCable = defaults.weightPerCableKg
 
-            // Convert stored weight change (KG) to display unit if needed
-            // weightChangePerRep is already Int in viewmodel format
-            weightChangePerRep = if (weightUnit == WeightUnit.LB) {
-                kotlin.math.round(defaults.weightChangePerRep * 2.20462f).toInt()
-            } else {
-                defaults.weightChangePerRep
-            }
-
-            // Set mode from saved defaults
-            val savedProgramMode = defaults.toProgramMode()
-            selectedMode = savedProgramMode.toWorkoutMode(defaults.getEchoLevel())
-
-            // Restore eccentric load and echo level for Echo mode
-            eccentricLoad = defaults.getEccentricLoad()
-            echoLevel = defaults.getEchoLevel()
-
-            // Restore rep count timing
-            repCountTiming = defaults.getRepCountTiming()
-
-            // Restore stall detection
-            stallDetectionEnabled = defaults.stallDetectionEnabled
-
-            // Restore rest timer duration
-            restSeconds = defaults.restSeconds
-
-            Logger.d(
-                "Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, repTiming=${defaults.repCountTimingName}, restSeconds=${defaults.restSeconds}",
-            )
-            defaultsLoaded = true
+        // Convert stored weight change (KG) to display unit if needed
+        // weightChangePerRep is already Int in viewmodel format
+        weightChangePerRep = if (loadingContext.preferences.core.value.weightUnit == WeightUnit.LB) {
+            kotlin.math.round(defaults.weightChangePerRep * 2.20462f).toInt()
+        } else {
+            defaults.weightChangePerRep
         }
+
+        // Set mode from saved defaults
+        val savedProgramMode = defaults.toProgramMode()
+        selectedMode = savedProgramMode.toWorkoutMode(defaults.getEchoLevel())
+
+        // Restore eccentric load and echo level for Echo mode
+        eccentricLoad = defaults.getEccentricLoad()
+        echoLevel = defaults.getEchoLevel()
+
+        // Restore rep count timing
+        repCountTiming = defaults.getRepCountTiming()
+
+        // Restore stall detection
+        stallDetectionEnabled = defaults.stallDetectionEnabled
+
+        // Restore rest timer duration
+        restSeconds = defaults.restSeconds
+
+        Logger.d(
+            "Loaded Just Lift defaults for profile=$loadingProfileId: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, repTiming=${defaults.repCountTimingName}, restSeconds=${defaults.restSeconds}",
+        )
+        defaultsProfileId = loadingProfileId
     }
 
     LaunchedEffect(workoutParameters.programMode) {
@@ -265,8 +263,8 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     ) {
         // Don't write params until saved defaults have been loaded.
         // Without this guard, the effect fires immediately with the hardcoded
-        // initial weightPerCable (0.453592f) before the defaults-loading
-        // LaunchedEffect(Unit) has returned from disk, causing #344.
+        // initial weightPerCable (0.453592f) before the current profile's defaults
+        // have returned, causing #344 or leaking values across a profile switch.
         if (!defaultsLoaded) return@LaunchedEffect
 
         val weightChangeKg = if (weightUnit == WeightUnit.LB) {
@@ -803,23 +801,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             )
         }
 
-        // Profile side panel
-        ProfileSidePanel(
-            profiles = profiles,
-            activeProfile = activeProfile,
-            profileRepository = profileRepository,
-            scope = scope,
-            onAddProfile = { showAddProfileDialog = true },
-        )
-        // Add Profile Dialog
-        if (showAddProfileDialog) {
-            AddProfileDialog(
-                profiles = profiles,
-                profileRepository = profileRepository,
-                scope = scope,
-                onDismiss = { showAddProfileDialog = false },
-            )
-        }
     }
 }
 

@@ -33,6 +33,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 
+internal data class VbtRuntimeSettings(
+    val enabled: Boolean = true,
+    val velocityLossThresholdPercent: Float = 20f,
+    val autoEndOnVelocityLoss: Boolean = false,
+)
+
 /**
  * Shared state bus for all workout state. Contains zero business logic methods —
  * only state fields, public getters, and companion constants.
@@ -48,7 +54,8 @@ class WorkoutCoordinator(
         extraBufferCapacity = 32,
         onBufferOverflow = BufferOverflow.SUSPEND,
     ),
-    private val velocityLossThresholdPercent: Float = 20f,
+    vbtEnabled: Boolean = true,
+    velocityLossThresholdPercent: Float = 20f,
     autoEndOnVelocityLoss: Boolean = false,
 ) {
     companion object {
@@ -543,9 +550,18 @@ class WorkoutCoordinator(
 
     // ===== Biomechanics Engine =====
 
-    private val _autoEndOnVelocityLoss = MutableStateFlow(autoEndOnVelocityLoss)
+    private val _vbtRuntimeSettings = MutableStateFlow(
+        VbtRuntimeSettings(
+            enabled = vbtEnabled,
+            velocityLossThresholdPercent = velocityLossThresholdPercent,
+            autoEndOnVelocityLoss = autoEndOnVelocityLoss,
+        ),
+    )
+    internal val vbtRuntimeSettings: StateFlow<VbtRuntimeSettings> =
+        _vbtRuntimeSettings.asStateFlow()
+
     internal val autoEndOnVelocityLoss: Boolean
-        get() = _autoEndOnVelocityLoss.value
+        get() = _vbtRuntimeSettings.value.autoEndOnVelocityLoss
 
     /**
      * Biomechanics analysis engine for VBT, force curve, and asymmetry analysis.
@@ -555,11 +571,17 @@ class WorkoutCoordinator(
     val biomechanicsEngine = BiomechanicsEngine(velocityLossThresholdPercent)
 
     internal fun updateVbtSettings(
-        velocityLossThresholdPercent: Float,
-        autoEndOnVelocityLoss: Boolean,
+        vbtEnabled: Boolean,
+        thresholdPercent: Float,
+        autoEnd: Boolean,
     ) {
-        biomechanicsEngine.updateVelocityLossThresholdPercent(velocityLossThresholdPercent)
-        _autoEndOnVelocityLoss.value = autoEndOnVelocityLoss
+        require(thresholdPercent in 10f..50f)
+        biomechanicsEngine.updateVelocityLossThresholdPercent(thresholdPercent)
+        _vbtRuntimeSettings.value = VbtRuntimeSettings(
+            enabled = vbtEnabled,
+            velocityLossThresholdPercent = thresholdPercent,
+            autoEndOnVelocityLoss = autoEnd,
+        )
     }
 
     /**

@@ -265,7 +265,7 @@ class FakeSyncRepository : SyncRepository {
 
     // === Atomic Pull Merge ===
 
-    /** Captured data from atomic merge calls */
+    /** Captured data from ordinary SyncRepository merge calls. */
     var atomicMergeCallCount = 0
     var lastAtomicMergeSessions: List<WorkoutSession> = emptyList()
     var lastAtomicMergeRoutines: List<PullRoutineDto> = emptyList()
@@ -276,8 +276,9 @@ class FakeSyncRepository : SyncRepository {
     var lastAtomicMergeLastSync: Long = 0L
     var lastAtomicMergeProfileId: String = ""
 
-    /** Set to throw an exception to simulate atomic merge failure */
+    /** Set to throw an exception before the ordinary repository merge commits. */
     var atomicMergeShouldFail: Boolean = false
+    var onMergeAllPullData: (() -> Unit)? = null
 
     override suspend fun mergeAllPullData(
         sessions: List<WorkoutSession>,
@@ -290,9 +291,10 @@ class FakeSyncRepository : SyncRepository {
         profileId: String,
     ) {
         if (atomicMergeShouldFail) {
-            throw RuntimeException("Simulated atomic merge failure for testing rollback")
+            throw RuntimeException("Simulated ordinary repository merge failure")
         }
 
+        onMergeAllPullData?.invoke()
         atomicMergeCallCount++
         lastAtomicMergeSessions = sessions
         lastAtomicMergeRoutines = routines

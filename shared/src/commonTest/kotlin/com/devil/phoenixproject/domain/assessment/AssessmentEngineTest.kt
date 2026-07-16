@@ -117,20 +117,16 @@ class AssessmentEngineTest {
     }
 
     @Test
-    fun `estimateOneRepMax clamps result at per-cable hardware maximum`() {
-        // Two points with very gentle slope → OLS extrapolation far above 110kg.
+    fun `estimateOneRepMax clamps total result at dual cable hardware maximum`() {
+        // Two total-load points with a gentle slope extrapolate beyond the 220kg ceiling.
         // slope ≈ -0.002, intercept ≈ 1.2 → at 0.17 m/s: ~515kg unclamped.
         val points = listOf(
             LoadVelocityPoint(100f, 1.0f),
             LoadVelocityPoint(105f, 0.99f),
         )
         val result = engine.estimateOneRepMax(points)
-        assertNotNull(result, "Should produce result")
-        assertTrue(
-            result.estimatedOneRepMaxKg <= 110f,
-            "1RM must be clamped to 110kg per-cable max, got ${result.estimatedOneRepMaxKg}",
-        )
-        assertEquals(110f, result.estimatedOneRepMaxKg, 0.1f, "Should be clamped to exactly 110kg")
+        assertNotNull(result)
+        assertEquals(220f, result.estimatedOneRepMaxKg, 0.1f)
     }
 
     // =========================================================================

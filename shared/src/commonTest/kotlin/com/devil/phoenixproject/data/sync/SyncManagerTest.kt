@@ -15,6 +15,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
+import com.devil.phoenixproject.testutil.FakeProfilePreferenceSyncRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
@@ -48,6 +49,7 @@ class SyncManagerTest {
     private val fakeUserProfileRepo = FakeUserProfileRepository()
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
     private val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
+    private val fakeProfilePreferenceSyncRepo = FakeProfilePreferenceSyncRepository()
     private val json = Json { encodeDefaults = true }
 
     private fun createManager() = SyncManager(
@@ -57,8 +59,10 @@ class SyncManagerTest {
         gamificationRepository = fakeGamificationRepo,
         repMetricRepository = fakeRepMetricRepo,
         userProfileRepository = fakeUserProfileRepo,
+        profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
         externalActivityRepository = fakeExternalActivityRepo,
         velocityOneRepMaxRepository = fakeVelocityRepo,
+        isProfilePreferenceMigrationReady = { true },
     )
 
     /**

@@ -4,6 +4,70 @@ import kotlinx.serialization.Serializable
 
 // === Shared Data Structures ===
 
+data class ProfilePreferenceSectionKey(
+    val localProfileId: String,
+    val section: com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName,
+)
+
+data class ProfilePreferenceSectionSyncDto(
+    val key: ProfilePreferenceSectionKey,
+    val documentVersion: Int,
+    val baseRevision: Long,
+    val clientModifiedAtEpochMs: Long,
+    val localGeneration: Long,
+    val payload: kotlinx.serialization.json.JsonObject,
+)
+
+data class PreparedProfilePreferenceMutation(
+    val wire: PortalProfilePreferenceSectionMutationDto,
+    val key: ProfilePreferenceSectionKey,
+    val sentLocalGeneration: Long,
+)
+
+data class CanonicalProfilePreferenceSection(
+    val key: ProfilePreferenceSectionKey,
+    val documentVersion: Int,
+    val serverRevision: Long,
+    val serverUpdatedAtEpochMs: Long,
+    val payload: kotlinx.serialization.json.JsonObject,
+)
+
+data class ProfilePreferencePushOutcome(
+    val key: ProfilePreferenceSectionKey,
+    val sentLocalGeneration: Long,
+    val serverRevision: Long,
+    val canonical: CanonicalProfilePreferenceSection?,
+    val rejectionReason: String?,
+)
+
+data class ProfilePreferenceSyncApplyReport(
+    val applied: Int = 0,
+    val preservedNewerLocal: Int = 0,
+    val ignoredUnknownProfile: Int = 0,
+    val invalid: Int = 0,
+)
+
+data class ProfilePreferenceSyncIssue(
+    val key: ProfilePreferenceSectionKey,
+    val localGeneration: Long,
+    val reason: String,
+)
+
+data class ProfilePreferenceDirtySnapshot(
+    val valid: List<ProfilePreferenceSectionSyncDto>,
+    val unsyncable: List<ProfilePreferenceSyncIssue>,
+)
+
+sealed interface ProfilePreferenceCanonicalDecodeResult {
+    data class Valid(val section: CanonicalProfilePreferenceSection) : ProfilePreferenceCanonicalDecodeResult
+
+    data class Invalid(
+        val localProfileId: String,
+        val section: String,
+        val reason: String,
+    ) : ProfilePreferenceCanonicalDecodeResult
+}
+
 // IdMappings is used by SyncRepository / SqlDelightSyncRepository to stamp server-assigned
 // UUIDs back onto locally-created rows after a successful push. It is NOT part of the wire
 // format for the current Edge Functions (which use client-provided UUIDs); it exists to
@@ -31,7 +95,7 @@ data class PortalUser(val id: String, val email: String, val displayName: String
 // === Entity DTOs ===
 // NOTE: These types are internal data-transfer objects used between the sync layer and the
 // repository / merge logic. They are NOT wire-format types — the actual HTTP request/response
-// bodies are defined in PortalSyncDtos.kt (PortalSyncPushRequest, PortalSyncPullResponse, etc.).
+// bodies are defined in PortalSyncDtos.kt (PortalSyncPayload, PortalSyncPullResponse, etc.).
 
 @Serializable
 data class WorkoutSessionSyncDto(

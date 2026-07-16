@@ -166,7 +166,16 @@ class FakeExternalProgramRepository : ExternalProgramRepository {
 }
 
 class FakeExternalMeasurementRepository : ExternalMeasurementRepository {
+    data class MeasurementObservationRequest(
+        val profileId: String,
+        val measurementType: String,
+    )
+
     val measurements = mutableListOf<ExternalBodyMeasurement>()
+    val observationRequests = mutableListOf<MeasurementObservationRequest>()
+    var upsertFailure: Throwable? = null
+    var observeByTypeOverride:
+        ((String, String) -> Flow<List<ExternalBodyMeasurement>>)? = null
     private val measurementsFlow = MutableStateFlow<List<ExternalBodyMeasurement>>(emptyList())
 
     private fun publishMeasurements() {
@@ -177,11 +186,21 @@ class FakeExternalMeasurementRepository : ExternalMeasurementRepository {
         rows.filter { it.profileId == profileId && (provider == null || it.provider == provider) }
     }
 
-    override fun observeMeasurementsByType(profileId: String, measurementType: String): Flow<List<ExternalBodyMeasurement>> = measurementsFlow.map { rows ->
-        rows.filter { it.profileId == profileId && it.measurementType == measurementType }
+    override fun observeMeasurementsByType(
+        profileId: String,
+        measurementType: String,
+    ): Flow<List<ExternalBodyMeasurement>> {
+        observationRequests += MeasurementObservationRequest(profileId, measurementType)
+        return observeByTypeOverride?.invoke(profileId, measurementType)
+            ?: measurementsFlow.map { rows ->
+                rows.filter {
+                    it.profileId == profileId && it.measurementType == measurementType
+                }
+            }
     }
 
     override suspend fun upsertMeasurements(measurements: List<ExternalBodyMeasurement>) {
+        upsertFailure?.let { throw it }
         for (measurement in measurements) {
             this.measurements.removeAll {
                 it.provider == measurement.provider &&

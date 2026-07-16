@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:name=".qa.ProfileQaDebugApp"
+        tools:replace="android:name">
+
+        <receiver
+            android:name=".qa.ProfileQaSeedReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.devil.phoenixproject.QA_SEED_PROFILE" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

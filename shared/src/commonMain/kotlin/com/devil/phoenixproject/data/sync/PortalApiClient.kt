@@ -2,7 +2,9 @@ package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
+import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
@@ -24,7 +26,6 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.Json
 
 /**
  * Subscription tier precedence (high → low). The portal may return multiple
@@ -47,6 +48,29 @@ internal fun highestKnownTier(subscriptions: List<SubscriptionCheckDto>): String
     .mapNotNull { sub -> TIER_PRECEDENCE[sub.tier]?.let { rank -> sub.tier to rank } }
     .maxByOrNull { (_, rank) -> rank }
     ?.first
+
+private fun HttpClientConfig<*>.configurePortalHttpClient() {
+    install(ContentNegotiation) {
+        json(PortalWireJson)
+    }
+    install(HttpTimeout) {
+        // Issue 4.4: Increased from 30s to 60s for large payloads on slow connections.
+        // Batch size of 50 sessions with nested telemetry can be several MB.
+        requestTimeoutMillis = 60_000
+        connectTimeoutMillis = 10_000
+        socketTimeoutMillis = 60_000
+    }
+    defaultRequest {
+        contentType(ContentType.Application.Json)
+    }
+}
+
+private fun createPortalHttpClient(engine: HttpClientEngine?): HttpClient =
+    if (engine == null) {
+        HttpClient { configurePortalHttpClient() }
+    } else {
+        HttpClient(engine) { configurePortalHttpClient() }
+    }
 
 /**
  * Categorizes sync errors for appropriate retry handling.
@@ -164,7 +188,7 @@ fun classifyByStatusCode(
     )
 
     // Bad request, not found - permanent errors, don't retry
-    400, 404 -> ClassifiedSyncError(
+    400, 404, 413 -> ClassifiedSyncError(
         category = SyncErrorCategory.PERMANENT,
         message = message,
         statusCode = statusCode,
@@ -200,32 +224,14 @@ fun classifyByStatusCode(
     )
 }
 
-open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private val tokenStorage: PortalTokenStorage) {
+open class PortalApiClient(
+    private val supabaseConfig: SupabaseConfig,
+    private val tokenStorage: PortalTokenStorage,
+    httpClientEngine: HttpClientEngine? = null,
+) {
 
     private val refreshMutex = Mutex()
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        encodeDefaults = true
-        explicitNulls = false
-    }
-
-    private val httpClient = HttpClient {
-        install(ContentNegotiation) {
-            json(json)
-        }
-        install(HttpTimeout) {
-            // Issue 4.4: Increased from 30s to 60s for large payloads on slow connections.
-            // Batch size of 50 sessions with nested telemetry can be several MB.
-            requestTimeoutMillis = 60_000
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis = 60_000 // Socket read timeout - must be set explicitly
-        }
-        defaultRequest {
-            contentType(ContentType.Application.Json)
-        }
-    }
+    private val httpClient = createPortalHttpClient(httpClientEngine)
 
     // === GoTrue Auth Endpoints ===
 
@@ -475,15 +481,33 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
             )
         }
 
-        // Serialize once to measure size. Cache the byte array so we do not
-        // pay the encoding cost twice (once for the size check, once for the error message).
-        val serialized = json.encodeToString(PortalSyncPayload.serializer(), payload)
-        val payloadBytes = serialized.encodeToByteArray()
-        if (payloadBytes.size > SyncConfig.MAX_PAYLOAD_BYTES) {
+        val encoded = encodePortalSyncPayload(payload)
+        if (payload.profilePreferenceSections != null) {
+            encoded.preferenceElementSpans.forEach { span ->
+                if (encoded.preferenceElementByteCount(span) > MAX_PROFILE_PREFERENCE_SECTION_BYTES) {
+                    return Result.failure(
+                        PortalApiException(
+                            "SECTION_TOO_LARGE: cap=$MAX_PROFILE_PREFERENCE_SECTION_BYTES",
+                            statusCode = 413,
+                        ),
+                    )
+                }
+            }
+            if (encoded.rawBytes.size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES) {
+                return Result.failure(
+                    PortalApiException(
+                        "REQUEST_TOO_LARGE: cap=$MAX_PROFILE_PREFERENCE_REQUEST_BYTES",
+                        statusCode = 413,
+                    ),
+                )
+            }
+        }
+        if (encoded.rawBytes.size > SyncConfig.MAX_PAYLOAD_BYTES) {
             return Result.failure(
                 PortalApiException(
-                    "Push payload is ${payloadBytes.size} bytes; " +
+                    "Push payload is ${encoded.rawBytes.size} bytes; " +
                         "cap is ${SyncConfig.MAX_PAYLOAD_BYTES} bytes. Caller must split.",
+                    statusCode = 413,
                 ),
             )
         }
@@ -492,8 +516,8 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
             httpClient.post("${supabaseConfig.url}/functions/v1/mobile-sync-push") {
                 bearerAuth(token)
                 header("apikey", supabaseConfig.anonKey)
-                header("Content-Type", "application/json")
-                setBody(serialized)
+                contentType(ContentType.Application.Json)
+                setBody(encoded.rawBytes)
             }
         }
     }

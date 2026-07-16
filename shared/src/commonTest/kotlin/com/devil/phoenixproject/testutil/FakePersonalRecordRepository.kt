@@ -22,6 +22,15 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
     // Track calls for verification
     val updateCalls = mutableListOf<UpdateCall>()
 
+    data class GetAllForExerciseRequest(
+        val exerciseId: String,
+        val profileId: String,
+    )
+
+    val getAllForExerciseRequests = mutableListOf<GetAllForExerciseRequest>()
+    var getAllForExerciseFailure: Throwable? = null
+    var beforeGetAllForExerciseReturn: (suspend (String, String) -> Unit)? = null
+
     data class UpdateCall(
         val exerciseId: String,
         val weightPRWeightPerCableKg: Float,
@@ -41,6 +50,9 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
     fun reset() {
         records.clear()
         updateCalls.clear()
+        getAllForExerciseRequests.clear()
+        getAllForExerciseFailure = null
+        beforeGetAllForExerciseReturn = null
         updateRecordsFlow()
     }
 
@@ -168,9 +180,18 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         }
         .maxByOrNull { it.volume }
 
-    override suspend fun getAllPRsForExercise(exerciseId: String, profileId: String): List<PersonalRecord> = records.values
-        .filter { it.exerciseId == exerciseId && it.profileId == profileId }
-        .sortedByDescending { it.timestamp }
+    override suspend fun getAllPRsForExercise(
+        exerciseId: String,
+        profileId: String,
+    ): List<PersonalRecord> {
+        getAllForExerciseRequests += GetAllForExerciseRequest(exerciseId, profileId)
+        getAllForExerciseFailure?.let { throw it }
+        val result = records.values
+            .filter { it.exerciseId == exerciseId && it.profileId == profileId }
+            .sortedByDescending { it.timestamp }
+        beforeGetAllForExerciseReturn?.invoke(exerciseId, profileId)
+        return result
+    }
 
     override suspend fun updatePRsIfBetter(
         exerciseId: String,

@@ -1,27 +1,59 @@
 package com.devil.phoenixproject.util
 
-import com.devil.phoenixproject.data.repository.SettingsEquipmentRackRepository
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlCursor
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlPreparedStatement
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
+import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
+import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
+import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
+import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.LedPreferences
+import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackItemCategory
+import com.devil.phoenixproject.domain.model.RackPreferences
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
+import com.devil.phoenixproject.domain.model.VbtPreferences
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.russhwolf.settings.MapSettings
 import java.io.File
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Before
 import org.junit.Test
 
@@ -643,6 +675,8 @@ class DataBackupManagerRoutineNameTest {
             createdAt = 1_700_000_000_000,
             isActive = 1L,
         )
+        queries.insertDefaultProfilePreferences("userA", 1L)
+        queries.setActiveProfile("userA")
 
         // 2. Insert a session and routine owned by "userA"
         queries.insertSession(
@@ -772,6 +806,9 @@ class DataBackupManagerRoutineNameTest {
         // 1. Create two profiles; make "userA" active
         queries.insertProfile(id = "userA", name = "User A", colorIndex = 1L, createdAt = 1_700_000_000_000, isActive = 1L)
         queries.insertProfile(id = "userB", name = "User B", colorIndex = 2L, createdAt = 1_700_000_000_001, isActive = 0L)
+        queries.insertDefaultProfilePreferences("userA", 1L)
+        queries.insertDefaultProfilePreferences("userB", 1L)
+        queries.setActiveProfile("userA")
 
         // 2. Insert a session owned by "userB"
         queries.insertSession(
@@ -1003,11 +1040,456 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
-    fun `v4 round-trip restores equipment rack items and routine rack defaults`() = runTest {
-        val sourceRackRepository = SettingsEquipmentRackRepository(MapSettings())
-        val sourceManager = TestDataBackupManager(database, sourceRackRepository)
-        sourceRackRepository.saveItems(
+    fun `v5 buffered and streaming exports include valid profile sections and exclude legacy and local-only state`() = runTest {
+        val fixture = profileFixture()
+        seedDistinctProfilePreferences(fixture)
+        fixture.safetyStore.write(
+            PROFILE_A,
+            ProfileLocalSafetyPreferences(
+                safeWord = "distinctive-do-not-export-phrase",
+                safeWordCalibrated = true,
+                adultsOnlyConfirmed = true,
+                adultsOnlyPrompted = true,
+            ),
+        )
+        executeSql(
+            fixture.driver,
+            "UPDATE UserProfilePreferences SET workout_preferences_json = ? WHERE profile_id = ?",
+            "{broken-workout-json",
+            PROFILE_B,
+        )
+
+        val buffered = fixture.manager.exportToJson()
+        val streaming = File(fixture.manager.exportToCachePublic()).readText()
+
+        listOf(buffered, streaming).forEach { output ->
+            val root = testJson.parseToJsonElement(output).jsonObject
+            val data = root.getValue("data").jsonObject
+            assertEquals(5, root.getValue("version").jsonPrimitive.content.toInt())
+            assertEquals(setOf(PROFILE_A, PROFILE_B, "default"), data.getValue("userProfiles").jsonArray
+                .map { it.jsonObject.getValue("id").jsonPrimitive.content }
+                .toSet())
+            val preferenceEntries = data.getValue("profilePreferences").jsonArray
+                .associateBy { it.jsonObject.getValue("profileId").jsonPrimitive.content }
+            assertEquals(3, preferenceEntries.size)
+            assertEquals("70.0", preferenceEntries.getValue(PROFILE_A).jsonObject
+                .getValue("core").jsonObject.getValue("bodyWeightKg").jsonPrimitive.content)
+            assertTrue("rack" in preferenceEntries.getValue(PROFILE_A).jsonObject)
+            assertTrue("led" in preferenceEntries.getValue(PROFILE_A).jsonObject)
+            assertTrue("vbt" in preferenceEntries.getValue(PROFILE_A).jsonObject)
+            assertFalse("workout" in preferenceEntries.getValue(PROFILE_B).jsonObject)
+            assertFalse("equipmentRackItems" in data)
             listOf(
+                "localGeneration",
+                "serverRevision",
+                "dirty",
+                "distinctive-do-not-export-phrase",
+                "safeWord",
+                "safe_word",
+                "calibrated",
+                "adultsOnly",
+                "adult_confirm",
+                "adult_prompt",
+            ).forEach { forbidden -> assertFalse(output.contains(forbidden, ignoreCase = true), forbidden) }
+        }
+    }
+
+    @Test
+    fun `v1 through v3 ignore supplied preferences and legacy rack`() = runTest {
+        for (version in 1..3) {
+            val fixture = profileFixture()
+            seedDistinctProfilePreferences(fixture)
+            val beforeA = fixture.preferences.get(PROFILE_A)
+            val payload = rawBackupJson(
+                version = version,
+                identities = listOf(profileBackup(PROFILE_A)),
+                profilePreferences = listOf(
+                    preferenceEntry(
+                        PROFILE_A,
+                        core = jsonElement(CoreProfilePreferences(120f, WeightUnit.LB, 10f)),
+                        rack = jsonElement(RackPreferences()),
+                    ),
+                ),
+                legacyRackPresent = true,
+                legacyRack = JsonArray(emptyList()),
+            )
+
+            val result = fixture.manager.importFromJson(payload)
+
+            assertTrue(result.isSuccess, "v$version: ${result.exceptionOrNull()}")
+            val afterA = fixture.preferences.get(PROFILE_A)
+            assertEquals(beforeA.core.value, afterA.core.value, "v$version core")
+            assertEquals(beforeA.rack.value, afterA.rack.value, "v$version rack")
+        }
+    }
+
+    @Test
+    fun `v4 legacy rack preserves all raw states and targets represented profiles exactly once`() = runTest {
+        suspend fun importRack(
+            present: Boolean,
+            raw: JsonElement,
+            identities: List<UserProfileBackup> = listOf(profileBackup(PROFILE_A), profileBackup(PROFILE_B)),
+        ): Pair<PreferenceFixture, ImportResult> {
+            val fixture = profileFixture()
+            seedDistinctProfilePreferences(fixture)
+            val payload = rawBackupJson(
+                version = 4,
+                identities = identities,
+                profilePreferences = listOf(
+                    preferenceEntry(PROFILE_A, rack = jsonElement(RackPreferences())),
+                ),
+                legacyRackPresent = present,
+                legacyRack = raw,
+            )
+            return fixture to fixture.manager.importFromJson(payload).getOrThrow()
+        }
+
+        val missing = importRack(false, JsonNull).first
+        assertEquals(listOf("a-existing", "shared"), missing.preferences.get(PROFILE_A).rack.value.items.map { it.id })
+
+        val explicitNull = importRack(true, JsonNull)
+        assertEquals(1, explicitNull.second.entitiesWithErrors)
+        assertEquals(listOf("a-existing", "shared"), explicitNull.first.preferences.get(PROFILE_A).rack.value.items.map { it.id })
+
+        val scalar = importRack(true, JsonPrimitive("wrong-kind"))
+        assertEquals(1, scalar.second.entitiesWithErrors)
+        assertEquals(listOf("a-existing", "shared"), scalar.first.preferences.get(PROFILE_A).rack.value.items.map { it.id })
+
+        val malformedArray = importRack(
+            true,
+            JsonArray(listOf(buildJsonObject { put("id", "missing-required-fields") })),
+        )
+        assertEquals(1, malformedArray.second.entitiesWithErrors)
+        assertEquals(listOf("a-existing", "shared"), malformedArray.first.preferences.get(PROFILE_A).rack.value.items.map { it.id })
+
+        val empty = importRack(true, JsonArray(emptyList())).first
+        assertTrue(empty.preferences.get(PROFILE_A).rack.value.items.isEmpty())
+        assertTrue(empty.preferences.get(PROFILE_B).rack.value.items.isEmpty())
+
+        val replacement = rackItem("shared", "Imported shared", 99f)
+        val appended = rackItem("new-item", "New item", 3f)
+        val merged = importRack(true, jsonElement(listOf(replacement, appended))).first
+        assertEquals(
+            listOf("a-existing", "shared", "new-item"),
+            merged.preferences.get(PROFILE_A).rack.value.items.map { it.id },
+        )
+        assertEquals("Imported shared", merged.preferences.get(PROFILE_A).rack.value.items[1].name)
+        assertEquals(
+            listOf("b-existing", "shared", "new-item"),
+            merged.preferences.get(PROFILE_B).rack.value.items.map { it.id },
+        )
+
+        val fallback = importRack(true, JsonArray(emptyList()), identities = emptyList()).first
+        assertTrue(fallback.preferences.get(PROFILE_A).rack.value.items.isEmpty())
+        assertEquals(
+            listOf("b-existing", "shared"),
+            fallback.preferences.get(PROFILE_B).rack.value.items.map { it.id },
+            "active fallback must not also mutate unrelated profiles",
+        )
+    }
+
+    @Test
+    fun `v5 restores valid sections independently through repository metadata semantics and allowlist`() = runTest {
+        val fixture = profileFixture()
+        seedDistinctProfilePreferences(fixture)
+        insertProfile(fixture, PROFILE_C, active = false)
+        fixture.preferences.updateCore(PROFILE_C, CoreProfilePreferences(55f, WeightUnit.KG, 1f), 2L)
+        executeSql(
+            fixture.driver,
+            "UPDATE UserProfilePreferences SET core_server_revision = 42, core_local_generation = 7, core_dirty = 0 WHERE profile_id = ?",
+            PROFILE_A,
+        )
+        fixture.safetyStore.write(PROFILE_A, ProfileLocalSafetyPreferences("target-secret", true, true, true))
+        val beforeA = fixture.preferences.get(PROFILE_A)
+        val beforeB = fixture.preferences.get(PROFILE_B)
+        val payload = rawBackupJson(
+            version = 5,
+            identities = listOf(profileBackup(PROFILE_A), profileBackup(PROFILE_B)),
+            profilePreferences = listOf(
+                preferenceEntry(
+                    PROFILE_A,
+                    core = JsonPrimitive("wrong-kind"),
+                    workout = jsonElement(WorkoutPreferences(stopAtTop = true, summaryCountdownSeconds = 30)),
+                    led = jsonElement(LedPreferences(colorScheme = 11, discoModeUnlocked = true)),
+                ),
+                preferenceEntry(
+                    PROFILE_B,
+                    core = jsonElement(CoreProfilePreferences(101f, WeightUnit.LB, 5f)),
+                    vbt = jsonElement(VbtPreferences(enabled = false, velocityLossThresholdPercent = 45)),
+                ),
+                preferenceEntry(
+                    PROFILE_C,
+                    core = jsonElement(CoreProfilePreferences(130f, WeightUnit.KG, 2f)),
+                ),
+                preferenceEntry(
+                    "missing-identity",
+                    core = jsonElement(CoreProfilePreferences(140f, WeightUnit.KG, 2f)),
+                ),
+            ),
+            legacyRackPresent = true,
+            legacyRack = JsonArray(emptyList()),
+        )
+
+        val result = fixture.manager.importFromJson(payload)
+
+        assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
+        assertEquals(1, result.getOrThrow().entitiesWithErrors)
+        val afterA = fixture.preferences.get(PROFILE_A)
+        val afterB = fixture.preferences.get(PROFILE_B)
+        assertEquals(beforeA.core.value, afterA.core.value, "invalid core is non-destructive")
+        assertEquals(42L, afterA.core.metadata.serverRevision)
+        assertEquals(7L, afterA.core.metadata.localGeneration)
+        assertFalse(afterA.core.metadata.dirty)
+        assertEquals(30, afterA.workout.value.summaryCountdownSeconds)
+        assertEquals(11, afterA.led.value.colorScheme)
+        assertEquals(101f, afterB.core.value.bodyWeightKg)
+        assertEquals(beforeB.core.metadata.serverRevision, afterB.core.metadata.serverRevision)
+        assertEquals(beforeB.core.metadata.localGeneration + 1, afterB.core.metadata.localGeneration)
+        assertTrue(afterB.core.metadata.dirty)
+        assertEquals(55f, fixture.preferences.get(PROFILE_C).core.value.bodyWeightKg)
+        assertEquals("target-secret", fixture.safetyStore.read(PROFILE_A).safeWord)
+        assertEquals(1, fixture.userProfiles.reconcileCalls)
+        assertEquals(70f, fixture.userProfiles.observedPreferences?.core?.value?.bodyWeightKg)
+    }
+
+    @Test
+    fun `v5 ignores legacy rack and v6 restores known fields while dropping unknown fields`() = runTest {
+        val fixture = profileFixture()
+        seedDistinctProfilePreferences(fixture)
+        val entry = buildJsonObject {
+            put("profileId", PROFILE_A)
+            put("core", buildJsonObject {
+                put("bodyWeightKg", 88f)
+                put("weightUnit", "KG")
+                put("weightIncrement", 2.5f)
+                put("unknownCoreField", true)
+            })
+            put("unknownEntryField", buildJsonObject { put("nested", true) })
+        }
+        val v6 = rawBackupJson(
+            version = 6,
+            identities = listOf(profileBackup(PROFILE_A)),
+            profilePreferences = listOf(entry),
+            legacyRackPresent = true,
+            legacyRack = JsonArray(emptyList()),
+            unknownData = true,
+            unknownRoot = true,
+        )
+
+        val result = fixture.manager.importFromJson(v6)
+
+        assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
+        assertEquals(88f, fixture.preferences.get(PROFILE_A).core.value.bodyWeightKg)
+        assertEquals(
+            listOf("a-existing", "shared"),
+            fixture.preferences.get(PROFILE_A).rack.value.items.map { it.id },
+            "v5+ must ignore a supplied legacy rack",
+        )
+    }
+
+    @Test
+    fun `backup active flags are informational and reconciliation failures do not replace restore failures`() = runTest {
+        listOf(
+            listOf(false, false),
+            listOf(false, true),
+            listOf(true, true),
+        ).forEach { flags ->
+            val fixture = profileFixture()
+            seedDistinctProfilePreferences(fixture)
+            val payload = rawBackupJson(
+                version = 5,
+                identities = listOf(
+                    profileBackup(PROFILE_A, flags[0]),
+                    profileBackup(PROFILE_B, flags[1]),
+                ),
+            )
+            assertTrue(fixture.manager.importFromJson(payload).isSuccess)
+            val profiles = fixture.database.vitruvianDatabaseQueries.getAllProfiles().executeAsList()
+            assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
+        }
+
+        val restoreFailure = IllegalStateException("preference storage failed")
+        val reconcileFailure = IllegalArgumentException("reconcile failed")
+        val fixture = profileFixture(
+            preferenceDecorator = { delegate ->
+                FaultingProfilePreferencesRepository(delegate, restoreFailure)
+            },
+            reconcileFailure = reconcileFailure,
+        )
+        val payload = rawBackupJson(
+            version = 5,
+            identities = listOf(profileBackup("default")),
+            profilePreferences = listOf(
+                preferenceEntry(
+                    "default",
+                    core = jsonElement(CoreProfilePreferences(80f, WeightUnit.KG, 2.5f)),
+                ),
+            ),
+        )
+
+        val result = fixture.manager.importFromJson(payload)
+
+        assertTrue(result.isFailure)
+        assertSame(restoreFailure, result.exceptionOrNull())
+        assertTrue(result.exceptionOrNull()!!.suppressed.any { it.message == reconcileFailure.message })
+        assertEquals(1, fixture.userProfiles.reconcileCalls)
+    }
+
+    @Test
+    fun `identity query failure is fatal for buffered and streaming export and deletes partial output`() = runTest {
+        val driver = FailingIdentityQueryDriver(JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY))
+        val fixture = profileFixture(driver)
+        seedDistinctProfilePreferences(fixture)
+        driver.failIdentityQueries = true
+
+        val bufferedFailure = runCatching { fixture.manager.exportAllData() }.exceptionOrNull()
+        assertNotNull(bufferedFailure, "buffered export must not substitute an empty identity list")
+
+        val streamingFailure = runCatching { fixture.manager.exportToCachePublic() }.exceptionOrNull()
+        assertNotNull(streamingFailure, "streaming export must not substitute an empty identity list")
+        val partialPath = assertNotNull(fixture.manager.lastWriterPath)
+        assertFalse(File(partialPath).exists(), "failed streaming export must delete its partial file")
+    }
+
+    @Test
+    fun `missing profile preference aggregate is fatal for both exports and deletes streaming partial output`() = runTest {
+        val fixture = profileFixture()
+        seedDistinctProfilePreferences(fixture)
+        executeSql(
+            fixture.driver,
+            "DELETE FROM UserProfilePreferences WHERE profile_id = ?",
+            PROFILE_B,
+        )
+
+        val bufferedFailure = runCatching { fixture.manager.exportAllData() }.exceptionOrNull()
+        assertNotNull(bufferedFailure, "buffered export must fail when an identity aggregate is missing")
+
+        val streamingFailure = runCatching { fixture.manager.exportToCachePublic() }.exceptionOrNull()
+        assertNotNull(streamingFailure, "streaming export must fail when an identity aggregate is missing")
+        val partialPath = assertNotNull(fixture.manager.lastWriterPath)
+        assertFalse(File(partialPath).exists(), "failed streaming export must delete its partial file")
+    }
+
+    @Test
+    fun `buffered legacy and absent explicit owners use represented fallback when active is absent`() = runTest {
+        val fixture = profileFixture()
+        val represented = "first-represented"
+        fun session(id: String, profileId: String?) = WorkoutSessionBackup(
+            id = id,
+            timestamp = 1L,
+            mode = "Old School",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            profileId = profileId,
+        )
+        val explicitDefault = session("explicit-default", "original-owner")
+        val explicitRepresented = session("explicit-represented", "original-owner")
+        val seedResult = fixture.manager.importFromJson(
+            testJson.encodeToString(
+                BackupData(
+                    version = 5,
+                    exportedAt = "seed",
+                    appVersion = "test",
+                    data = BackupContent(
+                        workoutSessions = listOf(explicitDefault, explicitRepresented),
+                    ),
+                ),
+            ),
+        )
+        assertTrue(seedResult.isSuccess, seedResult.exceptionOrNull()?.toString())
+        executeSql(fixture.driver, "DELETE FROM UserProfile WHERE id = ?", "default")
+        val payload = BackupData(
+            version = 5,
+            exportedAt = "2026-07-12T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                userProfiles = listOf(profileBackup(represented)),
+                workoutSessions = listOf(
+                    session("legacy-fallback-session", null),
+                    explicitDefault.copy(profileId = "default"),
+                    explicitRepresented.copy(profileId = represented),
+                ),
+            ),
+        )
+
+        val result = fixture.manager.importFromJson(testJson.encodeToString(payload))
+
+        assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
+        assertEquals(
+            represented,
+            fixture.database.vitruvianDatabaseQueries
+                .selectSessionById("legacy-fallback-session")
+                .executeAsOne()
+                .profile_id,
+        )
+        assertEquals(
+            represented,
+            fixture.database.vitruvianDatabaseQueries
+                .selectSessionById(explicitDefault.id)
+                .executeAsOne()
+                .profile_id,
+        )
+        assertEquals(
+            represented,
+            fixture.database.vitruvianDatabaseQueries
+                .selectSessionById(explicitRepresented.id)
+                .executeAsOne()
+                .profile_id,
+        )
+        assertEquals(
+            represented,
+            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+        )
+    }
+
+    @Test
+    fun `buffered session import adopts explicit owner when its profile is absent`() = runTest {
+        val activeProfileId = database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id
+        val session = WorkoutSessionBackup(
+            id = "buffered-missing-profile-session",
+            timestamp = 1L,
+            mode = "Old School",
+            targetReps = 1,
+            weightPerCableKg = 1f,
+            progressionKg = 0f,
+            duration = 1L,
+            totalReps = 1,
+            warmupReps = 0,
+            workingReps = 1,
+            isJustLift = false,
+            stopAtTop = false,
+            profileId = "deleted-source-profile",
+        )
+        val payload = BackupData(
+            version = 5,
+            exportedAt = "2026-07-15T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(workoutSessions = listOf(session)),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(payload))
+
+        assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
+        assertEquals(
+            activeProfileId,
+            database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
+        )
+    }
+
+    @Test
+    fun `v5 round-trip restores profile rack and routine rack defaults`() = runTest {
+        val source = profileFixture()
+        seedDistinctProfilePreferences(source)
+        source.preferences.updateRack(
+            PROFILE_A,
+            RackPreferences(items = listOf(
                 RackItem(
                     id = "vest",
                     name = "Weighted Vest",
@@ -1015,9 +1497,11 @@ class DataBackupManagerRoutineNameTest {
                     weightKg = 10f,
                     behavior = RackItemBehavior.ADDED_RESISTANCE,
                 ),
-            ),
+            )),
+            30L,
         )
-        workoutRepository.saveRoutine(
+        val sourceWorkoutRepository = SqlDelightWorkoutRepository(source.database, FakeExerciseRepository())
+        sourceWorkoutRepository.saveRoutine(
             buildRoutine(
                 routineId = "routine-rack-backup",
                 routineName = "Rack Backup",
@@ -1032,16 +1516,14 @@ class DataBackupManagerRoutineNameTest {
             },
         )
 
-        val backupJson = sourceManager.exportToJson()
-        val targetDatabase = createTestDatabase()
-        val targetRackRepository = SettingsEquipmentRackRepository(MapSettings())
-        val targetManager = TestDataBackupManager(targetDatabase, targetRackRepository)
+        val backupJson = source.manager.exportToJson()
+        val target = profileFixture()
 
-        val importResult = targetManager.importFromJson(backupJson)
+        val importResult = target.manager.importFromJson(backupJson)
 
-        assertTrue(importResult.isSuccess, "v4 backup import must succeed: ${importResult.exceptionOrNull()?.message}")
-        assertEquals("vest", targetRackRepository.getItems().single().id)
-        val importedExercise = targetDatabase.vitruvianDatabaseQueries
+        assertTrue(importResult.isSuccess, "v5 backup import must succeed: ${importResult.exceptionOrNull()?.message}")
+        assertEquals("vest", target.preferences.get(PROFILE_A).rack.value.items.single().id)
+        val importedExercise = target.database.vitruvianDatabaseQueries
             .selectAllRoutineExercisesSync()
             .executeAsList()
             .single()
@@ -1112,18 +1594,288 @@ class DataBackupManagerRoutineNameTest {
         )
     }
 
+    private fun profileFixture(
+        driver: SqlDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY),
+        preferenceDecorator: (ProfilePreferencesRepository) -> ProfilePreferencesRepository = { it },
+        reconcileFailure: Throwable? = null,
+    ): PreferenceFixture {
+        VitruvianDatabase.Schema.create(driver)
+        val fixtureDatabase = VitruvianDatabase(driver)
+        val realPreferences = SqlDelightProfilePreferencesRepository(fixtureDatabase)
+        val effectivePreferences = preferenceDecorator(realPreferences)
+        val safetyStore = SettingsProfileLocalSafetyStore(MapSettings())
+        val realUserProfiles = SqlDelightUserProfileRepository(
+            database = fixtureDatabase,
+            profilePreferencesRepository = effectivePreferences,
+            profileLocalSafetyStore = safetyStore,
+            gamificationRepository = SqlDelightGamificationRepository(fixtureDatabase),
+        )
+        fixtureDatabase.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+        val recordingUserProfiles = RecordingUserProfileRepository(
+            delegate = realUserProfiles,
+            preferences = effectivePreferences,
+            reconciliationFailure = reconcileFailure,
+        )
+        return PreferenceFixture(
+            driver = driver,
+            database = fixtureDatabase,
+            preferences = effectivePreferences,
+            safetyStore = safetyStore,
+            userProfiles = recordingUserProfiles,
+            manager = TestDataBackupManager(
+                database = fixtureDatabase,
+                profilePreferencesRepository = effectivePreferences,
+                userProfileRepository = recordingUserProfiles,
+            ),
+        )
+    }
+
+    private suspend fun seedDistinctProfilePreferences(fixture: PreferenceFixture) {
+        insertProfile(fixture, PROFILE_A, active = false)
+        insertProfile(fixture, PROFILE_B, active = false)
+        fixture.database.vitruvianDatabaseQueries.setActiveProfile(PROFILE_A)
+        fixture.preferences.updateCore(PROFILE_A, CoreProfilePreferences(70f, WeightUnit.KG, 2.5f), 10L)
+        fixture.preferences.updateRack(
+            PROFILE_A,
+            RackPreferences(items = listOf(
+                rackItem("a-existing", "A existing", 1f),
+                rackItem("shared", "A shared", 2f),
+            )),
+            11L,
+        )
+        fixture.preferences.updateWorkout(
+            PROFILE_A,
+            WorkoutPreferences(stopAtTop = true, summaryCountdownSeconds = 5),
+            12L,
+        )
+        fixture.preferences.updateLed(PROFILE_A, LedPreferences(colorScheme = 2), 13L)
+        fixture.preferences.updateVbt(
+            PROFILE_A,
+            VbtPreferences(enabled = false, velocityLossThresholdPercent = 30),
+            14L,
+        )
+
+        fixture.preferences.updateCore(PROFILE_B, CoreProfilePreferences(90f, WeightUnit.LB, 5f), 20L)
+        fixture.preferences.updateRack(
+            PROFILE_B,
+            RackPreferences(items = listOf(
+                rackItem("b-existing", "B existing", 4f),
+                rackItem("shared", "B shared", 5f),
+            )),
+            21L,
+        )
+        fixture.preferences.updateWorkout(
+            PROFILE_B,
+            WorkoutPreferences(beepsEnabled = false, summaryCountdownSeconds = 15),
+            22L,
+        )
+        fixture.preferences.updateLed(PROFILE_B, LedPreferences(colorScheme = 7), 23L)
+        fixture.preferences.updateVbt(
+            PROFILE_B,
+            VbtPreferences(enabled = true, velocityLossThresholdPercent = 40),
+            24L,
+        )
+    }
+
+    private fun insertProfile(fixture: PreferenceFixture, id: String, active: Boolean) {
+        if (fixture.database.vitruvianDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
+            fixture.database.vitruvianDatabaseQueries.insertProfile(
+                id = id,
+                name = id,
+                colorIndex = 0L,
+                createdAt = when (id) {
+                    PROFILE_A -> 100L
+                    PROFILE_B -> 200L
+                    else -> 300L
+                },
+                isActive = if (active) 1L else 0L,
+            )
+        }
+        fixture.database.vitruvianDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
+        if (active) fixture.database.vitruvianDatabaseQueries.setActiveProfile(id)
+    }
+
+    private inline fun <reified T> jsonElement(value: T): JsonElement =
+        testJson.encodeToJsonElement(value)
+
+    private fun rackItem(id: String, name: String, weight: Float) = RackItem(
+        id = id,
+        name = name,
+        category = RackItemCategory.OTHER,
+        weightKg = weight,
+        behavior = RackItemBehavior.ADDED_RESISTANCE,
+        createdAt = 1L,
+        updatedAt = 1L,
+    )
+
+    private fun profileBackup(id: String, active: Boolean = false) = UserProfileBackup(
+        id = id,
+        name = id,
+        colorIndex = 0,
+        createdAt = when (id) {
+            PROFILE_A -> 100L
+            PROFILE_B -> 200L
+            else -> 300L
+        },
+        isActive = active,
+    )
+
+    private fun preferenceEntry(
+        profileId: String,
+        core: JsonElement? = null,
+        rack: JsonElement? = null,
+        workout: JsonElement? = null,
+        led: JsonElement? = null,
+        vbt: JsonElement? = null,
+    ): JsonElement = buildJsonObject {
+        put("profileId", profileId)
+        core?.let { put("core", it) }
+        rack?.let { put("rack", it) }
+        workout?.let { put("workout", it) }
+        led?.let { put("led", it) }
+        vbt?.let { put("vbt", it) }
+    }
+
+    private fun rawBackupJson(
+        version: Int,
+        identities: List<UserProfileBackup> = emptyList(),
+        profilePreferences: List<JsonElement> = emptyList(),
+        legacyRackPresent: Boolean = false,
+        legacyRack: JsonElement = JsonNull,
+        unknownData: Boolean = false,
+        unknownRoot: Boolean = false,
+    ): String = buildJsonObject {
+        put("version", version)
+        put("exportedAt", "2026-07-12T00:00:00Z")
+        put("appVersion", "test")
+        put("data", buildJsonObject {
+            put("userProfiles", testJson.encodeToJsonElement(identities))
+            put("profilePreferences", JsonArray(profilePreferences))
+            if (legacyRackPresent) put("equipmentRackItems", legacyRack)
+            if (unknownData) put("futureData", buildJsonObject { put("ignored", true) })
+        })
+        if (unknownRoot) put("futureRoot", JsonArray(listOf(JsonPrimitive(1))))
+    }.toString()
+
+    private fun executeSql(driver: SqlDriver, sql: String, vararg values: Any?) {
+        driver.execute(null, sql, values.size) {
+            values.forEachIndexed { index, value ->
+                when (value) {
+                    null -> bindString(index, null)
+                    is String -> bindString(index, value)
+                    is Long -> bindLong(index, value)
+                    is Int -> bindLong(index, value.toLong())
+                    is Double -> bindDouble(index, value)
+                    else -> error("Unsupported SQL value: $value")
+                }
+            }
+        }
+    }
+
+    private data class PreferenceFixture(
+        val driver: SqlDriver,
+        val database: VitruvianDatabase,
+        val preferences: ProfilePreferencesRepository,
+        val safetyStore: ProfileLocalSafetyStore,
+        val userProfiles: RecordingUserProfileRepository,
+        val manager: TestDataBackupManager,
+    )
+
+    private class RecordingUserProfileRepository(
+        private val delegate: UserProfileRepository,
+        private val preferences: ProfilePreferencesRepository,
+        private val reconciliationFailure: Throwable? = null,
+    ) : UserProfileRepository by delegate {
+        var reconcileCalls: Int = 0
+            private set
+        var observedPreferences: UserProfilePreferences? = null
+            private set
+
+        override suspend fun reconcileActiveProfileContext() {
+            reconcileCalls++
+            reconciliationFailure?.let { throw it }
+            delegate.reconcileActiveProfileContext()
+            delegate.activeProfile.value?.id?.let { activeId ->
+                observedPreferences = preferences.get(activeId)
+            }
+        }
+    }
+
+    private class FaultingProfilePreferencesRepository(
+        private val delegate: ProfilePreferencesRepository,
+        private val failure: Throwable,
+    ) : ProfilePreferencesRepository by delegate {
+        override suspend fun updateCore(profileId: String, value: CoreProfilePreferences, now: Long) {
+            throw failure
+        }
+    }
+
+    private class FailingIdentityQueryDriver(
+        private val delegate: SqlDriver,
+    ) : SqlDriver by delegate {
+        var failIdentityQueries: Boolean = false
+
+        override fun <R> executeQuery(
+            identifier: Int?,
+            sql: String,
+            mapper: (SqlCursor) -> QueryResult<R>,
+            parameters: Int,
+            binders: (SqlPreparedStatement.() -> Unit)?,
+        ): QueryResult<R> {
+            if (failIdentityQueries &&
+                (identifier == SELECT_ALL_USER_PROFILES_IDENTIFIER || sql.contains("FROM UserProfile"))
+            ) {
+                throw IllegalStateException("injected identity export query failure")
+            }
+            return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
+        }
+
+        private companion object {
+            const val SELECT_ALL_USER_PROFILES_IDENTIFIER = -107_782_522
+        }
+    }
+
+    private companion object {
+        const val PROFILE_A = "profile-a"
+        const val PROFILE_B = "profile-b"
+        const val PROFILE_C = "profile-c"
+
+        fun createTestUserProfileRepository(
+            database: VitruvianDatabase,
+            preferences: ProfilePreferencesRepository,
+        ): UserProfileRepository = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = preferences,
+            profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings()),
+            gamificationRepository = SqlDelightGamificationRepository(database),
+        ).also {
+            database.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+        }
+    }
+
     private class TestDataBackupManager(
         database: com.devil.phoenixproject.database.VitruvianDatabase,
-        equipmentRackRepository: SettingsEquipmentRackRepository = SettingsEquipmentRackRepository(MapSettings()),
+        val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),
+        val userProfileRepository: UserProfileRepository = createTestUserProfileRepository(
+            database,
+            profilePreferencesRepository,
+        ),
     ) : BaseDataBackupManager(
         database,
-        equipmentRackRepository,
+        profilePreferencesRepository,
+        userProfileRepository,
     ) {
+
+        var lastWriterPath: String? = null
+            private set
 
         override fun createBackupWriter(): BackupJsonWriter {
             val tempFile = File.createTempFile("backup-test-", ".json")
+            lastWriterPath = tempFile.absolutePath
             return BackupJsonWriter(tempFile.absolutePath)
         }
+
+        suspend fun exportToCachePublic(): String = exportToCache()
 
         override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
 

@@ -26,14 +26,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
+import com.devil.phoenixproject.domain.usecase.CurrentOneRepMax
+import com.devil.phoenixproject.domain.usecase.CurrentOneRepMaxSource
+import com.devil.phoenixproject.domain.usecase.ResolveCurrentOneRepMaxUseCase
+import com.devil.phoenixproject.domain.usecase.estimatedOneRepMaxPerCableOrNull
 import com.devil.phoenixproject.presentation.components.charts.ProgressionLineChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
-import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
@@ -41,12 +43,62 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
-import com.devil.phoenixproject.util.OneRepMaxCalculator
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.ShimmerBox
+import kotlin.coroutines.cancellation.CancellationException
 import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+
+internal data class ExerciseDetailOneRepMaxRequest(
+    val exerciseId: String,
+    val profileId: String,
+    val completedSessions: List<WorkoutSession>,
+)
+
+internal data class ExerciseDetailOneRepMaxLoadToken(
+    val generation: Long,
+    val request: ExerciseDetailOneRepMaxRequest,
+)
+
+internal class ExerciseDetailOneRepMaxLoadGate {
+    private var generation = 0L
+    private var active: ExerciseDetailOneRepMaxLoadToken? = null
+
+    fun begin(request: ExerciseDetailOneRepMaxRequest): ExerciseDetailOneRepMaxLoadToken =
+        ExerciseDetailOneRepMaxLoadToken(++generation, request).also { active = it }
+
+    fun isCurrent(token: ExerciseDetailOneRepMaxLoadToken): Boolean = active == token
+}
+
+internal sealed interface ExerciseDetailOneRepMaxState {
+    data object Loading : ExerciseDetailOneRepMaxState
+    data class Ready(val resolution: CurrentOneRepMax?) : ExerciseDetailOneRepMaxState
+    data object Failed : ExerciseDetailOneRepMaxState
+}
+
+internal suspend fun loadExerciseDetailOneRepMax(
+    request: ExerciseDetailOneRepMaxRequest,
+    gate: ExerciseDetailOneRepMaxLoadGate,
+    resolve: suspend (exerciseId: String, profileId: String) -> CurrentOneRepMax?,
+    publish: (ExerciseDetailOneRepMaxState) -> Unit,
+) {
+    val token = gate.begin(request)
+    publish(ExerciseDetailOneRepMaxState.Loading)
+    try {
+        val resolution = resolve(request.exerciseId, request.profileId)
+        if (gate.isCurrent(token)) {
+            publish(ExerciseDetailOneRepMaxState.Ready(resolution))
+        }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Exception) {
+        if (gate.isCurrent(token)) {
+            publish(ExerciseDetailOneRepMaxState.Failed)
+        }
+    }
+}
 
 /**
  * Detail screen for a single exercise.
@@ -55,17 +107,34 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewModel: MainViewModel, themeMode: ThemeMode) {
+fun ExerciseDetailScreen(
+    exerciseId: String,
+    navController: NavController,
+    viewModel: MainViewModel,
+    themeMode: ThemeMode,
+    assessmentProfileId: String?,
+    onNavigateToStrengthAssessment: (String) -> Unit,
+) {
     val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val isConnected = connectionState is ConnectionState.Connected
 
-    // Filter sessions for this exercise
-    val exerciseSessions = remember(allWorkoutSessions, exerciseId) {
-        allWorkoutSessions
-            .filter { it.exerciseId == exerciseId }
-            .sortedByDescending { it.timestamp }
+    val profileId = assessmentProfileId
+    val exerciseSessions = remember(allWorkoutSessions, exerciseId, profileId) {
+        if (profileId == null) {
+            emptyList()
+        } else {
+            allWorkoutSessions
+                .asSequence()
+                .filter { it.profileId == profileId && it.exerciseId == exerciseId }
+                .filter { it.workingReps > 0 || it.totalReps > 0 }
+                .sortedWith(
+                    compareByDescending<WorkoutSession> { it.timestamp }
+                        .thenByDescending { it.id },
+                )
+                .toList()
+        }
     }
 
     // Get exercise name — null while the repository call is in flight
@@ -78,26 +147,45 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
         viewModel.updateTopBarTitle("")
     }
 
-    // Velocity-based 1RM estimate (issue #517): latest estimate that passed the quality gate,
-    // scoped to the active profile. Keyed on exerciseId + profileId so the value resets (no
-    // stale flash) when either changes.
-    val profileId by viewModel.activeProfileId.collectAsState()
-    var velocity1Rm by remember(exerciseId, profileId) { mutableStateOf<VelocityOneRepMaxEntity?>(null) }
-    LaunchedEffect(exerciseId, profileId) {
-        velocity1Rm = viewModel.velocityOneRepMaxRepository.getLatestPassing(exerciseId, profileId)
+    val resolveCurrentOneRepMax: ResolveCurrentOneRepMaxUseCase = koinInject()
+    val loadGate = remember { ExerciseDetailOneRepMaxLoadGate() }
+    val request = remember(exerciseId, profileId, exerciseSessions) {
+        profileId?.let {
+            ExerciseDetailOneRepMaxRequest(
+                exerciseId = exerciseId,
+                profileId = it,
+                completedSessions = exerciseSessions,
+            )
+        }
+    }
+    val stateHolder = remember(request) {
+        mutableStateOf<ExerciseDetailOneRepMaxState>(
+            ExerciseDetailOneRepMaxState.Loading,
+        )
+    }
+    val oneRepMaxState by stateHolder
+
+    LaunchedEffect(request, resolveCurrentOneRepMax) {
+        val currentRequest = request ?: return@LaunchedEffect
+        loadExerciseDetailOneRepMax(
+            request = currentRequest,
+            gate = loadGate,
+            resolve = resolveCurrentOneRepMax::invoke,
+            publish = { stateHolder.value = it },
+        )
     }
 
-    // Calculate 1RM progression using saved per-cable load.
-    val oneRepMaxData = remember(exerciseSessions) {
+    val validSessionEstimatesNewestFirst = remember(exerciseSessions) {
         exerciseSessions.mapNotNull { session ->
-            if (session.workingReps > 0) {
-                val oneRm = calculateOneRepMax(session.weightPerCableKg, session.workingReps)
-                session.timestamp to oneRm
-            } else {
-                null
-            }
-        }.reversed() // Chronological order for chart
+            session.estimatedOneRepMaxPerCableOrNull()
+                ?.let { estimate -> session.timestamp to estimate }
+        }
     }
+    val oneRepMaxData = remember(validSessionEstimatesNewestFirst) {
+        validSessionEstimatesNewestFirst.reversed()
+    }
+    val previousSessionOneRepMax =
+        validSessionEstimatesNewestFirst.getOrNull(1)?.second
 
     // Weight-over-time trend data using saved per-cable load.
     val weightTrendData = remember(exerciseSessions) {
@@ -114,9 +202,6 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
     val chronologicalSessions = remember(exerciseSessions) {
         exerciseSessions.reversed()
     }
-
-    val currentOneRepMax = oneRepMaxData.lastOrNull()?.second
-    val previousOneRepMax = if (oneRepMaxData.size >= 2) oneRepMaxData[oneRepMaxData.size - 2].second else null
 
     // View mode toggle: "charts" or "table"
     var viewMode by remember { mutableStateOf("charts") }
@@ -156,11 +241,10 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
                 // 1RM Hero Card
                 item {
                     OneRepMaxCard(
-                        currentOneRepMax = currentOneRepMax,
-                        previousOneRepMax = previousOneRepMax,
+                        state = oneRepMaxState,
+                        previousSessionOneRepMax = previousSessionOneRepMax,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
-                        velocity1Rm = velocity1Rm,
                     )
                 }
 
@@ -168,11 +252,9 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
                 item {
                     OutlinedButton(
                         onClick = {
-                            navController.navigate(
-                                NavigationRoutes.StrengthAssessment.createRoute(exerciseId),
-                            )
+                            assessmentProfileId?.let(onNavigateToStrengthAssessment)
                         },
-                        enabled = isConnected,
+                        enabled = isConnected && assessmentProfileId != null,
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.small,
                     ) {
@@ -277,14 +359,17 @@ fun ExerciseDetailScreen(exerciseId: String, navController: NavController, viewM
 
 @Composable
 private fun OneRepMaxCard(
-    currentOneRepMax: Float?,
-    previousOneRepMax: Float?,
+    state: ExerciseDetailOneRepMaxState,
+    previousSessionOneRepMax: Float?,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    velocity1Rm: VelocityOneRepMaxEntity? = null,
 ) {
-    val delta = if (currentOneRepMax != null && previousOneRepMax != null) {
-        currentOneRepMax - previousOneRepMax
+    val resolution = (state as? ExerciseDetailOneRepMaxState.Ready)?.resolution
+    val delta = if (
+        resolution?.source == CurrentOneRepMaxSource.SESSION &&
+        previousSessionOneRepMax != null
+    ) {
+        resolution.perCableKg - previousSessionOneRepMax
     } else {
         null
     }
@@ -312,67 +397,66 @@ private fun OneRepMaxCard(
 
             Spacer(Modifier.height(8.dp))
 
-            if (currentOneRepMax != null) {
-                Text(
-                    formatWeight(currentOneRepMax, weightUnit),
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
+            when {
+                resolution != null -> {
+                    Text(
+                        formatWeight(resolution.perCableKg, weightUnit),
+                        style = MaterialTheme.typography.displayMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    Text(
+                        when (resolution.source) {
+                            CurrentOneRepMaxSource.VELOCITY -> "Velocity profile"
+                            CurrentOneRepMaxSource.ASSESSMENT -> "Strength assessment"
+                            CurrentOneRepMaxSource.SESSION -> "Recent session"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                    )
 
-                if (delta != null && delta != 0f) {
-                    Spacer(Modifier.height(8.dp))
-                    val isPositive = delta > 0
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            if (isPositive) {
-                                Icons.AutoMirrored.Filled.TrendingUp
-                            } else {
-                                Icons.AutoMirrored.Filled.TrendingDown
-                            },
-                            contentDescription = null,
-                            tint = if (isPositive) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            "${if (isPositive) "+" else ""}${formatWeight(delta, weightUnit)} from last",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (isPositive) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
-                        )
+                    if (delta != null && delta != 0f) {
+                        Spacer(Modifier.height(8.dp))
+                        val isPositive = delta > 0
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                if (isPositive) {
+                                    Icons.AutoMirrored.Filled.TrendingUp
+                                } else {
+                                    Icons.AutoMirrored.Filled.TrendingDown
+                                },
+                                contentDescription = null,
+                                tint = if (isPositive) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "${if (isPositive) "+" else ""}${formatWeight(delta, weightUnit)} from last",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isPositive) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
+                            )
+                        }
                     }
                 }
-            } else {
-                Text(
-                    "No data",
+
+                state is ExerciseDetailOneRepMaxState.Failed -> Text(
+                    "Unable to load 1RM",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                )
+
+                state is ExerciseDetailOneRepMaxState.Loading -> Text(
+                    "Loading…",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
                 )
-            }
 
-            // Velocity-based 1RM (issue #517): show only when a passing estimate exists.
-            velocity1Rm?.let { v ->
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "VELOCITY 1RM",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    formatWeight(v.estimatedPerCableKg, weightUnit),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-                Text(
-                    "MVT ${KmpUtils.formatFloat(v.mvtUsedMs, 2)} m/s",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                else -> Text(
+                    "No data",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
                 )
             }
         }
@@ -668,14 +752,9 @@ private fun ExerciseHistoryTable(sessions: List<WorkoutSession>, weightUnit: Wei
                             Modifier.weight(1f),
                         )
                         TableCell(
-                            if (session.workingReps > 0) {
-                                formatWeight(
-                                    calculateOneRepMax(session.weightPerCableKg, session.workingReps),
-                                    weightUnit,
-                                )
-                            } else {
-                                "-"
-                            },
+                            session.estimatedOneRepMaxPerCableOrNull()
+                                ?.let { formatWeight(it, weightUnit) }
+                                ?: "-",
                             Modifier.weight(1f),
                         )
                         TableCell(
@@ -803,8 +882,6 @@ private enum class TimeRange(val label: String) {
     YEAR_1("1y"),
     ALL("All"),
 }
-
-private fun calculateOneRepMax(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)
 
 private fun formatDuration(durationMs: Long): String {
     val minutes = durationMs / 60000

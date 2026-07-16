@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.di
 
 import com.devil.phoenixproject.data.migration.MigrationManager
+import com.devil.phoenixproject.data.migration.RequiredMigrationGate
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -22,6 +23,7 @@ import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ResolveCurrentOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
@@ -48,6 +50,7 @@ val domainModule = module {
 
     // Assessment
     single { AssessmentEngine() }
+    single { ResolveCurrentOneRepMaxUseCase(get(), get(), get()) }
 
     // Velocity-based 1RM (issue #517)
     single { MvtProvider() }
@@ -87,10 +90,22 @@ val domainModule = module {
         )
     }
 
-    // Migration — settings is passed so one-time repairs are gated by a persisted version flag
-    single { MigrationManager(get(), get<UserProfileRepository>(), get<GamificationRepository>(), settings = get()) }
+    // Required profile preference copy runs before the existing non-critical repair passes.
+    single {
+        MigrationManager(
+            database = get(),
+            userProfileRepository = get(),
+            gamificationRepository = get(),
+            settings = get(),
+            profilePreferencesRepository = get(),
+            profileLocalSafetyStore = get(),
+            legacyProfilePreferencesReader = get(),
+            profileScopedDataMerger = get(),
+        )
+    }
+    single<RequiredMigrationGate> { get<MigrationManager>() }
 
     // Voice / Safe Word (Issue #141)
     // SafeWordListenerFactory is provided by platformModule
-    single { SafeWordDetectionManager(get(), get()) }
+    single { SafeWordDetectionManager(get<UserProfileRepository>(), get()) }
 }

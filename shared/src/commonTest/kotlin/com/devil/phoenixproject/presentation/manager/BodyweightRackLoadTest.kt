@@ -81,7 +81,7 @@ class BodyweightRackLoadTest {
     fun `Issue 534 - vest toggled before body-weight set is included in persisted volume`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.setActiveBodyWeightKg(80f)
 
         val v = vest()
         harness.fakeEquipmentRackRepo.upsert(v)
@@ -141,7 +141,7 @@ class BodyweightRackLoadTest {
     fun `Issue 534 - vest toggled AFTER startWorkout on body-weight exercise is included in persisted volume`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.setActiveBodyWeightKg(80f)
 
         val v = vest()
         harness.fakeEquipmentRackRepo.upsert(v)
@@ -210,7 +210,7 @@ class BodyweightRackLoadTest {
     fun `Issue 534 - vest configured as defaultRackItemIds seeds adjustment on enterSetReady`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.setActiveBodyWeightKg(80f)
 
         val v = vest()
         harness.fakeEquipmentRackRepo.upsert(v)

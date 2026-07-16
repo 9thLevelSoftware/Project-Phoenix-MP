@@ -168,7 +168,7 @@ class DWSMSessionBodyweightTest {
         val harness = DWSMTestHarness(this)
         try {
             seedExercises(harness)
-            harness.fakePrefsManager.setBodyWeightKg(82f)
+            harness.setActiveBodyWeightKg(82f)
             harness.dwsm.loadRoutine(bodyweightRoutine())
             advanceUntilIdle()
 
@@ -189,7 +189,7 @@ class DWSMSessionBodyweightTest {
         val harness = DWSMTestHarness(this)
         try {
             seedExercises(harness)
-            harness.fakePrefsManager.setBodyWeightKg(75f)
+            harness.setActiveBodyWeightKg(75f)
             harness.dwsm.loadRoutine(bodyweightRoutine())
             advanceUntilIdle()
 
@@ -200,7 +200,7 @@ class DWSMSessionBodyweightTest {
             assertEquals(SessionBodyweightAction.EDITED_FOR_SESSION, state.lastAction)
             assertFloatEquals(300f, state.sessionBodyWeightKg ?: 0f)
             assertFloatEquals(300f, harness.dwsm.resolvedBodyWeightKg())
-            assertFloatEquals(75f, harness.fakePrefsManager.preferencesFlow.value.bodyWeightKg)
+            assertFloatEquals(75f, harness.settingsManager.userPreferences.value.bodyWeightKg)
         } finally {
             harness.cleanup()
         }
@@ -211,7 +211,7 @@ class DWSMSessionBodyweightTest {
         val harness = DWSMTestHarness(this)
         try {
             seedExercises(harness)
-            harness.fakePrefsManager.setBodyWeightKg(75f)
+            harness.setActiveBodyWeightKg(75f)
             harness.dwsm.loadRoutine(bodyweightRoutine())
             advanceUntilIdle()
 
@@ -221,7 +221,7 @@ class DWSMSessionBodyweightTest {
             val state = harness.dwsm.sessionBodyweightState.value
             assertEquals(SessionBodyweightAction.EDITED_FOR_SESSION, state.lastAction)
             assertFloatEquals(20f, state.sessionBodyWeightKg ?: 0f)
-            assertFloatEquals(75f, harness.fakePrefsManager.preferencesFlow.value.bodyWeightKg)
+            assertFloatEquals(75f, harness.settingsManager.userPreferences.value.bodyWeightKg)
         } finally {
             harness.cleanup()
         }
@@ -232,7 +232,7 @@ class DWSMSessionBodyweightTest {
         val harness = DWSMTestHarness(this)
         try {
             seedExercises(harness)
-            harness.fakePrefsManager.setBodyWeightKg(75f)
+            harness.setActiveBodyWeightKg(75f)
             harness.dwsm.loadRoutine(bodyweightRoutine())
             advanceUntilIdle()
 
@@ -242,7 +242,7 @@ class DWSMSessionBodyweightTest {
             val state = harness.dwsm.sessionBodyweightState.value
             assertEquals(SessionBodyweightAction.EDITED_AND_SAVED_TO_PROFILE, state.lastAction)
             assertFloatEquals(91f, state.sessionBodyWeightKg ?: 0f)
-            assertFloatEquals(91f, harness.fakePrefsManager.preferencesFlow.value.bodyWeightKg)
+            assertFloatEquals(91f, harness.settingsManager.userPreferences.value.bodyWeightKg)
             assertFloatEquals(91f, harness.dwsm.resolvedBodyWeightKg())
         } finally {
             harness.cleanup()
@@ -254,7 +254,7 @@ class DWSMSessionBodyweightTest {
         val harness = DWSMTestHarness(this)
         try {
             seedExercises(harness)
-            harness.fakePrefsManager.setBodyWeightKg(84f)
+            harness.setActiveBodyWeightKg(84f)
             harness.dwsm.loadRoutine(bodyweightRoutine())
             advanceUntilIdle()
 
@@ -298,7 +298,7 @@ class DWSMSessionBodyweightTest {
         try {
             seedExercises(harness)
             harness.fakeBleRepo.simulateConnect("Vee_Test")
-            harness.fakePrefsManager.setBodyWeightKg(80f)
+            harness.setActiveBodyWeightKg(80f)
             harness.dwsm.loadRoutine(bodyweightRoutine())
             advanceUntilIdle()
             harness.dwsm.confirmSessionBodyWeight(weightKg = 90f, saveToProfile = false)
@@ -322,7 +322,7 @@ class DWSMSessionBodyweightTest {
         try {
             seedExercises(harness)
             harness.fakeBleRepo.simulateConnect("Vee_Test")
-            harness.fakePrefsManager.setBodyWeightKg(80f)
+            harness.setActiveBodyWeightKg(80f)
             val v = vest()
             harness.fakeEquipmentRackRepo.upsert(v)
             advanceUntilIdle()

@@ -964,5 +964,57 @@ WHERE gs.rowid = (
         "ALTER TABLE TrainingCycle ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1",
     )
 
+    42 -> listOf(
+        """CREATE TABLE UserProfilePreferences (
+        profile_id TEXT PRIMARY KEY NOT NULL,
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        legacy_migration_version INTEGER NOT NULL DEFAULT 0,
+        body_weight_kg REAL NOT NULL DEFAULT 0 CHECK(body_weight_kg = 0 OR body_weight_kg BETWEEN 20 AND 300),
+        weight_unit TEXT NOT NULL DEFAULT 'LB' CHECK(weight_unit IN ('KG', 'LB')),
+        weight_increment REAL NOT NULL DEFAULT -1 CHECK(weight_increment = -1 OR weight_increment > 0),
+        core_updated_at INTEGER NOT NULL DEFAULT 0,
+        core_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(core_local_generation >= 0),
+        core_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(core_server_revision >= 0),
+        core_dirty INTEGER NOT NULL DEFAULT 1 CHECK(core_dirty IN (0, 1)),
+        equipment_rack_json TEXT NOT NULL DEFAULT '{"version":1,"items":[]}',
+        rack_updated_at INTEGER NOT NULL DEFAULT 0,
+        rack_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(rack_local_generation >= 0),
+        rack_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(rack_server_revision >= 0),
+        rack_dirty INTEGER NOT NULL DEFAULT 1 CHECK(rack_dirty IN (0, 1)),
+        workout_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+        workout_updated_at INTEGER NOT NULL DEFAULT 0,
+        workout_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(workout_local_generation >= 0),
+        workout_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(workout_server_revision >= 0),
+        workout_dirty INTEGER NOT NULL DEFAULT 1 CHECK(workout_dirty IN (0, 1)),
+        led_color_scheme_id INTEGER NOT NULL DEFAULT 0 CHECK(led_color_scheme_id >= 0),
+        led_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+        led_updated_at INTEGER NOT NULL DEFAULT 0,
+        led_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(led_local_generation >= 0),
+        led_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(led_server_revision >= 0),
+        led_dirty INTEGER NOT NULL DEFAULT 1 CHECK(led_dirty IN (0, 1)),
+        vbt_enabled INTEGER NOT NULL DEFAULT 1 CHECK(vbt_enabled IN (0, 1)),
+        vbt_preferences_json TEXT NOT NULL DEFAULT '{"version":1}',
+        vbt_updated_at INTEGER NOT NULL DEFAULT 0,
+        vbt_local_generation INTEGER NOT NULL DEFAULT 0 CHECK(vbt_local_generation >= 0),
+        vbt_server_revision INTEGER NOT NULL DEFAULT 0 CHECK(vbt_server_revision >= 0),
+        vbt_dirty INTEGER NOT NULL DEFAULT 1 CHECK(vbt_dirty IN (0, 1)),
+        FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE
+    )""",
+        """CREATE TABLE PendingProfileLocalCleanup (
+        profile_id TEXT PRIMARY KEY NOT NULL,
+        enqueued_at INTEGER NOT NULL
+    )""",
+        """CREATE TABLE PendingProfileContextRecovery (
+        recovery_key TEXT PRIMARY KEY NOT NULL
+            DEFAULT 'active_profile_transition'
+            CHECK(recovery_key = 'active_profile_transition'),
+        prior_profile_id TEXT NOT NULL,
+        created_profile_id TEXT,
+        enqueued_at INTEGER NOT NULL
+    )""",
+        """INSERT OR IGNORE INTO UserProfilePreferences(profile_id)
+    SELECT id FROM UserProfile""",
+    )
+
     else -> emptyList()
 }

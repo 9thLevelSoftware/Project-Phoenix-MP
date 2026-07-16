@@ -320,6 +320,7 @@
     <string name="actual_weight_label">Tatsächlich verwendetes Gewicht (kg)</string>
     <string name="mean_velocity_label">Durchschnittsgeschwindigkeit (m/s)</string>
     <string name="cancel_assessment">Bewertung abbrechen</string>
+    <string name="assessment_save_failed">Die Kraftmessung konnte nicht gespeichert werden. Versuche es erneut.</string>
     <string name="enter_estimate_label">Eigene Schätzung eingeben (kg)</string>
     <string name="leave_empty_hint">Leer lassen, um den berechneten Wert zu verwenden</string>
     <string name="enter_valid_number">Bitte gib eine gültige Zahl ein</string>
@@ -347,6 +348,7 @@
 
     <string name="nav_analytics">Analyse</string>
     <string name="nav_workouts">Trainings</string>
+    <string name="nav_insights">Einblicke</string>
     <string name="nav_settings">Einstellungen</string>
 
     <string name="workout_count_label">Trainings</string>
@@ -516,7 +518,7 @@
     <string name="cd_app_info">App information</string>
     <string name="cd_support_developer">Support the developer</string>
     <string name="cd_led_feedback">LED biofeedback</string>
-    <string name="cd_led_scheme">LED color scheme</string>
+    <string name="cd_led_scheme">LED-Farbschema</string>
     <string name="cd_leds_off">LEDs Off</string>
     <string name="cd_test_sounds">Test sounds</string>
 
@@ -588,7 +590,7 @@
     <string name="cd_below_pr">Below PR</string>
     <string name="cd_delete_workout">Delete workout</string>
     <string name="cd_toggle_theme_cycle">Design wechseln (aktuell: %1$s, nächstes: %2$s)</string>
-    <string name="cd_workouts">Workouts</string>
+    <string name="cd_home">Startseite</string>
     <string name="cd_disconnect">Trennen</string>
 
     <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
@@ -625,7 +627,7 @@
     <string name="settings_dominatrix_mode_title">Dominatrix-Modus</string>
     <string name="settings_dominatrix_mode_description">Charlotte-Sprachbefehle. Überschreibt das vulgäre Pool, wenn aktiv.</string>
     <string name="settings_dominatrix_unlock_hint">Tippe 7× auf den Header zum Entsperren</string>
-    <string name="settings_dominatrix_unlock_toast">Boss-Modus freigeschaltet</string>
+    <string name="settings_dominatrix_unlock_toast">Dominatrix-Modus freigeschaltet</string>
     <string name="settings_adults_only_title">Nur für Erwachsene</string>
     <string name="settings_adults_only_body">Der vulgäre Modus enthält Kraftausdrücke und reife Themen. Bist du 18 oder älter?</string>
     <string name="settings_adults_only_confirm">Ich bin 18+ und Oma hört mich nicht</string>
@@ -705,4 +707,91 @@
     <string name="set_type_warmup">Warm-up Set %1$d</string>
     <string name="set_type_working">Working Set</string>
 
+    <string name="nav_profile">Profil</string>
+    <string name="cd_profile">Profil</string>
+    <string name="cd_open_profile_switcher">Profilwechsler öffnen</string>
+    <string name="profiles_title">Profile</string>
+    <string name="switch_profile">Profil wechseln</string>
+    <string name="profile_exercise_insights">Übungsanalysen</string>
+    <string name="profile_choose_exercise">Übung auswählen</string>
+    <string name="profile_no_exercise_history">Keine Übungshistorie für dieses Profil</string>
+    <string name="profile_current_one_rep_max">Aktuelles 1RM</string>
+    <string name="profile_one_rep_max_source_velocity">Geschwindigkeitsschätzung</string>
+    <string name="profile_one_rep_max_source_assessment">Krafttest</string>
+    <string name="profile_one_rep_max_source_session">Letzte abgeschlossene Einheit</string>
+    <string name="profile_one_rep_max_source_none">Keine profilspezifische Schätzung</string>
+    <string name="profile_pr_highlights">PR-Höhepunkte</string>
+    <string name="profile_pr_max_weight">Maximalgewicht</string>
+    <string name="profile_pr_estimated_one_rep_max">Geschätztes 1RM</string>
+    <string name="profile_pr_max_volume">Maximalvolumen</string>
+    <string name="profile_recent_history">Letzter Verlauf</string>
+    <string name="profile_view_full_history">Gesamten Verlauf anzeigen</string>
+    <string name="profile_preferences_title">Einstellungen</string>
+    <string name="profile_measurements">Messwerte</string>
+    <string name="profile_workout_behavior">Trainingsverhalten</string>
+    <string name="profile_led">LED</string>
+    <string name="profile_vbt">Geschwindigkeitsbasiertes Training</string>
+    <string name="profile_safety">Sicherheit</string>
+    <string name="profile_vbt_enabled">VBT im Live-Training verwenden</string>
+    <string name="profile_switching">Profil wird gewechselt…</string>
+    <string name="profile_missing_exercise">Diese Übung ist nicht mehr verfügbar</string>
+    <string name="profile_insights_load_failed">Übungsanalysen konnten nicht geladen werden</string>
+    <string name="profile_update_failed">Diese Profileinstellung konnte nicht gespeichert werden</string>
+    <string name="profile_switch_failed">Profilwechsel fehlgeschlagen</string>
+    <string name="profile_create_failed">Profil konnte nicht erstellt werden</string>
+    <string name="profile_recovery_title">Profilwiederherstellung erforderlich</string>
+    <string name="profile_recovery_message">Phoenix konnte nicht bestätigen, welches Profil aktiv ist. Versuche es erneut, bevor du fortfährst.</string>
+    <string name="profile_recovery_retry_failed">Profilwiederherstellung ist weiterhin nicht verfügbar</string>
+    <string name="profile_delete_reassign_message">„%1$s“ löschen? Trainings, Routinen, Rekorde, Abzeichen, Tests und Fortschrittsdaten werden zu Default verschoben. Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="settings_video_behavior">Videoverhalten</string>
+    <string name="settings_show_exercise_videos">Übungsvideos anzeigen</string>
+    <string name="settings_show_exercise_videos_description">Übungsdemonstrationen anzeigen; auf langsameren Geräten deaktivieren</string>
+    <string name="profile_weight_increment">Gewichtsschritt</string>
+    <string name="profile_body_weight">Körpergewicht</string>
+    <string name="profile_set_summary">Dauer der Satzzusammenfassung</string>
+    <string name="profile_autostart_countdown">Autostart-Countdown</string>
+    <string name="profile_auto_start_routine">Routine automatisch starten</string>
+    <string name="profile_audio_rep_counter">Gesprochener Wiederholungszähler</string>
+    <string name="profile_countdown_beeps">Countdown-Töne</string>
+    <string name="profile_rep_completion_sound">Wiederholungston</string>
+    <string name="profile_motion_start">Satzstart durch Bewegung</string>
+    <string name="profile_gamification">Gamification</string>
+    <string name="profile_default_scaling_basis">Standardbasis für Gewichtsskalierung</string>
+    <string name="profile_stop_at_top">Oben stoppen</string>
+    <string name="profile_stall_detection">Stillstandserkennung</string>
+    <string name="profile_velocity_loss_threshold">Schwelle für Geschwindigkeitsverlust</string>
+    <string name="profile_auto_end_velocity_loss">Bei Geschwindigkeitsverlust automatisch beenden</string>
+    <string name="profile_vbt_history_note">Das Ausschalten von VBT betrifft nur Live-Trainings; gespeicherte Schätzungen und Tests bleiben verfügbar.</string>
+    <string name="color_blue">Blau</string>
+    <string name="color_green">Grün</string>
+    <string name="color_amber">Bernstein</string>
+    <string name="color_red">Rot</string>
+    <string name="color_purple">Lila</string>
+    <string name="color_pink">Rosa</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="color_orange">Orange</string>
+    <string name="cd_select_profile_color">Profilfarbe %1$s auswählen</string>
+    <string name="profile_automatic">Automatisch</string>
+    <string name="profile_default_rest">Standardpause</string>
+    <string name="profile_master_beeps">Trainingstöne</string>
+    <string name="profile_rep_count_timing">Zeitpunkt der Wiederholungszählung</string>
+    <string name="profile_body_weight_unset">Nicht festgelegt</string>
+    <string name="profile_body_weight_invalid">Gib ein Körpergewicht zwischen 20 und 300 kg ein</string>
+    <string name="profile_body_weight_imported">Entspricht einer importierten Gesundheitsmessung</string>
+    <string name="profile_led_scheme_blue">Blau</string>
+    <string name="profile_led_scheme_green">Grün</string>
+    <string name="profile_led_scheme_teal">Türkis</string>
+    <string name="profile_led_scheme_yellow">Gelb</string>
+    <string name="profile_led_scheme_pink">Rosa</string>
+    <string name="profile_led_scheme_red">Rot</string>
+    <string name="profile_led_scheme_purple">Lila</string>
+    <string name="profile_led_scheme_none">Keine</string>
+    <string name="cd_select_led_scheme">LED-Schema auswählen: %1$s</string>
+    <string name="profile_led_selected_scheme">Ausgewählt: %1$s</string>
+    <string name="profile_disco_mode">Disco-Modus</string>
+    <string name="profile_disco_requires_connection">Verbinde deinen Trainer, um den Disco-Modus zu verwenden</string>
+    <string name="profile_disco_unlocked_title">Disco-Modus freigeschaltet</string>
+    <string name="profile_disco_unlocked_body">Aktiviere den Disco-Modus in den LED-Einstellungen, damit dein Trainer Party macht.</string>
+    <string name="profile_disco_unlocked_action">Party starten</string>
+    <string name="profile_adult_enable_partial_failure">Die Altersbestätigung wurde gespeichert, aber der vulgäre Modus konnte nicht aktiviert werden. Versuche es erneut.</string>
 </resources>

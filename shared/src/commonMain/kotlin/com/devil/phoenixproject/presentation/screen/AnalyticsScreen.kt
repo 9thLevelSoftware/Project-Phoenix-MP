@@ -53,6 +53,7 @@ fun ProgressTab(
     exerciseRepository: ExerciseRepository,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
+    assessmentEnabled: Boolean,
     onNavigateToStrengthAssessment: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -98,6 +99,7 @@ fun ProgressTab(
         item {
             ExpressiveCard(
                 onClick = onNavigateToStrengthAssessment,
+                enabled = assessmentEnabled,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
@@ -264,7 +266,8 @@ fun ProgressTab(
 fun AnalyticsScreen(
     viewModel: MainViewModel,
     themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
-    onNavigateToStrengthAssessment: () -> Unit,
+    assessmentProfileId: String?,
+    onNavigateToStrengthAssessment: (String) -> Unit,
 ) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
@@ -478,7 +481,10 @@ fun AnalyticsScreen(
                         exerciseRepository = viewModel.exerciseRepository,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
-                        onNavigateToStrengthAssessment = onNavigateToStrengthAssessment,
+                        assessmentEnabled = assessmentProfileId != null,
+                        onNavigateToStrengthAssessment = {
+                            assessmentProfileId?.let(onNavigateToStrengthAssessment)
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
 

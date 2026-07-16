@@ -54,7 +54,7 @@
     <string name="settings_dominatrix_mode_title">Modalità Dominatrix</string>
     <string name="settings_dominatrix_mode_description">Comandi vocali di Charlotte. Sovrascrive il pool volgare quando attivo.</string>
     <string name="settings_dominatrix_unlock_hint">Tocca l\'intestazione 7× per sbloccare</string>
-    <string name="settings_dominatrix_unlock_toast">Modalità boss sbloccata</string>
+    <string name="settings_dominatrix_unlock_toast">Modalità Dominatrix sbloccata</string>
     <string name="settings_adults_only_title">Solo per adulti</string>
     <string name="settings_adults_only_body">La modalità volgare contiene parolacce e temi per adulti. Hai 18 anni o più?</string>
     <string name="settings_adults_only_confirm">Ho 18+ e la nonna non mi sente</string>

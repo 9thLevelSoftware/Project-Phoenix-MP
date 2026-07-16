@@ -13,7 +13,7 @@ data class AssessmentResultEntity(
     val assessmentSessionId: String?,
     val userOverrideKg: Float?,
     val createdAt: Long,
-    val profileId: String = "default",
+    val profileId: String,
 )
 
 /**
@@ -28,10 +28,10 @@ interface AssessmentRepository {
     /**
      * Save a raw assessment result to the database.
      * @param exerciseId Exercise ID
-     * @param estimatedOneRepMaxKg Estimated 1RM from load-velocity profiling
+     * @param estimatedOneRepMaxKg Estimated total 1RM from load-velocity profiling
      * @param loadVelocityDataJson JSON blob of load-velocity data points
      * @param sessionId Optional workout session ID to link
-     * @param userOverrideKg Optional user-provided override for the 1RM
+     * @param userOverrideKg Optional user-provided total-weight override for the 1RM
      * @param profileId Profile ID for multi-profile support
      * @return Row ID of the inserted assessment result
      */
@@ -41,7 +41,7 @@ interface AssessmentRepository {
         loadVelocityDataJson: String,
         sessionId: String?,
         userOverrideKg: Float? = null,
-        profileId: String = "default",
+        profileId: String,
     ): Long
 
     /**
@@ -73,9 +73,9 @@ interface AssessmentRepository {
      *
      * @param exerciseId Exercise ID
      * @param exerciseName Exercise display name
-     * @param estimatedOneRepMaxKg Estimated 1RM from load-velocity profiling
+     * @param estimatedOneRepMaxKg Estimated total 1RM from load-velocity profiling
      * @param loadVelocityDataJson JSON blob of load-velocity data points
-     * @param userOverrideKg Optional user-provided override for the 1RM
+     * @param userOverrideKg Optional user-provided total-weight override for the 1RM
      * @param totalReps Total reps performed during assessment
      * @param durationMs Duration of assessment in milliseconds
      * @param weightPerCableKg Weight used per cable during assessment
@@ -91,6 +91,6 @@ interface AssessmentRepository {
         totalReps: Int,
         durationMs: Long,
         weightPerCableKg: Float,
-        profileId: String = "default",
+        profileId: String,
     ): String
 }

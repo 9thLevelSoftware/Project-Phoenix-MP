@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.domain.model
 
+import kotlinx.serialization.Serializable
+
 /**
  * Vitruvian Hardware Model
  */
@@ -321,6 +323,7 @@ enum class EccentricLoad(val percentage: Int, val displayName: String) {
 /**
  * Weight unit preference
  */
+@Serializable
 enum class WeightUnit {
     KG,
     LB,
@@ -329,6 +332,7 @@ enum class WeightUnit {
 /**
  * Rep count timing mode - controls when the working rep number increments
  */
+@Serializable
 enum class RepCountTiming {
     TOP, // Count rep at concentric peak (top of lift) - what users expect
     BOTTOM, // Count rep at eccentric valley (bottom) - legacy machine behavior
@@ -440,6 +444,7 @@ data class RepEvent(
  * the tier; the audio router handles the override, this enum only encodes the
  * vulgar intensity choice.
  */
+@Serializable
 enum class VulgarTier { MILD, STRONG, MIX }
 
 /**

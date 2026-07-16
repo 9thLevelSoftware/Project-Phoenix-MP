@@ -221,6 +221,7 @@ fun WorkoutTab(
         onResumeExerciseTimer = actions::onResumeExerciseTimer,
         onResetExerciseTimer = actions::onResetExerciseTimer,
         onConfirmBodyweightSetResult = actions::onConfirmBodyweightSetResult,
+        vbtEnabled = state.vbtEnabled,
         velocityLossThresholdPercent = state.velocityLossThresholdPercent,
         weightStepKg = state.weightStepKg,
         rackLoadAdjustment = state.rackLoadAdjustment,
@@ -302,6 +303,7 @@ fun WorkoutTab(
     onResetExerciseTimer: () -> Unit = {},
     onConfirmBodyweightSetResult: (Int, BodyweightVariantOption) -> Unit = { _, _ -> },
     // Issue #313: VBT velocity loss threshold for HUD visualization
+    vbtEnabled: Boolean = true,
     velocityLossThresholdPercent: Int = 20,
     // Issue #266/#410: Configurable weight step from user preferences (kg)
     weightStepKg: Float = 0.25f,
@@ -345,6 +347,7 @@ fun WorkoutTab(
                 onPauseExerciseTimer = onPauseExerciseTimer,
                 onResumeExerciseTimer = onResumeExerciseTimer,
                 onResetExerciseTimer = onResetExerciseTimer,
+                vbtEnabled = vbtEnabled,
                 velocityLossThresholdPercent = velocityLossThresholdPercent,
                 rackLoadAdjustment = rackLoadAdjustment,
                 currentWarmupSetIndex = currentWarmupSetIndex,

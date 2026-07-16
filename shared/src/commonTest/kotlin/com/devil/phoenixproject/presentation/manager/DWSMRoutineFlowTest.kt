@@ -1722,7 +1722,7 @@ class DWSMRoutineFlowTest {
             ),
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-        harness.fakePrefsManager.setSummaryCountdownSeconds(10)
+        harness.setActiveSummaryCountdownSeconds(10)
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
@@ -1792,7 +1792,7 @@ class DWSMRoutineFlowTest {
             ),
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-        harness.fakePrefsManager.setSummaryCountdownSeconds(10)
+        harness.setActiveSummaryCountdownSeconds(10)
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
@@ -1831,7 +1831,7 @@ class DWSMRoutineFlowTest {
         val harness = DWSMTestHarness(this)
         val routine = createLegsStyleRoutine()
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        harness.setActiveSummaryCountdownSeconds(0)
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 

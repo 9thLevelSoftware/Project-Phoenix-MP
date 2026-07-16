@@ -3,6 +3,7 @@ package com.devil.phoenixproject
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
@@ -16,6 +17,7 @@ private data class IosAppDependencies(
     val eulaViewModel: EulaViewModel,
     val exerciseRepository: ExerciseRepository,
     val syncTriggerManager: SyncTriggerManager,
+    val migrationManager: MigrationManager,
 )
 
 @Composable
@@ -30,6 +32,7 @@ fun IosAppHost() {
                 eulaViewModel = koin.get(),
                 exerciseRepository = koin.get(),
                 syncTriggerManager = koin.get(),
+                migrationManager = koin.get(),
             )
         }
     }
@@ -49,6 +52,7 @@ fun IosAppHost() {
         eulaViewModel = deps.eulaViewModel,
         exerciseRepository = deps.exerciseRepository,
         syncTriggerManager = deps.syncTriggerManager,
+        migrationManager = deps.migrationManager,
     )
 }
 

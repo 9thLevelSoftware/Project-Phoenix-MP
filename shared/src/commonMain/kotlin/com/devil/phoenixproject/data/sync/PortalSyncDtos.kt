@@ -399,6 +399,116 @@ data class PortalAssessmentResultDto(
 @Serializable
 data class LocalProfileDto(val id: String, val name: String, val colorIndex: Int)
 
+private val LOCAL_ONLY_PROFILE_PREFERENCE_KEYS = setOf(
+    "safeword",
+    "safewordcalibrated",
+    "adultsonlyconfirmed",
+    "adultsonlyprompted",
+    "localgeneration",
+    "dirty",
+    "legacymigrationversion",
+)
+
+private fun normalizedProfilePreferenceWireKey(key: String): String =
+    key
+        .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
+        .lowercase()
+
+internal enum class ProfilePreferenceWireSafetyViolation {
+    INVALID_TEXT_TREE,
+    LOCAL_ONLY_KEY,
+}
+
+internal fun isPostgresCompatibleText(value: String): Boolean {
+    var index = 0
+    while (index < value.length) {
+        val codeUnit = value[index]
+        when {
+            codeUnit == '\u0000' -> return false
+            codeUnit in '\uD800'..'\uDBFF' -> {
+                if (index + 1 >= value.length || value[index + 1] !in '\uDC00'..'\uDFFF') {
+                    return false
+                }
+                index += 1
+            }
+            codeUnit in '\uDC00'..'\uDFFF' -> return false
+        }
+        index += 1
+    }
+    return true
+}
+
+internal fun profilePreferenceWireSafetyViolation(
+    value: kotlinx.serialization.json.JsonElement,
+): ProfilePreferenceWireSafetyViolation? = when (value) {
+    is kotlinx.serialization.json.JsonArray -> value.firstNotNullOfOrNull(
+        ::profilePreferenceWireSafetyViolation,
+    )
+    is kotlinx.serialization.json.JsonObject -> {
+        value.entries.firstNotNullOfOrNull { (key, child) ->
+            when {
+                !isPostgresCompatibleText(key) ->
+                    ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE
+                normalizedProfilePreferenceWireKey(key) in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS ->
+                    ProfilePreferenceWireSafetyViolation.LOCAL_ONLY_KEY
+                else -> profilePreferenceWireSafetyViolation(child)
+            }
+        }
+    }
+    is kotlinx.serialization.json.JsonPrimitive -> if (
+        value.isString && !isPostgresCompatibleText(value.content)
+    ) {
+        ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE
+    } else {
+        null
+    }
+}
+
+private fun requireValueOnlyProfilePreferencePayload(
+    value: kotlinx.serialization.json.JsonElement,
+) {
+    require(profilePreferenceWireSafetyViolation(value) == null) {
+        "Profile preference payload is not wire-safe"
+    }
+}
+
+@Serializable
+data class PortalProfilePreferenceSectionMutationDto(
+    val localProfileId: String,
+    val section: String,
+    val documentVersion: Int,
+    val baseRevision: Long,
+    val clientModifiedAt: String,
+    val payload: kotlinx.serialization.json.JsonObject,
+) {
+    init {
+        requireValueOnlyProfilePreferencePayload(payload)
+    }
+}
+
+@Serializable
+data class PortalProfilePreferenceSectionCanonicalDto(
+    val localProfileId: String,
+    val section: String,
+    val documentVersion: Int,
+    val serverRevision: Long,
+    val serverUpdatedAt: String,
+    val payload: kotlinx.serialization.json.JsonObject,
+) {
+    init {
+        requireValueOnlyProfilePreferencePayload(payload)
+    }
+}
+
+@Serializable
+data class ProfilePreferenceSectionRejectionDto(
+    val localProfileId: String,
+    val section: String,
+    val serverRevision: Long,
+    val reason: String,
+    val canonicalSection: PortalProfilePreferenceSectionCanonicalDto? = null,
+)
+
 // ─── Push Response ──────────────────────────────────────────────────
 
 /**
@@ -435,6 +545,9 @@ data class PortalSyncPushResponse(
     )
     val externalActivityIds: List<String> = emptyList(),
     val externalActivityKeys: List<ExternalActivityAckDto> = emptyList(),
+    val profilePreferencesAccepted: Boolean? = null,
+    val canonicalProfilePreferenceSections: List<PortalProfilePreferenceSectionCanonicalDto> = emptyList(),
+    val profilePreferenceRejections: List<ProfilePreferenceSectionRejectionDto> = emptyList(),
     /**
      * Per-entity LWW rejections. Empty when SYNC_LWW_ENABLED is false on
      * the server or when every incoming row cleared the LWW gate. Phase 3.2.
@@ -554,6 +667,7 @@ data class PortalSyncPayload(
     val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
     // Dedicated personal_records rows; authoritative over legacy set PR hints.
     val personalRecords: List<PortalPersonalRecordDto> = emptyList(),
+    val profilePreferenceSections: List<PortalProfilePreferenceSectionMutationDto>? = null,
 )
 
 // ─── External Activities (Integration sync) ──────────────────────────
@@ -647,6 +761,7 @@ data class PortalSyncPullResponse(
     val gamificationStats: PullGamificationStatsDto? = null,
     // Profile data separation: profile list from portal (round-trip)
     val localProfiles: List<LocalProfileDto>? = null,
+    val profilePreferenceSections: List<PortalProfilePreferenceSectionCanonicalDto>? = null,
     // External integration activities (paid users only)
     val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
 )

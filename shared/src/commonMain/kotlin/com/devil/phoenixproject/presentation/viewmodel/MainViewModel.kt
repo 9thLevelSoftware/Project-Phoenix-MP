@@ -37,18 +37,15 @@ import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
-import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.domain.model.RoutineGroup
-import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.UserPreferences
-import com.devil.phoenixproject.domain.model.VulgarTier
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -72,6 +69,7 @@ import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
+import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
 import kotlinx.coroutines.CancellationException
@@ -95,6 +93,22 @@ import kotlinx.coroutines.launch
  * Represents a dynamic action for the top app bar.
  */
 data class TopBarAction(val icon: ImageVector, val description: String, val onClick: () -> Unit)
+
+data class SettingsGlobalUiState(
+    val enableVideoPlayback: Boolean,
+    val bleCompatibilityMode: BleCompatibilitySetting,
+    val autoBackupEnabled: Boolean,
+    val backupDestination: BackupDestination,
+    val language: String,
+)
+
+private fun UserPreferences.toSettingsGlobalUiState() = SettingsGlobalUiState(
+    enableVideoPlayback = enableVideoPlayback,
+    bleCompatibilityMode = bleCompatibilityMode,
+    autoBackupEnabled = autoBackupEnabled,
+    backupDestination = backupDestination,
+    language = language,
+)
 
 class MainViewModel constructor(
     private val bleRepository: BleRepository,
@@ -137,7 +151,7 @@ class MainViewModel constructor(
     )
 
     // === Phase 1b: SettingsManager (extracted from this class) ===
-    val settingsManager = SettingsManager(preferencesManager, bleRepository, viewModelScope)
+    private val settingsManager = SettingsManager(preferencesManager, userProfileRepository, viewModelScope)
 
     // === Phase 1a: HistoryManager (extracted from this class) ===
     val historyManager = HistoryManager(workoutRepository, personalRecordRepository, userProfileRepository, viewModelScope)
@@ -274,7 +288,6 @@ class MainViewModel constructor(
     fun disconnect() = bleConnectionManager.disconnect()
     fun clearConnectionError() = bleConnectionManager.clearConnectionError()
     fun dismissConnectionLostAlert() = bleConnectionManager.dismissConnectionLostAlert()
-    fun cancelAutoConnecting() = bleConnectionManager.cancelAutoConnecting()
     fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
     fun reconnectInterruptedWorkout() {
         bleConnectionManager.dismissConnectionLostAlert()
@@ -315,76 +328,31 @@ class MainViewModel constructor(
     val enableVideoPlayback: StateFlow<Boolean> get() = settingsManager.enableVideoPlayback
     val autoplayEnabled: StateFlow<Boolean> get() = settingsManager.autoplayEnabled
 
-    fun setWeightUnit(unit: WeightUnit) = settingsManager.setWeightUnit(unit)
-    fun setStopAtTop(enabled: Boolean) = settingsManager.setStopAtTop(enabled)
+    val globalSettings: StateFlow<SettingsGlobalUiState> =
+        preferencesManager.preferencesFlow
+            .map(UserPreferences::toSettingsGlobalUiState)
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                preferencesManager.preferencesFlow.value.toSettingsGlobalUiState(),
+            )
+
     fun setEnableVideoPlayback(enabled: Boolean) = settingsManager.setEnableVideoPlayback(enabled)
-    fun setAudioRepCountEnabled(enabled: Boolean) = settingsManager.setAudioRepCountEnabled(enabled)
-    fun setRepCountTiming(timing: RepCountTiming) = settingsManager.setRepCountTiming(timing)
-    fun setSummaryCountdownSeconds(seconds: Int) = settingsManager.setSummaryCountdownSeconds(seconds)
-    fun setAutoStartCountdownSeconds(seconds: Int) = settingsManager.setAutoStartCountdownSeconds(seconds)
-    fun setColorScheme(schemeIndex: Int) = settingsManager.setColorScheme(schemeIndex)
-    fun setWeightIncrement(increment: Float) = settingsManager.setWeightIncrement(increment)
-    fun setAutoStartRoutine(enabled: Boolean) = settingsManager.setAutoStartRoutine(enabled)
-    fun setBodyWeightKg(weightKg: Float) = settingsManager.setBodyWeightKg(weightKg)
-    fun setGamificationEnabled(enabled: Boolean) = settingsManager.setGamificationEnabled(enabled)
 
     // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
     fun setBleCompatibilityMode(setting: BleCompatibilitySetting) = settingsManager.setBleCompatibilityMode(setting)
-    fun setCountdownBeepsEnabled(enabled: Boolean) = settingsManager.setCountdownBeepsEnabled(enabled)
-    fun setRepSoundEnabled(enabled: Boolean) = settingsManager.setRepSoundEnabled(enabled)
-    fun setMotionStartEnabled(enabled: Boolean) = settingsManager.setMotionStartEnabled(enabled)
     fun setAutoBackupEnabled(enabled: Boolean) {
         settingsManager.setAutoBackupEnabled(enabled)
         refreshBackupStats()
     }
 
-    fun setBackupDestination(destination: com.devil.phoenixproject.util.BackupDestination) {
+    fun setBackupDestination(destination: BackupDestination) {
         settingsManager.setBackupDestination(destination)
     }
 
     fun setLanguage(language: String) {
         settingsManager.setLanguage(language)
     }
-
-    // Issue #141: Voice-activated emergency stop
-    fun setVoiceStopEnabled(enabled: Boolean) = settingsManager.setVoiceStopEnabled(enabled)
-    fun setSafeWord(word: String?) = settingsManager.setSafeWord(word)
-    fun setSafeWordCalibrated(calibrated: Boolean) = settingsManager.setSafeWordCalibrated(calibrated)
-    fun setVelocityLossThreshold(percent: Int) = settingsManager.setVelocityLossThreshold(percent)
-    fun setAutoEndOnVelocityLoss(enabled: Boolean) = settingsManager.setAutoEndOnVelocityLoss(enabled)
-    fun setWeightSuggestionsEnabled(enabled: Boolean) = settingsManager.setWeightSuggestionsEnabled(enabled)
-
-    // Issue #517: system-wide default scaling basis
-    fun setDefaultScalingBasis(basis: ScalingBasis) = settingsManager.setDefaultScalingBasis(basis)
-
-    // Issue #595: routine-builder defaults for newly added cable exercises
-    fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) =
-        settingsManager.setDefaultRoutineExerciseUsePercentOfPR(enabled)
-
-    fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) =
-        settingsManager.setDefaultRoutineExerciseWeightPercentOfPR(percent)
-
-    // Issue #611: Verbal encouragement + opt-in vulgar mode + Dominatrix mode + 18+ gate
-    fun setVerbalEncouragementEnabled(enabled: Boolean) =
-        settingsManager.setVerbalEncouragementEnabled(enabled)
-    fun setVulgarModeEnabled(enabled: Boolean) =
-        settingsManager.setVulgarModeEnabled(enabled)
-    fun setVulgarTier(tier: VulgarTier) =
-        settingsManager.setVulgarTier(tier)
-    fun setDominatrixModeUnlocked(unlocked: Boolean) =
-        settingsManager.setDominatrixModeUnlocked(unlocked)
-    fun setDominatrixModeActive(active: Boolean) =
-        settingsManager.setDominatrixModeActive(active)
-    fun setAdultsOnlyConfirmed(confirmed: Boolean) =
-        settingsManager.setAdultsOnlyConfirmed(confirmed)
-
-    // Issue #611 (PR-followup #613): one-shot decline-remember gate for the 18+
-    // Adults Only modal. Thin wrapper around SettingsManager; used by SettingsTab's
-    // modal decline path so the modal never re-prompts for this install.
-    fun setAdultsOnlyPrompted(prompted: Boolean) =
-        settingsManager.setAdultsOnlyPrompted(prompted)
-    fun isAdultsOnlyPrompted(): Boolean =
-        settingsManager.isAdultsOnlyPrompted()
 
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
@@ -690,13 +658,6 @@ class MainViewModel constructor(
     // ===== Disco Mode (Easter Egg - stays here) =====
 
     val discoModeActive: StateFlow<Boolean> = bleRepository.discoModeActive
-
-    fun unlockDiscoMode() {
-        viewModelScope.launch {
-            preferencesManager.setDiscoModeUnlocked(true)
-            Logger.i { "DISCO MODE UNLOCKED!" }
-        }
-    }
 
     fun toggleDiscoMode(enabled: Boolean) {
         if (enabled) {

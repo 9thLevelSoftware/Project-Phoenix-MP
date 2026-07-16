@@ -1,7 +1,8 @@
 package com.devil.phoenixproject.util
 
-import com.devil.phoenixproject.domain.model.RackItem
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 /**
  * Sanitize eccentric load values to prevent machine faults.
@@ -442,7 +443,9 @@ enum class BackupPhase(val displayName: String) {
  *       progression overrides. Older (v1) backups remain importable — new fields default
  *       to null via kotlinx.serialization default values.
  * - v3: adds RoutineGroup table and Routine.groupId field for routine grouping.
- * - v4: adds equipment rack definitions and per-routine-exercise rack defaults.
+ * - v4: adds legacy global equipment rack definitions and per-routine-exercise rack defaults.
+ * - v5: replaces the global rack payload with independently restorable profile training
+ *       preference sections. Local safety/consent state and sync bookkeeping are excluded.
  */
 @Serializable
 data class BackupData(
@@ -467,14 +470,29 @@ data class BackupPrivacyMetadata(
     val containsSessionNotes: Boolean = true,
     val containsAuthTokens: Boolean = false,
     val containsRuntimeSecrets: Boolean = false,
-    val userFacingSummary: String = "Full personal-data export: includes workout history, routines, profiles, personal records, and notes. Does not include auth tokens or runtime secrets.",
+    val userFacingSummary: String = "Full personal-data export: includes workout history, routines, profiles, profile training preferences, personal records, and notes. Does not include auth tokens, runtime secrets, preference sync bookkeeping, voice phrase or calibration, or adult consent and prompt state.",
 )
 
 /**
  * Highest backup schema version this build can produce.
  * Bump whenever BackupContent gains/loses entities or a backup field type changes.
  */
-const val CURRENT_BACKUP_VERSION: Int = 4
+const val CURRENT_BACKUP_VERSION: Int = 5
+
+/**
+ * Profile-scoped preference payload. Raw JSON sections intentionally isolate malformed or
+ * forward-version values so one bad section cannot prevent valid siblings from restoring.
+ * Sync metadata and local-only safety state are deliberately absent from this wire type.
+ */
+@Serializable
+data class ProfilePreferencesBackup(
+    val profileId: String,
+    val core: JsonElement? = null,
+    val rack: JsonElement? = null,
+    val workout: JsonElement? = null,
+    val led: JsonElement? = null,
+    val vbt: JsonElement? = null,
+)
 
 /**
  * Container for all backup data entities
@@ -499,8 +517,11 @@ data class BackupContent(
     val streakHistory: List<StreakHistoryBackup> = emptyList(),
     val gamificationStats: GamificationStatsBackup? = null,
     val userProfiles: List<UserProfileBackup> = emptyList(),
-    // Added v4: local equipment rack definitions from Settings-backed repository.
-    val equipmentRackItems: List<RackItem> = emptyList(),
+    // Added v5: profile-scoped training preferences; sections decode independently.
+    val profilePreferences: List<ProfilePreferencesBackup> = emptyList(),
+    // Added v4 and retained only for deterministic v4 import compatibility.
+    @SerialName("equipmentRackItems")
+    val legacyEquipmentRackItems: JsonElement? = null,
     // Added v2: portal session notes (migration 26)
     val sessionNotes: List<SessionNotesBackup> = emptyList(),
     // Added v3: routine groups (migration 27)

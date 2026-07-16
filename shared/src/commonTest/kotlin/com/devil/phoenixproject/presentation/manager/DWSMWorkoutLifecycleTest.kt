@@ -503,7 +503,7 @@ class DWSMWorkoutLifecycleTest {
 
         // Disable autoplay so startNextSet() enters SetReady instead of launching
         // startWorkout() which creates infinite delay loops (rest timer, metrics, etc.)
-        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        harness.setActiveSummaryCountdownSeconds(0)
         advanceUntilIdle()
 
         harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
@@ -528,7 +528,7 @@ class DWSMWorkoutLifecycleTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        harness.setActiveSummaryCountdownSeconds(0)
 
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
@@ -547,7 +547,7 @@ class DWSMWorkoutLifecycleTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        harness.setActiveSummaryCountdownSeconds(0)
 
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
@@ -566,7 +566,7 @@ class DWSMWorkoutLifecycleTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        harness.setActiveSummaryCountdownSeconds(0)
         val events = mutableListOf<HapticEvent>()
         val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
             harness.dwsm.coordinator.hapticEvents.collect { event ->
@@ -609,8 +609,8 @@ class DWSMWorkoutLifecycleTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
-        harness.fakePrefsManager.setCountdownBeepsEnabled(false)
+        harness.setActiveSummaryCountdownSeconds(0)
+        harness.setActiveCountdownBeepsEnabled(false)
         val events = mutableListOf<HapticEvent>()
         val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
             harness.dwsm.coordinator.hapticEvents.collect { event ->
@@ -638,7 +638,7 @@ class DWSMWorkoutLifecycleTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        harness.setActiveSummaryCountdownSeconds(0)
 
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
@@ -671,7 +671,7 @@ class DWSMWorkoutLifecycleTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        harness.setActiveSummaryCountdownSeconds(0)
 
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
@@ -2196,7 +2196,7 @@ class DWSMWorkoutLifecycleTest {
     fun `Issue 427 - timed bodyweight set prompts for reps instead of saving zero volume`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.setActiveBodyWeightKg(80f)
         val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
@@ -2236,7 +2236,7 @@ class DWSMWorkoutLifecycleTest {
         // the set; the prompt fires afterwards.
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.setActiveBodyWeightKg(80f)
         val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 0)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
@@ -2268,7 +2268,7 @@ class DWSMWorkoutLifecycleTest {
     fun `Issue 427 - confirming bodyweight reps saves selected variant volume`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.setActiveBodyWeightKg(80f)
         val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
@@ -2342,7 +2342,7 @@ class DWSMWorkoutLifecycleTest {
     fun `Issue 427 - bodyweight variant carries into later set prompt`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.setActiveBodyWeightKg(80f)
         val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
@@ -2381,7 +2381,7 @@ class DWSMWorkoutLifecycleTest {
     fun `Issue 490 - timed bodyweight set emits final countdown ticks`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.setActiveBodyWeightKg(80f)
         val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 12)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
         val ticks = mutableListOf<Int>()
@@ -2413,7 +2413,7 @@ class DWSMWorkoutLifecycleTest {
     fun `Issue 490 - short timed bodyweight set includes initial countdown tick`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
+        harness.setActiveBodyWeightKg(80f)
         val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 10)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
         val ticks = mutableListOf<Int>()
@@ -2482,8 +2482,8 @@ class DWSMWorkoutLifecycleTest {
     fun `Issue 490 - disabled countdown beeps suppress timed bodyweight ticks`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.fakePrefsManager.setBodyWeightKg(80f)
-        harness.fakePrefsManager.setCountdownBeepsEnabled(false)
+        harness.setActiveBodyWeightKg(80f)
+        harness.setActiveCountdownBeepsEnabled(false)
         val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 12)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
         val ticks = mutableListOf<Int>()

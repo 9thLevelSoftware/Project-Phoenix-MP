@@ -8,8 +8,9 @@ object TestTags {
     const val APP_NAV_HOST = "app-nav-host"
 
     const val NAV_ANALYTICS = "nav-analytics"
-    const val NAV_WORKOUTS = "nav-workouts"
     const val NAV_INSIGHTS = "nav-insights"
+    const val NAV_HOME = "nav-home"
+    const val NAV_PROFILE = "nav-profile"
     const val NAV_SETTINGS = "nav-settings"
 
     const val ACTION_CYCLES = "action-cycles"
@@ -24,11 +25,15 @@ object TestTags {
     const val ACTION_START_SET = "action-start-set"
     const val ACTION_STOP_ROUTINE_OVERVIEW = "action-stop-routine-overview"
     const val ACTION_STOP_WORKOUT = "action-stop-workout"
+    const val ACTION_ADD_PROFILE = "action-add-profile"
+    const val ACTION_EDIT_PROFILE = "action-edit-profile"
+    const val ACTION_DELETE_PROFILE = "action-delete-profile"
 
     const val SCREEN_HOME = "screen-home"
     const val SCREEN_ANALYTICS = "screen-analytics"
     const val SCREEN_SMART_INSIGHTS = "screen-smart-insights"
     const val SCREEN_SETTINGS = "screen-settings"
+    const val SCREEN_PROFILE = "screen-profile"
     const val SCREEN_LINK_ACCOUNT = "screen-link-account"
     const val SCREEN_BADGES = "screen-badges"
     const val SCREEN_CONNECTION_LOGS = "screen-connection-logs"
@@ -51,4 +56,6 @@ object TestTags {
     const val DIALOG_EXIT_ROUTINE = "dialog-exit-routine"
     const val DIALOG_STOP_CURRENT_SET = "dialog-stop-current-set"
     const val DIALOG_EXIT_WORKOUT = "dialog-exit-workout"
+
+    const val PROFILE_SWITCHER_SHEET = "profile-switcher-sheet"
 }
