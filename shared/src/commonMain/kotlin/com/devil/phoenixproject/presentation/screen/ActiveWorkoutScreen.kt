@@ -263,7 +263,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                                 DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,
                             ) ==
                             true &&
-                                routineFlowState !is RoutineFlowState.SetReady
+                                !viewModel.isStoppingWorkout()
                         )
                     ) -> {
                 // Issue #660: a direct timed Stop Set returns a temp routine to SetReady.

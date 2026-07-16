@@ -9,8 +9,9 @@ import kotlin.test.assertTrue
  * Issue #660 regression guard for a direct timed bodyweight session.
  *
  * A SingleExerciseScreen launch uses a `temp_single_` routine. An early Stop Set
- * must publish SetReady before Idle so ActiveWorkoutScreen's Idle observer sees
- * that SetReady owns navigation, regardless of cross-flow observer scheduling.
+ * must retain the Stop Set guard until ActiveWorkoutScreen routes the idle state
+ * back to SetReady; normal temp-single completion must still navigate away. The
+ * two Compose observers otherwise race independently.
  *
  * This is source-level because this module has no Compose UI harness for the
  * two independent ActiveWorkoutScreen observers.
@@ -18,7 +19,7 @@ import kotlin.test.assertTrue
 class Issue660TempSingleStopSetNavigationTest {
 
     @Test
-    fun `early temp single Stop Set publishes SetReady before Idle navigation`() {
+    fun `early temp single Stop Set cannot teardown Idle during SetReady transition`() {
         val stopSet = between(
             readActiveSessionEngineSource(),
             "fun stopAndReturnToSetReady()",
@@ -26,22 +27,53 @@ class Issue660TempSingleStopSetNavigationTest {
         )
         val setReady = stopSet.indexOf("flowDelegate?.enterSetReady")
         val idle = stopSet.indexOf("coordinator._workoutState.value = WorkoutState.Idle")
+        val stopGuardRelease = stopSet.lastIndexOf("coordinator.stopWorkoutInProgress.value = false")
+        val returnedToSetReady = stopSet.indexOf("returnedToSetReady = true")
+        val releaseOnFailure = stopSet.indexOf("if (!returnedToSetReady)")
         assertTrue(
-            setReady >= 0 && idle >= 0 && setReady < idle,
-            "Issue #660: Stop Set must publish SetReady before Idle so no Idle observer can " +
-                "navigate a temp_single_ routine home first.",
+            setReady >= 0 &&
+                idle >= 0 &&
+                setReady < idle &&
+                returnedToSetReady > idle &&
+                releaseOnFailure > returnedToSetReady &&
+                stopGuardRelease > releaseOnFailure,
+            "Issue #660: only a failed Stop Set may release its guard; successful SetReady return must retain it.",
         )
 
+        val startWorkout = between(
+            readActiveSessionEngineSource(),
+            "fun startWorkout(",
+            "fun stopWorkout(",
+        )
+        assertTrue(
+            startWorkout.contains("coordinator.stopWorkoutInProgress.value = false"),
+            "Issue #660: the next SetReady start must release the preserved Stop Set guard.",
+        )
+
+        val activeWorkout = readActiveWorkoutScreenSource()
         val tempSingleIdleBranch = between(
-            readActiveWorkoutScreenSource(),
+            activeWorkout,
             "loadedRoutine == null ||",
             "workoutState is WorkoutState.Error",
         )
         val tempSingle = tempSingleIdleBranch.indexOf("DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX")
-        val setReadyGuard = tempSingleIdleBranch.indexOf("routineFlowState !is RoutineFlowState.SetReady")
+        val stoppingGuard = tempSingleIdleBranch.indexOf("!viewModel.isStoppingWorkout()")
+        val staleSetReadyGuard = tempSingleIdleBranch.indexOf("routineFlowState !is RoutineFlowState.SetReady")
         assertTrue(
-            tempSingle >= 0 && setReadyGuard > tempSingle,
-            "Issue #660: the temp_single_ Idle completion branch must defer to the SetReady observer.",
+            tempSingle >= 0 && stoppingGuard > tempSingle && staleSetReadyGuard < 0,
+            "Issue #660: only an in-flight Stop Set may suppress temp_single_ Idle teardown; " +
+                "normal completion must retain its existing navigate-away behavior.",
+        )
+
+        val setReadyObserver = between(
+            activeWorkout,
+            "LaunchedEffect(routineFlowState, workoutState)",
+            "// Use the new state holder pattern",
+        )
+        assertTrue(
+            setReadyObserver.contains("is RoutineFlowState.SetReady") &&
+                setReadyObserver.contains("navController.navigate(NavigationRoutes.SetReady.route)"),
+            "Issue #660: the flow observer must own the deferred SetReady destination.",
         )
     }
 
