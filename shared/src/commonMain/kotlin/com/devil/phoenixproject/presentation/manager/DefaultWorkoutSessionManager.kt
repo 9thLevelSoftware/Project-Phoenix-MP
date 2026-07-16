@@ -702,16 +702,10 @@ class DefaultWorkoutSessionManager(
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)
 
-    // Issue #627: Read-only exposure of the in-flight stop guard. True from the moment
-    // stopWorkout() / stopAndReturnToSetReady() / stopAndSkipCurrentExercise() arm the
-    // compareAndSet. Reset to false at ALL of the following sites (zero writes from here):
-    //   - startWorkout()                       ActiveSessionEngine:2352  — primary; beginning of any new set
-    //   - stopAndReturnToSetReady()            ActiveSessionEngine:3145  — early release before delegating to handleSetCompletion
-    //   - stopAndReturnToSetReady() finally    ActiveSessionEngine:3178  — end of teardown coroutine
-    //   - stopAndSkipCurrentExercise() finally ActiveSessionEngine:3226  — end of skip coroutine
-    //   - warmup fast-path (next warmup set)   ActiveSessionEngine:3783  — before starting next warmup set
-    //   - warmup fast-path (to working sets)   ActiveSessionEngine:3801  — before transitioning to first working set
-    //   - resumeWorkout()                      ActiveSessionEngine:3253  — gate invariant: every resumable-state entry opens the guard
+    // Issue #627: Read-only exposure of the stop guard. It is armed by stop entry points.
+    // A successful Stop Set deliberately keeps it armed until startWorkout() begins the retry,
+    // preventing Idle navigation from racing SetReady. Failures, completed-rep delegation,
+    // skipped exercises, and warm-up transitions release it on their own paths.
     val isStoppingWorkout: Boolean get() = coordinator.stopWorkoutInProgress.value
 
     fun stopAndReturnToSetReady() = activeSessionEngine.stopAndReturnToSetReady()

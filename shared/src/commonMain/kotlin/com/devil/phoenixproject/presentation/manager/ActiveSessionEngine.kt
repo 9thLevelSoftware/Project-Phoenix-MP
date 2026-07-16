@@ -3373,6 +3373,9 @@ class ActiveSessionEngine(
         coordinator._timedExerciseRemainingSeconds.value = null
         cancelJustLiftEggTimer()
 
+        // Leave this armed after a successful Stop Set so Idle routing cannot race the
+        // SetReady observer; startWorkout() releases it when the user retries the set.
+        var returnedToSetReady = false
         scope.launch {
             try {
                 bleRepository.stopWorkout()
@@ -3382,16 +3385,20 @@ class ActiveSessionEngine(
                 coordinator._repRanges.value = null
                 coordinator.warmupCompleteTimeMs = 0
                 resetAutoStopState()
-                coordinator._workoutState.value = WorkoutState.Idle
 
                 val routine = coordinator._loadedRoutine.value
                 if (routine != null) {
+                    // Issue #660: publish SetReady before Idle so its observer owns navigation.
                     flowDelegate?.enterSetReady(coordinator._currentExerciseIndex.value, coordinator._currentSetIndex.value)
                 }
+                coordinator._workoutState.value = WorkoutState.Idle
+                returnedToSetReady = true
 
                 Logger.d { "stopAndReturnToSetReady: Reset to SetReady for exercise=${coordinator._currentExerciseIndex.value}, set=${coordinator._currentSetIndex.value}" }
             } finally {
-                coordinator.stopWorkoutInProgress.value = false
+                if (!returnedToSetReady) {
+                    coordinator.stopWorkoutInProgress.value = false
+                }
             }
         }
     }

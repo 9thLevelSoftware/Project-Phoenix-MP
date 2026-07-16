@@ -258,12 +258,16 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             workoutState is WorkoutState.Idle &&
                 (
                     loadedRoutine == null ||
-                        loadedRoutine?.id?.startsWith(
-                            DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,
-                        ) ==
-                        true
+                        (
+                            loadedRoutine?.id?.startsWith(
+                                DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,
+                            ) ==
+                            true &&
+                                !viewModel.isStoppingWorkout()
+                        )
                     ) -> {
-                // Single Exercise completed and reset to Idle - navigate back to SingleExerciseScreen
+                // Issue #660: a direct timed Stop Set returns a temp routine to SetReady.
+                // Let the routine-flow observer navigate there rather than tearing down to Home.
                 Logger.d { "ActiveWorkoutScreen: Single Exercise idle, navigating back" }
                 hasNavigatedAway = true
                 navController.navigateUp()
