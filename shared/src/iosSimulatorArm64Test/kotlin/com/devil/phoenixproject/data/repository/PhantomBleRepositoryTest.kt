@@ -81,6 +81,47 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `shutdown wins over an in-flight scan`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val scanning = async(Dispatchers.Default) { repository.startScanning() }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Scanning }
+            repository.shutdown()
+
+            assertTrue(scanning.await().isFailure)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+            assertNull(repository.heuristicData.value)
+            assertNull(repository.diagnostics.value)
+            assertFalse(repository.connectionState.value is ConnectionState.Connected)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown wins over a racing connect`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val connecting = async(Dispatchers.Default) {
+            repository.connect(ScannedDevice("race", "race-address"))
+        }
+
+        try {
+            repository.shutdown()
+
+            assertTrue(connecting.await().isFailure)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+            assertNull(repository.heuristicData.value)
+            assertNull(repository.diagnostics.value)
+            assertFalse(repository.connectionState.value is ConnectionState.Connected)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `injectRawPacket parses legacy rep bytes through protocol parser`() = runTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
         val raw = byteArrayOf(
@@ -101,6 +142,55 @@ class PhantomBleRepositoryTest {
             assertEquals(raw.toList(), event.rawData.toList())
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `injectRawPacket parses opcode-prefixed rep bytes through protocol parser`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val raw = byteArrayOf(
+            0x02, // opcode prefix
+            0x05, 0x00, 0x00, 0x00, // topCounter = 5
+            0x04, 0x00, 0x00, 0x00, // completeCounter = 4
+            0x00, 0x00, 0x80.toByte(), 0x3F, // rangeTop = 1.0f
+            0x00, 0x00, 0x00, 0x00, // rangeBottom = 0.0f
+            0x01, 0x00, // repsRomCount = 1
+            0x02, 0x00, // repsRomTotal = 2
+            0x03, 0x00, // repsSetCount = 3
+            0x04, 0x00, // repsSetTotal = 4
+        )
+
+        repository.repEvents.test {
+            val result = repository.injectRawPacket(PhantomRawPacketKind.REP, raw, hasOpcodePrefix = true)
+            assertTrue(result.isSuccess)
+
+            val event = awaitItem()
+            assertEquals(5, event.topCounter)
+            assertEquals(4, event.completeCounter)
+            assertEquals(1, event.repsRomCount)
+            assertEquals(3, event.repsSetCount)
+            assertFalse(event.isLegacyFormat)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `injectRawPacket parses heuristic bytes into heuristic state`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val raw = ByteArray(48).also { bytes ->
+            putFloatLE(bytes, 0, 50f)
+            putFloatLE(bytes, 4, 80f)
+            putFloatLE(bytes, 24, 40f)
+            putFloatLE(bytes, 28, 60f)
+        }
+
+        val result = repository.injectRawPacket(PhantomRawPacketKind.HEURISTIC, raw)
+
+        assertTrue(result.isSuccess)
+        val heuristic = requireNotNull(repository.heuristicData.value)
+        assertEquals(50f, heuristic.concentric.kgAvg)
+        assertEquals(80f, heuristic.concentric.kgMax)
+        assertEquals(40f, heuristic.eccentric.kgAvg)
+        assertEquals(60f, heuristic.eccentric.kgMax)
     }
 
     @Test
@@ -374,5 +464,13 @@ class PhantomBleRepositoryTest {
     private fun putInt16LE(bytes: ByteArray, offset: Int, value: Int) {
         val encoded = value and 0xFFFF
         putUInt16LE(bytes, offset, encoded)
+    }
+
+    private fun putFloatLE(bytes: ByteArray, offset: Int, value: Float) {
+        val bits = value.toBits()
+        bytes[offset] = bits.toByte()
+        bytes[offset + 1] = (bits ushr 8).toByte()
+        bytes[offset + 2] = (bits ushr 16).toByte()
+        bytes[offset + 3] = (bits ushr 24).toByte()
     }
 }

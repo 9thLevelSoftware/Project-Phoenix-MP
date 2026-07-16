@@ -30,6 +30,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 
 enum class PhantomRawPacketKind {
     MONITOR,
@@ -131,13 +134,21 @@ class PhantomBleRepository(
     val config: StateFlow<PhantomBleConfig> = _config.asStateFlow()
     private var ticks = 0L
     private var lastColorSchemeIndex = 0
-    private var connectionAttemptGeneration = 0L
+    private val lifecycleLock = reentrantLock()
+    private val terminal = atomic(false)
+    private val connectionAttemptGeneration = atomic(0L)
 
     override suspend fun startScanning(): Result<Unit> {
+        val attemptGeneration = beginConnectionAttempt()
+            ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
         logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
-        setConnectionState(ConnectionState.Scanning)
+        if (!publishConnectionState(attemptGeneration, ConnectionState.Scanning)) {
+            return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
+        }
         delay(150)
-        _scannedDevices.value = listOf(device)
+        if (!publishScannedDevices(attemptGeneration, listOf(device))) {
+            return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
+        }
         logRepo.info(
             LogEventType.DEVICE_FOUND,
             "Found phantom Vitruvian device",
@@ -149,58 +160,48 @@ class PhantomBleRepository(
     }
 
     override suspend fun stopScanning() {
-        if (_connectionState.value == ConnectionState.Scanning) {
-            setConnectionState(ConnectionState.Disconnected)
+        lifecycleLock.withLock {
+            connectionAttemptGeneration.incrementAndGet()
+            if (_connectionState.value == ConnectionState.Scanning) {
+                _connectionState.value = ConnectionState.Disconnected
+            }
         }
         logRepo.info(LogEventType.SCAN_STOP, "Stopped phantom Vitruvian scan")
     }
 
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
-        val attemptGeneration = ++connectionAttemptGeneration
+        val attemptGeneration = beginConnectionAttempt()
+            ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
         logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
-        setConnectionState(ConnectionState.Connecting)
-        delay(250)
-        if (attemptGeneration != connectionAttemptGeneration) {
+        if (!publishConnectionState(attemptGeneration, ConnectionState.Connecting)) {
             return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
         }
-        setConnectionState(ConnectionState.Connected(device.name, device.address))
-        _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true)
-        _handleState.value = HandleState.Released
-        logRepo.info(LogEventType.SERVICE_DISCOVERED, "Phantom service map ready", device.name, device.address)
-        logRepo.info(LogEventType.CONNECT_SUCCESS, "Connected to phantom Vitruvian", device.name, device.address)
-        startDiagnostics()
-        startMetrics(activeWorkout = false)
-        startHeuristicGeneration(activeWorkout = false)
-        startHeartbeat()
+        delay(250)
+        if (!completeConnection(attemptGeneration, device)) {
+            return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
+        }
         return Result.success(Unit)
     }
 
     override suspend fun cancelConnection() {
-        connectionAttemptGeneration++
+        lifecycleLock.withLock {
+            connectionAttemptGeneration.incrementAndGet()
+            if (!terminal.value) {
+                _connectionState.value = ConnectionState.Disconnected
+            }
+        }
         logRepo.warning(LogEventType.DISCONNECT, "Cancelled phantom connection")
-        setConnectionState(ConnectionState.Disconnected)
     }
 
     override suspend fun disconnect() {
-        connectionAttemptGeneration++
         logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-        stopJobs()
-        workoutParams = null
-        _handleDetection.value = HandleDetection()
-        _handleState.value = HandleState.WaitingForRest
-        _diagnostics.value = null
-        _heuristicData.value = null
-        _scannedDevices.value = emptyList()
-        _discoModeActive.value = false
-        setConnectionState(ConnectionState.Disconnected)
+        teardownConnection()
     }
 
     override suspend fun shutdown() {
-        try {
-            disconnect()
-        } finally {
-            repositoryJob.cancel()
-        }
+        logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+        teardownConnection(markTerminal = true)
+        repositoryJob.cancel()
     }
 
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
@@ -216,16 +217,7 @@ class PhantomBleRepository(
             return Result.success(Unit)
         }
 
-        connectionAttemptGeneration++
-        stopJobs()
-        workoutParams = null
-        _diagnostics.value = null
-        _heuristicData.value = null
-        _scannedDevices.value = emptyList()
-        _handleDetection.value = HandleDetection()
-        _handleState.value = HandleState.WaitingForRest
-        _discoModeActive.value = false
-        setConnectionState(ConnectionState.Disconnected)
+        teardownConnection()
         logRepo.error(
             LogEventType.ERROR,
             "Phantom scan and connect timed out",
@@ -267,22 +259,27 @@ class PhantomBleRepository(
     }
 
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
-        if (_discoModeActive.value) {
-            stopDiscoMode()
+        return lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            if (_discoModeActive.value) {
+                stopDiscoMode()
+            }
+            workoutParams = params
+            _handleState.value = HandleState.Grabbed
+            logRepo.info(
+                LogEventType.COMMAND_SENT,
+                "Phantom workout started",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}; justLift=${params.isJustLift}",
+            )
+            startMetrics(activeWorkout = true)
+            startHeuristicGeneration(activeWorkout = true)
+            startRepSimulation(params)
+            Result.success(Unit)
         }
-        workoutParams = params
-        _handleState.value = HandleState.Grabbed
-        logRepo.info(
-            LogEventType.COMMAND_SENT,
-            "Phantom workout started",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}; justLift=${params.isJustLift}",
-        )
-        startMetrics(activeWorkout = true)
-        startHeuristicGeneration(activeWorkout = true)
-        startRepSimulation(params)
-        return Result.success(Unit)
     }
 
     override suspend fun stopWorkout(): Result<Unit> {
@@ -316,13 +313,22 @@ class PhantomBleRepository(
     }
 
     override fun restartMonitorPolling() {
-        startMetrics(activeWorkout = workoutParams != null)
+        lifecycleLock.withLock {
+            if (!terminal.value) {
+                startMetrics(activeWorkout = workoutParams != null)
+            }
+        }
     }
 
     override fun startActiveWorkoutPolling() {
-        _handleState.value = HandleState.Grabbed
-        startMetrics(activeWorkout = true)
-        startHeuristicGeneration(activeWorkout = true)
+        lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
+            _handleState.value = HandleState.Grabbed
+            startMetrics(activeWorkout = true)
+            startHeuristicGeneration(activeWorkout = true)
+        }
     }
 
     override fun stopPolling() {
@@ -340,8 +346,12 @@ class PhantomBleRepository(
     }
 
     override fun restartDiagnosticPolling() {
-        startDiagnostics()
-        startHeartbeat()
+        lifecycleLock.withLock {
+            if (!terminal.value) {
+                startDiagnostics()
+                startHeartbeat()
+            }
+        }
     }
 
     override fun startDiscoMode() {
@@ -469,8 +479,73 @@ class PhantomBleRepository(
         }
     }
 
-    private fun setConnectionState(state: ConnectionState) {
-        _connectionState.value = state
+    private fun beginConnectionAttempt(): Long? = lifecycleLock.withLock {
+        if (terminal.value) {
+            null
+        } else {
+            connectionAttemptGeneration.incrementAndGet()
+        }
+    }
+
+    private fun publishConnectionState(attemptGeneration: Long, state: ConnectionState): Boolean = lifecycleLock.withLock {
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            false
+        } else {
+            _connectionState.value = state
+            true
+        }
+    }
+
+    private fun publishScannedDevices(attemptGeneration: Long, devices: List<ScannedDevice>): Boolean = lifecycleLock.withLock {
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            false
+        } else {
+            _scannedDevices.value = devices
+            true
+        }
+    }
+
+    private fun completeConnection(attemptGeneration: Long, device: ScannedDevice): Boolean = lifecycleLock.withLock {
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        _connectionState.value = ConnectionState.Connected(device.name, device.address)
+        _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true)
+        _handleState.value = HandleState.Released
+        logRepo.info(LogEventType.SERVICE_DISCOVERED, "Phantom service map ready", device.name, device.address)
+        logRepo.info(LogEventType.CONNECT_SUCCESS, "Connected to phantom Vitruvian", device.name, device.address)
+        startDiagnostics()
+        startMetrics(activeWorkout = false)
+        startHeuristicGeneration(activeWorkout = false)
+        startHeartbeat()
+        true
+    }
+
+    private fun teardownConnection(markTerminal: Boolean = false) {
+        lifecycleLock.withLock {
+            if (markTerminal) {
+                terminal.value = true
+            }
+            connectionAttemptGeneration.incrementAndGet()
+            stopJobs()
+            workoutParams = null
+            _handleDetection.value = HandleDetection()
+            _handleState.value = HandleState.WaitingForRest
+            _diagnostics.value = null
+            _heuristicData.value = null
+            _scannedDevices.value = emptyList()
+            _discoModeActive.value = false
+            _connectionState.value = ConnectionState.Disconnected
+        }
+    }
+
+    private inline fun publishIfConnected(publish: () -> Unit): Boolean = lifecycleLock.withLock {
+        if (terminal.value || _connectionState.value !is ConnectionState.Connected) {
+            false
+        } else {
+            publish()
+            true
+        }
     }
 
     private fun startMetrics(activeWorkout: Boolean) {
@@ -516,11 +591,15 @@ class PhantomBleRepository(
                 val config = _config.value
                 val configuredLoad = workoutParams?.weightPerCableKg ?: 7.5f
                 val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
-                _heuristicData.value = HeuristicStatistics(
-                    concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
-                    eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
-                    timestamp = Clock.System.now().toEpochMilliseconds(),
-                )
+                if (!publishIfConnected {
+                        _heuristicData.value = HeuristicStatistics(
+                            concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
+                            eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
+                            timestamp = Clock.System.now().toEpochMilliseconds(),
+                        )
+                    }) {
+                    break
+                }
                 logRepo.debug(
                     LogEventType.NOTIFICATION,
                     "Phantom heuristic update",
@@ -583,13 +662,17 @@ class PhantomBleRepository(
             val connectedAt = Clock.System.now().toEpochMilliseconds()
             while (isActive && connectionState.value is ConnectionState.Connected) {
                 val now = Clock.System.now().toEpochMilliseconds()
-                _diagnostics.value = DiagnosticPacket(
-                    runtimeSeconds = (now - connectedAt) / 1000,
-                    faultWords = listOf(0, 0, 0, 0),
-                    temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
-                    hasFaults = false,
-                    receivedAtMillis = now,
-                )
+                if (!publishIfConnected {
+                        _diagnostics.value = DiagnosticPacket(
+                            runtimeSeconds = (now - connectedAt) / 1000,
+                            faultWords = listOf(0, 0, 0, 0),
+                            temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
+                            hasFaults = false,
+                            receivedAtMillis = now,
+                        )
+                    }) {
+                    break
+                }
                 logRepo.debug(LogEventType.DIAGNOSTIC, "Phantom diagnostic heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
                 delay(2_000)
             }
