@@ -298,18 +298,32 @@ class PhantomBleRepository(
     }
 
     override fun enableHandleDetection(enabled: Boolean) {
-        _handleDetection.value = HandleDetection(leftDetected = enabled, rightDetected = enabled)
-        _handleState.value = if (enabled) HandleState.WaitingForRest else HandleState.Released
-        logRepo.info(LogEventType.NOTIFICATION, "Phantom handle detection ${if (enabled) "enabled" else "disabled"}")
+        lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
+            _handleDetection.value = HandleDetection(leftDetected = enabled, rightDetected = enabled)
+            _handleState.value = if (enabled) HandleState.WaitingForRest else HandleState.Released
+            logRepo.info(LogEventType.NOTIFICATION, "Phantom handle detection ${if (enabled) "enabled" else "disabled"}")
+        }
     }
 
     override fun resetHandleState() {
-        _handleState.value = HandleState.WaitingForRest
+        lifecycleLock.withLock {
+            if (!terminal.value) {
+                _handleState.value = HandleState.WaitingForRest
+            }
+        }
     }
 
     override fun enableJustLiftWaitingMode() {
-        _handleState.value = HandleState.WaitingForRest
-        logRepo.info(LogEventType.NOTIFICATION, "Phantom Just Lift waiting mode armed")
+        lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
+            _handleState.value = HandleState.WaitingForRest
+            logRepo.info(LogEventType.NOTIFICATION, "Phantom Just Lift waiting mode armed")
+        }
     }
 
     override fun restartMonitorPolling() {
@@ -355,22 +369,29 @@ class PhantomBleRepository(
     }
 
     override fun startDiscoMode() {
-        if (_connectionState.value !is ConnectionState.Connected || workoutParams != null) {
-            return
+        lifecycleLock.withLock {
+            if (terminal.value || _connectionState.value !is ConnectionState.Connected || workoutParams != null) {
+                return@withLock
+            }
+            _discoModeActive.value = true
+            logRepo.info(LogEventType.COMMAND_SENT, "Phantom disco mode started", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
         }
-        _discoModeActive.value = true
-        logRepo.info(LogEventType.COMMAND_SENT, "Phantom disco mode started", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
     }
 
     override fun stopDiscoMode() {
-        _discoModeActive.value = false
-        logRepo.info(
-            LogEventType.COMMAND_SENT,
-            "Phantom disco mode stopped",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            "restoredScheme=$lastColorSchemeIndex",
-        )
+        lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
+            _discoModeActive.value = false
+            logRepo.info(
+                LogEventType.COMMAND_SENT,
+                "Phantom disco mode stopped",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "restoredScheme=$lastColorSchemeIndex",
+            )
+        }
     }
 
     override fun setLastColorSchemeIndex(index: Int) {
@@ -411,7 +432,11 @@ class PhantomBleRepository(
             ?: error("monitor packet too short: ${data.size} bytes")
         val metric = monitorProcessor.process(packet)
             ?: error("monitor packet parsed but was rejected by validation")
-        _metricsFlow.emit(metric)
+        lifecycleLock.withLock {
+            if (!terminal.value) {
+                _metricsFlow.tryEmit(metric)
+            }
+        }
         logRepo.info(
             LogEventType.NOTIFICATION,
             "Phantom injected raw monitor packet",
@@ -425,7 +450,11 @@ class PhantomBleRepository(
         val timestamp = Clock.System.now().toEpochMilliseconds()
         val rep = parseRepPacket(data, hasOpcodePrefix, timestamp)
             ?: error("rep packet too short: ${data.size} bytes")
-        _repEvents.emit(rep)
+        lifecycleLock.withLock {
+            if (!terminal.value) {
+                _repEvents.tryEmit(rep)
+            }
+        }
         logRepo.info(
             LogEventType.REP_RECEIVED,
             "Phantom injected raw rep packet",
@@ -439,7 +468,11 @@ class PhantomBleRepository(
         val timestamp = Clock.System.now().toEpochMilliseconds()
         val diagnostic = parseDiagnosticPacket(data)
             ?: error("diagnostic packet too short: ${data.size} bytes")
-        _diagnostics.value = diagnostic.copy(receivedAtMillis = timestamp)
+        lifecycleLock.withLock {
+            if (!terminal.value) {
+                _diagnostics.value = diagnostic.copy(receivedAtMillis = timestamp)
+            }
+        }
         logRepo.info(
             LogEventType.DIAGNOSTIC,
             "Phantom injected raw diagnostic packet",
@@ -453,7 +486,11 @@ class PhantomBleRepository(
         val timestamp = Clock.System.now().toEpochMilliseconds()
         val heuristic = parseHeuristicPacket(data, timestamp)
             ?: error("heuristic packet too short: ${data.size} bytes")
-        _heuristicData.value = heuristic
+        lifecycleLock.withLock {
+            if (!terminal.value) {
+                _heuristicData.value = heuristic
+            }
+        }
         logRepo.info(
             LogEventType.NOTIFICATION,
             "Phantom injected raw heuristic packet",

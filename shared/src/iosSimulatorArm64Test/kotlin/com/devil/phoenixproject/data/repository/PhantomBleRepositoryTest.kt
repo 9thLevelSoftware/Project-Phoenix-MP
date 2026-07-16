@@ -422,6 +422,77 @@ class PhantomBleRepositoryTest {
         assertNull(repository.heuristicData.value)
     }
 
+    @Test
+    fun `shutdown makes non-suspend controls no-ops`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        repository.shutdown()
+
+        repository.enableHandleDetection(true)
+        repository.resetHandleState()
+        repository.enableJustLiftWaitingMode()
+        repository.startDiscoMode()
+        repository.stopDiscoMode()
+
+        assertFalse(repository.handleDetection.value.leftDetected)
+        assertFalse(repository.handleDetection.value.rightDetected)
+        assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+        assertFalse(repository.discoModeActive.value)
+    }
+
+    @Test
+    fun `shutdown prevents raw packet routes from publishing`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val monitor = monitorPacket(
+            ticks = 42,
+            posA = 1250,
+            velA = 320,
+            loadA = 1234,
+            posB = -750,
+            velB = -250,
+            loadB = 567,
+        )
+        val rep = byteArrayOf(
+            0x07, 0x00,
+            0x00, 0x00,
+            0x05, 0x00,
+            0x55, 0x66, 0x77, 0x11,
+        )
+        val diagnostic = ByteArray(18).also { bytes ->
+            putUInt32LE(bytes, 0, 1234)
+            putUInt16LE(bytes, 4, 0x0001)
+            bytes[12] = 31
+            bytes[13] = 32
+            bytes[14] = 33
+            bytes[15] = 34
+            bytes[16] = 35
+            bytes[17] = 36
+        }
+        val heuristic = ByteArray(48).also { bytes ->
+            putFloatLE(bytes, 0, 50f)
+            putFloatLE(bytes, 4, 80f)
+            putFloatLE(bytes, 24, 40f)
+            putFloatLE(bytes, 28, 60f)
+        }
+
+        repository.shutdown()
+
+        repository.metricsFlow.test {
+            assertTrue(repository.injectRawPacket(PhantomRawPacketKind.MONITOR, monitor).isSuccess)
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+        repository.repEvents.test {
+            assertTrue(repository.injectRawPacket(PhantomRawPacketKind.REP, rep).isSuccess)
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertTrue(repository.injectRawPacket(PhantomRawPacketKind.DIAGNOSTIC, diagnostic).isSuccess)
+        assertTrue(repository.injectRawPacket(PhantomRawPacketKind.HEURISTIC, heuristic).isSuccess)
+        assertNull(repository.diagnostics.value)
+        assertNull(repository.heuristicData.value)
+    }
+
     private fun workoutParameters(): WorkoutParameters = WorkoutParameters(
         programMode = ProgramMode.OldSchool,
         reps = 3,
