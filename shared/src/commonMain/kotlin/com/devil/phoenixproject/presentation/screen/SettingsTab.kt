@@ -1244,7 +1244,7 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Play workout sounds to test audio configuration and volume",
+                    "Tests current workout sounds; numbered rep count requires Profile > Workout > Audio rep counter.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

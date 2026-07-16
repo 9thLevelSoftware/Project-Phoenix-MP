@@ -69,6 +69,7 @@ import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
+import com.devil.phoenixproject.presentation.manager.currentProfileTestSoundEvents
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
@@ -684,13 +685,13 @@ class MainViewModel constructor(
 
     fun testSounds() {
         viewModelScope.launch {
-            _hapticEvents.emit(HapticEvent.REP_COMPLETED)
-            kotlinx.coroutines.delay(800)
-            _hapticEvents.emit(HapticEvent.WARMUP_COMPLETE)
-            kotlinx.coroutines.delay(1000)
-            _hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(5))
-            kotlinx.coroutines.delay(1000)
-            _hapticEvents.emit(HapticEvent.WORKOUT_COMPLETE)
+            val events = currentProfileTestSoundEvents(settingsManager.userPreferences.value)
+            events.forEachIndexed { index, event ->
+                _hapticEvents.emit(event)
+                if (index < events.lastIndex) {
+                    kotlinx.coroutines.delay(if (event == HapticEvent.REP_COMPLETED) 800 else 1000)
+                }
+            }
         }
     }
 
