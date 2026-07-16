@@ -283,7 +283,7 @@ class ActiveSessionEngine(
                             // Issue #100: Check if this is the final working rep
                             val isFinalRep = !params.isJustLift && !params.isAMRAP &&
                                 params.reps > 0 && repNumber >= params.reps
-                            if (prefs.audioRepCountEnabled && repNumber in 1..25) {
+                            if (shouldEmitRepCountAnnouncement(prefs, repNumber)) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(repNumber))
                             }
                             if (isFinalRep && prefs.repSoundEnabled) {
@@ -302,7 +302,7 @@ class ActiveSessionEngine(
                             // Issue #100: Check if this is the final working rep
                             val isFinalRep = !params.isJustLift && !params.isAMRAP &&
                                 params.reps > 0 && event.workingCount >= params.reps
-                            if (prefs.audioRepCountEnabled && event.workingCount in 1..25) {
+                            if (shouldEmitRepCountAnnouncement(prefs, event.workingCount)) {
                                 coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(event.workingCount))
                             }
                             if (isFinalRep && prefs.repSoundEnabled) {
