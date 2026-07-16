@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 enum class PhantomRawPacketKind {
     MONITOR,
@@ -39,7 +41,7 @@ data class PhantomBleConfig(
     val loadScale: Float = 1f,
     val velocityScale: Double = 1.0,
     val positionScale: Float = 1f,
-    val repDelayMs: Long = 2_000L,
+    val repDelayMs: Long = 750L,
     val autoCompleteFixedRepSets: Boolean = true,
 ) {
     init {
@@ -119,8 +121,10 @@ class PhantomBleRepository(
     )
 
     private var metricsJob: Job? = null
+    private var heuristicJob: Job? = null
     private var repJob: Job? = null
     private var diagnosticJob: Job? = null
+    private var heartbeatJob: Job? = null
     private var workoutParams: WorkoutParameters? = null
     private val _config = MutableStateFlow(initialConfig)
     val config: StateFlow<PhantomBleConfig> = _config.asStateFlow()
@@ -160,6 +164,8 @@ class PhantomBleRepository(
         logRepo.info(LogEventType.CONNECT_SUCCESS, "Connected to phantom Vitruvian", device.name, device.address)
         startDiagnostics()
         startMetrics(activeWorkout = false)
+        startHeuristicGeneration(activeWorkout = false)
+        startHeartbeat()
         return Result.success(Unit)
     }
 
@@ -175,6 +181,7 @@ class PhantomBleRepository(
         _handleDetection.value = HandleDetection()
         _handleState.value = HandleState.WaitingForRest
         _diagnostics.value = null
+        _discoModeActive.value = false
         setConnectionState(ConnectionState.Disconnected)
     }
 
@@ -187,8 +194,41 @@ class PhantomBleRepository(
     }
 
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
-        startScanning()
-        return connect(device)
+        if (timeoutMs <= 0L) {
+            return Result.failure(IllegalArgumentException("timeoutMs must be > 0"))
+        }
+
+        return try {
+            withTimeout(timeoutMs) {
+                startScanning().getOrThrow()
+                connect(device).getOrThrow()
+            }
+            Result.success(Unit)
+        } catch (error: TimeoutCancellationException) {
+            stopJobs()
+            workoutParams = null
+            _diagnostics.value = null
+            _handleDetection.value = HandleDetection()
+            _handleState.value = HandleState.WaitingForRest
+            _discoModeActive.value = false
+            setConnectionState(ConnectionState.Disconnected)
+            logRepo.error(
+                LogEventType.ERROR,
+                "Phantom scan and connect timed out",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "timeoutMs=$timeoutMs",
+            )
+            _reconnectionRequested.emit(
+                ReconnectionRequest(
+                    deviceName = PHANTOM_DEVICE_NAME,
+                    deviceAddress = PHANTOM_DEVICE_ADDRESS,
+                    reason = "connection_timeout",
+                    timestamp = Clock.System.now().toEpochMilliseconds(),
+                ),
+            )
+            Result.failure(error)
+        }
     }
 
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
@@ -214,6 +254,9 @@ class PhantomBleRepository(
     }
 
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
+        if (_discoModeActive.value) {
+            stopDiscoMode()
+        }
         workoutParams = params
         _handleState.value = HandleState.Grabbed
         logRepo.info(
@@ -224,6 +267,7 @@ class PhantomBleRepository(
             "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}; justLift=${params.isJustLift}",
         )
         startMetrics(activeWorkout = true)
+        startHeuristicGeneration(activeWorkout = true)
         startRepSimulation(params)
         return Result.success(Unit)
     }
@@ -234,6 +278,7 @@ class PhantomBleRepository(
         workoutParams = null
         _handleState.value = HandleState.Released
         startMetrics(activeWorkout = false)
+        startHeuristicGeneration(activeWorkout = false)
         return Result.success(Unit)
     }
 
@@ -264,26 +309,32 @@ class PhantomBleRepository(
     override fun startActiveWorkoutPolling() {
         _handleState.value = HandleState.Grabbed
         startMetrics(activeWorkout = true)
+        startHeuristicGeneration(activeWorkout = true)
     }
 
     override fun stopPolling() {
         metricsJob?.cancel()
+        heuristicJob?.cancel()
         repJob?.cancel()
         diagnosticJob?.cancel()
+        heartbeatJob?.cancel()
         logRepo.info(LogEventType.HEARTBEAT, "Phantom polling stopped")
     }
 
     override fun stopMonitorPollingOnly() {
         metricsJob?.cancel()
-        repJob?.cancel()
         logRepo.info(LogEventType.HEARTBEAT, "Phantom monitor polling stopped; diagnostics kept warm")
     }
 
     override fun restartDiagnosticPolling() {
         startDiagnostics()
+        startHeartbeat()
     }
 
     override fun startDiscoMode() {
+        if (_connectionState.value !is ConnectionState.Connected || workoutParams != null) {
+            return
+        }
         _discoModeActive.value = true
         logRepo.info(LogEventType.COMMAND_SENT, "Phantom disco mode started", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
     }
@@ -400,6 +451,7 @@ class PhantomBleRepository(
         )
         if (_connectionState.value is ConnectionState.Connected) {
             startMetrics(activeWorkout = workoutParams != null)
+            startHeuristicGeneration(activeWorkout = workoutParams != null)
             workoutParams?.let(::startRepSimulation)
         }
     }
@@ -431,20 +483,37 @@ class PhantomBleRepository(
                     status = 0,
                 )
                 _metricsFlow.emit(metric)
-                if (sample % 8 == 0) {
-                    _heuristicData.value = HeuristicStatistics(
-                        concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
-                        eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
-                    )
-                    logRepo.debug(
-                        LogEventType.NOTIFICATION,
-                        "Phantom monitor metric",
-                        PHANTOM_DEVICE_NAME,
-                        PHANTOM_DEVICE_ADDRESS,
-                        "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}",
-                    )
-                }
+                logRepo.debug(
+                    LogEventType.NOTIFICATION,
+                    "Phantom monitor metric",
+                    PHANTOM_DEVICE_NAME,
+                    PHANTOM_DEVICE_ADDRESS,
+                    "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}",
+                )
                 sample++
+                delay(if (activeWorkout) 250 else 750)
+            }
+        }
+    }
+
+    private fun startHeuristicGeneration(activeWorkout: Boolean) {
+        heuristicJob?.cancel()
+        heuristicJob = scope.launch {
+            while (isActive && connectionState.value is ConnectionState.Connected) {
+                val config = _config.value
+                val configuredLoad = workoutParams?.weightPerCableKg ?: 7.5f
+                val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
+                _heuristicData.value = HeuristicStatistics(
+                    concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
+                    eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
+                    timestamp = Clock.System.now().toEpochMilliseconds(),
+                )
+                logRepo.debug(
+                    LogEventType.NOTIFICATION,
+                    "Phantom heuristic update",
+                    PHANTOM_DEVICE_NAME,
+                    PHANTOM_DEVICE_ADDRESS,
+                )
                 delay(if (activeWorkout) 250 else 750)
             }
         }
@@ -514,13 +583,27 @@ class PhantomBleRepository(
         }
     }
 
+    private fun startHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            while (isActive && connectionState.value is ConnectionState.Connected) {
+                logRepo.info(LogEventType.HEARTBEAT, "Phantom heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                delay(2_000)
+            }
+        }
+    }
+
     private fun stopJobs() {
         metricsJob?.cancel()
+        heuristicJob?.cancel()
         repJob?.cancel()
         diagnosticJob?.cancel()
+        heartbeatJob?.cancel()
         metricsJob = null
+        heuristicJob = null
         repJob = null
         diagnosticJob = null
+        heartbeatJob = null
     }
 
     companion object {

@@ -2,14 +2,25 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runTest
 
 class PhantomBleRepositoryTest {
+
+    @Test
+    fun `config defaults to 750 millisecond rep delay`() {
+        assertEquals(750L, PhantomBleConfig().repDelayMs)
+    }
 
     @Test
     fun `config rejects non-positive load scale`() {
@@ -149,6 +160,138 @@ class PhantomBleRepositoryTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `stopMonitorPollingOnly stops metrics without stopping other polling`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            repository.metricsFlow.test {
+                assertTrue(repository.scanAndConnect().isSuccess)
+                assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                var metric = awaitItem()
+                while (metric.loadA < 2f) {
+                    metric = awaitItem()
+                }
+
+                repository.stopMonitorPollingOnly()
+
+                delay(500L)
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `stopMonitorPollingOnly keeps rep heuristic diagnostics and heartbeat active`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.repEvents.test {
+                assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                withContext(Dispatchers.Default) { delay(50L) }
+                assertTrue(repository.heuristicData.value != null)
+                val heuristicTimestamp = requireNotNull(repository.heuristicData.value).timestamp
+                val diagnosticTimestamp = requireNotNull(repository.diagnostics.value).receivedAtMillis
+
+                repository.stopMonitorPollingOnly()
+                val heartbeatCountAfterStop = logRepo.getLogsByEventType(LogEventType.HEARTBEAT).size
+
+                withContext(Dispatchers.Default) { delay(300L) }
+                assertTrue(logRepo.getLogsByEventType(LogEventType.REP_RECEIVED).isNotEmpty())
+                awaitItem()
+                assertTrue(requireNotNull(repository.heuristicData.value).timestamp > heuristicTimestamp)
+                withContext(Dispatchers.Default) { delay(2_200L) }
+                assertTrue(requireNotNull(repository.diagnostics.value).receivedAtMillis > diagnosticTimestamp)
+                assertTrue(logRepo.getLogsByEventType(LogEventType.HEARTBEAT).size > heartbeatCountAfterStop)
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `scanAndConnect timeout returns failure and requests reconnection`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            repository.reconnectionRequested.test {
+                val result = repository.scanAndConnect(timeoutMs = 50L)
+
+                assertTrue(result.isFailure)
+                val request = awaitItem()
+                assertEquals(PhantomBleRepository.PHANTOM_DEVICE_NAME, request.deviceName)
+                assertEquals(PhantomBleRepository.PHANTOM_DEVICE_ADDRESS, request.deviceAddress)
+                assertEquals("connection_timeout", request.reason)
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `disco mode requires connection and clears on workout and disconnect`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            repository.startDiscoMode()
+            assertFalse(repository.discoModeActive.value)
+
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.startDiscoMode()
+            assertTrue(repository.discoModeActive.value)
+
+            assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+            assertFalse(repository.discoModeActive.value)
+
+            repository.startDiscoMode()
+            assertFalse(repository.discoModeActive.value)
+            repository.disconnect()
+            assertFalse(repository.discoModeActive.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown cancels polling jobs and clears lifecycle state`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        assertTrue(repository.scanAndConnect().isSuccess)
+        assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+        withContext(Dispatchers.Default) { delay(50L) }
+        assertFalse(repository.discoModeActive.value)
+        assertTrue(repository.diagnostics.value != null)
+
+        repository.shutdown()
+        withContext(Dispatchers.Default) { delay(350L) }
+
+        assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+        assertFalse(repository.handleDetection.value.leftDetected)
+        assertFalse(repository.handleDetection.value.rightDetected)
+        assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+        assertFalse(repository.discoModeActive.value)
+        assertNull(repository.diagnostics.value)
+    }
+
+    private fun workoutParameters(): WorkoutParameters = WorkoutParameters(
+        programMode = ProgramMode.OldSchool,
+        reps = 3,
+        weightPerCableKg = 10f,
+    )
 
     private fun monitorPacket(
         ticks: Int,
