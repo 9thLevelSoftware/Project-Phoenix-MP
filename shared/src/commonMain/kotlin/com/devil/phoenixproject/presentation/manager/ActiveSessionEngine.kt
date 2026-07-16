@@ -3382,12 +3382,13 @@ class ActiveSessionEngine(
                 coordinator._repRanges.value = null
                 coordinator.warmupCompleteTimeMs = 0
                 resetAutoStopState()
-                coordinator._workoutState.value = WorkoutState.Idle
 
                 val routine = coordinator._loadedRoutine.value
                 if (routine != null) {
+                    // Issue #660: publish SetReady before Idle so its observer owns navigation.
                     flowDelegate?.enterSetReady(coordinator._currentExerciseIndex.value, coordinator._currentSetIndex.value)
                 }
+                coordinator._workoutState.value = WorkoutState.Idle
 
                 Logger.d { "stopAndReturnToSetReady: Reset to SetReady for exercise=${coordinator._currentExerciseIndex.value}, set=${coordinator._currentSetIndex.value}" }
             } finally {
