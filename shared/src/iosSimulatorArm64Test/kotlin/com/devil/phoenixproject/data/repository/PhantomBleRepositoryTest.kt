@@ -104,6 +104,27 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `shutdown after scan publication prevents post-terminal device-found log`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val shutdownOnPublication = async(Dispatchers.Default) {
+            repository.scannedDevices.first { it.isNotEmpty() }
+            repository.shutdown()
+        }
+        val scanning = async(Dispatchers.Default) { repository.startScanning() }
+
+        try {
+            shutdownOnPublication.await()
+            val logsAfterShutdown = logRepo.logs.value.size
+
+            assertTrue(scanning.await().isSuccess)
+            assertEquals(logsAfterShutdown, logRepo.logs.value.size)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `shutdown wins over a racing connect`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)

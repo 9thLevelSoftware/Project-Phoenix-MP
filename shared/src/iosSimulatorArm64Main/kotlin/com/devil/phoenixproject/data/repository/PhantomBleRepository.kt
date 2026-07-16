@@ -155,13 +155,6 @@ class PhantomBleRepository(
         if (!publishScannedDevices(attemptGeneration, listOf(device))) {
             return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
         }
-        logRepo.info(
-            LogEventType.DEVICE_FOUND,
-            "Found phantom Vitruvian device",
-            deviceName = device.name,
-            deviceAddress = device.address,
-            details = "RSSI ${device.rssi}; no Bluetooth hardware used",
-        )
         return Result.success(Unit)
     }
 
@@ -646,6 +639,13 @@ class PhantomBleRepository(
             false
         } else {
             _scannedDevices.value = devices
+            logRepo.info(
+                LogEventType.DEVICE_FOUND,
+                "Found phantom Vitruvian device",
+                deviceName = device.name,
+                deviceAddress = device.address,
+                details = "RSSI ${device.rssi}; no Bluetooth hardware used",
+            )
             true
         }
     }
