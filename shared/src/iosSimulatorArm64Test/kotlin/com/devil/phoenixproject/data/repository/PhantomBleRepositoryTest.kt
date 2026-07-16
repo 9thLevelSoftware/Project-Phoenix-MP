@@ -354,6 +354,26 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `shutdown makes scanAndConnect return failure without timeout side effects`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+
+        repository.shutdown()
+        val logsAfterShutdown = logRepo.logs.value.size
+
+        repository.reconnectionRequested.test {
+            val result = repository.scanAndConnect(timeoutMs = 50L)
+
+            assertTrue(result.isFailure)
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        assertEquals(logsAfterShutdown, logRepo.logs.value.size)
+        assertTrue(logRepo.getLogsByEventType(LogEventType.ERROR).isEmpty())
+    }
+
+    @Test
     fun `scanAndConnect propagates caller timeout without requesting reconnection`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)
@@ -463,6 +483,29 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `shutdown seals remaining suspend controls without post-terminal logs`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+
+        repository.shutdown()
+        val logsAfterShutdown = logRepo.logs.value.size
+
+        repository.stopScanning()
+        repository.cancelConnection()
+        repository.disconnect()
+        val workoutResult = repository.sendWorkoutCommand(byteArrayOf(0x01))
+        val initResult = repository.sendInitSequence()
+        val stopResult = repository.sendStopCommand()
+        repository.stopPolling()
+        repository.stopMonitorPollingOnly()
+
+        assertTrue(workoutResult.isFailure)
+        assertTrue(initResult.isFailure)
+        assertTrue(stopResult.isFailure)
+        assertEquals(logsAfterShutdown, logRepo.logs.value.size)
+    }
+
+    @Test
     fun `shutdown prevents scheduled metric emissions`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),
@@ -511,7 +554,8 @@ class PhantomBleRepositoryTest {
 
     @Test
     fun `shutdown prevents raw packet routes from publishing`() = runTest {
-        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
         val monitor = monitorPacket(
             ticks = 42,
             posA = 1250,
@@ -545,21 +589,23 @@ class PhantomBleRepositoryTest {
         }
 
         repository.shutdown()
+        val logsAfterShutdown = logRepo.logs.value.size
 
         repository.metricsFlow.test {
-            assertTrue(repository.injectRawPacket(PhantomRawPacketKind.MONITOR, monitor).isSuccess)
+            assertTrue(repository.injectRawPacket(PhantomRawPacketKind.MONITOR, monitor).isFailure)
             expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
         repository.repEvents.test {
-            assertTrue(repository.injectRawPacket(PhantomRawPacketKind.REP, rep).isSuccess)
+            assertTrue(repository.injectRawPacket(PhantomRawPacketKind.REP, rep).isFailure)
             expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
-        assertTrue(repository.injectRawPacket(PhantomRawPacketKind.DIAGNOSTIC, diagnostic).isSuccess)
-        assertTrue(repository.injectRawPacket(PhantomRawPacketKind.HEURISTIC, heuristic).isSuccess)
+        assertTrue(repository.injectRawPacket(PhantomRawPacketKind.DIAGNOSTIC, diagnostic).isFailure)
+        assertTrue(repository.injectRawPacket(PhantomRawPacketKind.HEURISTIC, heuristic).isFailure)
         assertNull(repository.diagnostics.value)
         assertNull(repository.heuristicData.value)
+        assertEquals(logsAfterShutdown, logRepo.logs.value.size)
     }
 
     private fun workoutParameters(): WorkoutParameters = WorkoutParameters(

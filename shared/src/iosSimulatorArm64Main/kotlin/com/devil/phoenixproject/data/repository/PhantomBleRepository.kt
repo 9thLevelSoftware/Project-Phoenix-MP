@@ -161,12 +161,15 @@ class PhantomBleRepository(
 
     override suspend fun stopScanning() {
         lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
             connectionAttemptGeneration.incrementAndGet()
             if (_connectionState.value == ConnectionState.Scanning) {
                 _connectionState.value = ConnectionState.Disconnected
             }
+            logRepo.info(LogEventType.SCAN_STOP, "Stopped phantom Vitruvian scan")
         }
-        logRepo.info(LogEventType.SCAN_STOP, "Stopped phantom Vitruvian scan")
     }
 
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
@@ -185,17 +188,23 @@ class PhantomBleRepository(
 
     override suspend fun cancelConnection() {
         lifecycleLock.withLock {
-            connectionAttemptGeneration.incrementAndGet()
-            if (!terminal.value) {
-                _connectionState.value = ConnectionState.Disconnected
+            if (terminal.value) {
+                return@withLock
             }
+            connectionAttemptGeneration.incrementAndGet()
+            _connectionState.value = ConnectionState.Disconnected
+            logRepo.warning(LogEventType.DISCONNECT, "Cancelled phantom connection")
         }
-        logRepo.warning(LogEventType.DISCONNECT, "Cancelled phantom connection")
     }
 
     override suspend fun disconnect() {
-        logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-        teardownConnection()
+        lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
+            logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+            teardownConnection()
+        }
     }
 
     override suspend fun shutdown() {
@@ -209,31 +218,44 @@ class PhantomBleRepository(
             return Result.failure(IllegalArgumentException("timeoutMs must be > 0"))
         }
 
-        val completed = withTimeoutOrNull(timeoutMs) {
-            startScanning().getOrThrow()
-            connect(device).getOrThrow()
-        }
-        if (completed != null) {
-            return Result.success(Unit)
+        if (lifecycleLock.withLock { terminal.value }) {
+            return Result.failure(IllegalStateException("Phantom repository is shut down"))
         }
 
-        teardownConnection()
-        logRepo.error(
-            LogEventType.ERROR,
-            "Phantom scan and connect timed out",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            "timeoutMs=$timeoutMs",
-        )
-        _reconnectionRequested.emit(
-            ReconnectionRequest(
-                deviceName = PHANTOM_DEVICE_NAME,
-                deviceAddress = PHANTOM_DEVICE_ADDRESS,
-                reason = "connection_timeout",
-                timestamp = Clock.System.now().toEpochMilliseconds(),
-            ),
-        )
-        return Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
+        val completed = withTimeoutOrNull(timeoutMs) {
+            val scanResult = startScanning()
+            if (scanResult.isFailure) {
+                return@withTimeoutOrNull scanResult
+            }
+            connect(device)
+        }
+        if (completed != null) {
+            return completed
+        }
+
+        return lifecycleLock.withLock {
+            if (terminal.value) {
+                Result.failure(IllegalStateException("Phantom repository is shut down"))
+            } else {
+                teardownConnection()
+                logRepo.error(
+                    LogEventType.ERROR,
+                    "Phantom scan and connect timed out",
+                    PHANTOM_DEVICE_NAME,
+                    PHANTOM_DEVICE_ADDRESS,
+                    "timeoutMs=$timeoutMs",
+                )
+                _reconnectionRequested.tryEmit(
+                    ReconnectionRequest(
+                        deviceName = PHANTOM_DEVICE_NAME,
+                        deviceAddress = PHANTOM_DEVICE_ADDRESS,
+                        reason = "connection_timeout",
+                        timestamp = Clock.System.now().toEpochMilliseconds(),
+                    ),
+                )
+                Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
+            }
+        }
     }
 
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
@@ -248,19 +270,29 @@ class PhantomBleRepository(
     }
 
     override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
-        logRepo.info(
-            LogEventType.COMMAND_SENT,
-            "Phantom received raw workout command",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            command.joinToString(" ") { it.toUByte().toString(16).padStart(2, '0') },
-        )
-        return Result.success(Unit)
+        return lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            logRepo.info(
+                LogEventType.COMMAND_SENT,
+                "Phantom received raw workout command",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                command.joinToString(" ") { it.toUByte().toString(16).padStart(2, '0') },
+            )
+            Result.success(Unit)
+        }
     }
 
     override suspend fun sendInitSequence(): Result<Unit> {
-        logRepo.info(LogEventType.COMMAND_SENT, "Phantom init sequence accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-        return Result.success(Unit)
+        return lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            logRepo.info(LogEventType.COMMAND_SENT, "Phantom init sequence accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+            Result.success(Unit)
+        }
     }
 
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
@@ -303,7 +335,17 @@ class PhantomBleRepository(
     }
 
     override suspend fun sendStopCommand(): Result<Unit> {
-        logRepo.info(LogEventType.COMMAND_SENT, "Phantom stop command accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+        val canSend = lifecycleLock.withLock {
+            if (terminal.value) {
+                false
+            } else {
+                logRepo.info(LogEventType.COMMAND_SENT, "Phantom stop command accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                true
+            }
+        }
+        if (!canSend) {
+            return Result.failure(IllegalStateException("Phantom repository is shut down"))
+        }
         return stopWorkout()
     }
 
@@ -356,17 +398,27 @@ class PhantomBleRepository(
     }
 
     override fun stopPolling() {
-        metricsJob?.cancel()
-        heuristicJob?.cancel()
-        repJob?.cancel()
-        diagnosticJob?.cancel()
-        heartbeatJob?.cancel()
-        logRepo.info(LogEventType.HEARTBEAT, "Phantom polling stopped")
+        lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
+            metricsJob?.cancel()
+            heuristicJob?.cancel()
+            repJob?.cancel()
+            diagnosticJob?.cancel()
+            heartbeatJob?.cancel()
+            logRepo.info(LogEventType.HEARTBEAT, "Phantom polling stopped")
+        }
     }
 
     override fun stopMonitorPollingOnly() {
-        metricsJob?.cancel()
-        logRepo.info(LogEventType.HEARTBEAT, "Phantom monitor polling stopped; diagnostics kept warm")
+        lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
+            metricsJob?.cancel()
+            logRepo.info(LogEventType.HEARTBEAT, "Phantom monitor polling stopped; diagnostics kept warm")
+        }
     }
 
     override fun restartDiagnosticPolling() {
@@ -420,98 +472,116 @@ class PhantomBleRepository(
         kind: PhantomRawPacketKind,
         data: ByteArray,
         hasOpcodePrefix: Boolean = false,
-    ): Result<Unit> = try {
-        when (kind) {
-            PhantomRawPacketKind.MONITOR -> injectMonitorPacket(data)
-            PhantomRawPacketKind.REP -> injectRepPacket(data, hasOpcodePrefix)
-            PhantomRawPacketKind.DIAGNOSTIC -> injectDiagnosticPacket(data)
-            PhantomRawPacketKind.HEURISTIC -> injectHeuristicPacket(data)
+    ): Result<Unit> {
+        if (lifecycleLock.withLock { terminal.value }) {
+            return Result.failure(IllegalStateException("Phantom repository is shut down"))
         }
-        Result.success(Unit)
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: Throwable) {
-        logRepo.error(
-            LogEventType.ERROR,
-            "Phantom raw ${kind.name.lowercase()} packet rejected",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            "${error.message}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
-        )
-        Result.failure(error)
+
+        return try {
+            when (kind) {
+                PhantomRawPacketKind.MONITOR -> injectMonitorPacket(data)
+                PhantomRawPacketKind.REP -> injectRepPacket(data, hasOpcodePrefix)
+                PhantomRawPacketKind.DIAGNOSTIC -> injectDiagnosticPacket(data)
+                PhantomRawPacketKind.HEURISTIC -> injectHeuristicPacket(data)
+            }
+            if (lifecycleLock.withLock { terminal.value }) {
+                Result.failure(IllegalStateException("Phantom repository is shut down"))
+            } else {
+                Result.success(Unit)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            lifecycleLock.withLock {
+                if (!terminal.value) {
+                    logRepo.error(
+                        LogEventType.ERROR,
+                        "Phantom raw ${kind.name.lowercase()} packet rejected",
+                        PHANTOM_DEVICE_NAME,
+                        PHANTOM_DEVICE_ADDRESS,
+                        "${error.message}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
+                    )
+                }
+            }
+            Result.failure(error)
+        }
     }
 
     private suspend fun injectMonitorPacket(data: ByteArray) {
-        val packet = parseMonitorPacket(data)
-            ?: error("monitor packet too short: ${data.size} bytes")
-        val metric = monitorProcessor.process(packet)
-            ?: error("monitor packet parsed but was rejected by validation")
         lifecycleLock.withLock {
-            if (!terminal.value) {
-                _metricsFlow.tryEmit(metric)
+            if (terminal.value) {
+                return@withLock
             }
+            val packet = parseMonitorPacket(data)
+                ?: error("monitor packet too short: ${data.size} bytes")
+            val metric = monitorProcessor.process(packet)
+                ?: error("monitor packet parsed but was rejected by validation")
+            _metricsFlow.tryEmit(metric)
+            logRepo.info(
+                LogEventType.NOTIFICATION,
+                "Phantom injected raw monitor packet",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
+            )
         }
-        logRepo.info(
-            LogEventType.NOTIFICATION,
-            "Phantom injected raw monitor packet",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
-        )
     }
 
     private suspend fun injectRepPacket(data: ByteArray, hasOpcodePrefix: Boolean) {
-        val timestamp = Clock.System.now().toEpochMilliseconds()
-        val rep = parseRepPacket(data, hasOpcodePrefix, timestamp)
-            ?: error("rep packet too short: ${data.size} bytes")
         lifecycleLock.withLock {
-            if (!terminal.value) {
-                _repEvents.tryEmit(rep)
+            if (terminal.value) {
+                return@withLock
             }
+            val timestamp = Clock.System.now().toEpochMilliseconds()
+            val rep = parseRepPacket(data, hasOpcodePrefix, timestamp)
+                ?: error("rep packet too short: ${data.size} bytes")
+            _repEvents.tryEmit(rep)
+            logRepo.info(
+                LogEventType.REP_RECEIVED,
+                "Phantom injected raw rep packet",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "top=${rep.topCounter}; complete=${rep.completeCounter}; legacy=${rep.isLegacyFormat}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
+            )
         }
-        logRepo.info(
-            LogEventType.REP_RECEIVED,
-            "Phantom injected raw rep packet",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            "top=${rep.topCounter}; complete=${rep.completeCounter}; legacy=${rep.isLegacyFormat}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
-        )
     }
 
     private fun injectDiagnosticPacket(data: ByteArray) {
-        val timestamp = Clock.System.now().toEpochMilliseconds()
-        val diagnostic = parseDiagnosticPacket(data)
-            ?: error("diagnostic packet too short: ${data.size} bytes")
         lifecycleLock.withLock {
-            if (!terminal.value) {
-                _diagnostics.value = diagnostic.copy(receivedAtMillis = timestamp)
+            if (terminal.value) {
+                return@withLock
             }
+            val timestamp = Clock.System.now().toEpochMilliseconds()
+            val diagnostic = parseDiagnosticPacket(data)
+                ?: error("diagnostic packet too short: ${data.size} bytes")
+            _diagnostics.value = diagnostic.copy(receivedAtMillis = timestamp)
+            logRepo.info(
+                LogEventType.DIAGNOSTIC,
+                "Phantom injected raw diagnostic packet",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "faults=${diagnostic.faultWords}; temps=${diagnostic.temperatures}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
+            )
         }
-        logRepo.info(
-            LogEventType.DIAGNOSTIC,
-            "Phantom injected raw diagnostic packet",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            "faults=${diagnostic.faultWords}; temps=${diagnostic.temperatures}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
-        )
     }
 
     private fun injectHeuristicPacket(data: ByteArray) {
-        val timestamp = Clock.System.now().toEpochMilliseconds()
-        val heuristic = parseHeuristicPacket(data, timestamp)
-            ?: error("heuristic packet too short: ${data.size} bytes")
         lifecycleLock.withLock {
-            if (!terminal.value) {
-                _heuristicData.value = heuristic
+            if (terminal.value) {
+                return@withLock
             }
+            val timestamp = Clock.System.now().toEpochMilliseconds()
+            val heuristic = parseHeuristicPacket(data, timestamp)
+                ?: error("heuristic packet too short: ${data.size} bytes")
+            _heuristicData.value = heuristic
+            logRepo.info(
+                LogEventType.NOTIFICATION,
+                "Phantom injected raw heuristic packet",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "conKgAvg=${heuristic.concentric.kgAvg}; eccKgAvg=${heuristic.eccentric.kgAvg}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
+            )
         }
-        logRepo.info(
-            LogEventType.NOTIFICATION,
-            "Phantom injected raw heuristic packet",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            "conKgAvg=${heuristic.concentric.kgAvg}; eccKgAvg=${heuristic.eccentric.kgAvg}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
-        )
     }
 
     fun replaceConfig(config: PhantomBleConfig) {
