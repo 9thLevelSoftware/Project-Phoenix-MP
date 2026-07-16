@@ -18,20 +18,27 @@ import kotlin.test.assertTrue
  */
 class Issue660TempSingleStopSetNavigationTest {
 
+    private companion object {
+        val TEMP_SINGLE_SET_READY_GUARD = Regex(
+            """DefaultWorkoutSessionManager\.TEMP_SINGLE_EXERCISE_PREFIX.*?routineFlowState\s*!is\s+RoutineFlowState\.SetReady""",
+            RegexOption.DOT_MATCHES_ALL,
+        )
+        val SET_READY_NAVIGATION = Regex(
+            """is\s+RoutineFlowState\.SetReady\s*->\s*\{.*?navController\.navigate\(NavigationRoutes\.SetReady\.route\)""",
+            RegexOption.DOT_MATCHES_ALL,
+        )
+    }
+
     @Test
     fun `early temp single Stop Set lets SetReady own Idle navigation`() {
         val src = readActiveWorkoutScreenSource()
-        val tempSingleIdleBranch = src.substringAfter(
-            "loadedRoutine?.id?.startsWith(\n                            DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,",
-        ).substringBefore("workoutState is WorkoutState.Error")
-
         assertTrue(
-            tempSingleIdleBranch.contains("routineFlowState !is RoutineFlowState.SetReady"),
+            TEMP_SINGLE_SET_READY_GUARD.containsMatchIn(src),
             "Issue #660: Idle temp_single_ Stop Set returning to SetReady must not call the " +
                 "single-exercise navigateUp() completion branch.",
         )
         assertTrue(
-            src.contains("RoutineFlowState.SetReady + Idle - navigating to SetReady"),
+            SET_READY_NAVIGATION.containsMatchIn(src),
             "Issue #660: the existing SetReady destination must own the early Stop Set transition.",
         )
     }
