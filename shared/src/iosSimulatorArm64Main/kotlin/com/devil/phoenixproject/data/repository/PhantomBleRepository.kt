@@ -237,9 +237,14 @@ class PhantomBleRepository(
     }
 
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
-        lastColorSchemeIndex = schemeIndex
-        logRepo.info(LogEventType.COMMAND_SENT, "Phantom color scheme set", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, "scheme=$schemeIndex")
-        return Result.success(Unit)
+        return lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            lastColorSchemeIndex = schemeIndex
+            logRepo.info(LogEventType.COMMAND_SENT, "Phantom color scheme set", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, "scheme=$schemeIndex")
+            Result.success(Unit)
+        }
     }
 
     override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
@@ -283,13 +288,18 @@ class PhantomBleRepository(
     }
 
     override suspend fun stopWorkout(): Result<Unit> {
-        logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-        repJob?.cancel()
-        workoutParams = null
-        _handleState.value = HandleState.Released
-        startMetrics(activeWorkout = false)
-        startHeuristicGeneration(activeWorkout = false)
-        return Result.success(Unit)
+        return lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
+            logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+            repJob?.cancel()
+            workoutParams = null
+            _handleState.value = HandleState.Released
+            startMetrics(activeWorkout = false)
+            startHeuristicGeneration(activeWorkout = false)
+            Result.success(Unit)
+        }
     }
 
     override suspend fun sendStopCommand(): Result<Unit> {
@@ -395,7 +405,11 @@ class PhantomBleRepository(
     }
 
     override fun setLastColorSchemeIndex(index: Int) {
-        lastColorSchemeIndex = index
+        lifecycleLock.withLock {
+            if (!terminal.value) {
+                lastColorSchemeIndex = index
+            }
+        }
     }
 
     /**
@@ -501,18 +515,23 @@ class PhantomBleRepository(
     }
 
     fun replaceConfig(config: PhantomBleConfig) {
-        _config.value = config
-        logRepo.info(
-            LogEventType.NOTIFICATION,
-            "Phantom config updated",
-            PHANTOM_DEVICE_NAME,
-            PHANTOM_DEVICE_ADDRESS,
-            "loadScale=${config.loadScale}; velocityScale=${config.velocityScale}; positionScale=${config.positionScale}; repDelayMs=${config.repDelayMs}; autoCompleteFixedRepSets=${config.autoCompleteFixedRepSets}",
-        )
-        if (_connectionState.value is ConnectionState.Connected) {
-            startMetrics(activeWorkout = workoutParams != null)
-            startHeuristicGeneration(activeWorkout = workoutParams != null)
-            workoutParams?.let(::startRepSimulation)
+        lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
+            _config.value = config
+            logRepo.info(
+                LogEventType.NOTIFICATION,
+                "Phantom config updated",
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "loadScale=${config.loadScale}; velocityScale=${config.velocityScale}; positionScale=${config.positionScale}; repDelayMs=${config.repDelayMs}; autoCompleteFixedRepSets=${config.autoCompleteFixedRepSets}",
+            )
+            if (_connectionState.value is ConnectionState.Connected) {
+                startMetrics(activeWorkout = workoutParams != null)
+                startHeuristicGeneration(activeWorkout = workoutParams != null)
+                workoutParams?.let(::startRepSimulation)
+            }
         }
     }
 
@@ -607,7 +626,9 @@ class PhantomBleRepository(
                     velocityB = wave * 245.0 * config.velocityScale,
                     status = 0,
                 )
-                _metricsFlow.emit(metric)
+                if (!publishIfConnected { _metricsFlow.tryEmit(metric) }) {
+                    break
+                }
                 logRepo.debug(
                     LogEventType.NOTIFICATION,
                     "Phantom monitor metric",
@@ -664,20 +685,24 @@ class PhantomBleRepository(
                     bytes[18] = params.warmupReps.toByte()
                     bytes[22] = target.toByte()
                 }
-                _repEvents.emit(
-                    RepNotification(
-                        topCounter = rep,
-                        completeCounter = rep,
-                        repsRomCount = params.warmupReps.coerceAtMost(rep),
-                        repsRomTotal = params.warmupReps,
-                        repsSetCount = rep.coerceAtMost(target),
-                        repsSetTotal = target,
-                        rangeTop = 650f,
-                        rangeBottom = -650f,
-                        rawData = rawData,
-                        timestamp = timestamp,
-                    ),
-                )
+                if (!publishIfConnected {
+                        _repEvents.tryEmit(
+                            RepNotification(
+                                topCounter = rep,
+                                completeCounter = rep,
+                                repsRomCount = params.warmupReps.coerceAtMost(rep),
+                                repsRomTotal = params.warmupReps,
+                                repsSetCount = rep.coerceAtMost(target),
+                                repsSetTotal = target,
+                                rangeTop = 650f,
+                                rangeBottom = -650f,
+                                rawData = rawData,
+                                timestamp = timestamp,
+                            ),
+                        )
+                    }) {
+                    break
+                }
                 logRepo.info(
                     LogEventType.REP_RECEIVED,
                     "Phantom rep notification",

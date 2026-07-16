@@ -441,6 +441,75 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `shutdown rejects stop and color commands and preserves config`() = runTest {
+        val initialConfig = PhantomBleConfig(repDelayMs = 100L)
+        val repository = PhantomBleRepository(ConnectionLogRepository(), initialConfig)
+
+        assertTrue(repository.scanAndConnect().isSuccess)
+        assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+        repository.shutdown()
+
+        val stopResult = repository.stopWorkout()
+        val sendStopResult = repository.sendStopCommand()
+        val setColorResult = repository.setColorScheme(7)
+        repository.setLastColorSchemeIndex(7)
+        repository.replaceConfig(PhantomBleConfig(loadScale = 2f, repDelayMs = 100L))
+
+        assertTrue(stopResult.isFailure)
+        assertTrue(sendStopResult.isFailure)
+        assertTrue(setColorResult.isFailure)
+        assertEquals(initialConfig, repository.config.value)
+        assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+    }
+
+    @Test
+    fun `shutdown prevents scheduled metric emissions`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            repository.metricsFlow.test {
+                assertTrue(repository.scanAndConnect().isSuccess)
+                awaitItem()
+                assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                awaitItem()
+
+                repository.shutdown()
+                withContext(Dispatchers.Default) { delay(350L) }
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown prevents scheduled rep emissions`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            repository.repEvents.test {
+                assertTrue(repository.scanAndConnect().isSuccess)
+                assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                awaitItem()
+
+                repository.shutdown()
+                withContext(Dispatchers.Default) { delay(200L) }
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `shutdown prevents raw packet routes from publishing`() = runTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
         val monitor = monitorPacket(
