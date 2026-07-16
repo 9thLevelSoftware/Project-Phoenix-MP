@@ -111,7 +111,11 @@ class PhantomBleRepository(
 
     private val monitorProcessor = MonitorDataProcessor(
         onDeloadOccurred = {
-            scope.launch { _deloadOccurredEvents.emit(Unit) }
+            lifecycleLock.withLock {
+                if (!terminal.value) {
+                    _deloadOccurredEvents.tryEmit(Unit)
+                }
+            }
         },
         onRomViolation = { violation ->
             logRepo.warning(
@@ -137,6 +141,7 @@ class PhantomBleRepository(
     private val lifecycleLock = reentrantLock()
     private val terminal = atomic(false)
     private val connectionAttemptGeneration = atomic(0L)
+    private var metricsGeneration = 0L
 
     override suspend fun startScanning(): Result<Unit> {
         val attemptGeneration = beginConnectionAttempt()
@@ -208,8 +213,13 @@ class PhantomBleRepository(
     }
 
     override suspend fun shutdown() {
-        logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-        teardownConnection(markTerminal = true)
+        lifecycleLock.withLock {
+            if (terminal.value) {
+                return@withLock
+            }
+            logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+            teardownConnection(markTerminal = true)
+        }
         repositoryJob.cancel()
     }
 
@@ -402,6 +412,7 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            metricsGeneration += 1
             metricsJob?.cancel()
             heuristicJob?.cancel()
             repJob?.cancel()
@@ -416,6 +427,7 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            metricsGeneration += 1
             metricsJob?.cancel()
             logRepo.info(LogEventType.HEARTBEAT, "Phantom monitor polling stopped; diagnostics kept warm")
         }
@@ -665,8 +677,15 @@ class PhantomBleRepository(
         }
     }
 
-    private inline fun publishIfConnected(publish: () -> Unit): Boolean = lifecycleLock.withLock {
-        if (terminal.value || _connectionState.value !is ConnectionState.Connected) {
+    private inline fun publishIfConnected(
+        expectedMetricsGeneration: Long? = null,
+        publish: () -> Unit,
+    ): Boolean = lifecycleLock.withLock {
+        if (
+            terminal.value ||
+            _connectionState.value !is ConnectionState.Connected ||
+            (expectedMetricsGeneration != null && metricsGeneration != expectedMetricsGeneration)
+        ) {
             false
         } else {
             publish()
@@ -675,39 +694,45 @@ class PhantomBleRepository(
     }
 
     private fun startMetrics(activeWorkout: Boolean) {
-        metricsJob?.cancel()
-        metricsJob = scope.launch {
-            var sample = 0
-            while (isActive && connectionState.value is ConnectionState.Connected) {
-                val now = Clock.System.now().toEpochMilliseconds()
-                val phase = (sample % 40) / 40.0
-                val wave = sin(phase * 2.0 * PI).toFloat()
-                val config = _config.value
-                val configuredLoad = workoutParams?.weightPerCableKg ?: 7.5f
-                val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
-                val metric = WorkoutMetric(
-                    timestamp = now,
-                    loadA = load + wave.coerceAtLeast(0f) * config.loadScale,
-                    loadB = load + (-wave).coerceAtLeast(0f) * config.loadScale,
-                    positionA = wave * 650f * config.positionScale,
-                    positionB = wave * 640f * config.positionScale,
-                    ticks = ticks++,
-                    velocityA = wave * 250.0 * config.velocityScale,
-                    velocityB = wave * 245.0 * config.velocityScale,
-                    status = 0,
-                )
-                if (!publishIfConnected { _metricsFlow.tryEmit(metric) }) {
-                    break
+        lifecycleLock.withLock {
+            metricsGeneration += 1
+            val expectedGeneration = metricsGeneration
+            metricsJob?.cancel()
+            metricsJob = scope.launch {
+                var sample = 0
+                while (isActive && connectionState.value is ConnectionState.Connected) {
+                    val now = Clock.System.now().toEpochMilliseconds()
+                    val phase = (sample % 40) / 40.0
+                    val wave = sin(phase * 2.0 * PI).toFloat()
+                    val config = _config.value
+                    val configuredLoad = workoutParams?.weightPerCableKg ?: 7.5f
+                    val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
+                    val metric = WorkoutMetric(
+                        timestamp = now,
+                        loadA = load + wave.coerceAtLeast(0f) * config.loadScale,
+                        loadB = load + (-wave).coerceAtLeast(0f) * config.loadScale,
+                        positionA = wave * 650f * config.positionScale,
+                        positionB = wave * 640f * config.positionScale,
+                        ticks = ticks++,
+                        velocityA = wave * 250.0 * config.velocityScale,
+                        velocityB = wave * 245.0 * config.velocityScale,
+                        status = 0,
+                    )
+                    if (!publishIfConnected(expectedMetricsGeneration = expectedGeneration) {
+                            _metricsFlow.tryEmit(metric)
+                            logRepo.debug(
+                                LogEventType.NOTIFICATION,
+                                "Phantom monitor metric",
+                                PHANTOM_DEVICE_NAME,
+                                PHANTOM_DEVICE_ADDRESS,
+                                "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}",
+                            )
+                        }) {
+                        break
+                    }
+                    sample++
+                    delay(if (activeWorkout) 250 else 750)
                 }
-                logRepo.debug(
-                    LogEventType.NOTIFICATION,
-                    "Phantom monitor metric",
-                    PHANTOM_DEVICE_NAME,
-                    PHANTOM_DEVICE_ADDRESS,
-                    "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}",
-                )
-                sample++
-                delay(if (activeWorkout) 250 else 750)
             }
         }
     }
@@ -725,15 +750,15 @@ class PhantomBleRepository(
                             eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
                             timestamp = Clock.System.now().toEpochMilliseconds(),
                         )
+                        logRepo.debug(
+                            LogEventType.NOTIFICATION,
+                            "Phantom heuristic update",
+                            PHANTOM_DEVICE_NAME,
+                            PHANTOM_DEVICE_ADDRESS,
+                        )
                     }) {
                     break
                 }
-                logRepo.debug(
-                    LogEventType.NOTIFICATION,
-                    "Phantom heuristic update",
-                    PHANTOM_DEVICE_NAME,
-                    PHANTOM_DEVICE_ADDRESS,
-                )
                 delay(if (activeWorkout) 250 else 750)
             }
         }
@@ -770,18 +795,20 @@ class PhantomBleRepository(
                                 timestamp = timestamp,
                             ),
                         )
+                        logRepo.info(
+                            LogEventType.REP_RECEIVED,
+                            "Phantom rep notification",
+                            PHANTOM_DEVICE_NAME,
+                            PHANTOM_DEVICE_ADDRESS,
+                            "rep=$rep/$target; timestamp=$timestamp",
+                        )
+                        if (rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets) {
+                            logRepo.info(LogEventType.COMMAND_RESPONSE, "Phantom target reps reached", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                        }
                     }) {
                     break
                 }
-                logRepo.info(
-                    LogEventType.REP_RECEIVED,
-                    "Phantom rep notification",
-                    PHANTOM_DEVICE_NAME,
-                    PHANTOM_DEVICE_ADDRESS,
-                    "rep=$rep/$target; timestamp=$timestamp",
-                )
                 if (rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets) {
-                    logRepo.info(LogEventType.COMMAND_RESPONSE, "Phantom target reps reached", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
                     break
                 }
             }
@@ -822,6 +849,7 @@ class PhantomBleRepository(
     }
 
     private fun stopJobs() {
+        metricsGeneration += 1
         metricsJob?.cancel()
         heuristicJob?.cancel()
         repJob?.cancel()

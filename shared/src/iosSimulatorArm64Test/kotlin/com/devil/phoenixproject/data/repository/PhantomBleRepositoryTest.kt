@@ -285,15 +285,13 @@ class PhantomBleRepositoryTest {
         try {
             repository.metricsFlow.test {
                 assertTrue(repository.scanAndConnect().isSuccess)
+                assertTrue(awaitItem().loadA < 2f)
                 assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
-                var metric = awaitItem()
-                while (metric.loadA < 2f) {
-                    metric = awaitItem()
-                }
+                assertTrue(awaitItem().loadA >= 2f)
 
                 repository.stopMonitorPollingOnly()
 
-                delay(500L)
+                withContext(Dispatchers.Default) { delay(500L) }
                 expectNoEvents()
                 cancelAndIgnoreRemainingEvents()
             }
@@ -498,6 +496,7 @@ class PhantomBleRepositoryTest {
         val stopResult = repository.sendStopCommand()
         repository.stopPolling()
         repository.stopMonitorPollingOnly()
+        repository.shutdown()
 
         assertTrue(workoutResult.isFailure)
         assertTrue(initResult.isFailure)
