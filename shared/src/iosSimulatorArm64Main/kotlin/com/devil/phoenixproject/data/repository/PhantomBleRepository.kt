@@ -6,11 +6,13 @@ import com.devil.phoenixproject.data.ble.parseDiagnosticPacket
 import com.devil.phoenixproject.data.ble.parseHeuristicPacket
 import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseRepPacket
+import com.devil.phoenixproject.data.ble.toVitruvianHex
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicPhaseStatistics
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.time.Clock
@@ -18,7 +20,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -28,7 +29,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class PhantomRawPacketKind {
     MONITOR,
@@ -130,6 +131,7 @@ class PhantomBleRepository(
     val config: StateFlow<PhantomBleConfig> = _config.asStateFlow()
     private var ticks = 0L
     private var lastColorSchemeIndex = 0
+    private var connectionAttemptGeneration = 0L
 
     override suspend fun startScanning(): Result<Unit> {
         logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
@@ -154,9 +156,13 @@ class PhantomBleRepository(
     }
 
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
+        val attemptGeneration = ++connectionAttemptGeneration
         logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
         setConnectionState(ConnectionState.Connecting)
         delay(250)
+        if (attemptGeneration != connectionAttemptGeneration) {
+            return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
+        }
         setConnectionState(ConnectionState.Connected(device.name, device.address))
         _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true)
         _handleState.value = HandleState.Released
@@ -170,17 +176,21 @@ class PhantomBleRepository(
     }
 
     override suspend fun cancelConnection() {
+        connectionAttemptGeneration++
         logRepo.warning(LogEventType.DISCONNECT, "Cancelled phantom connection")
         setConnectionState(ConnectionState.Disconnected)
     }
 
     override suspend fun disconnect() {
+        connectionAttemptGeneration++
         logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
         stopJobs()
         workoutParams = null
         _handleDetection.value = HandleDetection()
         _handleState.value = HandleState.WaitingForRest
         _diagnostics.value = null
+        _heuristicData.value = null
+        _scannedDevices.value = emptyList()
         _discoModeActive.value = false
         setConnectionState(ConnectionState.Disconnected)
     }
@@ -198,37 +208,40 @@ class PhantomBleRepository(
             return Result.failure(IllegalArgumentException("timeoutMs must be > 0"))
         }
 
-        return try {
-            withTimeout(timeoutMs) {
-                startScanning().getOrThrow()
-                connect(device).getOrThrow()
-            }
-            Result.success(Unit)
-        } catch (error: TimeoutCancellationException) {
-            stopJobs()
-            workoutParams = null
-            _diagnostics.value = null
-            _handleDetection.value = HandleDetection()
-            _handleState.value = HandleState.WaitingForRest
-            _discoModeActive.value = false
-            setConnectionState(ConnectionState.Disconnected)
-            logRepo.error(
-                LogEventType.ERROR,
-                "Phantom scan and connect timed out",
-                PHANTOM_DEVICE_NAME,
-                PHANTOM_DEVICE_ADDRESS,
-                "timeoutMs=$timeoutMs",
-            )
-            _reconnectionRequested.emit(
-                ReconnectionRequest(
-                    deviceName = PHANTOM_DEVICE_NAME,
-                    deviceAddress = PHANTOM_DEVICE_ADDRESS,
-                    reason = "connection_timeout",
-                    timestamp = Clock.System.now().toEpochMilliseconds(),
-                ),
-            )
-            Result.failure(error)
+        val completed = withTimeoutOrNull(timeoutMs) {
+            startScanning().getOrThrow()
+            connect(device).getOrThrow()
         }
+        if (completed != null) {
+            return Result.success(Unit)
+        }
+
+        connectionAttemptGeneration++
+        stopJobs()
+        workoutParams = null
+        _diagnostics.value = null
+        _heuristicData.value = null
+        _scannedDevices.value = emptyList()
+        _handleDetection.value = HandleDetection()
+        _handleState.value = HandleState.WaitingForRest
+        _discoModeActive.value = false
+        setConnectionState(ConnectionState.Disconnected)
+        logRepo.error(
+            LogEventType.ERROR,
+            "Phantom scan and connect timed out",
+            PHANTOM_DEVICE_NAME,
+            PHANTOM_DEVICE_ADDRESS,
+            "timeoutMs=$timeoutMs",
+        )
+        _reconnectionRequested.emit(
+            ReconnectionRequest(
+                deviceName = PHANTOM_DEVICE_NAME,
+                deviceAddress = PHANTOM_DEVICE_ADDRESS,
+                reason = "connection_timeout",
+                timestamp = Clock.System.now().toEpochMilliseconds(),
+            ),
+        )
+        return Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
     }
 
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
@@ -362,21 +375,25 @@ class PhantomBleRepository(
         kind: PhantomRawPacketKind,
         data: ByteArray,
         hasOpcodePrefix: Boolean = false,
-    ): Result<Unit> = runCatching {
+    ): Result<Unit> = try {
         when (kind) {
             PhantomRawPacketKind.MONITOR -> injectMonitorPacket(data)
             PhantomRawPacketKind.REP -> injectRepPacket(data, hasOpcodePrefix)
             PhantomRawPacketKind.DIAGNOSTIC -> injectDiagnosticPacket(data)
             PhantomRawPacketKind.HEURISTIC -> injectHeuristicPacket(data)
         }
-    }.onFailure { error ->
+        Result.success(Unit)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
         logRepo.error(
             LogEventType.ERROR,
             "Phantom raw ${kind.name.lowercase()} packet rejected",
             PHANTOM_DEVICE_NAME,
             PHANTOM_DEVICE_ADDRESS,
-            "${error.message}; hex=${data.toHexString()}",
+            "${error.message}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
         )
+        Result.failure(error)
     }
 
     private suspend fun injectMonitorPacket(data: ByteArray) {
@@ -390,7 +407,7 @@ class PhantomBleRepository(
             "Phantom injected raw monitor packet",
             PHANTOM_DEVICE_NAME,
             PHANTOM_DEVICE_ADDRESS,
-            "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}; hex=${data.toHexString()}",
+            "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
         )
     }
 
@@ -404,7 +421,7 @@ class PhantomBleRepository(
             "Phantom injected raw rep packet",
             PHANTOM_DEVICE_NAME,
             PHANTOM_DEVICE_ADDRESS,
-            "top=${rep.topCounter}; complete=${rep.completeCounter}; legacy=${rep.isLegacyFormat}; hex=${data.toHexString()}",
+            "top=${rep.topCounter}; complete=${rep.completeCounter}; legacy=${rep.isLegacyFormat}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
         )
     }
 
@@ -418,7 +435,7 @@ class PhantomBleRepository(
             "Phantom injected raw diagnostic packet",
             PHANTOM_DEVICE_NAME,
             PHANTOM_DEVICE_ADDRESS,
-            "faults=${diagnostic.faultWords}; temps=${diagnostic.temperatures}; hex=${data.toHexString()}",
+            "faults=${diagnostic.faultWords}; temps=${diagnostic.temperatures}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
         )
     }
 
@@ -432,12 +449,8 @@ class PhantomBleRepository(
             "Phantom injected raw heuristic packet",
             PHANTOM_DEVICE_NAME,
             PHANTOM_DEVICE_ADDRESS,
-            "conKgAvg=${heuristic.concentric.kgAvg}; eccKgAvg=${heuristic.eccentric.kgAvg}; hex=${data.toHexString()}",
+            "conKgAvg=${heuristic.concentric.kgAvg}; eccKgAvg=${heuristic.eccentric.kgAvg}; hex=${data.joinToString(" ") { it.toVitruvianHex() }}",
         )
-    }
-
-    private fun ByteArray.toHexString(): String = joinToString(" ") { byte ->
-        byte.toUByte().toString(16).padStart(2, '0')
     }
 
     fun replaceConfig(config: PhantomBleConfig) {

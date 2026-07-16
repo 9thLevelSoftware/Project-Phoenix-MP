@@ -11,8 +11,12 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 
 class PhantomBleRepositoryTest {
@@ -51,6 +55,26 @@ class PhantomBleRepositoryTest {
             assertEquals(1, repository.scannedDevices.value.size)
             assertEquals("Vee_PhantomSimulator", repository.scannedDevices.value.single().name)
             assertTrue(repository.connectionState.value is ConnectionState.Connected)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `cancelConnection invalidates an in-flight connect`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val connecting = async(Dispatchers.Default) {
+            repository.connect(ScannedDevice("race", "race-address"))
+        }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Connecting }
+            repository.cancelConnection()
+
+            val result = connecting.await()
+
+            assertTrue(result.isFailure)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
         } finally {
             repository.shutdown()
         }
@@ -240,6 +264,23 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `scanAndConnect propagates caller timeout without requesting reconnection`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+
+        try {
+            assertFailsWith<TimeoutCancellationException> {
+                withTimeout(50L) {
+                    repository.scanAndConnect(timeoutMs = 10_000L)
+                }
+            }
+            assertTrue(logRepo.getLogsByEventType(LogEventType.ERROR).isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `disco mode requires connection and clears on workout and disconnect`() = runTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
 
@@ -274,7 +315,9 @@ class PhantomBleRepositoryTest {
         assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
         withContext(Dispatchers.Default) { delay(50L) }
         assertFalse(repository.discoModeActive.value)
+        assertTrue(repository.scannedDevices.value.isNotEmpty())
         assertTrue(repository.diagnostics.value != null)
+        assertTrue(repository.heuristicData.value != null)
 
         repository.shutdown()
         withContext(Dispatchers.Default) { delay(350L) }
@@ -285,6 +328,8 @@ class PhantomBleRepositoryTest {
         assertEquals(HandleState.WaitingForRest, repository.handleState.value)
         assertFalse(repository.discoModeActive.value)
         assertNull(repository.diagnostics.value)
+        assertTrue(repository.scannedDevices.value.isEmpty())
+        assertNull(repository.heuristicData.value)
     }
 
     private fun workoutParameters(): WorkoutParameters = WorkoutParameters(
