@@ -146,8 +146,9 @@ class PhantomBleRepository(
     override suspend fun startScanning(): Result<Unit> {
         val attemptGeneration = beginConnectionAttempt()
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
-        logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
-        if (!publishConnectionState(attemptGeneration, ConnectionState.Scanning)) {
+        if (!publishConnectionState(attemptGeneration, ConnectionState.Scanning) {
+                logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
+            }) {
             return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
         }
         delay(150)
@@ -180,8 +181,9 @@ class PhantomBleRepository(
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
         val attemptGeneration = beginConnectionAttempt()
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
-        logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
-        if (!publishConnectionState(attemptGeneration, ConnectionState.Connecting)) {
+        if (!publishConnectionState(attemptGeneration, ConnectionState.Connecting) {
+                logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
+            }) {
             return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
         }
         delay(250)
@@ -625,11 +627,16 @@ class PhantomBleRepository(
         }
     }
 
-    private fun publishConnectionState(attemptGeneration: Long, state: ConnectionState): Boolean = lifecycleLock.withLock {
+    private inline fun publishConnectionState(
+        attemptGeneration: Long,
+        state: ConnectionState,
+        onPublished: () -> Unit,
+    ): Boolean = lifecycleLock.withLock {
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             false
         } else {
             _connectionState.value = state
+            onPublished()
             true
         }
     }
@@ -829,10 +836,10 @@ class PhantomBleRepository(
                             hasFaults = false,
                             receivedAtMillis = now,
                         )
+                        logRepo.debug(LogEventType.DIAGNOSTIC, "Phantom diagnostic heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
                     }) {
                     break
                 }
-                logRepo.debug(LogEventType.DIAGNOSTIC, "Phantom diagnostic heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
                 delay(2_000)
             }
         }
@@ -842,7 +849,11 @@ class PhantomBleRepository(
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             while (isActive && connectionState.value is ConnectionState.Connected) {
-                logRepo.info(LogEventType.HEARTBEAT, "Phantom heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                if (!publishIfConnected {
+                        logRepo.info(LogEventType.HEARTBEAT, "Phantom heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                    }) {
+                    break
+                }
                 delay(2_000)
             }
         }

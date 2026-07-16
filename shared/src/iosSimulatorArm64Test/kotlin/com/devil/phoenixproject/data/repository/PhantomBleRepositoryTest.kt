@@ -82,14 +82,17 @@ class PhantomBleRepositoryTest {
 
     @Test
     fun `shutdown wins over an in-flight scan`() = runTest {
-        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
         val scanning = async(Dispatchers.Default) { repository.startScanning() }
 
         try {
             repository.connectionState.first { it == ConnectionState.Scanning }
             repository.shutdown()
+            val logsAfterShutdown = logRepo.logs.value.size
 
             assertTrue(scanning.await().isFailure)
+            assertEquals(logsAfterShutdown, logRepo.logs.value.size)
             assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
             assertTrue(repository.scannedDevices.value.isEmpty())
             assertNull(repository.heuristicData.value)
@@ -102,15 +105,18 @@ class PhantomBleRepositoryTest {
 
     @Test
     fun `shutdown wins over a racing connect`() = runTest {
-        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
         val connecting = async(Dispatchers.Default) {
             repository.connect(ScannedDevice("race", "race-address"))
         }
 
         try {
             repository.shutdown()
+            val logsAfterShutdown = logRepo.logs.value.size
 
             assertTrue(connecting.await().isFailure)
+            assertEquals(logsAfterShutdown, logRepo.logs.value.size)
             assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
             assertTrue(repository.scannedDevices.value.isEmpty())
             assertNull(repository.heuristicData.value)
@@ -414,8 +420,9 @@ class PhantomBleRepositoryTest {
 
     @Test
     fun `shutdown cancels polling jobs and clears lifecycle state`() = runTest {
+        val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(
-            ConnectionLogRepository(),
+            logRepo,
             PhantomBleConfig(repDelayMs = 100L),
         )
 
@@ -428,8 +435,12 @@ class PhantomBleRepositoryTest {
         assertTrue(repository.heuristicData.value != null)
 
         repository.shutdown()
+        val diagnosticLogsAfterShutdown = logRepo.getLogsByEventType(LogEventType.DIAGNOSTIC).size
+        val heartbeatLogsAfterShutdown = logRepo.getLogsByEventType(LogEventType.HEARTBEAT).size
         withContext(Dispatchers.Default) { delay(350L) }
 
+        assertEquals(diagnosticLogsAfterShutdown, logRepo.getLogsByEventType(LogEventType.DIAGNOSTIC).size)
+        assertEquals(heartbeatLogsAfterShutdown, logRepo.getLogsByEventType(LogEventType.HEARTBEAT).size)
         assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
         assertFalse(repository.handleDetection.value.leftDetected)
         assertFalse(repository.handleDetection.value.rightDetected)
