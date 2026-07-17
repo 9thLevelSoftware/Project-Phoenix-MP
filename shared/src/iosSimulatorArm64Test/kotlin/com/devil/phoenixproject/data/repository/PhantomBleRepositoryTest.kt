@@ -371,6 +371,34 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `connected collector active polling owns connection completion producers`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val startPollingOnConnected = async(Dispatchers.Unconfined) {
+            repository.connectionState.first { state ->
+                if (state is ConnectionState.Connected) {
+                    repository.startActiveWorkoutPolling()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.connect(ScannedDevice("collector", "collector-address")).isSuccess)
+            startPollingOnConnected.await()
+
+            assertEquals(HandleState.Grabbed, repository.handleState.value)
+            val metric = withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.metricsFlow.first() }
+            }
+            assertTrue(metric.loadA >= 2f, "completion must preserve reentrant active polling")
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `handle detection collector workout preserves connected handoff`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),

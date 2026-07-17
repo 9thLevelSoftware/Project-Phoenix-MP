@@ -564,15 +564,16 @@ class PhantomBleRepository(
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
+            workoutConnectionGeneration = expectedConnectionGeneration
             _handleState.value = HandleState.Grabbed
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             startMetrics(
                 activeWorkout = true,
                 expectedConnectionGeneration = expectedConnectionGeneration,
             )
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             if (!startHeuristicGeneration(
@@ -582,7 +583,7 @@ class PhantomBleRepository(
             ) {
                 return@withLock
             }
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
         }
