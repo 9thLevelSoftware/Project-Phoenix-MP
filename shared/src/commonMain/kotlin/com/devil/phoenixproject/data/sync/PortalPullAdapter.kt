@@ -354,6 +354,13 @@ object PortalPullAdapter {
         resolvedExerciseId: String? = null,
     ): PersonalRecordSyncDto {
         val now = currentTimeMillis()
+        fun parseTimestamp(value: String?): Long? = value?.let {
+            try {
+                kotlinx.datetime.Instant.parse(it).toEpochMilliseconds()
+            } catch (_: Exception) {
+                null
+            }
+        }
         return PersonalRecordSyncDto(
             clientId = pr.id,
             serverId = pr.id,
@@ -364,25 +371,27 @@ object PortalPullAdapter {
             // previous unconditional `exerciseId = pr.id` broke exercise linkage
             // and made every pulled PR a unique idx_pr_unique key that never
             // deduped against local PRs (audit F021).
-            exerciseId = resolvedExerciseId?.takeIf { it.isNotBlank() } ?: pr.id,
+            exerciseId = resolvedExerciseId?.takeIf { it.isNotBlank() }
+                ?: pr.exerciseId?.takeIf { it.isNotBlank() }
+                ?: pr.id,
             exerciseName = pr.exerciseName,
             weight = pr.value.toFloat(),
             reps = pr.reps ?: 0,
             oneRepMax = 0f, // Portal doesn't send computed 1RM
-            achievedAt = pr.achievedAt?.let {
-                try {
-                    kotlinx.datetime.Instant.parse(it).toEpochMilliseconds()
-                } catch (_: Exception) {
-                    now
-                }
-            } ?: now,
+            achievedAt = parseTimestamp(pr.achievedAt) ?: now,
             workoutMode = pr.recordType,
             prType = pr.recordType,
             phase = pr.workoutPhase ?: "COMBINED",
             volume = pr.value.toFloat(),
-            deletedAt = null,
-            createdAt = now,
-            updatedAt = now,
+            deletedAt = pr.deletedAt?.let { value ->
+                runCatching { kotlinx.datetime.Instant.parse(value).toEpochMilliseconds() }.getOrNull()
+            },
+            createdAt = pr.achievedAt?.let { value ->
+                runCatching { kotlinx.datetime.Instant.parse(value).toEpochMilliseconds() }.getOrNull()
+            } ?: now,
+            updatedAt = pr.updatedAt?.let { value ->
+                runCatching { kotlinx.datetime.Instant.parse(value).toEpochMilliseconds() }.getOrNull()
+            } ?: now,
         )
     }
 

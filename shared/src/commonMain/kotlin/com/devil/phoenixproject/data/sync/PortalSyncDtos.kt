@@ -630,6 +630,7 @@ data class PortalPersonalRecordDto(
     val sessionId: String? = null,
     val achievedAt: String,
     val updatedAt: String? = null,
+    val deletedAt: String? = null,
     val localProfileId: String? = null,
     val workoutMode: String? = null,
 )
@@ -977,6 +978,8 @@ data class PullGamificationStatsDto(
 data class PullPersonalRecordDto(
     val id: String = "",
     val userId: String = "",
+    val exerciseId: String? = null,
+    val localProfileId: String? = null,
     val exerciseName: String = "",
     val muscleGroup: String = "General",
     val recordType: String = "1RM",
@@ -987,4 +990,5 @@ data class PullPersonalRecordDto(
     val sessionId: String? = null,
     val achievedAt: String? = null,
     val updatedAt: String? = null,
+    val deletedAt: String? = null,
 )

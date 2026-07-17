@@ -998,89 +998,95 @@ WHERE exerciseId = ?
 
 -- Personal Record Queries
 
--- Get all PRs ordered by timestamp
+-- Get all active PRs ordered by timestamp
 selectAllRecords:
-SELECT * FROM PersonalRecord WHERE profile_id = :profileId ORDER BY achievedAt DESC;
+SELECT * FROM PersonalRecord
+WHERE profile_id = :profileId AND deletedAt IS NULL
+ORDER BY achievedAt DESC;
 
--- Get PRs for a specific exercise
+-- Get active PRs for a specific exercise
 selectRecordsByExercise:
-SELECT * FROM PersonalRecord WHERE exerciseId = ? AND profile_id = :profileId ORDER BY oneRepMax DESC;
+SELECT * FROM PersonalRecord
+WHERE exerciseId = ? AND profile_id = :profileId AND deletedAt IS NULL
+ORDER BY oneRepMax DESC;
 
--- Get PR by exercise, workout mode, PR type, and phase
+-- Get active PR by exercise, workout mode, PR type, and phase
 selectPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ?
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 LIMIT 1;
 
--- Get both PRs (MAX_WEIGHT and MAX_VOLUME) for an exercise in a specific mode (COMBINED phase)
+-- Get active PRs for an exercise in a specific mode (COMBINED phase)
 selectPRsForExerciseAndMode:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ?
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY prType;
 
--- Get the best weight PR for an exercise across all modes
+-- Get the best active weight PR for an exercise across all modes
 selectBestWeightPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND prType = 'MAX_WEIGHT'
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY weight DESC
 LIMIT 1;
 
--- Get the best volume PR for an exercise across all modes
+-- Get the best active volume PR for an exercise across all modes
 selectBestVolumePR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND prType = 'MAX_VOLUME'
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY volume DESC
 LIMIT 1;
 
--- Get best weight PR for exercise BY MODE
+-- Get best active weight PR for exercise BY MODE
 selectBestWeightPRByMode:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = :exerciseId
 AND prType = 'MAX_WEIGHT'
 AND workoutMode = :workoutMode
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY weight DESC
 LIMIT 1;
 
--- Get best volume PR for exercise BY MODE
+-- Get best active volume PR for exercise BY MODE
 selectBestVolumePRByMode:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = :exerciseId
 AND prType = 'MAX_VOLUME'
 AND workoutMode = :workoutMode
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY volume DESC
 LIMIT 1;
 
--- Get all PRs for an exercise (all modes) for display
+-- Get all active PRs for an exercise (all modes) for display
 selectAllPRsForExercise:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = :exerciseId
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY workoutMode, prType, achievedAt DESC;
 
--- Get the best overall PR for an exercise (prefers weight, for backwards compatibility)
+-- Get the best active overall PR for an exercise (prefers weight, for backwards compatibility)
 selectBestPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ?
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY weight DESC, volume DESC
 LIMIT 1;
 
--- Get the latest MAX_WEIGHT PR for an exercise in a specific mode (backwards compatibility)
+-- Get the latest active MAX_WEIGHT PR for an exercise in a specific mode (backwards compatibility)
 selectLatestPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ? AND prType = 'MAX_WEIGHT'
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 LIMIT 1;
 
--- Get all PRs grouped by exercise for analytics
+-- Get all active PRs grouped by exercise for analytics
 selectAllPRsGrouped:
-SELECT * FROM PersonalRecord WHERE profile_id = :profileId ORDER BY exerciseId, workoutMode, prType, achievedAt DESC;
+SELECT * FROM PersonalRecord
+WHERE profile_id = :profileId AND deletedAt IS NULL
+ORDER BY exerciseId, workoutMode, prType, achievedAt DESC;
 
 -- Insert a new PR (with prType, volume, and phase support)
 insertRecord:
@@ -1122,7 +1128,26 @@ WHERE id = (
   LIMIT 1
 );
 
--- Delete PR by unique key (for upsert fallback)
+-- Soft delete exactly one active PR in the active profile, preserving its sync identity.
+softDeletePRById:
+UPDATE PersonalRecord
+SET deletedAt = :deletedAt, updatedAt = :updatedAt
+WHERE id = :id AND profile_id = :profileId AND deletedAt IS NULL;
+
+-- Apply a pulled PR's deletion state with tombstone-aware LWW. A newer active
+-- update may restore a deleted row; an equal-time tombstone wins.
+applyPulledPersonalRecordTombstoneState:
+UPDATE PersonalRecord
+SET deletedAt = :deletedAt, updatedAt = :updatedAt
+WHERE uuid = :uuid
+  AND profile_id = :profileId
+  AND (
+    updatedAt IS NULL
+    OR updatedAt < :updatedAt
+    OR (updatedAt = :updatedAt AND :deletedAt IS NOT NULL AND deletedAt IS NULL)
+  );
+
+-- Delete PR by unique key (legacy upsert fallback only)
 deletePRByKey:
 DELETE FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ? AND profile_id = ?;
@@ -2652,10 +2677,10 @@ INSERT OR REPLACE INTO WorkoutSession (
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- Get PRs modified since last sync
+-- Get PRs modified since last sync, including tombstones for convergence.
 selectPRsModifiedSince:
 SELECT * FROM PersonalRecord
-WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
+WHERE (updatedAt > ? OR updatedAt IS NULL)
 AND profile_id = :profileId;
 
 -- Update PR server ID

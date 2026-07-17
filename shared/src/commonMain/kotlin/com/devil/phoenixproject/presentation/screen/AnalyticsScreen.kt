@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -55,8 +57,13 @@ fun ProgressTab(
     formatWeight: (Float, WeightUnit) -> String,
     assessmentEnabled: Boolean,
     onNavigateToStrengthAssessment: () -> Unit,
+    onNavigateToExerciseDetail: (String) -> Unit,
+    onDeletePersonalRecord: suspend (PersonalRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var pendingDelete by remember { mutableStateOf<PersonalRecord?>(null) }
+    var deletingRecord by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -193,7 +200,9 @@ fun ProgressTab(
                     }
 
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigateToExerciseDetail(pr.exerciseId) },
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         ),
@@ -237,6 +246,15 @@ fun ProgressTab(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            IconButton(
+                                onClick = { pendingDelete = pr },
+                                enabled = !deletingRecord,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = stringResource(Res.string.action_delete),
+                                )
+                            }
                         }
                     }
                 }
@@ -253,6 +271,36 @@ fun ProgressTab(
             Spacer(modifier = Modifier.height(80.dp))
         }
     }
+
+    pendingDelete?.let { pr ->
+        AlertDialog(
+            onDismissRequest = { if (!deletingRecord) pendingDelete = null },
+            title = { Text(stringResource(Res.string.delete_personal_record_title)) },
+            text = { Text(stringResource(Res.string.delete_personal_record_message)) },
+            dismissButton = {
+                TextButton(
+                    enabled = !deletingRecord,
+                    onClick = { pendingDelete = null },
+                ) { Text(stringResource(Res.string.action_cancel)) }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !deletingRecord,
+                    onClick = {
+                        scope.launch {
+                            deletingRecord = true
+                            try {
+                                onDeletePersonalRecord(pr)
+                                pendingDelete = null
+                            } finally {
+                                deletingRecord = false
+                            }
+                        }
+                    },
+                ) { Text(stringResource(Res.string.action_delete)) }
+            },
+        )
+    }
 }
 
 /**
@@ -268,6 +316,7 @@ fun AnalyticsScreen(
     themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
     assessmentProfileId: String?,
     onNavigateToStrengthAssessment: (String) -> Unit,
+    onNavigateToExerciseDetail: (String) -> Unit,
 ) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
@@ -314,6 +363,7 @@ fun AnalyticsScreen(
     val csvExporter: CsvExporter = koinInject()
     val csvImporter: CsvImporter = koinInject()
     val userProfileRepository: UserProfileRepository = koinInject()
+    val personalRecordRepository: PersonalRecordRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileId = activeProfile?.id ?: "default"
     val scope = rememberCoroutineScope()
@@ -484,6 +534,10 @@ fun AnalyticsScreen(
                         assessmentEnabled = assessmentProfileId != null,
                         onNavigateToStrengthAssessment = {
                             assessmentProfileId?.let(onNavigateToStrengthAssessment)
+                        },
+                        onNavigateToExerciseDetail = onNavigateToExerciseDetail,
+                        onDeletePersonalRecord = { pr ->
+                            personalRecordRepository.deletePR(pr.id, activeProfileId)
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

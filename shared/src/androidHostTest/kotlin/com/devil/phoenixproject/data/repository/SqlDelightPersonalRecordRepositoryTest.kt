@@ -229,6 +229,30 @@ class SqlDelightPersonalRecordRepositoryTest {
         )
     }
 
+    @Test
+    fun `deleting a PR hides it from product reads and retains a sync tombstone`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 65f,
+            volumePRWeightPerCableKg = 65f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 2_000L,
+            profileId = "default",
+        ).getOrThrow()
+        val weightPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+
+        repository.deletePR(weightPr.id, "default")
+
+        assertNull(repository.getWeightPR("bench", "Old School", "default"))
+        val retainedTombstone = database.vitruvianDatabaseQueries
+            .selectPRsModifiedSince(0L, profileId = "default")
+            .executeAsList()
+            .single { it.id == weightPr.id }
+        assertNotNull(retainedTombstone.deletedAt)
+        assertEquals(retainedTombstone.deletedAt, retainedTombstone.updatedAt)
+    }
+
     private fun insertExercise(id: String, name: String) {
         database.vitruvianDatabaseQueries.insertExercise(
             id = id,

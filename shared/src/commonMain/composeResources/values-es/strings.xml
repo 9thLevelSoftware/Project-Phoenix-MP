@@ -17,6 +17,8 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Guardar</string>
     <string name="action_delete">Eliminar</string>
+    <string name="delete_personal_record_title">¿Eliminar récord personal?</string>
+    <string name="delete_personal_record_message">¿Eliminar este récord personal de este dispositivo y de los dispositivos sincronizados? Esta acción no se puede deshacer en esta versión.</string>
     <string name="action_edit">Editar</string>
     <string name="action_copy">Copiar</string>
     <string name="action_close">Cerrar</string>

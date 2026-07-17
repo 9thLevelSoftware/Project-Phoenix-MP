@@ -17,6 +17,8 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Enregistrer</string>
     <string name="action_delete">Supprimer</string>
+    <string name="delete_personal_record_title">Supprimer le record personnel ?</string>
+    <string name="delete_personal_record_message">Supprimer ce record personnel de cet appareil et des appareils synchronisés ? Cette action est irréversible dans cette version.</string>
     <string name="action_edit">Modifier</string>
     <string name="action_copy">Copier</string>
     <string name="action_close">Fermer</string>

@@ -785,16 +785,18 @@ class SyncManager(
             context = "Push payload",
         )
 
-        // 2. Fetch full PRs with type/phase/volume metadata (GAP 2 fix), profile-scoped
-        val recentPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
-        val prBySessionKey = recentPRs.groupBy { pr ->
+        // 2. Fetch the narrow sync delta for the dedicated PR payload while
+        // retaining the display projection only for legacy set-level metadata.
+        val recentPRs = syncRepository.getPRsModifiedSince(lastSync, activeProfileId)
+        val recentDisplayPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
+        val prBySessionKey = recentDisplayPRs.groupBy { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp)
         }
         val sessionIdByDeltaPrKey = sessions.mapNotNull { session ->
             val exerciseId = session.exerciseId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             personalRecordSessionKey(exerciseId, session.timestamp) to session.id
         }.toMap()
-        val missingSessionRecords = recentPRs.filter { pr ->
+        val missingSessionRecords = recentDisplayPRs.filter { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp) !in sessionIdByDeltaPrKey
         }
         val historicalSessionIdByPrKey = if (missingSessionRecords.isEmpty()) {
@@ -829,7 +831,7 @@ class SyncManager(
             )
         }
         val personalRecordDtos = recentPRs.map { pr ->
-            val sessionKey = personalRecordSessionKey(pr.exerciseId, pr.timestamp)
+            val sessionKey = personalRecordSessionKey(pr.exerciseId, pr.achievedAt)
             val muscleGroup =
                 syncRepository.getExerciseMuscleGroup(pr.exerciseId, pr.exerciseName)
                     ?: "General"
@@ -1288,7 +1290,10 @@ class SyncManager(
         // server confirmed the push. This gives PersonalRecord rows the same
         // post-confirmation resend protection that WorkoutSession rows get from
         // the caller's post-push stamping block.
-        val pushedPrIds = recentPRs.map { it.id }.distinct()
+        val pushedPrIds = recentPRs
+            .filter { it.deletedAt == null && it.localId >= 0L }
+            .map { it.localId }
+            .distinct()
         if (pushedPrIds.isNotEmpty()) {
             val prStampTime = currentTimeMillis()
             syncRepository.updatePersonalRecordTimestamp(pushedPrIds, prStampTime)

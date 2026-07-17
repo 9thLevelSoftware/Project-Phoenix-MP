@@ -17,6 +17,8 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Opslaan</string>
     <string name="action_delete">Verwijderen</string>
+    <string name="delete_personal_record_title">Persoonlijk record verwijderen?</string>
+    <string name="delete_personal_record_message">Dit persoonlijke record verwijderen van dit apparaat en gesynchroniseerde apparaten? Dit kan in deze versie niet ongedaan worden gemaakt.</string>
     <string name="action_edit">Bewerken</string>
     <string name="action_copy">Kopiëren</string>
     <string name="action_close">Sluiten</string>
