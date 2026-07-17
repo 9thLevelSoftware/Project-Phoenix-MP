@@ -1228,6 +1228,109 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `disconnect teardown rejects ordinary controls at final disconnected publication`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val initialConfig = PhantomBleConfig(repDelayMs = 100L)
+        val replacement = PhantomBleConfig(loadScale = 2f, repDelayMs = 100L)
+        val repository = PhantomBleRepository(logRepo, initialConfig)
+        var startWorkoutResult: Result<Unit>? = null
+        var stopWorkoutResult: Result<Unit>? = null
+        var colorResult: Result<Unit>? = null
+        var workoutCommandResult: Result<Unit>? = null
+        var initResult: Result<Unit>? = null
+        var stopCommandResult: Result<Unit>? = null
+        var rawPacketResult: Result<Unit>? = null
+        val controlsOnDisconnect = async(Dispatchers.Unconfined) {
+            repository.connectionState.drop(1).first { state ->
+                if (state == ConnectionState.Disconnected) {
+                    repository.enableHandleDetection(true)
+                    repository.resetHandleState()
+                    repository.enableJustLiftWaitingMode()
+                    repository.startActiveWorkoutPolling()
+                    repository.stopPolling()
+                    repository.stopMonitorPollingOnly()
+                    repository.restartMonitorPolling()
+                    repository.restartDiagnosticPolling()
+                    repository.startDiscoMode()
+                    repository.stopDiscoMode()
+                    repository.setLastColorSchemeIndex(7)
+                    repository.replaceConfig(replacement)
+                    startWorkoutResult = repository.startWorkout(workoutParameters())
+                    stopWorkoutResult = repository.stopWorkout()
+                    colorResult = repository.setColorScheme(7)
+                    workoutCommandResult = repository.sendWorkoutCommand(byteArrayOf(0x01))
+                    initResult = repository.sendInitSequence()
+                    stopCommandResult = repository.sendStopCommand()
+                    rawPacketResult = repository.injectRawPacket(
+                        PhantomRawPacketKind.MONITOR,
+                        monitorPacket(
+                            ticks = 42,
+                            posA = 1250,
+                            velA = 320,
+                            loadA = 1234,
+                            posB = -750,
+                            velB = -250,
+                            loadB = 567,
+                        ),
+                    )
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+
+            repository.disconnect()
+            controlsOnDisconnect.await()
+
+            assertTrue(requireNotNull(startWorkoutResult).isFailure)
+            assertTrue(requireNotNull(stopWorkoutResult).isFailure)
+            assertTrue(requireNotNull(colorResult).isFailure)
+            assertTrue(requireNotNull(workoutCommandResult).isFailure)
+            assertTrue(requireNotNull(initResult).isFailure)
+            assertTrue(requireNotNull(stopCommandResult).isFailure)
+            assertTrue(requireNotNull(rawPacketResult).isFailure)
+            assertFalse(repository.handleDetection.value.leftDetected)
+            assertFalse(repository.handleDetection.value.rightDetected)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+            assertEquals(initialConfig, repository.config.value)
+            assertFalse(repository.discoModeActive.value)
+            assertTrue(logRepo.logs.value.none { log ->
+                log.message in setOf(
+                    "Phantom handle detection enabled",
+                    "Phantom Just Lift waiting mode armed",
+                    "Phantom polling stopped",
+                    "Phantom monitor polling stopped; diagnostics kept warm",
+                    "Phantom disco mode stopped",
+                    "Phantom config updated",
+                    "Phantom workout started",
+                    "Phantom workout stopped",
+                    "Phantom color scheme set",
+                    "Phantom received raw workout command",
+                    "Phantom init sequence accepted",
+                    "Phantom stop command accepted",
+                    "Phantom injected raw monitor packet",
+                )
+            })
+
+            assertTrue(repository.connect(ScannedDevice("post-cleanup", "post-cleanup-address")).isSuccess)
+            logRepo.clearAll()
+            repository.startDiscoMode()
+            repository.stopDiscoMode()
+            assertTrue(
+                logRepo.getLogsByEventType(LogEventType.COMMAND_SENT)
+                    .any { it.message == "Phantom disco mode stopped" && it.details == "restoredScheme=0" },
+            )
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `command results fail when command log collector disconnects normally`() = runTest {
         val commands = listOf<Pair<String, suspend PhantomBleRepository.() -> Result<Unit>>>(
             "Phantom color scheme set" to { setColorScheme(7) },

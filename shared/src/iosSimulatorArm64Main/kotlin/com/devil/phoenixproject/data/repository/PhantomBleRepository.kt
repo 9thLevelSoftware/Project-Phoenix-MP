@@ -342,7 +342,7 @@ class PhantomBleRepository(
 
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
         return lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -357,7 +357,7 @@ class PhantomBleRepository(
 
     override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
         return lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -377,7 +377,7 @@ class PhantomBleRepository(
 
     override suspend fun sendInitSequence(): Result<Unit> {
         return lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -447,7 +447,7 @@ class PhantomBleRepository(
 
     override suspend fun stopWorkout(): Result<Unit> {
         return lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -471,7 +471,7 @@ class PhantomBleRepository(
 
     override suspend fun sendStopCommand(): Result<Unit> {
         return lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 Result.failure(IllegalStateException("Phantom repository is shut down"))
             } else {
                 val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -487,7 +487,7 @@ class PhantomBleRepository(
 
     override fun enableHandleDetection(enabled: Boolean) {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -505,7 +505,7 @@ class PhantomBleRepository(
 
     override fun resetHandleState() {
         lifecycleLock.withLock {
-            if (!terminal.value) {
+            if (!terminal.value && !lifecycleCleanupInProgress) {
                 _handleState.value = HandleState.WaitingForRest
                 if (terminal.value) {
                     return@withLock
@@ -516,7 +516,7 @@ class PhantomBleRepository(
 
     override fun enableJustLiftWaitingMode() {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -568,7 +568,7 @@ class PhantomBleRepository(
 
     override fun stopPolling() {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
             metricsGeneration += 1
@@ -587,7 +587,7 @@ class PhantomBleRepository(
 
     override fun stopMonitorPollingOnly() {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
             metricsGeneration += 1
@@ -612,7 +612,11 @@ class PhantomBleRepository(
 
     override fun startDiscoMode() {
         lifecycleLock.withLock {
-            if (terminal.value || _connectionState.value !is ConnectionState.Connected || workoutParams != null) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                _connectionState.value !is ConnectionState.Connected ||
+                workoutParams != null
+            ) {
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -626,7 +630,7 @@ class PhantomBleRepository(
 
     override fun stopDiscoMode() {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -646,7 +650,7 @@ class PhantomBleRepository(
 
     override fun setLastColorSchemeIndex(index: Int) {
         lifecycleLock.withLock {
-            if (!terminal.value) {
+            if (!terminal.value && !lifecycleCleanupInProgress) {
                 lastColorSchemeIndex = index
             }
         }
