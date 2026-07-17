@@ -927,15 +927,15 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        _connectionState.value = ConnectionState.Connected(device.name, device.address)
-        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
-            return@withLock false
-        }
         _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true)
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
         _handleState.value = HandleState.Released
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
+        _connectionState.value = ConnectionState.Connected(device.name, device.address)
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }

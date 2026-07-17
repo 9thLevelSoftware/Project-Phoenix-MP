@@ -334,6 +334,43 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `connected collector workout preserves grabbed handle and active producers`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+        val startWorkoutOnConnected = async(Dispatchers.Unconfined) {
+            repository.connectionState.first { state ->
+                if (state is ConnectionState.Connected) {
+                    assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.connect(ScannedDevice("collector", "collector-address")).isSuccess)
+            startWorkoutOnConnected.await()
+
+            assertEquals(HandleState.Grabbed, repository.handleState.value)
+
+            val metric = withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.metricsFlow.first() }
+            }
+            assertTrue(metric.loadA >= 10f, "connected handoff must preserve active workout metrics")
+
+            val rep = withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.repEvents.first() }
+            }
+            assertTrue(rep.topCounter >= 1)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `beginning a connection attempt gates reentrant producer restarts`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)
