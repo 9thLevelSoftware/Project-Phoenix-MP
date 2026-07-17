@@ -2,8 +2,10 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.util.BlePacketFactory
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,6 +38,139 @@ class PhantomBleRepositoryTest {
         }
         assertFailsWith<IllegalArgumentException> {
             PhantomBleConfig(loadScale = -1f)
+        }
+    }
+
+    @Test
+    fun `config rejects non-positive echo load`() {
+        assertEquals(20f, PhantomBleConfig().defaultEchoLoadKg)
+        assertFailsWith<IllegalArgumentException> {
+            PhantomBleConfig(defaultEchoLoadKg = 0f)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            PhantomBleConfig(defaultEchoLoadKg = -1f)
+        }
+    }
+
+    @Test
+    fun `regular factory packet records finite phantom workout program`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 7,
+            warmupReps = 3,
+            weightPerCableKg = 12.5f,
+        )
+
+        try {
+            val command = BlePacketFactory.createProgramParams(params)
+            assertEquals(96, command.size)
+            assertTrue(repository.sendWorkoutCommand(command).isSuccess)
+            assertEquals(
+                PhantomWorkoutProgram(
+                    warmupReps = 3,
+                    workingReps = 7,
+                    weightPerCableKg = 12.5f,
+                ),
+                repository.currentProgram,
+            )
+            assertTrue(logRepo.logs.value.any { log ->
+                log.eventType == LogEventType.COMMAND_SENT &&
+                    log.message == "Phantom parsed workout command" &&
+                    log.details == "warmupReps=3; workingReps=7; weightPerCableKg=12.5"
+            })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `regular factory packet records unlimited phantom workout program`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 0,
+            warmupReps = 3,
+            weightPerCableKg = 8.25f,
+            isAMRAP = true,
+        )
+
+        try {
+            val command = BlePacketFactory.createProgramParams(params)
+            assertEquals(96, command.size)
+            assertTrue(repository.sendWorkoutCommand(command).isSuccess)
+            assertEquals(
+                PhantomWorkoutProgram(
+                    warmupReps = 3,
+                    workingReps = null,
+                    weightPerCableKg = 8.25f,
+                ),
+                repository.currentProgram,
+            )
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `echo factory packet records phantom workout program with default load`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            val command = BlePacketFactory.createEchoControl(
+                level = EchoLevel.HARDER,
+                warmupReps = 2,
+                targetReps = 5,
+            )
+            assertEquals(32, command.size)
+            assertTrue(repository.sendWorkoutCommand(command).isSuccess)
+            assertEquals(
+                PhantomWorkoutProgram(
+                    warmupReps = 2,
+                    workingReps = 5,
+                    weightPerCableKg = 20f,
+                ),
+                repository.currentProgram,
+            )
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `echo factory packet records unlimited phantom workout program`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            val command = BlePacketFactory.createEchoControl(
+                level = EchoLevel.HARDER,
+                warmupReps = 2,
+                isAMRAP = true,
+            )
+            assertTrue(repository.sendWorkoutCommand(command).isSuccess)
+            assertEquals(
+                PhantomWorkoutProgram(
+                    warmupReps = 2,
+                    workingReps = null,
+                    weightPerCableKg = 20f,
+                ),
+                repository.currentProgram,
+            )
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `unrelated workout command remains accepted`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            assertTrue(repository.sendWorkoutCommand(byteArrayOf(0x01)).isSuccess)
+            assertNull(repository.currentProgram)
+        } finally {
+            repository.shutdown()
         }
     }
 
