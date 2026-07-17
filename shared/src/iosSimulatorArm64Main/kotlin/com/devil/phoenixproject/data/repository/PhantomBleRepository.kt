@@ -302,7 +302,12 @@ class PhantomBleRepository(
                 Result.failure(IllegalStateException("Phantom scan and connect attempt invalidated"))
             } else {
                 val expectedPostTeardownGeneration = attemptGeneration + 1L
-                teardownConnection()
+                lifecycleCleanupInProgress = true
+                try {
+                    teardownConnection()
+                } finally {
+                    lifecycleCleanupInProgress = false
+                }
                 if (terminal.value || connectionAttemptGeneration.value != expectedPostTeardownGeneration) {
                     Result.failure(IllegalStateException("Phantom scan and connect attempt invalidated"))
                 } else {
@@ -386,7 +391,7 @@ class PhantomBleRepository(
 
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
         return lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -525,7 +530,7 @@ class PhantomBleRepository(
 
     override fun restartMonitorPolling() {
         lifecycleLock.withLock {
-            if (!terminal.value) {
+            if (!terminal.value && !lifecycleCleanupInProgress) {
                 startMetrics(activeWorkout = workoutParams != null)
             }
         }
@@ -533,7 +538,7 @@ class PhantomBleRepository(
 
     override fun startActiveWorkoutPolling() {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -806,7 +811,7 @@ class PhantomBleRepository(
 
     fun replaceConfig(config: PhantomBleConfig) {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value

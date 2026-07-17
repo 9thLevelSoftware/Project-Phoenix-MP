@@ -946,6 +946,139 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `disconnect teardown rejects reentrant producer controls`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val initialConfig = PhantomBleConfig(repDelayMs = 100L)
+        val repository = PhantomBleRepository(logRepo, initialConfig)
+        val replacement = PhantomBleConfig(loadScale = 2f, repDelayMs = 100L)
+        var startWorkoutResult: Result<Unit>? = null
+        val startWorkoutOnTeardown = async(Dispatchers.Unconfined) {
+            repository.handleDetection.drop(1).first { detection ->
+                if (!detection.leftDetected && !detection.rightDetected) {
+                    startWorkoutResult = repository.startWorkout(workoutParameters())
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        val controlsOnTeardown = async(Dispatchers.Unconfined) {
+            repository.handleDetection.drop(1).first { detection ->
+                if (!detection.leftDetected && !detection.rightDetected) {
+                    repository.startActiveWorkoutPolling()
+                    repository.restartMonitorPolling()
+                    repository.replaceConfig(replacement)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+
+            repository.disconnect()
+
+            assertFalse(controlsOnTeardown.await().leftDetected)
+            assertFalse(startWorkoutOnTeardown.await().leftDetected)
+            assertTrue(requireNotNull(startWorkoutResult).isFailure)
+            assertEquals(initialConfig, repository.config.value)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+            assertNull(repository.diagnostics.value)
+            assertNull(repository.heuristicData.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+            val logsAfterTeardown = logRepo.logs.value
+            assertTrue(logsAfterTeardown.none { log ->
+                log.message in setOf(
+                    "Phantom workout started",
+                    "Phantom config updated",
+                    "Phantom monitor metric",
+                    "Phantom heuristic update",
+                    "Phantom rep notification",
+                )
+            })
+
+            withContext(Dispatchers.Default) { delay(350L) }
+            assertEquals(logsAfterTeardown, logRepo.logs.value)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+            assertNull(repository.diagnostics.value)
+            assertNull(repository.heuristicData.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `timeout teardown rejects reentrant producer controls`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val initialConfig = PhantomBleConfig(repDelayMs = 100L)
+        val repository = PhantomBleRepository(logRepo, initialConfig)
+        val replacement = PhantomBleConfig(loadScale = 2f, repDelayMs = 100L)
+        var startWorkoutResult: Result<Unit>? = null
+        val startWorkoutOnTeardown = async(Dispatchers.Unconfined) {
+            repository.scannedDevices.drop(1).first { devices ->
+                if (devices.isEmpty()) {
+                    startWorkoutResult = repository.startWorkout(workoutParameters())
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        val controlsOnTeardown = async(Dispatchers.Unconfined) {
+            repository.scannedDevices.drop(1).first { devices ->
+                if (devices.isEmpty()) {
+                    repository.startActiveWorkoutPolling()
+                    repository.restartMonitorPolling()
+                    repository.replaceConfig(replacement)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect(timeoutMs = 300L).isFailure)
+
+            assertTrue(controlsOnTeardown.await().isEmpty())
+            assertTrue(startWorkoutOnTeardown.await().isEmpty())
+            assertTrue(requireNotNull(startWorkoutResult).isFailure)
+            assertEquals(initialConfig, repository.config.value)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+            assertNull(repository.diagnostics.value)
+            assertNull(repository.heuristicData.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+            val logsAfterTeardown = logRepo.logs.value
+            assertTrue(logsAfterTeardown.none { log ->
+                log.message in setOf(
+                    "Phantom workout started",
+                    "Phantom config updated",
+                    "Phantom monitor metric",
+                    "Phantom heuristic update",
+                    "Phantom rep notification",
+                )
+            })
+
+            withContext(Dispatchers.Default) { delay(350L) }
+            assertEquals(logsAfterTeardown, logRepo.logs.value)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+            assertNull(repository.diagnostics.value)
+            assertNull(repository.heuristicData.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `shutdown from workout handle publication prevents post-publication workout effects`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))
