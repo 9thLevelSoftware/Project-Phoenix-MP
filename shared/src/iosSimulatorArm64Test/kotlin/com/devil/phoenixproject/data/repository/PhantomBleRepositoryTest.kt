@@ -3124,6 +3124,195 @@ class PhantomBleRepositoryTest {
         assertEquals(logsAfterShutdown, logRepo.logs.value.size)
     }
 
+    @Test
+    fun `stopWorkout rejects scanning without invalidating the scan attempt`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val scanning = async(Dispatchers.Default) { repository.startScanning() }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Scanning }
+            logRepo.clearAll()
+
+            val result = repository.stopWorkout()
+
+            assertTrue(result.isFailure)
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+            assertTrue(logRepo.logs.value.none { it.message == "Phantom workout stopped" })
+            assertTrue(scanning.await().isSuccess)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `stopWorkout rejects connecting without invalidating the connection attempt`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val connecting = async(Dispatchers.Default) {
+            repository.connect(ScannedDevice("stop-race", "stop-race-address"))
+        }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Connecting }
+            logRepo.clearAll()
+
+            val result = repository.stopWorkout()
+
+            assertTrue(result.isFailure)
+            assertEquals(ConnectionState.Connecting, repository.connectionState.value)
+            assertTrue(logRepo.logs.value.none { it.message == "Phantom workout stopped" })
+            assertTrue(connecting.await().isSuccess)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `connected collector reset preserves waiting handle state`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val resetOnConnected = async(Dispatchers.Unconfined) {
+            repository.connectionState.first { state ->
+                if (state is ConnectionState.Connected) {
+                    repository.resetHandleState()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.connect(ScannedDevice("reset-collector", "reset-collector-address")).isSuccess)
+            resetOnConnected.await()
+
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `connected collector Just Lift waiting mode preserves waiting handle state`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val enableJustLiftOnConnected = async(Dispatchers.Unconfined) {
+            repository.connectionState.first { state ->
+                if (state is ConnectionState.Connected) {
+                    repository.enableJustLiftWaitingMode()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.connect(ScannedDevice("just-lift-collector", "just-lift-collector-address")).isSuccess)
+            enableJustLiftOnConnected.await()
+
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `connected collector disabling handle detection preserves disabled state`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val disableDetectionOnConnected = async(Dispatchers.Unconfined) {
+            repository.connectionState.first { state ->
+                if (state is ConnectionState.Connected) {
+                    repository.enableHandleDetection(false)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.connect(ScannedDevice("detection-collector", "detection-collector-address")).isSuccess)
+            disableDetectionOnConnected.await()
+
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertFalse(repository.handleDetection.value.leftDetected)
+            assertFalse(repository.handleDetection.value.rightDetected)
+            assertEquals(HandleState.Released, repository.handleState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `reset handle preserves active polling across monitor restart and config replacement`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.startActiveWorkoutPolling()
+            withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.metricsFlow.first { it.loadA >= 2f } }
+            }
+
+            repository.resetHandleState()
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+
+            val metricAfterRestart = async(Dispatchers.Unconfined) {
+                withTimeout(1_000L) { repository.metricsFlow.first { it.loadA >= 2f } }
+            }
+            repository.restartMonitorPolling()
+            metricAfterRestart.await()
+
+            val metricAfterReplacement = async(Dispatchers.Unconfined) {
+                withTimeout(1_000L) { repository.metricsFlow.first { it.loadA >= 10f } }
+            }
+            repository.replaceConfig(PhantomBleConfig(loadScale = 2f))
+            metricAfterReplacement.await()
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `stopWorkout reserves cleanup before publishing stop log`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))
+        var startWorkoutResult: Result<Unit>? = null
+        val controlsOnStopLog = async(Dispatchers.Unconfined) {
+            logRepo.logs.first { logs ->
+                if (logs.any { it.message == "Phantom workout stopped" }) {
+                    startWorkoutResult = repository.startWorkout(workoutParameters())
+                    repository.startActiveWorkoutPolling()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+            logRepo.clearAll()
+
+            assertTrue(repository.stopWorkout().isSuccess)
+            controlsOnStopLog.await()
+
+            assertTrue(requireNotNull(startWorkoutResult).isFailure)
+            assertEquals(HandleState.Released, repository.handleState.value)
+            logRepo.clearAll()
+            repository.restartMonitorPolling()
+            withContext(Dispatchers.Default) { delay(350L) }
+            assertTrue(logRepo.logs.value.none { log ->
+                log.message == "Phantom monitor metric" && log.details?.contains("load=7.5") == true
+            })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
     private fun workoutParameters(): WorkoutParameters = WorkoutParameters(
         programMode = ProgramMode.OldSchool,
         reps = 3,

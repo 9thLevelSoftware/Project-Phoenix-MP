@@ -129,6 +129,9 @@ class PhantomBleRepository(
     private val connectionAttemptGeneration = atomic(0L)
     private var lifecycleCleanupInProgress = false
     private var connectionAttemptReservationActive = false
+    private var activePollingConnectionGeneration: Long? = null
+    private var handleStateControlGeneration = 0L
+    private var handleDetectionControlGeneration = 0L
     private var metricsGeneration = 0L
     private var heuristicGeneration = 0L
     private var repGeneration = 0L
@@ -472,22 +475,31 @@ class PhantomBleRepository(
             if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
-            val expectedConnectionGeneration = connectionAttemptGeneration.incrementAndGet()
-            logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            if (_connectionState.value !is ConnectionState.Connected) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout requires an active connection"))
             }
-            stopJobs()
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            lifecycleCleanupInProgress = true
+            try {
+                val expectedConnectionGeneration = connectionAttemptGeneration.incrementAndGet()
+                logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+                }
+                stopJobs()
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+                }
+                activePollingConnectionGeneration = null
+                workoutParams = null
+                workoutConnectionGeneration = null
+                _handleState.value = HandleState.Released
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+                }
+                Result.success(Unit)
+            } finally {
+                lifecycleCleanupInProgress = false
             }
-            workoutParams = null
-            workoutConnectionGeneration = null
-            _handleState.value = HandleState.Released
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
-            }
-            Result.success(Unit)
         }
     }
 
@@ -513,6 +525,8 @@ class PhantomBleRepository(
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
+            handleStateControlGeneration += 1
+            handleDetectionControlGeneration += 1
             _handleDetection.value = HandleDetection(leftDetected = enabled, rightDetected = enabled)
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
@@ -541,6 +555,7 @@ class PhantomBleRepository(
             ) {
                 return@withLock
             }
+            handleStateControlGeneration += 1
             _handleState.value = HandleState.WaitingForRest
             if (
                 terminal.value ||
@@ -558,6 +573,7 @@ class PhantomBleRepository(
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
+            handleStateControlGeneration += 1
             _handleState.value = HandleState.WaitingForRest
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
@@ -571,7 +587,7 @@ class PhantomBleRepository(
             if (!terminal.value && !lifecycleCleanupInProgress && !connectionAttemptReservationActive) {
                 val expectedConnectionGeneration = connectionAttemptGeneration.value
                 val activeWorkout = workoutParams != null ||
-                    (workoutConnectionGeneration == expectedConnectionGeneration && _handleState.value == HandleState.Grabbed)
+                    activePollingConnectionGeneration == expectedConnectionGeneration
                 startMetrics(
                     activeWorkout = activeWorkout,
                     expectedConnectionGeneration = expectedConnectionGeneration,
@@ -590,6 +606,7 @@ class PhantomBleRepository(
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
+            activePollingConnectionGeneration = expectedConnectionGeneration
             workoutConnectionGeneration = expectedConnectionGeneration
             _handleState.value = HandleState.Grabbed
             if (terminal.value || lifecycleCleanupInProgress || connectionAttemptGeneration.value != expectedConnectionGeneration) {
@@ -931,7 +948,7 @@ class PhantomBleRepository(
                     return@withLock
                 }
                 val activeWorkout = workoutParams != null ||
-                    (workoutConnectionGeneration == expectedConnectionGeneration && _handleState.value == HandleState.Grabbed)
+                    activePollingConnectionGeneration == expectedConnectionGeneration
                 startMetrics(
                     activeWorkout = activeWorkout,
                     expectedConnectionGeneration = expectedConnectionGeneration,
@@ -968,6 +985,7 @@ class PhantomBleRepository(
             connectionAttemptReservationActive = true
             try {
                 val attemptGeneration = connectionAttemptGeneration.incrementAndGet()
+                activePollingConnectionGeneration = null
                 if (reservedState == ConnectionState.Scanning) {
                     _scannedDevices.value = emptyList()
                 }
@@ -1059,17 +1077,23 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
+        val handleStateControlGenerationBeforePublication = handleStateControlGeneration
+        val handleDetectionControlGenerationBeforePublication = handleDetectionControlGeneration
         _connectionState.value = ConnectionState.Connected(device.name, device.address)
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true)
+        if (handleDetectionControlGeneration == handleDetectionControlGenerationBeforePublication) {
+            _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true)
+        }
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        val workoutOwnsConnection = workoutConnectionGeneration == attemptGeneration &&
-            (_handleState.value == HandleState.Grabbed || workoutParams != null)
-        if (!workoutOwnsConnection) {
+        val workoutOwnsConnection =
+            activePollingOwnsConnection(attemptGeneration) ||
+                (workoutConnectionGeneration == attemptGeneration &&
+                    (_handleState.value == HandleState.Grabbed || workoutParams != null))
+        if (!workoutOwnsConnection && handleStateControlGeneration == handleStateControlGenerationBeforePublication) {
             _handleState.value = HandleState.Released
         }
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
@@ -1092,8 +1116,10 @@ class PhantomBleRepository(
             return@withLock false
         }
         val activeWorkoutParams = workoutParams
-        val completionOwnsWorkout = workoutConnectionGeneration == attemptGeneration &&
-            (_handleState.value == HandleState.Grabbed || activeWorkoutParams != null)
+        val completionOwnsWorkout =
+            activePollingOwnsConnection(attemptGeneration) ||
+                (workoutConnectionGeneration == attemptGeneration &&
+                    (_handleState.value == HandleState.Grabbed || activeWorkoutParams != null))
         if (!completionOwnsWorkout) {
             if (activeWorkoutParams != null) {
                 workoutParams = null
@@ -1208,10 +1234,7 @@ class PhantomBleRepository(
             !lifecycleCleanupInProgress &&
             connectionAttemptGeneration.value == expectedConnectionGeneration &&
             _connectionState.value is ConnectionState.Connected &&
-            workoutConnectionGeneration == expectedConnectionGeneration &&
-            _handleState.value == HandleState.Grabbed &&
-            metricsJob?.isActive == true &&
-            heuristicJob?.isActive == true
+            activePollingConnectionGeneration == expectedConnectionGeneration
 
     private fun teardownConnection(markTerminal: Boolean = false) {
         lifecycleLock.withLock {
@@ -1223,6 +1246,7 @@ class PhantomBleRepository(
             if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
                 return@withLock
             }
+            activePollingConnectionGeneration = null
             workoutParams = null
             workoutConnectionGeneration = null
             _handleDetection.value = HandleDetection()
