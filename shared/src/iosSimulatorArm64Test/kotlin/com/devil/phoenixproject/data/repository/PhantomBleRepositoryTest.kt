@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -327,6 +328,159 @@ class PhantomBleRepositoryTest {
             assertNull(repository.heuristicData.value)
             assertFalse(repository.handleDetection.value.leftDetected)
             assertFalse(repository.handleDetection.value.rightDetected)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown from connecting publication prevents post-publication connection effects`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val shutdownOnConnecting = async(Dispatchers.Unconfined) {
+            repository.connectionState.first { state ->
+                if (state == ConnectionState.Connecting) {
+                    repository.shutdown()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val result = repository.connect(ScannedDevice("collector", "collector-address"))
+
+            shutdownOnConnecting.await()
+
+            assertTrue(result.isFailure)
+            assertTrue(logRepo.getLogsByEventType(LogEventType.CONNECT_START).isEmpty())
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown from scanned-device publication prevents device-found side effects`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val shutdownOnDevices = async(Dispatchers.Unconfined) {
+            repository.scannedDevices.first { devices ->
+                if (devices.isNotEmpty()) {
+                    repository.shutdown()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val result = repository.startScanning()
+
+            shutdownOnDevices.await()
+
+            assertTrue(result.isFailure)
+            assertTrue(logRepo.getLogsByEventType(LogEventType.DEVICE_FOUND).isEmpty())
+            assertTrue(repository.scannedDevices.value.isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown from timeout teardown prevents stale timeout side effects`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val shutdownOnDisconnected = async(Dispatchers.Unconfined) {
+            repository.connectionState.drop(1).first { state ->
+                if (state == ConnectionState.Disconnected) {
+                    repository.shutdown()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val result = repository.scanAndConnect(timeoutMs = 50L)
+
+            shutdownOnDisconnected.await()
+
+            assertTrue(result.isFailure)
+            assertTrue(logRepo.getLogsByEventType(LogEventType.ERROR).isEmpty())
+            repository.reconnectionRequested.test {
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown from raw monitor deload publication prevents metric side effects`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val shutdownOnDeload = async(Dispatchers.Unconfined) {
+            repository.deloadOccurredEvents.first {
+                repository.shutdown()
+                true
+            }
+        }
+        val monitor = monitorPacket(
+            ticks = 42,
+            posA = 1250,
+            velA = 320,
+            loadA = 1234,
+            posB = -750,
+            velB = -250,
+            loadB = 567,
+            status = 0x8000,
+        )
+
+        try {
+            repository.metricsFlow.test {
+                val result = repository.injectRawPacket(PhantomRawPacketKind.MONITOR, monitor)
+
+                shutdownOnDeload.await()
+
+                assertTrue(result.isFailure)
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown from workout handle publication prevents post-publication workout effects`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+            val shutdownOnGrabbed = async(Dispatchers.Unconfined) {
+                repository.handleState.first { state ->
+                    if (state == HandleState.Grabbed) {
+                        repository.shutdown()
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
+            val result = repository.startWorkout(workoutParameters())
+
+            shutdownOnGrabbed.await()
+
+            assertTrue(result.isFailure)
+            assertTrue(logRepo.logs.value.none { it.message == "Phantom workout started" })
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
         } finally {
             repository.shutdown()
         }
