@@ -1271,6 +1271,38 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `stopScanning is ignored by timeout teardown`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val stopScanningOnTeardown = async(Dispatchers.Unconfined) {
+            repository.scannedDevices.drop(1).first { devices ->
+                if (devices.isEmpty()) {
+                    repository.stopScanning()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val result = repository.scanAndConnect(timeoutMs = 200L)
+            stopScanningOnTeardown.await()
+
+            assertTrue(result.isFailure)
+            assertEquals(
+                "Phantom scan and connect timed out after 200ms",
+                result.exceptionOrNull()?.message,
+            )
+            assertTrue(logRepo.getLogsByEventType(LogEventType.SCAN_STOP).isEmpty())
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `cancelConnection does not log stale cleanup after a reentrant connection`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)
@@ -1299,6 +1331,40 @@ class PhantomBleRepositoryTest {
             assertTrue(connecting.await().isFailure)
             assertEquals(ConnectionState.Connected("new", "new-address"), repository.connectionState.value)
             assertTrue(logRepo.getLogsByEventType(LogEventType.DISCONNECT).none { it.message == "Cancelled phantom connection" })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `cancelConnection is ignored by timeout teardown`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val cancelConnectionOnTeardown = async(Dispatchers.Unconfined) {
+            repository.scannedDevices.drop(1).first { devices ->
+                if (devices.isEmpty()) {
+                    repository.cancelConnection()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val result = repository.scanAndConnect(timeoutMs = 200L)
+            cancelConnectionOnTeardown.await()
+
+            assertTrue(result.isFailure)
+            assertEquals(
+                "Phantom scan and connect timed out after 200ms",
+                result.exceptionOrNull()?.message,
+            )
+            assertTrue(logRepo.getLogsByEventType(LogEventType.DISCONNECT).none { log ->
+                log.message == "Cancelled phantom connection"
+            })
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
         } finally {
             repository.shutdown()
         }

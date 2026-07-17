@@ -165,7 +165,7 @@ class PhantomBleRepository(
 
     override suspend fun stopScanning() {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
             if (_connectionState.value != ConnectionState.Scanning &&
@@ -212,7 +212,7 @@ class PhantomBleRepository(
 
     override suspend fun cancelConnection() {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
             if (_connectionState.value == ConnectionState.Connecting) {
