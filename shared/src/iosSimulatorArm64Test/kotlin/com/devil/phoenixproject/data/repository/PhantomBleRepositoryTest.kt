@@ -274,6 +274,65 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `shutdown from connected collector invalidates completing connection`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val shutdownOnConnected = async(Dispatchers.Unconfined) {
+            repository.connectionState.first { state ->
+                if (state is ConnectionState.Connected) {
+                    repository.shutdown()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val result = repository.connect(ScannedDevice("collector", "collector-address"))
+
+            shutdownOnConnected.await()
+
+            assertTrue(result.isFailure)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+            assertNull(repository.diagnostics.value)
+            assertNull(repository.heuristicData.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown from metric collector prevents post-terminal metric logging and state repopulation`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val shutdownOnMetric = async(Dispatchers.Unconfined) {
+            repository.metricsFlow.first {
+                repository.shutdown()
+                true
+            }
+        }
+
+        try {
+            repository.scanAndConnect()
+            shutdownOnMetric.await()
+            val logsAfterShutdown = logRepo.logs.value.size
+
+            withContext(Dispatchers.Default) { delay(350L) }
+
+            assertEquals(logsAfterShutdown, logRepo.logs.value.size)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+            assertNull(repository.diagnostics.value)
+            assertNull(repository.heuristicData.value)
+            assertFalse(repository.handleDetection.value.leftDetected)
+            assertFalse(repository.handleDetection.value.rightDetected)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `injectRawPacket parses legacy rep bytes through protocol parser`() = runTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
         val raw = byteArrayOf(
