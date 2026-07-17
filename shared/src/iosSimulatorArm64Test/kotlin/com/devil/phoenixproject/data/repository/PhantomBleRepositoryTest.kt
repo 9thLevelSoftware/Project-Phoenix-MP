@@ -412,6 +412,61 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `active polling rejects scanning and connecting states without claiming ownership`() = runTest {
+        val scanningRepository = PhantomBleRepository(ConnectionLogRepository())
+        var handleStateWhenScanning: HandleState? = null
+        val startPollingOnScanning = async(Dispatchers.Unconfined) {
+            scanningRepository.connectionState.first { state ->
+                if (state == ConnectionState.Scanning) {
+                    scanningRepository.startActiveWorkoutPolling()
+                    handleStateWhenScanning = scanningRepository.handleState.value
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val scanning = async(Dispatchers.Default) { scanningRepository.startScanning() }
+            startPollingOnScanning.await()
+
+            assertEquals(HandleState.WaitingForRest, handleStateWhenScanning)
+            assertTrue(scanning.await().isSuccess)
+            assertEquals(HandleState.WaitingForRest, scanningRepository.handleState.value)
+        } finally {
+            scanningRepository.shutdown()
+        }
+
+        val connectingRepository = PhantomBleRepository(ConnectionLogRepository())
+        var handleStateWhenConnecting: HandleState? = null
+        val startPollingOnConnecting = async(Dispatchers.Unconfined) {
+            connectingRepository.connectionState.first { state ->
+                if (state == ConnectionState.Connecting) {
+                    connectingRepository.startActiveWorkoutPolling()
+                    handleStateWhenConnecting = connectingRepository.handleState.value
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val connecting = async(Dispatchers.Default) {
+                connectingRepository.connect(ScannedDevice("precondition", "precondition-address"))
+            }
+            startPollingOnConnecting.await()
+
+            assertEquals(HandleState.WaitingForRest, handleStateWhenConnecting)
+            assertTrue(connecting.await().isSuccess)
+            assertEquals(HandleState.Released, connectingRepository.handleState.value)
+        } finally {
+            connectingRepository.shutdown()
+        }
+    }
+
+    @Test
     fun `heuristic collector active polling preserves connection completion`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)
@@ -639,6 +694,51 @@ class PhantomBleRepositoryTest {
             assertTrue(requireNotNull(startWorkoutResult).isFailure)
             assertTrue(scanning.await().isSuccess)
             assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `connection attempt reservation rejects reentrant producer controls before scanning publication`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val initialConfig = PhantomBleConfig(repDelayMs = 100L)
+        val replacement = PhantomBleConfig(loadScale = 2f, repDelayMs = 100L)
+        val repository = PhantomBleRepository(logRepo, initialConfig)
+        val controlsOnClear = async(Dispatchers.Unconfined) {
+            repository.scannedDevices.drop(1).first { devices ->
+                if (devices.isEmpty()) {
+                    repository.restartMonitorPolling()
+                    repository.startActiveWorkoutPolling()
+                    repository.restartDiagnosticPolling()
+                    repository.replaceConfig(replacement)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.stopPolling()
+            logRepo.clearAll()
+
+            val scanning = async(Dispatchers.Default) { repository.startScanning() }
+            assertTrue(controlsOnClear.await().isEmpty())
+
+            assertTrue(scanning.await().isSuccess)
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+            assertEquals(HandleState.Released, repository.handleState.value)
+            assertEquals(initialConfig, repository.config.value)
+            assertTrue(logRepo.logs.value.none { log ->
+                log.message in setOf(
+                    "Phantom monitor metric",
+                    "Phantom heuristic update",
+                    "Phantom diagnostic heartbeat",
+                    "Phantom config updated",
+                )
+            })
         } finally {
             repository.shutdown()
         }
@@ -1205,7 +1305,7 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
-    fun `disconnect teardown yields to a reentrant scan`() = runTest {
+    fun `disconnect teardown rejects a reentrant scan`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)
 
@@ -1227,9 +1327,41 @@ class PhantomBleRepositoryTest {
 
             repository.disconnect()
 
-            assertTrue(restartedScan.await()!!.isSuccess)
-            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
-            assertTrue(repository.scannedDevices.value.isNotEmpty())
+            assertTrue(restartedScan.await()!!.isFailure)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `disconnect log rejects a reentrant scan during cleanup`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        var scanResult: Result<Unit>? = null
+        val scanOnDisconnectLog = async(Dispatchers.Unconfined) {
+            logRepo.logs.first { logs ->
+                if (logs.any { it.eventType == LogEventType.DISCONNECT }) {
+                    scanResult = repository.startScanning()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+
+            repository.disconnect()
+            assertTrue(scanOnDisconnectLog.await().any { it.eventType == LogEventType.DISCONNECT })
+
+            assertTrue(requireNotNull(scanResult).isFailure)
+            assertEquals(1, logRepo.getLogsByEventType(LogEventType.DISCONNECT).size)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
         } finally {
             repository.shutdown()
         }
@@ -1267,6 +1399,7 @@ class PhantomBleRepositoryTest {
 
         try {
             assertTrue(repository.scanAndConnect().isSuccess)
+            repository.stopPolling()
             logRepo.clearAll()
 
             repository.disconnect()

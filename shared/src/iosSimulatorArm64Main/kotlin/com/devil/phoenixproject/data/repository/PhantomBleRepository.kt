@@ -564,7 +564,7 @@ class PhantomBleRepository(
 
     override fun restartMonitorPolling() {
         lifecycleLock.withLock {
-            if (!terminal.value && !lifecycleCleanupInProgress) {
+            if (!terminal.value && !lifecycleCleanupInProgress && !connectionAttemptReservationActive) {
                 val expectedConnectionGeneration = connectionAttemptGeneration.value
                 val activeWorkout = workoutParams != null ||
                     (workoutConnectionGeneration == expectedConnectionGeneration && _handleState.value == HandleState.Grabbed)
@@ -578,7 +578,11 @@ class PhantomBleRepository(
 
     override fun startActiveWorkoutPolling() {
         lifecycleLock.withLock {
-            if (terminal.value || lifecycleCleanupInProgress) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptReservationActive ||
+                _connectionState.value !is ConnectionState.Connected
+            ) {
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -639,7 +643,7 @@ class PhantomBleRepository(
 
     override fun restartDiagnosticPolling() {
         lifecycleLock.withLock {
-            if (!terminal.value && !lifecycleCleanupInProgress) {
+            if (!terminal.value && !lifecycleCleanupInProgress && !connectionAttemptReservationActive) {
                 val expectedConnectionGeneration = connectionAttemptGeneration.value
                 if (!startDiagnostics(expectedConnectionGeneration) ||
                     terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration
@@ -900,7 +904,7 @@ class PhantomBleRepository(
 
     fun replaceConfig(config: PhantomBleConfig) {
         lifecycleLock.withLock {
-            if (terminal.value || lifecycleCleanupInProgress) {
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
@@ -954,7 +958,7 @@ class PhantomBleRepository(
     }
 
     private fun beginConnectionAttempt(reservedState: ConnectionState): Long? = lifecycleLock.withLock {
-        if (terminal.value || connectionAttemptReservationActive) {
+        if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
             null
         } else {
             connectionAttemptReservationActive = true
