@@ -1065,7 +1065,8 @@ class PhantomBleRepository(
                 !startHeuristicGeneration(
                     activeWorkout = false,
                     expectedConnectionGeneration = attemptGeneration,
-                )
+                ) &&
+                !activePollingOwnsConnection(attemptGeneration)
             ) {
                 if (terminal.value || connectionAttemptGeneration.value != attemptGeneration || workoutParams == null) {
                     return@withLock false
@@ -1081,12 +1082,12 @@ class PhantomBleRepository(
             if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
                 return@withLock false
             }
-            if (
-                heuristicJob?.isActive != true &&
+            if (heuristicJob?.isActive != true &&
                 !startHeuristicGeneration(
                     activeWorkout = true,
                     expectedConnectionGeneration = attemptGeneration,
-                )
+                ) &&
+                !activePollingOwnsConnection(attemptGeneration)
             ) {
                 return@withLock false
             }
@@ -1109,6 +1110,16 @@ class PhantomBleRepository(
         }
         true
     }
+
+    private fun activePollingOwnsConnection(expectedConnectionGeneration: Long): Boolean =
+        !terminal.value &&
+            !lifecycleCleanupInProgress &&
+            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+            _connectionState.value is ConnectionState.Connected &&
+            workoutConnectionGeneration == expectedConnectionGeneration &&
+            _handleState.value == HandleState.Grabbed &&
+            metricsJob?.isActive == true &&
+            heuristicJob?.isActive == true
 
     private fun teardownConnection(markTerminal: Boolean = false) {
         lifecycleLock.withLock {

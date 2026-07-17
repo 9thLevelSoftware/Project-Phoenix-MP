@@ -399,6 +399,46 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `heuristic collector active polling preserves connection completion`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val startPollingOnHeuristic = async(Dispatchers.Unconfined) {
+            repository.heuristicData.first { heuristic ->
+                if (heuristic != null) {
+                    repository.startActiveWorkoutPolling()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.connect(ScannedDevice("heuristic", "heuristic-address")).isSuccess)
+            startPollingOnHeuristic.await()
+
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.Grabbed, repository.handleState.value)
+            val metric = withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.metricsFlow.first() }
+            }
+            assertTrue(metric.loadA >= 2f, "heuristic handoff must preserve active workout metrics")
+            withContext(Dispatchers.Default) {
+                withTimeout(1_000L) {
+                    logRepo.logs.first { logs ->
+                        logs.any { log ->
+                            log.eventType == LogEventType.HEARTBEAT && log.message == "Phantom heartbeat"
+                        }
+                    }
+                }
+            }
+        } finally {
+            repository.stopPolling()
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `handle detection collector workout preserves connected handoff`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),
