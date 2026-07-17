@@ -619,6 +619,35 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `shutdown during disconnect cleanup claims terminal state`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+            val shutdownOnDisconnectLog = async(Dispatchers.Unconfined) {
+                logRepo.logs.first { logs ->
+                    if (logs.any { it.message == "Disconnected phantom Vitruvian" }) {
+                        repository.shutdown()
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
+            repository.disconnect()
+            shutdownOnDisconnectLog.await()
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.connect(ScannedDevice("terminal", "terminal-address")).isFailure)
+            assertEquals(1, logRepo.getLogsByEventType(LogEventType.DISCONNECT).size)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `stopScanning does not log stale cleanup after a reentrant scan`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)
@@ -1190,6 +1219,140 @@ class PhantomBleRepositoryTest {
                 )
                 cancelAndIgnoreRemainingEvents()
             }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `direct reconnect suppresses stale scheduled metric generation`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val reconnected = async(Dispatchers.Unconfined) {
+            repository.metricsFlow.first { metric ->
+                if (metric.loadA >= 2f) {
+                    repository.connect(ScannedDevice("metric-reconnected", "metric-reconnected-address"))
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+            reconnected.await()
+
+            logRepo.clearAll()
+            withContext(Dispatchers.Default) { delay(300L) }
+
+            assertEquals(ConnectionState.Connected("metric-reconnected", "metric-reconnected-address"), repository.connectionState.value)
+            assertTrue(
+                logRepo.getLogsByEventType(LogEventType.NOTIFICATION)
+                    .none { it.message == "Phantom monitor metric" && it.details?.contains("load=10") == true },
+            )
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `direct reconnect suppresses stale scheduled diagnostic generation`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val reconnected = async(Dispatchers.Unconfined) {
+            logRepo.logs.first { logs ->
+                if (logs.any { it.message == "Phantom diagnostic heartbeat" }) {
+                    repository.connect(ScannedDevice("diagnostic-reconnected", "diagnostic-reconnected-address"))
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            repository.connect(ScannedDevice("initial", "initial-address"))
+            reconnected.await()
+
+            logRepo.clearAll()
+            withContext(Dispatchers.Default) { delay(300L) }
+
+            assertEquals(
+                ConnectionState.Connected("diagnostic-reconnected", "diagnostic-reconnected-address"),
+                repository.connectionState.value,
+            )
+            assertTrue(logRepo.getLogsByEventType(LogEventType.DIAGNOSTIC).isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `direct reconnect suppresses stale scheduled heartbeat generation`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val reconnected = async(Dispatchers.Unconfined) {
+            logRepo.logs.first { logs ->
+                if (logs.any { it.message == "Phantom heartbeat" }) {
+                    repository.connect(ScannedDevice("heartbeat-reconnected", "heartbeat-reconnected-address"))
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            repository.connect(ScannedDevice("initial", "initial-address"))
+            reconnected.await()
+
+            withContext(Dispatchers.Default) { delay(100L) }
+            logRepo.clearAll()
+            withContext(Dispatchers.Default) { delay(300L) }
+
+            assertEquals(
+                ConnectionState.Connected("heartbeat-reconnected", "heartbeat-reconnected-address"),
+                repository.connectionState.value,
+            )
+            assertTrue(logRepo.getLogsByEventType(LogEventType.HEARTBEAT).isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `raw monitor injection preserves entry generation across reconnect`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val monitor = monitorPacket(
+            ticks = 42,
+            posA = 1250,
+            velA = 320,
+            loadA = 1234,
+            posB = -750,
+            velB = -250,
+            loadB = 567,
+        )
+        val reconnectOnMetric = async(Dispatchers.Unconfined) {
+            repository.metricsFlow.first { metric ->
+                if (metric.ticks == 42L) {
+                    repository.connect(ScannedDevice("raw-reconnected", "raw-reconnected-address"))
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.injectRawPacket(PhantomRawPacketKind.MONITOR, monitor).isFailure)
+            reconnectOnMetric.await()
+            assertEquals(
+                ConnectionState.Connected("raw-reconnected", "raw-reconnected-address"),
+                repository.connectionState.value,
+            )
         } finally {
             repository.shutdown()
         }

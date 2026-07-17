@@ -276,7 +276,12 @@ class PhantomBleRepository(
 
     override suspend fun shutdown() {
         lifecycleLock.withLock {
-            if (terminal.value || lifecycleCleanupInProgress) {
+            if (terminal.value) {
+                return@withLock
+            }
+            if (lifecycleCleanupInProgress) {
+                terminal.value = true
+                teardownConnection(markTerminal = true)
                 return@withLock
             }
             terminal.value = true
@@ -430,7 +435,10 @@ class PhantomBleRepository(
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
-            startMetrics(activeWorkout = true)
+            startMetrics(
+                activeWorkout = true,
+                expectedConnectionGeneration = expectedConnectionGeneration,
+            )
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
@@ -552,7 +560,10 @@ class PhantomBleRepository(
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
-            startMetrics(activeWorkout = true)
+            startMetrics(
+                activeWorkout = true,
+                expectedConnectionGeneration = expectedConnectionGeneration,
+            )
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
@@ -602,10 +613,13 @@ class PhantomBleRepository(
     override fun restartDiagnosticPolling() {
         lifecycleLock.withLock {
             if (!terminal.value) {
-                if (!startDiagnostics() || terminal.value) {
+                val expectedConnectionGeneration = connectionAttemptGeneration.value
+                if (!startDiagnostics(expectedConnectionGeneration) ||
+                    terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration
+                ) {
                     return@withLock
                 }
-                startHeartbeat()
+                startHeartbeat(expectedConnectionGeneration)
             }
         }
     }
@@ -671,10 +685,10 @@ class PhantomBleRepository(
 
         return try {
             when (kind) {
-                PhantomRawPacketKind.MONITOR -> injectMonitorPacket(data)
-                PhantomRawPacketKind.REP -> injectRepPacket(data, hasOpcodePrefix)
-                PhantomRawPacketKind.DIAGNOSTIC -> injectDiagnosticPacket(data)
-                PhantomRawPacketKind.HEURISTIC -> injectHeuristicPacket(data)
+                PhantomRawPacketKind.MONITOR -> injectMonitorPacket(data, expectedConnectionGeneration)
+                PhantomRawPacketKind.REP -> injectRepPacket(data, hasOpcodePrefix, expectedConnectionGeneration)
+                PhantomRawPacketKind.DIAGNOSTIC -> injectDiagnosticPacket(data, expectedConnectionGeneration)
+                PhantomRawPacketKind.HEURISTIC -> injectHeuristicPacket(data, expectedConnectionGeneration)
             }
             if (lifecycleLock.withLock {
                     terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration
@@ -701,12 +715,11 @@ class PhantomBleRepository(
             Result.failure(error)
         }
     }
-    private suspend fun injectMonitorPacket(data: ByteArray) {
+    private suspend fun injectMonitorPacket(data: ByteArray, expectedConnectionGeneration: Long) {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
-            val expectedConnectionGeneration = connectionAttemptGeneration.value
             rawMonitorConnectionGeneration = expectedConnectionGeneration
             val packet = parseMonitorPacket(data)
                 ?: error("monitor packet too short: ${data.size} bytes")
@@ -732,12 +745,15 @@ class PhantomBleRepository(
         }
     }
 
-    private suspend fun injectRepPacket(data: ByteArray, hasOpcodePrefix: Boolean) {
+    private suspend fun injectRepPacket(
+        data: ByteArray,
+        hasOpcodePrefix: Boolean,
+        expectedConnectionGeneration: Long,
+    ) {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
-            val expectedConnectionGeneration = connectionAttemptGeneration.value
             val timestamp = Clock.System.now().toEpochMilliseconds()
             val rep = parseRepPacket(data, hasOpcodePrefix, timestamp)
                 ?: error("rep packet too short: ${data.size} bytes")
@@ -758,12 +774,11 @@ class PhantomBleRepository(
         }
     }
 
-    private fun injectDiagnosticPacket(data: ByteArray) {
+    private fun injectDiagnosticPacket(data: ByteArray, expectedConnectionGeneration: Long) {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
-            val expectedConnectionGeneration = connectionAttemptGeneration.value
             val timestamp = Clock.System.now().toEpochMilliseconds()
             val diagnostic = parseDiagnosticPacket(data)
                 ?: error("diagnostic packet too short: ${data.size} bytes")
@@ -784,12 +799,11 @@ class PhantomBleRepository(
         }
     }
 
-    private fun injectHeuristicPacket(data: ByteArray) {
+    private fun injectHeuristicPacket(data: ByteArray, expectedConnectionGeneration: Long) {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
-            val expectedConnectionGeneration = connectionAttemptGeneration.value
             val timestamp = Clock.System.now().toEpochMilliseconds()
             val heuristic = parseHeuristicPacket(data, timestamp)
                 ?: error("heuristic packet too short: ${data.size} bytes")
@@ -834,7 +848,10 @@ class PhantomBleRepository(
                 if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                     return@withLock
                 }
-                startMetrics(activeWorkout = workoutParams != null)
+                startMetrics(
+                    activeWorkout = workoutParams != null,
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                )
                 if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                     return@withLock
                 }
@@ -949,7 +966,10 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        startMetrics(activeWorkout = false)
+        startMetrics(
+            activeWorkout = false,
+            expectedConnectionGeneration = attemptGeneration,
+        )
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
@@ -963,7 +983,7 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        startHeartbeat()
+        startHeartbeat(attemptGeneration)
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
@@ -1042,8 +1062,15 @@ class PhantomBleRepository(
         }
     }
 
-    private fun startMetrics(activeWorkout: Boolean) {
+    private fun startMetrics(
+        activeWorkout: Boolean,
+        expectedConnectionGeneration: Long? = null,
+    ) {
         lifecycleLock.withLock {
+            val lifecycleGeneration = expectedConnectionGeneration ?: connectionAttemptGeneration.value
+            if (terminal.value || connectionAttemptGeneration.value != lifecycleGeneration) {
+                return@withLock
+            }
             val workoutWeightPerCableKg = workoutParams?.weightPerCableKg
             metricsGeneration += 1
             val expectedGeneration = metricsGeneration
@@ -1057,7 +1084,10 @@ class PhantomBleRepository(
                     val config = _config.value
                     val configuredLoad = workoutWeightPerCableKg ?: 7.5f
                     val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
-                    if (!publishIfConnected(expectedMetricsGeneration = expectedGeneration) {
+                    if (!publishIfConnected(
+                            expectedConnectionGeneration = lifecycleGeneration,
+                            expectedMetricsGeneration = expectedGeneration,
+                        ) {
                             val metric = WorkoutMetric(
                                 timestamp = now,
                                 loadA = load + wave.coerceAtLeast(0f) * config.loadScale,
@@ -1070,7 +1100,10 @@ class PhantomBleRepository(
                                 status = 0,
                             )
                             _metricsFlow.tryEmit(metric)
-                            if (!terminal.value && metricsGeneration == expectedGeneration) {
+                            if (!terminal.value &&
+                                connectionAttemptGeneration.value == lifecycleGeneration &&
+                                metricsGeneration == expectedGeneration
+                            ) {
                                 logRepo.debug(
                                     LogEventType.NOTIFICATION,
                                     "Phantom monitor metric",
@@ -1114,7 +1147,10 @@ class PhantomBleRepository(
                     eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
                     timestamp = Clock.System.now().toEpochMilliseconds(),
                 )
-                if (!terminal.value && heuristicGeneration == expectedGeneration) {
+                if (!terminal.value &&
+                    connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                    heuristicGeneration == expectedGeneration
+                ) {
                     logRepo.debug(
                         LogEventType.NOTIFICATION,
                         "Phantom heuristic update",
@@ -1145,7 +1181,10 @@ class PhantomBleRepository(
                                 eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
                                 timestamp = Clock.System.now().toEpochMilliseconds(),
                             )
-                            if (!terminal.value && heuristicGeneration == expectedGeneration) {
+                            if (!terminal.value &&
+                                connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                                heuristicGeneration == expectedGeneration
+                            ) {
                                 logRepo.debug(
                                     LogEventType.NOTIFICATION,
                                     "Phantom heuristic update",
@@ -1202,7 +1241,10 @@ class PhantomBleRepository(
                                 timestamp = timestamp,
                             ),
                         )
-                        if (!terminal.value && repGeneration == expectedGeneration) {
+                        if (!terminal.value &&
+                            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                            repGeneration == expectedGeneration
+                        ) {
                             logRepo.info(
                                 LogEventType.REP_RECEIVED,
                                 "Phantom rep notification",
@@ -1210,7 +1252,9 @@ class PhantomBleRepository(
                                 PHANTOM_DEVICE_ADDRESS,
                                 "rep=$rep/$target; timestamp=$timestamp",
                             )
-                            if (!terminal.value && repGeneration == expectedGeneration &&
+                            if (!terminal.value &&
+                                connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                                repGeneration == expectedGeneration &&
                                 rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets
                             ) {
                                 logRepo.info(LogEventType.COMMAND_RESPONSE, "Phantom target reps reached", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
@@ -1226,10 +1270,8 @@ class PhantomBleRepository(
         }
     }
 
-    private fun startDiagnostics(expectedConnectionGeneration: Long? = null): Boolean {
-        if (expectedConnectionGeneration != null &&
-            (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration)
-        ) {
+    private fun startDiagnostics(expectedConnectionGeneration: Long): Boolean {
+        if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
             return false
         }
         diagnosticGeneration += 1
@@ -1248,7 +1290,10 @@ class PhantomBleRepository(
                 hasFaults = false,
                 receivedAtMillis = now,
             )
-            if (!terminal.value && diagnosticGeneration == expectedGeneration) {
+            if (!terminal.value &&
+                connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                diagnosticGeneration == expectedGeneration
+            ) {
                 logRepo.debug(LogEventType.DIAGNOSTIC, "Phantom diagnostic heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
             }
         }) {
@@ -1269,7 +1314,10 @@ class PhantomBleRepository(
                             hasFaults = false,
                             receivedAtMillis = now,
                         )
-                        if (!terminal.value && diagnosticGeneration == expectedGeneration) {
+                        if (!terminal.value &&
+                            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+                            diagnosticGeneration == expectedGeneration
+                        ) {
                             logRepo.debug(LogEventType.DIAGNOSTIC, "Phantom diagnostic heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
                         }
                     }) {
@@ -1280,13 +1328,19 @@ class PhantomBleRepository(
         return true
     }
 
-    private fun startHeartbeat() {
+    private fun startHeartbeat(expectedConnectionGeneration: Long) {
+        if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            return
+        }
         heartbeatGeneration += 1
         val expectedGeneration = heartbeatGeneration
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             while (isActive && connectionState.value is ConnectionState.Connected) {
-                if (!publishIfConnected(expectedHeartbeatGeneration = expectedGeneration) {
+                if (!publishIfConnected(
+                        expectedConnectionGeneration = expectedConnectionGeneration,
+                        expectedHeartbeatGeneration = expectedGeneration,
+                    ) {
                         logRepo.info(LogEventType.HEARTBEAT, "Phantom heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
                     }) {
                     break
