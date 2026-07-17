@@ -191,10 +191,13 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
-            val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
-            if (_connectionState.value == ConnectionState.Scanning || _connectionState.value == ConnectionState.Connecting) {
-                _connectionState.value = ConnectionState.Disconnected
+            if (_connectionState.value != ConnectionState.Scanning &&
+                _connectionState.value != ConnectionState.Connecting
+            ) {
+                return@withLock
             }
+            val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
+            _connectionState.value = ConnectionState.Disconnected
             if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
                 return@withLock
             }
@@ -940,7 +943,7 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        if (!startDiagnostics()) {
+        if (!startDiagnostics(expectedConnectionGeneration = attemptGeneration)) {
             return@withLock false
         }
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
@@ -950,7 +953,11 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        if (!startHeuristicGeneration(activeWorkout = false)) {
+        if (!startHeuristicGeneration(
+                activeWorkout = false,
+                expectedConnectionGeneration = attemptGeneration,
+            )
+        ) {
             return@withLock false
         }
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
@@ -1003,6 +1010,7 @@ class PhantomBleRepository(
     }
 
     private inline fun publishIfConnected(
+        expectedConnectionGeneration: Long? = null,
         expectedMetricsGeneration: Long? = null,
         expectedHeuristicGeneration: Long? = null,
         expectedRepGeneration: Long? = null,
@@ -1013,6 +1021,7 @@ class PhantomBleRepository(
         if (
             terminal.value ||
             _connectionState.value !is ConnectionState.Connected ||
+            (expectedConnectionGeneration != null && connectionAttemptGeneration.value != expectedConnectionGeneration) ||
             (expectedMetricsGeneration != null && metricsGeneration != expectedMetricsGeneration) ||
             (expectedHeuristicGeneration != null && heuristicGeneration != expectedHeuristicGeneration) ||
             (expectedRepGeneration != null && repGeneration != expectedRepGeneration) ||
@@ -1024,6 +1033,7 @@ class PhantomBleRepository(
             publish()
             !terminal.value &&
                 _connectionState.value is ConnectionState.Connected &&
+                (expectedConnectionGeneration == null || connectionAttemptGeneration.value == expectedConnectionGeneration) &&
                 (expectedMetricsGeneration == null || metricsGeneration == expectedMetricsGeneration) &&
                 (expectedHeuristicGeneration == null || heuristicGeneration == expectedHeuristicGeneration) &&
                 (expectedRepGeneration == null || repGeneration == expectedRepGeneration) &&
@@ -1092,7 +1102,10 @@ class PhantomBleRepository(
             heuristicGeneration += 1
             val expectedGeneration = heuristicGeneration
             heuristicJob?.cancel()
-            if (!publishIfConnected(expectedHeuristicGeneration = expectedGeneration) {
+            if (!publishIfConnected(
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                    expectedHeuristicGeneration = expectedGeneration,
+                ) {
                 val config = _config.value
                 val configuredLoad = workoutWeightPerCableKg ?: 7.5f
                 val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
@@ -1123,7 +1136,10 @@ class PhantomBleRepository(
                     val config = _config.value
                     val configuredLoad = workoutWeightPerCableKg ?: 7.5f
                     val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
-                    if (!publishIfConnected(expectedHeuristicGeneration = expectedGeneration) {
+                    if (!publishIfConnected(
+                            expectedConnectionGeneration = expectedConnectionGeneration,
+                            expectedHeuristicGeneration = expectedGeneration,
+                        ) {
                             _heuristicData.value = HeuristicStatistics(
                                 concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
                                 eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
@@ -1206,12 +1222,20 @@ class PhantomBleRepository(
         }
     }
 
-    private fun startDiagnostics(): Boolean {
+    private fun startDiagnostics(expectedConnectionGeneration: Long? = null): Boolean {
+        if (expectedConnectionGeneration != null &&
+            (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration)
+        ) {
+            return false
+        }
         diagnosticGeneration += 1
         val expectedGeneration = diagnosticGeneration
         diagnosticJob?.cancel()
         val connectedAt = Clock.System.now().toEpochMilliseconds()
-        if (!publishIfConnected(expectedDiagnosticGeneration = expectedGeneration) {
+        if (!publishIfConnected(
+                expectedConnectionGeneration = expectedConnectionGeneration,
+                expectedDiagnosticGeneration = expectedGeneration,
+            ) {
             val now = Clock.System.now().toEpochMilliseconds()
             _diagnostics.value = DiagnosticPacket(
                 runtimeSeconds = (now - connectedAt) / 1000,
@@ -1230,7 +1254,10 @@ class PhantomBleRepository(
             while (isActive && connectionState.value is ConnectionState.Connected) {
                 delay(2_000)
                 val now = Clock.System.now().toEpochMilliseconds()
-                if (!publishIfConnected(expectedDiagnosticGeneration = expectedGeneration) {
+                if (!publishIfConnected(
+                        expectedConnectionGeneration = expectedConnectionGeneration,
+                        expectedDiagnosticGeneration = expectedGeneration,
+                    ) {
                         _diagnostics.value = DiagnosticPacket(
                             runtimeSeconds = (now - connectedAt) / 1000,
                             faultWords = listOf(0, 0, 0, 0),

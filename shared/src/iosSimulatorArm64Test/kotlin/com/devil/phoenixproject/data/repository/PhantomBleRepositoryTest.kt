@@ -175,6 +175,36 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `stopScanning is a no-op while initial connection producers publish`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val stopScanningOnDiagnostics = async(Dispatchers.Unconfined) {
+            repository.diagnostics.first { diagnostic ->
+                if (diagnostic != null) {
+                    repository.stopScanning()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val result = repository.connect(ScannedDevice("collector", "collector-address"))
+
+            stopScanningOnDiagnostics.await()
+            assertTrue(result.isSuccess)
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertTrue(repository.diagnostics.value != null)
+            assertTrue(repository.heuristicData.value != null)
+            assertTrue(logRepo.getLogsByEventType(LogEventType.CONNECT_SUCCESS).isNotEmpty())
+            assertTrue(logRepo.getLogsByEventType(LogEventType.SCAN_STOP).isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `connected repository initializes diagnostics and heuristic state before workout cancellation`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),
