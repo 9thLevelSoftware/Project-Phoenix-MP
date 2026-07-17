@@ -127,6 +127,7 @@ class PhantomBleRepository(
     private val terminal = atomic(false)
     private val connectionAttemptGeneration = atomic(0L)
     private var lifecycleCleanupInProgress = false
+    private var connectionAttemptReservationActive = false
     private var metricsGeneration = 0L
     private var heuristicGeneration = 0L
     private var repGeneration = 0L
@@ -391,8 +392,16 @@ class PhantomBleRepository(
 
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
         return lifecycleLock.withLock {
-            if (terminal.value || lifecycleCleanupInProgress) {
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
+                return@withLock Result.failure(
+                    IllegalStateException(
+                        if (connectionAttemptReservationActive) {
+                            "Phantom connection attempt is being reserved"
+                        } else {
+                            "Phantom repository is shut down"
+                        },
+                    ),
+                )
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
             if (_discoModeActive.value) {
@@ -404,13 +413,12 @@ class PhantomBleRepository(
             workoutParams = params
             workoutConnectionGeneration = expectedConnectionGeneration
             _handleState.value = HandleState.Grabbed
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
-                if (workoutConnectionGeneration == expectedConnectionGeneration) {
-                    stopJobs()
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                if (workoutParams == params && workoutConnectionGeneration == expectedConnectionGeneration) {
                     workoutParams = null
                     workoutConnectionGeneration = null
                 }
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             logRepo.info(
                 LogEventType.COMMAND_SENT,
@@ -419,32 +427,32 @@ class PhantomBleRepository(
                 PHANTOM_DEVICE_ADDRESS,
                 "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}; justLift=${params.isJustLift}",
             )
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             startMetrics(
                 activeWorkout = true,
                 expectedConnectionGeneration = expectedConnectionGeneration,
             )
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             if (!startHeuristicGeneration(
                     activeWorkout = true,
                     expectedConnectionGeneration = expectedConnectionGeneration,
                 )
             ) {
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             startRepSimulation(
                 params = params,
                 expectedConnectionGeneration = expectedConnectionGeneration,
             )
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
-                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             Result.success(Unit)
         }
@@ -532,7 +540,6 @@ class PhantomBleRepository(
             ) {
                 return@withLock
             }
-            connectionAttemptGeneration.incrementAndGet()
         }
     }
 
@@ -934,22 +941,27 @@ class PhantomBleRepository(
     }
 
     private fun beginConnectionAttempt(reservedState: ConnectionState): Long? = lifecycleLock.withLock {
-        if (terminal.value) {
+        if (terminal.value || connectionAttemptReservationActive) {
             null
         } else {
-            val attemptGeneration = connectionAttemptGeneration.incrementAndGet()
-            if (reservedState == ConnectionState.Scanning) {
-                _scannedDevices.value = emptyList()
-            }
-            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
-                null
-            } else {
-                _connectionState.value = reservedState
+            connectionAttemptReservationActive = true
+            try {
+                val attemptGeneration = connectionAttemptGeneration.incrementAndGet()
+                if (reservedState == ConnectionState.Scanning) {
+                    _scannedDevices.value = emptyList()
+                }
                 if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
                     null
                 } else {
-                    attemptGeneration
+                    _connectionState.value = reservedState
+                    if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                        null
+                    } else {
+                        attemptGeneration
+                    }
                 }
+            } finally {
+                connectionAttemptReservationActive = false
             }
         }
     }
@@ -1040,7 +1052,9 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        if (!startDiagnostics(expectedConnectionGeneration = attemptGeneration)) {
+        if (!startDiagnostics(expectedConnectionGeneration = attemptGeneration) &&
+            !currentConnectedProducerOwnsConnection(attemptGeneration, diagnosticJob)
+        ) {
             return@withLock false
         }
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
@@ -1066,6 +1080,7 @@ class PhantomBleRepository(
                     activeWorkout = false,
                     expectedConnectionGeneration = attemptGeneration,
                 ) &&
+                !currentConnectedProducerOwnsConnection(attemptGeneration, heuristicJob) &&
                 !activePollingOwnsConnection(attemptGeneration)
             ) {
                 if (terminal.value || connectionAttemptGeneration.value != attemptGeneration || workoutParams == null) {
@@ -1087,6 +1102,7 @@ class PhantomBleRepository(
                     activeWorkout = true,
                     expectedConnectionGeneration = attemptGeneration,
                 ) &&
+                !currentConnectedProducerOwnsConnection(attemptGeneration, heuristicJob) &&
                 !activePollingOwnsConnection(attemptGeneration)
             ) {
                 return@withLock false
@@ -1110,6 +1126,27 @@ class PhantomBleRepository(
         }
         true
     }
+
+    private fun workoutHandoffIsCurrent(
+        params: WorkoutParameters,
+        expectedConnectionGeneration: Long,
+    ): Boolean =
+        !terminal.value &&
+            !lifecycleCleanupInProgress &&
+            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+            workoutConnectionGeneration == expectedConnectionGeneration &&
+            workoutParams == params &&
+            _handleState.value == HandleState.Grabbed
+
+    private fun currentConnectedProducerOwnsConnection(
+        expectedConnectionGeneration: Long,
+        producerJob: Job?,
+    ): Boolean =
+        !terminal.value &&
+            !lifecycleCleanupInProgress &&
+            connectionAttemptGeneration.value == expectedConnectionGeneration &&
+            _connectionState.value is ConnectionState.Connected &&
+            producerJob?.isActive == true
 
     private fun activePollingOwnsConnection(expectedConnectionGeneration: Long): Boolean =
         !terminal.value &&

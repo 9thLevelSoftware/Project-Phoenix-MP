@@ -439,6 +439,77 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `diagnostic producer replacement during connection preserves success`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val restartOnDiagnostic = async(Dispatchers.Unconfined) {
+            repository.diagnostics.first { diagnostic ->
+                if (diagnostic != null) {
+                    repository.restartDiagnosticPolling()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val result = repository.connect(ScannedDevice("diagnostic", "diagnostic-address"))
+
+            restartOnDiagnostic.await()
+            assertTrue(result.isSuccess)
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            withContext(Dispatchers.Default) {
+                withTimeout(1_000L) {
+                    logRepo.logs.first { logs ->
+                        logs.any { log ->
+                            log.eventType == LogEventType.HEARTBEAT && log.message == "Phantom heartbeat"
+                        }
+                    }
+                }
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `heuristic producer replacement during connection preserves success`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val replacement = PhantomBleConfig(loadScale = 2f)
+        val replaceOnHeuristic = async(Dispatchers.Unconfined) {
+            repository.heuristicData.first { heuristic ->
+                if (heuristic != null) {
+                    repository.replaceConfig(replacement)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            val result = repository.connect(ScannedDevice("heuristic", "heuristic-address"))
+
+            replaceOnHeuristic.await()
+            assertTrue(result.isSuccess)
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            withContext(Dispatchers.Default) {
+                withTimeout(1_000L) {
+                    logRepo.logs.first { logs ->
+                        logs.any { log ->
+                            log.eventType == LogEventType.HEARTBEAT && log.message == "Phantom heartbeat"
+                        }
+                    }
+                }
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `handle detection collector workout preserves connected handoff`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),
@@ -523,6 +594,74 @@ class PhantomBleRepositoryTest {
 
             scanningWithEmptyDevices.await()
             assertTrue(scanning.await().isSuccess)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `scan clear rejects reentrant workout before scanning publication`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        var stateWhenCleared: ConnectionState? = null
+        var startWorkoutResult: Result<Unit>? = null
+        val startWorkoutOnClear = async(Dispatchers.Unconfined) {
+            repository.scannedDevices.drop(1).first { devices ->
+                if (devices.isEmpty()) {
+                    stateWhenCleared = repository.connectionState.value
+                    startWorkoutResult = repository.startWorkout(workoutParameters())
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+
+            val scanning = async(Dispatchers.Default) { repository.startScanning() }
+            startWorkoutOnClear.await()
+
+            assertTrue(stateWhenCleared is ConnectionState.Connected)
+            assertTrue(requireNotNull(startWorkoutResult).isFailure)
+            assertTrue(scanning.await().isSuccess)
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `reset handle preserves active connected polling`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val resetOnActiveMetric = async(Dispatchers.Unconfined) {
+            repository.metricsFlow.first { metric ->
+                if (metric.loadA >= 2f) {
+                    repository.resetHandleState()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.startActiveWorkoutPolling()
+            resetOnActiveMetric.await()
+            logRepo.clearAll()
+
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+            withContext(Dispatchers.Default) {
+                withTimeout(1_000L) {
+                    logRepo.logs.first { logs ->
+                        logs.any { log -> log.message == "Phantom monitor metric" } &&
+                            logs.any { log -> log.message == "Phantom heuristic update" }
+                    }
+                }
+            }
         } finally {
             repository.shutdown()
         }
