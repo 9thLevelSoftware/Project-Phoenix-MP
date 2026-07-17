@@ -869,6 +869,9 @@ class PhantomBleRepository(
                     bytes[22] = target.toByte()
                 }
                 if (!publishIfConnected(expectedRepGeneration = expectedGeneration) {
+                        if (rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets) {
+                            repSimulationCompleted = true
+                        }
                         _repEvents.tryEmit(
                             RepNotification(
                                 topCounter = rep,
@@ -883,9 +886,6 @@ class PhantomBleRepository(
                                 timestamp = timestamp,
                             ),
                         )
-                        if (rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets) {
-                            repSimulationCompleted = true
-                        }
                         logRepo.info(
                             LogEventType.REP_RECEIVED,
                             "Phantom rep notification",

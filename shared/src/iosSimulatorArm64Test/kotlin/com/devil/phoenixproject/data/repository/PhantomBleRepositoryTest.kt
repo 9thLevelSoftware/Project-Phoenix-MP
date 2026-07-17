@@ -526,12 +526,14 @@ class PhantomBleRepositoryTest {
         try {
             assertTrue(repository.scanAndConnect().isSuccess)
             val replaceOnFinalRep = async(Dispatchers.Unconfined) {
-                logRepo.logs.first { logs ->
-                    logs.any {
-                        it.eventType == LogEventType.REP_RECEIVED && it.details?.startsWith("rep=2/2") == true
+                repository.repEvents.first { event ->
+                    if (event.repsSetCount == 2) {
+                        repository.replaceConfig(PhantomBleConfig(repDelayMs = 100L))
+                        true
+                    } else {
+                        false
                     }
                 }
-                repository.replaceConfig(PhantomBleConfig(repDelayMs = 100L))
             }
             repository.repEvents.test {
                 assertTrue(repository.startWorkout(workoutParameters().copy(reps = 2)).isSuccess)
