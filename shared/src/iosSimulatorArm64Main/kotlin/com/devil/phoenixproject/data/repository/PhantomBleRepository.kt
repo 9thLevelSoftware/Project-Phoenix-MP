@@ -947,13 +947,15 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
+        val workoutWasActiveBeforeDiagnostics = workoutParams != null
         if (!startDiagnostics(expectedConnectionGeneration = attemptGeneration)) {
             return@withLock false
         }
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        if (workoutParams == null) {
+        val activeWorkoutParams = workoutParams
+        if (activeWorkoutParams == null) {
             startMetrics(
                 activeWorkout = false,
                 expectedConnectionGeneration = attemptGeneration,
@@ -970,6 +972,34 @@ class PhantomBleRepository(
                 if (terminal.value || connectionAttemptGeneration.value != attemptGeneration || workoutParams == null) {
                     return@withLock false
                 }
+            }
+        } else if (!workoutWasActiveBeforeDiagnostics) {
+            if (metricsJob?.isActive != true) {
+                startMetrics(
+                    activeWorkout = true,
+                    expectedConnectionGeneration = attemptGeneration,
+                )
+            }
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                return@withLock false
+            }
+            if (
+                heuristicJob?.isActive != true &&
+                !startHeuristicGeneration(
+                    activeWorkout = true,
+                    expectedConnectionGeneration = attemptGeneration,
+                )
+            ) {
+                return@withLock false
+            }
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                return@withLock false
+            }
+            if (!repSimulationCompleted && repJob?.isActive != true) {
+                startRepSimulation(
+                    params = activeWorkoutParams,
+                    expectedConnectionGeneration = attemptGeneration,
+                )
             }
         }
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {

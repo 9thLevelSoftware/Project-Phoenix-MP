@@ -354,12 +354,12 @@ class PhantomBleRepositoryTest {
         try {
             assertTrue(repository.scanAndConnect().isSuccess)
             restartOnConnected.await()
-            logRepo.clearAll()
 
             val reconnecting = async(Dispatchers.Unconfined) {
                 repository.connect(ScannedDevice("reentrant", "reentrant-address"))
             }
             repository.connectionState.first { it == ConnectionState.Connecting }
+            logRepo.clearAll()
 
             withContext(Dispatchers.Default) { delay(100L) }
             assertTrue(logRepo.getLogsByEventType(LogEventType.NOTIFICATION).none { it.message == "Phantom monitor metric" })
@@ -372,7 +372,8 @@ class PhantomBleRepositoryTest {
 
     @Test
     fun `diagnostic collector workout owns connection completion producers`() = runTest {
-        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
         val startWorkoutOnDiagnostic = async(Dispatchers.Unconfined) {
             repository.diagnostics.first { diagnostic ->
                 if (diagnostic != null) {
@@ -385,14 +386,21 @@ class PhantomBleRepositoryTest {
         }
 
         try {
-            repository.metricsFlow.test {
-                assertTrue(repository.connect(ScannedDevice("diagnostic", "diagnostic-address")).isSuccess)
-                startWorkoutOnDiagnostic.await()
-
-                val metric = withTimeout(1_000L) { awaitItem() }
-                assertTrue(metric.loadA >= 2f, "completion must preserve the reentrant active workout producer")
-                cancelAndIgnoreRemainingEvents()
+            val metric = async(Dispatchers.Unconfined) { repository.metricsFlow.first() }
+            val metricProducer = async(Dispatchers.Unconfined) {
+                logRepo.logs.first { logs -> logs.any { log -> log.message == "Phantom monitor metric" } }
             }
+            assertTrue(repository.connect(ScannedDevice("diagnostic", "diagnostic-address")).isSuccess)
+            startWorkoutOnDiagnostic.await()
+            withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { metricProducer.await() }
+            }
+
+            val observedMetric = withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { metric.await() }
+            }
+            assertTrue(observedMetric.loadA >= 2f, "completion must preserve the reentrant active workout producer")
+            metric.cancel()
         } finally {
             repository.shutdown()
         }
