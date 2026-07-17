@@ -408,7 +408,7 @@ class PhantomBleRepository(
     }
 
     private fun decodeWorkoutProgram(command: ByteArray): PhantomWorkoutProgram? {
-        if (command.size >= REGULAR_PROGRAM_PACKET_SIZE && command[0].toInt() and 0xFF == REGULAR_PROGRAM_OPCODE) {
+        if (command.size >= REGULAR_PROGRAM_PACKET_SIZE && readUInt32LittleEndian(command, 0) == REGULAR_PROGRAM_OPCODE) {
             val totalReps = command[0x04].toInt() and 0xFF
             val warmupReps = command[0x05].toInt() and 0xFF
             return PhantomWorkoutProgram(

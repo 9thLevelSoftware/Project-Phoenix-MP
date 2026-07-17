@@ -86,6 +86,30 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `regular production packet requires exact four-byte opcode`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 7,
+            warmupReps = 3,
+            weightPerCableKg = 12.5f,
+        )
+
+        try {
+            val command = BlePacketFactory.createProgramParams(params).also { packet ->
+                packet[1] = 0x01
+            }
+            assertEquals(96, command.size)
+            assertEquals(0x04.toByte(), command[0])
+            assertEquals(0x01.toByte(), command[1])
+            assertTrue(repository.sendWorkoutCommand(command).isSuccess)
+            assertNull(repository.currentProgram)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `regular factory packet records unlimited phantom workout program`() = runTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
         val params = WorkoutParameters(
