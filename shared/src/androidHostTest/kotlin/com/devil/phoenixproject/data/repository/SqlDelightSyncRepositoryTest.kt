@@ -12,6 +12,7 @@ import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -166,6 +167,96 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("active-profile", record.profileId)
         assertEquals(2, record.cableCount)
         assertEquals(WorkoutPhase.CONCENTRIC, record.phase)
+    }
+
+    @Test
+    fun `mergePersonalRecords keeps a newer tombstone and rejects stale active replay`() = runTest {
+        val prId = "12345678-1234-4abc-8def-1234567890cc"
+        fun syncDto(updatedAt: Long, deletedAt: Long?) = PersonalRecordSyncDto(
+            clientId = prId,
+            serverId = prId,
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 85f,
+            reps = 5,
+            oneRepMax = 99.17f,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 425f,
+            createdAt = 1_700_000_000_000L,
+            updatedAt = updatedAt,
+            deletedAt = deletedAt,
+        )
+
+        repository.mergePersonalRecords(listOf(syncDto(100L, null)), "active-profile")
+        repository.mergePersonalRecords(listOf(syncDto(200L, 200L)), "active-profile")
+        repository.mergePersonalRecords(listOf(syncDto(150L, null)), "active-profile")
+
+        val row = database.vitruvianDatabaseQueries.selectAllRecordsSync().executeAsOne()
+        assertEquals(200L, row.updatedAt)
+        assertEquals(200L, row.deletedAt)
+    }
+
+    @Test
+    fun `mergePersonalRecords lets a newer active update restore a tombstoned row`() = runTest {
+        val prId = "12345678-1234-4abc-8def-1234567890ce"
+        fun syncDto(weight: Float, updatedAt: Long, deletedAt: Long?) = PersonalRecordSyncDto(
+            clientId = prId,
+            serverId = prId,
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = weight,
+            reps = 5,
+            oneRepMax = weight * 1.1667f,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = weight * 5,
+            createdAt = 1_700_000_000_000L,
+            updatedAt = updatedAt,
+            deletedAt = deletedAt,
+        )
+
+        repository.mergePersonalRecords(listOf(syncDto(85f, 200L, 200L)), "active-profile")
+        repository.mergePersonalRecords(listOf(syncDto(90f, 300L, null)), "active-profile")
+
+        val row = database.vitruvianDatabaseQueries.selectAllRecordsSync().executeAsOne()
+        assertEquals(300L, row.updatedAt)
+        assertNull(row.deletedAt)
+        assertEquals(90.0, row.weight)
+        assertEquals(450.0, row.volume)
+    }
+
+    @Test
+    fun `mergePersonalRecords materializes a tombstone received before its active row`() = runTest {
+        val prId = "12345678-1234-4abc-8def-1234567890cd"
+        repository.mergePersonalRecords(
+            listOf(
+                PersonalRecordSyncDto(
+                    clientId = prId,
+                    serverId = prId,
+                    exerciseId = "deadlift",
+                    exerciseName = "Deadlift",
+                    weight = 85f,
+                    reps = 5,
+                    oneRepMax = 99.17f,
+                    achievedAt = 1_700_000_000_000L,
+                    workoutMode = "Old School",
+                    prType = PRType.MAX_WEIGHT.name,
+                    volume = 425f,
+                    createdAt = 1_700_000_000_000L,
+                    updatedAt = 200L,
+                    deletedAt = 200L,
+                ),
+            ),
+            "active-profile",
+        )
+
+        val row = database.vitruvianDatabaseQueries.selectAllRecordsSync().executeAsOne()
+        assertEquals(prId, row.uuid)
+        assertEquals(200L, row.updatedAt)
+        assertEquals(200L, row.deletedAt)
     }
 
     @Test

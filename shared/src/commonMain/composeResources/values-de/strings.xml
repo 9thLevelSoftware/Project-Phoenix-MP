@@ -17,6 +17,8 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Speichern</string>
     <string name="action_delete">Löschen</string>
+    <string name="delete_personal_record_title">Persönlichen Rekord löschen?</string>
+    <string name="delete_personal_record_message">Diesen persönlichen Rekord von diesem und synchronisierten Geräten löschen? Dies kann in dieser Version nicht rückgängig gemacht werden.</string>
     <string name="action_edit">Bearbeiten</string>
     <string name="action_copy">Kopieren</string>
     <string name="action_close">Schließen</string>

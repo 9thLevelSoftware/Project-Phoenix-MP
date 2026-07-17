@@ -7,6 +7,9 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Save</string>
     <string name="action_delete">Delete</string>
+    <string name="delete_personal_record_title">Delete personal record?</string>
+    <string name="delete_personal_record_message">Delete this personal record from this device and synced devices? This cannot be undone in this release.</string>
+    <string name="delete_personal_record_failed">Unable to delete personal record</string>
     <string name="action_edit">Edit</string>
     <string name="action_copy">Copy</string>
     <string name="action_close">Close</string>

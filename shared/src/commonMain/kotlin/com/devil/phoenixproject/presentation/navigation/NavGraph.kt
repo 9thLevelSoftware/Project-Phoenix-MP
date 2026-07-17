@@ -331,6 +331,11 @@ fun NavGraph(
                             NavigationRoutes.StrengthAssessmentPicker.createRoute(profileId),
                         )
                     },
+                    onNavigateToExerciseDetail = { exerciseId ->
+                        navController.navigate(
+                            NavigationRoutes.ExerciseDetail.createRoute(exerciseId),
+                        )
+                    },
                 )
             }
 

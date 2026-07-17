@@ -429,7 +429,7 @@ class PortalPullPaginationTest {
     // ==================== Parity Sync: knownEntityIds ====================
 
     @Test
-    fun pullSendsKnownEntityIdsToServer() = runTest {
+    fun pullSendsKnownEntityIdsButOmitsPersonalRecordsForLwwRefresh() = runTest {
         authenticate()
         val s1 = "11111111-1111-4111-a111-111111111111"
         val s2 = "22222222-2222-4222-a222-222222222222"
@@ -452,7 +452,11 @@ class PortalPullPaginationTest {
         assertEquals(listOf(r1), known.routineIds)
         assertEquals(emptyList<String>(), known.cycleIds)
         assertEquals(listOf(b1, b2), known.badgeIds)
-        assertEquals(listOf(pr1), known.personalRecordIds)
+        assertEquals(
+            emptyList<String>(),
+            known.personalRecordIds,
+            "Known PR UUIDs must be omitted so the portal returns newer active rows and tombstones",
+        )
     }
 
     @Test
@@ -479,7 +483,7 @@ class PortalPullPaginationTest {
     }
 
     @Test
-    fun pullDropsNonUuidBadgeAndPersonalRecordIdsBeforeSend() = runTest {
+    fun pullFiltersNonUuidBadgesAndOmitsPersonalRecordsBeforeSend() = runTest {
         authenticate()
         val realBadge = "77777777-7777-4777-a777-777777777777"
         val realPr = "88888888-8888-4888-a888-888888888888"
@@ -496,11 +500,7 @@ class PortalPullPaginationTest {
             known.badgeIds,
             "Local numeric badge ids must be filtered before send; portal parity uses UUID row ids",
         )
-        assertEquals(
-            listOf(realPr),
-            known.personalRecordIds,
-            "Local numeric personal record ids must be filtered before send; portal parity uses UUID row ids",
-        )
+        assertEquals(emptyList<String>(), known.personalRecordIds)
     }
 
     @Test

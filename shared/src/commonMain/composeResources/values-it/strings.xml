@@ -16,6 +16,8 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Salva</string>
     <string name="action_delete">Elimina</string>
+    <string name="delete_personal_record_title">Eliminare il record personale?</string>
+    <string name="delete_personal_record_message">Eliminare questo record personale da questo dispositivo e dai dispositivi sincronizzati? Questa azione non può essere annullata in questa versione.</string>
 
     <!-- ==================== Workout Modes ==================== -->
     <string name="just_lift_tut_standard">Standard</string>

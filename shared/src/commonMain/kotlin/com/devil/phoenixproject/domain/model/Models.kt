@@ -51,6 +51,8 @@ data class PersonalRecord(
     val profileId: String = "default",
     val cableCount: Int? = null,
     val uuid: String? = null,
+    val updatedAt: Long? = null,
+    val deletedAt: Long? = null,
 )
 
 /**

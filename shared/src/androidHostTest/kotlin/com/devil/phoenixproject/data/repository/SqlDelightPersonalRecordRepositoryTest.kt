@@ -229,6 +229,60 @@ class SqlDelightPersonalRecordRepositoryTest {
         )
     }
 
+    @Test
+    fun `deleting a PR hides it from product reads and retains a sync tombstone`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 65f,
+            volumePRWeightPerCableKg = 65f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 2_000L,
+            profileId = "default",
+        ).getOrThrow()
+        val weightPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+
+        repository.deletePR(weightPr.id, "default")
+
+        assertNull(repository.getWeightPR("bench", "Old School", "default"))
+        val retainedTombstone = database.vitruvianDatabaseQueries
+            .selectPRsModifiedSince(0L, profileId = "default")
+            .executeAsList()
+            .single { it.id == weightPr.id }
+        assertNotNull(retainedTombstone.deletedAt)
+        assertEquals(retainedTombstone.deletedAt, retainedTombstone.updatedAt)
+    }
+
+    @Test
+    fun `beating a deleted PR restores its stable sync uuid`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 65f,
+            volumePRWeightPerCableKg = 65f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 2_000L,
+            profileId = "default",
+        ).getOrThrow()
+        val deletedPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+        val stableUuid = assertNotNull(deletedPr.uuid)
+        repository.deletePR(deletedPr.id, "default")
+
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 70f,
+            volumePRWeightPerCableKg = 70f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 3_000L,
+            profileId = "default",
+        ).getOrThrow()
+
+        val restoredPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+        assertEquals(stableUuid, restoredPr.uuid)
+        assertEquals(70f, restoredPr.weightPerCableKg)
+    }
+
     private fun insertExercise(id: String, name: String) {
         database.vitruvianDatabaseQueries.insertExercise(
             id = id,

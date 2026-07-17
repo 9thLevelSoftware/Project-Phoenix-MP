@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -63,6 +64,8 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         profileId = profileId,
         cableCount = cableCount?.toInt(),
         uuid = uuid,
+        updatedAt = updatedAt,
+        deletedAt = deletedAt,
     )
 
     override suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = withContext(Dispatchers.IO) {
@@ -93,6 +96,18 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                 // Return the best PR for each exercise (by weight, parity with parent repo)
                 prs.maxByOrNull { it.weightPerCableKg }
             }
+    }
+
+    override suspend fun deletePR(prId: Long, profileId: String) = withContext(Dispatchers.IO) {
+        val now = KmpUtils.currentTimeMillis()
+        db.transaction {
+            queries.softDeletePRById(
+                deletedAt = now,
+                updatedAt = now,
+                id = prId,
+                profileId = profileId,
+            )
+        }
     }
 
     override suspend fun updatePRIfBetter(
@@ -282,7 +297,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         Logger.d { "PR_SAVE: Checking for exercise=$exerciseId, mode=$canonicalWorkoutMode, phase=$phaseName, profile=$effectiveProfileId" }
 
         // Check weight PR for this phase
-        val currentWeightPR = queries.selectPR(
+        val currentWeightPR = queries.selectPRIncludingDeleted(
             exerciseId,
             canonicalWorkoutMode,
             PRType.MAX_WEIGHT.name,
@@ -307,7 +322,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         }
 
         // Check volume PR for this phase
-        val currentVolumePR = queries.selectPR(
+        val currentVolumePR = queries.selectPRIncludingDeleted(
             exerciseId,
             canonicalWorkoutMode,
             PRType.MAX_VOLUME.name,

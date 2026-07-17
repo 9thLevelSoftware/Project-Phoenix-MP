@@ -91,7 +91,9 @@ class SqlDelightSyncRepository(
     override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> = withContext(Dispatchers.IO) {
         queries.selectPRsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
             PersonalRecordSyncDto(
-                clientId = row.id.toString(),
+                // The Portal contract uses the immutable PR UUID. Retain the
+                // legacy row-id fallback only for pre-UUID local records.
+                clientId = row.uuid ?: row.id.toString(),
                 serverId = row.serverId,
                 exerciseId = row.exerciseId,
                 exerciseName = row.exerciseName,
@@ -1348,6 +1350,8 @@ class SqlDelightSyncRepository(
                 profileId = row.profile_id,
                 cableCount = row.cable_count?.toInt(),
                 uuid = row.uuid,
+                updatedAt = row.updatedAt,
+                deletedAt = row.deletedAt,
             )
         }
     }
@@ -1477,9 +1481,10 @@ class SqlDelightSyncRepository(
 
     private fun mergePersonalRecordRows(records: List<PersonalRecordSyncDto>, profileId: String) {
         records.forEach { dto ->
-            // INSERT OR IGNORE — local PRs win on conflict (same compound key)
-            val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
             val prUuid = dto.clientId.ifBlank { generateUUID() }
+            // Materialize an unknown remote PR first. The state-only LWW update below
+            // immediately turns it into a hidden tombstone when appropriate.
+            val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
             queries.adoptServerPrUuid(
                 uuid = prUuid,
                 exerciseId = dto.exerciseId,
@@ -1502,6 +1507,21 @@ class SqlDelightSyncRepository(
                 profile_id = profileId,
                 cable_count = dto.cableCount?.toLong(),
                 uuid = prUuid,
+            )
+            // A newer active row can restore a record; an older active row cannot
+            // clear a tombstone, and an equal-time tombstone wins deterministically.
+            queries.applyPulledPersonalRecordTombstoneState(
+                deletedAt = dto.deletedAt,
+                updatedAt = dto.updatedAt,
+                exerciseName = dto.exerciseName,
+                weight = dto.weight.toDouble(),
+                reps = dto.reps.toLong(),
+                oneRepMax = dto.oneRepMax.toDouble(),
+                achievedAt = dto.achievedAt,
+                volume = effectiveVolume.toDouble(),
+                cableCount = dto.cableCount?.toLong(),
+                uuid = prUuid,
+                profileId = profileId,
             )
         }
     }
