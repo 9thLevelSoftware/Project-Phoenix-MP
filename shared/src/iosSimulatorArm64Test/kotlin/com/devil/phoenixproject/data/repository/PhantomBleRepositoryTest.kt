@@ -152,7 +152,7 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
-    fun `cancelConnection leaves a connected repository intact`() = runTest {
+    fun `connected repository initializes diagnostics and heuristic state before workout cancellation`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),
             PhantomBleConfig(repDelayMs = 100L),
@@ -160,6 +160,9 @@ class PhantomBleRepositoryTest {
 
         try {
             assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.diagnostics.value != null)
+            assertTrue(repository.heuristicData.value != null)
+
             repository.repEvents.test {
                 assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
                 repository.cancelConnection()

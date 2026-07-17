@@ -789,8 +789,25 @@ class PhantomBleRepository(
             heuristicGeneration += 1
             val expectedGeneration = heuristicGeneration
             heuristicJob?.cancel()
+            publishIfConnected(expectedHeuristicGeneration = expectedGeneration) {
+                val config = _config.value
+                val configuredLoad = workoutWeightPerCableKg ?: 7.5f
+                val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
+                _heuristicData.value = HeuristicStatistics(
+                    concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
+                    eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
+                    timestamp = Clock.System.now().toEpochMilliseconds(),
+                )
+                logRepo.debug(
+                    LogEventType.NOTIFICATION,
+                    "Phantom heuristic update",
+                    PHANTOM_DEVICE_NAME,
+                    PHANTOM_DEVICE_ADDRESS,
+                )
+            }
             heuristicJob = scope.launch {
                 while (isActive && connectionState.value is ConnectionState.Connected) {
+                    delay(if (activeWorkout) 250 else 750)
                     val config = _config.value
                     val configuredLoad = workoutWeightPerCableKg ?: 7.5f
                     val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
@@ -809,7 +826,6 @@ class PhantomBleRepository(
                         }) {
                         break
                     }
-                    delay(if (activeWorkout) 250 else 750)
                 }
             }
         }
@@ -872,9 +888,21 @@ class PhantomBleRepository(
         diagnosticGeneration += 1
         val expectedGeneration = diagnosticGeneration
         diagnosticJob?.cancel()
+        val connectedAt = Clock.System.now().toEpochMilliseconds()
+        publishIfConnected(expectedDiagnosticGeneration = expectedGeneration) {
+            val now = Clock.System.now().toEpochMilliseconds()
+            _diagnostics.value = DiagnosticPacket(
+                runtimeSeconds = (now - connectedAt) / 1000,
+                faultWords = listOf(0, 0, 0, 0),
+                temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
+                hasFaults = false,
+                receivedAtMillis = now,
+            )
+            logRepo.debug(LogEventType.DIAGNOSTIC, "Phantom diagnostic heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+        }
         diagnosticJob = scope.launch {
-            val connectedAt = Clock.System.now().toEpochMilliseconds()
             while (isActive && connectionState.value is ConnectionState.Connected) {
+                delay(2_000)
                 val now = Clock.System.now().toEpochMilliseconds()
                 if (!publishIfConnected(expectedDiagnosticGeneration = expectedGeneration) {
                         _diagnostics.value = DiagnosticPacket(
@@ -888,7 +916,6 @@ class PhantomBleRepository(
                     }) {
                     break
                 }
-                delay(2_000)
             }
         }
     }
