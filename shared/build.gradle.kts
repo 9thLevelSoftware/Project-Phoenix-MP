@@ -37,9 +37,22 @@ kotlin {
         withHostTest {}
     }
 
-    // iOS target (iosArm64 only - physical devices for distribution)
+    // iOS targets
     val xcf = XCFramework()
     iosArm64 {
+        binaries.framework {
+            baseName = "shared"
+            isStatic = true
+            xcf.add(this)
+            // Link system frameworks required by shared module
+            linkerOpts("-framework", "HealthKit")
+            linkerOpts("-framework", "Speech")
+        }
+        binaries.all {
+            freeCompilerArgs += listOf("-Xadd-light-debug=enable")
+        }
+    }
+    iosSimulatorArm64 {
         binaries.framework {
             baseName = "shared"
             isStatic = true
@@ -179,11 +192,14 @@ kotlin {
 
         val iosArm64Main by getting
         val iosArm64Test by getting
+        val iosSimulatorArm64Main by getting
+        val iosSimulatorArm64Test by getting
 
         @Suppress("UNUSED_VARIABLE")
         val iosMain by creating {
             dependsOn(commonMain)
             iosArm64Main.dependsOn(this)
+            iosSimulatorArm64Main.dependsOn(this)
 
             dependencies {
                 // SQLDelight Native Driver
@@ -198,6 +214,7 @@ kotlin {
         val iosTest by creating {
             dependsOn(commonTest)
             iosArm64Test.dependsOn(this)
+            iosSimulatorArm64Test.dependsOn(this)
 
             dependencies {
                 implementation(libs.sqldelight.native.driver)
