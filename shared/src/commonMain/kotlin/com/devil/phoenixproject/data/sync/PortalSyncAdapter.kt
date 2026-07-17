@@ -360,7 +360,8 @@ object PortalSyncAdapter {
             workoutPhase = record.phase.name,
             sessionId = sessionId,
             achievedAt = epochToIso8601(record.timestamp),
-            updatedAt = epochToIso8601(currentTimeMillis()),
+            updatedAt = epochToIso8601(record.updatedAt),
+            deletedAt = record.deletedAt?.let(::epochToIso8601),
             localProfileId = record.profileId,
             workoutMode = PortalMappings.workoutModeToSync(record.workoutMode),
         )

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -55,8 +56,14 @@ fun ProgressTab(
     formatWeight: (Float, WeightUnit) -> String,
     assessmentEnabled: Boolean,
     onNavigateToStrengthAssessment: () -> Unit,
+    onNavigateToExerciseDetail: (String) -> Unit,
+    onDeletePersonalRecord: suspend (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var pendingDelete by remember { mutableStateOf<PersonalRecord?>(null) }
+    var isDeleting by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -193,7 +200,11 @@ fun ProgressTab(
                     }
 
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isDeleting) {
+                                onNavigateToExerciseDetail(pr.exerciseId)
+                            },
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         ),
@@ -220,22 +231,33 @@ fun ProgressTab(
                                 )
                             }
 
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = WeightDisplayFormatter.formatDisplayWeight(
-                                        pr.weightPerCableKg,
-                                        cableCount = null,
-                                        weightUnit,
-                                    ),
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                                Text(
-                                    text = "${pr.reps} Reps",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = WeightDisplayFormatter.formatDisplayWeight(
+                                            pr.weightPerCableKg,
+                                            cableCount = null,
+                                            weightUnit,
+                                        ),
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Text(
+                                        text = "${pr.reps} Reps",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                IconButton(
+                                    enabled = !isDeleting,
+                                    onClick = { pendingDelete = pr },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = stringResource(Res.string.analytics_delete_pr),
+                                    )
+                                }
                             }
                         }
                     }
@@ -253,6 +275,33 @@ fun ProgressTab(
             Spacer(modifier = Modifier.height(80.dp))
         }
     }
+
+    pendingDelete?.let { pr ->
+        AlertDialog(
+            onDismissRequest = { if (!isDeleting) pendingDelete = null },
+            title = { Text(stringResource(Res.string.analytics_delete_pr_confirmation_title)) },
+            text = { Text(stringResource(Res.string.analytics_delete_pr_confirmation_message)) },
+            dismissButton = {
+                TextButton(
+                    enabled = !isDeleting,
+                    onClick = { pendingDelete = null },
+                ) { Text(stringResource(Res.string.action_cancel)) }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isDeleting,
+                    onClick = {
+                        scope.launch {
+                            isDeleting = true
+                            onDeletePersonalRecord(pr.id)
+                            isDeleting = false
+                            pendingDelete = null
+                        }
+                    },
+                ) { Text(stringResource(Res.string.action_delete)) }
+            },
+        )
+    }
 }
 
 /**
@@ -268,6 +317,7 @@ fun AnalyticsScreen(
     themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
     assessmentProfileId: String?,
     onNavigateToStrengthAssessment: (String) -> Unit,
+    onNavigateToExerciseDetail: (String) -> Unit,
 ) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
@@ -484,6 +534,10 @@ fun AnalyticsScreen(
                         assessmentEnabled = assessmentProfileId != null,
                         onNavigateToStrengthAssessment = {
                             assessmentProfileId?.let(onNavigateToStrengthAssessment)
+                        },
+                        onNavigateToExerciseDetail = onNavigateToExerciseDetail,
+                        onDeletePersonalRecord = { prId ->
+                            viewModel.personalRecordRepository.deletePR(prId, activeProfileId)
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

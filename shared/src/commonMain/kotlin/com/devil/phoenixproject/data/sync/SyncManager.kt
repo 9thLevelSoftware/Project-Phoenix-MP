@@ -787,14 +787,18 @@ class SyncManager(
 
         // 2. Fetch full PRs with type/phase/volume metadata (GAP 2 fix), profile-scoped
         val recentPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
-        val prBySessionKey = recentPRs.groupBy { pr ->
+        // Tombstones are dedicated PR payload rows only: they must be sent, but
+        // must not mark a workout session as a newly achieved PR or trigger an
+        // unnecessary historical-session lookup.
+        val activeRecentPRs = recentPRs.filter { it.deletedAt == null }
+        val prBySessionKey = activeRecentPRs.groupBy { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp)
         }
         val sessionIdByDeltaPrKey = sessions.mapNotNull { session ->
             val exerciseId = session.exerciseId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             personalRecordSessionKey(exerciseId, session.timestamp) to session.id
         }.toMap()
-        val missingSessionRecords = recentPRs.filter { pr ->
+        val missingSessionRecords = activeRecentPRs.filter { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp) !in sessionIdByDeltaPrKey
         }
         val historicalSessionIdByPrKey = if (missingSessionRecords.isEmpty()) {
@@ -1288,7 +1292,9 @@ class SyncManager(
         // server confirmed the push. This gives PersonalRecord rows the same
         // post-confirmation resend protection that WorkoutSession rows get from
         // the caller's post-push stamping block.
-        val pushedPrIds = recentPRs.map { it.id }.distinct()
+        // Active rows retain the legacy post-push stamp. Tombstones keep their
+        // deletion mutation timestamp so an older active payload cannot win LWW.
+        val pushedPrIds = activeRecentPRs.map { it.id }.distinct()
         if (pushedPrIds.isNotEmpty()) {
             val prStampTime = currentTimeMillis()
             syncRepository.updatePersonalRecordTimestamp(pushedPrIds, prStampTime)

@@ -354,6 +354,15 @@ object PortalPullAdapter {
         resolvedExerciseId: String? = null,
     ): PersonalRecordSyncDto {
         val now = currentTimeMillis()
+        fun parsePortalTimestamp(value: String?): Long? = value?.let {
+            try {
+                kotlinx.datetime.Instant.parse(it).toEpochMilliseconds()
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val achievedAt = parsePortalTimestamp(pr.achievedAt) ?: now
+        val updatedAt = parsePortalTimestamp(pr.updatedAt) ?: achievedAt
         return PersonalRecordSyncDto(
             clientId = pr.id,
             serverId = pr.id,
@@ -369,20 +378,14 @@ object PortalPullAdapter {
             weight = pr.value.toFloat(),
             reps = pr.reps ?: 0,
             oneRepMax = 0f, // Portal doesn't send computed 1RM
-            achievedAt = pr.achievedAt?.let {
-                try {
-                    kotlinx.datetime.Instant.parse(it).toEpochMilliseconds()
-                } catch (_: Exception) {
-                    now
-                }
-            } ?: now,
+            achievedAt = achievedAt,
             workoutMode = pr.recordType,
             prType = pr.recordType,
             phase = pr.workoutPhase ?: "COMBINED",
             volume = pr.value.toFloat(),
-            deletedAt = null,
-            createdAt = now,
-            updatedAt = now,
+            deletedAt = parsePortalTimestamp(pr.deletedAt),
+            createdAt = achievedAt,
+            updatedAt = updatedAt,
         )
     }
 

@@ -372,6 +372,9 @@
     <string name="analytics_personal_records">Records personnels</string>
     <string name="analytics_no_prs_title">Pas encore de RP</string>
     <string name="analytics_no_prs_message">Complete workouts to set personal records!</string>
+    <string name="analytics_delete_pr">Supprimer le record personnel</string>
+    <string name="analytics_delete_pr_confirmation_title">Supprimer ce record personnel ?</string>
+    <string name="analytics_delete_pr_confirmation_message">Cette action supprime ce record personnel de cet appareil et des appareils synchronisés. Elle est irréversible dans cette version.</string>
     <string name="analytics_dashboard">Dashboard</string>
     <string name="analytics_history">Historique</string>
 

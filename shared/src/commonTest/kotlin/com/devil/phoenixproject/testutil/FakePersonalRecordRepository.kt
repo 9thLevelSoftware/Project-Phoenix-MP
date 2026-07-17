@@ -93,6 +93,14 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
             .mapNotNull { (_, records) -> records.maxByOrNull { it.volume } }
     }
 
+    override suspend fun deletePR(prId: Long, profileId: String) {
+        val key = records.entries.firstOrNull { (_, record) ->
+            record.id == prId && record.profileId == profileId
+        }?.key ?: return
+        records.remove(key)
+        updateRecordsFlow()
+    }
+
     override suspend fun updatePRIfBetter(
         exerciseId: String,
         weightPerCableKg: Float,

@@ -1011,6 +1011,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     profile_id = defaultProfileId,
                     cable_count = cableCount?.toLong(),
                     uuid = currentWeightPR?.uuid ?: generateUUID(),
+                    updatedAt = timestamp,
                 )
             }
 
@@ -1029,6 +1030,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     profile_id = defaultProfileId,
                     cable_count = cableCount?.toLong(),
                     uuid = currentVolumePR?.uuid ?: generateUUID(),
+                    updatedAt = timestamp,
                 )
             }
 

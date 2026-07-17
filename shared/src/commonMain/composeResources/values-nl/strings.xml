@@ -374,6 +374,9 @@
     <string name="analytics_personal_records">Persoonlijke records</string>
     <string name="analytics_no_prs_title">Nog geen PR\'s</string>
     <string name="analytics_no_prs_message">Voltooi trainingen om persoonlijke records te vestigen!</string>
+    <string name="analytics_delete_pr">Persoonlijk record verwijderen</string>
+    <string name="analytics_delete_pr_confirmation_title">Persoonlijk record verwijderen?</string>
+    <string name="analytics_delete_pr_confirmation_message">Dit verwijdert dit persoonlijke record van dit apparaat en gesynchroniseerde apparaten. Dit kan in deze versie niet ongedaan worden gemaakt.</string>
     <string name="analytics_dashboard">Dashboard</string>
     <string name="analytics_history">Geschiedenis</string>
 

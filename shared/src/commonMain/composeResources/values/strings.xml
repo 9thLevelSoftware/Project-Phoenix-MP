@@ -453,6 +453,9 @@
     <string name="analytics_personal_records">Personal Records</string>
     <string name="analytics_no_prs_title">No PRs Yet</string>
     <string name="analytics_no_prs_message">Complete workouts to set personal records!</string>
+    <string name="analytics_delete_pr">Delete personal record</string>
+    <string name="analytics_delete_pr_confirmation_title">Delete personal record?</string>
+    <string name="analytics_delete_pr_confirmation_message">This removes this personal record from this device and synced devices. This can’t be undone in this release.</string>
     <string name="analytics_dashboard">Dashboard</string>
     <string name="analytics_history">History</string>
 

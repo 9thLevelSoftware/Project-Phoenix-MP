@@ -51,6 +51,9 @@ data class PersonalRecord(
     val profileId: String = "default",
     val cableCount: Int? = null,
     val uuid: String? = null,
+    /** Sync-only mutation metadata. Product reads filter tombstones in SQL. */
+    val updatedAt: Long = timestamp,
+    val deletedAt: Long? = null,
 )
 
 /**

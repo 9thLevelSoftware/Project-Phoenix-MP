@@ -349,6 +349,7 @@ class SqlDelightSyncRepository(
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
                         cable_count = dto.cableCount?.toLong(),
                         uuid = dto.clientId.ifBlank { generateUUID() },
+                        updatedAt = dto.updatedAt,
                     )
                 }
             }
@@ -1348,6 +1349,8 @@ class SqlDelightSyncRepository(
                 profileId = row.profile_id,
                 cableCount = row.cable_count?.toInt(),
                 uuid = row.uuid,
+                updatedAt = row.updatedAt ?: row.achievedAt,
+                deletedAt = row.deletedAt,
             )
         }
     }
@@ -1455,12 +1458,9 @@ class SqlDelightSyncRepository(
     /**
      * Merge personal records from portal (pull-path).
      *
-     * CONFLICT RESOLUTION STRATEGY: LOCAL WINS (INSERT OR IGNORE)
-     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 2 "Personal Records"
-     *
-     * PRs are computed from local workout sessions. Mobile computes PRs.
-     * If the same PR exists locally (same compound key: exerciseId, workoutMode, prType, phase),
-     * the local version is authoritative and the remote PR is silently dropped.
+     * CONFLICT RESOLUTION STRATEGY: stable UUID, timestamp last-write-wins;
+     * on equal timestamps a tombstone wins. This prevents an older active pull
+     * from resurrecting a PR a different device has deleted.
      *
      * Multi-device scenario: Both devices compute same PR from same session - no conflict
      * because the data is identical. Different PRs from different sessions both get inserted
@@ -1477,9 +1477,8 @@ class SqlDelightSyncRepository(
 
     private fun mergePersonalRecordRows(records: List<PersonalRecordSyncDto>, profileId: String) {
         records.forEach { dto ->
-            // INSERT OR IGNORE — local PRs win on conflict (same compound key)
             val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
-            val prUuid = dto.clientId.ifBlank { generateUUID() }
+            val prUuid = dto.clientId.takeIf { it.isNotBlank() } ?: return@forEach
             queries.adoptServerPrUuid(
                 uuid = prUuid,
                 exerciseId = dto.exerciseId,
@@ -1488,7 +1487,7 @@ class SqlDelightSyncRepository(
                 profileId = profileId,
                 achievedAt = dto.achievedAt,
             )
-            queries.insertPRIgnore(
+            queries.updatePRFromSyncIfNewer(
                 exerciseId = dto.exerciseId,
                 exerciseName = dto.exerciseName,
                 weight = dto.weight.toDouble(),
@@ -1499,6 +1498,25 @@ class SqlDelightSyncRepository(
                 prType = dto.prType,
                 volume = effectiveVolume.toDouble(),
                 phase = dto.phase,
+                updatedAt = dto.updatedAt,
+                deletedAt = dto.deletedAt,
+                profileId = profileId,
+                cable_count = dto.cableCount?.toLong(),
+                uuid = prUuid,
+            )
+            queries.insertPRFromSyncIgnore(
+                exerciseId = dto.exerciseId,
+                exerciseName = dto.exerciseName,
+                weight = dto.weight.toDouble(),
+                reps = dto.reps.toLong(),
+                oneRepMax = dto.oneRepMax.toDouble(),
+                achievedAt = dto.achievedAt,
+                workoutMode = dto.workoutMode,
+                prType = dto.prType,
+                volume = effectiveVolume.toDouble(),
+                phase = dto.phase,
+                updatedAt = dto.updatedAt,
+                deletedAt = dto.deletedAt,
                 profile_id = profileId,
                 cable_count = dto.cableCount?.toLong(),
                 uuid = prUuid,

@@ -752,6 +752,7 @@ abstract class BaseDataBackupManager(
                             profile_id = pr.profileId ?: "default",
                             cable_count = pr.cableCount?.toLong(),
                             uuid = pr.uuid ?: generateUUID(),
+                            updatedAt = pr.achievedAt,
                         )
                         personalRecordsImported++
                     } catch (e: Exception) {
@@ -1585,6 +1586,7 @@ abstract class BaseDataBackupManager(
                                                     // non-streaming path already passes pr.cableCount).
                                                     cable_count = pr.cableCount?.toLong(),
                                                     uuid = pr.uuid ?: generateUUID(),
+                                                    updatedAt = pr.achievedAt,
                                                 )
                                                 personalRecordsImported++
                                             } catch (e: Exception) {

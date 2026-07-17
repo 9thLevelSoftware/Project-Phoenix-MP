@@ -514,4 +514,43 @@ class PersonalRecordRepositoryTest {
         assertEquals(35f, oldSchoolPR?.weightPerCableKg)
         assertEquals(55f, echoPR?.weightPerCableKg)
     }
+
+    @Test
+    fun `deletePR removes only the requested active-profile record`() = runTest {
+        repository.addRecord(
+            PersonalRecord(
+                id = 1,
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+                weightPerCableKg = 35f,
+                reps = 10,
+                oneRepMax = 45f,
+                timestamp = 1000L,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = 350f,
+                profileId = profileId,
+            ),
+        )
+        repository.addRecord(
+            PersonalRecord(
+                id = 2,
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+                weightPerCableKg = 55f,
+                reps = 8,
+                oneRepMax = 65f,
+                timestamp = 2000L,
+                workoutMode = "Echo",
+                prType = PRType.MAX_WEIGHT,
+                volume = 440f,
+                profileId = profileId,
+            ),
+        )
+
+        repository.deletePR(prId = 1, profileId = profileId)
+
+        assertNull(repository.getBestWeightPR(exerciseId, "OldSchool", profileId))
+        assertEquals(55f, repository.getBestWeightPR(exerciseId, "Echo", profileId)?.weightPerCableKg)
+    }
 }

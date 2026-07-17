@@ -72,4 +72,7 @@
     <string name="set_type_warmup">Warm-up Set %1$d</string>
     <string name="set_type_working">Working Set</string>
 
+    <string name="analytics_delete_pr">Elimina record personale</string>
+    <string name="analytics_delete_pr_confirmation_title">Eliminare il record personale?</string>
+    <string name="analytics_delete_pr_confirmation_message">Questa azione rimuove questo record personale da questo dispositivo e dai dispositivi sincronizzati. Non può essere annullata in questa versione.</string>
 </resources>

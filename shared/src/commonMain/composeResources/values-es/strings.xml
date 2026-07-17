@@ -372,6 +372,9 @@
     <string name="analytics_personal_records">Récords personales</string>
     <string name="analytics_no_prs_title">Sin RPs todavía</string>
     <string name="analytics_no_prs_message">Completa entrenamientos para establecer récords personales!</string>
+    <string name="analytics_delete_pr">Eliminar récord personal</string>
+    <string name="analytics_delete_pr_confirmation_title">¿Eliminar récord personal?</string>
+    <string name="analytics_delete_pr_confirmation_message">Esto elimina este récord personal de este dispositivo y de los dispositivos sincronizados. No se puede deshacer en esta versión.</string>
     <string name="analytics_dashboard">Dashboard</string>
     <string name="analytics_history">Historial</string>
 

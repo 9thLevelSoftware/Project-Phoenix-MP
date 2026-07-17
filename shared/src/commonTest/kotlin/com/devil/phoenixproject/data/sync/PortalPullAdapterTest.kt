@@ -290,6 +290,19 @@ class PortalPullAdapterTest {
     }
 
     @Test
+    fun `toPersonalRecordSyncDto preserves portal tombstone and mutation timestamp`() {
+        val pr = makePullPersonalRecordDto(
+            updatedAt = "2026-01-03T04:05:06Z",
+            deletedAt = "2026-01-04T05:06:07Z",
+        )
+
+        val result = PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = "catalog-1")
+
+        assertEquals(1767413106000L, result.updatedAt)
+        assertEquals(1767503167000L, result.deletedAt)
+    }
+
+    @Test
     fun `toPersonalRecordSyncDto maps weight value and reps`() {
         val pr = makePullPersonalRecordDto(value = 102.5, reps = 5)
 
@@ -332,6 +345,8 @@ class PortalPullAdapterTest {
         exerciseName: String = "Bench Press",
         value: Double = 100.0,
         reps: Int? = 1,
+        updatedAt: String? = null,
+        deletedAt: String? = null,
     ) = PullPersonalRecordDto(
         id = id,
         userId = "user-1",
@@ -342,6 +357,8 @@ class PortalPullAdapterTest {
         reps = reps,
         workoutPhase = "COMBINED",
         achievedAt = "2026-01-01T00:00:00Z",
+        updatedAt = updatedAt,
+        deletedAt = deletedAt,
     )
 
     private fun makePullGamificationStatsDto(
