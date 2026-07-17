@@ -405,6 +405,11 @@ class PhantomBleRepository(
             workoutConnectionGeneration = expectedConnectionGeneration
             _handleState.value = HandleState.Grabbed
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                if (workoutConnectionGeneration == expectedConnectionGeneration) {
+                    stopJobs()
+                    workoutParams = null
+                    workoutConnectionGeneration = null
+                }
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             logRepo.info(
@@ -493,6 +498,12 @@ class PhantomBleRepository(
             val expectedConnectionGeneration = connectionAttemptGeneration.value
             _handleDetection.value = HandleDetection(leftDetected = enabled, rightDetected = enabled)
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock
+            }
+            if (
+                workoutConnectionGeneration == expectedConnectionGeneration &&
+                (_handleState.value == HandleState.Grabbed || workoutParams != null)
+            ) {
                 return@withLock
             }
             _handleState.value = if (enabled) HandleState.WaitingForRest else HandleState.Released

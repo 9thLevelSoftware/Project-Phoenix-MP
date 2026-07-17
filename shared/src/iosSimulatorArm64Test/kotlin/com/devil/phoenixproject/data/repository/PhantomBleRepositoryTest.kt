@@ -1238,9 +1238,45 @@ class PhantomBleRepositoryTest {
                     (log.message == "Phantom monitor metric" && log.details?.contains("load=10") == true)
             })
 
-            val logsAfterReset = logRepo.logs.value
+            repository.replaceConfig(PhantomBleConfig(loadScale = 2f, repDelayMs = 100L))
+            logRepo.clearAll()
             withContext(Dispatchers.Default) { delay(350L) }
-            assertEquals(logsAfterReset, logRepo.logs.value)
+            assertTrue(logRepo.logs.value.none { log ->
+                log.message == "Phantom monitor metric" && log.details?.contains("load=20") == true
+            })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `handle detection publication preserves reentrant workout ownership`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+            val startWorkoutOnDetection = async(Dispatchers.Unconfined) {
+                repository.handleDetection.drop(1).first { detection ->
+                    if (!detection.leftDetected) {
+                        assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
+            repository.enableHandleDetection(false)
+            startWorkoutOnDetection.await()
+
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.Grabbed, repository.handleState.value)
+            val metric = withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.metricsFlow.first() }
+            }
+            assertTrue(metric.loadA >= 10f, "detection handoff must preserve active workout metrics")
         } finally {
             repository.shutdown()
         }
