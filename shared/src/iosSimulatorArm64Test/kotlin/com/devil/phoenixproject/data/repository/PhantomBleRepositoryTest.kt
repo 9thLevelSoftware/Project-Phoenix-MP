@@ -234,10 +234,12 @@ class PhantomBleRepositoryTest {
         }
 
         try {
+            repository.connectionState.first { it == ConnectionState.Connecting }
             repository.shutdown()
             val logsAfterShutdown = logRepo.logs.value.size
 
             assertTrue(connecting.await().isFailure)
+            withContext(Dispatchers.Default) { delay(350L) }
             assertEquals(logsAfterShutdown, logRepo.logs.value.size)
             assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
             assertTrue(repository.scannedDevices.value.isEmpty())

@@ -150,6 +150,10 @@ class PhantomBleRepository(
     override suspend fun startScanning(): Result<Unit> {
         val attemptGeneration = beginConnectionAttempt()
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
+        return startScanning(attemptGeneration)
+    }
+
+    private suspend fun startScanning(attemptGeneration: Long): Result<Unit> {
         if (!publishConnectionState(attemptGeneration, ConnectionState.Scanning) {
                 logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
             }) {
@@ -183,6 +187,10 @@ class PhantomBleRepository(
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
         val attemptGeneration = beginConnectionAttempt()
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
+        return connect(device, attemptGeneration)
+    }
+
+    private suspend fun connect(device: ScannedDevice, attemptGeneration: Long): Result<Unit> {
         if (!publishConnectionState(attemptGeneration, ConnectionState.Connecting) {
                 logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
             }) {
@@ -243,12 +251,15 @@ class PhantomBleRepository(
             return Result.failure(IllegalStateException("Phantom repository is shut down"))
         }
 
+        val attemptGeneration = beginConnectionAttempt()
+            ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
+
         val completed = withTimeoutOrNull(timeoutMs) {
-            val scanResult = startScanning()
+            val scanResult = startScanning(attemptGeneration)
             if (scanResult.isFailure) {
                 return@withTimeoutOrNull scanResult
             }
-            connect(device)
+            connect(device, attemptGeneration)
         }
         if (completed != null) {
             return completed
