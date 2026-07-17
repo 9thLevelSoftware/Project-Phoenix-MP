@@ -112,19 +112,25 @@ class PhantomBleRepository(
     private val monitorProcessor = MonitorDataProcessor(
         onDeloadOccurred = {
             lifecycleLock.withLock {
-                if (!terminal.value) {
+                val expectedConnectionGeneration = rawMonitorConnectionGeneration
+                if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
                     _deloadOccurredEvents.tryEmit(Unit)
                 }
             }
         },
         onRomViolation = { violation ->
-            logRepo.warning(
-                LogEventType.NOTIFICATION,
-                "Phantom raw monitor packet reported ROM violation",
-                PHANTOM_DEVICE_NAME,
-                PHANTOM_DEVICE_ADDRESS,
-                violation.name,
-            )
+            lifecycleLock.withLock {
+                val expectedConnectionGeneration = rawMonitorConnectionGeneration
+                if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
+                    logRepo.warning(
+                        LogEventType.NOTIFICATION,
+                        "Phantom raw monitor packet reported ROM violation",
+                        PHANTOM_DEVICE_NAME,
+                        PHANTOM_DEVICE_ADDRESS,
+                        violation.name,
+                    )
+                }
+            }
         },
     )
 
@@ -142,6 +148,8 @@ class PhantomBleRepository(
     private val lifecycleLock = reentrantLock()
     private val terminal = atomic(false)
     private val connectionAttemptGeneration = atomic(0L)
+    private var lifecycleCleanupInProgress = false
+    private var rawMonitorConnectionGeneration = 0L
     private var metricsGeneration = 0L
     private var heuristicGeneration = 0L
     private var repGeneration = 0L
@@ -183,14 +191,17 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
-            connectionAttemptGeneration.incrementAndGet()
+            val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
             if (_connectionState.value == ConnectionState.Scanning || _connectionState.value == ConnectionState.Connecting) {
                 _connectionState.value = ConnectionState.Disconnected
             }
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
                 return@withLock
             }
             logRepo.info(LogEventType.SCAN_STOP, "Stopped phantom Vitruvian scan")
+            if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                return@withLock
+            }
         }
     }
 
@@ -225,39 +236,55 @@ class PhantomBleRepository(
                 return@withLock
             }
             if (_connectionState.value == ConnectionState.Connecting) {
-                connectionAttemptGeneration.incrementAndGet()
+                val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
                 _connectionState.value = ConnectionState.Disconnected
-                if (terminal.value) {
+                if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
                     return@withLock
                 }
                 logRepo.warning(LogEventType.DISCONNECT, "Cancelled phantom connection")
+                if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                    return@withLock
+                }
             }
         }
     }
 
     override suspend fun disconnect() {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
-            logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-            if (terminal.value) {
-                return@withLock
+            lifecycleCleanupInProgress = true
+            val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
+            try {
+                if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                    return@withLock
+                }
+                logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                if (terminal.value || connectionAttemptGeneration.value != cleanupGeneration) {
+                    return@withLock
+                }
+                teardownConnection()
+            } finally {
+                lifecycleCleanupInProgress = false
             }
-            teardownConnection()
         }
     }
 
     override suspend fun shutdown() {
         lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock
             }
-            logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-            if (terminal.value) {
-                return@withLock
+            terminal.value = true
+            lifecycleCleanupInProgress = true
+            connectionAttemptGeneration.incrementAndGet()
+            try {
+                logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                teardownConnection(markTerminal = true)
+            } finally {
+                lifecycleCleanupInProgress = false
             }
-            teardownConnection(markTerminal = true)
         }
         repositoryJob.cancel()
     }
@@ -302,18 +329,22 @@ class PhantomBleRepository(
                         PHANTOM_DEVICE_ADDRESS,
                         "timeoutMs=$timeoutMs",
                     )
-                    _reconnectionRequested.tryEmit(
-                        ReconnectionRequest(
-                            deviceName = PHANTOM_DEVICE_NAME,
-                            deviceAddress = PHANTOM_DEVICE_ADDRESS,
-                            reason = "connection_timeout",
-                            timestamp = Clock.System.now().toEpochMilliseconds(),
-                        ),
-                    )
                     if (terminal.value || connectionAttemptGeneration.value != expectedPostTeardownGeneration) {
                         Result.failure(IllegalStateException("Phantom scan and connect attempt invalidated"))
                     } else {
-                        Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
+                        _reconnectionRequested.tryEmit(
+                            ReconnectionRequest(
+                                deviceName = PHANTOM_DEVICE_NAME,
+                                deviceAddress = PHANTOM_DEVICE_ADDRESS,
+                                reason = "connection_timeout",
+                                timestamp = Clock.System.now().toEpochMilliseconds(),
+                            ),
+                        )
+                        if (terminal.value || connectionAttemptGeneration.value != expectedPostTeardownGeneration) {
+                            Result.failure(IllegalStateException("Phantom scan and connect attempt invalidated"))
+                        } else {
+                            Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
+                        }
                     }
                 }
             }
@@ -602,9 +633,13 @@ class PhantomBleRepository(
         data: ByteArray,
         hasOpcodePrefix: Boolean = false,
     ): Result<Unit> {
-        if (lifecycleLock.withLock { terminal.value }) {
-            return Result.failure(IllegalStateException("Phantom repository is shut down"))
-        }
+        val expectedConnectionGeneration = lifecycleLock.withLock {
+            if (terminal.value) {
+                null
+            } else {
+                connectionAttemptGeneration.value
+            }
+        } ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
 
         return try {
             when (kind) {
@@ -613,8 +648,11 @@ class PhantomBleRepository(
                 PhantomRawPacketKind.DIAGNOSTIC -> injectDiagnosticPacket(data)
                 PhantomRawPacketKind.HEURISTIC -> injectHeuristicPacket(data)
             }
-            if (lifecycleLock.withLock { terminal.value }) {
-                Result.failure(IllegalStateException("Phantom repository is shut down"))
+            if (lifecycleLock.withLock {
+                    terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration
+                }
+            ) {
+                Result.failure(IllegalStateException("Phantom raw packet injection invalidated"))
             } else {
                 Result.success(Unit)
             }
@@ -622,7 +660,7 @@ class PhantomBleRepository(
             throw error
         } catch (error: Throwable) {
             lifecycleLock.withLock {
-                if (!terminal.value) {
+                if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
                     logRepo.error(
                         LogEventType.ERROR,
                         "Phantom raw ${kind.name.lowercase()} packet rejected",
@@ -635,15 +673,18 @@ class PhantomBleRepository(
             Result.failure(error)
         }
     }
-
     private suspend fun injectMonitorPacket(data: ByteArray) {
         lifecycleLock.withLock {
             if (terminal.value) {
                 return@withLock
             }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
+            rawMonitorConnectionGeneration = expectedConnectionGeneration
             val packet = parseMonitorPacket(data)
                 ?: error("monitor packet too short: ${data.size} bytes")
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock
+            }
             val metric = monitorProcessor.process(packet)
                 ?: error("monitor packet parsed but was rejected by validation")
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
@@ -668,11 +709,15 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             val timestamp = Clock.System.now().toEpochMilliseconds()
             val rep = parseRepPacket(data, hasOpcodePrefix, timestamp)
                 ?: error("rep packet too short: ${data.size} bytes")
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock
+            }
             _repEvents.tryEmit(rep)
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             logRepo.info(
@@ -690,11 +735,15 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             val timestamp = Clock.System.now().toEpochMilliseconds()
             val diagnostic = parseDiagnosticPacket(data)
                 ?: error("diagnostic packet too short: ${data.size} bytes")
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock
+            }
             _diagnostics.value = diagnostic.copy(receivedAtMillis = timestamp)
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             logRepo.info(
@@ -712,11 +761,15 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             val timestamp = Clock.System.now().toEpochMilliseconds()
             val heuristic = parseHeuristicPacket(data, timestamp)
                 ?: error("heuristic packet too short: ${data.size} bytes")
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock
+            }
             _heuristicData.value = heuristic
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             logRepo.info(
@@ -882,15 +935,36 @@ class PhantomBleRepository(
             if (markTerminal) {
                 terminal.value = true
             }
-            connectionAttemptGeneration.incrementAndGet()
+            val cleanupGeneration = connectionAttemptGeneration.incrementAndGet()
             stopJobs()
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
             workoutParams = null
             _handleDetection.value = HandleDetection()
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
             _handleState.value = HandleState.WaitingForRest
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
             _diagnostics.value = null
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
             _heuristicData.value = null
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
             _scannedDevices.value = emptyList()
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
             _discoModeActive.value = false
+            if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
+                return@withLock
+            }
             _connectionState.value = ConnectionState.Disconnected
         }
     }

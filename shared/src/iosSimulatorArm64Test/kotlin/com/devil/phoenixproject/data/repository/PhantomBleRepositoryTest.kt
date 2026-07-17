@@ -421,6 +421,36 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `shutdown from timeout log prevents reconnection side effects`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val shutdownOnTimeoutLog = async(Dispatchers.Unconfined) {
+            var shutdownTriggered = false
+            logRepo.logs.first { logs ->
+                if (!shutdownTriggered && logs.any { it.message == "Phantom scan and connect timed out" }) {
+                    shutdownTriggered = true
+                    repository.shutdown()
+                }
+                shutdownTriggered
+            }
+        }
+
+        try {
+            repository.reconnectionRequested.test {
+                val result = repository.scanAndConnect(timeoutMs = 50L)
+
+                shutdownOnTimeoutLog.await()
+
+                assertTrue(result.isFailure)
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `shutdown from raw monitor deload publication prevents metric side effects`() = runTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
         val shutdownOnDeload = async(Dispatchers.Unconfined) {
@@ -450,6 +480,207 @@ class PhantomBleRepositoryTest {
                 expectNoEvents()
                 cancelAndIgnoreRemainingEvents()
             }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown from raw ROM publication prevents later ROM and deload side effects`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val shutdownOnRom = async(Dispatchers.Unconfined) {
+            var shutdownTriggered = false
+            logRepo.logs.first { logs ->
+                if (!shutdownTriggered && logs.any { it.message == "Phantom raw monitor packet reported ROM violation" }) {
+                    shutdownTriggered = true
+                    repository.shutdown()
+                }
+                shutdownTriggered
+            }
+        }
+        val monitor = monitorPacket(
+            ticks = 42,
+            posA = 1250,
+            velA = 320,
+            loadA = 1234,
+            posB = -750,
+            velB = -250,
+            loadB = 567,
+            status = 0x800c,
+        )
+
+        try {
+            repository.metricsFlow.test {
+                val result = repository.injectRawPacket(PhantomRawPacketKind.MONITOR, monitor)
+
+                shutdownOnRom.await()
+
+                assertTrue(result.isFailure)
+                assertEquals(
+                    1,
+                    logRepo.logs.value.count { it.message == "Phantom raw monitor packet reported ROM violation" },
+                )
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+            repository.deloadOccurredEvents.test {
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `reentrant shutdown log does not recurse disconnect publication`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val shutdownOnDisconnectLog = async(Dispatchers.Unconfined) {
+            var shutdownTriggered = false
+            logRepo.logs.first { logs ->
+                if (!shutdownTriggered && logs.any { it.eventType == LogEventType.DISCONNECT }) {
+                    shutdownTriggered = true
+                    repository.shutdown()
+                }
+                shutdownTriggered
+            }
+        }
+
+        try {
+            repository.shutdown()
+            shutdownOnDisconnectLog.await()
+
+            assertEquals(1, logRepo.getLogsByEventType(LogEventType.DISCONNECT).size)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `reentrant disconnect log does not duplicate cleanup`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+            val disconnectOnLog = async(Dispatchers.Unconfined) {
+                var disconnectTriggered = false
+                logRepo.logs.first { logs ->
+                    if (!disconnectTriggered && logs.any { it.eventType == LogEventType.DISCONNECT }) {
+                        disconnectTriggered = true
+                        repository.disconnect()
+                    }
+                    disconnectTriggered
+                }
+            }
+
+            repository.disconnect()
+            disconnectOnLog.await()
+
+            assertEquals(1, logRepo.getLogsByEventType(LogEventType.DISCONNECT).size)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `stopScanning does not log stale cleanup after a reentrant scan`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val restartedScan = async(Dispatchers.Unconfined) {
+            var result: Result<Unit>? = null
+            repository.connectionState.drop(1).first { state ->
+                if (state == ConnectionState.Disconnected) {
+                    result = repository.startScanning()
+                    true
+                } else {
+                    false
+                }
+            }
+            result
+        }
+        val scanning = async(Dispatchers.Default) { repository.startScanning() }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Scanning }
+            logRepo.clearAll()
+            repository.stopScanning()
+
+            assertTrue(restartedScan.await()!!.isSuccess)
+            assertTrue(scanning.await().isFailure)
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isNotEmpty())
+            assertTrue(logRepo.getLogsByEventType(LogEventType.SCAN_STOP).isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `cancelConnection does not log stale cleanup after a reentrant connection`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val reconnected = async(Dispatchers.Unconfined) {
+            var result: Result<Unit>? = null
+            repository.connectionState.drop(1).first { state ->
+                if (state == ConnectionState.Disconnected) {
+                    result = repository.connect(ScannedDevice("new", "new-address"))
+                    true
+                } else {
+                    false
+                }
+            }
+            result
+        }
+        val connecting = async(Dispatchers.Default) {
+            repository.connect(ScannedDevice("old", "old-address"))
+        }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Connecting }
+            logRepo.clearAll()
+            repository.cancelConnection()
+
+            assertTrue(reconnected.await()!!.isSuccess)
+            assertTrue(connecting.await().isFailure)
+            assertEquals(ConnectionState.Connected("new", "new-address"), repository.connectionState.value)
+            assertTrue(logRepo.getLogsByEventType(LogEventType.DISCONNECT).none { it.message == "Cancelled phantom connection" })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `disconnect teardown yields to a reentrant scan`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            val restartedScan = async(Dispatchers.Unconfined) {
+                var result: Result<Unit>? = null
+                repository.handleDetection.drop(1).first { detection ->
+                    if (!detection.leftDetected) {
+                        result = repository.startScanning()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                result
+            }
+            logRepo.clearAll()
+
+            repository.disconnect()
+
+            assertTrue(restartedScan.await()!!.isSuccess)
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isNotEmpty())
         } finally {
             repository.shutdown()
         }
