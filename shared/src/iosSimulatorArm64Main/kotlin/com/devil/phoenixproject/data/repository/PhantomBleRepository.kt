@@ -118,6 +118,7 @@ class PhantomBleRepository(
     private var diagnosticJob: Job? = null
     private var heartbeatJob: Job? = null
     private var workoutParams: WorkoutParameters? = null
+    private var workoutConnectionGeneration: Long? = null
     private val _config = MutableStateFlow(initialConfig)
     val config: StateFlow<PhantomBleConfig> = _config.asStateFlow()
     private var ticks = 0L
@@ -145,7 +146,6 @@ class PhantomBleRepository(
 
     private suspend fun startScanning(attemptGeneration: Long): Result<Unit> {
         if (!publishConnectionState(attemptGeneration, ConnectionState.Scanning) {
-                _scannedDevices.value = emptyList()
                 if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
                     false
                 } else {
@@ -397,6 +397,7 @@ class PhantomBleRepository(
                 }
             }
             workoutParams = params
+            workoutConnectionGeneration = expectedConnectionGeneration
             _handleState.value = HandleState.Grabbed
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
@@ -454,6 +455,7 @@ class PhantomBleRepository(
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             workoutParams = null
+            workoutConnectionGeneration = null
             _handleState.value = HandleState.Released
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
@@ -860,8 +862,19 @@ class PhantomBleRepository(
             null
         } else {
             val attemptGeneration = connectionAttemptGeneration.incrementAndGet()
-            _connectionState.value = reservedState
-            attemptGeneration
+            if (reservedState == ConnectionState.Scanning) {
+                _scannedDevices.value = emptyList()
+            }
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                null
+            } else {
+                _connectionState.value = reservedState
+                if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                    null
+                } else {
+                    attemptGeneration
+                }
+            }
         }
     }
 
@@ -927,15 +940,19 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
+        _connectionState.value = ConnectionState.Connected(device.name, device.address)
+        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+            return@withLock false
+        }
         _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true)
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        _handleState.value = HandleState.Released
-        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
-            return@withLock false
+        val workoutOwnsConnection = workoutConnectionGeneration == attemptGeneration &&
+            (_handleState.value == HandleState.Grabbed || workoutParams != null)
+        if (!workoutOwnsConnection) {
+            _handleState.value = HandleState.Released
         }
-        _connectionState.value = ConnectionState.Connected(device.name, device.address)
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
@@ -947,7 +964,6 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        val workoutWasActiveBeforeDiagnostics = workoutParams != null
         if (!startDiagnostics(expectedConnectionGeneration = attemptGeneration)) {
             return@withLock false
         }
@@ -955,7 +971,13 @@ class PhantomBleRepository(
             return@withLock false
         }
         val activeWorkoutParams = workoutParams
-        if (activeWorkoutParams == null) {
+        val completionOwnsWorkout = workoutConnectionGeneration == attemptGeneration &&
+            (_handleState.value == HandleState.Grabbed || activeWorkoutParams != null)
+        if (!completionOwnsWorkout) {
+            if (activeWorkoutParams != null) {
+                workoutParams = null
+                workoutConnectionGeneration = null
+            }
             startMetrics(
                 activeWorkout = false,
                 expectedConnectionGeneration = attemptGeneration,
@@ -973,7 +995,7 @@ class PhantomBleRepository(
                     return@withLock false
                 }
             }
-        } else if (!workoutWasActiveBeforeDiagnostics) {
+        } else if (activeWorkoutParams != null) {
             if (metricsJob?.isActive != true) {
                 startMetrics(
                     activeWorkout = true,
@@ -1023,6 +1045,7 @@ class PhantomBleRepository(
                 return@withLock
             }
             workoutParams = null
+            workoutConnectionGeneration = null
             _handleDetection.value = HandleDetection()
             if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
                 return@withLock

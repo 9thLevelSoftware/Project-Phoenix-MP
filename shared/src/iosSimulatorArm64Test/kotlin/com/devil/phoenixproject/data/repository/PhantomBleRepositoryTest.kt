@@ -371,6 +371,96 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `handle detection collector workout preserves connected handoff`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+        val startWorkoutOnHandleDetection = async(Dispatchers.Unconfined) {
+            repository.handleDetection.first { detection ->
+                if (detection.leftDetected) {
+                    assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.connect(ScannedDevice("collector", "collector-address")).isSuccess)
+            startWorkoutOnHandleDetection.await()
+
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.Grabbed, repository.handleState.value)
+            val metric = withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.metricsFlow.first() }
+            }
+            assertTrue(metric.loadA >= 10f, "handle detection handoff must preserve active workout metrics")
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `handle state collector workout preserves grabbed handle and active producers`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+        val startWorkoutOnHandleState = async(Dispatchers.Unconfined) {
+            repository.handleState.first { state ->
+                if (state == HandleState.Released) {
+                    assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.connect(ScannedDevice("collector", "collector-address")).isSuccess)
+            startWorkoutOnHandleState.await()
+
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.Grabbed, repository.handleState.value)
+            val metric = withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.metricsFlow.first() }
+            }
+            assertTrue(metric.loadA >= 10f, "handle state handoff must preserve active workout metrics")
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `starting a scan clears stale devices before publishing scanning`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.scannedDevices.value.isNotEmpty())
+            val scanningWithEmptyDevices = async(Dispatchers.Unconfined) {
+                repository.connectionState.first { state ->
+                    if (state == ConnectionState.Scanning) {
+                        assertTrue(repository.scannedDevices.value.isEmpty())
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            val scanning = async(Dispatchers.Default) { repository.startScanning() }
+
+            scanningWithEmptyDevices.await()
+            assertTrue(scanning.await().isSuccess)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `beginning a connection attempt gates reentrant producer restarts`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)
