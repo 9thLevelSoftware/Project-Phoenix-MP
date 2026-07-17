@@ -1154,6 +1154,47 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `replaceConfig does not bind a restarted rep producer to a reentrant connection`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 500L),
+        )
+        val replacement = PhantomBleConfig(repDelayMs = 100L)
+        val reconnectOnConfig = async(Dispatchers.Unconfined) {
+            var result: Result<Unit>? = null
+            repository.config.first { config ->
+                if (config == replacement) {
+                    result = repository.connect(ScannedDevice("replacement", "replacement-address"))
+                    true
+                } else {
+                    false
+                }
+            }
+            result
+        }
+
+        try {
+            repository.repEvents.test {
+                assertTrue(repository.scanAndConnect().isSuccess)
+                assertTrue(
+                    repository.startWorkout(
+                        workoutParameters().copy(isAMRAP = true),
+                    ).isSuccess,
+                )
+
+                repository.replaceConfig(replacement)
+                assertTrue(reconnectOnConfig.await()!!.isSuccess)
+                withContext(Dispatchers.Default) { delay(600L) }
+
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `AMRAP workout continues past requested rep count`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),
@@ -1353,6 +1394,55 @@ class PhantomBleRepositoryTest {
                 ConnectionState.Connected("raw-reconnected", "raw-reconnected-address"),
                 repository.connectionState.value,
             )
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `nested raw monitor route preserves outer callback generation`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val outerMonitor = monitorPacket(
+            ticks = 42,
+            posA = 1250,
+            velA = 320,
+            loadA = 1234,
+            posB = -750,
+            velB = -250,
+            loadB = 567,
+            status = 0x800c,
+        )
+        val nestedMonitor = monitorPacket(
+            ticks = 43,
+            posA = 1250,
+            velA = 320,
+            loadA = 1234,
+            posB = -750,
+            velB = -250,
+            loadB = 567,
+        )
+        val nestedRoute = async(Dispatchers.Unconfined) {
+            var routeTriggered = false
+            logRepo.logs.first { logs ->
+                if (!routeTriggered && logs.any { it.message == "Phantom raw monitor packet reported ROM violation" }) {
+                    routeTriggered = true
+                    repository.disconnect()
+                    assertTrue(repository.injectRawPacket(PhantomRawPacketKind.MONITOR, nestedMonitor).isSuccess)
+                }
+                routeTriggered
+            }
+        }
+
+        try {
+            repository.deloadOccurredEvents.test {
+                val result = repository.injectRawPacket(PhantomRawPacketKind.MONITOR, outerMonitor)
+
+                nestedRoute.await()
+                assertTrue(result.isFailure)
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
         } finally {
             repository.shutdown()
         }

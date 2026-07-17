@@ -109,31 +109,8 @@ class PhantomBleRepository(
     private val _discoModeActive = MutableStateFlow(false)
     override val discoModeActive: StateFlow<Boolean> = _discoModeActive.asStateFlow()
 
-    private val monitorProcessor = MonitorDataProcessor(
-        onDeloadOccurred = {
-            lifecycleLock.withLock {
-                val expectedConnectionGeneration = rawMonitorConnectionGeneration
-                if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
-                    _deloadOccurredEvents.tryEmit(Unit)
-                }
-            }
-        },
-        onRomViolation = { violation ->
-            lifecycleLock.withLock {
-                val expectedConnectionGeneration = rawMonitorConnectionGeneration
-                if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
-                    logRepo.warning(
-                        LogEventType.NOTIFICATION,
-                        "Phantom raw monitor packet reported ROM violation",
-                        PHANTOM_DEVICE_NAME,
-                        PHANTOM_DEVICE_ADDRESS,
-                        violation.name,
-                    )
-                }
-            }
-        },
-    )
-
+    private var monitorProcessor: MonitorDataProcessor? = null
+    private var monitorProcessorConnectionGeneration: Long? = null
     private var metricsJob: Job? = null
     private var heuristicJob: Job? = null
     private var repJob: Job? = null
@@ -149,7 +126,6 @@ class PhantomBleRepository(
     private val terminal = atomic(false)
     private val connectionAttemptGeneration = atomic(0L)
     private var lifecycleCleanupInProgress = false
-    private var rawMonitorConnectionGeneration = 0L
     private var metricsGeneration = 0L
     private var heuristicGeneration = 0L
     private var repGeneration = 0L
@@ -452,7 +428,10 @@ class PhantomBleRepository(
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
-            startRepSimulation(params)
+            startRepSimulation(
+                params = params,
+                expectedConnectionGeneration = expectedConnectionGeneration,
+            )
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
@@ -720,13 +699,12 @@ class PhantomBleRepository(
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
-            rawMonitorConnectionGeneration = expectedConnectionGeneration
             val packet = parseMonitorPacket(data)
                 ?: error("monitor packet too short: ${data.size} bytes")
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
-            val metric = monitorProcessor.process(packet)
+            val metric = monitorProcessorFor(expectedConnectionGeneration).process(packet)
                 ?: error("monitor packet parsed but was rejected by validation")
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
@@ -865,7 +843,14 @@ class PhantomBleRepository(
                 if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                     return@withLock
                 }
-                workoutParams?.takeIf { repJob?.isActive == true && !repSimulationCompleted }?.let(::startRepSimulation)
+                workoutParams
+                    ?.takeIf { repJob?.isActive == true && !repSimulationCompleted }
+                    ?.let {
+                        startRepSimulation(
+                            params = it,
+                            expectedConnectionGeneration = expectedConnectionGeneration,
+                        )
+                    }
             }
         }
     }
@@ -1200,11 +1185,42 @@ class PhantomBleRepository(
             true
         }
 
-    private fun startRepSimulation(params: WorkoutParameters) {
+    private fun monitorProcessorFor(expectedConnectionGeneration: Long): MonitorDataProcessor {
+        if (monitorProcessorConnectionGeneration != expectedConnectionGeneration) {
+            monitorProcessorConnectionGeneration = expectedConnectionGeneration
+            monitorProcessor = MonitorDataProcessor(
+                onDeloadOccurred = {
+                    lifecycleLock.withLock {
+                        if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
+                            _deloadOccurredEvents.tryEmit(Unit)
+                        }
+                    }
+                },
+                onRomViolation = { violation ->
+                    lifecycleLock.withLock {
+                        if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
+                            logRepo.warning(
+                                LogEventType.NOTIFICATION,
+                                "Phantom raw monitor packet reported ROM violation",
+                                PHANTOM_DEVICE_NAME,
+                                PHANTOM_DEVICE_ADDRESS,
+                                violation.name,
+                            )
+                        }
+                    }
+                },
+            )
+        }
+        return requireNotNull(monitorProcessor)
+    }
+
+    private fun startRepSimulation(
+        params: WorkoutParameters,
+        expectedConnectionGeneration: Long,
+    ) {
         repSimulationCompleted = false
         repGeneration += 1
         val expectedGeneration = repGeneration
-        val expectedConnectionGeneration = lifecycleLock.withLock { connectionAttemptGeneration.value }
         repJob?.cancel()
         repJob = scope.launch {
             var rep = 0
