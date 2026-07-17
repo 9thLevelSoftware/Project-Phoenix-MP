@@ -1165,6 +1165,7 @@ class PhantomBleRepository(
         repSimulationCompleted = false
         repGeneration += 1
         val expectedGeneration = repGeneration
+        val expectedConnectionGeneration = lifecycleLock.withLock { connectionAttemptGeneration.value }
         repJob?.cancel()
         repJob = scope.launch {
             var rep = 0
@@ -1180,7 +1181,10 @@ class PhantomBleRepository(
                     bytes[18] = params.warmupReps.toByte()
                     bytes[22] = target.toByte()
                 }
-                if (!publishIfConnected(expectedRepGeneration = expectedGeneration) {
+                if (!publishIfConnected(
+                        expectedConnectionGeneration = expectedConnectionGeneration,
+                        expectedRepGeneration = expectedGeneration,
+                    ) {
                         if (rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets) {
                             repSimulationCompleted = true
                         }

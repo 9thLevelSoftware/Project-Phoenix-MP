@@ -1155,6 +1155,47 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `direct reconnect suppresses stale AMRAP rep from previous connection`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(
+            logRepo,
+            PhantomBleConfig(repDelayMs = 400L),
+        )
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.repEvents.test {
+                assertTrue(
+                    repository.startWorkout(
+                        workoutParameters().copy(reps = 2, isAMRAP = true),
+                    ).isSuccess,
+                )
+                awaitItem()
+
+                val reconnecting = async(Dispatchers.Default) {
+                    repository.connect(ScannedDevice("reconnected", "reconnected-address"))
+                }
+                repository.connectionState.first { it == ConnectionState.Connecting }
+                assertTrue(reconnecting.await().isSuccess)
+                assertEquals(
+                    ConnectionState.Connected("reconnected", "reconnected-address"),
+                    repository.connectionState.value,
+                )
+
+                withContext(Dispatchers.Default) { delay(500L) }
+                expectNoEvents()
+                assertTrue(
+                    logRepo.getLogsByEventType(LogEventType.REP_RECEIVED)
+                        .none { it.message == "Phantom rep notification" && it.details?.contains("rep=2/2") == true },
+                )
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `stopping workout races scheduled rep publication without post-stop rep`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(
