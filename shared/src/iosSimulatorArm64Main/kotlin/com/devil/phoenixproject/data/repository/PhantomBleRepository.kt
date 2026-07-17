@@ -621,7 +621,7 @@ class PhantomBleRepository(
             if (_connectionState.value is ConnectionState.Connected) {
                 startMetrics(activeWorkout = workoutParams != null)
                 startHeuristicGeneration(activeWorkout = workoutParams != null)
-                workoutParams?.let(::startRepSimulation)
+                workoutParams?.takeIf { repJob?.isActive == true }?.let(::startRepSimulation)
             }
         }
     }

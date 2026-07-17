@@ -439,6 +439,56 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `replaceConfig restarts an active rep simulation`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.repEvents.test {
+                assertTrue(repository.startWorkout(workoutParameters().copy(reps = 3)).isSuccess)
+                assertEquals(1, awaitItem().repsSetCount)
+
+                repository.replaceConfig(PhantomBleConfig(repDelayMs = 100L))
+
+                val restarted = awaitItem()
+                assertEquals(1, restarted.repsSetCount)
+                assertEquals(3, restarted.repsSetTotal)
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `replaceConfig does not restart a completed fixed rep simulation`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.repEvents.test {
+                assertTrue(repository.startWorkout(workoutParameters().copy(reps = 2)).isSuccess)
+                assertEquals(1, awaitItem().repsSetCount)
+                assertEquals(2, awaitItem().repsSetCount)
+
+                withContext(Dispatchers.Default) { delay(250L) }
+                repository.replaceConfig(PhantomBleConfig(repDelayMs = 100L))
+                withContext(Dispatchers.Default) { delay(250L) }
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `AMRAP workout continues past requested rep count`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),
