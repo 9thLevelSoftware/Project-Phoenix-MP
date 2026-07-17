@@ -63,6 +63,19 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `disconnected workout start does not claim handle ownership`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            assertTrue(repository.startWorkout(workoutParameters()).isFailure)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `cancelConnection invalidates an in-flight connect`() = runTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
         val connecting = async(Dispatchers.Default) {
@@ -662,6 +675,76 @@ class PhantomBleRepositoryTest {
                     }
                 }
             }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `heuristic invalidation rolls back workout producers`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+            val resetOnWorkoutHeuristic = async(Dispatchers.Unconfined) {
+                repository.heuristicData.drop(1).first {
+                    repository.resetHandleState()
+                    true
+                }
+            }
+
+            val result = repository.startWorkout(workoutParameters())
+
+            resetOnWorkoutHeuristic.await()
+            assertTrue(result.isFailure)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+            val workoutProducerLogsAfterRollback = logRepo.logs.value.filter { log ->
+                log.message in setOf(
+                    "Phantom monitor metric",
+                    "Phantom heuristic update",
+                    "Phantom rep notification",
+                )
+            }
+            withContext(Dispatchers.Default) { delay(350L) }
+            assertEquals(
+                workoutProducerLogsAfterRollback,
+                logRepo.logs.value.filter { log ->
+                    log.message in setOf(
+                        "Phantom monitor metric",
+                        "Phantom heuristic update",
+                        "Phantom rep notification",
+                    )
+                },
+            )
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `active polling remains active across monitor restart and config replacement`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.startActiveWorkoutPolling()
+            withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.metricsFlow.first { it.loadA >= 2f } }
+            }
+
+            val metricAfterRestart = async(Dispatchers.Unconfined) {
+                withTimeout(1_000L) { repository.metricsFlow.first { it.loadA >= 2f } }
+            }
+            repository.restartMonitorPolling()
+            metricAfterRestart.await()
+
+            val metricAfterReplacement = async(Dispatchers.Unconfined) {
+                withTimeout(1_000L) { repository.metricsFlow.first { it.loadA >= 10f } }
+            }
+            repository.replaceConfig(PhantomBleConfig(loadScale = 2f))
+            metricAfterReplacement.await()
         } finally {
             repository.shutdown()
         }

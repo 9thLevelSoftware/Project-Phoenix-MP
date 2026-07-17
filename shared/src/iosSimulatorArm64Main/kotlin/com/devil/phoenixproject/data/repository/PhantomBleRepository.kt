@@ -403,6 +403,9 @@ class PhantomBleRepository(
                     ),
                 )
             }
+            if (_connectionState.value !is ConnectionState.Connected) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout requires an active connection"))
+            }
             val expectedConnectionGeneration = connectionAttemptGeneration.value
             if (_discoModeActive.value) {
                 stopDiscoMode()
@@ -414,10 +417,7 @@ class PhantomBleRepository(
             workoutConnectionGeneration = expectedConnectionGeneration
             _handleState.value = HandleState.Grabbed
             if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
-                if (workoutParams == params && workoutConnectionGeneration == expectedConnectionGeneration) {
-                    workoutParams = null
-                    workoutConnectionGeneration = null
-                }
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
                 return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             logRepo.info(
@@ -428,6 +428,7 @@ class PhantomBleRepository(
                 "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}; justLift=${params.isJustLift}",
             )
             if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
                 return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             startMetrics(
@@ -435,6 +436,7 @@ class PhantomBleRepository(
                 expectedConnectionGeneration = expectedConnectionGeneration,
             )
             if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
                 return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             if (!startHeuristicGeneration(
@@ -442,9 +444,11 @@ class PhantomBleRepository(
                     expectedConnectionGeneration = expectedConnectionGeneration,
                 )
             ) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
                 return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
                 return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             startRepSimulation(
@@ -452,6 +456,7 @@ class PhantomBleRepository(
                 expectedConnectionGeneration = expectedConnectionGeneration,
             )
             if (!workoutHandoffIsCurrent(params, expectedConnectionGeneration)) {
+                rollbackWorkoutHandoff(params, expectedConnectionGeneration)
                 return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
             }
             Result.success(Unit)
@@ -560,7 +565,13 @@ class PhantomBleRepository(
     override fun restartMonitorPolling() {
         lifecycleLock.withLock {
             if (!terminal.value && !lifecycleCleanupInProgress) {
-                startMetrics(activeWorkout = workoutParams != null)
+                val expectedConnectionGeneration = connectionAttemptGeneration.value
+                val activeWorkout = workoutParams != null ||
+                    (workoutConnectionGeneration == expectedConnectionGeneration && _handleState.value == HandleState.Grabbed)
+                startMetrics(
+                    activeWorkout = activeWorkout,
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                )
             }
         }
     }
@@ -911,15 +922,17 @@ class PhantomBleRepository(
                 if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                     return@withLock
                 }
+                val activeWorkout = workoutParams != null ||
+                    (workoutConnectionGeneration == expectedConnectionGeneration && _handleState.value == HandleState.Grabbed)
                 startMetrics(
-                    activeWorkout = workoutParams != null,
+                    activeWorkout = activeWorkout,
                     expectedConnectionGeneration = expectedConnectionGeneration,
                 )
                 if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                     return@withLock
                 }
                 if (!startHeuristicGeneration(
-                        activeWorkout = workoutParams != null,
+                        activeWorkout = activeWorkout,
                         expectedConnectionGeneration = expectedConnectionGeneration,
                     )
                 ) {
@@ -1133,10 +1146,34 @@ class PhantomBleRepository(
     ): Boolean =
         !terminal.value &&
             !lifecycleCleanupInProgress &&
+            _connectionState.value is ConnectionState.Connected &&
             connectionAttemptGeneration.value == expectedConnectionGeneration &&
             workoutConnectionGeneration == expectedConnectionGeneration &&
-            workoutParams == params &&
+            workoutParams === params &&
             _handleState.value == HandleState.Grabbed
+
+    private fun rollbackWorkoutHandoff(
+        params: WorkoutParameters,
+        expectedConnectionGeneration: Long,
+    ) {
+        if (workoutParams !== params || workoutConnectionGeneration != expectedConnectionGeneration) {
+            return
+        }
+        metricsGeneration += 1
+        heuristicGeneration += 1
+        repGeneration += 1
+        metricsJob?.cancel()
+        heuristicJob?.cancel()
+        repJob?.cancel()
+        metricsJob = null
+        heuristicJob = null
+        repJob = null
+        workoutParams = null
+        workoutConnectionGeneration = null
+        if (_handleState.value == HandleState.Grabbed) {
+            _handleState.value = HandleState.Released
+        }
+    }
 
     private fun currentConnectedProducerOwnsConnection(
         expectedConnectionGeneration: Long,
