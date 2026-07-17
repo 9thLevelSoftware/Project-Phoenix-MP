@@ -279,7 +279,7 @@ abstract class BaseDataBackupManager(
         val routineNameResolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
         // Supersets table might not exist on older databases
         val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }.getOrElse { emptyList() }
-        val personalRecords = queries.selectAllRecordsSync().executeAsList().map { pr ->
+        val personalRecords = queries.selectActiveRecordsForBackup().executeAsList().map { pr ->
             mapPersonalRecordToBackup(pr)
         }
         // Training cycles tables might not exist on older databases
@@ -2175,7 +2175,7 @@ abstract class BaseDataBackupManager(
         writeJsonArray(writer, "supersets", supersets.map { json.encodeToString(SupersetBackup.serializer(), mapSupersetToBackup(it)) })
         writer.write(",")
 
-        val personalRecords = queries.selectAllRecordsSync().executeAsList()
+        val personalRecords = queries.selectActiveRecordsForBackup().executeAsList()
         writeJsonArray(writer, "personalRecords", personalRecords.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
         writer.write(",")
 

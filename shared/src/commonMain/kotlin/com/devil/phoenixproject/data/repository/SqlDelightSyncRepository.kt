@@ -95,7 +95,6 @@ class SqlDelightSyncRepository(
                 // legacy row-id fallback only for pre-UUID local records.
                 clientId = row.uuid ?: row.id.toString(),
                 serverId = row.serverId,
-                localId = row.id,
                 exerciseId = row.exerciseId,
                 exerciseName = row.exerciseName,
                 weight = row.weight.toFloat(),
@@ -1514,6 +1513,13 @@ class SqlDelightSyncRepository(
             queries.applyPulledPersonalRecordTombstoneState(
                 deletedAt = dto.deletedAt,
                 updatedAt = dto.updatedAt,
+                exerciseName = dto.exerciseName,
+                weight = dto.weight.toDouble(),
+                reps = dto.reps.toLong(),
+                oneRepMax = dto.oneRepMax.toDouble(),
+                achievedAt = dto.achievedAt,
+                volume = effectiveVolume.toDouble(),
+                cableCount = dto.cableCount?.toLong(),
                 uuid = prUuid,
                 profileId = profileId,
             )

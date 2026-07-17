@@ -1477,7 +1477,7 @@ class SyncManagerTest {
     // ===== Parity Sync Tests =====
 
     @Test
-    fun pullSendsKnownEntityIdsToServer() = runTest {
+    fun pullSendsKnownEntityIdsButOmitsPersonalRecordsForLwwRefresh() = runTest {
         setupAuthenticated()
         // Set up fake repository with known entity IDs (simulating local database content).
         // IDs must be canonical UUIDs — SyncManager filters non-UUIDs before send to
@@ -1510,7 +1510,11 @@ class SyncManagerTest {
         assertEquals(listOf(rout1), knownIds.routineIds)
         assertEquals(emptyList<String>(), knownIds.cycleIds)
         assertEquals(listOf(badge1, badge2, badge3), knownIds.badgeIds)
-        assertEquals(listOf(pr1, pr2), knownIds.personalRecordIds)
+        assertEquals(
+            emptyList<String>(),
+            knownIds.personalRecordIds,
+            "Known PR UUIDs must be omitted so the portal returns newer active rows and tombstones",
+        )
     }
 
     @Test
@@ -1535,11 +1539,7 @@ class SyncManagerTest {
             knownIds.badgeIds,
             "Local numeric badge ids must be filtered before send; portal parity uses UUID row ids",
         )
-        assertEquals(
-            listOf(personalRecordId),
-            knownIds.personalRecordIds,
-            "Local numeric personal record ids must be filtered before send; portal parity uses UUID row ids",
-        )
+        assertEquals(emptyList<String>(), knownIds.personalRecordIds)
     }
 
     @Test

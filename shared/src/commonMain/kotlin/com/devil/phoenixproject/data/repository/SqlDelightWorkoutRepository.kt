@@ -972,7 +972,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
             val defaultProfileId = profileId.ifBlank { "default" }
 
-            val currentWeightPR = queries.selectPR(
+            val currentWeightPR = queries.selectPRIncludingDeleted(
                 exerciseId,
                 mode,
                 PRType.MAX_WEIGHT.name,
@@ -980,7 +980,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 profileId = defaultProfileId,
             ).executeAsOneOrNull()
 
-            val currentVolumePR = queries.selectPR(
+            val currentVolumePR = queries.selectPRIncludingDeleted(
                 exerciseId,
                 mode,
                 PRType.MAX_VOLUME.name,

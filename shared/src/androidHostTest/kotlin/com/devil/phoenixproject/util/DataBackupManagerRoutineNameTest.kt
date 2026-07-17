@@ -133,6 +133,45 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `full backup excludes soft-deleted personal records`() = runTest {
+        fun insertPersonalRecord(exerciseId: String, uuid: String) {
+            database.vitruvianDatabaseQueries.insertRecord(
+                exerciseId = exerciseId,
+                exerciseName = exerciseId,
+                weight = 80.0,
+                reps = 5L,
+                oneRepMax = 93.33,
+                achievedAt = 1_700_000_000_000L,
+                workoutMode = "Old School",
+                prType = "MAX_WEIGHT",
+                volume = 400.0,
+                phase = "COMBINED",
+                profile_id = "default",
+                cable_count = 2L,
+                uuid = uuid,
+            )
+        }
+
+        insertPersonalRecord("active-pr", "12345678-1234-4abc-8def-1234567890ab")
+        insertPersonalRecord("deleted-pr", "22345678-1234-4abc-8def-1234567890ab")
+        val deleted = database.vitruvianDatabaseQueries
+            .selectRecordsByExercise("deleted-pr", profileId = "default")
+            .executeAsOne()
+        database.vitruvianDatabaseQueries.softDeletePRById(
+            deletedAt = 1_700_000_123_000L,
+            updatedAt = 1_700_000_123_000L,
+            id = deleted.id,
+            profileId = "default",
+        )
+
+        val legacyBackup = backupManager.exportAllData()
+        val streamedBackup = testJson.decodeFromString<BackupData>(backupManager.exportToJson())
+
+        assertEquals(listOf("active-pr"), legacyBackup.data.personalRecords.map { it.exerciseId })
+        assertEquals(listOf("active-pr"), streamedBackup.data.personalRecords.map { it.exerciseId })
+    }
+
+    @Test
     fun `exportAllData leaves routine name unset when exercise maps to multiple routines`() = runTest {
         workoutRepository.saveRoutine(
             buildRoutine(

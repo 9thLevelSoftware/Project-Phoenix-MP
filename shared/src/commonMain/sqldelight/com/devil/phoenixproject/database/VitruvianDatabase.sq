@@ -1017,6 +1017,13 @@ WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ?
 AND profile_id = :profileId AND deletedAt IS NULL
 LIMIT 1;
 
+-- Get a PR snapshot, including a tombstone, for comparison and stable UUID reuse.
+selectPRIncludingDeleted:
+SELECT * FROM PersonalRecord
+WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ?
+AND profile_id = :profileId
+LIMIT 1;
+
 -- Get active PRs for an exercise in a specific mode (COMBINED phase)
 selectPRsForExerciseAndMode:
 SELECT * FROM PersonalRecord
@@ -1138,7 +1145,15 @@ WHERE id = :id AND profile_id = :profileId AND deletedAt IS NULL;
 -- update may restore a deleted row; an equal-time tombstone wins.
 applyPulledPersonalRecordTombstoneState:
 UPDATE PersonalRecord
-SET deletedAt = :deletedAt, updatedAt = :updatedAt
+SET deletedAt = :deletedAt,
+    updatedAt = :updatedAt,
+    exerciseName = :exerciseName,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    volume = :volume,
+    cable_count = :cableCount
 WHERE uuid = :uuid
   AND profile_id = :profileId
   AND (
@@ -1147,11 +1162,6 @@ WHERE uuid = :uuid
     OR (updatedAt = :updatedAt AND :deletedAt IS NOT NULL AND deletedAt IS NULL)
   );
 
--- Delete PR by unique key (legacy upsert fallback only)
-deletePRByKey:
-DELETE FROM PersonalRecord
-WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ? AND profile_id = ?;
-
 -- Get all PR IDs for duplicate checking during import
 selectAllPRIds:
 SELECT id FROM PersonalRecord;
@@ -1159,6 +1169,12 @@ SELECT id FROM PersonalRecord;
 -- Get all PRs unfiltered (for backup export across all profiles)
 selectAllRecordsSync:
 SELECT * FROM PersonalRecord ORDER BY achievedAt DESC;
+
+-- Backups cannot represent tombstone metadata, so export active PRs only.
+selectActiveRecordsForBackup:
+SELECT * FROM PersonalRecord
+WHERE deletedAt IS NULL
+ORDER BY achievedAt DESC;
 
 -- Routine Queries
 selectAllRoutines:

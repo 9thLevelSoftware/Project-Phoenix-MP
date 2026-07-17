@@ -297,7 +297,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         Logger.d { "PR_SAVE: Checking for exercise=$exerciseId, mode=$canonicalWorkoutMode, phase=$phaseName, profile=$effectiveProfileId" }
 
         // Check weight PR for this phase
-        val currentWeightPR = queries.selectPR(
+        val currentWeightPR = queries.selectPRIncludingDeleted(
             exerciseId,
             canonicalWorkoutMode,
             PRType.MAX_WEIGHT.name,
@@ -322,7 +322,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         }
 
         // Check volume PR for this phase
-        val currentVolumePR = queries.selectPR(
+        val currentVolumePR = queries.selectPRIncludingDeleted(
             exerciseId,
             canonicalWorkoutMode,
             PRType.MAX_VOLUME.name,

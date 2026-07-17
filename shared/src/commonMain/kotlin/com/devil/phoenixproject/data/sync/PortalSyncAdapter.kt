@@ -338,29 +338,6 @@ object PortalSyncAdapter {
     }
 
     fun toPortalPersonalRecord(
-        record: PersonalRecordSyncDto,
-        sessionId: String?,
-        muscleGroup: String,
-    ): PortalPersonalRecordDto = PortalPersonalRecordDto(
-        id = record.serverId ?: record.clientId,
-        exerciseName = record.exerciseName.ifBlank { record.exerciseId },
-        exerciseId = record.exerciseId,
-        muscleGroup = muscleGroup.ifBlank { "General" },
-        recordType = record.prType,
-        value = if (record.prType == PRType.MAX_VOLUME.name) record.volume else record.weight,
-        volume = record.volume.takeIf { record.prType == PRType.MAX_VOLUME.name },
-        weightKg = record.weight,
-        reps = record.reps,
-        workoutPhase = record.phase,
-        sessionId = sessionId,
-        achievedAt = epochToIso8601(record.achievedAt),
-        updatedAt = epochToIso8601(record.updatedAt),
-        deletedAt = record.deletedAt?.let(::epochToIso8601),
-        localProfileId = null,
-        workoutMode = record.workoutMode,
-    )
-
-    fun toPortalPersonalRecord(
         record: PersonalRecord,
         sessionId: String?,
         muscleGroup: String,

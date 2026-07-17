@@ -789,15 +789,14 @@ class SyncManager(
         // deletedAt all reach the portal. Reuse that same projection for legacy
         // set-level PR hints rather than reading a lossy second delta.
         val recentPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
-        val recentDisplayPRs = recentPRs
-        val prBySessionKey = recentDisplayPRs.groupBy { pr ->
+        val prBySessionKey = recentPRs.groupBy { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp)
         }
         val sessionIdByDeltaPrKey = sessions.mapNotNull { session ->
             val exerciseId = session.exerciseId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             personalRecordSessionKey(exerciseId, session.timestamp) to session.id
         }.toMap()
-        val missingSessionRecords = recentDisplayPRs.filter { pr ->
+        val missingSessionRecords = recentPRs.filter { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp) !in sessionIdByDeltaPrKey
         }
         val historicalSessionIdByPrKey = if (missingSessionRecords.isEmpty()) {
@@ -1433,7 +1432,6 @@ class SyncManager(
         val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
         val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
         val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
-        val rawPrIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
 
         // fix(pull 400): TemplateConverter mints cycle-derived routine IDs as
         // "cycle_routine_<uuid>" which aren't valid UUIDs. The server's
@@ -1455,7 +1453,6 @@ class SyncManager(
         val filteredSessionIds = filterUuids(rawSessionIds, "sessionIds")
         val filteredCycleIds = filterUuids(rawCycleIds, "cycleIds")
         val filteredBadgeIds = filterUuids(rawBadgeIds, "badgeIds")
-        val filteredPrIds = filterUuids(rawPrIds, "personalRecordIds")
 
         fun <T> capParity(list: List<T>, label: String): List<T> = if (list.size <= SyncConfig.MAX_PARITY_IDS) {
             list
@@ -1473,7 +1470,9 @@ class SyncManager(
             routineIds = capParity(filteredRoutineIds, "routineIds"),
             cycleIds = capParity(filteredCycleIds, "cycleIds"),
             badgeIds = capParity(filteredBadgeIds, "badgeIds"),
-            personalRecordIds = capParity(filteredPrIds, "personalRecordIds"),
+            // PRs use timestamp LWW, so the portal must return newer states even
+            // for UUIDs already present locally (including remote tombstones).
+            personalRecordIds = emptyList(),
         )
 
         Logger.i("SyncManager") {

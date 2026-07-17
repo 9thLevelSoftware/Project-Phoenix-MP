@@ -383,15 +383,9 @@ object PortalPullAdapter {
             prType = pr.recordType,
             phase = pr.workoutPhase ?: "COMBINED",
             volume = pr.value.toFloat(),
-            deletedAt = pr.deletedAt?.let { value ->
-                runCatching { kotlinx.datetime.Instant.parse(value).toEpochMilliseconds() }.getOrNull()
-            },
-            createdAt = pr.achievedAt?.let { value ->
-                runCatching { kotlinx.datetime.Instant.parse(value).toEpochMilliseconds() }.getOrNull()
-            } ?: now,
-            updatedAt = pr.updatedAt?.let { value ->
-                runCatching { kotlinx.datetime.Instant.parse(value).toEpochMilliseconds() }.getOrNull()
-            } ?: now,
+            deletedAt = parseTimestamp(pr.deletedAt),
+            createdAt = parseTimestamp(pr.achievedAt) ?: now,
+            updatedAt = parseTimestamp(pr.updatedAt) ?: now,
         )
     }
 

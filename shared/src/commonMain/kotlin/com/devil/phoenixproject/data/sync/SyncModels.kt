@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 
 // === Shared Data Structures ===
 
@@ -121,7 +120,6 @@ data class WorkoutSessionSyncDto(
 data class PersonalRecordSyncDto(
     val clientId: String,
     val serverId: String? = null,
-    @Transient val localId: Long = -1L,
     val exerciseId: String,
     val exerciseName: String,
     val weight: Float,

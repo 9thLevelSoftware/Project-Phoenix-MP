@@ -201,29 +201,31 @@ class SqlDelightSyncRepositoryTest {
     @Test
     fun `mergePersonalRecords lets a newer active update restore a tombstoned row`() = runTest {
         val prId = "12345678-1234-4abc-8def-1234567890ce"
-        fun syncDto(updatedAt: Long, deletedAt: Long?) = PersonalRecordSyncDto(
+        fun syncDto(weight: Float, updatedAt: Long, deletedAt: Long?) = PersonalRecordSyncDto(
             clientId = prId,
             serverId = prId,
             exerciseId = "deadlift",
             exerciseName = "Deadlift",
-            weight = 85f,
+            weight = weight,
             reps = 5,
-            oneRepMax = 99.17f,
+            oneRepMax = weight * 1.1667f,
             achievedAt = 1_700_000_000_000L,
             workoutMode = "Old School",
             prType = PRType.MAX_WEIGHT.name,
-            volume = 425f,
+            volume = weight * 5,
             createdAt = 1_700_000_000_000L,
             updatedAt = updatedAt,
             deletedAt = deletedAt,
         )
 
-        repository.mergePersonalRecords(listOf(syncDto(200L, 200L)), "active-profile")
-        repository.mergePersonalRecords(listOf(syncDto(300L, null)), "active-profile")
+        repository.mergePersonalRecords(listOf(syncDto(85f, 200L, 200L)), "active-profile")
+        repository.mergePersonalRecords(listOf(syncDto(90f, 300L, null)), "active-profile")
 
         val row = database.vitruvianDatabaseQueries.selectAllRecordsSync().executeAsOne()
         assertEquals(300L, row.updatedAt)
         assertNull(row.deletedAt)
+        assertEquals(90.0, row.weight)
+        assertEquals(450.0, row.volume)
     }
 
     @Test

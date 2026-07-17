@@ -37,6 +37,7 @@ import com.devil.phoenixproject.util.CsvImportResult
 import com.devil.phoenixproject.util.CsvImporter
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.rememberFilePicker
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -59,6 +60,7 @@ fun ProgressTab(
     onNavigateToStrengthAssessment: () -> Unit,
     onNavigateToExerciseDetail: (String) -> Unit,
     onDeletePersonalRecord: suspend (PersonalRecord) -> Unit,
+    onDeletePersonalRecordError: (Throwable) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var pendingDelete by remember { mutableStateOf<PersonalRecord?>(null) }
@@ -291,9 +293,12 @@ fun ProgressTab(
                             deletingRecord = true
                             try {
                                 onDeletePersonalRecord(pr)
-                                pendingDelete = null
+                            } catch (error: Throwable) {
+                                if (error is CancellationException) throw error
+                                onDeletePersonalRecordError(error)
                             } finally {
                                 deletingRecord = false
+                                pendingDelete = null
                             }
                         }
                     },
@@ -348,6 +353,7 @@ fun AnalyticsScreen(
 
     // Set global title (localized — was a hardcoded English literal)
     val analyticsTitle = stringResource(Res.string.nav_analytics)
+    val deletePersonalRecordFailed = stringResource(Res.string.delete_personal_record_failed)
     LaunchedEffect(analyticsTitle) {
         viewModel.updateTopBarTitle(analyticsTitle)
     }
@@ -537,7 +543,11 @@ fun AnalyticsScreen(
                         },
                         onNavigateToExerciseDetail = onNavigateToExerciseDetail,
                         onDeletePersonalRecord = { pr ->
-                            personalRecordRepository.deletePR(pr.id, activeProfileId)
+                            personalRecordRepository.deletePR(pr.id, pr.profileId)
+                        },
+                        onDeletePersonalRecordError = { error ->
+                            exportMessage = error.message?.takeIf { it.isNotBlank() }
+                                ?: deletePersonalRecordFailed
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
