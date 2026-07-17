@@ -11,6 +11,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -126,6 +127,64 @@ class PhantomBleRepositoryTest {
             assertFailsWith<CancellationException> { connecting.await() }
             assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
             assertTrue(repository.scannedDevices.value.isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `caller cancellation from final scanned-device publication invalidates scan`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        lateinit var scanning: Deferred<Result<Unit>>
+        val cancelOnDevices = async(Dispatchers.Unconfined) {
+            repository.scannedDevices.first { devices ->
+                if (devices.isNotEmpty()) {
+                    scanning.cancel()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            scanning = async(Dispatchers.Unconfined) { repository.startScanning() }
+            cancelOnDevices.await()
+
+            assertFailsWith<CancellationException> { scanning.await() }
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `caller cancellation from final connected publication invalidates connect`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        lateinit var connecting: Deferred<Result<Unit>>
+        val cancelOnConnected = async(Dispatchers.Unconfined) {
+            repository.connectionState.first { state ->
+                if (state is ConnectionState.Connected) {
+                    connecting.cancel()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            connecting = async(Dispatchers.Unconfined) {
+                repository.connect(ScannedDevice("collector", "collector-address"))
+            }
+            cancelOnConnected.await()
+
+            assertFailsWith<CancellationException> { connecting.await() }
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+            assertNull(repository.diagnostics.value)
+            assertNull(repository.heuristicData.value)
         } finally {
             repository.shutdown()
         }
@@ -818,6 +877,38 @@ class PhantomBleRepositoryTest {
                     )
                 },
             )
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `inline heuristic config replacement preserves workout handoff`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository(), PhantomBleConfig(repDelayMs = 100L))
+        val replacement = PhantomBleConfig(loadScale = 2f, repDelayMs = 100L)
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            val replaceOnHeuristic = async(Dispatchers.Unconfined) {
+                repository.heuristicData.drop(1).first { heuristic ->
+                    if (heuristic != null) {
+                        repository.replaceConfig(replacement)
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            val result = repository.startWorkout(workoutParameters())
+
+            replaceOnHeuristic.await()
+            assertTrue(result.isSuccess)
+            assertEquals(replacement, repository.config.value)
+            assertEquals(HandleState.Grabbed, repository.handleState.value)
+            val metric = withContext(Dispatchers.Default) {
+                withTimeout(1_000L) { repository.metricsFlow.first { it.loadA >= 10f } }
+            }
+            assertTrue(metric.loadA >= 10f)
         } finally {
             repository.shutdown()
         }

@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -160,6 +161,7 @@ class PhantomBleRepository(
         if (!publishScannedDevices(attemptGeneration, listOf(device))) {
             return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
         }
+        yield()
         return Result.success(Unit)
     }
 
@@ -207,6 +209,7 @@ class PhantomBleRepository(
         if (!completeConnection(attemptGeneration, device)) {
             return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
         }
+        yield()
         return Result.success(Unit)
     }
 
@@ -442,7 +445,8 @@ class PhantomBleRepository(
             if (!startHeuristicGeneration(
                     activeWorkout = true,
                     expectedConnectionGeneration = expectedConnectionGeneration,
-                )
+                ) &&
+                !currentConnectedProducerOwnsConnection(expectedConnectionGeneration, heuristicJob)
             ) {
                 rollbackWorkoutHandoff(params, expectedConnectionGeneration)
                 return@withLock Result.failure(IllegalStateException("Phantom workout handoff invalidated"))
@@ -988,17 +992,27 @@ class PhantomBleRepository(
         expectedState: ConnectionState? = null,
     ) {
         lifecycleLock.withLock {
-            if (
+            val currentState = _connectionState.value
+            val matchesAttempt =
                 !terminal.value &&
+                !lifecycleCleanupInProgress &&
                 connectionAttemptGeneration.value == attemptGeneration &&
                 (
                     (expectedState == null &&
-                        (_connectionState.value == ConnectionState.Scanning || _connectionState.value == ConnectionState.Connecting)) ||
-                        (expectedState != null && _connectionState.value == expectedState)
+                        (currentState == ConnectionState.Scanning ||
+                            currentState == ConnectionState.Connecting ||
+                            currentState is ConnectionState.Connected)) ||
+                        (expectedState != null &&
+                            (currentState == expectedState ||
+                                (expectedState == ConnectionState.Connecting && currentState is ConnectionState.Connected)))
                 )
-            ) {
-                connectionAttemptGeneration.incrementAndGet()
-                _connectionState.value = ConnectionState.Disconnected
+            if (matchesAttempt) {
+                lifecycleCleanupInProgress = true
+                try {
+                    teardownConnection()
+                } finally {
+                    lifecycleCleanupInProgress = false
+                }
             }
         }
     }
