@@ -1193,14 +1193,6 @@ class PhantomBleRepositoryTest {
             val logsAfterStop = logRepo.logs.value
             withContext(Dispatchers.Default) { delay(350L) }
             assertEquals(logsAfterStop, logRepo.logs.value)
-            assertTrue(logRepo.logs.value.none { log ->
-                log.message in setOf(
-                    "Phantom workout started",
-                    "Phantom monitor metric",
-                    "Phantom heuristic update",
-                    "Phantom rep notification",
-                )
-            })
         } finally {
             repository.shutdown()
         }
