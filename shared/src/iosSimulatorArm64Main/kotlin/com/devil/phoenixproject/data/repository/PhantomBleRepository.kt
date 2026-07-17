@@ -42,18 +42,26 @@ enum class PhantomRawPacketKind {
     HEURISTIC,
 }
 
+internal data class PhantomWorkoutProgram(
+    val warmupReps: Int,
+    val workingReps: Int?,
+    val weightPerCableKg: Float,
+)
+
 data class PhantomBleConfig(
     val loadScale: Float = 1f,
     val velocityScale: Double = 1.0,
     val positionScale: Float = 1f,
     val repDelayMs: Long = 750L,
     val autoCompleteFixedRepSets: Boolean = true,
+    val defaultEchoLoadKg: Float = 20f,
 ) {
     init {
         require(loadScale > 0f) { "loadScale must be > 0" }
         require(velocityScale > 0.0) { "velocityScale must be > 0" }
         require(positionScale > 0f) { "positionScale must be > 0" }
         require(repDelayMs >= 100L) { "repDelayMs must be >= 100" }
+        require(defaultEchoLoadKg > 0f) { "defaultEchoLoadKg must be > 0" }
     }
 
     companion object {
@@ -120,6 +128,9 @@ class PhantomBleRepository(
     private var heartbeatJob: Job? = null
     private var workoutParams: WorkoutParameters? = null
     private var workoutConnectionGeneration: Long? = null
+    private var currentWorkoutProgram: PhantomWorkoutProgram? = null
+    internal val currentProgram: PhantomWorkoutProgram?
+        get() = currentWorkoutProgram
     private val _config = MutableStateFlow(initialConfig)
     val config: StateFlow<PhantomBleConfig> = _config.asStateFlow()
     private var ticks = 0L
@@ -379,9 +390,55 @@ class PhantomBleRepository(
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
+            decodeWorkoutProgram(command)?.let { program ->
+                currentWorkoutProgram = program
+                logRepo.info(
+                    LogEventType.COMMAND_SENT,
+                    "Phantom parsed workout command",
+                    PHANTOM_DEVICE_NAME,
+                    PHANTOM_DEVICE_ADDRESS,
+                    "warmupReps=${program.warmupReps}; workingReps=${program.workingReps}; weightPerCableKg=${program.weightPerCableKg}",
+                )
+            }
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
             Result.success(Unit)
         }
     }
+
+    private fun decodeWorkoutProgram(command: ByteArray): PhantomWorkoutProgram? {
+        if (command.size >= REGULAR_PROGRAM_PACKET_SIZE && readUInt32LittleEndian(command, 0) == REGULAR_PROGRAM_OPCODE) {
+            val totalReps = command[0x04].toInt() and 0xFF
+            val warmupReps = command[0x05].toInt() and 0xFF
+            return PhantomWorkoutProgram(
+                warmupReps = warmupReps,
+                workingReps = totalReps.takeUnless { it == UNLIMITED_REPS }?.minus(warmupReps),
+                weightPerCableKg = readFloat32LittleEndian(command, 0x58),
+            )
+        }
+
+        if (command.size >= ECHO_PROGRAM_PACKET_SIZE && readUInt32LittleEndian(command, 0) == ECHO_PROGRAM_OPCODE) {
+            val warmupReps = command[0x04].toInt() and 0xFF
+            val targetReps = command[0x05].toInt() and 0xFF
+            return PhantomWorkoutProgram(
+                warmupReps = warmupReps,
+                workingReps = targetReps.takeUnless { it == UNLIMITED_REPS },
+                weightPerCableKg = _config.value.defaultEchoLoadKg,
+            )
+        }
+
+        return null
+    }
+
+    private fun readUInt32LittleEndian(bytes: ByteArray, offset: Int): Int =
+        (bytes[offset].toInt() and 0xFF) or
+            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+
+    private fun readFloat32LittleEndian(bytes: ByteArray, offset: Int): Float =
+        Float.fromBits(readUInt32LittleEndian(bytes, offset))
 
     override suspend fun sendInitSequence(): Result<Unit> {
         return lifecycleLock.withLock {
@@ -1328,6 +1385,7 @@ class PhantomBleRepository(
             activePollingConnectionGeneration = null
             workoutParams = null
             workoutConnectionGeneration = null
+            currentWorkoutProgram = null
             _handleDetection.value = HandleDetection()
             if (connectionAttemptGeneration.value != cleanupGeneration || (!markTerminal && terminal.value)) {
                 return@withLock
@@ -1752,6 +1810,11 @@ class PhantomBleRepository(
     }
 
     companion object {
+        private const val REGULAR_PROGRAM_OPCODE = 0x04
+        private const val ECHO_PROGRAM_OPCODE = 0x4E
+        private const val REGULAR_PROGRAM_PACKET_SIZE = 96
+        private const val ECHO_PROGRAM_PACKET_SIZE = 32
+        private const val UNLIMITED_REPS = 0xFF
         const val PHANTOM_DEVICE_NAME = "Vee_PhantomSimulator"
         const val PHANTOM_DEVICE_ADDRESS = "PH:AN:TO:MS:BX:01"
     }
