@@ -1165,6 +1165,48 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `stopWorkout from workout handle publication invalidates outer workout handoff`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))
+        val stopOnGrabbed = async(Dispatchers.Unconfined) {
+            repository.handleState.first { state ->
+                if (state == HandleState.Grabbed) {
+                    assertTrue(repository.stopWorkout().isSuccess)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+
+            val result = repository.startWorkout(workoutParameters())
+
+            stopOnGrabbed.await()
+            assertTrue(result.isFailure)
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.Released, repository.handleState.value)
+
+            val logsAfterStop = logRepo.logs.value
+            withContext(Dispatchers.Default) { delay(350L) }
+            assertEquals(logsAfterStop, logRepo.logs.value)
+            assertTrue(logRepo.logs.value.none { log ->
+                log.message in setOf(
+                    "Phantom workout started",
+                    "Phantom monitor metric",
+                    "Phantom heuristic update",
+                    "Phantom rep notification",
+                )
+            })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `shutdown from workout handle publication prevents post-publication workout effects`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))

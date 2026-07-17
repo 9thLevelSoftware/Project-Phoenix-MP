@@ -450,7 +450,7 @@ class PhantomBleRepository(
             if (terminal.value || lifecycleCleanupInProgress) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
-            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            val expectedConnectionGeneration = connectionAttemptGeneration.incrementAndGet()
             logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
             if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
