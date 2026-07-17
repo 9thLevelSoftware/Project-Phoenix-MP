@@ -785,10 +785,11 @@ class SyncManager(
             context = "Push payload",
         )
 
-        // 2. Fetch the narrow sync delta for the dedicated PR payload while
-        // retaining the display projection only for legacy set-level metadata.
-        val recentPRs = syncRepository.getPRsModifiedSince(lastSync, activeProfileId)
-        val recentDisplayPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
+        // Dedicated PR rows need the full snapshot so stable UUID, updatedAt, and
+        // deletedAt all reach the portal. Reuse that same projection for legacy
+        // set-level PR hints rather than reading a lossy second delta.
+        val recentPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
+        val recentDisplayPRs = recentPRs
         val prBySessionKey = recentDisplayPRs.groupBy { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp)
         }
@@ -831,7 +832,7 @@ class SyncManager(
             )
         }
         val personalRecordDtos = recentPRs.map { pr ->
-            val sessionKey = personalRecordSessionKey(pr.exerciseId, pr.achievedAt)
+            val sessionKey = personalRecordSessionKey(pr.exerciseId, pr.timestamp)
             val muscleGroup =
                 syncRepository.getExerciseMuscleGroup(pr.exerciseId, pr.exerciseName)
                     ?: "General"
@@ -1291,8 +1292,8 @@ class SyncManager(
         // post-confirmation resend protection that WorkoutSession rows get from
         // the caller's post-push stamping block.
         val pushedPrIds = recentPRs
-            .filter { it.deletedAt == null && it.localId >= 0L }
-            .map { it.localId }
+            .filter { it.deletedAt == null && it.id >= 0L }
+            .map { it.id }
             .distinct()
         if (pushedPrIds.isNotEmpty()) {
             val prStampTime = currentTimeMillis()
