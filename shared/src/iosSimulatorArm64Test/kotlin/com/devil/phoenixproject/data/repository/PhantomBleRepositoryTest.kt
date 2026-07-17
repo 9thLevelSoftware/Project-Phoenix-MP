@@ -81,6 +81,67 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `stopScanning invalidates a scanning attempt and resets state`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val scanning = async(Dispatchers.Default) { repository.startScanning() }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Scanning }
+            repository.stopScanning()
+
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(scanning.await().isFailure)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `stopScanning invalidates a connecting attempt and resets state`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val connecting = async(Dispatchers.Default) {
+            repository.connect(ScannedDevice("race", "race-address"))
+        }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Connecting }
+            repository.stopScanning()
+
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(connecting.await().isFailure)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `cancelConnection leaves a connected repository intact`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.repEvents.test {
+                assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                repository.cancelConnection()
+
+                assertTrue(repository.connectionState.value is ConnectionState.Connected)
+                assertTrue(repository.scannedDevices.value.isNotEmpty())
+                assertTrue(repository.handleDetection.value.leftDetected)
+                assertEquals(HandleState.Grabbed, repository.handleState.value)
+                assertTrue(repository.diagnostics.value != null)
+                assertTrue(repository.heuristicData.value != null)
+                awaitItem()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `shutdown wins over an in-flight scan`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)
@@ -285,13 +346,19 @@ class PhantomBleRepositoryTest {
 
     @Test
     fun `replaceConfig scales generated phantom metrics`() = runTest {
-        val repository = PhantomBleRepository(
-            ConnectionLogRepository(),
-            PhantomBleConfig(loadScale = 2f, velocityScale = 3.0, positionScale = 0.5f, repDelayMs = 100L),
-        )
+        val repository = PhantomBleRepository(ConnectionLogRepository())
 
         repository.metricsFlow.test {
             assertTrue(repository.scanAndConnect().isSuccess)
+            awaitItem()
+            repository.replaceConfig(
+                PhantomBleConfig(
+                    loadScale = 2f,
+                    velocityScale = 3.0,
+                    positionScale = 0.5f,
+                    repDelayMs = 100L,
+                ),
+            )
             val metric = awaitItem()
 
             assertTrue(metric.loadA >= 3.0f, "loadA should reflect doubled inactive phantom load")
@@ -299,6 +366,100 @@ class PhantomBleRepositoryTest {
             assertTrue(kotlin.math.abs(metric.velocityA) <= 750.0, "velocityA should reflect tripled range")
             repository.disconnect()
             cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `fixed rep workout completes at target and stops simulation`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(
+            logRepo,
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.repEvents.test {
+                assertTrue(repository.startWorkout(workoutParameters().copy(reps = 2)).isSuccess)
+
+                val first = awaitItem()
+                val second = awaitItem()
+                assertEquals(1, first.repsSetCount)
+                assertEquals(2, second.repsSetCount)
+                assertEquals(2, second.repsSetTotal)
+                assertTrue(
+                    logRepo.getLogsByEventType(LogEventType.COMMAND_RESPONSE)
+                        .any { it.message == "Phantom target reps reached" },
+                )
+
+                withContext(Dispatchers.Default) { delay(250L) }
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `AMRAP workout continues past requested rep count`() = runTest {
+        val repository = PhantomBleRepository(
+            ConnectionLogRepository(),
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.repEvents.test {
+                assertTrue(
+                    repository.startWorkout(
+                        workoutParameters().copy(reps = 2, isAMRAP = true),
+                    ).isSuccess,
+                )
+
+                val first = awaitItem()
+                val second = awaitItem()
+                val third = awaitItem()
+                assertEquals(1, first.repsSetCount)
+                assertEquals(2, second.repsSetCount)
+                assertEquals(2, third.repsSetCount)
+                assertEquals(2, third.repsSetTotal)
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `stopping workout races scheduled rep publication without post-stop rep`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(
+            logRepo,
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+            val stopAfterRep = async(Dispatchers.Default) {
+                logRepo.logs.first { logs ->
+                    logs.any {
+                        it.eventType == LogEventType.REP_RECEIVED && it.message == "Phantom rep notification"
+                    }
+                }
+                repository.stopWorkout()
+            }
+
+            assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+            stopAfterRep.await()
+            assertEquals(HandleState.Released, repository.handleState.value)
+            val repLogsAfterStop = logRepo.getLogsByEventType(LogEventType.REP_RECEIVED).size
+
+            withContext(Dispatchers.Default) { delay(200L) }
+            assertEquals(repLogsAfterStop, logRepo.getLogsByEventType(LogEventType.REP_RECEIVED).size)
+        } finally {
+            repository.shutdown()
         }
     }
 

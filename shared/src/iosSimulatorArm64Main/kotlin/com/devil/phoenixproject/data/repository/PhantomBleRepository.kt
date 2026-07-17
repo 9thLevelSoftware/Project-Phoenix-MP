@@ -142,6 +142,10 @@ class PhantomBleRepository(
     private val terminal = atomic(false)
     private val connectionAttemptGeneration = atomic(0L)
     private var metricsGeneration = 0L
+    private var heuristicGeneration = 0L
+    private var repGeneration = 0L
+    private var diagnosticGeneration = 0L
+    private var heartbeatGeneration = 0L
 
     override suspend fun startScanning(): Result<Unit> {
         val attemptGeneration = beginConnectionAttempt()
@@ -164,7 +168,7 @@ class PhantomBleRepository(
                 return@withLock
             }
             connectionAttemptGeneration.incrementAndGet()
-            if (_connectionState.value == ConnectionState.Scanning) {
+            if (_connectionState.value == ConnectionState.Scanning || _connectionState.value == ConnectionState.Connecting) {
                 _connectionState.value = ConnectionState.Disconnected
             }
             logRepo.info(LogEventType.SCAN_STOP, "Stopped phantom Vitruvian scan")
@@ -191,9 +195,11 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
-            connectionAttemptGeneration.incrementAndGet()
-            _connectionState.value = ConnectionState.Disconnected
-            logRepo.warning(LogEventType.DISCONNECT, "Cancelled phantom connection")
+            if (_connectionState.value == ConnectionState.Connecting) {
+                connectionAttemptGeneration.incrementAndGet()
+                _connectionState.value = ConnectionState.Disconnected
+                logRepo.warning(LogEventType.DISCONNECT, "Cancelled phantom connection")
+            }
         }
     }
 
@@ -330,6 +336,7 @@ class PhantomBleRepository(
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+            repGeneration += 1
             repJob?.cancel()
             workoutParams = null
             _handleState.value = HandleState.Released
@@ -408,6 +415,10 @@ class PhantomBleRepository(
                 return@withLock
             }
             metricsGeneration += 1
+            heuristicGeneration += 1
+            repGeneration += 1
+            diagnosticGeneration += 1
+            heartbeatGeneration += 1
             metricsJob?.cancel()
             heuristicJob?.cancel()
             repJob?.cancel()
@@ -686,12 +697,20 @@ class PhantomBleRepository(
 
     private inline fun publishIfConnected(
         expectedMetricsGeneration: Long? = null,
+        expectedHeuristicGeneration: Long? = null,
+        expectedRepGeneration: Long? = null,
+        expectedDiagnosticGeneration: Long? = null,
+        expectedHeartbeatGeneration: Long? = null,
         publish: () -> Unit,
     ): Boolean = lifecycleLock.withLock {
         if (
             terminal.value ||
             _connectionState.value !is ConnectionState.Connected ||
-            (expectedMetricsGeneration != null && metricsGeneration != expectedMetricsGeneration)
+            (expectedMetricsGeneration != null && metricsGeneration != expectedMetricsGeneration) ||
+            (expectedHeuristicGeneration != null && heuristicGeneration != expectedHeuristicGeneration) ||
+            (expectedRepGeneration != null && repGeneration != expectedRepGeneration) ||
+            (expectedDiagnosticGeneration != null && diagnosticGeneration != expectedDiagnosticGeneration) ||
+            (expectedHeartbeatGeneration != null && heartbeatGeneration != expectedHeartbeatGeneration)
         ) {
             false
         } else {
@@ -745,13 +764,15 @@ class PhantomBleRepository(
     }
 
     private fun startHeuristicGeneration(activeWorkout: Boolean) {
+        heuristicGeneration += 1
+        val expectedGeneration = heuristicGeneration
         heuristicJob?.cancel()
         heuristicJob = scope.launch {
             while (isActive && connectionState.value is ConnectionState.Connected) {
                 val config = _config.value
                 val configuredLoad = workoutParams?.weightPerCableKg ?: 7.5f
                 val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
-                if (!publishIfConnected {
+                if (!publishIfConnected(expectedHeuristicGeneration = expectedGeneration) {
                         _heuristicData.value = HeuristicStatistics(
                             concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
                             eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
@@ -772,6 +793,8 @@ class PhantomBleRepository(
     }
 
     private fun startRepSimulation(params: WorkoutParameters) {
+        repGeneration += 1
+        val expectedGeneration = repGeneration
         repJob?.cancel()
         repJob = scope.launch {
             var rep = 0
@@ -787,7 +810,7 @@ class PhantomBleRepository(
                     bytes[18] = params.warmupReps.toByte()
                     bytes[22] = target.toByte()
                 }
-                if (!publishIfConnected {
+                if (!publishIfConnected(expectedRepGeneration = expectedGeneration) {
                         _repEvents.tryEmit(
                             RepNotification(
                                 topCounter = rep,
@@ -823,12 +846,14 @@ class PhantomBleRepository(
     }
 
     private fun startDiagnostics() {
+        diagnosticGeneration += 1
+        val expectedGeneration = diagnosticGeneration
         diagnosticJob?.cancel()
         diagnosticJob = scope.launch {
             val connectedAt = Clock.System.now().toEpochMilliseconds()
             while (isActive && connectionState.value is ConnectionState.Connected) {
                 val now = Clock.System.now().toEpochMilliseconds()
-                if (!publishIfConnected {
+                if (!publishIfConnected(expectedDiagnosticGeneration = expectedGeneration) {
                         _diagnostics.value = DiagnosticPacket(
                             runtimeSeconds = (now - connectedAt) / 1000,
                             faultWords = listOf(0, 0, 0, 0),
@@ -846,10 +871,12 @@ class PhantomBleRepository(
     }
 
     private fun startHeartbeat() {
+        heartbeatGeneration += 1
+        val expectedGeneration = heartbeatGeneration
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             while (isActive && connectionState.value is ConnectionState.Connected) {
-                if (!publishIfConnected {
+                if (!publishIfConnected(expectedHeartbeatGeneration = expectedGeneration) {
                         logRepo.info(LogEventType.HEARTBEAT, "Phantom heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
                     }) {
                     break
@@ -861,6 +888,10 @@ class PhantomBleRepository(
 
     private fun stopJobs() {
         metricsGeneration += 1
+        heuristicGeneration += 1
+        repGeneration += 1
+        diagnosticGeneration += 1
+        heartbeatGeneration += 1
         metricsJob?.cancel()
         heuristicJob?.cancel()
         repJob?.cancel()
