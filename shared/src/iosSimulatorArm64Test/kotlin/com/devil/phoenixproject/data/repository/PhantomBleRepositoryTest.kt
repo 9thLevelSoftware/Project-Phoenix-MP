@@ -3313,6 +3313,136 @@ class PhantomBleRepositoryTest {
         }
     }
 
+    @Test
+    fun `scan reservation rejects raw and disco controls before scanning publication`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val monitor = monitorPacket(
+            ticks = 42,
+            posA = 1250,
+            velA = 320,
+            loadA = 1234,
+            posB = -750,
+            velB = -250,
+            loadB = 567,
+        )
+        var rawResult: Result<Unit>? = null
+        val controlsOnClear = async(Dispatchers.Unconfined) {
+            repository.scannedDevices.drop(1).first { devices ->
+                if (devices.isEmpty()) {
+                    assertNull(repository.diagnostics.value)
+                    assertNull(repository.heuristicData.value)
+                    rawResult = repository.injectRawPacket(PhantomRawPacketKind.MONITOR, monitor)
+                    repository.startDiscoMode()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.stopPolling()
+            logRepo.clearAll()
+
+            val scanning = async(Dispatchers.Default) { repository.startScanning() }
+            controlsOnClear.await()
+
+            assertTrue(requireNotNull(rawResult).isFailure)
+            assertFalse(repository.discoModeActive.value)
+            assertTrue(logRepo.logs.value.none { log ->
+                log.message == "Phantom injected raw monitor packet" ||
+                    log.message == "Phantom disco mode started"
+            })
+            assertTrue(scanning.await().isSuccess)
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `opposite handle detection publication preserves nested control result`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+            val enableOnDisabled = async(Dispatchers.Unconfined) {
+                repository.handleDetection.drop(1).first { detection ->
+                    if (!detection.leftDetected && !detection.rightDetected) {
+                        repository.enableHandleDetection(true)
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
+            repository.enableHandleDetection(false)
+            enableOnDisabled.await()
+
+            assertTrue(repository.handleDetection.value.leftDetected)
+            assertTrue(repository.handleDetection.value.rightDetected)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+            assertTrue(logRepo.logs.value.any { log -> log.message == "Phantom handle detection enabled" })
+            assertTrue(logRepo.logs.value.none { log -> log.message == "Phantom handle detection disabled" })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `opposite disco publication preserves nested start and blocks workout handoff`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.startDiscoMode()
+            logRepo.clearAll()
+            val startOnStop = async(Dispatchers.Unconfined) {
+                repository.discoModeActive.drop(1).first { active ->
+                    if (!active) {
+                        repository.startDiscoMode()
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
+            repository.stopDiscoMode()
+            startOnStop.await()
+
+            assertTrue(repository.discoModeActive.value)
+            assertTrue(logRepo.logs.value.any { log -> log.message == "Phantom disco mode started" })
+            assertTrue(logRepo.logs.value.none { log -> log.message == "Phantom disco mode stopped" })
+
+            logRepo.clearAll()
+            val startOnWorkoutStop = async(Dispatchers.Unconfined) {
+                repository.discoModeActive.drop(1).first { active ->
+                    if (!active) {
+                        repository.startDiscoMode()
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            val workoutResult = repository.startWorkout(workoutParameters())
+            startOnWorkoutStop.await()
+
+            assertTrue(workoutResult.isFailure)
+            assertTrue(repository.discoModeActive.value)
+            assertTrue(logRepo.logs.value.none { log -> log.message == "Phantom workout started" })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
     private fun workoutParameters(): WorkoutParameters = WorkoutParameters(
         programMode = ProgramMode.OldSchool,
         reps = 3,
