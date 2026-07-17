@@ -346,12 +346,9 @@ class PhantomBleRepository(
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-            repGeneration += 1
-            repJob?.cancel()
+            stopJobs()
             workoutParams = null
             _handleState.value = HandleState.Released
-            startMetrics(activeWorkout = false)
-            startHeuristicGeneration(activeWorkout = false)
             Result.success(Unit)
         }
     }

@@ -501,63 +501,66 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
-    fun `sendStopCommand preserves active workout polling until stopWorkout`() = runTest {
+    fun `sendStopCommand preserves active polling until stopWorkout cancels every producer`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(
             logRepo,
             PhantomBleConfig(repDelayMs = 100L),
         )
+        val pollingMessages = listOf(
+            "Phantom monitor metric",
+            "Phantom heuristic update",
+            "Phantom diagnostic heartbeat",
+            "Phantom heartbeat",
+            "Phantom rep notification",
+        )
+        fun pollingCounts(): Map<String, Int> = pollingMessages.associateWith { message ->
+            logRepo.logs.value.count { it.message == message }
+        }
 
         try {
             assertTrue(repository.scanAndConnect().isSuccess)
-            repository.repEvents.test {
-                val activeMetric = async(Dispatchers.Default) {
-                    repository.metricsFlow.first { it.loadA >= 2f }
-                }
-                assertTrue(
-                    repository.startWorkout(workoutParameters().copy(isAMRAP = true)).isSuccess,
-                )
+            assertTrue(
+                repository.startWorkout(workoutParameters().copy(isAMRAP = true)).isSuccess,
+            )
 
-                val firstRep = awaitItem()
-                val metricBeforeStop = activeMetric.await()
-                val heuristicBeforeStop = withTimeout(1_000L) {
-                    requireNotNull(repository.heuristicData.first { it != null })
-                }
-                val diagnosticsBeforeStop = withTimeout(1_000L) {
-                    requireNotNull(repository.diagnostics.first { it != null })
-                }
-                val heartbeatCountBeforeStop = logRepo.getLogsByEventType(LogEventType.HEARTBEAT).size
-
-                assertTrue(repository.sendStopCommand().isSuccess)
-                assertEquals(HandleState.Grabbed, repository.handleState.value)
-                assertEquals(diagnosticsBeforeStop, repository.diagnostics.value)
-                assertTrue(
-                    logRepo.getLogsByEventType(LogEventType.HEARTBEAT).size >= heartbeatCountBeforeStop,
-                )
-
-                val secondRep = awaitItem()
-                assertTrue(secondRep.topCounter > firstRep.topCounter)
-                val metricAfterStop = withContext(Dispatchers.Default) {
-                    withTimeout(1_000L) {
-                        repository.metricsFlow.first { it.loadA >= 2f }
+            withContext(Dispatchers.Default) {
+                withTimeout(3_500L) {
+                    logRepo.logs.first { logs ->
+                        pollingMessages.all { message -> logs.any { it.message == message } }
                     }
                 }
-                assertTrue(metricAfterStop.timestamp >= metricBeforeStop.timestamp)
-                val heuristicAfterStop = withContext(Dispatchers.Default) {
-                    withTimeout(1_000L) {
-                        repository.heuristicData.first { it?.timestamp != heuristicBeforeStop.timestamp }
-                    }
-                }
-                assertEquals(
-                    heuristicBeforeStop.concentric.kgAvg,
-                    requireNotNull(heuristicAfterStop).concentric.kgAvg,
-                )
-
-                assertTrue(repository.stopWorkout().isSuccess)
-                withContext(Dispatchers.Default) { delay(200L) }
-                expectNoEvents()
-                cancelAndIgnoreRemainingEvents()
             }
+            val countsBeforeSendStop = pollingCounts()
+            assertTrue(countsBeforeSendStop.values.all { it > 0 })
+
+            assertTrue(repository.sendStopCommand().isSuccess)
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.Grabbed, repository.handleState.value)
+            val countsAfterSendStop = withContext(Dispatchers.Default) {
+                withTimeout(3_500L) {
+                    logRepo.logs.first { logs ->
+                        pollingMessages.all { message ->
+                            logs.count { it.message == message } > countsBeforeSendStop.getValue(message)
+                        }
+                    }
+                    pollingCounts()
+                }
+            }
+            pollingMessages.forEach { message ->
+                assertTrue(
+                    countsAfterSendStop.getValue(message) > countsBeforeSendStop.getValue(message),
+                    "$message should remain active after sendStopCommand",
+                )
+            }
+
+            assertTrue(repository.stopWorkout().isSuccess)
+            assertTrue(repository.connectionState.value is ConnectionState.Connected)
+            assertEquals(HandleState.Released, repository.handleState.value)
+            val countsAfterStop = pollingCounts()
+
+            withContext(Dispatchers.Default) { delay(2_250L) }
+            assertEquals(countsAfterStop, pollingCounts())
         } finally {
             repository.shutdown()
         }
