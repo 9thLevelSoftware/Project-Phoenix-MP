@@ -155,7 +155,12 @@ class PhantomBleRepository(
             }) {
             return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
         }
-        delay(150)
+        try {
+            delay(150)
+        } catch (error: CancellationException) {
+            invalidateCancelledConnectionAttempt(attemptGeneration, ConnectionState.Scanning)
+            throw error
+        }
         if (!publishScannedDevices(attemptGeneration, listOf(device))) {
             return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
         }
@@ -183,7 +188,12 @@ class PhantomBleRepository(
             }) {
             return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
         }
-        delay(250)
+        try {
+            delay(250)
+        } catch (error: CancellationException) {
+            invalidateCancelledConnectionAttempt(attemptGeneration, ConnectionState.Connecting)
+            throw error
+        }
         if (!completeConnection(attemptGeneration, device)) {
             return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
         }
@@ -347,18 +357,14 @@ class PhantomBleRepository(
     }
 
     override suspend fun sendStopCommand(): Result<Unit> {
-        val canSend = lifecycleLock.withLock {
+        return lifecycleLock.withLock {
             if (terminal.value) {
-                false
+                Result.failure(IllegalStateException("Phantom repository is shut down"))
             } else {
                 logRepo.info(LogEventType.COMMAND_SENT, "Phantom stop command accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-                true
+                Result.success(Unit)
             }
         }
-        if (!canSend) {
-            return Result.failure(IllegalStateException("Phantom repository is shut down"))
-        }
-        return stopWorkout()
     }
 
     override fun enableHandleDetection(enabled: Boolean) {
@@ -631,6 +637,22 @@ class PhantomBleRepository(
         }
     }
 
+    private fun invalidateCancelledConnectionAttempt(
+        attemptGeneration: Long,
+        expectedState: ConnectionState,
+    ) {
+        lifecycleLock.withLock {
+            if (
+                !terminal.value &&
+                connectionAttemptGeneration.value == attemptGeneration &&
+                _connectionState.value == expectedState
+            ) {
+                connectionAttemptGeneration.incrementAndGet()
+                _connectionState.value = ConnectionState.Disconnected
+            }
+        }
+    }
+
     private inline fun publishConnectionState(
         attemptGeneration: Long,
         state: ConnectionState,
@@ -721,6 +743,7 @@ class PhantomBleRepository(
 
     private fun startMetrics(activeWorkout: Boolean) {
         lifecycleLock.withLock {
+            val workoutWeightPerCableKg = workoutParams?.weightPerCableKg
             metricsGeneration += 1
             val expectedGeneration = metricsGeneration
             metricsJob?.cancel()
@@ -731,20 +754,20 @@ class PhantomBleRepository(
                     val phase = (sample % 40) / 40.0
                     val wave = sin(phase * 2.0 * PI).toFloat()
                     val config = _config.value
-                    val configuredLoad = workoutParams?.weightPerCableKg ?: 7.5f
+                    val configuredLoad = workoutWeightPerCableKg ?: 7.5f
                     val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
-                    val metric = WorkoutMetric(
-                        timestamp = now,
-                        loadA = load + wave.coerceAtLeast(0f) * config.loadScale,
-                        loadB = load + (-wave).coerceAtLeast(0f) * config.loadScale,
-                        positionA = wave * 650f * config.positionScale,
-                        positionB = wave * 640f * config.positionScale,
-                        ticks = ticks++,
-                        velocityA = wave * 250.0 * config.velocityScale,
-                        velocityB = wave * 245.0 * config.velocityScale,
-                        status = 0,
-                    )
                     if (!publishIfConnected(expectedMetricsGeneration = expectedGeneration) {
+                            val metric = WorkoutMetric(
+                                timestamp = now,
+                                loadA = load + wave.coerceAtLeast(0f) * config.loadScale,
+                                loadB = load + (-wave).coerceAtLeast(0f) * config.loadScale,
+                                positionA = wave * 650f * config.positionScale,
+                                positionB = wave * 640f * config.positionScale,
+                                ticks = ticks++,
+                                velocityA = wave * 250.0 * config.velocityScale,
+                                velocityB = wave * 245.0 * config.velocityScale,
+                                status = 0,
+                            )
                             _metricsFlow.tryEmit(metric)
                             logRepo.debug(
                                 LogEventType.NOTIFICATION,
@@ -764,30 +787,33 @@ class PhantomBleRepository(
     }
 
     private fun startHeuristicGeneration(activeWorkout: Boolean) {
-        heuristicGeneration += 1
-        val expectedGeneration = heuristicGeneration
-        heuristicJob?.cancel()
-        heuristicJob = scope.launch {
-            while (isActive && connectionState.value is ConnectionState.Connected) {
-                val config = _config.value
-                val configuredLoad = workoutParams?.weightPerCableKg ?: 7.5f
-                val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
-                if (!publishIfConnected(expectedHeuristicGeneration = expectedGeneration) {
-                        _heuristicData.value = HeuristicStatistics(
-                            concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
-                            eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
-                            timestamp = Clock.System.now().toEpochMilliseconds(),
-                        )
-                        logRepo.debug(
-                            LogEventType.NOTIFICATION,
-                            "Phantom heuristic update",
-                            PHANTOM_DEVICE_NAME,
-                            PHANTOM_DEVICE_ADDRESS,
-                        )
-                    }) {
-                    break
+        lifecycleLock.withLock {
+            val workoutWeightPerCableKg = workoutParams?.weightPerCableKg
+            heuristicGeneration += 1
+            val expectedGeneration = heuristicGeneration
+            heuristicJob?.cancel()
+            heuristicJob = scope.launch {
+                while (isActive && connectionState.value is ConnectionState.Connected) {
+                    val config = _config.value
+                    val configuredLoad = workoutWeightPerCableKg ?: 7.5f
+                    val load = (if (activeWorkout) configuredLoad.coerceAtLeast(2f) else 1.5f) * config.loadScale
+                    if (!publishIfConnected(expectedHeuristicGeneration = expectedGeneration) {
+                            _heuristicData.value = HeuristicStatistics(
+                                concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
+                                eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
+                                timestamp = Clock.System.now().toEpochMilliseconds(),
+                            )
+                            logRepo.debug(
+                                LogEventType.NOTIFICATION,
+                                "Phantom heuristic update",
+                                PHANTOM_DEVICE_NAME,
+                                PHANTOM_DEVICE_ADDRESS,
+                            )
+                        }) {
+                        break
+                    }
+                    delay(if (activeWorkout) 250 else 750)
                 }
-                delay(if (activeWorkout) 250 else 750)
             }
         }
     }

@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -75,6 +76,42 @@ class PhantomBleRepositoryTest {
 
             assertTrue(result.isFailure)
             assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `caller cancellation invalidates an in-flight scan`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val scanning = async(Dispatchers.Default) { repository.startScanning() }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Scanning }
+            scanning.cancel()
+
+            assertFailsWith<CancellationException> { scanning.await() }
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `caller cancellation invalidates an in-flight connect`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val connecting = async(Dispatchers.Default) {
+            repository.connect(ScannedDevice("race", "race-address"))
+        }
+
+        try {
+            repository.connectionState.first { it == ConnectionState.Connecting }
+            connecting.cancel()
+
+            assertFailsWith<CancellationException> { connecting.await() }
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
         } finally {
             repository.shutdown()
         }
@@ -458,6 +495,69 @@ class PhantomBleRepositoryTest {
 
             withContext(Dispatchers.Default) { delay(200L) }
             assertEquals(repLogsAfterStop, logRepo.getLogsByEventType(LogEventType.REP_RECEIVED).size)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `sendStopCommand preserves active workout polling until stopWorkout`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(
+            logRepo,
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.repEvents.test {
+                val activeMetric = async(Dispatchers.Default) {
+                    repository.metricsFlow.first { it.loadA >= 2f }
+                }
+                assertTrue(
+                    repository.startWorkout(workoutParameters().copy(isAMRAP = true)).isSuccess,
+                )
+
+                val firstRep = awaitItem()
+                val metricBeforeStop = activeMetric.await()
+                val heuristicBeforeStop = withTimeout(1_000L) {
+                    requireNotNull(repository.heuristicData.first { it != null })
+                }
+                val diagnosticsBeforeStop = withTimeout(1_000L) {
+                    requireNotNull(repository.diagnostics.first { it != null })
+                }
+                val heartbeatCountBeforeStop = logRepo.getLogsByEventType(LogEventType.HEARTBEAT).size
+
+                assertTrue(repository.sendStopCommand().isSuccess)
+                assertEquals(HandleState.Grabbed, repository.handleState.value)
+                assertEquals(diagnosticsBeforeStop, repository.diagnostics.value)
+                assertTrue(
+                    logRepo.getLogsByEventType(LogEventType.HEARTBEAT).size >= heartbeatCountBeforeStop,
+                )
+
+                val secondRep = awaitItem()
+                assertTrue(secondRep.topCounter > firstRep.topCounter)
+                val metricAfterStop = withContext(Dispatchers.Default) {
+                    withTimeout(1_000L) {
+                        repository.metricsFlow.first { it.loadA >= 2f }
+                    }
+                }
+                assertTrue(metricAfterStop.timestamp >= metricBeforeStop.timestamp)
+                val heuristicAfterStop = withContext(Dispatchers.Default) {
+                    withTimeout(1_000L) {
+                        repository.heuristicData.first { it?.timestamp != heuristicBeforeStop.timestamp }
+                    }
+                }
+                assertEquals(
+                    heuristicBeforeStop.concentric.kgAvg,
+                    requireNotNull(heuristicAfterStop).concentric.kgAvg,
+                )
+
+                assertTrue(repository.stopWorkout().isSuccess)
+                withContext(Dispatchers.Default) { delay(200L) }
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
         } finally {
             repository.shutdown()
         }
