@@ -131,6 +131,7 @@ class PhantomBleRepository(
     private var metricsJob: Job? = null
     private var heuristicJob: Job? = null
     private var repJob: Job? = null
+    private var repSimulationCompleted = false
     private var diagnosticJob: Job? = null
     private var heartbeatJob: Job? = null
     private var workoutParams: WorkoutParameters? = null
@@ -150,21 +151,22 @@ class PhantomBleRepository(
     override suspend fun startScanning(): Result<Unit> {
         val attemptGeneration = beginConnectionAttempt()
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
-        return startScanning(attemptGeneration)
-    }
-
-    private suspend fun startScanning(attemptGeneration: Long): Result<Unit> {
-        if (!publishConnectionState(attemptGeneration, ConnectionState.Scanning) {
-                logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
-            }) {
-            return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
-        }
-        try {
-            delay(150)
+        return try {
+            startScanning(attemptGeneration)
         } catch (error: CancellationException) {
             invalidateCancelledConnectionAttempt(attemptGeneration, ConnectionState.Scanning)
             throw error
         }
+    }
+
+    private suspend fun startScanning(attemptGeneration: Long): Result<Unit> {
+        if (!publishConnectionState(attemptGeneration, ConnectionState.Scanning) {
+                _scannedDevices.value = emptyList()
+                logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
+            }) {
+            return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
+        }
+        delay(150)
         if (!publishScannedDevices(attemptGeneration, listOf(device))) {
             return Result.failure(IllegalStateException("Phantom scan attempt invalidated"))
         }
@@ -187,7 +189,12 @@ class PhantomBleRepository(
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
         val attemptGeneration = beginConnectionAttempt()
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
-        return connect(device, attemptGeneration)
+        return try {
+            connect(device, attemptGeneration)
+        } catch (error: CancellationException) {
+            invalidateCancelledConnectionAttempt(attemptGeneration, ConnectionState.Connecting)
+            throw error
+        }
     }
 
     private suspend fun connect(device: ScannedDevice, attemptGeneration: Long): Result<Unit> {
@@ -196,12 +203,7 @@ class PhantomBleRepository(
             }) {
             return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
         }
-        try {
-            delay(250)
-        } catch (error: CancellationException) {
-            invalidateCancelledConnectionAttempt(attemptGeneration, ConnectionState.Connecting)
-            throw error
-        }
+        delay(250)
         if (!completeConnection(attemptGeneration, device)) {
             return Result.failure(IllegalStateException("Phantom connection attempt invalidated"))
         }
@@ -247,27 +249,28 @@ class PhantomBleRepository(
             return Result.failure(IllegalArgumentException("timeoutMs must be > 0"))
         }
 
-        if (lifecycleLock.withLock { terminal.value }) {
-            return Result.failure(IllegalStateException("Phantom repository is shut down"))
-        }
-
         val attemptGeneration = beginConnectionAttempt()
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
 
-        val completed = withTimeoutOrNull(timeoutMs) {
-            val scanResult = startScanning(attemptGeneration)
-            if (scanResult.isFailure) {
-                return@withTimeoutOrNull scanResult
+        val completed = try {
+            withTimeoutOrNull(timeoutMs) {
+                val scanResult = startScanning(attemptGeneration)
+                if (scanResult.isFailure) {
+                    return@withTimeoutOrNull scanResult
+                }
+                connect(device, attemptGeneration)
             }
-            connect(device, attemptGeneration)
+        } catch (error: CancellationException) {
+            invalidateCancelledConnectionAttempt(attemptGeneration)
+            throw error
         }
         if (completed != null) {
             return completed
         }
 
         return lifecycleLock.withLock {
-            if (terminal.value) {
-                Result.failure(IllegalStateException("Phantom repository is shut down"))
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                Result.failure(IllegalStateException("Phantom scan and connect attempt invalidated"))
             } else {
                 teardownConnection()
                 logRepo.error(
@@ -632,7 +635,7 @@ class PhantomBleRepository(
             if (_connectionState.value is ConnectionState.Connected) {
                 startMetrics(activeWorkout = workoutParams != null)
                 startHeuristicGeneration(activeWorkout = workoutParams != null)
-                workoutParams?.takeIf { repJob?.isActive == true }?.let(::startRepSimulation)
+                workoutParams?.takeIf { repJob?.isActive == true && !repSimulationCompleted }?.let(::startRepSimulation)
             }
         }
     }
@@ -647,13 +650,17 @@ class PhantomBleRepository(
 
     private fun invalidateCancelledConnectionAttempt(
         attemptGeneration: Long,
-        expectedState: ConnectionState,
+        expectedState: ConnectionState? = null,
     ) {
         lifecycleLock.withLock {
             if (
                 !terminal.value &&
                 connectionAttemptGeneration.value == attemptGeneration &&
-                _connectionState.value == expectedState
+                (
+                    (expectedState == null &&
+                        (_connectionState.value == ConnectionState.Scanning || _connectionState.value == ConnectionState.Connecting)) ||
+                        (expectedState != null && _connectionState.value == expectedState)
+                )
             ) {
                 connectionAttemptGeneration.incrementAndGet()
                 _connectionState.value = ConnectionState.Disconnected
@@ -843,6 +850,7 @@ class PhantomBleRepository(
     }
 
     private fun startRepSimulation(params: WorkoutParameters) {
+        repSimulationCompleted = false
         repGeneration += 1
         val expectedGeneration = repGeneration
         repJob?.cancel()
@@ -875,6 +883,9 @@ class PhantomBleRepository(
                                 timestamp = timestamp,
                             ),
                         )
+                        if (rep >= target && !params.isAMRAP && config.autoCompleteFixedRepSets) {
+                            repSimulationCompleted = true
+                        }
                         logRepo.info(
                             LogEventType.REP_RECEIVED,
                             "Phantom rep notification",

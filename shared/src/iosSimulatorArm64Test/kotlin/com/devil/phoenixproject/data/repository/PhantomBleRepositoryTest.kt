@@ -152,6 +152,28 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `starting a new scan clears devices from the previous scan`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.scannedDevices.value.isNotEmpty())
+
+            val scanning = async(Dispatchers.Default) { repository.startScanning() }
+            withContext(Dispatchers.Default) {
+                withTimeout(1_000L) {
+                    repository.scannedDevices.first { it.isEmpty() }
+                }
+            }
+
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+            assertTrue(scanning.await().isSuccess)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `connected repository initializes diagnostics and heuristic state before workout cancellation`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),
@@ -494,6 +516,39 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `replaceConfig immediately after final rep does not duplicate completed sequence`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(
+            logRepo,
+            PhantomBleConfig(repDelayMs = 100L),
+        )
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            val replaceOnFinalRep = async(Dispatchers.Unconfined) {
+                logRepo.logs.first { logs ->
+                    logs.any {
+                        it.eventType == LogEventType.REP_RECEIVED && it.details?.startsWith("rep=2/2") == true
+                    }
+                }
+                repository.replaceConfig(PhantomBleConfig(repDelayMs = 100L))
+            }
+            repository.repEvents.test {
+                assertTrue(repository.startWorkout(workoutParameters().copy(reps = 2)).isSuccess)
+                assertEquals(1, awaitItem().repsSetCount)
+                assertEquals(2, awaitItem().repsSetCount)
+
+                replaceOnFinalRep.await()
+                withContext(Dispatchers.Default) { delay(250L) }
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `AMRAP workout continues past requested rep count`() = runTest {
         val repository = PhantomBleRepository(
             ConnectionLogRepository(),
@@ -690,6 +745,35 @@ class PhantomBleRepositoryTest {
                 assertEquals(PhantomBleRepository.PHANTOM_DEVICE_NAME, request.deviceName)
                 assertEquals(PhantomBleRepository.PHANTOM_DEVICE_ADDRESS, request.deviceAddress)
                 assertEquals("connection_timeout", request.reason)
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `timed out scan does not tear down an explicitly started newer scan`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+
+        try {
+            repository.reconnectionRequested.test {
+                val timedOut = async(Dispatchers.Default) {
+                    repository.scanAndConnect(timeoutMs = 250L)
+                }
+                repository.connectionState.first { it == ConnectionState.Connecting }
+
+                repository.stopScanning()
+                val newerScan = async(Dispatchers.Default) { repository.startScanning() }
+                repository.connectionState.first { it == ConnectionState.Scanning }
+
+                assertTrue(timedOut.await().isFailure)
+                assertTrue(newerScan.await().isSuccess)
+                assertTrue(repository.scannedDevices.value.isNotEmpty())
+                assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+                expectNoEvents()
+                assertTrue(logRepo.getLogsByEventType(LogEventType.ERROR).isEmpty())
                 cancelAndIgnoreRemainingEvents()
             }
         } finally {
