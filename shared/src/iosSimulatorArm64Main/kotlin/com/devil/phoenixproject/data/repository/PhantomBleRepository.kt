@@ -402,15 +402,16 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             if (_discoModeActive.value) {
                 stopDiscoMode()
-                if (terminal.value) {
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                     return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
                 }
             }
             workoutParams = params
             _handleState.value = HandleState.Grabbed
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             logRepo.info(
@@ -420,21 +421,25 @@ class PhantomBleRepository(
                 PHANTOM_DEVICE_ADDRESS,
                 "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}; justLift=${params.isJustLift}",
             )
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             startMetrics(activeWorkout = true)
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
-            if (!startHeuristicGeneration(activeWorkout = true)) {
+            if (!startHeuristicGeneration(
+                    activeWorkout = true,
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                )
+            ) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             startRepSimulation(params)
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             Result.success(Unit)
@@ -446,14 +451,18 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             stopJobs()
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
+            }
             workoutParams = null
             _handleState.value = HandleState.Released
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             Result.success(Unit)
@@ -480,12 +489,13 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             _handleDetection.value = HandleDetection(leftDetected = enabled, rightDetected = enabled)
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             _handleState.value = if (enabled) HandleState.WaitingForRest else HandleState.Released
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             logRepo.info(LogEventType.NOTIFICATION, "Phantom handle detection ${if (enabled) "enabled" else "disabled"}")
@@ -508,8 +518,9 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             _handleState.value = HandleState.WaitingForRest
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             logRepo.info(LogEventType.NOTIFICATION, "Phantom Just Lift waiting mode armed")
@@ -529,15 +540,23 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             _handleState.value = HandleState.Grabbed
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             startMetrics(activeWorkout = true)
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
-            if (!startHeuristicGeneration(activeWorkout = true)) {
+            if (!startHeuristicGeneration(
+                    activeWorkout = true,
+                    expectedConnectionGeneration = expectedConnectionGeneration,
+                )
+            ) {
+                return@withLock
+            }
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
         }
@@ -589,8 +608,9 @@ class PhantomBleRepository(
             if (terminal.value || _connectionState.value !is ConnectionState.Connected || workoutParams != null) {
                 return@withLock
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             _discoModeActive.value = true
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             logRepo.info(LogEventType.COMMAND_SENT, "Phantom disco mode started", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
@@ -602,8 +622,9 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             _discoModeActive.value = false
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             logRepo.info(
@@ -1046,7 +1067,15 @@ class PhantomBleRepository(
         }
     }
 
-    private fun startHeuristicGeneration(activeWorkout: Boolean): Boolean = lifecycleLock.withLock {
+    private fun startHeuristicGeneration(
+        activeWorkout: Boolean,
+        expectedConnectionGeneration: Long? = null,
+    ): Boolean = lifecycleLock.withLock {
+            if (expectedConnectionGeneration != null &&
+                (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration)
+            ) {
+                return@withLock false
+            }
             val workoutWeightPerCableKg = workoutParams?.weightPerCableKg
             heuristicGeneration += 1
             val expectedGeneration = heuristicGeneration
@@ -1069,6 +1098,11 @@ class PhantomBleRepository(
                     )
                 }
             }) {
+                return@withLock false
+            }
+            if (expectedConnectionGeneration != null &&
+                (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration)
+            ) {
                 return@withLock false
             }
             heuristicJob = scope.launch {

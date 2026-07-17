@@ -718,6 +718,38 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `handle control does not overwrite reentrant disconnect cleanup`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+            val disconnectOnHandleDetection = async(Dispatchers.Unconfined) {
+                repository.handleDetection.first { detection ->
+                    if (!detection.leftDetected && !detection.rightDetected) {
+                        repository.disconnect()
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
+            repository.enableHandleDetection(false)
+            disconnectOnHandleDetection.await()
+
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertFalse(repository.handleDetection.value.leftDetected)
+            assertFalse(repository.handleDetection.value.rightDetected)
+            assertEquals(HandleState.WaitingForRest, repository.handleState.value)
+            assertTrue(logRepo.logs.value.none { it.message == "Phantom handle detection disabled" })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `injectRawPacket parses legacy rep bytes through protocol parser`() = runTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
         val raw = byteArrayOf(
