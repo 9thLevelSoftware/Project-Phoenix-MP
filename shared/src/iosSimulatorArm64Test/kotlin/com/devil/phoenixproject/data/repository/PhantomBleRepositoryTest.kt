@@ -334,6 +334,71 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `beginning a connection attempt gates reentrant producer restarts`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val replacement = PhantomBleConfig(loadScale = 2f, repDelayMs = 100L)
+        val restartOnConnected = async(Dispatchers.Unconfined) {
+            repository.connectionState.first { state ->
+                if (state is ConnectionState.Connected) {
+                    repository.restartMonitorPolling()
+                    repository.restartDiagnosticPolling()
+                    repository.replaceConfig(replacement)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            restartOnConnected.await()
+            logRepo.clearAll()
+
+            val reconnecting = async(Dispatchers.Unconfined) {
+                repository.connect(ScannedDevice("reentrant", "reentrant-address"))
+            }
+            repository.connectionState.first { it == ConnectionState.Connecting }
+
+            withContext(Dispatchers.Default) { delay(100L) }
+            assertTrue(logRepo.getLogsByEventType(LogEventType.NOTIFICATION).none { it.message == "Phantom monitor metric" })
+            assertTrue(logRepo.getLogsByEventType(LogEventType.DIAGNOSTIC).none { it.message == "Phantom diagnostic heartbeat" })
+            assertTrue(reconnecting.await().isSuccess)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `diagnostic collector workout owns connection completion producers`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+        val startWorkoutOnDiagnostic = async(Dispatchers.Unconfined) {
+            repository.diagnostics.first { diagnostic ->
+                if (diagnostic != null) {
+                    assertTrue(repository.startWorkout(workoutParameters()).isSuccess)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        try {
+            repository.metricsFlow.test {
+                assertTrue(repository.connect(ScannedDevice("diagnostic", "diagnostic-address")).isSuccess)
+                startWorkoutOnDiagnostic.await()
+
+                val metric = withTimeout(1_000L) { awaitItem() }
+                assertTrue(metric.loadA >= 2f, "completion must preserve the reentrant active workout producer")
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `shutdown from metric collector prevents post-terminal metric logging and state repopulation`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo)

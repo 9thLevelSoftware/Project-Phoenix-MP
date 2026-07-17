@@ -133,7 +133,7 @@ class PhantomBleRepository(
     private var heartbeatGeneration = 0L
 
     override suspend fun startScanning(): Result<Unit> {
-        val attemptGeneration = beginConnectionAttempt()
+        val attemptGeneration = beginConnectionAttempt(ConnectionState.Scanning)
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
         return try {
             startScanning(attemptGeneration)
@@ -185,7 +185,7 @@ class PhantomBleRepository(
     }
 
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
-        val attemptGeneration = beginConnectionAttempt()
+        val attemptGeneration = beginConnectionAttempt(ConnectionState.Connecting)
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
         return try {
             connect(device, attemptGeneration)
@@ -278,7 +278,7 @@ class PhantomBleRepository(
             return Result.failure(IllegalArgumentException("timeoutMs must be > 0"))
         }
 
-        val attemptGeneration = beginConnectionAttempt()
+        val attemptGeneration = beginConnectionAttempt(ConnectionState.Scanning)
             ?: return Result.failure(IllegalStateException("Phantom repository is shut down"))
 
         val completed = try {
@@ -855,11 +855,13 @@ class PhantomBleRepository(
         }
     }
 
-    private fun beginConnectionAttempt(): Long? = lifecycleLock.withLock {
+    private fun beginConnectionAttempt(reservedState: ConnectionState): Long? = lifecycleLock.withLock {
         if (terminal.value) {
             null
         } else {
-            connectionAttemptGeneration.incrementAndGet()
+            val attemptGeneration = connectionAttemptGeneration.incrementAndGet()
+            _connectionState.value = reservedState
+            attemptGeneration
         }
     }
 
@@ -951,19 +953,24 @@ class PhantomBleRepository(
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }
-        startMetrics(
-            activeWorkout = false,
-            expectedConnectionGeneration = attemptGeneration,
-        )
-        if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
-            return@withLock false
-        }
-        if (!startHeuristicGeneration(
+        if (workoutParams == null) {
+            startMetrics(
                 activeWorkout = false,
                 expectedConnectionGeneration = attemptGeneration,
             )
-        ) {
-            return@withLock false
+            if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
+                return@withLock false
+            }
+            if (workoutParams == null &&
+                !startHeuristicGeneration(
+                    activeWorkout = false,
+                    expectedConnectionGeneration = attemptGeneration,
+                )
+            ) {
+                if (terminal.value || connectionAttemptGeneration.value != attemptGeneration || workoutParams == null) {
+                    return@withLock false
+                }
+            }
         }
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
