@@ -750,6 +750,74 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `command results fail when command log collector disconnects normally`() = runTest {
+        val commands = listOf<Pair<String, suspend PhantomBleRepository.() -> Result<Unit>>>(
+            "Phantom color scheme set" to { setColorScheme(7) },
+            "Phantom received raw workout command" to { sendWorkoutCommand(byteArrayOf(0x01)) },
+            "Phantom init sequence accepted" to { sendInitSequence() },
+            "Phantom stop command accepted" to { sendStopCommand() },
+        )
+
+        commands.forEach { (message, command) ->
+            val logRepo = ConnectionLogRepository()
+            val repository = PhantomBleRepository(logRepo)
+            try {
+                assertTrue(repository.scanAndConnect().isSuccess)
+                logRepo.clearAll()
+                val disconnectOnCommandLog = async(Dispatchers.Unconfined) {
+                    var disconnectTriggered = false
+                    logRepo.logs.first { logs ->
+                        if (!disconnectTriggered && logs.any { it.message == message }) {
+                            disconnectTriggered = true
+                            repository.disconnect()
+                        }
+                        disconnectTriggered
+                    }
+                }
+
+                val result = command(repository)
+
+                disconnectOnCommandLog.await()
+                assertTrue(result.isFailure, message)
+                assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            } finally {
+                repository.shutdown()
+            }
+        }
+    }
+
+    @Test
+    fun `replaceConfig aborts when config collector disconnects normally`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val replacement = PhantomBleConfig(loadScale = 2f, repDelayMs = 100L)
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            logRepo.clearAll()
+            val disconnectOnConfig = async(Dispatchers.Unconfined) {
+                repository.config.first { config ->
+                    if (config == replacement) {
+                        repository.disconnect()
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
+            repository.replaceConfig(replacement)
+
+            disconnectOnConfig.await()
+            assertEquals(replacement, repository.config.value)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(logRepo.logs.value.none { it.message == "Phantom config updated" })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `injectRawPacket parses legacy rep bytes through protocol parser`() = runTest {
         val repository = PhantomBleRepository(ConnectionLogRepository())
         val raw = byteArrayOf(

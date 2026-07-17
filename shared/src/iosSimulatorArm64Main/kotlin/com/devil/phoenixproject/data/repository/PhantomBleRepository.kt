@@ -356,9 +356,10 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             lastColorSchemeIndex = schemeIndex
             logRepo.info(LogEventType.COMMAND_SENT, "Phantom color scheme set", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, "scheme=$schemeIndex")
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             Result.success(Unit)
@@ -370,6 +371,7 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             logRepo.info(
                 LogEventType.COMMAND_SENT,
                 "Phantom received raw workout command",
@@ -377,7 +379,7 @@ class PhantomBleRepository(
                 PHANTOM_DEVICE_ADDRESS,
                 command.joinToString(" ") { it.toUByte().toString(16).padStart(2, '0') },
             )
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             Result.success(Unit)
@@ -389,8 +391,9 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             logRepo.info(LogEventType.COMMAND_SENT, "Phantom init sequence accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
             }
             Result.success(Unit)
@@ -474,8 +477,9 @@ class PhantomBleRepository(
             if (terminal.value) {
                 Result.failure(IllegalStateException("Phantom repository is shut down"))
             } else {
+                val expectedConnectionGeneration = connectionAttemptGeneration.value
                 logRepo.info(LogEventType.COMMAND_SENT, "Phantom stop command accepted", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-                if (terminal.value) {
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                     Result.failure(IllegalStateException("Phantom repository is shut down"))
                 } else {
                     Result.success(Unit)
@@ -808,8 +812,9 @@ class PhantomBleRepository(
             if (terminal.value) {
                 return@withLock
             }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
             _config.value = config
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             logRepo.info(
@@ -819,18 +824,25 @@ class PhantomBleRepository(
                 PHANTOM_DEVICE_ADDRESS,
                 "loadScale=${config.loadScale}; velocityScale=${config.velocityScale}; positionScale=${config.positionScale}; repDelayMs=${config.repDelayMs}; autoCompleteFixedRepSets=${config.autoCompleteFixedRepSets}",
             )
-            if (terminal.value) {
+            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                 return@withLock
             }
             if (_connectionState.value is ConnectionState.Connected) {
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+                    return@withLock
+                }
                 startMetrics(activeWorkout = workoutParams != null)
-                if (terminal.value) {
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                     return@withLock
                 }
-                if (!startHeuristicGeneration(activeWorkout = workoutParams != null)) {
+                if (!startHeuristicGeneration(
+                        activeWorkout = workoutParams != null,
+                        expectedConnectionGeneration = expectedConnectionGeneration,
+                    )
+                ) {
                     return@withLock
                 }
-                if (terminal.value) {
+                if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
                     return@withLock
                 }
                 workoutParams?.takeIf { repJob?.isActive == true && !repSimulationCompleted }?.let(::startRepSimulation)
