@@ -773,4 +773,8 @@
     <string name="profile_disco_unlocked_body">Schakel de discomodus in bij de LED-voorkeuren en laat je trainer feesten.</string>
     <string name="profile_disco_unlocked_action">Tijd voor een feestje</string>
     <string name="profile_adult_enable_partial_failure">De leeftijdsbevestiging is opgeslagen, maar de vulgaire modus kon niet worden ingeschakeld. Probeer het opnieuw.</string>
+    <string name="delete_personal_record_title">Persoonlijk record verwijderen?</string>
+    <string name="delete_personal_record_message">Dit verwijdert het record na synchronisatie van alle apparaten. Dit kan niet ongedaan worden gemaakt.</string>
+    <string name="cd_delete_personal_record">Persoonlijk record verwijderen</string>
+    <string name="personal_record_delete_failed">Record kon niet worden verwijderd: %1$s</string>
 </resources>

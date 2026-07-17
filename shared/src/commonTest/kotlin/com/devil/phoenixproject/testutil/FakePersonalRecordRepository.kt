@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -57,7 +58,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
     }
 
     private fun updateRecordsFlow() {
-        _recordsFlow.value = records.values.toList()
+        _recordsFlow.value = records.values.filter { it.deletedAt == null }
     }
 
     private fun calculateOneRepMax(weightKg: Float, reps: Int): Float {
@@ -71,6 +72,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         .filter {
             it.exerciseId == exerciseId &&
                 it.profileId == profileId &&
+                it.deletedAt == null &&
                 normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode)
         }
         .maxByOrNull { it.timestamp }
@@ -80,7 +82,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
     }
 
     override suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord? = records.values
-        .filter { it.exerciseId == exerciseId && it.profileId == profileId }
+        .filter { it.exerciseId == exerciseId && it.profileId == profileId && it.deletedAt == null }
         .maxByOrNull { it.volume }
 
     override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = _recordsFlow.map { list ->
@@ -91,6 +93,20 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         list.filter { it.profileId == profileId }
             .groupBy { it.exerciseId }
             .mapNotNull { (_, records) -> records.maxByOrNull { it.volume } }
+    }
+
+    override suspend fun deletePR(prId: Long, profileId: String): Result<Unit> {
+        val key = records.entries
+            .firstOrNull { (_, record) -> record.id == prId && record.profileId == profileId }
+            ?.key
+            ?: return Result.failure(IllegalArgumentException("Personal record $prId was not found for profile $profileId"))
+        val deletedAt = KmpUtils.currentTimeMillis()
+        records[key] = records.getValue(key).copy(
+            updatedAt = deletedAt,
+            deletedAt = deletedAt,
+        )
+        updateRecordsFlow()
+        return Result.success(Unit)
     }
 
     override suspend fun updatePRIfBetter(

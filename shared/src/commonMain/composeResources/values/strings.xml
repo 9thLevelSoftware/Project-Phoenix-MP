@@ -928,4 +928,8 @@
     <string name="profile_disco_unlocked_body">Turn on Disco Mode in LED preferences to make your trainer party.</string>
     <string name="profile_disco_unlocked_action">Let\'s party</string>
     <string name="profile_adult_enable_partial_failure">Age confirmation was saved, but Vulgar Mode could not be enabled. Try again.</string>
+    <string name="delete_personal_record_title">Delete personal record?</string>
+    <string name="delete_personal_record_message">This removes the record from all devices after sync. This can’t be undone.</string>
+    <string name="cd_delete_personal_record">Delete personal record</string>
+    <string name="personal_record_delete_failed">Could not delete record: %1$s</string>
 </resources>

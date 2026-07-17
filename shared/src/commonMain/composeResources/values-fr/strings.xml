@@ -794,4 +794,8 @@
     <string name="profile_disco_unlocked_body">Activez le mode disco dans les préférences LED pour faire danser votre machine.</string>
     <string name="profile_disco_unlocked_action">C\'est parti !</string>
     <string name="profile_adult_enable_partial_failure">La confirmation de l\'âge a été enregistrée, mais le mode vulgaire n\'a pas pu être activé. Réessayez.</string>
+    <string name="delete_personal_record_title">Supprimer le record personnel ?</string>
+    <string name="delete_personal_record_message">Ce record sera supprimé de tous les appareils après synchronisation. Cette action est irréversible.</string>
+    <string name="cd_delete_personal_record">Supprimer le record personnel</string>
+    <string name="personal_record_delete_failed">Impossible de supprimer le record : %1$s</string>
 </resources>

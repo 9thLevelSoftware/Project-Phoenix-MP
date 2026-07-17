@@ -330,27 +330,10 @@ class SqlDelightSyncRepository(
     override suspend fun mergePRs(records: List<PersonalRecordSyncDto>) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                records.forEach { dto ->
-                    // Upsert by compound key (exerciseId, workoutMode, prType, phase)
-                    // to match the UNIQUE INDEX idx_pr_unique.
-                    // Uses DTO-supplied prType/phase/volume with backward-compatible defaults.
-                    val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
-                    queries.upsertPR(
-                        exerciseId = dto.exerciseId,
-                        exerciseName = dto.exerciseName,
-                        weight = dto.weight.toDouble(),
-                        reps = dto.reps.toLong(),
-                        oneRepMax = dto.oneRepMax.toDouble(),
-                        achievedAt = dto.achievedAt,
-                        workoutMode = dto.workoutMode,
-                        prType = dto.prType,
-                        volume = effectiveVolume.toDouble(),
-                        phase = dto.phase,
-                        profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
-                        cable_count = dto.cableCount?.toLong(),
-                        uuid = dto.clientId.ifBlank { generateUUID() },
-                    )
-                }
+                mergePersonalRecordRows(
+                    records,
+                    userProfileRepository.activeProfile.value?.id ?: "default",
+                )
             }
             Logger.d { "Merged ${records.size} PRs from server" }
         }
@@ -1348,6 +1331,8 @@ class SqlDelightSyncRepository(
                 profileId = row.profile_id,
                 cableCount = row.cable_count?.toInt(),
                 uuid = row.uuid,
+                updatedAt = row.updatedAt,
+                deletedAt = row.deletedAt,
             )
         }
     }
@@ -1477,7 +1462,8 @@ class SqlDelightSyncRepository(
 
     private fun mergePersonalRecordRows(records: List<PersonalRecordSyncDto>, profileId: String) {
         records.forEach { dto ->
-            // INSERT OR IGNORE — local PRs win on conflict (same compound key)
+            // Stable UUID + timestamp LWW: at an equal timestamp deletion wins so a stale
+            // active device cannot resurrect a synced deletion.
             val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
             val prUuid = dto.clientId.ifBlank { generateUUID() }
             queries.adoptServerPrUuid(
@@ -1488,7 +1474,25 @@ class SqlDelightSyncRepository(
                 profileId = profileId,
                 achievedAt = dto.achievedAt,
             )
-            queries.insertPRIgnore(
+            queries.updateSyncedPRIfNewer(
+                exerciseId = dto.exerciseId,
+                exerciseName = dto.exerciseName,
+                weight = dto.weight.toDouble(),
+                reps = dto.reps.toLong(),
+                oneRepMax = dto.oneRepMax.toDouble(),
+                achievedAt = dto.achievedAt,
+                workoutMode = dto.workoutMode,
+                preserveWorkoutMode = dto.workoutMode in setOf("MAX_WEIGHT", "MAX_VOLUME"),
+                prType = dto.prType,
+                volume = effectiveVolume.toDouble(),
+                phase = dto.phase,
+                updatedAt = dto.updatedAt,
+                deletedAt = dto.deletedAt,
+                profileId = profileId,
+                cableCount = dto.cableCount?.toLong(),
+                uuid = prUuid,
+            )
+            queries.insertSyncedPRIgnore(
                 exerciseId = dto.exerciseId,
                 exerciseName = dto.exerciseName,
                 weight = dto.weight.toDouble(),
@@ -1499,8 +1503,10 @@ class SqlDelightSyncRepository(
                 prType = dto.prType,
                 volume = effectiveVolume.toDouble(),
                 phase = dto.phase,
-                profile_id = profileId,
-                cable_count = dto.cableCount?.toLong(),
+                updatedAt = dto.updatedAt,
+                deletedAt = dto.deletedAt,
+                profileId = profileId,
+                cableCount = dto.cableCount?.toLong(),
                 uuid = prUuid,
             )
         }

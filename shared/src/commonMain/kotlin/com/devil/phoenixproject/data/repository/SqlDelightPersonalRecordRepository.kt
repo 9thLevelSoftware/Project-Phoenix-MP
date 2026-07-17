@@ -8,12 +8,14 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+
 
 class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : PersonalRecordRepository {
     private val queries = db.vitruvianDatabaseQueries
@@ -63,6 +65,8 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         profileId = profileId,
         cableCount = cableCount?.toInt(),
         uuid = uuid,
+        updatedAt = updatedAt,
+        deletedAt = deletedAt,
     )
 
     override suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = withContext(Dispatchers.IO) {
@@ -93,6 +97,23 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                 // Return the best PR for each exercise (by weight, parity with parent repo)
                 prs.maxByOrNull { it.weightPerCableKg }
             }
+    }
+
+    override suspend fun deletePR(prId: Long, profileId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val now = KmpUtils.currentTimeMillis()
+            db.transaction {
+                queries.softDeletePR(
+                    deletedAt = now,
+                    updatedAt = now,
+                    id = prId,
+                    profileId = profileId,
+                )
+            }
+            Result.success(Unit)
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
     }
 
     override suspend fun updatePRIfBetter(
@@ -277,6 +298,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         val volumeForVolumePR = volumePRWeightPerCableKg * reps
         val estimatedOneRepMax = OneRepMaxCalculator.estimate(weightPRWeightPerCableKg, reps)
         val phaseName = phase.name
+        val updatedAt = KmpUtils.currentTimeMillis()
 
         // Issue #319: Log the profile context being used
         Logger.d { "PR_SAVE: Checking for exercise=$exerciseId, mode=$canonicalWorkoutMode, phase=$phaseName, profile=$effectiveProfileId" }
@@ -347,6 +369,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     prType = PRType.MAX_WEIGHT.name,
                     volume = volumeForWeightPR.toDouble(),
                     phase = phaseName,
+                    updatedAt = updatedAt,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
                     uuid = currentWeightPR?.uuid ?: generateUUID(),
@@ -367,6 +390,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     prType = PRType.MAX_VOLUME.name,
                     volume = volumeForVolumePR.toDouble(),
                     phase = phaseName,
+                    updatedAt = updatedAt,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
                     uuid = currentVolumePR?.uuid ?: generateUUID(),

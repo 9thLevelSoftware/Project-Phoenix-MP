@@ -514,4 +514,27 @@ class PersonalRecordRepositoryTest {
         assertEquals(35f, oldSchoolPR?.weightPerCableKg)
         assertEquals(55f, echoPR?.weightPerCableKg)
     }
+
+    @Test
+    fun `deleting a PR removes its tombstone from active queries`() = runTest {
+        repository.addRecord(
+            PersonalRecord(
+                id = 99,
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+                weightPerCableKg = 200f,
+                reps = 1,
+                oneRepMax = 200f,
+                timestamp = 1000L,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = 200f,
+                profileId = profileId,
+            ),
+        )
+
+        assertTrue(repository.deletePR(99, profileId).isSuccess)
+        assertTrue(repository.getAllPRs(profileId).first().isEmpty())
+        assertNull(repository.getLatestPR(exerciseId, "OldSchool", profileId))
+    }
 }

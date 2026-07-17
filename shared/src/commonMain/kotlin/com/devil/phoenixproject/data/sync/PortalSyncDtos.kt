@@ -630,6 +630,7 @@ data class PortalPersonalRecordDto(
     val sessionId: String? = null,
     val achievedAt: String,
     val updatedAt: String? = null,
+    val deletedAt: String? = null,
     val localProfileId: String? = null,
     val workoutMode: String? = null,
 )
@@ -987,4 +988,5 @@ data class PullPersonalRecordDto(
     val sessionId: String? = null,
     val achievedAt: String? = null,
     val updatedAt: String? = null,
+    val deletedAt: String? = null,
 )

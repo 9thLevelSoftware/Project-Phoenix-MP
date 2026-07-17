@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -55,8 +56,14 @@ fun ProgressTab(
     formatWeight: (Float, WeightUnit) -> String,
     assessmentEnabled: Boolean,
     onNavigateToStrengthAssessment: () -> Unit,
+    onNavigateToExerciseDetail: (String) -> Unit,
+    onDeletePersonalRecord: suspend (PersonalRecord) -> Result<Unit>,
     modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
+    var pendingDelete by remember { mutableStateOf<PersonalRecord?>(null) }
+    var isDeletingRecord by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -193,7 +200,9 @@ fun ProgressTab(
                     }
 
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigateToExerciseDetail(pr.exerciseId) },
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         ),
@@ -237,6 +246,18 @@ fun ProgressTab(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            IconButton(
+                                onClick = {
+                                    deleteError = null
+                                    pendingDelete = pr
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = stringResource(Res.string.cd_delete_personal_record),
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
                 }
@@ -253,6 +274,46 @@ fun ProgressTab(
             Spacer(modifier = Modifier.height(80.dp))
         }
     }
+
+    pendingDelete?.let { record ->
+        AlertDialog(
+            onDismissRequest = { if (!isDeletingRecord) pendingDelete = null },
+            title = { Text(stringResource(Res.string.delete_personal_record_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                    Text(stringResource(Res.string.delete_personal_record_message))
+                    deleteError?.let { error ->
+                        Text(
+                            text = stringResource(Res.string.personal_record_delete_failed, error),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isDeletingRecord,
+                    onClick = {
+                        isDeletingRecord = true
+                        scope.launch {
+                            onDeletePersonalRecord(record).fold(
+                                onSuccess = { pendingDelete = null },
+                                onFailure = { deleteError = it.message ?: "Unknown error" },
+                            )
+                            isDeletingRecord = false
+                        }
+                    },
+                ) { Text(stringResource(Res.string.action_delete)) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isDeletingRecord,
+                    onClick = { pendingDelete = null },
+                ) { Text(stringResource(Res.string.action_cancel)) }
+            },
+        )
+    }
 }
 
 /**
@@ -268,6 +329,7 @@ fun AnalyticsScreen(
     themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
     assessmentProfileId: String?,
     onNavigateToStrengthAssessment: (String) -> Unit,
+    onNavigateToExerciseDetail: (String) -> Unit,
 ) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
@@ -484,6 +546,10 @@ fun AnalyticsScreen(
                         assessmentEnabled = assessmentProfileId != null,
                         onNavigateToStrengthAssessment = {
                             assessmentProfileId?.let(onNavigateToStrengthAssessment)
+                        },
+                        onNavigateToExerciseDetail = onNavigateToExerciseDetail,
+                        onDeletePersonalRecord = { record ->
+                            viewModel.personalRecordRepository.deletePR(record.id, activeProfileId)
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

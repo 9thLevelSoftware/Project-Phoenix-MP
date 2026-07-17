@@ -51,6 +51,9 @@ data class PersonalRecord(
     val profileId: String = "default",
     val cableCount: Int? = null,
     val uuid: String? = null,
+    /** Sync metadata; product reads remain tombstone-filtered in SQL. */
+    val updatedAt: Long? = null,
+    val deletedAt: Long? = null,
 )
 
 /**

@@ -794,4 +794,8 @@
     <string name="profile_disco_unlocked_body">Aktiviere den Disco-Modus in den LED-Einstellungen, damit dein Trainer Party macht.</string>
     <string name="profile_disco_unlocked_action">Party starten</string>
     <string name="profile_adult_enable_partial_failure">Die Altersbestätigung wurde gespeichert, aber der vulgäre Modus konnte nicht aktiviert werden. Versuche es erneut.</string>
+    <string name="delete_personal_record_title">Persönlichen Rekord löschen?</string>
+    <string name="delete_personal_record_message">Dadurch wird der Rekord nach der Synchronisierung von allen Geräten entfernt. Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="cd_delete_personal_record">Persönlichen Rekord löschen</string>
+    <string name="personal_record_delete_failed">Rekord konnte nicht gelöscht werden: %1$s</string>
 </resources>

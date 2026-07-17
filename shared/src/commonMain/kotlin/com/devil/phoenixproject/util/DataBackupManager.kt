@@ -749,6 +749,7 @@ abstract class BaseDataBackupManager(
                             prType = pr.prType,
                             volume = pr.volume.toDouble(),
                             phase = pr.phase ?: "COMBINED",
+                            updatedAt = KmpUtils.currentTimeMillis(),
                             profile_id = pr.profileId ?: "default",
                             cable_count = pr.cableCount?.toLong(),
                             uuid = pr.uuid ?: generateUUID(),
@@ -1580,6 +1581,7 @@ abstract class BaseDataBackupManager(
                                                     prType = pr.prType,
                                                     volume = pr.volume.toDouble(),
                                                     phase = pr.phase ?: "COMBINED",
+                                                    updatedAt = KmpUtils.currentTimeMillis(),
                                                     profile_id = pr.profileId ?: "default",
                                                     // F304: preserve cable count on streaming restore (the
                                                     // non-streaming path already passes pr.cableCount).

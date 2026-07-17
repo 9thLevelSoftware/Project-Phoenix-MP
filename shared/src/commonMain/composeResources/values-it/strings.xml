@@ -72,4 +72,8 @@
     <string name="set_type_warmup">Warm-up Set %1$d</string>
     <string name="set_type_working">Working Set</string>
 
+    <string name="delete_personal_record_title">Eliminare il record personale?</string>
+    <string name="delete_personal_record_message">Il record verrà rimosso da tutti i dispositivi dopo la sincronizzazione. L’azione non può essere annullata.</string>
+    <string name="cd_delete_personal_record">Elimina record personale</string>
+    <string name="personal_record_delete_failed">Impossibile eliminare il record: %1$s</string>
 </resources>

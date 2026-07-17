@@ -1000,31 +1000,35 @@ WHERE exerciseId = ?
 
 -- Get all PRs ordered by timestamp
 selectAllRecords:
-SELECT * FROM PersonalRecord WHERE profile_id = :profileId ORDER BY achievedAt DESC;
+SELECT * FROM PersonalRecord
+WHERE profile_id = :profileId AND deletedAt IS NULL
+ORDER BY achievedAt DESC;
 
 -- Get PRs for a specific exercise
 selectRecordsByExercise:
-SELECT * FROM PersonalRecord WHERE exerciseId = ? AND profile_id = :profileId ORDER BY oneRepMax DESC;
+SELECT * FROM PersonalRecord
+WHERE exerciseId = ? AND profile_id = :profileId AND deletedAt IS NULL
+ORDER BY oneRepMax DESC;
 
 -- Get PR by exercise, workout mode, PR type, and phase
 selectPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ?
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 LIMIT 1;
 
 -- Get both PRs (MAX_WEIGHT and MAX_VOLUME) for an exercise in a specific mode (COMBINED phase)
 selectPRsForExerciseAndMode:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ?
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY prType;
 
 -- Get the best weight PR for an exercise across all modes
 selectBestWeightPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND prType = 'MAX_WEIGHT'
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY weight DESC
 LIMIT 1;
 
@@ -1032,7 +1036,7 @@ LIMIT 1;
 selectBestVolumePR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND prType = 'MAX_VOLUME'
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY volume DESC
 LIMIT 1;
 
@@ -1042,7 +1046,7 @@ SELECT * FROM PersonalRecord
 WHERE exerciseId = :exerciseId
 AND prType = 'MAX_WEIGHT'
 AND workoutMode = :workoutMode
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY weight DESC
 LIMIT 1;
 
@@ -1052,7 +1056,7 @@ SELECT * FROM PersonalRecord
 WHERE exerciseId = :exerciseId
 AND prType = 'MAX_VOLUME'
 AND workoutMode = :workoutMode
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY volume DESC
 LIMIT 1;
 
@@ -1060,14 +1064,14 @@ LIMIT 1;
 selectAllPRsForExercise:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = :exerciseId
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY workoutMode, prType, achievedAt DESC;
 
 -- Get the best overall PR for an exercise (prefers weight, for backwards compatibility)
 selectBestPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ?
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY weight DESC, volume DESC
 LIMIT 1;
 
@@ -1075,12 +1079,14 @@ LIMIT 1;
 selectLatestPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ? AND prType = 'MAX_WEIGHT'
-AND profile_id = :profileId
+AND profile_id = :profileId AND deletedAt IS NULL
 LIMIT 1;
 
 -- Get all PRs grouped by exercise for analytics
 selectAllPRsGrouped:
-SELECT * FROM PersonalRecord WHERE profile_id = :profileId ORDER BY exerciseId, workoutMode, prType, achievedAt DESC;
+SELECT * FROM PersonalRecord
+WHERE profile_id = :profileId AND deletedAt IS NULL
+ORDER BY exerciseId, workoutMode, prType, achievedAt DESC;
 
 -- Insert a new PR (with prType, volume, and phase support)
 insertRecord:
@@ -1095,8 +1101,52 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 -- Upsert PR by unique key (exerciseId, workoutMode, prType, phase) - no ID required
 -- Uses INSERT OR REPLACE which replaces on unique index conflict (idx_pr_unique)
 upsertPR:
-INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, deletedAt, profile_id, cable_count, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :updatedAt, NULL, ?, ?, ?);
+
+-- User-facing deletion: retain the stable UUID and full row for sync, but hide it from all product reads.
+softDeletePR:
+UPDATE PersonalRecord
+SET deletedAt = :deletedAt, updatedAt = :updatedAt
+WHERE id = :id AND profile_id = :profileId AND deletedAt IS NULL;
+
+-- Update only when the incoming portal row wins by timestamp. At an equal timestamp, deletion wins
+-- so a concurrent active write cannot resurrect a deleted record.
+updateSyncedPRIfNewer:
+UPDATE PersonalRecord
+SET exerciseId = :exerciseId,
+    exerciseName = :exerciseName,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    workoutMode = CASE
+        -- Older portal records only expose their PR type here; retain the local
+        -- user-selected workout mode rather than degrading it on a pull.
+        WHEN :preserveWorkoutMode THEN workoutMode
+        ELSE :workoutMode
+    END,
+    prType = :prType,
+    volume = :volume,
+    phase = :phase,
+    updatedAt = :updatedAt,
+    deletedAt = :deletedAt,
+    profile_id = :profileId,
+    cable_count = :cableCount
+WHERE uuid = :uuid
+  AND (
+      COALESCE(updatedAt, 0) < :updatedAt
+      OR (
+          COALESCE(updatedAt, 0) = :updatedAt
+          AND :deletedAt IS NOT NULL
+          AND deletedAt IS NULL
+      )
+  );
+
+-- Insert a portal row only when no stable UUID or compound-key equivalent already exists.
+insertSyncedPRIgnore:
+INSERT OR IGNORE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, deletedAt, profile_id, cable_count, uuid)
+VALUES (:exerciseId, :exerciseName, :weight, :reps, :oneRepMax, :achievedAt, :workoutMode, :prType, :volume, :phase, :updatedAt, :deletedAt, :profileId, :cableCount, :uuid);
 
 -- Insert PR but ignore on conflict (local wins) - for portal pull merge
 insertPRIgnore:
@@ -2655,7 +2705,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 -- Get PRs modified since last sync
 selectPRsModifiedSince:
 SELECT * FROM PersonalRecord
-WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
+WHERE (updatedAt > ? OR updatedAt IS NULL)
 AND profile_id = :profileId;
 
 -- Update PR server ID

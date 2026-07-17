@@ -794,4 +794,8 @@
     <string name="profile_disco_unlocked_body">Activa el modo disco en las preferencias LED para que tu entrenador se una a la fiesta.</string>
     <string name="profile_disco_unlocked_action">¡A bailar!</string>
     <string name="profile_adult_enable_partial_failure">La confirmación de edad se guardó, pero no se pudo activar el modo vulgar. Inténtalo de nuevo.</string>
+    <string name="delete_personal_record_title">¿Eliminar récord personal?</string>
+    <string name="delete_personal_record_message">Esto elimina el récord de todos los dispositivos después de sincronizar. No se puede deshacer.</string>
+    <string name="cd_delete_personal_record">Eliminar récord personal</string>
+    <string name="personal_record_delete_failed">No se pudo eliminar el récord: %1$s</string>
 </resources>
