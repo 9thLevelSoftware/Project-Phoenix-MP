@@ -505,12 +505,23 @@ class PhantomBleRepository(
 
     override fun resetHandleState() {
         lifecycleLock.withLock {
-            if (!terminal.value && !lifecycleCleanupInProgress) {
-                _handleState.value = HandleState.WaitingForRest
-                if (terminal.value) {
-                    return@withLock
-                }
+            val expectedConnectionGeneration = connectionAttemptGeneration.value
+            if (
+                terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
             }
+            _handleState.value = HandleState.WaitingForRest
+            if (
+                terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
+                return@withLock
+            }
+            connectionAttemptGeneration.incrementAndGet()
         }
     }
 
