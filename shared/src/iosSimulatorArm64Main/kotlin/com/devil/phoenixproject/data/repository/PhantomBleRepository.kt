@@ -598,7 +598,7 @@ class PhantomBleRepository(
 
     override fun restartDiagnosticPolling() {
         lifecycleLock.withLock {
-            if (!terminal.value) {
+            if (!terminal.value && !lifecycleCleanupInProgress) {
                 val expectedConnectionGeneration = connectionAttemptGeneration.value
                 if (!startDiagnostics(expectedConnectionGeneration) ||
                     terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration
@@ -662,7 +662,7 @@ class PhantomBleRepository(
         hasOpcodePrefix: Boolean = false,
     ): Result<Unit> {
         val expectedConnectionGeneration = lifecycleLock.withLock {
-            if (terminal.value) {
+            if (terminal.value || lifecycleCleanupInProgress) {
                 null
             } else {
                 connectionAttemptGeneration.value
@@ -677,7 +677,9 @@ class PhantomBleRepository(
                 PhantomRawPacketKind.HEURISTIC -> injectHeuristicPacket(data, expectedConnectionGeneration)
             }
             if (lifecycleLock.withLock {
-                    terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration
+                    terminal.value ||
+                        lifecycleCleanupInProgress ||
+                        connectionAttemptGeneration.value != expectedConnectionGeneration
                 }
             ) {
                 Result.failure(IllegalStateException("Phantom raw packet injection invalidated"))
@@ -688,7 +690,10 @@ class PhantomBleRepository(
             throw error
         } catch (error: Throwable) {
             lifecycleLock.withLock {
-                if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
+                if (!terminal.value &&
+                    !lifecycleCleanupInProgress &&
+                    connectionAttemptGeneration.value == expectedConnectionGeneration
+                ) {
                     logRepo.error(
                         LogEventType.ERROR,
                         "Phantom raw ${kind.name.lowercase()} packet rejected",
@@ -703,21 +708,33 @@ class PhantomBleRepository(
     }
     private suspend fun injectMonitorPacket(data: ByteArray, expectedConnectionGeneration: Long) {
         lifecycleLock.withLock {
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             val packet = parseMonitorPacket(data)
                 ?: error("monitor packet too short: ${data.size} bytes")
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             val metric = monitorProcessorFor(expectedConnectionGeneration).process(packet)
                 ?: error("monitor packet parsed but was rejected by validation")
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             _metricsFlow.tryEmit(metric)
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             logRepo.info(
@@ -736,17 +753,26 @@ class PhantomBleRepository(
         expectedConnectionGeneration: Long,
     ) {
         lifecycleLock.withLock {
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             val timestamp = Clock.System.now().toEpochMilliseconds()
             val rep = parseRepPacket(data, hasOpcodePrefix, timestamp)
                 ?: error("rep packet too short: ${data.size} bytes")
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             _repEvents.tryEmit(rep)
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             logRepo.info(
@@ -761,17 +787,26 @@ class PhantomBleRepository(
 
     private fun injectDiagnosticPacket(data: ByteArray, expectedConnectionGeneration: Long) {
         lifecycleLock.withLock {
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             val timestamp = Clock.System.now().toEpochMilliseconds()
             val diagnostic = parseDiagnosticPacket(data)
                 ?: error("diagnostic packet too short: ${data.size} bytes")
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             _diagnostics.value = diagnostic.copy(receivedAtMillis = timestamp)
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             logRepo.info(
@@ -786,17 +821,26 @@ class PhantomBleRepository(
 
     private fun injectHeuristicPacket(data: ByteArray, expectedConnectionGeneration: Long) {
         lifecycleLock.withLock {
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             val timestamp = Clock.System.now().toEpochMilliseconds()
             val heuristic = parseHeuristicPacket(data, timestamp)
                 ?: error("heuristic packet too short: ${data.size} bytes")
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             _heuristicData.value = heuristic
-            if (terminal.value || connectionAttemptGeneration.value != expectedConnectionGeneration) {
+            if (terminal.value ||
+                lifecycleCleanupInProgress ||
+                connectionAttemptGeneration.value != expectedConnectionGeneration
+            ) {
                 return@withLock
             }
             logRepo.info(
@@ -1090,6 +1134,7 @@ class PhantomBleRepository(
     ): Boolean = lifecycleLock.withLock {
         if (
             terminal.value ||
+            lifecycleCleanupInProgress ||
             _connectionState.value !is ConnectionState.Connected ||
             (expectedConnectionGeneration != null && connectionAttemptGeneration.value != expectedConnectionGeneration) ||
             (expectedMetricsGeneration != null && metricsGeneration != expectedMetricsGeneration) ||
@@ -1102,6 +1147,7 @@ class PhantomBleRepository(
         } else {
             publish()
             !terminal.value &&
+                !lifecycleCleanupInProgress &&
                 _connectionState.value is ConnectionState.Connected &&
                 (expectedConnectionGeneration == null || connectionAttemptGeneration.value == expectedConnectionGeneration) &&
                 (expectedMetricsGeneration == null || metricsGeneration == expectedMetricsGeneration) &&
@@ -1256,14 +1302,20 @@ class PhantomBleRepository(
             monitorProcessor = MonitorDataProcessor(
                 onDeloadOccurred = {
                     lifecycleLock.withLock {
-                        if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
+                        if (!terminal.value &&
+                            !lifecycleCleanupInProgress &&
+                            connectionAttemptGeneration.value == expectedConnectionGeneration
+                        ) {
                             _deloadOccurredEvents.tryEmit(Unit)
                         }
                     }
                 },
                 onRomViolation = { violation ->
                     lifecycleLock.withLock {
-                        if (!terminal.value && connectionAttemptGeneration.value == expectedConnectionGeneration) {
+                        if (!terminal.value &&
+                            !lifecycleCleanupInProgress &&
+                            connectionAttemptGeneration.value == expectedConnectionGeneration
+                        ) {
                             logRepo.warning(
                                 LogEventType.NOTIFICATION,
                                 "Phantom raw monitor packet reported ROM violation",

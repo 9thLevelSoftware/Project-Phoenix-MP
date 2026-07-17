@@ -1079,6 +1079,92 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `disconnect teardown rejects reentrant diagnostic polling restart`() = runTest {
+        val repository = PhantomBleRepository(ConnectionLogRepository())
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            val restartOnDiagnosticsClear = async(Dispatchers.Unconfined) {
+                repository.diagnostics.first { diagnostic ->
+                    if (diagnostic == null) {
+                        repository.restartDiagnosticPolling()
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            repository.disconnect()
+            restartOnDiagnosticsClear.await()
+
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertNull(repository.diagnostics.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `disconnect teardown rejects reentrant raw diagnostic and monitor injection`() = runTest {
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo)
+        val monitor = monitorPacket(
+            ticks = 42,
+            posA = 1250,
+            velA = 320,
+            loadA = 1234,
+            posB = -750,
+            velB = -250,
+            loadB = 567,
+        )
+        val diagnostic = ByteArray(18).also { bytes ->
+            putUInt32LE(bytes, 0, 1234)
+            putUInt16LE(bytes, 4, 0x0001)
+            bytes[12] = 31
+            bytes[13] = 32
+            bytes[14] = 33
+            bytes[15] = 34
+            bytes[16] = 35
+            bytes[17] = 36
+        }
+        var diagnosticResult: Result<Unit>? = null
+        var monitorResult: Result<Unit>? = null
+
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            val injectOnDiagnosticsClear = async(Dispatchers.Unconfined) {
+                repository.diagnostics.first { packet ->
+                    if (packet == null) {
+                        diagnosticResult = repository.injectRawPacket(PhantomRawPacketKind.DIAGNOSTIC, diagnostic)
+                        monitorResult = repository.injectRawPacket(PhantomRawPacketKind.MONITOR, monitor)
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            repository.metricsFlow.test {
+                repository.disconnect()
+                injectOnDiagnosticsClear.await()
+
+                assertTrue(requireNotNull(diagnosticResult).isFailure)
+                assertTrue(requireNotNull(monitorResult).isFailure)
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+            assertNull(repository.diagnostics.value)
+            assertTrue(logRepo.logs.value.none { log ->
+                log.message in setOf(
+                    "Phantom injected raw diagnostic packet",
+                    "Phantom injected raw monitor packet",
+                )
+            })
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `shutdown from workout handle publication prevents post-publication workout effects`() = runTest {
         val logRepo = ConnectionLogRepository()
         val repository = PhantomBleRepository(logRepo, PhantomBleConfig(repDelayMs = 100L))
