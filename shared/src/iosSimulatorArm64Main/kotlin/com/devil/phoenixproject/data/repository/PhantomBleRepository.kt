@@ -12,6 +12,7 @@ import kotlin.time.Clock
 import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -60,14 +61,28 @@ internal data class PhantomWorkoutProgram(
  * Simulator-only BLE implementation. It intentionally contains no Kable or CoreBluetooth
  * references: the iOS simulator binding can exercise the real app repository contract without
  * requesting hardware permissions or touching a persisted BLE session.
+ *
+ * Lifecycle ownership is deliberately token based. A token is never reused: an operation, normal
+ * cleanup, and terminal cleanup can therefore invalidate one another without predicting or
+ * comparing generation values across public calls.
  */
 class PhantomBleRepository(
     private val logRepo: ConnectionLogRepository = ConnectionLogRepository.instance,
     initialConfig: PhantomBleConfig = PhantomBleConfig(),
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : BleRepository {
+    private enum class LifecyclePhase {
+        ACTIVE,
+        CLEANING,
+        TERMINAL,
+    }
+
+    /** Identity-only token. Equality must remain reference equality. */
+    private class LifecycleToken
+
     private val lifecycleLock = reentrantLock()
     private val repositoryJob = SupervisorJob()
-    private val scope = CoroutineScope(repositoryJob + Dispatchers.Default)
+    private val scope = CoroutineScope(repositoryJob + dispatcher)
     private val device = ScannedDevice(PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, -42)
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -93,9 +108,10 @@ class PhantomBleRepository(
     private val _discoModeActive = MutableStateFlow(false)
     override val discoModeActive: StateFlow<Boolean> = _discoModeActive.asStateFlow()
 
+    /* All fields below are read and written while lifecycleLock is held. */
     private var config = initialConfig
-    private var terminal = false
-    private var generation = 0L
+    private var lifecyclePhase = LifecyclePhase.ACTIVE
+    private var lifecycleOwner: LifecycleToken? = null
     private var metricGeneration = 0L
     private var heuristicGeneration = 0L
     private var repGeneration = 0L
@@ -114,247 +130,159 @@ class PhantomBleRepository(
     private var fixedSetCompleted = false
     private var ticks = 0L
     private var lastColorSchemeIndex = 0
+    private var repDeliveryLosses = 0L
+    private var repNoSubscriberLosses = 0L
+    private var repOverflowLosses = 0L
 
     override suspend fun startScanning(): Result<Unit> {
-        val attempt = lifecycleLock.withLock {
-            if (terminal) return@withLock null
-            generation += 1
-            val expectedGeneration = generation
-            cancelPollingLocked()
-            _connectionState.value = ConnectionState.Scanning
-            if (!ownsStateLocked(expectedGeneration, ConnectionState.Scanning)) return@withLock null
-            _scannedDevices.value = emptyList()
-            if (!ownsStateLocked(expectedGeneration, ConnectionState.Scanning)) return@withLock null
-            expectedGeneration
-        }
-        if (attempt == null) return lifecycleFailure()
-
-        try {
-            val started = lifecycleLock.withLock {
-                logIfOwnedLocked(attempt) {
-                    logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
-                }
-            }
-            if (!started) return lifecycleFailure()
-            delay(SCAN_DELAY_MS)
-            return lifecycleLock.withLock {
-                if (!ownsStateLocked(attempt, ConnectionState.Scanning)) {
-                    return@withLock lifecycleFailureLocked()
-                }
-                _scannedDevices.value = listOf(device)
-                if (!ownsStateLocked(attempt, ConnectionState.Scanning)) {
-                    return@withLock lifecycleFailureLocked()
-                }
-                if (!logIfOwnedLocked(attempt) {
-                        logRepo.info(
-                            LogEventType.DEVICE_FOUND,
-                            "Found phantom Vitruvian device",
-                            device.name,
-                            device.address,
-                            "RSSI ${device.rssi}; no Bluetooth hardware used",
-                        )
-                    }
-                ) {
-                    return@withLock lifecycleFailureLocked()
-                }
-                Result.success(Unit)
-            }
+        val owner = lifecycleLock.withLock { reserveOperationLocked() }
+            ?: return lifecycleFailure()
+        return try {
+            scanPhase(owner)
         } catch (cancellation: CancellationException) {
-            cancelAttemptIfOwner(attempt)
+            cleanupOperationIfOwner(owner, reason = "scan_cancelled")
             throw cancellation
         }
     }
 
     override suspend fun stopScanning() {
-        lifecycleLock.withLock {
-            if (terminal || (_connectionState.value != ConnectionState.Scanning &&
+        val cleanup = lifecycleLock.withLock {
+            if (!isOperationOwnerLocked() ||
+                (_connectionState.value != ConnectionState.Scanning &&
                     _connectionState.value != ConnectionState.Connecting)
-            ) return@withLock
-            generation += 1
-            val expectedGeneration = generation
-            cancelPollingLocked()
-            _connectionState.value = ConnectionState.Disconnected
-            if (!ownsGenerationLocked(expectedGeneration)) return@withLock
-            _scannedDevices.value = emptyList()
-            if (!ownsGenerationLocked(expectedGeneration)) return@withLock
-            logIfGenerationOwnedLocked(expectedGeneration) {
-                logRepo.info(LogEventType.SCAN_STOP, "Stopped phantom Vitruvian scan")
+            ) {
+                null
+            } else {
+                claimNormalCleanupLocked()
             }
+        } ?: return
+        lifecycleLock.withLock {
+            finishCleanupLocked(cleanup, reason = "scan_stopped")
         }
     }
 
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
-        val attempt = lifecycleLock.withLock {
-            if (terminal) return@withLock null
-            generation += 1
-            val expectedGeneration = generation
-            cancelPollingLocked()
-            _connectionState.value = ConnectionState.Connecting
-            if (!ownsStateLocked(expectedGeneration, ConnectionState.Connecting)) return@withLock null
-            expectedGeneration
-        }
-        if (attempt == null) return lifecycleFailure()
-
-        try {
-            val started = lifecycleLock.withLock {
-                logIfOwnedLocked(attempt) {
-                    logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
-                }
-            }
-            if (!started) return lifecycleFailure()
-            delay(CONNECT_DELAY_MS)
-            return lifecycleLock.withLock {
-                if (!ownsStateLocked(attempt, ConnectionState.Connecting)) {
-                    return@withLock lifecycleFailureLocked()
-                }
-                _connectionState.value = ConnectionState.Connected(device.name, device.address)
-                if (!isConnectedLocked(attempt)) return@withLock lifecycleFailureLocked()
-                _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true)
-                if (!isConnectedLocked(attempt)) return@withLock lifecycleFailureLocked()
-                _handleState.value = HandleState.Released
-                if (!isConnectedLocked(attempt)) return@withLock lifecycleFailureLocked()
-                publishDiagnosticsLocked(attempt)
-                if (!isConnectedLocked(attempt)) return@withLock lifecycleFailureLocked()
-                startMetricsLocked(activeWorkout = false, expectedGeneration = attempt)
-                if (!isConnectedLocked(attempt)) return@withLock lifecycleFailureLocked()
-                startHeuristicLocked(activeWorkout = false, expectedGeneration = attempt)
-                if (!isConnectedLocked(attempt)) return@withLock lifecycleFailureLocked()
-                startHeartbeatLocked(attempt)
-                if (!isConnectedLocked(attempt)) return@withLock lifecycleFailureLocked()
-                if (!logIfOwnedLocked(attempt) {
-                        logRepo.info(LogEventType.SERVICE_DISCOVERED, "Phantom service map ready", device.name, device.address)
-                    }
-                ) return@withLock lifecycleFailureLocked()
-                if (!logIfOwnedLocked(attempt) {
-                        logRepo.info(LogEventType.CONNECT_SUCCESS, "Connected to phantom Vitruvian", device.name, device.address)
-                    }
-                ) return@withLock lifecycleFailureLocked()
-                Result.success(Unit)
-            }
+        val owner = lifecycleLock.withLock { reserveOperationLocked() }
+            ?: return lifecycleFailure()
+        return try {
+            connectPhase(owner, device)
         } catch (cancellation: CancellationException) {
-            cancelAttemptIfOwner(attempt)
+            cleanupOperationIfOwner(owner, reason = "connect_cancelled")
             throw cancellation
         }
     }
 
     override suspend fun cancelConnection() {
-        lifecycleLock.withLock {
-            if (terminal || _connectionState.value != ConnectionState.Connecting) return@withLock
-            generation += 1
-            val expectedGeneration = generation
-            cancelPollingLocked()
-            _connectionState.value = ConnectionState.Disconnected
-            if (!ownsGenerationLocked(expectedGeneration)) return@withLock
-            _scannedDevices.value = emptyList()
-            if (!ownsGenerationLocked(expectedGeneration)) return@withLock
-            logIfGenerationOwnedLocked(expectedGeneration) {
-                logRepo.warning(LogEventType.DISCONNECT, "Cancelled phantom connection")
+        val cleanup = lifecycleLock.withLock {
+            if (!isOperationOwnerLocked() || _connectionState.value != ConnectionState.Connecting) {
+                null
+            } else {
+                claimNormalCleanupLocked()
             }
+        } ?: return
+        lifecycleLock.withLock {
+            finishCleanupLocked(cleanup, reason = "connection_cancelled")
         }
     }
 
     override suspend fun disconnect() {
+        val cleanup = lifecycleLock.withLock { claimNormalCleanupLocked() } ?: return
         lifecycleLock.withLock {
-            if (terminal) return@withLock
-            teardownLocked(markTerminal = false)
-            if (!terminal && _connectionState.value == ConnectionState.Disconnected) {
-                logRepo.info(LogEventType.DISCONNECT, "Disconnected phantom Vitruvian", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-            }
+            finishCleanupLocked(cleanup, reason = "disconnect")
         }
     }
 
     override suspend fun shutdown() {
+        val terminalOwner = lifecycleLock.withLock { claimTerminalCleanupLocked() } ?: return
         lifecycleLock.withLock {
-            if (terminal) return@withLock
-            terminal = true
-            teardownLocked(markTerminal = true)
+            finishCleanupLocked(terminalOwner, reason = "shutdown", terminal = true)
         }
         repositoryJob.cancel()
     }
 
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
         if (timeoutMs <= 0L) return Result.failure(IllegalArgumentException("timeoutMs must be > 0"))
-        val initialGeneration = lifecycleLock.withLock {
-            if (terminal) null else generation
-        } ?: return Result.failure(shutdownError())
-        var attemptGeneration = initialGeneration + 1L
-        val result: Result<Unit>? = withTimeoutOrNull(timeoutMs) {
-            val scan = startScanning()
-            if (scan.isFailure) {
-                scan
-            } else {
-                attemptGeneration = lifecycleLock.withLock { generation + 1L }
-                connect(device)
+        val owner = lifecycleLock.withLock { reserveOperationLocked() }
+            ?: return lifecycleFailure()
+        return try {
+            val result = withTimeoutOrNull(timeoutMs) {
+                val scanResult = scanPhase(owner)
+                if (scanResult.isFailure) {
+                    scanResult
+                } else {
+                    val scannedDevice = lifecycleLock.withLock {
+                        if (ownsOperationLocked(owner) && _connectionState.value == ConnectionState.Scanning) {
+                            _scannedDevices.value.firstOrNull()
+                        } else {
+                            null
+                        }
+                    }
+                    if (scannedDevice == null) {
+                        lifecycleFailure()
+                    } else {
+                        connectPhase(owner, scannedDevice)
+                    }
+                }
             }
-        }
-        if (result != null) return result
+            if (result != null) return result
 
-        return lifecycleLock.withLock {
-            if (terminal) return@withLock Result.failure(shutdownError())
-            val ownsTimedOutAttempt =
-                (generation == attemptGeneration &&
-                    (_connectionState.value == ConnectionState.Scanning ||
-                        _connectionState.value == ConnectionState.Connecting)) ||
-                    (generation == attemptGeneration + 1L &&
-                        _connectionState.value == ConnectionState.Disconnected)
-            if (!ownsTimedOutAttempt) return@withLock lifecycleFailureLocked()
-
-            teardownLocked(markTerminal = false)
-            val cleanupGeneration = generation
-            if (!ownsGenerationLocked(cleanupGeneration) ||
-                _connectionState.value != ConnectionState.Disconnected
-            ) return@withLock lifecycleFailureLocked()
-            val request = ReconnectionRequest(
-                deviceName = PHANTOM_DEVICE_NAME,
-                deviceAddress = PHANTOM_DEVICE_ADDRESS,
-                reason = "connection_timeout",
-                timestamp = Clock.System.now().toEpochMilliseconds(),
-            )
-            _reconnectionRequested.tryEmit(request)
-            if (!ownsGenerationLocked(cleanupGeneration)) return@withLock lifecycleFailureLocked()
-            logRepo.error(
-                LogEventType.ERROR,
-                "Phantom scan and connect timed out",
-                PHANTOM_DEVICE_NAME,
-                PHANTOM_DEVICE_ADDRESS,
-                "timeoutMs=$timeoutMs",
-            )
-            if (!ownsGenerationLocked(cleanupGeneration)) return@withLock lifecycleFailureLocked()
-            Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
+            lifecycleLock.withLock {
+                if (!ownsOperationLocked(owner)) {
+                    lifecycleFailureLocked()
+                } else {
+                    val cleanup = claimNormalCleanupLocked()
+                    if (cleanup == null) {
+                        lifecycleFailureLocked()
+                    } else {
+                        val cleanupResult = finishCleanupLocked(
+                            cleanup,
+                            reason = "connection_timeout",
+                            reconnectionReason = "connection_timeout",
+                            timeoutMs = timeoutMs,
+                        )
+                        if (cleanupResult.isFailure) {
+                            cleanupResult
+                        } else {
+                            Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
+                        }
+                    }
+                }
+            }
+        } catch (cancellation: CancellationException) {
+            cleanupOperationIfOwner(owner, reason = "scan_connect_cancelled")
+            throw cancellation
         }
     }
 
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> = lifecycleLock.withLock {
-        if (terminal) return@withLock Result.failure(shutdownError())
+        val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
         lastColorSchemeIndex = schemeIndex
-        acceptCommandLocked("Phantom color scheme set", "scheme=$schemeIndex")
+        acceptCommandLocked(owner, "Phantom color scheme set", "scheme=$schemeIndex")
     }
 
     override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> = lifecycleLock.withLock {
-        if (terminal) return@withLock Result.failure(shutdownError())
+        val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
         if (_connectionState.value !is ConnectionState.Connected) {
             return@withLock Result.failure(IllegalStateException("Phantom workout command requires an active connection"))
         }
         decodeProgram(command)?.let { currentProgram = it }
         acceptCommandLocked(
+            owner,
             "Phantom received raw workout command",
             command.joinToString(" ") { it.toUByte().toString(16).padStart(2, '0') },
         )
     }
 
     override suspend fun sendInitSequence(): Result<Unit> = lifecycleLock.withLock {
-        if (terminal) return@withLock Result.failure(shutdownError())
-        acceptCommandLocked("Phantom init sequence accepted")
+        val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
+        acceptCommandLocked(owner, "Phantom init sequence accepted")
     }
 
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> = lifecycleLock.withLock {
-        if (terminal) return@withLock Result.failure(shutdownError())
-        if (_connectionState.value !is ConnectionState.Connected) {
-            return@withLock Result.failure(IllegalStateException("Phantom workout requires an active connection"))
+        val owner = connectedOwnerLocked() ?: return@withLock lifecycleFailureLocked()
+        if (!publishIfOwnedLocked(owner) { _discoModeActive.value = false }) {
+            return@withLock lifecycleFailureLocked()
         }
-        val expected = generation
-        _discoModeActive.value = false
-        if (!isConnectedLocked(expected)) return@withLock lifecycleFailureLocked()
         workoutParams = params
         currentProgram = currentProgram ?: PhantomWorkoutProgram(
             warmupReps = params.warmupReps,
@@ -365,15 +293,13 @@ class PhantomBleRepository(
         topCounter = 0
         completeCounter = 0
         fixedSetCompleted = false
-        _handleState.value = HandleState.Grabbed
-        if (!isConnectedLocked(expected)) return@withLock lifecycleFailureLocked()
-        startMetricsLocked(activeWorkout = true, expectedGeneration = expected)
-        if (!isConnectedLocked(expected)) return@withLock lifecycleFailureLocked()
-        startHeuristicLocked(activeWorkout = true, expectedGeneration = expected)
-        if (!isConnectedLocked(expected)) return@withLock lifecycleFailureLocked()
-        startRepSimulationLocked(expected)
-        if (!isConnectedLocked(expected)) return@withLock lifecycleFailureLocked()
-        if (!logIfOwnedLocked(expected) {
+        if (!publishIfOwnedLocked(owner) { _handleState.value = HandleState.Grabbed }) {
+            return@withLock lifecycleFailureLocked()
+        }
+        if (!startMetricsLocked(activeWorkout = true, owner)) return@withLock lifecycleFailureLocked()
+        if (!startHeuristicLocked(activeWorkout = true, owner)) return@withLock lifecycleFailureLocked()
+        if (!startRepSimulationLocked(owner)) return@withLock lifecycleFailureLocked()
+        if (!logIfOwnedLocked(owner) {
                 logRepo.info(
                     LogEventType.COMMAND_SENT,
                     "Phantom workout started",
@@ -387,18 +313,15 @@ class PhantomBleRepository(
     }
 
     override suspend fun stopWorkout(): Result<Unit> = lifecycleLock.withLock {
-        if (terminal) return@withLock Result.failure(shutdownError())
-        if (_connectionState.value !is ConnectionState.Connected) {
-            return@withLock Result.failure(IllegalStateException("Phantom workout requires an active connection"))
-        }
-        val expected = generation
+        val owner = connectedOwnerLocked() ?: return@withLock lifecycleFailureLocked()
         cancelPollingLocked()
         workoutParams = null
         currentProgram = null
         fixedSetCompleted = false
-        _handleState.value = HandleState.Released
-        if (!isConnectedLocked(expected)) return@withLock lifecycleFailureLocked()
-        if (!logIfOwnedLocked(expected) {
+        if (!publishIfOwnedLocked(owner) { _handleState.value = HandleState.Released }) {
+            return@withLock lifecycleFailureLocked()
+        }
+        if (!logIfOwnedLocked(owner) {
                 logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
             }
         ) return@withLock lifecycleFailureLocked()
@@ -406,97 +329,99 @@ class PhantomBleRepository(
     }
 
     override suspend fun sendStopCommand(): Result<Unit> = lifecycleLock.withLock {
-        if (terminal) return@withLock Result.failure(shutdownError())
-        acceptCommandLocked("Phantom stop command accepted")
+        val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
+        acceptCommandLocked(owner, "Phantom stop command accepted")
     }
 
     override fun enableHandleDetection(enabled: Boolean) {
         lifecycleLock.withLock {
-            if (terminal) return@withLock
-            val expected = generation
-            _handleDetection.value = HandleDetection(enabled, enabled)
-            if (!ownsGenerationLocked(expected)) return@withLock
-            _handleState.value = if (enabled) HandleState.WaitingForRest else HandleState.Released
-            if (!ownsGenerationLocked(expected)) return@withLock
+            val owner = activeOwnerLocked() ?: return@withLock
+            if (!publishIfOwnedLocked(owner) { _handleDetection.value = HandleDetection(enabled, enabled) }) return@withLock
+            publishIfOwnedLocked(owner) {
+                _handleState.value = if (enabled) HandleState.WaitingForRest else HandleState.Released
+            }
         }
     }
 
     override fun resetHandleState() {
         lifecycleLock.withLock {
-            if (!terminal) _handleState.value = HandleState.WaitingForRest
+            val owner = activeOwnerLocked() ?: return@withLock
+            publishIfOwnedLocked(owner) { _handleState.value = HandleState.WaitingForRest }
         }
     }
 
     override fun enableJustLiftWaitingMode() {
         lifecycleLock.withLock {
-            if (!terminal) _handleState.value = HandleState.WaitingForRest
+            val owner = activeOwnerLocked() ?: return@withLock
+            publishIfOwnedLocked(owner) { _handleState.value = HandleState.WaitingForRest }
         }
     }
 
     override fun restartMonitorPolling() {
         lifecycleLock.withLock {
-            if (terminal || _connectionState.value !is ConnectionState.Connected) return@withLock
-            startMetricsLocked(workoutParams != null, generation)
+            val owner = connectedOwnerLocked() ?: return@withLock
+            startMetricsLocked(workoutParams != null, owner)
         }
     }
 
     override fun startActiveWorkoutPolling() {
         lifecycleLock.withLock {
-            if (terminal || _connectionState.value !is ConnectionState.Connected || fixedSetCompleted) return@withLock
-            val expected = generation
-            _handleState.value = HandleState.Grabbed
-            if (!isConnectedLocked(expected)) return@withLock
-            startMetricsLocked(activeWorkout = true, expectedGeneration = expected)
-            if (!isConnectedLocked(expected)) return@withLock
-            startHeuristicLocked(activeWorkout = true, expectedGeneration = expected)
-            if (!isConnectedLocked(expected)) return@withLock
-            if (workoutParams != null) startRepSimulationLocked(expected)
+            val owner = connectedOwnerLocked() ?: return@withLock
+            if (fixedSetCompleted) return@withLock
+            if (!publishIfOwnedLocked(owner) { _handleState.value = HandleState.Grabbed }) return@withLock
+            if (!startMetricsLocked(activeWorkout = true, owner)) return@withLock
+            if (!startHeuristicLocked(activeWorkout = true, owner)) return@withLock
+            if (workoutParams != null) startRepSimulationLocked(owner)
         }
     }
 
     override fun stopPolling() {
         lifecycleLock.withLock {
-            if (terminal) return@withLock
+            val owner = activeOwnerLocked() ?: return@withLock
             cancelPollingLocked()
-            logRepo.info(LogEventType.HEARTBEAT, "Phantom polling stopped")
+            logIfOwnedLocked(owner) {
+                logRepo.info(LogEventType.HEARTBEAT, "Phantom polling stopped")
+            }
         }
     }
 
     override fun stopMonitorPollingOnly() {
         lifecycleLock.withLock {
-            if (terminal) return@withLock
+            val owner = activeOwnerLocked() ?: return@withLock
             metricGeneration += 1
             metricsJob?.cancel()
             metricsJob = null
-            logRepo.info(LogEventType.HEARTBEAT, "Phantom monitor polling stopped; diagnostics kept warm")
+            logIfOwnedLocked(owner) {
+                logRepo.info(LogEventType.HEARTBEAT, "Phantom monitor polling stopped; diagnostics kept warm")
+            }
         }
     }
 
     override fun restartDiagnosticPolling() {
         lifecycleLock.withLock {
-            if (terminal || _connectionState.value !is ConnectionState.Connected) return@withLock
-            startDiagnosticsLocked(generation)
-            startHeartbeatLocked(generation)
+            val owner = connectedOwnerLocked() ?: return@withLock
+            if (!startDiagnosticsLocked(owner)) return@withLock
+            startHeartbeatLocked(owner)
         }
     }
 
     override fun startDiscoMode() {
         lifecycleLock.withLock {
-            if (terminal || _connectionState.value !is ConnectionState.Connected || workoutParams != null) return@withLock
-            val expected = generation
-            _discoModeActive.value = true
-            if (!isConnectedLocked(expected)) return@withLock
-            logRepo.info(LogEventType.COMMAND_SENT, "Phantom disco mode started", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+            val owner = connectedOwnerLocked() ?: return@withLock
+            if (workoutParams != null) return@withLock
+            if (!publishIfOwnedLocked(owner) { _discoModeActive.value = true }) return@withLock
+            logIfOwnedLocked(owner) {
+                logRepo.info(LogEventType.COMMAND_SENT, "Phantom disco mode started", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+            }
         }
     }
 
     override fun stopDiscoMode() {
         lifecycleLock.withLock {
-            if (terminal) return@withLock
-            if (_discoModeActive.value) {
-                val expected = generation
-                _discoModeActive.value = false
-                if (!ownsGenerationLocked(expected)) return@withLock
+            val owner = activeOwnerLocked() ?: return@withLock
+            if (!_discoModeActive.value) return@withLock
+            if (!publishIfOwnedLocked(owner) { _discoModeActive.value = false }) return@withLock
+            logIfOwnedLocked(owner) {
                 logRepo.info(
                     LogEventType.COMMAND_SENT,
                     "Phantom disco mode stopped",
@@ -510,12 +435,225 @@ class PhantomBleRepository(
 
     override fun setLastColorSchemeIndex(index: Int) {
         lifecycleLock.withLock {
-            if (!terminal) lastColorSchemeIndex = index
+            val owner = activeOwnerLocked() ?: return@withLock
+            if (ownsOperationLocked(owner)) lastColorSchemeIndex = index
         }
     }
 
-    private fun acceptCommandLocked(message: String, details: String? = null): Result<Unit> {
-        logRepo.info(LogEventType.COMMAND_SENT, message, PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, details)
+    private suspend fun scanPhase(owner: LifecycleToken): Result<Unit> {
+        val prepared = lifecycleLock.withLock {
+            if (!ownsOperationLocked(owner)) return@withLock false
+            if (!publishIfOwnedLocked(owner) { _connectionState.value = ConnectionState.Scanning }) return@withLock false
+            if (!publishIfOwnedLocked(owner) { _scannedDevices.value = emptyList() }) return@withLock false
+            logIfOwnedLocked(owner) {
+                logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
+            }
+        }
+        if (!prepared) return lifecycleFailure()
+
+        delay(SCAN_DELAY_MS)
+        return lifecycleLock.withLock {
+            if (!ownsOperationLocked(owner) || _connectionState.value != ConnectionState.Scanning) {
+                return@withLock lifecycleFailureLocked()
+            }
+            if (!publishIfOwnedLocked(owner) { _scannedDevices.value = listOf(device) }) {
+                return@withLock lifecycleFailureLocked()
+            }
+            if (!logIfOwnedLocked(owner) {
+                    logRepo.info(
+                        LogEventType.DEVICE_FOUND,
+                        "Found phantom Vitruvian device",
+                        device.name,
+                        device.address,
+                        "RSSI ${device.rssi}; no Bluetooth hardware used",
+                    )
+                }
+            ) return@withLock lifecycleFailureLocked()
+            Result.success(Unit)
+        }
+    }
+
+    private suspend fun connectPhase(owner: LifecycleToken, device: ScannedDevice): Result<Unit> {
+        val prepared = lifecycleLock.withLock {
+            if (!ownsOperationLocked(owner)) return@withLock false
+            cancelPollingLocked()
+            if (!publishIfOwnedLocked(owner) { _connectionState.value = ConnectionState.Connecting }) return@withLock false
+            logIfOwnedLocked(owner) {
+                logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
+            }
+        }
+        if (!prepared) return lifecycleFailure()
+
+        delay(CONNECT_DELAY_MS)
+        return lifecycleLock.withLock {
+            if (!ownsOperationLocked(owner) || _connectionState.value != ConnectionState.Connecting) {
+                return@withLock lifecycleFailureLocked()
+            }
+            if (!publishIfOwnedLocked(owner) { _connectionState.value = ConnectionState.Connected(device.name, device.address) }) {
+                return@withLock lifecycleFailureLocked()
+            }
+            if (!publishIfOwnedLocked(owner) { _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true) }) {
+                return@withLock lifecycleFailureLocked()
+            }
+            if (!publishIfOwnedLocked(owner) { _handleState.value = HandleState.Released }) {
+                return@withLock lifecycleFailureLocked()
+            }
+            if (!publishDiagnosticsLocked(owner)) return@withLock lifecycleFailureLocked()
+            if (!startMetricsLocked(activeWorkout = false, owner)) return@withLock lifecycleFailureLocked()
+            if (!startHeuristicLocked(activeWorkout = false, owner)) return@withLock lifecycleFailureLocked()
+            if (!startHeartbeatLocked(owner)) return@withLock lifecycleFailureLocked()
+            if (!logIfOwnedLocked(owner) {
+                    logRepo.info(LogEventType.SERVICE_DISCOVERED, "Phantom service map ready", device.name, device.address)
+                }
+            ) return@withLock lifecycleFailureLocked()
+            if (!logIfOwnedLocked(owner) {
+                    logRepo.info(LogEventType.CONNECT_SUCCESS, "Connected to phantom Vitruvian", device.name, device.address)
+                }
+            ) return@withLock lifecycleFailureLocked()
+            Result.success(Unit)
+        }
+    }
+
+    private fun reserveOperationLocked(): LifecycleToken? {
+        if (lifecyclePhase != LifecyclePhase.ACTIVE) return null
+        val owner = LifecycleToken()
+        lifecycleOwner = owner
+        cancelPollingLocked()
+        return owner
+    }
+
+    private fun activeOwnerLocked(): LifecycleToken? = lifecycleOwner?.takeIf { ownsOperationLocked(it) }
+
+    private fun connectedOwnerLocked(): LifecycleToken? = activeOwnerLocked()?.takeIf {
+        _connectionState.value is ConnectionState.Connected
+    }
+
+    private fun ownsOperationLocked(owner: LifecycleToken): Boolean =
+        lifecyclePhase == LifecyclePhase.ACTIVE && lifecycleOwner === owner
+
+    private fun isOperationOwnerLocked(): Boolean =
+        lifecyclePhase == LifecyclePhase.ACTIVE && lifecycleOwner != null
+
+    private fun ownsCleanupLocked(owner: LifecycleToken): Boolean =
+        lifecyclePhase == LifecyclePhase.CLEANING && lifecycleOwner === owner
+
+    private fun ownsTerminalLocked(owner: LifecycleToken): Boolean =
+        lifecyclePhase == LifecyclePhase.TERMINAL && lifecycleOwner === owner
+
+    private fun claimNormalCleanupLocked(): LifecycleToken? {
+        if (lifecyclePhase == LifecyclePhase.TERMINAL || lifecyclePhase == LifecyclePhase.CLEANING) return null
+        val cleanup = LifecycleToken()
+        lifecyclePhase = LifecyclePhase.CLEANING
+        lifecycleOwner = cleanup
+        cancelPollingLocked()
+        workoutParams = null
+        currentProgram = null
+        repCount = 0
+        topCounter = 0
+        completeCounter = 0
+        fixedSetCompleted = false
+        return cleanup
+    }
+
+    private fun claimTerminalCleanupLocked(): LifecycleToken? {
+        if (lifecyclePhase == LifecyclePhase.TERMINAL) return null
+        val terminalOwner = LifecycleToken()
+        lifecyclePhase = LifecyclePhase.TERMINAL
+        lifecycleOwner = terminalOwner
+        cancelPollingLocked()
+        workoutParams = null
+        currentProgram = null
+        repCount = 0
+        topCounter = 0
+        completeCounter = 0
+        fixedSetCompleted = false
+        return terminalOwner
+    }
+
+    private fun finishCleanupLocked(
+        owner: LifecycleToken,
+        reason: String,
+        terminal: Boolean = false,
+        reconnectionReason: String? = null,
+        timeoutMs: Long? = null,
+    ): Result<Unit> {
+        val phase = if (terminal) LifecyclePhase.TERMINAL else LifecyclePhase.CLEANING
+        if (!ownsLocked(owner, phase)) return lifecycleFailureLocked()
+        if (!publishIfOwnedLocked(owner, phase) { _handleDetection.value = HandleDetection() }) {
+            return lifecycleFailureLocked()
+        }
+        if (!publishIfOwnedLocked(owner, phase) { _handleState.value = HandleState.WaitingForRest }) {
+            return lifecycleFailureLocked()
+        }
+        if (!publishIfOwnedLocked(owner, phase) { _heuristicData.value = null }) {
+            return lifecycleFailureLocked()
+        }
+        if (!publishIfOwnedLocked(owner, phase) { _diagnostics.value = null }) {
+            return lifecycleFailureLocked()
+        }
+        if (!publishIfOwnedLocked(owner, phase) { _scannedDevices.value = emptyList() }) {
+            return lifecycleFailureLocked()
+        }
+        if (!publishIfOwnedLocked(owner, phase) { _discoModeActive.value = false }) {
+            return lifecycleFailureLocked()
+        }
+        if (!publishIfOwnedLocked(owner, phase) { _connectionState.value = ConnectionState.Disconnected }) {
+            return lifecycleFailureLocked()
+        }
+        if (reconnectionReason != null) {
+            val request = ReconnectionRequest(
+                deviceName = PHANTOM_DEVICE_NAME,
+                deviceAddress = PHANTOM_DEVICE_ADDRESS,
+                reason = reconnectionReason,
+                timestamp = Clock.System.now().toEpochMilliseconds(),
+            )
+            if (!publishIfOwnedLocked(owner, phase) { _reconnectionRequested.tryEmit(request) }) {
+                return lifecycleFailureLocked()
+            }
+            if (!logIfOwnedLocked(owner, phase) {
+                    logRepo.error(
+                        LogEventType.ERROR,
+                        "Phantom scan and connect timed out",
+                        PHANTOM_DEVICE_NAME,
+                        PHANTOM_DEVICE_ADDRESS,
+                        "timeoutMs=$timeoutMs",
+                    )
+                }
+            ) return lifecycleFailureLocked()
+        }
+        if (!logIfOwnedLocked(owner, phase) {
+                logRepo.info(
+                    LogEventType.DISCONNECT,
+                    if (terminal) "Shutting down phantom Vitruvian" else "Disconnected phantom Vitruvian",
+                    PHANTOM_DEVICE_NAME,
+                    PHANTOM_DEVICE_ADDRESS,
+                    reason,
+                )
+            }
+        ) return lifecycleFailureLocked()
+
+        if (terminal) {
+            if (!ownsTerminalLocked(owner)) return lifecycleFailureLocked()
+        } else {
+            if (!ownsCleanupLocked(owner)) return lifecycleFailureLocked()
+            lifecyclePhase = LifecyclePhase.ACTIVE
+            lifecycleOwner = null
+        }
+        return Result.success(Unit)
+    }
+
+    private fun cleanupOperationIfOwner(owner: LifecycleToken, reason: String): Boolean = lifecycleLock.withLock {
+        if (!ownsOperationLocked(owner)) return@withLock false
+        val cleanup = claimNormalCleanupLocked() ?: return@withLock false
+        finishCleanupLocked(cleanup, reason)
+        true
+    }
+
+    private fun acceptCommandLocked(owner: LifecycleToken, message: String, details: String? = null): Result<Unit> {
+        if (!logIfOwnedLocked(owner) {
+                logRepo.info(LogEventType.COMMAND_SENT, message, PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, details)
+            }
+        ) return lifecycleFailureLocked()
         return Result.success(Unit)
     }
 
@@ -543,13 +681,13 @@ class PhantomBleRepository(
         return null
     }
 
-    private fun startMetricsLocked(activeWorkout: Boolean, expectedGeneration: Long) {
-        if (!isConnectedLocked(expectedGeneration)) return
+    private fun startMetricsLocked(activeWorkout: Boolean, owner: LifecycleToken): Boolean {
+        if (!isConnectedLocked(owner)) return false
         metricGeneration += 1
-        val expectedMetricGeneration = metricGeneration
+        val expectedGeneration = metricGeneration
         metricsJob?.cancel()
         val configuredLoad = workoutParams?.weightPerCableKg ?: currentProgram?.weightPerCableKg ?: 7.5f
-        metricsJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             var sample = 0
             while (isActive) {
                 val phase = (sample % 40) / 40.0
@@ -565,11 +703,12 @@ class PhantomBleRepository(
                     velocityB = wave * 245.0 * config.velocityScale,
                 )
                 val published = lifecycleLock.withLock {
-                    if (!isConnectedLocked(expectedGeneration) || metricGeneration != expectedMetricGeneration) {
+                    if (!isConnectedLocked(owner) || metricGeneration != expectedGeneration) {
                         false
                     } else {
-                        _metricsFlow.tryEmit(metric)
-                        isConnectedLocked(expectedGeneration) && metricGeneration == expectedMetricGeneration
+                        var emitted = false
+                        if (!publishIfOwnedLocked(owner) { emitted = _metricsFlow.tryEmit(metric) }) false
+                        else emitted && isConnectedLocked(owner) && metricGeneration == expectedGeneration
                     }
                 }
                 if (!published) break
@@ -577,53 +716,67 @@ class PhantomBleRepository(
                 delay(if (activeWorkout) ACTIVE_METRIC_DELAY_MS else IDLE_METRIC_DELAY_MS)
             }
         }
+        if (!isConnectedLocked(owner) || metricGeneration != expectedGeneration) {
+            job.cancel()
+            return false
+        }
+        metricsJob = job
+        return true
     }
 
-    private fun startHeuristicLocked(activeWorkout: Boolean, expectedGeneration: Long) {
-        if (!isConnectedLocked(expectedGeneration)) return
+    private fun startHeuristicLocked(activeWorkout: Boolean, owner: LifecycleToken): Boolean {
+        if (!isConnectedLocked(owner)) return false
         heuristicGeneration += 1
-        val expectedHeuristicGeneration = heuristicGeneration
+        val expectedGeneration = heuristicGeneration
         heuristicJob?.cancel()
-        publishHeuristicLocked(activeWorkout)
-        if (!isConnectedLocked(expectedGeneration) || heuristicGeneration != expectedHeuristicGeneration) return
-        heuristicJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        if (!publishHeuristicLocked(activeWorkout, owner)) return false
+        if (!isConnectedLocked(owner) || heuristicGeneration != expectedGeneration) return false
+        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             while (isActive) {
                 delay(if (activeWorkout) ACTIVE_HEURISTIC_DELAY_MS else IDLE_HEURISTIC_DELAY_MS)
                 val published = lifecycleLock.withLock {
-                    if (!isConnectedLocked(expectedGeneration) || heuristicGeneration != expectedHeuristicGeneration) {
+                    if (!isConnectedLocked(owner) || heuristicGeneration != expectedGeneration) {
                         false
                     } else {
-                        publishHeuristicLocked(activeWorkout)
-                        isConnectedLocked(expectedGeneration) && heuristicGeneration == expectedHeuristicGeneration
+                        publishHeuristicLocked(activeWorkout, owner) &&
+                            isConnectedLocked(owner) && heuristicGeneration == expectedGeneration
                     }
                 }
                 if (!published) break
             }
         }
+        if (!isConnectedLocked(owner) || heuristicGeneration != expectedGeneration) {
+            job.cancel()
+            return false
+        }
+        heuristicJob = job
+        return true
     }
 
-    private fun publishHeuristicLocked(activeWorkout: Boolean) {
+    private fun publishHeuristicLocked(activeWorkout: Boolean, owner: LifecycleToken): Boolean {
         val load = (if (activeWorkout) {
             (workoutParams?.weightPerCableKg ?: currentProgram?.weightPerCableKg ?: 7.5f).coerceAtLeast(2f)
         } else 1.5f) * config.loadScale
-        _heuristicData.value = HeuristicStatistics(
-            concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
-            eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
-            timestamp = Clock.System.now().toEpochMilliseconds(),
-        )
+        return publishIfOwnedLocked(owner) {
+            _heuristicData.value = HeuristicStatistics(
+                concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
+                eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
+                timestamp = Clock.System.now().toEpochMilliseconds(),
+            )
+        }
     }
 
-    private fun startRepSimulationLocked(expectedGeneration: Long) {
-        val program = currentProgram ?: return
-        if (!isConnectedLocked(expectedGeneration) || fixedSetCompleted) return
+    private fun startRepSimulationLocked(owner: LifecycleToken): Boolean {
+        val program = currentProgram ?: return false
+        if (!isConnectedLocked(owner) || fixedSetCompleted) return false
         repGeneration += 1
-        val expectedRepGeneration = repGeneration
+        val expectedGeneration = repGeneration
         repJob?.cancel()
-        repJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             while (isActive) {
                 delay(config.repDelayMs)
                 val shouldContinue = lifecycleLock.withLock {
-                    if (!isConnectedLocked(expectedGeneration) || repGeneration != expectedRepGeneration || workoutParams == null) {
+                    if (!isConnectedLocked(owner) || repGeneration != expectedGeneration || workoutParams == null) {
                         false
                     } else {
                         repCount += 1
@@ -645,111 +798,150 @@ class PhantomBleRepository(
                             writeUInt16(bytes, 20, boundedWorking)
                             writeUInt16(bytes, 22, program.workingReps ?: 0)
                         }
-                        _repEvents.tryEmit(
-                            RepNotification(
-                                topCounter = topCounter,
-                                completeCounter = completeCounter,
-                                repsRomCount = warmupDone,
-                                repsRomTotal = program.warmupReps,
-                                repsSetCount = boundedWorking,
-                                repsSetTotal = program.workingReps ?: 0,
-                                rangeTop = RANGE_TOP,
-                                rangeBottom = RANGE_BOTTOM,
-                                rawData = rawData,
-                                timestamp = Clock.System.now().toEpochMilliseconds(),
-                            ),
+                        val notification = RepNotification(
+                            topCounter = topCounter,
+                            completeCounter = completeCounter,
+                            repsRomCount = warmupDone,
+                            repsRomTotal = program.warmupReps,
+                            repsSetCount = boundedWorking,
+                            repsSetTotal = program.workingReps ?: 0,
+                            rangeTop = RANGE_TOP,
+                            rangeBottom = RANGE_BOTTOM,
+                            rawData = rawData,
+                            timestamp = Clock.System.now().toEpochMilliseconds(),
                         )
-                        if (!isConnectedLocked(expectedGeneration) ||
-                            repGeneration != expectedRepGeneration ||
-                            workoutParams == null
-                        ) {
+                        if (!emitRepAndLogLocked(owner, notification, repCount, warmupDone, boundedWorking)) {
                             false
                         } else {
-                            logRepo.info(
-                                LogEventType.REP_RECEIVED,
-                                PHANTOM_REP,
-                                PHANTOM_DEVICE_NAME,
-                                PHANTOM_DEVICE_ADDRESS,
-                                "rep=$repCount; warmup=$warmupDone/${program.warmupReps}; working=$boundedWorking/${program.workingReps ?: 0}",
-                            )
-                            if (!isConnectedLocked(expectedGeneration) ||
-                                repGeneration != expectedRepGeneration ||
-                                workoutParams == null
-                            ) {
-                                false
-                            } else {
-                                !reached
-                            }
+                            !reached
                         }
                     }
                 }
                 if (!shouldContinue) break
             }
         }
+        if (!isConnectedLocked(owner) || repGeneration != expectedGeneration) {
+            job.cancel()
+            return false
+        }
+        repJob = job
+        return true
     }
 
-    private fun publishDiagnosticsLocked(expectedGeneration: Long) {
-        if (isConnectedLocked(expectedGeneration)) {
-            _diagnostics.value = DiagnosticPacket(
-                runtimeSeconds = 0,
-                faultWords = listOf(0, 0, 0, 0),
-                temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
-                hasFaults = false,
-                receivedAtMillis = Clock.System.now().toEpochMilliseconds(),
+    private fun emitRepAndLogLocked(
+        owner: LifecycleToken,
+        notification: RepNotification,
+        repNumber: Int,
+        warmupDone: Int,
+        workingDone: Int,
+    ): Boolean {
+        if (!isConnectedLocked(owner)) return false
+        val hadSubscriber = _repEvents.subscriptionCount.value > 0
+        var delivered = false
+        if (!publishIfOwnedLocked(owner) { delivered = _repEvents.tryEmit(notification) }) return false
+        if (!hadSubscriber || !delivered) {
+            repDeliveryLosses += 1
+            if (!hadSubscriber) repNoSubscriberLosses += 1 else repOverflowLosses += 1
+            return logIfOwnedLocked(owner) {
+                logRepo.warning(
+                    LogEventType.REP_RECEIVED,
+                    "Phantom rep delivery lost",
+                    PHANTOM_DEVICE_NAME,
+                    PHANTOM_DEVICE_ADDRESS,
+                    "reason=${if (hadSubscriber) "overflow" else "no_subscriber"}; " +
+                        "losses=$repDeliveryLosses; rep=$repNumber; warmup=$warmupDone; working=$workingDone",
+                )
+            }
+        }
+        return logIfOwnedLocked(owner) {
+            logRepo.info(
+                LogEventType.REP_RECEIVED,
+                PHANTOM_REP,
+                PHANTOM_DEVICE_NAME,
+                PHANTOM_DEVICE_ADDRESS,
+                "rep=$repNumber; warmup=$warmupDone/${currentProgram?.warmupReps ?: 0}; working=$workingDone/${currentProgram?.workingReps ?: 0}",
             )
-            if (!isConnectedLocked(expectedGeneration)) return
-            startDiagnosticsLocked(expectedGeneration)
         }
     }
 
-    private fun startDiagnosticsLocked(expectedGeneration: Long) {
-        if (!isConnectedLocked(expectedGeneration)) return
+    private fun publishDiagnosticsLocked(owner: LifecycleToken): Boolean {
+        if (!isConnectedLocked(owner)) return false
+        if (!publishIfOwnedLocked(owner) {
+                _diagnostics.value = DiagnosticPacket(
+                    runtimeSeconds = 0,
+                    faultWords = listOf(0, 0, 0, 0),
+                    temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
+                    hasFaults = false,
+                    receivedAtMillis = Clock.System.now().toEpochMilliseconds(),
+                )
+            }
+        ) return false
+        return startDiagnosticsLocked(owner)
+    }
+
+    private fun startDiagnosticsLocked(owner: LifecycleToken): Boolean {
+        if (!isConnectedLocked(owner)) return false
         diagnosticGeneration += 1
-        val expectedDiagnosticGeneration = diagnosticGeneration
+        val expectedGeneration = diagnosticGeneration
         diagnosticJob?.cancel()
-        diagnosticJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             var runtimeSeconds = 0L
             while (isActive) {
                 delay(DIAGNOSTIC_DELAY_MS)
                 val published = lifecycleLock.withLock {
-                    if (!isConnectedLocked(expectedGeneration) || diagnosticGeneration != expectedDiagnosticGeneration) {
+                    if (!isConnectedLocked(owner) || diagnosticGeneration != expectedGeneration) {
                         false
                     } else {
                         runtimeSeconds += DIAGNOSTIC_DELAY_MS / 1000L
-                        _diagnostics.value = DiagnosticPacket(
-                            runtimeSeconds = runtimeSeconds,
-                            faultWords = listOf(0, 0, 0, 0),
-                            temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
-                            hasFaults = false,
-                            receivedAtMillis = Clock.System.now().toEpochMilliseconds(),
-                        )
-                        isConnectedLocked(expectedGeneration) && diagnosticGeneration == expectedDiagnosticGeneration
+                        if (!publishIfOwnedLocked(owner) {
+                                _diagnostics.value = DiagnosticPacket(
+                                    runtimeSeconds = runtimeSeconds,
+                                    faultWords = listOf(0, 0, 0, 0),
+                                    temperatures = listOf(34, 35, 34, 35, 36, 36, 35, 34),
+                                    hasFaults = false,
+                                    receivedAtMillis = Clock.System.now().toEpochMilliseconds(),
+                                )
+                            }
+                        ) false else isConnectedLocked(owner) && diagnosticGeneration == expectedGeneration
                     }
                 }
                 if (!published) break
             }
         }
+        if (!isConnectedLocked(owner) || diagnosticGeneration != expectedGeneration) {
+            job.cancel()
+            return false
+        }
+        diagnosticJob = job
+        return true
     }
 
-    private fun startHeartbeatLocked(expectedGeneration: Long) {
-        if (!isConnectedLocked(expectedGeneration)) return
+    private fun startHeartbeatLocked(owner: LifecycleToken): Boolean {
+        if (!isConnectedLocked(owner)) return false
         heartbeatGeneration += 1
-        val expectedHeartbeatGeneration = heartbeatGeneration
+        val expectedGeneration = heartbeatGeneration
         heartbeatJob?.cancel()
-        heartbeatJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             while (isActive) {
                 val published = lifecycleLock.withLock {
-                    if (!isConnectedLocked(expectedGeneration) || heartbeatGeneration != expectedHeartbeatGeneration) {
+                    if (!isConnectedLocked(owner) || heartbeatGeneration != expectedGeneration) {
                         false
                     } else {
-                        logRepo.info(LogEventType.HEARTBEAT, "Phantom heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-                        isConnectedLocked(expectedGeneration) && heartbeatGeneration == expectedHeartbeatGeneration
+                        logIfOwnedLocked(owner) {
+                            logRepo.info(LogEventType.HEARTBEAT, "Phantom heartbeat", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                        } && isConnectedLocked(owner) && heartbeatGeneration == expectedGeneration
                     }
                 }
                 if (!published) break
                 delay(HEARTBEAT_DELAY_MS)
             }
         }
+        if (!isConnectedLocked(owner) || heartbeatGeneration != expectedGeneration) {
+            job.cancel()
+            return false
+        }
+        heartbeatJob = job
+        return true
     }
 
     private fun cancelPollingLocked() {
@@ -770,78 +962,33 @@ class PhantomBleRepository(
         heartbeatJob = null
     }
 
-    private fun teardownLocked(markTerminal: Boolean) {
-        generation += 1
-        val expectedGeneration = generation
-        cancelPollingLocked()
-        workoutParams = null
-        currentProgram = null
-        repCount = 0
-        topCounter = 0
-        completeCounter = 0
-        fixedSetCompleted = false
-        _handleDetection.value = HandleDetection()
-        if (!ownsTeardownLocked(expectedGeneration, markTerminal)) return
-        _handleState.value = HandleState.WaitingForRest
-        if (!ownsTeardownLocked(expectedGeneration, markTerminal)) return
-        _heuristicData.value = null
-        if (!ownsTeardownLocked(expectedGeneration, markTerminal)) return
-        _diagnostics.value = null
-        if (!ownsTeardownLocked(expectedGeneration, markTerminal)) return
-        _scannedDevices.value = emptyList()
-        if (!ownsTeardownLocked(expectedGeneration, markTerminal)) return
-        _discoModeActive.value = false
-        if (!ownsTeardownLocked(expectedGeneration, markTerminal)) return
-        _connectionState.value = ConnectionState.Disconnected
-        if (!ownsTeardownLocked(expectedGeneration, markTerminal)) return
-        if (markTerminal) logRepo.info(LogEventType.DISCONNECT, "Shutting down phantom Vitruvian")
+    private inline fun ownsLocked(owner: LifecycleToken, phase: LifecyclePhase): Boolean =
+        lifecyclePhase == phase && lifecycleOwner === owner
+
+    /** Every StateFlow/SharedFlow publication calls this pre/post ownership gate. */
+    private inline fun publishIfOwnedLocked(
+        owner: LifecycleToken,
+        phase: LifecyclePhase = LifecyclePhase.ACTIVE,
+        callback: () -> Unit,
+    ): Boolean {
+        if (!ownsLocked(owner, phase)) return false
+        callback()
+        return ownsLocked(owner, phase)
     }
 
-    private fun ownsTeardownLocked(expectedGeneration: Long, markTerminal: Boolean): Boolean =
-        generation == expectedGeneration && (if (markTerminal) terminal else !terminal)
+    private inline fun logIfOwnedLocked(
+        owner: LifecycleToken,
+        phase: LifecyclePhase = LifecyclePhase.ACTIVE,
+        log: () -> Unit,
+    ): Boolean = publishIfOwnedLocked(owner, phase, log)
 
-    private fun cancelAttemptIfOwner(expectedGeneration: Long) {
-        lifecycleLock.withLock {
-            if (ownsGenerationLocked(expectedGeneration) &&
-                (_connectionState.value == ConnectionState.Scanning ||
-                    _connectionState.value == ConnectionState.Connecting)
-            ) {
-                teardownLocked(markTerminal = false)
-            }
-        }
-    }
-
-    private fun ownsStateLocked(expectedGeneration: Long, expectedState: ConnectionState): Boolean =
-        !terminal && generation == expectedGeneration && _connectionState.value == expectedState
-
-    private fun ownsGenerationLocked(expectedGeneration: Long): Boolean =
-        !terminal && generation == expectedGeneration
-
-    private inline fun logIfOwnedLocked(expectedGeneration: Long, log: () -> Unit): Boolean {
-        if (!isCurrentLocked(expectedGeneration)) return false
-        log()
-        return isCurrentLocked(expectedGeneration)
-    }
-
-    private inline fun logIfGenerationOwnedLocked(expectedGeneration: Long, log: () -> Unit): Boolean {
-        if (!ownsGenerationLocked(expectedGeneration)) return false
-        log()
-        return ownsGenerationLocked(expectedGeneration)
-    }
+    private fun isConnectedLocked(owner: LifecycleToken): Boolean =
+        ownsOperationLocked(owner) && _connectionState.value is ConnectionState.Connected
 
     private fun lifecycleFailure(): Result<Unit> = lifecycleLock.withLock { lifecycleFailureLocked() }
 
     private fun lifecycleFailureLocked(): Result<Unit> =
-        Result.failure(if (terminal) shutdownError() else invalidatedError())
-
-    private fun isConnectedLocked(expectedGeneration: Long): Boolean =
-        !terminal && generation == expectedGeneration && _connectionState.value is ConnectionState.Connected
-
-    private fun isCurrentLocked(expectedGeneration: Long): Boolean =
-        !terminal && generation == expectedGeneration &&
-            (_connectionState.value == ConnectionState.Scanning ||
-                _connectionState.value == ConnectionState.Connecting ||
-                _connectionState.value is ConnectionState.Connected)
+        Result.failure(if (lifecyclePhase == LifecyclePhase.TERMINAL) shutdownError() else invalidatedError())
 
     private fun shutdownError() = IllegalStateException("Phantom repository is shut down")
     private fun invalidatedError() = IllegalStateException("Phantom lifecycle attempt invalidated")

@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.take
@@ -20,10 +21,393 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class PhantomBleRepositoryTest {
+    @Test
+    fun `disconnect reentered by disconnected state cannot republish or leave cleanup open`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo = logRepo, dispatcher = dispatcher)
+        var reentered = false
+        val observer = launch(dispatcher) {
+            repository.connectionState.collect { state ->
+                if (!reentered && state == ConnectionState.Disconnected) {
+                    reentered = true
+                    repository.disconnect()
+                    assertTrue(repository.startScanning().isFailure)
+                }
+            }
+        }
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.disconnect()
+            assertTrue(reentered)
+            assertTrue(repository.startScanning().isSuccess)
+        } finally {
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `final command log reentered shutdown invalidates command result`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo = logRepo, dispatcher = dispatcher)
+        var shutdownTriggered = false
+        val observer = launch(dispatcher) {
+            logRepo.logs.collect { logs ->
+                if (!shutdownTriggered && logs.firstOrNull()?.eventType == LogEventType.COMMAND_SENT) {
+                    shutdownTriggered = true
+                    repository.shutdown()
+                }
+            }
+        }
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.sendInitSequence().isFailure)
+            assertTrue(shutdownTriggered)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+        } finally {
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `timeout reconnection publication cannot reenter a new scan before cleanup completes`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo = logRepo, dispatcher = dispatcher)
+        val scanAttempt = CompletableDeferred<Result<Unit>>()
+        val reconnectionObserver = launch(UnconfinedTestDispatcher(testScheduler)) {
+            repository.reconnectionRequested.collect {
+                scanAttempt.complete(repository.startScanning())
+            }
+        }
+        try {
+            val result = async { repository.scanAndConnect(timeoutMs = 100L) }
+            runCurrent()
+            advanceTimeBy(100L)
+            advanceUntilIdle()
+            assertTrue(result.await().isFailure)
+            assertTrue(scanAttempt.await().isFailure)
+            assertTrue(repository.startScanning().isSuccess)
+        } finally {
+            reconnectionObserver.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `disconnect log reentry is serialized by the cleanup owner`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo = logRepo, dispatcher = dispatcher)
+        var reentered = false
+        val observer = launch(dispatcher) {
+            logRepo.logs.collect { logs ->
+                if (!reentered && logs.firstOrNull()?.eventType == LogEventType.DISCONNECT) {
+                    reentered = true
+                    repository.disconnect()
+                }
+            }
+        }
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.disconnect()
+            assertTrue(reentered)
+            assertTrue(repository.startScanning().isSuccess)
+            assertEquals(1, logRepo.logs.value.count { it.eventType == LogEventType.DISCONNECT })
+        } finally {
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown during normal cleanup upgrades cleanup owner to terminal`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val repository = PhantomBleRepository(dispatcher = dispatcher)
+        var connected = false
+        var shutdownTriggered = false
+        val observer = launch(dispatcher) {
+            repository.connectionState.collect { state ->
+                if (state is ConnectionState.Connected) connected = true
+                if (connected && !shutdownTriggered && state == ConnectionState.Disconnected) {
+                    shutdownTriggered = true
+                    repository.shutdown()
+                }
+            }
+        }
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            repository.disconnect()
+            assertTrue(shutdownTriggered)
+            assertTrue(repository.startScanning().isFailure)
+        } finally {
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `scan and connect phases share one owner while newer scan invalidates stale connect`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val repository = PhantomBleRepository(dispatcher = dispatcher)
+        try {
+            val first = async { repository.scanAndConnect(timeoutMs = 1_000L) }
+            runCurrent()
+            advanceTimeBy(150L)
+            runCurrent()
+            val second = async { repository.startScanning() }
+            runCurrent()
+            advanceUntilIdle()
+            assertTrue(first.await().isFailure)
+            assertTrue(second.await().isSuccess)
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+            assertEquals(1, repository.scannedDevices.value.size)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `stale timeout cannot clean up newer operation owner`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val repository = PhantomBleRepository(dispatcher = dispatcher)
+        try {
+            val stale = async { repository.scanAndConnect(timeoutMs = 200L) }
+            runCurrent()
+            advanceTimeBy(150L)
+            runCurrent()
+            val newer = async { repository.startScanning() }
+            runCurrent()
+            advanceTimeBy(50L)
+            runCurrent()
+            assertTrue(stale.await().isFailure)
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+            advanceTimeBy(100L)
+            runCurrent()
+            assertTrue(newer.await().isSuccess)
+            assertEquals(1, repository.scannedDevices.value.size)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `direct cancellation only cleans the attempt that owns it`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val repository = PhantomBleRepository(dispatcher = dispatcher)
+        try {
+            val oldScan = launch { repository.startScanning() }
+            runCurrent()
+            val newScan = launch { repository.startScanning() }
+            runCurrent()
+            oldScan.cancelAndJoin()
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+            advanceTimeBy(150L)
+            runCurrent()
+            assertTrue(newScan.isCompleted)
+            assertEquals(1, repository.scannedDevices.value.size)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown during initial metric publication prevents connect success`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val repository = PhantomBleRepository(dispatcher = dispatcher)
+        var shutdownTriggered = false
+        val observer = launch(dispatcher) {
+            repository.metricsFlow.collect {
+                if (!shutdownTriggered) {
+                    shutdownTriggered = true
+                    repository.shutdown()
+                }
+            }
+        }
+        try {
+            assertTrue(repository.scanAndConnect().isFailure)
+            assertTrue(shutdownTriggered)
+            assertTrue(repository.startScanning().isFailure)
+        } finally {
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown during initial heuristic publication prevents connect success`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val repository = PhantomBleRepository(dispatcher = dispatcher)
+        var shutdownTriggered = false
+        val observer = launch(dispatcher) {
+            repository.heuristicData.collect { value ->
+                if (value != null && !shutdownTriggered) {
+                    shutdownTriggered = true
+                    repository.shutdown()
+                }
+            }
+        }
+        try {
+            assertTrue(repository.scanAndConnect().isFailure)
+            assertTrue(shutdownTriggered)
+            assertTrue(repository.startScanning().isFailure)
+        } finally {
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown during initial heartbeat publication prevents connect success`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo = logRepo, dispatcher = dispatcher)
+        var shutdownTriggered = false
+        val observer = launch(dispatcher) {
+            logRepo.logs.collect { logs ->
+                if (!shutdownTriggered && logs.firstOrNull()?.eventType == LogEventType.HEARTBEAT) {
+                    shutdownTriggered = true
+                    repository.shutdown()
+                }
+            }
+        }
+        try {
+            assertTrue(repository.scanAndConnect().isFailure)
+            assertTrue(shutdownTriggered)
+            assertTrue(repository.startScanning().isFailure)
+        } finally {
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown during initial rep publication prevents rep log continuation`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(
+            logRepo = logRepo,
+            initialConfig = PhantomBleConfig(repDelayMs = 100L),
+            dispatcher = dispatcher,
+        )
+        val params = WorkoutParameters(ProgramMode.OldSchool, reps = 3, warmupReps = 0, weightPerCableKg = 8f)
+        var shutdownTriggered = false
+        val observer = launch(UnconfinedTestDispatcher(testScheduler)) {
+            repository.repEvents.collect {
+                if (!shutdownTriggered) {
+                    shutdownTriggered = true
+                    repository.shutdown()
+                }
+            }
+        }
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.startWorkout(params).isSuccess)
+            advanceTimeBy(100L)
+            runCurrent()
+            assertTrue(shutdownTriggered)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.REP_RECEIVED && it.level == LogLevel.INFO.name })
+        } finally {
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `rep with no subscriber records an observable delivery loss warning`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(
+            logRepo = logRepo,
+            initialConfig = PhantomBleConfig(repDelayMs = 100L),
+            dispatcher = dispatcher,
+        )
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.startWorkout(WorkoutParameters(ProgramMode.OldSchool, reps = 1, warmupReps = 0, weightPerCableKg = 8f)).isSuccess)
+            advanceTimeBy(100L)
+            runCurrent()
+            assertTrue(
+                logRepo.logs.value.any {
+                    it.eventType == LogEventType.REP_RECEIVED &&
+                        it.level == LogLevel.WARNING.name &&
+                        it.details?.contains("no_subscriber") == true
+                },
+            )
+        } finally {
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `slow subscriber overflow records bounded rep delivery loss`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(
+            logRepo = logRepo,
+            initialConfig = PhantomBleConfig(repDelayMs = 100L),
+            dispatcher = dispatcher,
+        )
+        val observer = launch(UnconfinedTestDispatcher(testScheduler)) {
+            repository.repEvents.collect {
+                delay(1_000L)
+            }
+        }
+        try {
+            assertTrue(repository.scanAndConnect().isSuccess)
+            assertTrue(repository.startWorkout(WorkoutParameters(ProgramMode.OldSchool, reps = 100, warmupReps = 0, weightPerCableKg = 8f)).isSuccess)
+            advanceTimeBy(10_000L)
+            runCurrent()
+            assertTrue(
+                logRepo.logs.value.any {
+                    it.eventType == LogEventType.REP_RECEIVED &&
+                        it.level == LogLevel.WARNING.name &&
+                        it.details?.contains("overflow") == true
+                },
+            )
+        } finally {
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `direct connect cancellation only cleans the attempt that owns it`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val repository = PhantomBleRepository(dispatcher = dispatcher)
+        try {
+            val scan = async { repository.startScanning() }
+            runCurrent()
+            advanceTimeBy(150L)
+            runCurrent()
+            assertTrue(scan.await().isSuccess)
+            val device = repository.scannedDevices.value.single()
+            val oldConnect = launch { repository.connect(device) }
+            runCurrent()
+            val newConnect = launch { repository.connect(device) }
+            runCurrent()
+            oldConnect.cancelAndJoin()
+            assertEquals(ConnectionState.Connecting, repository.connectionState.value)
+            advanceTimeBy(250L)
+            runCurrent()
+            assertTrue(newConnect.isCompleted)
+            assertEquals(ConnectionState.Connected(device.name, device.address), repository.connectionState.value)
+        } finally {
+            repository.shutdown()
+        }
+    }
+
     @Test
     fun `shutdown reentered from scanning wins before scan continuation`() = runTest {
         val logRepo = ConnectionLogRepository()
