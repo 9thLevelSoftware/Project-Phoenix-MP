@@ -545,9 +545,8 @@ fun AnalyticsScreen(
                         onDeletePersonalRecord = { pr ->
                             personalRecordRepository.deletePR(pr.id, pr.profileId)
                         },
-                        onDeletePersonalRecordError = { error ->
-                            exportMessage = error.message?.takeIf { it.isNotBlank() }
-                                ?: deletePersonalRecordFailed
+                        onDeletePersonalRecordError = { _ ->
+                            exportMessage = deletePersonalRecordFailed
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

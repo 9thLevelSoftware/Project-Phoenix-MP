@@ -1147,13 +1147,16 @@ applyPulledPersonalRecordTombstoneState:
 UPDATE PersonalRecord
 SET deletedAt = :deletedAt,
     updatedAt = :updatedAt,
-    exerciseName = :exerciseName,
-    weight = :weight,
-    reps = :reps,
-    oneRepMax = :oneRepMax,
-    achievedAt = :achievedAt,
-    volume = :volume,
-    cable_count = :cableCount
+    -- Portal tombstone DTOs intentionally contain only identity and deletion
+    -- state. Preserve the last active metrics for a tombstone, but replace the
+    -- full snapshot when a newer active record legitimately restores it.
+    exerciseName = CASE WHEN :deletedAt IS NULL THEN :exerciseName ELSE exerciseName END,
+    weight = CASE WHEN :deletedAt IS NULL THEN :weight ELSE weight END,
+    reps = CASE WHEN :deletedAt IS NULL THEN :reps ELSE reps END,
+    oneRepMax = CASE WHEN :deletedAt IS NULL THEN :oneRepMax ELSE oneRepMax END,
+    achievedAt = CASE WHEN :deletedAt IS NULL THEN :achievedAt ELSE achievedAt END,
+    volume = CASE WHEN :deletedAt IS NULL THEN :volume ELSE volume END,
+    cable_count = CASE WHEN :deletedAt IS NULL THEN :cableCount ELSE cable_count END
 WHERE uuid = :uuid
   AND profile_id = :profileId
   AND (
