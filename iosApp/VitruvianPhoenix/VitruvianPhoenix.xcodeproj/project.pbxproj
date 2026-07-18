@@ -8,12 +8,15 @@
 
 /* Begin PBXBuildFile section */
 		DFE6BD6E2EEDFF6E00886589 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */; };
+		76423536F7CB40AD87E5D523 /* PhantomJustLiftFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EF5480C68E54A508C57DC83 /* PhantomJustLiftFlowUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		7BD2BAB62F8C1299004FCE77 /* SupabaseBase.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/SupabaseBase.xcconfig; sourceTree = "<group>"; };
 		DFE6BD472EEDF42200886589 /* VitruvianPhoenix.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitruvianPhoenix.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
+		2EF5480C68E54A508C57DC83 /* PhantomJustLiftFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhantomJustLiftFlowUITests.swift; sourceTree = "<group>"; };
+		503FDCA13116435380416142 /* VitruvianPhoenixUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VitruvianPhoenixUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -37,12 +40,37 @@
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
+/* Begin PBXContainerItemProxy section */
+		E70B50E244D943ECA94350FA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DFE6BD3F2EEDF42200886589 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DFE6BD462EEDF42200886589;
+			remoteInfo = VitruvianPhoenix;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		0FAD56B17F2248E2A5745F61 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DFE6BD462EEDF42200886589 /* VitruvianPhoenix */;
+			targetProxy = E70B50E244D943ECA94350FA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		DFE6BD442EEDF42200886589 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				DFE6BD6E2EEDFF6E00886589 /* libsqlite3.tbd in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		69EDA8A059DA43CFA73E0841 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -54,6 +82,7 @@
 			children = (
 				7BD2BAB62F8C1299004FCE77 /* SupabaseBase.xcconfig */,
 				DFE6BD492EEDF42200886589 /* VitruvianPhoenix */,
+				CC7CCA7A83D24BD59C0F277F /* VitruvianPhoenixUITests */,
 				DFE6BD552EEDF53700886589 /* Frameworks */,
 				DFE6BD482EEDF42200886589 /* Products */,
 			);
@@ -63,6 +92,7 @@
 			isa = PBXGroup;
 			children = (
 				DFE6BD472EEDF42200886589 /* VitruvianPhoenix.app */,
+				503FDCA13116435380416142 /* VitruvianPhoenixUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -73,6 +103,14 @@
 				DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		CC7CCA7A83D24BD59C0F277F /* VitruvianPhoenixUITests */ = {
+			isa = PBXGroup;
+			children = (
+				2EF5480C68E54A508C57DC83 /* PhantomJustLiftFlowUITests.swift */,
+			);
+			path = VitruvianPhoenixUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -102,6 +140,24 @@
 			productReference = DFE6BD472EEDF42200886589 /* VitruvianPhoenix.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AEE01EBB79D242D3853DB1A1 /* VitruvianPhoenixUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E907639526FA4CB29CFE78D7 /* Build configuration list for PBXNativeTarget "VitruvianPhoenixUITests" */;
+			buildPhases = (
+				8101D17527EA4E6C8C67D934 /* Sources */,
+				69EDA8A059DA43CFA73E0841 /* Frameworks */,
+				CD9F157B9C3247A0851325E8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0FAD56B17F2248E2A5745F61 /* PBXTargetDependency */,
+			);
+			name = VitruvianPhoenixUITests;
+			productName = VitruvianPhoenixUITests;
+			productReference = 503FDCA13116435380416142 /* VitruvianPhoenixUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -115,6 +171,10 @@
 					DFE6BD462EEDF42200886589 = {
 						CreatedOnToolsVersion = 26.1;
 						LastSwiftMigration = 2610;
+					};
+					AEE01EBB79D242D3853DB1A1 = {
+						CreatedOnToolsVersion = 26.1;
+						TestTargetID = DFE6BD462EEDF42200886589;
 					};
 				};
 			};
@@ -133,12 +193,20 @@
 			projectRoot = "";
 			targets = (
 				DFE6BD462EEDF42200886589 /* VitruvianPhoenix */,
+				AEE01EBB79D242D3853DB1A1 /* VitruvianPhoenixUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		DFE6BD452EEDF42200886589 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CD9F157B9C3247A0851325E8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -186,6 +254,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8101D17527EA4E6C8C67D934 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				76423536F7CB40AD87E5D523 /* PhantomJustLiftFlowUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -418,6 +494,53 @@
 			};
 			name = Release;
 		};
+		2BDD624698834DA0AB9E6C1F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = BDJDR669ZV;
+				ENABLE_TESTABILITY = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix.UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = VitruvianPhoenix;
+			};
+			name = Debug;
+		};
+		09FD3A6B343A4A6EA7542144 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = BDJDR669ZV;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix.UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = VitruvianPhoenix;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -435,6 +558,15 @@
 			buildConfigurations = (
 				DFE6BD532EEDF42300886589 /* Debug */,
 				DFE6BD542EEDF42300886589 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E907639526FA4CB29CFE78D7 /* Build configuration list for PBXNativeTarget "VitruvianPhoenixUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2BDD624698834DA0AB9E6C1F /* Debug */,
+				09FD3A6B343A4A6EA7542144 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
