@@ -173,11 +173,11 @@
 			);
 			name = "Process Resources";
 			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/compose-resources",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/compose-resources/composeResources",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\ncase \"$SDK_NAME\" in\n    iphonesimulator*)\n        KOTLIN_TARGET=\"iosSimulatorArm64\"\n        ;;\n    iphoneos*)\n        KOTLIN_TARGET=\"iosArm64\"\n        ;;\n    *)\n        echo \"error: Unsupported SDK_NAME: $SDK_NAME\" >&2\n        exit 1\n        ;;\nesac\n\nSOURCE=\"$SRCROOT/../../shared/build/processedResources/${KOTLIN_TARGET}/main/composeResources\"\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources\"\nrm -rf \"$DEST\"\nif [ -d \"$SOURCE\" ]; then\n    mkdir -p \"$DEST\"\n    cp -R \"$SOURCE/\" \"$DEST/\"\nelse\n    echo \"warning: Processed Compose resources not found at $SOURCE\"\nfi\n";
+			shellScript = "set -e\ncase \"$SDK_NAME\" in\n    iphonesimulator*)\n        KOTLIN_TARGET=\"iosSimulatorArm64\"\n        ;;\n    iphoneos*)\n        KOTLIN_TARGET=\"iosArm64\"\n        ;;\n    *)\n        echo \"error: Unsupported SDK_NAME: $SDK_NAME\" >&2\n        exit 1\n        ;;\nesac\n\nSOURCE=\"$SRCROOT/../../shared/build/processedResources/${KOTLIN_TARGET}/main/composeResources\"\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources/composeResources\"\nrm -rf \"$DEST\"\nif [ -d \"$SOURCE\" ]; then\n    mkdir -p \"$DEST\"\n    cp -R \"$SOURCE/\" \"$DEST/\"\nelse\n    echo \"warning: Processed Compose resources not found at $SOURCE\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
