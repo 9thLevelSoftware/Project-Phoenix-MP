@@ -2,6 +2,7 @@ package com.devil.phoenixproject.di
 
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.PhantomBleRepository
+import com.devil.phoenixproject.fixture.SimulatorLaunchFixture
 import com.russhwolf.settings.Settings
 import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
@@ -15,6 +16,11 @@ internal actual object IosRuntimeBindings {
     actual fun createBleRepository(): BleRepository = PhantomBleRepository()
 
     actual fun createSecureSettings(legacySettings: Settings): Settings = InMemorySecureSettings()
+
+    actual val usesRealBlePermissionGate: Boolean = false
+
+    actual fun resolveSimulatorLaunchFixture(): IosLaunchFixture? =
+        SimulatorLaunchFixture.resolveFromEnvironment()
 }
 
 /** Process-local Settings implementation used only by the iOS simulator target. */

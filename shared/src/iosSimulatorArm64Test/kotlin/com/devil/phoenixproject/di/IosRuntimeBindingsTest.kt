@@ -13,6 +13,12 @@ import org.koin.dsl.koinApplication
 
 class IosRuntimeBindingsTest {
     @Test
+    fun `simulator binding bypasses real BLE permission gate when no fixture environment is selected`() {
+        assertEquals(false, IosRuntimeBindings.usesRealBlePermissionGate)
+        assertNull(IosRuntimeBindings.resolveSimulatorLaunchFixture())
+    }
+
+    @Test
     fun `simulator bindings select phantom repository and ephemeral secure settings`() {
         val repository = IosRuntimeBindings.createBleRepository()
         val settings = IosRuntimeBindings.createSecureSettings(MapSettings())

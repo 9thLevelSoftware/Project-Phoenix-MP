@@ -25,7 +25,10 @@ import com.russhwolf.settings.Settings
 import org.koin.core.module.Module
 import org.koin.dsl.module
 import platform.Foundation.NSBundle
+import platform.Foundation.NSLog
 import platform.Foundation.NSUserDefaults
+
+private val simulatorLaunchFixture = IosRuntimeBindings.resolveSimulatorLaunchFixture()
 
 actual val platformModule: Module = module {
     single {
@@ -49,7 +52,12 @@ actual val platformModule: Module = module {
     single { DriverFactory() }
     single<Settings> {
         val defaults = NSUserDefaults.standardUserDefaults
-        NSUserDefaultsSettings(defaults)
+        val settings = NSUserDefaultsSettings(defaults)
+        simulatorLaunchFixture?.let { fixture ->
+            fixture.seed(settings)
+            NSLog("PHOENIX_IOS_FIXTURE_READY ${fixture.id}")
+        }
+        settings
     }
     single<Settings>(SecureSettingsQualifier) {
         IosRuntimeBindings.createSecureSettings(get())

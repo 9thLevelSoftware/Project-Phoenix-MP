@@ -36,6 +36,10 @@ internal actual object IosRuntimeBindings {
         migrateTokensToKeychain(legacySettings, keychainSettings)
         return keychainSettings
     }
+
+    actual val usesRealBlePermissionGate: Boolean = true
+
+    actual fun resolveSimulatorLaunchFixture(): IosLaunchFixture? = null
 }
 
 /**
