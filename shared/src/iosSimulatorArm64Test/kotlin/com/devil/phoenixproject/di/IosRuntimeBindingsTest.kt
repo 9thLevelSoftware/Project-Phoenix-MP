@@ -26,6 +26,24 @@ class IosRuntimeBindingsTest {
     }
 
     @Test
+    fun `simulator secure settings ignore populated legacy settings and stay process local`() {
+        val legacySettings = MapSettings()
+        legacySettings.putString("portal_auth_token", "legacy-token")
+        legacySettings.putString("refresh_token", "legacy-refresh-token")
+
+        val settings = IosRuntimeBindings.createSecureSettings(legacySettings)
+
+        assertNull(settings.getStringOrNull("portal_auth_token"))
+        assertNull(settings.getStringOrNull("refresh_token"))
+        settings.putString("portal_auth_token", "simulator-token")
+        assertEquals("simulator-token", settings.getStringOrNull("portal_auth_token"))
+        assertEquals("legacy-token", legacySettings.getStringOrNull("portal_auth_token"))
+
+        val nextProcessSettings = IosRuntimeBindings.createSecureSettings(legacySettings)
+        assertNull(nextProcessSettings.getStringOrNull("portal_auth_token"))
+    }
+
+    @Test
     fun `simulator koin binding resolves portal token storage without keychain`() {
         val first = koinApplication {
             modules(platformModule, syncModule)
