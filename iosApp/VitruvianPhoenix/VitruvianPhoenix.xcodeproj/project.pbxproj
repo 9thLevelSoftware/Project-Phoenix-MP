@@ -7,29 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		DFE6BD572EEDF53700886589 /* shared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DFE6BD562EEDF53700886589 /* shared.framework */; };
-		DFE6BD582EEDF53700886589 /* shared.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DFE6BD562EEDF53700886589 /* shared.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		DFE6BD6E2EEDFF6E00886589 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		DFE6BD592EEDF53700886589 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				DFE6BD582EEDF53700886589 /* shared.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		7BD2BAB62F8C1299004FCE77 /* SupabaseBase.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/SupabaseBase.xcconfig; sourceTree = "<group>"; };
 		DFE6BD472EEDF42200886589 /* VitruvianPhoenix.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitruvianPhoenix.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		DFE6BD562EEDF53700886589 /* shared.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = shared.framework; path = ../../shared/build/bin/iosArm64/debugFramework/shared.framework; sourceTree = "<group>"; };
 		DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -60,7 +43,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				DFE6BD6E2EEDFF6E00886589 /* libsqlite3.tbd in Frameworks */,
-				DFE6BD572EEDF53700886589 /* shared.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -89,7 +71,6 @@
 			isa = PBXGroup;
 			children = (
 				DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */,
-				DFE6BD562EEDF53700886589 /* shared.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -101,12 +82,11 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = DFE6BD522EEDF42300886589 /* Build configuration list for PBXNativeTarget "VitruvianPhoenix" */;
 			buildPhases = (
+				DFE6BD822EEE300000886589 /* Compile Kotlin Framework */,
 				DFE6BD432EEDF42200886589 /* Sources */,
 				DFE6BD442EEDF42200886589 /* Frameworks */,
 				DFE6BD452EEDF42200886589 /* Resources */,
-				DFE6BD812EEE200000886589 /* Copy Compose Resources */,
-				DFE6BD592EEDF53700886589 /* Embed Frameworks */,
-				DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */,
+				DFE6BD812EEE200000886589 /* Process Resources */,
 			);
 			buildRules = (
 			);
@@ -168,37 +148,36 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		DFE6BD812EEE200000886589 /* Copy Compose Resources */ = {
+		DFE6BD822EEE300000886589 /* Compile Kotlin Framework */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/compose-resources",
 			);
-			name = "Copy Compose Resources";
+			name = "Compile Kotlin Framework";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n    echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\"\n    exit 0\nfi\n\ncase \"$SDK_NAME\" in\n    iphonesimulator*)\n        KOTLIN_TARGET=\"iosSimulatorArm64\"\n        ;;\n    iphoneos*)\n        KOTLIN_TARGET=\"iosArm64\"\n        ;;\n    *)\n        echo \"error: Unsupported SDK_NAME: $SDK_NAME\" >&2\n        exit 1\n        ;;\nesac\n\ncd \"$SRCROOT/../..\"\n./gradlew \":shared:${KOTLIN_TARGET}ProcessResources\" :shared:embedAndSignAppleFrameworkForXcode -Pskip.supabase.check=true\n";
+		};
+		DFE6BD812EEE200000886589 /* Process Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Process Resources";
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/compose-resources",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Copy Compose Multiplatform resources preserving directory structure.\n# Resources are placed OUTSIDE the fileSystemSynchronizedGroups directory\n# (at $SRCROOT/compose-resources/, not $SRCROOT/VitruvianPhoenix/compose-resources/)\n# to avoid Xcode auto-including them and flattening locale-specific .cvr files.\n# This script copies the directory tree intact so DefaultIOsResourceReader\n# can find resources at their expected bundle paths.\nCOMPOSE_RES=\"$SRCROOT/compose-resources\"\nif [ -d \"$COMPOSE_RES\" ]; then\n    DEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources\"\n    rm -rf \"$DEST\"\n    mkdir -p \"$DEST\"\n    cp -R \"$COMPOSE_RES/\" \"$DEST/\"\n    echo \"Copied Compose resources to bundle: $(find \"$DEST\" -type f | wc -l | tr -d ' ') files\"\nelse\n    echo \"warning: Compose resources not found at $COMPOSE_RES (expected for local builds without Gradle resource processing)\"\nfi\n";
-		};
-		DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework/shared.framework/shared",
-			);
-			name = "Generate shared.framework dSYM";
-			outputPaths = (
-				"$(DWARF_DSYM_FOLDER_PATH)/shared.framework.dSYM",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Generate dSYM for shared.framework\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    FRAMEWORK_PATH=\"${SRCROOT}/../../shared/build/bin/iosArm64/debugFramework/shared.framework\"\n    DSYM_PATH=\"${DWARF_DSYM_FOLDER_PATH}/shared.framework.dSYM\"\n    FRAMEWORK_BIN=\"${FRAMEWORK_PATH}/shared\"\n    \n    if [ -f \"${FRAMEWORK_BIN}\" ]; then\n        FILE_TYPE=\"$(/usr/bin/file -b \"${FRAMEWORK_BIN}\" 2>/dev/null || true)\"\n        if echo \"${FILE_TYPE}\" | /usr/bin/grep -q \"Mach-O\"; then\n            echo \"Generating dSYM for shared.framework...\"\n            if xcrun dsymutil \"${FRAMEWORK_BIN}\" -o \"${DSYM_PATH}\" >/dev/null 2>&1; then\n                echo \"dSYM generated at ${DSYM_PATH}\"\n            else\n                echo \"Warning: dsymutil failed for shared.framework; skipping.\"\n            fi\n        else\n            echo \"Skipping dSYM generation for shared.framework (binary type: ${FILE_TYPE:-unknown}).\"\n        fi\n    else\n        echo \"Warning: shared.framework binary not found at ${FRAMEWORK_PATH}\"\n    fi\nfi\n";
+			shellScript = "set -e\ncase \"$SDK_NAME\" in\n    iphonesimulator*)\n        KOTLIN_TARGET=\"iosSimulatorArm64\"\n        ;;\n    iphoneos*)\n        KOTLIN_TARGET=\"iosArm64\"\n        ;;\n    *)\n        echo \"error: Unsupported SDK_NAME: $SDK_NAME\" >&2\n        exit 1\n        ;;\nesac\n\nSOURCE=\"$SRCROOT/../../shared/build/processedResources/${KOTLIN_TARGET}/main/composeResources\"\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources\"\nrm -rf \"$DEST\"\nif [ -d \"$SOURCE\" ]; then\n    mkdir -p \"$DEST\"\n    cp -R \"$SOURCE/\" \"$DEST/\"\nelse\n    echo \"warning: Processed Compose resources not found at $SOURCE\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -348,7 +327,13 @@
 				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					shared,
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VitruvianPhoenix/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Project Phoenix";
@@ -359,7 +344,8 @@
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "arm64 bluetooth-le";
+				"INFOPLIST_KEY_UIRequiredDeviceCapabilities[sdk=iphoneos*]" = "arm64 bluetooth-le";
+				"INFOPLIST_KEY_UIRequiredDeviceCapabilities[sdk=iphonesimulator*]" = arm64;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -393,7 +379,13 @@
 				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					shared,
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VitruvianPhoenix/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Project Phoenix";
@@ -404,7 +396,8 @@
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "arm64 bluetooth-le";
+				"INFOPLIST_KEY_UIRequiredDeviceCapabilities[sdk=iphoneos*]" = "arm64 bluetooth-le";
+				"INFOPLIST_KEY_UIRequiredDeviceCapabilities[sdk=iphonesimulator*]" = arm64;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
