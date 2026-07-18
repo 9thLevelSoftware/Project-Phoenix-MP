@@ -223,7 +223,13 @@ kotlin {
     }
 }
 
-// Serialize the two memory-intensive iOS release links used by XCFramework assembly.
+// Serialize all memory-intensive iOS framework links used by XCFramework assembly.
+tasks.named("linkDebugFrameworkIosSimulatorArm64") {
+    mustRunAfter("linkDebugFrameworkIosArm64")
+}
+tasks.named("linkReleaseFrameworkIosArm64") {
+    mustRunAfter("linkDebugFrameworkIosSimulatorArm64")
+}
 tasks.named("linkReleaseFrameworkIosSimulatorArm64") {
     mustRunAfter("linkReleaseFrameworkIosArm64")
 }
