@@ -223,6 +223,11 @@ kotlin {
     }
 }
 
+// Serialize the two memory-intensive iOS release links used by XCFramework assembly.
+tasks.named("linkReleaseFrameworkIosSimulatorArm64") {
+    mustRunAfter("linkReleaseFrameworkIosArm64")
+}
+
 sqldelight {
     databases {
         create("VitruvianDatabase") {
